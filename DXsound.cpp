@@ -646,11 +646,71 @@ void DXINPUT_SetMouseButtonState(u8 button, u8 state)
 	gMouseButtonState[button] = state;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 i32 DXINPUT_SetupController(void)
 {
-    printf("DXINPUT_SetupController(void)");
-	return 0x23082024;
+#ifdef _WIN32
+	g_pDI->EnumDevices(DI8DEVCLASS_GAMECTRL, EnumControllersCallback, 0, DIEDFL_ATTACHEDONLY);
+
+	if (!gControllerRelated)
+	{
+		return 0;
+	}
+
+	HRESULT hr = gControllerRelated->SetCooperativeLevel(gDxInputHwnd, DISCL_FOREGROUND | DISCL_EXCLUSIVE);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	hr = gControllerRelated->SetDataFormat(&c_dfDIJoystick);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	DIPROPDWORD dipdw;
+	dipdw.diph.dwSize = sizeof(DIPROPDWORD);
+	dipdw.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+	dipdw.diph.dwObj = 0;
+	dipdw.diph.dwHow = DIPH_DEVICE;
+	dipdw.dwData = 16;
+
+	hr = gControllerRelated->SetProperty(DIPROP_BUFFERSIZE, &dipdw.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	dipdw.dwData = DIPROPAXISMODE_ABS;
+	hr = gControllerRelated->SetProperty(DIPROP_AXISMODE, &dipdw.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	DIPROPRANGE diprg;
+	diprg.diph.dwSize = sizeof(DIPROPRANGE);
+	diprg.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+	diprg.diph.dwHow = DIPH_BYOFFSET;
+	diprg.diph.dwObj = DIJOFS_X;
+	diprg.lMin = -1000;
+	diprg.lMax = 1000;
+
+	hr = gControllerRelated->SetProperty(DIPROP_RANGE, &diprg.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	diprg.diph.dwSize = sizeof(DIPROPRANGE);
+	diprg.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+	diprg.diph.dwHow = DIPH_BYOFFSET;
+	diprg.diph.dwObj = DIJOFS_Y;
+	diprg.lMin = -1000;
+	diprg.lMax = 1000;
+
+	hr = gControllerRelated->SetProperty(DIPROP_RANGE, &diprg.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	hr = gControllerRelated->Acquire();
+	if (hr == DIERR_OTHERAPPHASPRIO)
+	{
+		DXERR_printf("Other application has priority when attempting to acquire controller\n");
+	}
+	else
+	{
+		DI_ERROR_LOG_AND_QUIT(hr);
+	}
+#endif
+
+	return 1;
 }
 
 // @MEDIUMTODO
