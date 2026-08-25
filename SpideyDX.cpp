@@ -55,24 +55,8 @@ EXPORT i32 gActive;
 
 // @Ok
 EXPORT u32 gTwiddleTable[1024];
-
-// @SMALLTODO
-u16* PVR_ConvertTwiddledToBMP(i32 a1, i32 a2, const u16* a3, i32 a4)
-{
-	// @FIXME
-	typedef u16* (*func_ptr)(i32, i32, const u16*, i32);
-	func_ptr func = (func_ptr)0x00511400;
-	return func(a1, a2, a3, a4);
-}
-
-// @SMALLTODO
-u16* PVR_ConvertVQToBMP(i32 a1, i32 a2, const u16* a3, i32 a4)
-{
-	// @FIXME
-	typedef u16* (*func_ptr)(i32, i32, const u16*, i32);
-	func_ptr func = (func_ptr)0x005115D0;
-	return func(a1, a2, a3, a4);
-}
+// set once the table above has been filled, 0xADC4DC in the original
+static u8 gTwiddleTableBuilt;
 
 // @Ok
 EXPORT u8 isMMX(void)
@@ -97,58 +81,56 @@ EXPORT u8 isMMX(void)
 
 // @Ok
 // @Validated
-// @NotMatching: Not matching but didn't check inlined version
+// @Matching: checked inlined in the PVR converters
 INLINE void BuildTwiddleTable(void)
 {
 	for (u32 i = 0; i < 1024; i++)
 	{
-		u32 v6 = (i >> 1) & 0x55555555;
-		u32 v7 = i ^ (2 * v6);
+		u32 a = (i >> 1) & 0x55555555;
+		u32 b = i ^ (a << 1);
 
-		u32 v8 = (v7 >> 2) & 0x33333333 ^ (v6 & 0x33333333);
+		u32 t = ((b >> 2) & 0x33333333) ^ (a & 0x33333333);
+		a ^= t;
+		b ^= t << 2;
 
-		u32 v9 = v8 ^ v6;
-		u32 v10 = (v8 << 2) ^ v7;
-		u32 v11 = v9 & 0xF0F0F0F ^ (v10 >> 4) & 0xF0F0F0F;
-		u32 v12 = v11 ^ v9;
+		t = ((b >> 4) & 0x0F0F0F0F) ^ (a & 0x0F0F0F0F);
+		a ^= t;
+		b ^= t << 4;
 
-		u32 v13 = (v11 << 4) ^ v10;
+		t = ((b >> 8) & 0x00FF00FF) ^ (a & 0x00FF00FF);
 
-		u32 res = 0x00FF00FF & v12 ^ 0x00FF00FF & (v13 >> 8);
-
-		gTwiddleTable[i] = (((res & 0xFF) << 8) ^ (v13 & 0xFFFF)) | ((res ^ v12) << 0x10);
-		
+		gTwiddleTable[i] = (((t & 0xFF) << 8) ^ (b & 0xFFFF)) | ((t ^ a) << 16);
 	}
 }
 
-// @SMALLTODO
-void CalcUntwiddledPos(u32,u32,u32,u32)
-{
-    printf("CalcUntwiddledPos(u32,u32,u32,u32)");
-}
-
-// @NotOk
-// @Validate: when inlined
+// @Ok
+// @Matching
 INLINE void ComputeMaskShift(
-		u32 a1,
-		u32 a2,
-		u32 *a3,
-		u32 *a4)
+		u32 width,
+		u32 height,
+		u32 &mask,
+		u32 &shift)
 {
-	if (a2 < a1)
-	{
-		a1 = a2;
-	}
+	mask = (width < height ? width : height) - 1;
 
-	*a3 = a1 - 1;
-
-	u32 v4 = 1;
-	*a4 = 0;
-	while (*a3 & v4)
+	u32 bit = 1;
+	shift = 0;
+	while (mask & bit)
 	{
-		v4 <<= 1;
-		++*a4;
+		bit <<= 1;
+		++shift;
 	}
+}
+
+// @Ok
+// @Matching
+INLINE u32 CalcUntwiddledPos(
+		u32 x,
+		u32 y,
+		u32 mask,
+		u32 shift)
+{
+	return (((x | y) & ~mask) << shift) | (gTwiddleTable[x & mask] << 1) | gTwiddleTable[y & mask];
 }
 
 // @Ok
@@ -408,6 +390,50 @@ i32 mipmapOffset(
 	i32 v4 = mipmapOffset(a1 >> 1, a2 >> 1, a3);
 	v4 += (i32)((a2 * a1) * a3);
 	return v4;
+}
+
+// @Ok
+u16* PVR_ConvertTwiddledToBMP(
+		u32 width,
+		u32 height,
+		const u16* src,
+		u32 mipmapped)
+{
+	if (!gTwiddleTableBuilt)
+	{
+		BuildTwiddleTable();
+		gTwiddleTableBuilt = 1;
+	}
+
+	if (mipmapped)
+	{
+		src = (const u16*)((const u8*)src + mipmapOffset(width >> 1, height >> 1, 2.0f));
+	}
+
+	u32 mask;
+	u32 shift;
+	ComputeMaskShift(width, height, mask, shift);
+
+	u16* dest = (u16*)malloc(width * height * 2);
+
+	for (u32 y = 0; y < height; y++)
+	{
+		for (u32 x = 0; x < width; x++)
+		{
+			dest[y * width + x] = src[CalcUntwiddledPos(x, y, mask, shift)];
+		}
+	}
+
+	return dest;
+}
+
+// @SMALLTODO
+u16* PVR_ConvertVQToBMP(u32 a1, u32 a2, const u16* a3, u32 a4)
+{
+	// @FIXME
+	typedef u16* (*func_ptr)(u32, u32, const u16*, u32);
+	func_ptr func = (func_ptr)0x005115D0;
+	return func(a1, a2, a3, a4);
 }
 
 // @PowerPC

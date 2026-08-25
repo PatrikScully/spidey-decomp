@@ -18,8 +18,8 @@ EXPORT extern u8 gMMXSupport;
 EXPORT extern u8 g3DAccelator;
 
 EXPORT void BuildTwiddleTable(void);
-EXPORT void CalcUntwiddledPos(u32,u32,u32,u32);
-EXPORT void ComputeMaskShift(u32,u32,u32 *,u32 *);
+EXPORT u32 CalcUntwiddledPos(u32,u32,u32,u32);
+EXPORT void ComputeMaskShift(u32,u32,u32 &,u32 &);
 EXPORT void SPIDEYDX_DisplayDeviceSettings(char *);
 EXPORT void SPIDEYDX_LoadSettings(void);
 EXPORT void SPIDEYDX_SaveSettings(void);
@@ -33,8 +33,8 @@ EXPORT void debugSettings(void);
 EXPORT i32 mipmapOffset(u32,u32,f32);
 EXPORT void parseCommandLine(char *);
 
-u16* PVR_ConvertTwiddledToBMP(i32, i32, const u16*, i32);
-u16* PVR_ConvertVQToBMP(i32, i32, const u16*, i32);
+EXPORT u16* PVR_ConvertTwiddledToBMP(u32, u32, const u16*, u32);
+EXPORT u16* PVR_ConvertVQToBMP(u32, u32, const u16*, u32);
 
 EXPORT i32 WINAPI RealWinMain(HINSTANCE, HINSTANCE, LPSTR, i32);
 
