@@ -17,9 +17,6 @@ EXPORT SPushOffset *gPushOffsetAddr;
 // @Ok
 EXPORT i32 gPushOffsetOne;
 
-EXPORT int gResolutionX;
-EXPORT int gResolutionY;
-
 i32 gLowGraphics;
 EXPORT void* gLowGraphicsRelated;
 
@@ -120,8 +117,8 @@ void DXINIT_DirectX8(
 	DXPOLY_Init(v3);
 }
 
-// @Ok
-// @Matching
+// @Bogus
+// unsigned overload for repo callers, the game only has the i32 version
 void DXINIT_GetCurrentResolution(
 		u32 *a1,
 		u32 *a2)
@@ -1981,12 +1978,12 @@ INLINE void shutdownDirectSound8(void)
 #endif
 }
 
-// @NotOk
-// Globals
-void DXINIT_GetCurrentResolution(int *x, int *y)
+// @Ok
+// @Matching
+void DXINIT_GetCurrentResolution(i32 *a1, i32 *a2)
 {
-	*x = gResolutionX;
-	*y = gResolutionY;
+	*a1 = gDxResolutionX;
+	*a2 = gDxResolutionY;
 }
 
 void validate_DXContext(void)
