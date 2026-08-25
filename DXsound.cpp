@@ -401,11 +401,72 @@ void DXINPUT_Initialize(LPDIRECTINPUT8 a1, HWND a2)
 	gNumControllerButtons = 0;
 }
 
-// @MEDIUMTODO
-i32 DXINPUT_PollController(i32 *,i32 *,i32 *)
+// @Ok
+// @Matching
+i32 DXINPUT_PollController(i32 *pX, i32 *pY, i32 *pZ)
 {
-    printf("DXINPUT_PollController(i32 *,i32 *,i32 *)");
-	return 0x24082024;
+#ifdef _WIN32
+	DWORD dwElements = 16;
+	DIDEVICEOBJECTDATA didod[16];
+	memset(didod, 0, sizeof(didod));
+
+	if (gControllerRelated)
+	{
+		HRESULT hr = gControllerRelated->Poll();
+		if (hr == DIERR_INPUTLOST || hr == DIERR_NOTACQUIRED)
+		{
+			hr = gControllerRelated->Acquire();
+			if (hr == DIERR_OTHERAPPHASPRIO)
+			{
+				DXERR_printf("Other application has priority when attempting to acquire controller\n");
+				return 0;
+			}
+
+			DI_ERROR_LOG_AND_QUIT(hr);
+			gControllerRelated->Poll();
+		}
+		else if (FAILED(hr))
+		{
+			return 0;
+		}
+
+		gControllerRelated->GetDeviceData(sizeof(DIDEVICEOBJECTDATA), didod, &dwElements, 0);
+
+		for (i32 i = 0; i < 32; i++)
+			gControllerButtonState[i] &= ~0x80u;
+
+		for (DWORD k = 0; k < dwElements; k++)
+		{
+			if (didod[k].dwOfs >= DIJOFS_BUTTON0 && didod[k].dwOfs < (DWORD)(gNumControllerButtons + DIJOFS_BUTTON0))
+			{
+				if (didod[k].dwData & 0x80)
+				{
+					gControllerButtonState[didod[k].dwOfs - DIJOFS_BUTTON0] = -1;
+				}
+				else
+				{
+					gControllerButtonState[didod[k].dwOfs - DIJOFS_BUTTON0] = 0x80;
+				}
+			}
+			else if (didod[k].dwOfs == DIJOFS_X)
+			{
+				*pX = didod[k].dwData;
+			}
+			else if (didod[k].dwOfs == DIJOFS_Y)
+			{
+				*pY = didod[k].dwData;
+			}
+			else if (didod[k].dwOfs == DIJOFS_POV(0))
+			{
+				*pZ = didod[k].dwData;
+			}
+		}
+
+		return 1;
+	}
+#endif
+
+	return 0;
 }
 
 // @Ok
@@ -457,11 +518,75 @@ i32 DXINPUT_PollKeyboard(void)
 	return 0;
 }
 
-// @MEDIUMTODO
-i32 DXINPUT_PollMouse(i32 *,i32 *)
+// @Ok
+// @Matching
+i32 DXINPUT_PollMouse(i32 *pX, i32 *pY)
 {
-    printf("DXINPUT_PollMouse(i32 *,i32 *)");
-	return 0x23082024;
+#ifdef _WIN32
+	DWORD dwElements = 16;
+	DIDEVICEOBJECTDATA didod[16];
+	memset(didod, 0, sizeof(didod));
+
+	if (!g_pMouse)
+	{
+		return 0;
+	}
+
+	if (g_pMouse->GetDeviceData(sizeof(DIDEVICEOBJECTDATA), didod, &dwElements, 0) == DIERR_INPUTLOST)
+	{
+		HRESULT hr = g_pMouse->Acquire();
+		if (hr == DIERR_OTHERAPPHASPRIO)
+		{
+			DXERR_printf("Other application has priority when attempting to acquire mouse\n");
+			return 0;
+		}
+
+		DI_ERROR_LOG_AND_QUIT(hr);
+		if (g_pMouse->GetDeviceData(sizeof(DIDEVICEOBJECTDATA), didod, &dwElements, 0) == DIERR_NOTACQUIRED)
+		{
+			return 0;
+		}
+	}
+
+	for (i32 i = 0; i < 3; i++)
+		gMouseButtonState[i] &= ~0x80u;
+
+	*pY = 0;
+	*pX = 0;
+
+	if (dwElements == 0)
+	{
+		return 0;
+	}
+
+	for (DWORD k = 0; k < dwElements; k++)
+	{
+		if (didod[k].dwOfs >= DIMOFS_BUTTON0 && didod[k].dwOfs < DIMOFS_BUTTON3)
+		{
+			if (didod[k].dwData & 0x80)
+			{
+				gMouseButtonState[didod[k].dwOfs - DIMOFS_BUTTON0] = -1;
+			}
+			else
+			{
+				gMouseButtonState[didod[k].dwOfs - DIMOFS_BUTTON0] = 0x80;
+			}
+		}
+		else switch (didod[k].dwOfs)
+		{
+			case DIMOFS_X:
+				*pX += didod[k].dwData;
+				break;
+			case DIMOFS_Y:
+				*pY += didod[k].dwData;
+				break;
+		}
+	}
+
+	return 1;
+#else
+	return 0;
+#endif
 }
 
 // @Ok
@@ -521,18 +646,148 @@ void DXINPUT_SetMouseButtonState(u8 button, u8 state)
 	gMouseButtonState[button] = state;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 i32 DXINPUT_SetupController(void)
 {
-    printf("DXINPUT_SetupController(void)");
-	return 0x23082024;
+#ifdef _WIN32
+	g_pDI->EnumDevices(DI8DEVCLASS_GAMECTRL, EnumControllersCallback, 0, DIEDFL_ATTACHEDONLY);
+
+	if (!gControllerRelated)
+	{
+		return 0;
+	}
+
+	HRESULT hr = gControllerRelated->SetCooperativeLevel(gDxInputHwnd, DISCL_FOREGROUND | DISCL_EXCLUSIVE);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	hr = gControllerRelated->SetDataFormat(&c_dfDIJoystick);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	DIPROPDWORD dipdw;
+	dipdw.diph.dwSize = sizeof(DIPROPDWORD);
+	dipdw.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+	dipdw.diph.dwObj = 0;
+	dipdw.diph.dwHow = DIPH_DEVICE;
+	dipdw.dwData = 16;
+
+	hr = gControllerRelated->SetProperty(DIPROP_BUFFERSIZE, &dipdw.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	dipdw.dwData = DIPROPAXISMODE_ABS;
+	hr = gControllerRelated->SetProperty(DIPROP_AXISMODE, &dipdw.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	DIPROPRANGE diprg;
+	diprg.diph.dwSize = sizeof(DIPROPRANGE);
+	diprg.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+	diprg.diph.dwHow = DIPH_BYOFFSET;
+	diprg.diph.dwObj = DIJOFS_X;
+	diprg.lMin = -1000;
+	diprg.lMax = 1000;
+
+	hr = gControllerRelated->SetProperty(DIPROP_RANGE, &diprg.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	diprg.diph.dwSize = sizeof(DIPROPRANGE);
+	diprg.diph.dwHeaderSize = sizeof(DIPROPHEADER);
+	diprg.diph.dwHow = DIPH_BYOFFSET;
+	diprg.diph.dwObj = DIJOFS_Y;
+	diprg.lMin = -1000;
+	diprg.lMax = 1000;
+
+	hr = gControllerRelated->SetProperty(DIPROP_RANGE, &diprg.diph);
+	DI_ERROR_LOG_AND_QUIT(hr);
+
+	hr = gControllerRelated->Acquire();
+	if (hr == DIERR_OTHERAPPHASPRIO)
+	{
+		DXERR_printf("Other application has priority when attempting to acquire controller\n");
+	}
+	else
+	{
+		DI_ERROR_LOG_AND_QUIT(hr);
+	}
+#endif
+
+	return 1;
 }
 
-// @MEDIUMTODO
-i32 DXINPUT_SetupForceFeedbackSineEffect(i32,f32)
+// @Ok
+// @Matching
+i32 DXINPUT_SetupForceFeedbackSineEffect(i32 magnitude, f32 period)
 {
-    printf("DXINPUT_SetupForceFeedbackSineEffect(i32,f32)");
-	return 0x24082024;
+#ifdef _WIN32
+	if (!gDxInputRelated || !gControllerRelated)
+	{
+		return 0;
+	}
+
+	DWORD rgdwAxes[2];
+	LONG rglDirection[2];
+	DIPERIODIC periodic;
+	DIEFFECT eff;
+
+	memset(&eff, 0, sizeof(eff));
+	memset(&periodic, 0, sizeof(periodic));
+
+	rgdwAxes[0] = DIJOFS_X;
+	rgdwAxes[1] = DIJOFS_Y;
+	rglDirection[0] = 0;
+	rglDirection[1] = 0;
+
+	periodic.dwMagnitude = magnitude;
+	periodic.dwPeriod = (DWORD)(period * 1000000.0f);
+
+	eff.dwSize = sizeof(DIEFFECT);
+	eff.dwFlags = DIEFF_OBJECTOFFSETS | DIEFF_POLAR;
+	eff.dwDuration = INFINITE;
+	eff.dwGain = DI_FFNOMINALMAX;
+	eff.dwTriggerButton = DIEB_NOTRIGGER;
+	eff.cAxes = 2;
+	eff.rgdwAxes = rgdwAxes;
+	eff.rglDirection = rglDirection;
+	eff.cbTypeSpecificParams = sizeof(DIPERIODIC);
+	eff.lpvTypeSpecificParams = &periodic;
+
+	if (gForceFeedbackRelated)
+	{
+		GUID guid;
+		HRESULT hr = gForceFeedbackRelated->GetEffectGuid(&guid);
+		DI_ERROR_LOG_AND_QUIT(hr);
+
+		if (guid == GUID_Sine)
+		{
+			hr = gForceFeedbackRelated->SetParameters(&eff, DIEP_TYPESPECIFICPARAMS);
+			DI_ERROR_LOG_AND_QUIT(hr);
+		}
+		else
+		{
+			gForceFeedbackRelated->Release();
+			gForceFeedbackRelated = 0;
+		}
+	}
+
+	if (!gForceFeedbackRelated)
+	{
+		HRESULT hr = gControllerRelated->CreateEffect(GUID_Sine, &eff, &gForceFeedbackRelated, 0);
+		DI_ERROR_LOG_AND_QUIT(hr);
+
+		if (!gForceFeedbackRelated)
+		{
+			return 0;
+		}
+	}
+
+	if (FAILED(gForceFeedbackRelated->Download()))
+	{
+		DXERR_printf("Could not download force-feedback effect into controller!\n");
+	}
+
+	return 1;
+#else
+	return 0;
+#endif
 }
 
 // @Ok
