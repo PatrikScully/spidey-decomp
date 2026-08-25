@@ -7,6 +7,7 @@
 #include "pshell.h"
 #include "PCGfx.h"
 #include "shell.h"
+#include "mess.h"
 
 #include <cstring>
 
@@ -117,10 +118,33 @@ u8 PCSHELL_IsMouseOver(
 	return PCINPUT_IsMouseOver(s1, s2, s3, s4);
 }
 
-// @SMALLTODO
-void PCSHELL_IsMouseOverText(char const *,i32,i32,i32)
+// @Ok
+// @Matching
+u8 PCSHELL_IsMouseOverText(const char* pText, i32 x, i32 y, i32 justification)
 {
-    printf("PCSHELL_IsMouseOverText(char const *,i32,i32,i32)");
+	if (gRenderTest & 0x10)
+		return 0;
+
+	i32 width = Mess_TextWidth(pText);
+	i32 height = Mess_TextHeight((char*)pText);
+	i32 x1;
+
+	switch (justification)
+	{
+	case 0:
+		x1 = x - (width >> 1);
+		break;
+	case 1:
+		x1 = x;
+		break;
+	case 2:
+		x1 = x - width;
+		break;
+	}
+
+	i32 y1 = y - height;
+
+	return PCSHELL_IsMouseOver(x1, y1, x1 + width, y1 + height);
 }
 
 // @Ok
