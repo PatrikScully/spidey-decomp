@@ -434,8 +434,9 @@ INLINE void DXINIT_ShutDown(void)
 	shutdownDirectInput8();
 }
 
-// @NotOk
-// @Validate: when done
+// @Ok
+// @Matching
+// only exists inlined in DXINIT_GetNextResolution and DXINIT_GetPrevResolution
 INLINE u8 DXINIT_ZBufSupported(u32 a1)
 {
 #ifdef _WIN32
