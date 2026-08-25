@@ -111,9 +111,9 @@ void PCINPUT_SetMouseBounds(i32 a1, i32 a2, i32 a3, i32 a4)
 	gMouseBoundFour = a4;
 }
 
-// @NotOk
-// Globals
-void PCINPUT_GetMousePosition(int *x, int *y)
+// @Ok
+// @Matching
+void PCINPUT_GetMousePosition(i32* x, i32* y)
 {
 	*x = gMouseX;
 	*y = gMouseY;
