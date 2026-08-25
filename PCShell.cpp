@@ -7,6 +7,7 @@
 #include "pshell.h"
 #include "PCGfx.h"
 #include "shell.h"
+#include "mess.h"
 
 #include <cstring>
 
@@ -32,16 +33,177 @@ EXPORT CMenu* gControllerMenuTwo;
 
 EXPORT i32 gActionMapRelated;
 
+char* STR_RESTORE_DEFAULTS = "restore default settings";
 char* STR_KB_CONFIG = "keyboard configuration";
 char* STR_JOY_CONFIG = "joystick configuration";
 
 EXPORT i32 gShellTitleBarRelated;
 
-// @MEDIUMTODO
-u8 PCSHELL_CheckTriggers(u32,i32,i32)
+// @Ok
+// @Matching
+u8 PCSHELL_CheckTriggers(u32 mask, i32 a2, i32 a3)
 {
-    printf("PCSHELL_CheckTriggers(uint,i32,i32)");
-	return (u8)0x28022025;
+	i32 result = 0;
+	u32 button;
+
+	if (mask & 0x1)
+		result |= PCINPUT_IsKeyPressed(0xC8, a2);
+
+	if (mask & 0x2)
+		result |= PCINPUT_IsKeyPressed(0xD0, a2);
+
+	if (mask & 0x4)
+		result |= PCINPUT_IsKeyPressed(0xCB, a2);
+
+	if (mask & 0x8)
+		result |= PCINPUT_IsKeyPressed(0xCD, a2);
+
+	if (mask & 0x10)
+	{
+		if (!gMouseTriggerRelated[4])
+		{
+			result |= PCINPUT_IsKeyPressed(0x1C, a2);
+			if (a3)
+				gMouseTriggerRelated[4] = 1;
+		}
+	}
+
+	if (mask & 0x20)
+	{
+		if (!gMouseTriggerRelated[5])
+		{
+			result |= PCINPUT_IsKeyPressed(0x1, a2);
+			if (a3)
+				gMouseTriggerRelated[5] = 1;
+		}
+	}
+
+	if (mask & 0x40)
+		result |= PCINPUT_IsKeyPressed(0x1, a2);
+
+	if (!(gRenderTest & 0x10))
+	{
+		if (mask & 0x100)
+		{
+			if (!gMouseTriggerRelated[7])
+			{
+				result |= PCINPUT_IsMouseButtonPressed(0, a2);
+				if (a3)
+					gMouseTriggerRelated[7] = 1;
+			}
+		}
+
+		if (mask & 0x200)
+		{
+			if (!gMouseTriggerRelated[8])
+			{
+				result |= PCINPUT_IsMouseButtonPressed(1, a2);
+				if (a3)
+					gMouseTriggerRelated[8] = 1;
+			}
+		}
+	}
+
+	if (mask & 0x1000)
+	{
+		if (PCINPUT_GetControllerDirections() & 1)
+		{
+			result |= 1;
+			if (a3)
+				PCINPUT_FreezeControllerAxes();
+		}
+	}
+
+	if (mask & 0x2000)
+	{
+		if (PCINPUT_GetControllerDirections() & 2)
+		{
+			result |= 1;
+			if (a3)
+				PCINPUT_FreezeControllerAxes();
+		}
+	}
+
+	if (mask & 0x4000)
+	{
+		if (PCINPUT_GetControllerDirections() & 4)
+		{
+			result |= 1;
+			if (a3)
+				PCINPUT_FreezeControllerAxes();
+		}
+	}
+
+	if (mask & 0x8000)
+	{
+		if (PCINPUT_GetControllerDirections() & 8)
+		{
+			result |= 1;
+			if (a3)
+				PCINPUT_FreezeControllerAxes();
+		}
+	}
+
+	if (mask & 0x10000)
+	{
+		if (!gMouseTriggerRelated[13])
+		{
+			PCINPUT_GetControllerMappingForAction(0x10, &button);
+			if (button == 0x4000)
+				button = 0;
+			result |= PCINPUT_IsControllerButtonPressed(button, a2);
+			if (a3)
+				gMouseTriggerRelated[13] = 1;
+		}
+	}
+
+	if (mask & 0x20000)
+	{
+		if (!gMouseTriggerRelated[14])
+		{
+			PCINPUT_GetControllerMappingForAction(0x20, &button);
+			if (button == 0x4000)
+				button = 1;
+			result |= PCINPUT_IsControllerButtonPressed(button, a2);
+			if (a3)
+				gMouseTriggerRelated[14] = 1;
+		}
+	}
+
+	if (mask & 0x40000)
+	{
+		if (!gMouseTriggerRelated[15])
+		{
+			PCINPUT_GetControllerMappingForAction(0x1000, &button);
+			if (button != 0x4000)
+				result |= PCINPUT_IsControllerButtonPressed(button, a2);
+			if (a3)
+				gMouseTriggerRelated[15] = 1;
+		}
+	}
+
+	if (mask & 0x100000)
+	{
+		result |= PCINPUT_IsKeyPressed(0xD, a2);
+		result |= PCINPUT_IsKeyPressed(0x4E, a2);
+	}
+
+	if (mask & 0x200000)
+	{
+		result |= PCINPUT_IsKeyPressed(0xC, a2);
+		result |= PCINPUT_IsKeyPressed(0x4A, a2);
+	}
+
+	if (mask & 0x1000000)
+		result |= PCINPUT_IsKeyPressed(0x1C, a2);
+
+	if (mask & 0x2000000)
+		result |= PCINPUT_IsKeyPressed(0x1, a2);
+
+	if (mask & 0x4000000)
+		result |= PCINPUT_IsKeyPressed(0x39, a2);
+
+	return result != 0;
 }
 
 // @Ok
@@ -117,10 +279,33 @@ u8 PCSHELL_IsMouseOver(
 	return PCINPUT_IsMouseOver(s1, s2, s3, s4);
 }
 
-// @SMALLTODO
-void PCSHELL_IsMouseOverText(char const *,i32,i32,i32)
+// @Ok
+// @Matching
+u8 PCSHELL_IsMouseOverText(const char* pText, i32 x, i32 y, i32 justification)
 {
-    printf("PCSHELL_IsMouseOverText(char const *,i32,i32,i32)");
+	if (gRenderTest & 0x10)
+		return 0;
+
+	i32 width = Mess_TextWidth(pText);
+	i32 height = Mess_TextHeight((char*)pText);
+	i32 x1;
+
+	switch (justification)
+	{
+	case 0:
+		x1 = x - (width >> 1);
+		break;
+	case 1:
+		x1 = x;
+		break;
+	case 2:
+		x1 = x - width;
+		break;
+	}
+
+	i32 y1 = y - height;
+
+	return PCSHELL_IsMouseOver(x1, y1, x1 + width, y1 + height);
 }
 
 // @Ok
@@ -217,8 +402,26 @@ void displayControllerScreen(void)
 		PCGfx_EndScene(1);
 }
 
-// @NotOk
-// missing last addentry
+// @Ok
+// @Matching
+// The Mac build places CMenu::EntryEnable in PCShell.cpp, initActionMaps inlines it.
+void CMenu::EntryEnable(u32 a2, u32 a3)
+{
+	this->mEntry[a2].what = a3 == 0;
+	if (a3)
+	{
+		this->SetNormalColor(a2, 69, 60, 107);
+		this->SetSelColor(a2, 128, 128, 128);
+	}
+	else
+	{
+		this->SetNormalColor(a2, 26, 23, 41);
+		this->SetSelColor(a2, 26, 23, 41);
+	}
+}
+
+// @Ok
+// @Matching
 void initActionMaps(void)
 {
 	for (
@@ -269,9 +472,8 @@ void initActionMaps(void)
 		gControllerMenuTwo->AddEntry(gKeyNames[i]);
 	}
 
-	gControllerMenu->AddEntry("restore default settings");
-	//@FIXME: figure out the string
-	//gControllerMenuTwo->AddEntry("");
+	gControllerMenu->AddEntry(STR_RESTORE_DEFAULTS);
+	gControllerMenuTwo->AddEntry("");
 }
 
 // @MEDIUMTODO
