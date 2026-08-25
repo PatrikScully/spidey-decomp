@@ -518,11 +518,75 @@ i32 DXINPUT_PollKeyboard(void)
 	return 0;
 }
 
-// @MEDIUMTODO
-i32 DXINPUT_PollMouse(i32 *,i32 *)
+// @Ok
+// @Matching
+i32 DXINPUT_PollMouse(i32 *pX, i32 *pY)
 {
-    printf("DXINPUT_PollMouse(i32 *,i32 *)");
-	return 0x23082024;
+#ifdef _WIN32
+	DWORD dwElements = 16;
+	DIDEVICEOBJECTDATA didod[16];
+	memset(didod, 0, sizeof(didod));
+
+	if (!g_pMouse)
+	{
+		return 0;
+	}
+
+	if (g_pMouse->GetDeviceData(sizeof(DIDEVICEOBJECTDATA), didod, &dwElements, 0) == DIERR_INPUTLOST)
+	{
+		HRESULT hr = g_pMouse->Acquire();
+		if (hr == DIERR_OTHERAPPHASPRIO)
+		{
+			DXERR_printf("Other application has priority when attempting to acquire mouse\n");
+			return 0;
+		}
+
+		DI_ERROR_LOG_AND_QUIT(hr);
+		if (g_pMouse->GetDeviceData(sizeof(DIDEVICEOBJECTDATA), didod, &dwElements, 0) == DIERR_NOTACQUIRED)
+		{
+			return 0;
+		}
+	}
+
+	for (i32 i = 0; i < 3; i++)
+		gMouseButtonState[i] &= ~0x80u;
+
+	*pY = 0;
+	*pX = 0;
+
+	if (dwElements == 0)
+	{
+		return 0;
+	}
+
+	for (DWORD k = 0; k < dwElements; k++)
+	{
+		if (didod[k].dwOfs >= DIMOFS_BUTTON0 && didod[k].dwOfs < DIMOFS_BUTTON3)
+		{
+			if (didod[k].dwData & 0x80)
+			{
+				gMouseButtonState[didod[k].dwOfs - DIMOFS_BUTTON0] = -1;
+			}
+			else
+			{
+				gMouseButtonState[didod[k].dwOfs - DIMOFS_BUTTON0] = 0x80;
+			}
+		}
+		else switch (didod[k].dwOfs)
+		{
+			case DIMOFS_X:
+				*pX += didod[k].dwData;
+				break;
+			case DIMOFS_Y:
+				*pY += didod[k].dwData;
+				break;
+		}
+	}
+
+	return 1;
+#else
+	return 0;
+#endif
 }
 
 // @Ok
