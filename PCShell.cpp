@@ -33,6 +33,7 @@ EXPORT CMenu* gControllerMenuTwo;
 
 EXPORT i32 gActionMapRelated;
 
+char* STR_RESTORE_DEFAULTS = "restore default settings";
 char* STR_KB_CONFIG = "keyboard configuration";
 char* STR_JOY_CONFIG = "joystick configuration";
 
@@ -401,8 +402,26 @@ void displayControllerScreen(void)
 		PCGfx_EndScene(1);
 }
 
-// @NotOk
-// missing last addentry
+// @Ok
+// @Matching
+// The Mac build places CMenu::EntryEnable in PCShell.cpp, initActionMaps inlines it.
+void CMenu::EntryEnable(u32 a2, u32 a3)
+{
+	this->mEntry[a2].what = a3 == 0;
+	if (a3)
+	{
+		this->SetNormalColor(a2, 69, 60, 107);
+		this->SetSelColor(a2, 128, 128, 128);
+	}
+	else
+	{
+		this->SetNormalColor(a2, 26, 23, 41);
+		this->SetSelColor(a2, 26, 23, 41);
+	}
+}
+
+// @Ok
+// @Matching
 void initActionMaps(void)
 {
 	for (
@@ -453,9 +472,8 @@ void initActionMaps(void)
 		gControllerMenuTwo->AddEntry(gKeyNames[i]);
 	}
 
-	gControllerMenu->AddEntry("restore default settings");
-	//@FIXME: figure out the string
-	//gControllerMenuTwo->AddEntry("");
+	gControllerMenu->AddEntry(STR_RESTORE_DEFAULTS);
+	gControllerMenuTwo->AddEntry("");
 }
 
 // @MEDIUMTODO
