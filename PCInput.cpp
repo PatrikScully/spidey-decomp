@@ -101,9 +101,9 @@ i32 PCINPUT_GetMouseStatus(void)
 }
 
 
-// @NotOk
-// Globals
-void PCINPUT_SetMouseBounds(int a1, int a2, int a3, int a4)
+// @Ok
+// @Matching
+void PCINPUT_SetMouseBounds(i32 a1, i32 a2, i32 a3, i32 a4)
 {
 	gMouseBoundOne = a1;
 	gMouseBoundTwo = a2;
