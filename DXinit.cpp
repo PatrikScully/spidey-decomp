@@ -74,12 +74,257 @@ void gsub_5027A0(void)
 	}
 }
 
-// @MEDIUMTODO
-i32 AUDIOGROUPS_GetGroup(char *)
+// @Ok
+// @Matching
+// group is never set on the default path, the original returns whatever sits in
+// its stack slot (the name pointer), so the -1 check in DXSOUND_Load never hits
+i32 AUDIOGROUPS_GetGroup(char *name)
 {
-    printf("AUDIOGROUPS_GetGroup(char *)");
-	return 0x06042025;
+	i32 group;
+
+	strlwr(name);
+
+	switch (name[1])
+	{
+	case 'p':
+		group = 1;
+		break;
+	case '1':
+		switch (name[3])
+		{
+		case '1':
+			group = 2;
+			break;
+		case '2':
+			group = 3;
+			break;
+		case '3':
+			group = 4;
+			break;
+		case '4':
+			group = 5;
+			break;
+		}
+		break;
+	case '2':
+		switch (name[3])
+		{
+		case '1':
+			group = 6;
+			break;
+		case '2':
+			group = 7;
+			break;
+		}
+		break;
+	case '3':
+		switch (name[3])
+		{
+		case '1':
+			group = 8;
+			break;
+		case '2':
+			group = 9;
+			break;
+		case '3':
+			group = 10;
+			break;
+		case '4':
+			group = 11;
+			break;
+		case '5':
+			group = 12;
+			break;
+		}
+		break;
+	case '4':
+		group = 13;
+		break;
+	case '5':
+		switch (name[3])
+		{
+		case '1':
+			group = 14;
+			break;
+		case '2':
+			group = 15;
+			break;
+		case '3':
+			group = 16;
+			break;
+		case '4':
+			group = 17;
+			break;
+		case '5':
+			group = 18;
+			break;
+		case '6':
+			group = 19;
+			break;
+		case '7':
+			group = 20;
+			break;
+		}
+		break;
+	case '6':
+		switch (name[3])
+		{
+		case '1':
+			group = 21;
+			break;
+		case '2':
+			group = 22;
+			break;
+		case '3':
+			group = 23;
+			break;
+		case '4':
+			group = 24;
+			break;
+		}
+		break;
+	case '7':
+		switch (name[3])
+		{
+		case '1':
+			group = 25;
+			break;
+		case '2':
+			group = 26;
+			break;
+		case '3':
+			group = 27;
+			break;
+		case '4':
+			group = 28;
+			break;
+		case '5':
+			group = 29;
+			break;
+		}
+		break;
+	case '8':
+		switch (name[3])
+		{
+		case '1':
+			group = 30;
+			break;
+		case '2':
+			group = 31;
+			break;
+		case '3':
+			group = 32;
+			break;
+		case '4':
+			group = 33;
+			break;
+		case '5':
+			group = 34;
+			break;
+		case '6':
+			group = 35;
+			break;
+		}
+		break;
+	case '9':
+		switch (name[3])
+		{
+		case '1':
+			group = 36;
+			break;
+		case '2':
+			group = 37;
+			break;
+		case '3':
+			group = 38;
+			break;
+		case '4':
+			group = 39;
+			break;
+		}
+		break;
+	case 'b':
+		switch (name[3])
+		{
+		case '1':
+			group = 40;
+			break;
+		case '2':
+			group = 41;
+			break;
+		case '3':
+			group = 42;
+			break;
+		case '4':
+			group = 43;
+			break;
+		}
+		break;
+	case 'c':
+		switch (name[3])
+		{
+		case '1':
+			group = 44;
+			break;
+		case '2':
+			group = 45;
+			break;
+		case '3':
+			group = 46;
+			break;
+		case '4':
+			group = 47;
+			break;
+		}
+		break;
+	case 'd':
+		switch (name[3])
+		{
+		case '1':
+			group = 48;
+			break;
+		case '2':
+			group = 49;
+			break;
+		case '3':
+			group = 50;
+			break;
+		}
+		break;
+	case 'e':
+		switch (name[3])
+		{
+		case 'u':
+			group = 0;
+			break;
+		case '1':
+			group = 51;
+			break;
+		case '2':
+			group = 52;
+			break;
+		case '3':
+			group = 53;
+			break;
+		case '4':
+			group = 54;
+			break;
+		}
+		break;
+	case 'f':
+		group = 55;
+		break;
+	case 'g':
+		group = 56;
+		break;
+	case 'h':
+		group = 57;
+		break;
+	}
+
+	return group;
 }
+
 
 // @Ok
 void DXINIT_DirectX8(
