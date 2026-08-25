@@ -42,6 +42,11 @@ struct SControl
 	SButton SmartBomb;
 	SButton SelectWeapon;
 
+	// tentative names, set by Pad_SetDigitalMapping / Pad_SetAnalogueMapping
+	// (Pad_InitAtStart stores gGameState[0..7] here, Font::getCharIndex reads DigitalMapping)
+	i32 DigitalMapping[4];
+	i32 AnalogueMapping[4];
+
 	u8 AnaloguePotMapping[4];
 	u8 RawAnalogueMoveForwardsBackwards;
 	u8 RawAnalogueMoveLeftRight;
@@ -63,7 +68,6 @@ struct SControl
 
 	u8 AlignCalled;
 
-	PADDING(0x20);
 	u16 Motor0Timer;
 	u16 Motor1Timer;
 
@@ -94,6 +98,8 @@ void validate_SButton(void);
 
 static const i32 NUM_CONTROLLERS = 1;
 EXPORT extern SControl gSControl[NUM_CONTROLLERS];
+//#define G_SCONTROL (gSControl)
+#define G_SCONTROL (reinterpret_cast<SControl*>(0x00661100))
 EXPORT extern i32 Pad_IdleTime;
 
 #endif

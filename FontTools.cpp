@@ -207,8 +207,10 @@ int Font::isEscapeChar(char a1)
 		return 249;
 	else if (a1 == '~')
 		return 248;
+	else if (a1 == '^')
+		return 250;
 
-	return ((a1 != 0x5E) - 1) & 0x000000FA;
+	return 0;
 }
 
 // @Ok
@@ -228,25 +230,224 @@ INLINE void Font::SetCharMap(int a2)
 	}
 }
 
-#define CHAR(x) ((char)(x))
 // @Ok
-// @Test
-char Font::getCharIndex(char a2)
+// @Matching
+char Font::getCharIndex(char c)
 {
-	// story
-	return 1;
+	if (this->field_58 == 2)
+	{
+			if (c >= 'a' && c <= 'z')
+				return c - 0x30;
+
+			if (c == '\xC0' || c == '\xC1')
+				return 0x4B;
+			if (c == '\xC7')
+				return 0x4C;
+			if (c == '\xC8' || c == '\xC9' || c == '\xCA')
+				return 0x4D;
+			if (c == '\xD4')
+				return 0x4E;
+			if (c == '\xD9' || c == '\xDA')
+				return 0x4F;
+			if (c == '\x8C')
+				return 0x50;
+			if (c == '\xC4')
+				return 0x51;
+			if (c == '\xD6')
+				return 0x52;
+			if (c == '\xDC')
+				return 0x53;
+			if (c == '\xDF')
+				return 0x54;
+			if (c == '\xE0' || c == '\xE1')
+				return 0x55;
+			if (c == '\xE7')
+				return 0x56;
+			if (c == '\xE8' || c == '\xE9' || c == '\xEA')
+				return 0x57;
+			if (c == '\xF4')
+				return 0x58;
+			if (c == '\xF9' || c == '\xFA')
+				return 0x59;
+			if (c == '\x9C')
+				return 0x5A;
+			if (c == '\xE4')
+				return 0x5B;
+			if (c == '\xF6')
+				return 0x5C;
+			if (c == '\xFC')
+				return 0x5D;
+
+			goto default_map;
+	}
+
+	if (this->field_58 == 0)
+	{
+default_map:
+			if (c >= 'A' && c <= 'Z')
+				return c - 'A';
+			if (c >= 'a' && c <= 'z')
+				return c - 'a';
+			if (c >= '0' && c <= '9')
+				return c - 0x16;
+
+			if (c == ' ')
+				return -1;
+
+			if (c == '?')
+			{
+				if (this->NumChars > 0x25)
+					return 0x25;
+			}
+			else if (c == '!')
+			{
+				if (this->NumChars > 0x26)
+					return 0x26;
+			}
+			else if (c == ':')
+			{
+				if (this->NumChars > 0x27)
+					return 0x27;
+			}
+			else if (c == '.')
+			{
+				if (this->NumChars > 0x28)
+					return 0x28;
+			}
+			else if (c == '-')
+			{
+				if (this->NumChars > 0x29)
+					return 0x29;
+			}
+			else if (c == '+')
+			{
+				if (this->NumChars > 0x2B)
+					return 0x2B;
+			}
+			else if (c == '\'')
+			{
+				if (this->NumChars > 0x2A)
+					return 0x2A;
+			}
+			else if (c == '_')
+			{
+				if (this->NumChars > 0x24)
+					return 0x24;
+			}
+			else if (c == '\xC0' || c == '\xC1' || c == '\xE0' || c == '\xE1')
+				return 0x31;
+			else if (c == '\xC7' || c == '\xE7')
+				return 0x32;
+			else if (c == '\xC8' || c == '\xC9' || c == '\xE8' || c == '\xE9' || c == '\xCA' || c == '\xEA')
+				return 0x33;
+			else if (c == '\xD4' || c == '\xF4')
+				return 0x34;
+			else if (c == '\xD9' || c == '\xDA' || c == '\xF9' || c == '\xFA')
+				return 0x35;
+			else if (c == '\x8C' || c == '\x9C')
+				return 0x36;
+			else if (c == '\xC4' || c == '\xE4')
+				return 0x37;
+			else if (c == '\xD6' || c == '\xF6')
+				return 0x38;
+			else if (c == '\xDC' || c == '\xFC')
+				return 0x39;
+			else if (c == '\xDF')
+				return 0x3A;
+
+			// button icons, the compare is against an int so it never fires for a signed char (original bug)
+			if (c == 0xA5)
+			{
+				switch (G_SCONTROL[0].DigitalMapping[3])
+				{
+					case 2:
+						return 1;
+					case 4:
+						return 0;
+					case 0x200:
+						return 0x18;
+					case 0x400:
+						return 0x17;
+				}
+			}
+
+			if (c == 0xA7)
+			{
+				switch (G_SCONTROL[0].DigitalMapping[2])
+				{
+					case 2:
+						return 1;
+					case 4:
+						return 0;
+					case 0x200:
+						return 0x18;
+					case 0x400:
+						return 0x17;
+				}
+			}
+
+			if (c == 0xA6)
+			{
+				switch (G_SCONTROL[0].DigitalMapping[1])
+				{
+					case 2:
+						return 1;
+					case 4:
+						return 0;
+					case 0x200:
+						return 0x18;
+					case 0x400:
+						return 0x17;
+				}
+			}
+
+			if (c == 0xA4)
+			{
+				if (G_DIFFICULTY_LEVEL == 0)
+					return 0;
+
+				switch (G_SCONTROL[0].DigitalMapping[0])
+				{
+					case 2:
+						return 1;
+					case 4:
+						return 0;
+					case 0x200:
+						return 0x18;
+					case 0x400:
+						return 0x17;
+				}
+			}
+	}
+	else if (this->field_58 == 1)
+	{
+			if (c >= '0' && c <= '9')
+				return c - '0';
+			if (c == ':')
+				return 10;
+			if (c == ' ')
+				return -1;
+	}
+	else
+	{
+			print_if_false(0, "Unrecognized char mapping");
+	}
+
+	if (this->isEscapeChar(c))
+		return -1;
+
+	return this->NumChars;
 }
 
-// @NotOk
-// globals
-// managed to make it match with the this->field_58 = this->field_58, by deref through array
+// @Ok
+// @Matching
 void FontManager::ResetCharMaps(void)
 {
-	for (int i = 0; i<6; i++)
+	for (i32 i = 0; i < NUM_FONTS_TAB; i++)
 	{
-		if (FontManager::FontTab[i])
+		if (G_FONT_TAB[i])
 		{
-			FontManager::FontTab[i]->SetCharMap(FontManager::FontTab[i]->GetCharMap());
+			G_FONT_TAB[i]->SetCharMap(G_FONT_TAB[i]->GetCharMap());
 		}
 	}
 }
