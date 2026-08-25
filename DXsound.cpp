@@ -1751,10 +1751,12 @@ void renderScene(void)
 #endif
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
+// Debug logger of this file. The release build has an empty body,
+// so the PC binary keeps it as the one byte ret at 0x502D50 (nullsub_5).
 void stateLog(char const *,...)
 {
-    printf("stateLog(char const *,...)");
 }
 
 void validate_DXsound(void)
