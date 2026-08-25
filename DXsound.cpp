@@ -713,11 +713,81 @@ i32 DXINPUT_SetupController(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-i32 DXINPUT_SetupForceFeedbackSineEffect(i32,f32)
+// @Ok
+// @Matching
+i32 DXINPUT_SetupForceFeedbackSineEffect(i32 magnitude, f32 period)
 {
-    printf("DXINPUT_SetupForceFeedbackSineEffect(i32,f32)");
-	return 0x24082024;
+#ifdef _WIN32
+	if (!gDxInputRelated || !gControllerRelated)
+	{
+		return 0;
+	}
+
+	DWORD rgdwAxes[2];
+	LONG rglDirection[2];
+	DIPERIODIC periodic;
+	DIEFFECT eff;
+
+	memset(&eff, 0, sizeof(eff));
+	memset(&periodic, 0, sizeof(periodic));
+
+	rgdwAxes[0] = DIJOFS_X;
+	rgdwAxes[1] = DIJOFS_Y;
+	rglDirection[0] = 0;
+	rglDirection[1] = 0;
+
+	periodic.dwMagnitude = magnitude;
+	periodic.dwPeriod = (DWORD)(period * 1000000.0f);
+
+	eff.dwSize = sizeof(DIEFFECT);
+	eff.dwFlags = DIEFF_OBJECTOFFSETS | DIEFF_POLAR;
+	eff.dwDuration = INFINITE;
+	eff.dwGain = DI_FFNOMINALMAX;
+	eff.dwTriggerButton = DIEB_NOTRIGGER;
+	eff.cAxes = 2;
+	eff.rgdwAxes = rgdwAxes;
+	eff.rglDirection = rglDirection;
+	eff.cbTypeSpecificParams = sizeof(DIPERIODIC);
+	eff.lpvTypeSpecificParams = &periodic;
+
+	if (gForceFeedbackRelated)
+	{
+		GUID guid;
+		HRESULT hr = gForceFeedbackRelated->GetEffectGuid(&guid);
+		DI_ERROR_LOG_AND_QUIT(hr);
+
+		if (guid == GUID_Sine)
+		{
+			hr = gForceFeedbackRelated->SetParameters(&eff, DIEP_TYPESPECIFICPARAMS);
+			DI_ERROR_LOG_AND_QUIT(hr);
+		}
+		else
+		{
+			gForceFeedbackRelated->Release();
+			gForceFeedbackRelated = 0;
+		}
+	}
+
+	if (!gForceFeedbackRelated)
+	{
+		HRESULT hr = gControllerRelated->CreateEffect(GUID_Sine, &eff, &gForceFeedbackRelated, 0);
+		DI_ERROR_LOG_AND_QUIT(hr);
+
+		if (!gForceFeedbackRelated)
+		{
+			return 0;
+		}
+	}
+
+	if (FAILED(gForceFeedbackRelated->Download()))
+	{
+		DXERR_printf("Could not download force-feedback effect into controller!\n");
+	}
+
+	return 1;
+#else
+	return 0;
+#endif
 }
 
 // @Ok
