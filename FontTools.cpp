@@ -242,11 +242,11 @@ char Font::getCharIndex(char a2)
 // managed to make it match with the this->field_58 = this->field_58, by deref through array
 void FontManager::ResetCharMaps(void)
 {
-	for (int i = 0; i<6; i++)
+	for (i32 i = 0; i < NUM_FONTS_TAB; i++)
 	{
 		if (FontManager::FontTab[i])
 		{
-			FontManager::FontTab[i]->SetCharMap(FontManager::FontTab[i]->GetCharMap());
+			G_FONT_TAB[i]->SetCharMap(G_FONT_TAB[i]->GetCharMap());
 		}
 	}
 }
@@ -323,7 +323,7 @@ void FontManager::UnloadAllFonts(void)
 	/*
 	for (i32 i = 0; i < 6; i++)
 	{
-		if (FontManager::FontTab[i])
+		if (G_FONT_TAB[i])
 		{
 			FontManager::FontTab[i]->unload();
 			delete FontManager::FontTab[i];
