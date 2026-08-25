@@ -93,17 +93,17 @@ EXPORT u8 gDefaultControllerMappings[0x70] =
   0x00, 0x00
 };
 
-// @NotOk
-// Globals
-int PCINPUT_GetMouseStatus(void)
+// @Ok
+// @Matching
+i32 PCINPUT_GetMouseStatus(void)
 {
 	return gMouseStatus;
 }
 
 
-// @NotOk
-// Globals
-void PCINPUT_SetMouseBounds(int a1, int a2, int a3, int a4)
+// @Ok
+// @Matching
+void PCINPUT_SetMouseBounds(i32 a1, i32 a2, i32 a3, i32 a4)
 {
 	gMouseBoundOne = a1;
 	gMouseBoundTwo = a2;
@@ -111,9 +111,9 @@ void PCINPUT_SetMouseBounds(int a1, int a2, int a3, int a4)
 	gMouseBoundFour = a4;
 }
 
-// @NotOk
-// Globals
-void PCINPUT_GetMousePosition(int *x, int *y)
+// @Ok
+// @Matching
+void PCINPUT_GetMousePosition(i32* x, i32* y)
 {
 	*x = gMouseX;
 	*y = gMouseY;
@@ -122,8 +122,8 @@ void PCINPUT_GetMousePosition(int *x, int *y)
 EXPORT u8 gControllerAxesRelatedOne;
 EXPORT i32 gControllerAxesRelatedTwo = -1;
 
-// @NotOk
-// Globals
+// @Ok
+// @Matching
 void PCINPUT_FreezeControllerAxes(void)
 {
 	gControllerAxesRelatedOne = 1;
@@ -137,9 +137,9 @@ INLINE void PCINPUT_ClearKeyState(u8 a1)
 	DXINPUT_SetKeyState(a1, 0);
 }
 
-// @NotOk
-// re-check couldn't find it
-void PCINPUT_ClearMouseState(u8 a1)
+// @Ok
+// Not in the PC binary (only the Mac build has it), same shape as PCINPUT_ClearKeyState
+INLINE void PCINPUT_ClearMouseState(u8 a1)
 {
 	DXINPUT_SetMouseButtonState(a1, 0);
 }
