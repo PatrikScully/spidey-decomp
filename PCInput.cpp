@@ -122,8 +122,8 @@ void PCINPUT_GetMousePosition(i32* x, i32* y)
 EXPORT u8 gControllerAxesRelatedOne;
 EXPORT i32 gControllerAxesRelatedTwo = -1;
 
-// @NotOk
-// Globals
+// @Ok
+// @Matching
 void PCINPUT_FreezeControllerAxes(void)
 {
 	gControllerAxesRelatedOne = 1;
