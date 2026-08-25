@@ -366,26 +366,29 @@ void validate_SControl(void)
 	VALIDATE(SControl, SmartBomb, 0x120);
 	VALIDATE(SControl, SelectWeapon, 0x130);
 
-	VALIDATE(SControl, AnaloguePotMapping, 0x140);
+	VALIDATE(SControl, DigitalMapping, 0x140);
+	VALIDATE(SControl, AnalogueMapping, 0x150);
 
-	VALIDATE(SControl, RawAnalogueMoveForwardsBackwards, 0x144);
-	VALIDATE(SControl, RawAnalogueMoveLeftRight, 0x145);
-	VALIDATE(SControl, RawAnalogueAimForwardsBackwards, 0x146);
-	VALIDATE(SControl, RawAnalogueAimLeftRight, 0x147);
+	VALIDATE(SControl, AnaloguePotMapping, 0x160);
 
-	VALIDATE(SControl, AnalogueMoveForwardsBackwards, 0x148);
-	VALIDATE(SControl, AnalogueMoveLeftRight, 0x149);
-	VALIDATE(SControl, AnalogueAimForwardsBackwards, 0x14A);
-	VALIDATE(SControl, AnalogueAimLeftRight, 0x14B);
+	VALIDATE(SControl, RawAnalogueMoveForwardsBackwards, 0x164);
+	VALIDATE(SControl, RawAnalogueMoveLeftRight, 0x165);
+	VALIDATE(SControl, RawAnalogueAimForwardsBackwards, 0x166);
+	VALIDATE(SControl, RawAnalogueAimLeftRight, 0x167);
 
-	VALIDATE(SControl, Type, 0x14C);
-	VALIDATE(SControl, ResetCounter, 0x150);
+	VALIDATE(SControl, AnalogueMoveForwardsBackwards, 0x168);
+	VALIDATE(SControl, AnalogueMoveLeftRight, 0x169);
+	VALIDATE(SControl, AnalogueAimForwardsBackwards, 0x16A);
+	VALIDATE(SControl, AnalogueAimLeftRight, 0x16B);
 
-	VALIDATE(SControl, Motor0, 0x154);
-	VALIDATE(SControl, Motor1, 0x155);
-	VALIDATE(SControl, Lock, 0x156);
+	VALIDATE(SControl, Type, 0x16C);
+	VALIDATE(SControl, ResetCounter, 0x170);
 
-	VALIDATE(SControl, AlignCalled, 0x157);
+	VALIDATE(SControl, Motor0, 0x174);
+	VALIDATE(SControl, Motor1, 0x175);
+	VALIDATE(SControl, Lock, 0x176);
+
+	VALIDATE(SControl, AlignCalled, 0x177);
 
 	VALIDATE(SControl, Motor0Timer, 0x178);
 	VALIDATE(SControl, Motor1Timer, 0x17A);
