@@ -93,9 +93,9 @@ EXPORT u8 gDefaultControllerMappings[0x70] =
   0x00, 0x00
 };
 
-// @NotOk
-// Globals
-int PCINPUT_GetMouseStatus(void)
+// @Ok
+// @Matching
+i32 PCINPUT_GetMouseStatus(void)
 {
 	return gMouseStatus;
 }

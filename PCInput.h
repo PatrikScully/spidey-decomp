@@ -5,7 +5,7 @@
 
 #include "export.h"
 
-EXPORT int PCINPUT_GetMouseStatus(void);
+EXPORT i32 PCINPUT_GetMouseStatus(void);
 EXPORT void PCINPUT_GetMousePosition(int*, int*);
 EXPORT void PCINPUT_FreezeControllerAxes(void);
 
