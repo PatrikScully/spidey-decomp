@@ -710,8 +710,8 @@ void FreePushOffsets(void)
 	gPushOffsetOne = 0;
 }
 
-// @NotOk
-// @Note: looks fine but registers are saved at different places
+// @Ok
+// @Matching
 void LoadPushOffsets(void)
 {
 	char path[32];
@@ -754,14 +754,14 @@ void LoadPushOffsets(void)
 					gPushOffsetAddr[i].field_4 = v21;
 				}
 			}
-		}
-		else
-		{
-			DXERR_printf("Out of memory loading: %s [%i entries]\r\n", path, gPushOffsetOne);
-			gPushOffsetOne = 0;
-		}
+			else
+			{
+				DXERR_printf("Out of memory loading: %s [%i entries]\r\n", path, gPushOffsetOne);
+				gPushOffsetOne = 0;
+			}
 
-		free(fileBuf);
+			free(fileBuf);
+		}
 	}
 }
 
