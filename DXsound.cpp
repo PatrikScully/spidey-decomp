@@ -401,11 +401,72 @@ void DXINPUT_Initialize(LPDIRECTINPUT8 a1, HWND a2)
 	gNumControllerButtons = 0;
 }
 
-// @MEDIUMTODO
-i32 DXINPUT_PollController(i32 *,i32 *,i32 *)
+// @Ok
+// @Matching
+i32 DXINPUT_PollController(i32 *pX, i32 *pY, i32 *pZ)
 {
-    printf("DXINPUT_PollController(i32 *,i32 *,i32 *)");
-	return 0x24082024;
+#ifdef _WIN32
+	DWORD dwElements = 16;
+	DIDEVICEOBJECTDATA didod[16];
+	memset(didod, 0, sizeof(didod));
+
+	if (gControllerRelated)
+	{
+		HRESULT hr = gControllerRelated->Poll();
+		if (hr == DIERR_INPUTLOST || hr == DIERR_NOTACQUIRED)
+		{
+			hr = gControllerRelated->Acquire();
+			if (hr == DIERR_OTHERAPPHASPRIO)
+			{
+				DXERR_printf("Other application has priority when attempting to acquire controller\n");
+				return 0;
+			}
+
+			DI_ERROR_LOG_AND_QUIT(hr);
+			gControllerRelated->Poll();
+		}
+		else if (FAILED(hr))
+		{
+			return 0;
+		}
+
+		gControllerRelated->GetDeviceData(sizeof(DIDEVICEOBJECTDATA), didod, &dwElements, 0);
+
+		for (i32 i = 0; i < 32; i++)
+			gControllerButtonState[i] &= ~0x80u;
+
+		for (DWORD k = 0; k < dwElements; k++)
+		{
+			if (didod[k].dwOfs >= DIJOFS_BUTTON0 && didod[k].dwOfs < (DWORD)(gNumControllerButtons + DIJOFS_BUTTON0))
+			{
+				if (didod[k].dwData & 0x80)
+				{
+					gControllerButtonState[didod[k].dwOfs - DIJOFS_BUTTON0] = -1;
+				}
+				else
+				{
+					gControllerButtonState[didod[k].dwOfs - DIJOFS_BUTTON0] = 0x80;
+				}
+			}
+			else if (didod[k].dwOfs == DIJOFS_X)
+			{
+				*pX = didod[k].dwData;
+			}
+			else if (didod[k].dwOfs == DIJOFS_Y)
+			{
+				*pY = didod[k].dwData;
+			}
+			else if (didod[k].dwOfs == DIJOFS_POV(0))
+			{
+				*pZ = didod[k].dwData;
+			}
+		}
+
+		return 1;
+	}
+#endif
+
+	return 0;
 }
 
 // @Ok
