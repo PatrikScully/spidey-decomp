@@ -137,9 +137,9 @@ INLINE void PCINPUT_ClearKeyState(u8 a1)
 	DXINPUT_SetKeyState(a1, 0);
 }
 
-// @NotOk
-// re-check couldn't find it
-void PCINPUT_ClearMouseState(u8 a1)
+// @Ok
+// Not in the PC binary (only the Mac build has it), same shape as PCINPUT_ClearKeyState
+INLINE void PCINPUT_ClearMouseState(u8 a1)
 {
 	DXINPUT_SetMouseButtonState(a1, 0);
 }
