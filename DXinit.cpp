@@ -61,6 +61,11 @@ EXPORT LPDIRECT3D7 g_D3D7;
 LPDIRECT3DDEVICE7 g_D3DDevice7;
 D3DDEVICEDESC7 gD3DDevCaps;
 
+// the original lives in the DXPOLY block (0x5027A0) and is a plain call from
+// DXINIT_ShutDown and shutdownDirect3D7, so keep the MSVC inliner away from it
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
 // @Ok
 void gsub_5027A0(void)
 {
@@ -73,6 +78,9 @@ void gsub_5027A0(void)
 		}
 	}
 }
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @Ok
 // @Matching
@@ -2189,10 +2197,117 @@ INLINE void initDirectSound8(HWND hwnd)
 #endif
 }
 
-// @MEDIUMTODO
-void shutdownDirect3D7(i32)
+// @Ok
+// @Matching
+// only the __LINE__ values pushed for displayD3DError differ
+// the two surface clears and the DeleteAttachedSurface only display and exit,
+// they do not run DXINIT_ShutDown like the other error checks
+void shutdownDirect3D7(i32 releaseAll)
 {
-    printf("shutdownDirect3D7(i32)");
+#ifdef _WIN32
+	HRESULT hr;
+
+	if (g_D3DDevice7)
+	{
+		hr = g_D3DDevice7->Release();
+		D3D_ERROR_LOG_AND_QUIT(hr);
+		g_D3DDevice7 = 0;
+	}
+
+	DDBLTFX fx;
+	memset(&fx, 0, sizeof(fx));
+	fx.dwSize = sizeof(fx);
+	fx.dwFillColor = 0xFF000000;
+
+	if (g_pDDS_SaveScreen)
+	{
+		if (gDxOptionRelated)
+		{
+			hr = g_pDDS_SaveScreen->Blt(&gRect, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+		}
+		else
+		{
+			hr = g_pDDS_SaveScreen->Blt(0, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+		}
+
+		if (hr)
+		{
+			DISPLAY_D3D_ERROR(hr);
+			if (FAILED(hr))
+			{
+				exit(hr);
+			}
+		}
+	}
+
+	if (g_pDDS_Scene)
+	{
+		hr = g_pDDS_Scene->Blt(0, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+		if (hr)
+		{
+			DISPLAY_D3D_ERROR(hr);
+			if (FAILED(hr))
+			{
+				exit(hr);
+			}
+		}
+	}
+
+	if (releaseAll)
+	{
+		if (g_pDDS_SaveScreen)
+		{
+			g_pDDS_Scene->Release();
+			hr = g_pDDS_SaveScreen->Release();
+			D3D_ERROR_LOG_AND_QUIT(hr);
+			g_pDDS_SaveScreen = 0;
+			g_pDDS_Scene = 0;
+		}
+
+		if (pDDS)
+		{
+			hr = pDDS->Release();
+			D3D_ERROR_LOG_AND_QUIT(hr);
+			pDDS = 0;
+		}
+
+		if (g_pClipper)
+		{
+			hr = g_pClipper->Release();
+			D3D_ERROR_LOG_AND_QUIT(hr);
+			g_pClipper = 0;
+		}
+	}
+	else if (gDxOptionRelated && pDDS)
+	{
+		hr = g_pDDS_Scene->DeleteAttachedSurface(0, pDDS);
+		if (hr)
+		{
+			DISPLAY_D3D_ERROR(hr);
+			if (FAILED(hr))
+			{
+				exit(hr);
+			}
+		}
+
+		hr = pDDS->Release();
+		D3D_ERROR_LOG_AND_QUIT(hr);
+		pDDS = 0;
+	}
+
+	if (g_D3D7)
+	{
+		g_D3D7->Release();
+		g_D3D7 = 0;
+	}
+
+	if (releaseAll && lpDD)
+	{
+		hr = lpDD->Release();
+		D3D_ERROR_LOG_AND_QUIT(hr);
+		lpDD = 0;
+	}
+#endif
 }
 
 // @Ok
