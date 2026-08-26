@@ -512,14 +512,22 @@ void Spool_ClearEnvironmentRegions(void)
 }
 
 // @NotOk
-// close but not matching: register allocation residue in the name-compare
-// loop (original uses a `ebp - a1` delta trick instead of a second walking
-// pointer). 3 hypotheses tried (pointer pair, pure indices, hybrid), best is
-// 59 mnemonic diffs, logged in spool.attempts.md.
+// close but not matching: the goto-based outer loop (same shape that made
+// Spool_AnimAccess match) fixes the loop back-edge, but the whole body still
+// gets a different register allocation than the original (ecx vs eax for
+// the AnimPackets pointer, plus an extra `xor eax,eax` right after the
+// first 2 pushes that our build never emits). a2 is a genuinely dead
+// parameter in both source and original disasm (never touched), so it is
+// not the cause. 5 hypotheses tried total (pointer pair, pure indices,
+// hybrid, goto outer loop, dead local to nudge allocation), all logged in
+// spool.attempts.md. Best result: 59 mnemonic diffs, all downstream of that
+// one register choice.
 SAnimFrame* Spool_FindAnim(char *a1, i32 a2)
 {
-	for (AnimPacket* pPacketInfo = AnimPackets; pPacketInfo; pPacketInfo = pPacketInfo->pNext)
+	AnimPacket* pPacketInfo = AnimPackets;
+	if (pPacketInfo)
 	{
+	loop_top:
 		u32* pPacket = pPacketInfo->pPacket;
 		u32 numAnims = *pPacket;
 		char* pEntry = reinterpret_cast<char*>(pPacket + 1);
@@ -546,6 +554,10 @@ SAnimFrame* Spool_FindAnim(char *a1, i32 a2)
 			u32 numFrames = *reinterpret_cast<u32*>(pEntry + 8);
 			pEntry += numFrames * 8 + 0xC;
 		}
+
+		pPacketInfo = pPacketInfo->pNext;
+		if (pPacketInfo)
+			goto loop_top;
 	}
 
 	return 0;
