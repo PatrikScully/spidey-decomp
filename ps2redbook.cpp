@@ -281,16 +281,30 @@ void Redbook_XAReset(void)
 	G_REDBOOK_RELATED_THREE = 0;
 }
 
-// @Ok
-// @Matching
+// @NotOk
+// residue: 2 mnemonic diffs vs original (cmpsum.sh), down from 48 before
+// caching G_SB_USE_SEMAPHORES in the useSem local below. Instruction and
+// byte counts match exactly (73 instructions, 304 bytes both sides), so
+// this is pure scheduling residue, not a missing/extra store. The original
+// computes the "if (useSem)" comparison right after Redbook_XAReset()'s
+// first field store (interleaved into the inlined Reset body); this build
+// computes the comparison right before its use, after all of Reset's
+// field stores. The load itself is already hoisted to the right spot
+// (matches); only the compare's position differs. Tried caching the value
+// with different types (i32/u32/bool/const), reading it before/after the
+// guard and before/after Redbook_XAReset(), and manually inlining
+// Redbook_XAReset()'s body instead of calling it (identical codegen either
+// way). None moved the compare. See ps2redbook.attempts.md.
 void Redbook_XAInit(void)
 {
 	if (G_ADXT_INITIALIZED)
 		return;
 
+	i32 useSem = G_SB_USE_SEMAPHORES;
+
 	Redbook_XAReset();
 
-	if (G_SB_USE_SEMAPHORES)
+	if (useSem)
 		Sb_SemWait(G_SB_SEMAPHORE_ONE);
 
 	ADXT_Init();
