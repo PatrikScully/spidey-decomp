@@ -84,7 +84,7 @@ public:
 	i16 text_val_b;
 	i32 width_val_a;
 
-	char scrollbar_one;
+	u8 scrollbar_one;
 	char scrollbar_zero;
 
 	u8 mJustification;
@@ -104,7 +104,9 @@ public:
 
 	i16 field_1E;
 
-	PADDING(4);
+	i16 field_20;
+
+	PADDING(2);
 
 	i32 mX;
 	i32 mY;

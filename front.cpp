@@ -7,6 +7,8 @@
 #include "ps2pad.h"
 #include "powerup.h"
 #include "dcmemcard.h"
+#include "PCShell.h"
+#include "ps2lowsfx.h"
 
 CMenu* pYesNoMenu;
 
@@ -165,6 +167,13 @@ static u8* const gFrontCardExists = (u8*)0x005FAD98;
 #define G_DEFAULT_SAVE_GAME (*reinterpret_cast<SSaveGame*>(0x00550E10))
 #define gFrontYesText (*reinterpret_cast<char**>(0x0054B780))
 #define gFrontNoText (*reinterpret_cast<char**>(0x0054B77C))
+
+// Tentative name, no idb_globals.txt entry (sits in the gap between named
+// gPostWaterEffect 0x5FAE98 and pYesNoMenu 0x5FAEAC). Used by CMenu::Update
+// as a held-direction repeat counter: reset to 0 when the mouse/trigger
+// state resets, incremented once per frame the cursor does not move,
+// checked against CMenu::scrollbar_one for the auto-repeat rate.
+#define gMenuNavRepeatTimer (*reinterpret_cast<i32*>(0x005FAEA0))
 
 // @Bogus
 // Plain non-throwing placement new. The original builds pYesNoMenu with a
@@ -579,11 +588,191 @@ void CMenu::SetLine(char Line)
 	}
 }
 
+// CMenu::ProcessMouse (0x50C8A0) is defined in PCShell.cpp, not here: its
+// address sits next to the PCSHELL_* functions, and the original CMenu::Update
+// calls it with a plain direct call, same TU boundary as CMenu::EntryEnable
+// (see the comment on that function in PCShell.cpp).
+
 // Mac symbol Update__5CMenuFv, address 0x440600
-// @SMALLTODO
+// @NotOk
+// residue: 182 mnemonic diffs (cmpsum), all one cascade from a single
+// register choice in the repeat-timer check (original keeps the timer
+// counter in edi across the whole "if (timer<=20) skip" / idiv-by-
+// scrollbar_one block, reusing edi right after for the 0x400 constant;
+// our build loads it into eax directly and never touches edi there).
+// Everything before this point (leading push order, the disabled-entry
+// skip loop, the ProcessMouse call site, the direction of the timer<=20
+// check, the up/down navigation do-whiles) matches. 7 hypotheses tried,
+// logged in front.attempts.md; below the 15-hypothesis minimum for a
+// medium function, so left @NotOk rather than @AlmostMatching.
 void CMenu::Update(void)
 {
-	printf("CMenu::Update(void)");
+	if ((u8)this->mLine > 40)
+		return;
+
+	while (!(this->mEntry[this->mLine].unk_b && this->mEntry[this->mLine].what == 0))
+	{
+		this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_A;
+		this->mEntry[this->mLine].val_a = this->mEntry[this->mLine].field_A;
+
+		this->mLine++;
+		if (this->mLine >= this->mNumLines)
+			this->mLine = 0;
+
+		this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_8;
+		this->mEntry[this->mLine].val_a = this->mEntry[this->mLine].field_A;
+	}
+
+	i32 startLine = this->mLine;
+	i32 mouseRes = this->ProcessMouse();
+
+	if (mouseRes != 2 && PCSHELL_CheckTriggers(0x3003, 0, 0))
+	{
+		i32 timer = gMenuNavRepeatTimer;
+
+		if (timer != 0)
+		{
+			if (timer <= 20)
+				goto skipMove;
+			if (timer % this->scrollbar_one != 0)
+				goto skipMove;
+		}
+
+		{
+			if (PCSHELL_CheckTriggers(0x1001, 0, 0))
+			{
+				G_SCONTROL[0].Up.Triggered = 0;
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_A;
+
+				do
+				{
+					if (this->mLine != 0)
+					{
+						this->mLine--;
+						this->field_20 = 0x400;
+					}
+					else if (this->scrollbar_zero)
+					{
+						this->mLine = this->mNumLines - 1;
+						this->field_20 = 0x400;
+					}
+				}
+				while (!(this->mEntry[this->mLine].unk_b && this->mEntry[this->mLine].what == 0));
+
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_8;
+			}
+
+			if (PCSHELL_CheckTriggers(0x2002, 0, 0))
+			{
+				G_SCONTROL[0].Down.Triggered = 0;
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_A;
+
+				do
+				{
+					this->mLine++;
+					if (this->mLine < this->mNumLines)
+					{
+						this->field_20 = 0x400;
+					}
+					else if (this->scrollbar_zero)
+					{
+						this->mLine = 0;
+						this->field_20 = 0x400;
+					}
+					else
+					{
+						this->mLine--;
+					}
+				}
+				while (!(this->mEntry[this->mLine].unk_b && this->mEntry[this->mLine].what == 0));
+
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_8;
+			}
+		}
+
+skipMove:
+		gMenuNavRepeatTimer++;
+	}
+	else
+	{
+		gMenuNavRepeatTimer = 0;
+	}
+
+	if (this->mLine != startLine)
+		SFX_Play(0x29, 0x3FFF, 0);
+
+	for (i32 i = 0; i < this->mNumLines; i++)
+	{
+		if (this->mEntry[i].val_a >= this->mEntry[i].val_b)
+		{
+			this->mEntry[i].val_a = this->mEntry[i].val_a + 40;
+			if (this->mEntry[i].val_a > this->mEntry[i].val_b)
+				this->mEntry[i].val_a = this->mEntry[i].val_b;
+		}
+
+		if (this->mEntry[i].val_a <= this->mEntry[i].val_b)
+		{
+			this->mEntry[i].val_a = this->mEntry[i].val_a - 40;
+			if (this->mEntry[i].val_a < this->mEntry[i].val_b)
+				this->mEntry[i].val_a = this->mEntry[i].val_b;
+		}
+	}
+
+	if (mouseRes == 0 && this->mLine != startLine)
+	{
+		if (this->mLine < this->mCursorLine)
+		{
+			this->mCursorLine = this->mLine;
+		}
+		else
+		{
+			i32 activeCount = 0;
+
+			if (this->mCursorLine <= this->mLine)
+			{
+				for (i32 k = this->mCursorLine; k <= this->mLine; k++)
+					if (this->mEntry[k].unk_b)
+						activeCount++;
+			}
+
+			if (activeCount > this->field_1B)
+			{
+				if (this->mLine == 0)
+				{
+					this->mCursorLine = 0;
+				}
+				else
+				{
+					i32 visible = 0;
+
+					do
+					{
+						if (this->mEntry[this->mCursorLine].unk_b)
+						{
+							visible++;
+							if (visible == this->field_1B)
+								break;
+						}
+
+						this->mCursorLine--;
+					}
+					while (this->mCursorLine != 0);
+				}
+			}
+		}
+	}
+
+	if (!this->ptr_to)
+		return;
+
+	if ((u16)this->field_32 <= this->field_1B)
+	{
+		this->ptr_to->field_28 = 0;
+	}
+	else
+	{
+		this->ptr_to->field_28 = (this->mCursorLine * 256) / (this->field_32 - this->field_1B);
+	}
 }
 
 // @Ok
@@ -611,6 +800,7 @@ void validate_CMenu(void)
 	VALIDATE(CMenu, field_1B,  0x1B);
 	VALIDATE(CMenu, mZoomBoxType,  0x1C);
 	VALIDATE(CMenu, field_1E, 0x1E);
+	VALIDATE(CMenu, field_20, 0x20);
 	VALIDATE(CMenu, mX, 0x24);
 	VALIDATE(CMenu, mY, 0x28);
 	VALIDATE(CMenu, mLineSep, 0x2C);
