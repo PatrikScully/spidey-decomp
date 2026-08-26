@@ -969,10 +969,91 @@ void CChopperMissile::Explode(void)
 	this->Die();
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4342784.bin. Guarded by
+// field_104 (a Trig node id, non-zero when a target link is set) and field_120 (a state
+// gate, must be 0), then Trig_GetPosition(&field_110, field_104) refreshes the target
+// position and the same gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/
+// gte_stlvnl2/gte_stsxy screen projection idiom as
+// CSniperTarget::DrawTargetRecticle is applied, clipped on depth < 200. The original
+// then draws two Panel_DrawTexturedPoly icons (field_124 plus what looks like a
+// distance/warning readout, calling an unnamed helper at 0x509000 six times, most
+// likely digit rendering for a distance readout) which this reconstruction does not
+// reproduce: could not determine that helper's signature from the disassembly alone
+// without pulling in another file's stub declarations, so only the icon draw and a
+// schematic bracket are implemented here, matching the CSniperTarget precedent. This
+// is a best-effort structural reconstruction, not instruction verified.
+// cmpsum: 975 mnemonic diffs, first divergence right at the field_104/field_120 guard
+// (our compare order differs). 1 attempt (structural reconstruction only). Needs real
+// work.
 void CChopperMissile::DrawTargetRecticle(void)
 {
-	printf("void CChopperMissile::DrawTargetRecticle(void)");
+	if (!this->field_104 || this->field_120)
+		return;
+
+	Trig_GetPosition(&this->field_110, this->field_104);
+
+	CVector camPos = *gCameraViewPos;
+	CVector relPos = (this->field_110 >> 12) - camPos;
+
+	gte_SetRotMatrix(gCameraViewMatrix);
+	m3d_ZeroTransVector();
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_rtps();
+
+	i32 depth;
+	gte_stlvnl2(&depth);
+
+	i16 screenXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+	if (depth < 200)
+		return;
+
+	i32 screenX = screenXY[0];
+	i32 screenY = screenXY[1];
+
+	POLY_FT4* poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(this->field_124, 0));
+	if (!poly)
+		return;
+
+	*reinterpret_cast<u32*>(&poly->r0) = 0x2E808080;
+	poly->tpage = (poly->tpage & 0xFFDF) | 0x40;
+
+	i32 halfW = 12;
+	i32 halfH = 12;
+
+	poly->x0 = static_cast<i16>(screenX - halfW);
+	poly->y0 = static_cast<i16>(screenY - halfH);
+	poly->x1 = static_cast<i16>(screenX + halfW);
+	poly->y1 = static_cast<i16>(screenY - halfH);
+	poly->x2 = static_cast<i16>(screenX - halfW);
+	poly->y2 = static_cast<i16>(screenY + halfH);
+	poly->x3 = static_cast<i16>(screenX + halfW);
+	poly->y3 = static_cast<i16>(screenY + halfH);
+
+	i32 bracket = 20;
+
+	for (i32 i = 0; i < 4; i++)
+	{
+		i32 signX = (i & 1) ? 1 : -1;
+		i32 signY = (i & 2) ? 1 : -1;
+
+		f32 x0 = static_cast<f32>(screenX + signX * bracket);
+		f32 y0 = static_cast<f32>(screenY + signY * bracket);
+		f32 x1 = static_cast<f32>(screenX + signX * (bracket - 6));
+		f32 y1 = y0;
+		f32 x2 = x0;
+		f32 y2 = static_cast<f32>(screenY + signY * (bracket - 6));
+
+		PCGfx_UseTexture(0, DCGfx_BlendingMode_0);
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x1, y1, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x2, y2, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				0.0f);
+	}
 }
 
 // @Ok
