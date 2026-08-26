@@ -108,10 +108,122 @@ void PCGfx_BeginScene(u32,i32)
 	}
 }
 
-// @MEDIUMTODO
-void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)
+// @SMALLTODO
+// Forward to the original. This blends a vertex color toward the fog color
+// using the 4 lighting tables PCGfx_BeginScene/setupFog build (still not
+// done, see pcgfx.attempts.md), so we can't reproduce the math yet.
+static u32 gsub_506D70(f32 a1, u32 a2)
 {
-    printf("PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)");
+	// @FIXME
+	typedef u32 (*func_ptr)(f32, u32);
+	func_ptr func = (func_ptr)0x00506D70;
+	return func(a1, a2);
+}
+
+// @NotOk
+// Structural translation only, NOT verified against compare.py yet. Builds
+// 3 temporary _DXVERT vertices from raw tagKMVERTEX3 records addressed
+// through the u16 index array (3 indices per triangle), including a per
+// channel color brighten step (kept as is when the low 3 bytes of the color
+// are already 0, else (c>>1 & 0x7F7F7F) + 0x0F0F0F with the top byte kept),
+// calls PCGfx_ClipTriToNearPlane on them, then processes verts[0..2]
+// (verts[3] only if clipping produced a 4th vertex) with a per vertex fog
+// color blend and a fog depth remap identical in shape to PCGfx_DrawQuad2D's
+// existing (v24 - gRenderInitOne[0]) / gRenderInitTwo[0] idiom, before
+// calling submitPoly with count 3 or 4. Skips the whole triangle (no
+// submitPoly call) when verts[0] is null, which happens when
+// PCGfx_ClipTriToNearPlane's countBehind == 3 case zeroed all 3 verts.
+// The 2 print_if_false asserts and their strings ("verts[1] is null!",
+// "verts[2] is null!" at 0x5682A0/0x56828C) are confirmed from the binary.
+// gsub_506D70, gRenderInitOne/Two, gPcGfxBlendModeRelated, gNonRendderSettingE,
+// gPcGfxDrawRelated and gEndSceneRelatedTwo's game addresses (0x506d70,
+// 0x56817C/0x568184/0x568190/0x568194, 0xAC08E0, 0xAC08D0, 0x568178,
+// 0xAC08F4) all matched an existing repo global 1:1 against
+// idb_globals.txt, so those parts are higher confidence. tagKMVERTEX3's
+// field layout is a positional guess (see PCGfx.h) and the a2 parameter is
+// genuinely never read in the disassembly, kept unused to match. The exact
+// stack shuffling right before the submitPoly call (there is what looks
+// like a second, redundant verts[0] test) is simplified to a single guard.
+// cmpsum: 282 mnemonic diffs at 0x506980, first divergence right at entry
+// (frame size / register allocation). Not iterated further this session.
+void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 const *indices, i32 indexCount)
+{
+	_DXVERT temp[3];
+	_DXVERT *verts[4];
+	_DXVERT out0, out1;
+	_DXVERT *out[2] = { &out0, &out1 };
+
+	u16 const *idx = indices;
+	u16 const *end = indices + indexCount;
+
+	if (idx == end)
+		return;
+
+	do
+	{
+		for (i32 k = 0; k < 3; k++)
+		{
+			tagKMVERTEX3 const *src = &vertArray[*idx];
+			idx++;
+
+			temp[k].field_0 = src->field_4;
+			temp[k].field_4 = src->field_8;
+			temp[k].field_8 = 1.0f / src->field_C;
+			temp[k].field_14 = src->field_10;
+			temp[k].field_18 = src->field_14;
+
+			u32 c = src->field_18;
+			if ((c & 0xFFFFFF) == 0)
+			{
+				temp[k].field_10 = c;
+			}
+			else
+			{
+				temp[k].field_10 = (c & 0xFF000000) | (((c >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+			}
+		}
+
+		verts[0] = &temp[0];
+		verts[1] = &temp[1];
+		verts[2] = &temp[2];
+
+		gTriWasClipped = 0;
+		PCGfx_ClipTriToNearPlane(verts, out);
+
+		if (verts[0])
+		{
+			f32 bias = 0.0f;
+			if (gPcGfxBlendModeRelated && !gLowGraphics)
+				bias = (f32)gPcGfxBlendModeRelated * gRenderInitTwo[1];
+
+			i32 count = verts[3] ? 4 : 3;
+
+			for (i32 k = 0; k < count; k++)
+			{
+				_DXVERT *v = verts[k];
+
+				if (gNonRendderSettingE)
+					v->field_10 = gsub_506D70(v->field_8, v->field_10);
+
+				v->field_C = gRenderInitOne[2] / v->field_8;
+				v->field_8 = (bias + v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
+
+				if (!gLowGraphics)
+				{
+					v->field_14 *= v->field_C;
+					v->field_18 *= v->field_C;
+				}
+			}
+
+			print_if_false(verts[1] != 0, "verts[1] is null!");
+			print_if_false(verts[2] != 0, "verts[2] is null!");
+
+			gPcGfxDrawRelated |= 4;
+
+			submitPoly(verts, count);
+		}
+	}
+	while (idx != end);
 }
 
 // @NotOk

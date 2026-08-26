@@ -52,7 +52,22 @@ enum DCGfx_BlendingMode
 // straight 28 byte rep movsd, and the fog/color fields it touches afterward
 // (field_8, field_10) match SDXPolyField's members exactly.
 typedef SDXPolyField _DXVERT;
-#define tagKMVERTEX3 i32
+
+// tagKMVERTEX3: layout guessed from PCGfx_ClipSendIndexedVertList's (0x506980)
+// positional field reads only, not cross checked against any struct dump.
+// Stride is 0x20 bytes (index is shifted left by 5 to index the array).
+// field_0 is never read by that function so its meaning is unknown.
+struct tagKMVERTEX3
+{
+	i32 field_0;
+	f32 field_4;
+	f32 field_8;
+	f32 field_C;
+	f32 field_10;
+	f32 field_14;
+	u32 field_18;
+};
+
 #define _tagKMSTRIPHEAD i32
 
 EXPORT void PCGfx_BeginScene(u32,i32);
