@@ -69,23 +69,15 @@ void gte_op0(void)
 	printf("void gte_op0(void)");
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void gte_SetRotMatrix(MATRIX* a1)
 {
-
-	typedef void (*func_ptr)(MATRIX*);
-	func_ptr func = (func_ptr)0x0046D7B0;
-
-	func(a1);
-	return;
-
-	/*
 	for (int i = 0; i < 3; i++){
 		for (int j = 0; j < 3; j++){
 			gRotMatrix[i][j] = a1->m[i][j];
 		}
 	}
-	*/
 }
 
 // @MEDIUMTODO
