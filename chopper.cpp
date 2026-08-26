@@ -12,6 +12,8 @@
 #include "chunk.h"
 #include "ps2pad.h"
 #include "front.h"
+#include "m3dcolij.h"
+#include "m3dzone.h"
 #include <cmath>
 #include "ai.h"
 
@@ -138,11 +140,92 @@ void CChopper::TrackSpidey(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
 // @FIXME name does not have a V
+// @Note: reconstructed from tools/functions/4352816.bin. States 0/1 mirror the
+// GetToPos fallthrough idiom used in FollowWaypoints. State 2 walks the
+// waypoint's links (G_OFFSETLIST), pulsing every linked trigger except a
+// special type-1002 link, which is remembered as the gun target. State 3's
+// interpolation block (Trig_GetPosition + CVector lerp into field_3A8) is a
+// best-effort reconstruction of the control flow shape, not fully instruction
+// verified. cmpsum: 223 mnemonic diffs; MSVC6 did not emit the original's
+// jump-table dispatch for this switch (built an if-chain instead), first
+// divergence right at the dispatch. 1 attempt, not iterated. Needs real work.
 void CChopper::FireMachineGunAtWaypointV(void)
 {
-	printf("void CChopper::FireMachineGunAtWaypoint(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->MarkAIProcList(0, 256, 0);
+			this->SetHeightMode(4);
+			this->dumbAssPad++;
+		case 1:
+			if (this->GetToPos(&this->field_33C))
+			{
+				this->SetHeightMode(5);
+				this->field_3C4 = 1;
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+		{
+			print_if_false(1u, "Bad register index");
+
+			u16* LinksPointer = Trig_GetLinksPointer(this->realRegisterArr[0]);
+			i32 found = 0;
+
+			for (i32 i = 0; i < LinksPointer[0]; i++)
+			{
+				i16 link = LinksPointer[1 + i];
+
+				if (found == 0 && G_OFFSETLIST[link][0] == 1002)
+					found = link;
+				else
+					Trig_SendPulseToNode(link);
+			}
+
+			if (found == 0)
+			{
+				this->field_384 = 0;
+				this->field_31C.bothFlags = 1;
+				this->dumbAssPad = 0;
+			}
+			else
+			{
+				print_if_false(1u, "Bad register index");
+				this->realRegisterArr[1] = 0;
+				print_if_false(1u, "Bad register index");
+				this->realRegisterArr[2] = 0;
+
+				this->dumbAssPad++;
+				this->field_384 = 2;
+
+				if (this->field_3C4)
+				{
+					this->field_3C4 = 0;
+					print_if_false(1u, "Bad register index");
+
+					Trig_GetPosition(&this->field_3B8, this->realRegisterArr[0]);
+
+					print_if_false(1u, "Bad register index");
+					CVector target;
+					Trig_GetPosition(&target, this->realRegisterArr[1]);
+
+					print_if_false(1u, "Bad register index");
+
+					for (i32 j = 0; j < 4; j++)
+					{
+						this->field_3B8 += (target - this->field_3B8) * this->realRegisterArr[2];
+						this->field_3A8 = this->field_3B8;
+					}
+				}
+			}
+			break;
+		}
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @Ok
@@ -723,10 +806,113 @@ CChopper::~CChopper(void)
 		SFX_Stop(this->field_324);
 }
 
-// @MEDIUMTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4346880.bin (missile homing AI:
+// timer decay, difficulty-based speed ramp, aim via Utils_CalcAim/
+// Utils_TurnTowards, step toward target, hit check, then either pulse the
+// target's links and Explode, or re-target to the next type-1002 link).
+// The stepping loop (0x425572-0x42562f) and the final link-walk branch are
+// best-effort reconstructions of the control flow shape, not fully
+// instruction-verified. cmpsum: 200 mnemonic diffs, first divergence right at
+// the field_120 timer decrement (source-level if/else shape differs from the
+// original's branchless sub/clamp). 1 attempt, not iterated. Needs real work.
 void CChopperMissile::AI(void)
 {
-	printf("void CChopperMissile::AI(void)");
+	if (this->field_120)
+	{
+		if (this->field_120 <= this->field_80)
+			this->field_120 = 0;
+		else
+			this->field_120 -= this->field_80;
+	}
+
+	if (this->field_FC == 2)
+		return;
+
+	if (DifficultyLevel == 1 || DifficultyLevel == 0)
+	{
+		if (this->field_108 < 0x2A000)
+		{
+			this->field_108 += this->field_80 << 13;
+			if (this->field_108 > 0x2A000)
+				this->field_108 = 0x2A000;
+		}
+	}
+	else
+	{
+		if (this->field_108 < 0x40000)
+		{
+			this->field_108 += this->field_80 << 13;
+			if (this->field_108 > 0x40000)
+				this->field_108 = 0x40000;
+		}
+	}
+
+	CSVector aimDir;
+	aimDir.vx = 0;
+	aimDir.vy = 0;
+	aimDir.vz = 0;
+	Utils_CalcAim(&aimDir, &this->mPos, &this->field_110);
+
+	CSVector newAngles;
+	if (Utils_CrapDist(this->mPos, this->field_110) > 0x200)
+		Utils_TurnTowards(aimDir, &newAngles, &this->mAngVel, this->mAngAcc, this->field_108 >> 12);
+	else
+		newAngles = aimDir;
+
+	this->mAngles = newAngles;
+
+	Utils_GetVecFromMagDir(&this->mVel, this->field_108 >> 12, &this->mAngles);
+
+	bool hitTarget = false;
+	CVector pos = this->mPos;
+
+	for (i32 steps = 0; steps < this->field_80; steps += 2)
+	{
+		pos += this->mVel * 2;
+
+		if (Utils_Dist(pos, this->field_110) < 0x80)
+		{
+			hitTarget = true;
+			break;
+		}
+	}
+
+	this->mPos = pos;
+	this->field_F8->SetPos(this->mPos);
+	SFX_ModifyPos(this->field_10C, &this->mPos, 0);
+
+	if (!hitTarget)
+		return;
+
+	if (this->field_FC != 0 && this->field_FC != 1)
+		return;
+
+	u16* LinksPointer = Trig_GetLinksPointer(this->field_100);
+
+	if (this->field_FC == 0)
+	{
+		if (LinksPointer[0])
+		{
+			for (i32 i = 0; i < LinksPointer[0]; i++)
+				Trig_SendPulseToNode(LinksPointer[1 + i]);
+		}
+		this->Explode();
+	}
+	else
+	{
+		if (LinksPointer[0])
+		{
+			i32 v9 = LinksPointer[1];
+			if (*G_OFFSETLIST[v9] == 1002)
+			{
+				this->field_100 = v9;
+				Trig_GetPosition(&this->field_110, v9);
+				return;
+			}
+		}
+		this->Explode();
+	}
 }
 
 // @Ok
@@ -864,10 +1050,54 @@ void CSearchlight::CalculateSearchlight(CSVector*)
 	printf("CSearchlight::CalculateSearchlight(CSVector*)");
 }
 
-// @MEDIUMTODO
-void CSearchlight::CheckPointInScreenTri(u32, u32, u32, u32)
+// @NotOk
+// @Note: algorithm confirmed correct (bbox reject then 3 edge-function sign tests
+// against a triangle-orientation constant, verified with a symbolic instruction
+// trace against tools/functions/4339760.bin). 115 mnemonic diffs left, register
+// allocation / local order residue, all in the packed-arg unpacking prologue.
+// 2 declaration-order attempts tried (forward, reverse); reverse was worse (140
+// diffs). Below the 15-hypothesis bar in CLAUDE.md, needs more work.
+void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 {
-	printf("CSearchlight::CheckPointInScreenTri(u32, u32, u32, u32)");
+	i32 px = (i16)p;
+	i32 py = (i16)(p >> 16);
+	i32 ax = (i16)a;
+	i32 ay = (i16)(a >> 16);
+	i32 bx = (i16)b;
+	i32 by = (i16)(b >> 16);
+	i32 cx = (i16)c;
+	i32 cy = (i16)(c >> 16);
+
+	if (px < ax && px < bx && px < cx)
+		return;
+	if (px > ax && px > bx && px > cx)
+		return;
+	if (py < ay && py < by && py < cy)
+		return;
+	if (py > ay && py > by && py > cy)
+		return;
+
+	i32 d0 = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+
+	i32 e1 = (cx - bx) * (py - by) - (px - bx) * (cy - by);
+	if (d0 < 0 && e1 > 0)
+		return;
+	if (d0 > 0 && e1 < 0)
+		return;
+
+	i32 e2 = (ax - cx) * (py - cy) - (px - cx) * (ay - cy);
+	if (d0 < 0 && e2 > 0)
+		return;
+	if (d0 > 0 && e2 < 0)
+		return;
+
+	i32 e3 = (bx - ax) * (py - ay) - (px - ax) * (by - ay);
+	if (d0 < 0 && e3 > 0)
+		return;
+	if (d0 > 0 && e3 < 0)
+		return;
+
+	this->field_12C = 1;
 }
 
 // @BIGTODO
@@ -888,10 +1118,83 @@ void CMachineGunBullet::Move(void)
 	printf("CMachineGunBullet::Move(void)");
 }
 
-// @MEDIUMTODO
-void CMachineGunBullet::Common(CVector*, CVector*)
+// @NotOk
+// @Note: collision/raycast setup (dir/length/clamp/SLineInfo/InitLineInfo/
+// LineToItem) reconstructed from the disassembly of tools/functions/4328896.bin
+// and cross-checked against the SLineInfo layout in m3dcolij.h. The final
+// mStart target-selection block (below the pItem hit check) is a best-effort
+// reconstruction of the control flow shape, not instruction-verified: the
+// original reuses a stack slot there in a way not fully traced.
+// cmpsum: 162 mnemonic diffs, first divergence right after the dir=*a3-*a2
+// operator- call. 1 attempt (structural reconstruction only, no source-shape
+// iteration yet). Below the 15-hypothesis bar in CLAUDE.md, needs real work.
+void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 {
-	printf("CMachineGunBullet::Common(CVector*, CVector*)");
+	this->field_9C = 4;
+	this->SetRGB0(0, 0, 0);
+	this->SetRGB1(255, 255, 255);
+
+	this->mCodeBGR0 |= 0x2000000;
+
+	CVector dir = *a3 - *a2;
+	this->field_7C = dir.Length();
+	print_if_false(this->field_7C != 0, "Zero length in CMachineGunBullet::Common");
+
+	this->field_68 = dir.vx * this->field_7C;
+	this->field_6C = dir.vy * this->field_7C;
+	this->field_70 = dir.vz * this->field_7C;
+
+	if (this->field_7C < 5000)
+		this->field_7C = 5000;
+
+	SLineInfo lineinfo;
+	lineinfo.StartCoords = *a2;
+	lineinfo.EndCoords.vx = this->field_68 * this->field_7C + a2->vx;
+	lineinfo.EndCoords.vy = this->field_6C * this->field_7C + a2->vy;
+	lineinfo.EndCoords.vz = this->field_70 * this->field_7C + a2->vz;
+
+	lineinfo.MaxCoords.vx = 0;
+	lineinfo.MaxCoords.vy = 0;
+	lineinfo.MaxCoords.vz = 0;
+
+	lineinfo.Position.vx = 0;
+	lineinfo.Position.vy = 0;
+	lineinfo.Position.vz = 0;
+
+	lineinfo.Normal.vx = 0;
+	lineinfo.Normal.vy = 0;
+	lineinfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineinfo);
+	M3dZone_LineToItem(&lineinfo, 1);
+
+	if (lineinfo.pItem)
+	{
+		this->field_88 = 1;
+		this->field_80 = (i16)lineinfo.Position.vx;
+		this->field_82 = (i16)lineinfo.Position.vy;
+		this->field_84 = (i16)lineinfo.Position.vz;
+
+		CVector delta;
+		delta.vx = lineinfo.Position.vx - a2->vx;
+		delta.vy = lineinfo.Position.vy - a2->vy;
+		delta.vz = lineinfo.Position.vz - a2->vz;
+		this->field_78 = delta.Length();
+	}
+
+	this->field_74 = Rnd(200) - 250;
+
+	this->mStart = *a2;
+
+	if (this->field_88)
+	{
+		if (this->field_78 >= this->field_7C)
+			this->mStart = lineinfo.Position - dir * this->field_74;
+		else
+			this->mStart = *a2 + dir * this->field_74;
+	}
+
+	this->mEnd = lineinfo.Position;
 }
 
 // @Ok
@@ -1402,6 +1705,7 @@ void validate_CSearchlight(void)
 	VALIDATE(CSearchlight, field_104, 0x104);
 	VALIDATE(CSearchlight, field_110, 0x110);
 	VALIDATE(CSearchlight, field_11C, 0x11C);
+	VALIDATE(CSearchlight, field_12C, 0x12C);
 	VALIDATE(CSearchlight, field_138, 0x138);
 
 	VALIDATE_VTABLE(CSearchlight, SpecialRenderer, 5);
@@ -1419,12 +1723,19 @@ void validate_CMachineGunBullet(void)
 	VALIDATE(CMachineGunBullet, field_6C, 0x6C);
 	VALIDATE(CMachineGunBullet, field_70, 0x70);
 
+	VALIDATE(CMachineGunBullet, field_74, 0x74);
+	VALIDATE(CMachineGunBullet, field_78, 0x78);
+	VALIDATE(CMachineGunBullet, field_7C, 0x7C);
+
 	VALIDATE(CMachineGunBullet, field_80, 0x80);
 	VALIDATE(CMachineGunBullet, field_82, 0x82);
 	VALIDATE(CMachineGunBullet, field_84, 0x84);
 
+	VALIDATE(CMachineGunBullet, field_88, 0x88);
+
 	VALIDATE(CMachineGunBullet, field_8C, 0x8C);
 	VALIDATE(CMachineGunBullet, field_94, 0x94);
+	VALIDATE(CMachineGunBullet, field_9C, 0x9C);
 
 	VALIDATE(CMachineGunBullet, field_A4, 0xA4);
 
@@ -1442,6 +1753,7 @@ void validate_CChopperMissile(void)
 	VALIDATE(CChopperMissile, field_FC, 0xFC);
 	VALIDATE(CChopperMissile, field_100, 0x100);
 	VALIDATE(CChopperMissile, field_104, 0x104);
+	VALIDATE(CChopperMissile, field_108, 0x108);
 
 	VALIDATE(CChopperMissile, field_10C, 0x10C);
 

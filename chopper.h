@@ -174,7 +174,11 @@ class CSearchlight : public CBody
 		CVector field_110;
 		CVector field_11C;
 
-		PADDING(0x138-0x11C-sizeof(CVector));
+		PADDING(0x12C-0x11C-sizeof(CVector));
+
+		u8 field_12C;
+
+		PADDING(0x138-0x12C-1);
 
 		CVector field_138[66];
 };
@@ -196,21 +200,24 @@ class CMachineGunBullet : public CGLine
 		i32 field_6C;
 		i32 field_70;
 
-		PADDING(0x80-0x70-4);
-
+		i32 field_74;
+		i32 field_78;
+		i32 field_7C;
 
 		i16 field_80;
 		i16 field_82;
 		i16 field_84;
 
-		PADDING(4);
+		PADDING(0x88-0x84-2);
 
+		i32 field_88;
 
 		SHandle field_8C;
 		SHandle field_94;
 
-		PADDING(0xA4-0x94-sizeof(SHandle));
+		u8 field_9C;
 
+		PADDING(0xA4-0x9C-1);
 
 
 		i16 field_A4;
@@ -244,8 +251,7 @@ class CChopperMissile : public CBody
 		i32 field_FC;
 		i32 field_100;
 		i32 field_104;
-
-		PADDING(4);
+		i32 field_108;
 
 		i32 field_10C;
 		CVector field_110;
