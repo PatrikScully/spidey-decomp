@@ -426,7 +426,8 @@ void gte_ldlv0(const VECTOR *a1)
 }
 
 
-// @NotOk
+// @Ok
+// @Matching
 void gte_stsxy3(int *a1, int *a2, int *a3)
 {
   *a1 = (gOp12Result.vx & 0xFFFF) | (gOp12Result.vy << 16);
