@@ -7,6 +7,8 @@
 #include "vector.h"
 
 EXPORT extern i32 RestartNode;
+//#define G_RESTARTNODE (RestartNode)
+#define G_RESTARTNODE (*reinterpret_cast<i32*>(0x0055804C))
 
 EXPORT extern i32 IsRestartDeath;
 //#define G_ISRESTARTDEATH (IsRestartDeath)
@@ -80,6 +82,7 @@ EXPORT void ExecuteCommandList(u16*, i32, i32);
 EXPORT void Trig_DeleteTrigFile(void);
 EXPORT u16 *SkipString(char *);
 EXPORT void Trig_SetRestart(char *);
+EXPORT void Trig_LoadTRG(char *);
 EXPORT void Trig_ExecuteRestart(void);
 EXPORT void Trig_ExecuteAutoexec(void);
 EXPORT CBody* Trig_CreateObject(i32);

@@ -10,6 +10,10 @@
 #include "PCShell.h"
 #include "ps2lowsfx.h"
 #include "panel.h"
+#include "spidey.h"
+#include "camera.h"
+#include "screen.h"
+#include "ps2redbook.h"
 
 CMenu* pYesNoMenu;
 
@@ -34,9 +38,10 @@ SLevel Levels[FRONT_NUM_LEVELS];
 #define gMenuHighlightBufPos (*reinterpret_cast<u8**>(0x0056FB04))
 #define gMenuHighlightBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
 
-// Tentative name, guards two stubbed_printf debug calls in CMenu::Display
-// (0x54ABF0 / 0x56EB54 format strings, contents unknown).
-#define gMenuDisplayDebugFlag (*reinterpret_cast<u8*>(0x0054D341))
+// idb_globals.txt: 0x0054D341 gPrintStubbed. Guards debug stubbed_printf
+// calls in both CMenu::Display and Front_LoadGame below (not menu-specific,
+// despite the guess made before the idb name turned up).
+#define gPrintStubbed (*reinterpret_cast<u8*>(0x0054D341))
 
 // @Ok
 // @Matching
@@ -159,9 +164,9 @@ void CMenu::Display(void)
 			{
 				gMenuHighlightBufPos = next;
 
-				if (!gMenuDisplayDebugFlag)
+				if (!gPrintStubbed)
 					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
-				if (!gMenuDisplayDebugFlag)
+				if (!gPrintStubbed)
 					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
 
 				i16 yMinus5 = static_cast<i16>(y - 5);
@@ -545,10 +550,141 @@ void Front_Init(void)
 	pYesNoMenu->mY = 0x74;
 }
 
-// @MEDIUMTODO
-void Front_LoadGame(SSaveGame *,i32,bool)
+// Tentative names/globals for Front_LoadGame, no idb_globals.txt entries
+// unless noted. gFrontSlotCounter/gFrontSlotShuffleTable implement a
+// non-repeating random digit picker (Utils_Jumble reshuffles the table of 9
+// once every 9 draws); gFrontCameraModeFlagOne/Two are two byte flags set
+// from the pre-call RestartNode value, meaning unclear without a consumer.
+#define gFrontSlotCounter (*reinterpret_cast<i32*>(0x00682944))
+static i32 gFrontSlotShuffleTable[9] = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+#define gFrontCameraModeFlagOne (*reinterpret_cast<u8*>(0x0056FB78))
+#define gFrontCameraModeFlagTwo (*reinterpret_cast<u8*>(0x0056FBF4))
+
+// @NotOk
+// residue: 156 mnemonic diffs (cmpsum), instruction counts close (206
+// original vs 208 built). One honest attempt, not iterated further (see
+// front.attempts.md). This function allocates and constructs a CPlayer and
+// a CCamera with plain `new` expressions, which is exactly why the
+// original has an SEH frame (exception-safe cleanup if a constructor
+// throws, same reason CMenu::Zoom's `new CExpandingBox(...)` has one, see
+// that comment). Matching MSVC6's SEH scope-table generation by hand is not
+// realistic in one session. The residue is not pure register-naming noise
+// either: a saved-RestartNode local ends up zeroing a register (ebx) early
+// for a different reason than the original, and that zero register then
+// gets reused as the "compare against 0" operand for several later
+// `!gPrintStubbed`-style checks, turning the original's `test al,al` into
+// `cmp al,bl` in a few places - a real, if minor, mnemonic-level diff, not
+// just an operand/address difference.
+// SLevel's field_C/field_10 are read here as one raw 32-bit value at
+// offset +0xC (not through named struct fields) instead of widening
+// SLevel::field_C from u16 to i32: `Levels[35].field_C = 0xFFEC;` in
+// init.cpp sits inside an already-`@Ok` function in a file this session
+// does not own, and widening the field would change that store's
+// instruction encoding (2-byte immediate becomes 4-byte) - not safe to
+// risk from here. The raw 32-bit read still gets the right VALUE, because
+// `Levels[]` is a zero-initialized BSS global and the upper 16 bits are
+// currently unnamed padding right after field_C.
+void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
 {
-    printf("Front_LoadGame(SSaveGame *,i32,bool)");
+	// same address as gsub_430880 (nullsub_3), declared and defined in
+	// PCShell.cpp; see shell.cpp for the same local-extern precedent.
+	extern void gsub_430880(void);
+
+	i32 savedRestartNode = RestartNode;
+
+	if (gSaveGame.field_4[1] == 'f' && gSaveGame.field_4[3] == '1')
+	{
+		print_if_false(gFrontSlotCounter < 9, reinterpret_cast<char*>(0x0054ACCC));
+
+		gSaveGame.field_4[4] = static_cast<char>(gFrontSlotShuffleTable[gFrontSlotCounter] + '0');
+		gSaveGame.field_4[5] = '_';
+		gSaveGame.field_4[6] = 't';
+		gSaveGame.field_4[7] = 0;
+		gSaveGame.mRestartPointName[0] = 0;
+
+		gFrontSlotCounter++;
+		if (gFrontSlotCounter >= 9)
+		{
+			gFrontSlotCounter = 0;
+			Utils_Jumble(gFrontSlotShuffleTable, 9);
+		}
+	}
+
+	SLevel* pLevel = Front_FindLevel(gSaveGame.field_4);
+
+	if (pLevel)
+	{
+		i32 field_10 = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(pLevel) + 0x10);
+		i32 field_C = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(pLevel) + 0xC);
+
+		gSaveGame.field_84 |= field_10;
+		gSaveGame.field_90 |= field_C;
+
+		if (*reinterpret_cast<u8*>(0x0060CFC5) && Utils_CompareStrings(gSaveGame.field_4, reinterpret_cast<char*>(0x0054A808)))
+			gSaveGame.field_84 |= 0x2000000;
+	}
+
+	SFX_SpoolOutLevelSFX();
+
+	char levelId[5];
+	levelId[0] = gSaveGame.field_4[0];
+	levelId[1] = gSaveGame.field_4[1];
+	levelId[2] = gSaveGame.field_4[2];
+	levelId[3] = gSaveGame.field_4[3];
+	levelId[4] = 0;
+	SFX_SpoolInLevelSFX(levelId);
+
+	Spidey_SetUserFunction(0, 0);
+	((void(*)(i32))gsub_430880)(2000);
+	Trig_LoadTRG(gSaveGame.field_4);
+
+	gFrontGauge = 0;
+	((void(*)(i32))gsub_430880)(4);
+
+	CPlayer* player = new CPlayer();
+
+	if (a2)
+	{
+		RestartNode = savedRestartNode;
+	}
+	else if (pSave->mRestartPointName[0])
+	{
+		Trig_SetRestart(pSave->mRestartPointName);
+	}
+
+	new CCamera(player);
+
+	if (!gPrintStubbed)
+		stubbed_printf(reinterpret_cast<char*>(0x00549620));
+	gFrontCameraModeFlagOne = 0;
+
+	if (!gPrintStubbed)
+		stubbed_printf(reinterpret_cast<char*>(0x00549620));
+	gFrontCameraModeFlagTwo = 0;
+
+	G_REDBOOK_XA_CURRENT_PRIORITY = -1;
+	Trig_ExecuteRestart();
+
+	CVector v;
+	v.vx = 0;
+	v.vy = 0;
+	v.vz = 0;
+
+	char *pName = &reinterpret_cast<char*>(Trig_GetPosition(&v, RestartNode))[6];
+	char *pDestBuf = &gSaveGame.mRestartPointName[0];
+	i32 i = 0;
+
+	while (*pName)
+	{
+		i++;
+		*pDestBuf++ = *pName++;
+		print_if_false((u8)(i < 50), reinterpret_cast<char*>(0x0054ACA4));
+	}
+
+	*pDestBuf = 0;
+
+	CameraList->SetMode(CAMERAMODE_DEMO);
+	Screen_StartCircularFadeIn(0x20, 8);
 }
 
 // @Ok
