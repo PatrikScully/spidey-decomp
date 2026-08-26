@@ -6,6 +6,7 @@
 #include "ob.h"
 #include "texture.h"
 #include "export.h"
+#include "DXsound.h"
 
 enum DCGfx_RenderParameter
 {
@@ -46,8 +47,11 @@ enum DCGfx_BlendingMode
 	DCGfx_BlendingMode_MAX  = DCGfx_BlendingMode_4,
 };
 
-// @FIXME
-#define _DXVERT i32
+// _DXVERT has the same 7-field (28 byte) layout as SDXPolyField (DXsound.h):
+// submitPoly copies a _DXVERT list into a DXPOLY's field_10[] array with a
+// straight 28 byte rep movsd, and the fog/color fields it touches afterward
+// (field_8, field_10) match SDXPolyField's members exactly.
+typedef SDXPolyField _DXVERT;
 #define tagKMVERTEX3 i32
 #define _tagKMSTRIPHEAD i32
 

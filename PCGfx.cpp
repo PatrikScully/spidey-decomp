@@ -57,6 +57,10 @@ u32 gPcGfxSkyColor;
 EXPORT i32 gEndSceneRelated = -1;
 EXPORT i32 gEndSceneRelatedTwo;
 
+// 0xAC08F0, set to 1 by PCGfx_ClipTriToNearPlane whenever it actually cuts a
+// triangle. Not in the maintainer's IDB globals list, name is our guess.
+u8 gTriWasClipped;
+
 // @Ok
 // @Matching
 i32 acG2Write(void*, void*, i32)
@@ -110,10 +114,65 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)
     printf("PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)");
 }
 
-// @SMALLTODO
-void PCGfx_ClipTriToNearPlane(_DXVERT **,_DXVERT *const *)
+// @NotOk
+// verts holds the 3 input triangle vertex pointers, plus a spare 4th slot
+// (verts[3]) used when clipping turns the triangle into a quad. out[0]/out[1]
+// are the two spare _DXVERT slots the caller passes in to receive the newly
+// interpolated vertices. residue: original tests countBehind with a
+// dec/je/dec/je/dec/jne chain (switch-style dispatch on a cached local, see
+// tips.txt); our separate ifs compile to plain cmp/jne instead. 67 mnemonic
+// diffs at 0x506e40 as of this attempt, 2 hypotheses tried, logged in
+// pcgfx.attempts.md.
+void PCGfx_ClipTriToNearPlane(_DXVERT **verts, _DXVERT *const *out)
 {
-    printf("PCGfx_ClipTriToNearPlane(_DXVERT **,_DXVERT *const *)");
+	static const i32 prevIdx[3] = {2, 0, 1};
+	static const i32 nextIdx[3] = {1, 2, 0};
+
+	i32 countBehind = 0;
+	i32 behindIdx = -1;
+	verts[3] = 0;
+	i32 frontIdx = -1;
+
+	for (i32 i = 2; i >= 0; i--)
+	{
+		if (verts[i]->field_8 < gRenderInitOne[0])
+		{
+			behindIdx = i;
+			countBehind++;
+		}
+		else
+		{
+			frontIdx = i;
+		}
+	}
+
+	if (countBehind == 1)
+	{
+		ZCLIP_VERT(out[0], verts[prevIdx[behindIdx]], verts[behindIdx], gRenderInitOne[0]);
+		ZCLIP_VERT(out[1], verts[nextIdx[behindIdx]], verts[behindIdx], gRenderInitOne[0]);
+
+		for (i32 i = 2; i > behindIdx; i--)
+			verts[i + 1] = verts[i];
+
+		verts[behindIdx] = out[0];
+		verts[behindIdx + 1] = out[1];
+		gTriWasClipped = 1;
+	}
+	if (countBehind == 2)
+	{
+		ZCLIP_VERT(out[0], verts[frontIdx], verts[prevIdx[frontIdx]], gRenderInitOne[0]);
+		ZCLIP_VERT(out[1], verts[frontIdx], verts[nextIdx[frontIdx]], gRenderInitOne[0]);
+
+		verts[prevIdx[frontIdx]] = out[0];
+		verts[nextIdx[frontIdx]] = out[1];
+		gTriWasClipped = 1;
+	}
+	if (countBehind == 3)
+	{
+		verts[2] = 0;
+		verts[1] = 0;
+		verts[0] = 0;
+	}
 }
 
 // @Ok
@@ -348,8 +407,12 @@ void PCGfx_DrawQPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f
 }
 
 // @NotOk
-// missing low graphics
-// might be wrong too
+// low graphics branch added this session (was an empty @FIXME stub before),
+// mirrors submitPoly's low graphics branch. 235 mnemonic diffs at 0x507470
+// as of this attempt; the first diverging instruction is in the shared
+// (non-low-graphics) code above the branch, so there is a pre-existing
+// residue here independent of the low graphics addition. Not iterated on
+// further this session, see pcgfx.attempts.md.
 void PCGfx_DrawQuad2D(
 		f32 a1,
 		f32 a2,
@@ -438,7 +501,49 @@ void PCGfx_DrawQuad2D(
 
 	if (gLowGraphics)
 	{
-		// @FIXME: TODO
+		v16->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&v16->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&v16->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		v16->field_C = 4;
+
+		SDXPolyField **v21 = pDxPolyFields;
+		SDXPolyField *v22 = v16->field_10;
+
+		for (i32 i = 0; i < 4; i++)
+		{
+			memcpy(&v22[i], v21[i], sizeof(SDXPolyField));
+
+			if (!(v16->mBlendMode & 4))
+				v22[i].field_4 = 1.0f;
+
+			i32 v23;
+			if (gProcessTextureRelated)
+				v23 = 128;
+			else
+				v23 = (v22[i].field_10 >> 24) & 0xFF;
+
+			v22[i].field_10 =
+				gPcGfxBrightnessValues[v22[i].field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(v22[i].field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(v22[i].field_10 >> 16) & 0xFF] << 16 |
+				v23 << 24;
+
+			if (v22[i].field_8 < 0.0f)
+			{
+				v22[i].field_8 = 0.0f;
+			}
+			else if (v22[i].field_8 > 0.99989998f)
+			{
+				v22[i].field_8 = 0.99989998f;
+				v26 = v22[i].field_8;
+			}
+			else if (v26 < v22[i].field_8)
+			{
+				v26 = v22[i].field_8;
+			}
+		}
 	}
 	else
 	{
@@ -451,7 +556,7 @@ void PCGfx_DrawQuad2D(
 		v16->mBlendMode = gChosenBlendingMode;
 		v16->field_A = gProcessedTextureFlags;
 		v16->field_C = 4;
-		
+
 		SDXPolyField **v21 = pDxPolyFields;
 		SDXPolyField *v22 = v16->field_10;
 
@@ -692,7 +797,11 @@ EXPORT i32 gBlendingModes[DCGfx_BlendingMode_MAX + 1] =
 };
 
 // @NotOk
-// missing low graphics stuff
+// residue: 6 mnemonic diffs at 0x5062c0, all one spot: original computes
+// (gChosenBlendingMode-1)<<4 as "add ecx,-1; shl ecx,4" (subtract-then-shift
+// in that instruction order), ours (and 2 rewrites of the same expression)
+// compile to "shl ecx,4; sub ecx,0x10" (MSVC distributes the shift over the
+// subtraction either way). 3 hypotheses tried, logged in pcgfx.attempts.md.
 void PCGfx_ProcessTexture(
 		_tagKMSTRIPHEAD *,
 		i32 a2,
@@ -716,8 +825,27 @@ void PCGfx_ProcessTexture(
 
 	if (gLowGraphics)
 	{
+		gPcGfxDrawRelated &= 0xFFFFFF85;
+
+		if (a2 >= 0)
+		{
+			gPcGfxDrawRelated |= 2;
+
+			if (PCTex_TextureHasAlpha(a2))
+				gPcGfxDrawRelated |= 0x40;
+		}
+
+		if (gChosenBlendingMode >= 1 && gChosenBlendingMode <= 4)
+		{
+			gPcGfxDrawRelated |= ((gChosenBlendingMode - 1) << 4) | 8;
+		}
 	}
-	else if (a2 >= 0)
+	else if (a2 < 0)
+	{
+		DXPOLY_SetTexture(0);
+		gProcessedTextureFlags = 0;
+	}
+	else
 	{
 		IDirectDrawSurface7* Direct3DTexture = PCTex_GetDirect3DTexture(a2);
 		DXPOLY_SetTexture(Direct3DTexture);
@@ -738,11 +866,6 @@ void PCGfx_ProcessTexture(
 
 		if ((v9 & 4) == 0)
 			gProcessedTextureFlags |= 4;
-	}
-	else
-	{
-		DXPOLY_SetTexture(0);
-		gProcessedTextureFlags = 0;
 	}
 }
 
@@ -948,10 +1071,54 @@ void PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)
     printf("PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)");
 }
 
-// @MEDIUMTODO
-void ZCLIP_VERT(_DXVERT *,_DXVERT *,_DXVERT *,f32)
+// @NotOk
+// interpolates a new vertex where the b->c edge crosses the plane field_8 == t
+// residue: original uses a 0x10 byte local frame and different FPU stack
+// scheduling around the field_8 store and the bx/by/cx/cy multiplies (101
+// mnemonic diffs at 0x506f90 as of this attempt, 2 hypotheses tried so far,
+// logged in pcgfx.attempts.md). functionally faithful.
+void ZCLIP_VERT(_DXVERT *out, _DXVERT *b, _DXVERT *c, f32 t)
 {
-    printf("ZCLIP_VERT(_DXVERT *,_DXVERT *,_DXVERT *,f32)");
+	print_if_false(c->field_8 != b->field_8, "Zero denominator computing scale!");
+	print_if_false(t != 0.0f, "Zero denominator computing clip inverse!");
+
+	f32 frac = (t - b->field_8) / (c->field_8 - b->field_8);
+	out->field_8 = t;
+
+	f32 invT = 1.0f / t;
+
+	f32 bx = b->field_0 * b->field_8;
+	f32 by = b->field_4 * b->field_8;
+	f32 cx = c->field_0 * c->field_8;
+	f32 cy = c->field_4 * c->field_8;
+
+	out->field_C = gRenderInitOne[2] * invT;
+	out->field_0 = ((cx - bx) * frac + bx) * invT;
+	out->field_4 = ((cy - by) * frac + by) * invT;
+
+	out->field_14 = (c->field_14 - b->field_14) * frac + b->field_14;
+	out->field_18 = (c->field_18 - b->field_18) * frac + b->field_18;
+
+	u32 colorB = b->field_10;
+	u32 colorC = c->field_10;
+
+	i32 chB_A = (colorB >> 24) & 0xFF;
+	i32 chC_A = (colorC >> 24);
+	i32 newA = (i32)((f32)(chC_A - chB_A) * frac) + chB_A;
+
+	i32 chB_R = (colorB >> 16) & 0xFF;
+	i32 chC_R = (colorC >> 16) & 0xFF;
+	i32 newR = (i32)((f32)(chC_R - chB_R) * frac) + chB_R;
+
+	i32 chB_G = (colorB >> 8) & 0xFF;
+	i32 chC_G = (colorC >> 8) & 0xFF;
+	i32 newG = (i32)((f32)(chC_G - chB_G) * frac) + chB_G;
+
+	i32 chB_B = colorB & 0xFF;
+	i32 chC_B = colorC & 0xFF;
+	i32 newB = (i32)((f32)(chC_B - chB_B) * frac) + chB_B;
+
+	out->field_10 = ((newA & 0xFF) << 24) | ((newR & 0xFF) << 16) | ((newG & 0xFF) << 8) | (newB & 0xFF);
 }
 
 // @Ok
@@ -996,10 +1163,131 @@ void setupFog(void)
     printf("setupFog(void)");
 }
 
-// @MEDIUMTODO
-void submitPoly(_DXVERT **,i32)
+// @NotOk
+// gLowGraphics true/false take almost the same shape but are not shared code
+// (mBlendMode/field_A/field_C are sourced differently, field_C is a hardcoded
+// 4 on the low graphics side but the real vertex count otherwise); not
+// verified against compare.py yet beyond a first pass, residue logged in
+// pcgfx.attempts.md.
+void submitPoly(_DXVERT **verts, i32 count)
 {
-    printf("submitPoly(_DXVERT **,i32)");
+	i32 idx = gEndSceneRelatedTwo;
+	if (idx >= 15360)
+	{
+		gEndSceneRelatedTwo = idx + 1;
+		return;
+	}
+
+	DXPOLY *p = &gDxPolys[idx];
+	gEndSceneRelatedTwo = idx + 1;
+	i32 blendMode = gPcGfxBlendModeRelated;
+	f32 fogMax = 0.0f;
+
+	if (gLowGraphics)
+	{
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		p->field_C = 4;
+
+		if (count > 0)
+		{
+			for (i32 i = 0; i < count; i++)
+			{
+				SDXPolyField *dst = &p->field_10[i];
+				memcpy(dst, verts[i], sizeof(SDXPolyField));
+
+				if (!(p->mBlendMode & 4))
+					dst->field_4 = 1.0f;
+
+				i32 v23;
+				if (gProcessTextureRelated)
+					v23 = 128;
+				else
+					v23 = (dst->field_10 >> 24) & 0xFF;
+
+				dst->field_10 =
+					gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+					gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+					gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+					v23 << 24;
+
+				if (dst->field_8 < 0.0f)
+				{
+					dst->field_8 = 0.0f;
+				}
+				else if (dst->field_8 > 0.99989998f)
+				{
+					dst->field_8 = 0.99989998f;
+					fogMax = dst->field_8;
+				}
+				else if (fogMax < dst->field_8)
+				{
+					fogMax = dst->field_8;
+				}
+			}
+		}
+	}
+	else
+	{
+		LPDIRECTDRAWSURFACE7 Direct3DTexture;
+		if (gUseTextureRelated < 0)
+			Direct3DTexture = 0;
+		else
+			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+		p->field_4 = Direct3DTexture;
+		p->mBlendMode = gChosenBlendingMode;
+		p->field_A = gProcessedTextureFlags;
+		p->field_C = count;
+
+		if (count > 0)
+		{
+			for (i32 i = 0; i < count; i++)
+			{
+				SDXPolyField *dst = &p->field_10[i];
+				memcpy(dst, verts[i], sizeof(SDXPolyField));
+
+				if (!(p->mBlendMode & 4))
+					dst->field_4 = 1.0f;
+
+				i32 v23;
+				if (gProcessTextureRelated)
+					v23 = 128;
+				else
+					v23 = (dst->field_10 >> 24) & 0xFF;
+
+				dst->field_10 =
+					gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+					gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+					gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+					v23 << 24;
+
+				if (dst->field_8 < 0.0f)
+				{
+					dst->field_8 = 0.0f;
+				}
+				else if (dst->field_8 > 0.99989998f)
+				{
+					dst->field_8 = 0.99989998f;
+					fogMax = dst->field_8;
+				}
+				else if (fogMax < dst->field_8)
+				{
+					fogMax = dst->field_8;
+				}
+			}
+		}
+
+		if (gChosenBlendingMode)
+		{
+			blendMode = 0;
+		}
+	}
+
+	DXPOLY_DrawPoly(p, gPcGfxSlotNumber, blendMode, fogMax);
+	gPcGfxSlotNumber = -1;
 }
 
 // @Ok
