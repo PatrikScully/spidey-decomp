@@ -839,10 +839,41 @@ i32 CBaddy::CheckSightCone(i32 a2, i32 a3, i32 a4, i32 a5, CBody *a6)
 	return my_abs(v14) <= (a2 >> 1);
 }
 
-// @MEDIUMTODO
-void CBaddy::ParseScript(u16*)
+// byte right before gWhatIf (0x60CFC5, ob.cpp). Name from spideypc_names.txt
+// (maintainer's IDB extraction), tentative.
+static u8 * const gSubmarinerDieRelated = (u8*)0x60CFC4;
+
+// @Ok
+// @Matching
+void CBaddy::ParseScript(u16 *a2)
 {
-	printf("void CBaddy::ParseScript(u16*)");
+	this->field_24C = reinterpret_cast<i16*>(a2);
+
+	while (*this->field_24C != 0x4100)
+	{
+		u16 opcode = *this->field_24C;
+		this->field_24C++;
+
+		print_if_false((opcode & 0x6000) != 0, "Bad script command");
+
+		if (opcode & 0x4000)
+		{
+			if (!this->ExecuteCommand(opcode))
+				return;
+		}
+		else if (opcode & 0x2000)
+		{
+			this->SetVariable(opcode);
+		}
+	}
+
+	if (this->field_234 && *gSubmarinerDieRelated)
+	{
+		this->SendDeathPulse();
+		this->field_2A8 |= 0x4000;
+	}
+
+	this->field_20C = 0;
 }
 
 i32 NumBaddies;
