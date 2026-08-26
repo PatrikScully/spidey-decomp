@@ -233,6 +233,8 @@ STUBBED_FUNC(setRGB0)
 STUBBED_FUNC(PutDrawEnv)
 STUBBED_FUNC(DrawOTag)
 STUBBED_FUNC(SetDrawArea)
+STUBBED_FUNC(setPolyF3)
+STUBBED_FUNC(setSemiTrans)
 
 void patch_ps2funcs(void);
 

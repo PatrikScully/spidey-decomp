@@ -772,10 +772,37 @@ i32 CPlayer::IncHealth(i32 a2)
 	return 0;
 }
 
-// @SMALLTODO
+// @NotOk
+// residue: original keeps two independent per-iteration registers (an
+// ascending bound counter esi, tested against 0x60, and a value eax
+// freshly recomputed as 0x60-esi each pass); every source form tried here
+// (ascending for, do-while, independent counters, != and unsigned compares,
+// index*stride) gets fused by our compiler into one descending counter,
+// which changes both the loop compare and the stored value's derivation.
+// volatile on the counter stops the fusion but adds a stack spill (extra
+// sub esp,8 prologue and [esp] reloads) the original does not have.
+// 7 distinct hypotheses tried, none reproduce the original register split.
 void CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)
 {
-    printf("CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)");
+	SIndicator *pIndicator = this->field_5F0;
+
+	for (i32 i = 6; i != 0; i--)
+	{
+		i32 *pEntry = (i32*)((u8*)pIndicator + 0x18);
+
+		for (i32 j = 0; j < 0x60; j += 0x18)
+		{
+			pEntry[1] = 0;
+			pEntry[0] = 0x60 - j;
+
+			setPolyF3();
+			setSemiTrans();
+
+			pEntry = (i32*)((u8*)pEntry + 0x14);
+		}
+
+		pIndicator++;
+	}
 }
 
 // @SMALLTODO
