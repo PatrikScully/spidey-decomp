@@ -64,13 +64,38 @@ struct SSaveGame
 	PADDING(0x54-0x3F-1);
 
 	i8 mDifficulty;
-	PADDING(0x7B-0x54-1);
+
+	// ActivateCheat CHEAT_ROBRTSON ("Storyboard Viewer") toggle
+	u8 mCheatStoryboardFlag;
+
+	// PShell_MaybeUnlockStuff loops over 0x22 (34) of these checking completion
+	u8 field_56[0x22];
+
+	// ActivateCheat CHEAT_LEANEST ("everything") sets this to 1
+	u8 field_78;
+
+	PADDING(0x7B-0x79);
 
 	u8 field_7B;
-	PADDING(0x88-0x7B-1);
+	PADDING(0x80-0x7B-1);
 
+	// ActivateCheat costume unlock bitmask (SECRTWAR/MIGUELOH/TRISNTNL/
+	// SYNOPTIC/XILRTRNS/KICKME/MRWATSON/SMLVIII/CLUBNOIR cheats)
+	i32 field_80;
+
+	// ActivateCheat CHEAT_RGSGLLRY ("Character Viewer") = -1
+	i32 field_84;
+
+	// movie viewer unlock bitmask; also used directly as gSaveGame.field_88
+	// in ps2gamefmv.cpp ("|= 1 << a1"). ActivateCheat CHEAT_CINEMA sets -1
 	i32 field_88;
-	PADDING(0x94-0x88-4);
+
+	// ActivateCheat CHEAT_FANBOY / CHEAT_LEANEST; same address as
+	// powerup.cpp's gCheatUnlockFlags standalone global
+	i32 field_8C;
+
+	// ActivateCheat CHEAT_KIRBYFAN ("Game Comic Covers") = 0x3F
+	i32 field_90;
 
 	// PShell_ApplyGameState reads these and writes them into gGameState[11..13]
 	i32 field_94;

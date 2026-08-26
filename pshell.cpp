@@ -10,6 +10,7 @@
 #include "tweak.h"
 #include "ps2pad.h"
 #include "panel.h"
+#include "spidey.h"
 
 #include <cstring>
 
@@ -146,13 +147,162 @@ SCheat gCheats[NUM_CHEATS] =
 	},
 };
 
-// @MEDIUMTODO
+// these five and mCheatStoryboardFlag/field_78 now live as real fields in
+// SSaveGame (shell.h), found via ActivateCheat's cheat flag writes landing
+// inside gSaveGame's address range; see shell.h for per-field evidence.
+#define G_LEVEL_SELECT_FLAG (*reinterpret_cast<u32*>(0x0060CFD8))
+#define G_UNLIMITED_WEBBING_FLAG (*reinterpret_cast<i32*>(0x0060CFE8))
+#define G_PULSATING_HEAD_FLAG (*reinterpret_cast<i32*>(0x0060CFF0))
+#define G_INVULNERABLE_FLAG (*reinterpret_cast<i32*>(0x0060CFC8))
+
+// well past .data's raw file image (real BSS), zero at load
+#define G_STICKMAN_FLAG (*reinterpret_cast<i32*>(0x02E09BF4))
+#define G_TOON_SPIDEY_FLAG (*reinterpret_cast<i32*>(0x02E09BF0))
+
+// @NotOk
+// residue: 45 mnemonic diffs out of 95 instructions, same byte length (391).
+// Every case's logic and the switch dispatch itself match (jump table shape,
+// bounds check, eax=1 preset). The residue is that several cases compile as
+// load/modify/store (mov reg,[mem]; op reg,imm; mov[mem],reg) here where the
+// original folds to a single memory-immediate op (or dword ptr [mem],imm /
+// xor [mem],eax). Moving the newly-discovered cheat flags into real
+// SSaveGame fields (see shell.h) fixed most of the |= cases on
+// gSaveGame.field_80/84/88/8C/90 (confirmed via cmpsum, dropped 54 -> 45
+// diffs); the remaining ones are on plain fixed-address globals outside any
+// known struct (0x60CFE8, 0x60CFF0, 0x60CFC8, 0x2E09BF4, 0x2E09BF0) where no
+// such struct exists to attach them to. 11 hypotheses tried: explicit
+// return-per-case vs a shared result local with break (result+break fixed
+// the dispatch header, 68->54 diffs), G_* macro vs static const pointer for
+// the flag globals (no effect), an explicit bounds check before the switch
+// instead of relying on the jump table's own check (worse, 69 diffs),
+// dropping the CHEAT_WEAKNESS local in favor of inline G_MECHLIST casts (no
+// effect), moving the cheat flags into real SSaveGame struct fields
+// (improvement, see above), and XORing against the already-1 result local
+// instead of the literal 1 (no effect). See pshell.attempts.md.
 i32 ActivateCheat(i32 a1)
 {
-	typedef i32 (*func_ptr)(i32);
+	i32 result = 1;
 
-	func_ptr func = (func_ptr)0x0047C240;
-	return func(a1);
+	switch (a1)
+	{
+		case CHEAT_WEAKNESS:
+			if (G_MECHLIST)
+			{
+				((CPlayer*)G_MECHLIST)->mHealth = ((CPlayer*)G_MECHLIST)->mMaxHealth;
+			}
+			break;
+
+		case CHEAT_LEANEST:
+			gSaveGame.field_78 = 1;
+			gSaveGame.field_80 = -1;
+			gSaveGame.field_84 = -1;
+			gSaveGame.field_88 = -1;
+			gSaveGame.field_8C = -1;
+			gSaveGame.field_90 = -1;
+			gSaveGame.mCheatStoryboardFlag = 1;
+			G_LEVEL_SELECT_FLAG = 1;
+			break;
+
+		case CHEAT_GLANDS:
+			G_UNLIMITED_WEBBING_FLAG ^= 1;
+			break;
+
+		case CHEAT_EGOTRIP:
+			G_PULSATING_HEAD_FLAG ^= 1;
+			break;
+
+		case CHEAT_RULUR:
+			JoelJewCheatCode = !JoelJewCheatCode;
+			break;
+
+		case CHEAT_SECRTWAR:
+			gSaveGame.field_80 |= 4;
+			break;
+
+		case CHEAT_MIGUELOH:
+			gSaveGame.field_80 |= 2;
+			break;
+
+		case CHEAT_TRISNTNL:
+			gSaveGame.field_80 |= 8;
+			break;
+
+		case CHEAT_SYNOPTIC:
+			gSaveGame.field_80 |= 0x10;
+			break;
+
+		case CHEAT_XILRTRNS:
+			gSaveGame.field_80 |= 0x40;
+			break;
+
+		case CHEAT_KICKME:
+			gSaveGame.field_80 |= 0x20;
+			break;
+
+		case CHEAT_MRWATSON:
+			gSaveGame.field_80 |= 0x200;
+			break;
+
+		case CHEAT_SMLVIII:
+			gSaveGame.field_80 |= 0x100;
+			break;
+
+		case CHEAT_ROBRTSON:
+			gSaveGame.mCheatStoryboardFlag = !gSaveGame.mCheatStoryboardFlag;
+			break;
+
+		case CHEAT_KIRBYFAN:
+			gSaveGame.field_90 = 0x3F;
+			break;
+
+		case CHEAT_MMEWEB:
+			G_LEVEL_SELECT_FLAG = 1;
+			break;
+
+		case CHEAT_FANBOY:
+			gSaveGame.field_8C = -1;
+			break;
+
+		case CHEAT_CINEMA:
+			gSaveGame.field_88 = -1;
+			break;
+
+		case CHEAT_RGSGLLRY:
+			gSaveGame.field_84 = -1;
+			break;
+
+		case CHEAT_UATUSEES:
+			gWhatIf = !gWhatIf;
+			break;
+
+		case CHEAT_ADMNTIUM:
+			G_INVULNERABLE_FLAG ^= 1;
+			break;
+
+		case CHEAT_CLUBNOIR:
+			gSaveGame.field_80 |= 0x80;
+			break;
+
+		case CHEAT_STICKMAN:
+			if (G_STICKMAN_FLAG = !G_STICKMAN_FLAG)
+			{
+				G_TOON_SPIDEY_FLAG = 0;
+			}
+			break;
+
+		case CHEAT_FUNKYTWN:
+			if (G_TOON_SPIDEY_FLAG = !G_TOON_SPIDEY_FLAG)
+			{
+				G_STICKMAN_FLAG = 0;
+			}
+			break;
+
+		default:
+			result = 0;
+			break;
+	}
+
+	return result;
 }
 
 // @Ok
