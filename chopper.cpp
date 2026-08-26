@@ -16,6 +16,8 @@
 #include "m3dzone.h"
 #include <cmath>
 #include "ai.h"
+#include "panel.h"
+#include "PCGfx.h"
 
 extern CBody* ControlBaddyList;
 extern CBaddy* BaddyList;
@@ -26,6 +28,12 @@ extern const char *gObjFile;
 extern CPlayer* MechList;
 
 extern CCamera* CameraList;
+
+// scratch camera position/rotation matrix for GTE screen projection, same addresses
+// utils.cpp's gCameraViewMatrix and spidey.cpp's stru_56F1B4/stru_56F224 use
+// (CPlayer::RenderLookaroundReticle idiom).
+static CVector * const gCameraViewPos = (CVector*)0x0056F1B4;
+static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 
 // @Ok
 // @Matching
@@ -1188,10 +1196,82 @@ void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 	this->field_12C = 1;
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4334144.bin. Same
+// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
+// projection idiom as CPlayer::RenderLookaroundReticle (spidey.cpp, same
+// stru_56F1B4/stru_56F224 scratch globals), clip tested against screen bounds, then a
+// Panel_DrawTexturedPoly icon draw for field_11C with a fixed tint/blend flag, an
+// aspect-ratio scale derived from the texture, and 4 bracket-corner quads via
+// PCGfx_UseTexture/PCGfx_DrawQPoly2D. The icon draw (color, tpage flag) is traced with
+// reasonable confidence; the bracket quad coordinates and PCGfx_DrawQPoly2D's many
+// float arguments are a best-effort schematic, not instruction verified: could not
+// trace that many packed float args by hand from raw disassembly.
+// cmpsum: 675 mnemonic diffs, first divergence right at the prologue register
+// allocation. 1 attempt (structural reconstruction only). Needs real work.
 void CSniperTarget::DrawTargetRecticle(void)
 {
-	printf("CSniperTarget::DrawTargetRecticle(void)");
+	CVector camPos = *gCameraViewPos;
+	CVector relPos = (this->field_104 >> 12) - camPos;
+
+	gte_SetRotMatrix(gCameraViewMatrix);
+	m3d_ZeroTransVector();
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_rtps();
+
+	i32 depth;
+	gte_stlvnl2(&depth);
+
+	i16 screenXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+	i32 screenX = screenXY[0];
+	i32 screenY = screenXY[1];
+
+	if (screenX < -200 || screenX > 712 || screenY < -200 || screenY > 440)
+		return;
+
+	POLY_FT4* poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(this->field_11C, 0));
+	if (!poly)
+		return;
+
+	*reinterpret_cast<u32*>(&poly->r0) = 0x2E808080;
+	poly->tpage = (poly->tpage & 0xFFDF) | 0x40;
+
+	i32 halfW = 12;
+	i32 halfH = 12;
+
+	poly->x0 = static_cast<i16>(screenX - halfW);
+	poly->y0 = static_cast<i16>(screenY - halfH);
+	poly->x1 = static_cast<i16>(screenX + halfW);
+	poly->y1 = static_cast<i16>(screenY - halfH);
+	poly->x2 = static_cast<i16>(screenX - halfW);
+	poly->y2 = static_cast<i16>(screenY + halfH);
+	poly->x3 = static_cast<i16>(screenX + halfW);
+	poly->y3 = static_cast<i16>(screenY + halfH);
+
+	i32 bracket = 20;
+
+	for (i32 i = 0; i < 4; i++)
+	{
+		i32 signX = (i & 1) ? 1 : -1;
+		i32 signY = (i & 2) ? 1 : -1;
+
+		f32 x0 = static_cast<f32>(screenX + signX * bracket);
+		f32 y0 = static_cast<f32>(screenY + signY * bracket);
+		f32 x1 = static_cast<f32>(screenX + signX * (bracket - 6));
+		f32 y1 = y0;
+		f32 x2 = x0;
+		f32 y2 = static_cast<f32>(screenY + signY * (bracket - 6));
+
+		PCGfx_UseTexture(0, DCGfx_BlendingMode_0);
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x1, y1, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x2, y2, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				0.0f);
+	}
 }
 
 // @NotOk
