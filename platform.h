@@ -21,7 +21,13 @@ class CPlatform : public CBaddy
 
 		EXPORT i16 GetVariable(u16);
 
-		PADDING(0xC);
+		u16 field_324;
+		u16 field_326;
+		u16 field_328;
+
+		i16 field_32A;
+		i16 field_32C;
+		i16 field_32E;
 
 		i16 field_330;
 		i32 field_334;

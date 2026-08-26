@@ -1,18 +1,173 @@
+#include <cstdlib>
+
 #include "platform.h"
 #include "ps2lowsfx.h"
 #include "utils.h"
 #include "shatter.h"
 #include "spidey.h"
+#include "spool.h"
+#include "trig.h"
 
 #include "validate.h"
 
 extern CBody* EnvironmentalObjectList;
 extern const char* gObjFile;
+extern CSVector gTrajectoryVector;
+extern i32 TTime;
 
-// @MEDIUMTODO
+// gGravity (0x60F7B0): set by Physics_SetGravity (0x466C70, confirmed by scanning the original
+// function bytes for this address), a CVector. Physics_SetGravity also caches its Length() at
+// 0x60F7BC and a normalized copy at 0x60F888, neither of which we need here.
+static CVector * const gGravity = (CVector*)0x60F7B0;
+
+// @NotOk
+// residue: (1) the CVector operator-/operator>> in the movement-toward-target block get inlined
+// by our compiler (they are declared INLINE in vector.h), the original calls them out of line here;
+// (2) fine-grained register/stack allocation in the MechList push-out-of-box block differs (values
+// land in different registers/stack slots than the original, same logic). Both are toolchain/codegen
+// residue, not logic differences. Full attempt log in CPlatform_AI.attempts.md.
 void CPlatform::AI(void)
 {
-    printf("CPlatform::AI(void)");
+	if (this->pMessage)
+		this->CleanUpMessages(1, 0);
+
+	i32 half = this->field_80 >> 1;
+
+	if (this->field_324)
+	{
+		i32 amt = this->field_324;
+		if (amt >= half)
+			amt = half;
+		this->field_324 -= amt;
+		this->mScale.vx += this->field_32A * amt;
+	}
+
+	if (this->field_326)
+	{
+		i32 amt = this->field_326;
+		if (amt >= half)
+			amt = half;
+		this->field_326 -= amt;
+		this->mScale.vy += this->field_32C * amt;
+	}
+
+	if (this->field_328)
+	{
+		i32 amt = this->field_328;
+		if (amt < half)
+			half = amt;
+		this->field_328 -= half;
+		this->mScale.vz += this->field_32E * half;
+	}
+
+	this->mAcc = ZeroVector;
+
+	if (!this->field_334)
+		this->field_338++;
+
+	this->field_214 = this->mInputFlags;
+	if (this->mInputFlags & 1)
+	{
+		this->field_210++;
+		this->mInputFlags &= ~1;
+	}
+
+	if (this->field_20C)
+	{
+		if (this->field_230)
+			this->field_230--;
+		else
+			this->ParseScript(reinterpret_cast<u16*>(this->field_24C));
+	}
+
+	if (this->field_218 & 1)
+	{
+		CVector delta = (this->mPos - this->field_240) >> 12;
+
+		if (this->field_344.vz * delta.vz + this->field_344.vy * delta.vy + this->field_344.vx * delta.vx < 0)
+		{
+			this->mPos = this->field_240;
+		}
+
+		if ((this->field_240 - this->mPos).Length() > this->attributeArr[0])
+		{
+			CSVector aim;
+			Utils_CalcAim(&aim, &this->mPos, &this->field_240);
+			Utils_GetVecFromMagDir(&this->mVel, this->attributeArr[0], &aim);
+		}
+		else
+		{
+			this->mPos = this->field_240;
+			this->mVel.vx = 0;
+			this->mVel.vy = 0;
+			this->mVel.vz = 0;
+			this->field_218 &= ~1;
+		}
+	}
+
+	if (this->field_20E)
+		this->mAcc += *gGravity;
+
+	this->DoPhysics();
+
+	if (this->field_340 != -1 && TTime % this->field_340 == 0)
+	{
+		SFX_ModifyPos(this->field_33C, &this->mPos, 0);
+	}
+
+	this->field_334 = 0;
+
+	if ((this->field_218 & 4) && MechList)
+	{
+		CVector *mechPos = &MechList->mPos;
+		i32 mx = mechPos->vx;
+		i32 my = mechPos->vy;
+		i32 mz = mechPos->vz;
+		i32 xHi = this->mPos.vx + this->field_350.vx;
+
+		if (mx < xHi)
+		{
+			i32 xLo = this->mPos.vx - this->field_350.vx;
+
+			if (mx > xLo)
+			{
+				i32 zHi = this->mPos.vz + this->field_350.vz;
+
+				if (mz < zHi)
+				{
+					i32 zLo = this->mPos.vz - this->field_350.vz;
+
+					if (mz > zLo)
+					{
+						i32 yHi = this->mPos.vy + this->field_350.vy;
+
+						if (my < yHi)
+						{
+							i32 yLo = this->mPos.vy - this->field_350.vy;
+
+							if (my > yLo)
+							{
+								if (abs(this->mVel.vx) > abs(this->mVel.vz))
+								{
+									if (this->mVel.vx > 0)
+										mechPos->vx = xHi + 0x40000;
+									else
+										mechPos->vx = xLo - 0x40000;
+								}
+								else if (this->mVel.vz)
+								{
+									if (this->mVel.vz > 0)
+										mechPos->vz = zHi + 0x40000;
+									else
+										mechPos->vz = zLo - 0x40000;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // @Ok
@@ -117,10 +272,94 @@ void CPlatform::NotifyTrodUpon(CBody *,CVector const *,CSVector const *)
 	this->field_338 = 0;
 }
 
-// @MEDIUMTODO
-void CPlatform::SetVariable(u16)
+// @Ok
+// @Matching
+void CPlatform::SetVariable(u16 a2)
 {
-    printf("CPlatform::SetVariable(u16)");
+	switch (a2)
+	{
+	case 0x2123:
+		this->field_20E = *this->field_24C;
+		this->field_24C++;
+		break;
+
+	case 0x2124:
+		this->mModel = *this->field_24C;
+		this->field_24C++;
+		if (*(u8*)((i32***)0x6B2454)[this->mRegion * 17][this->mModel] & 0x10)
+			this->mFlags |= 0x20;
+		else
+			this->mFlags &= ~0x20;
+		break;
+
+	case 0x212F:
+		{
+			u32 *v6 = reinterpret_cast<u32*>((reinterpret_cast<u32>(this->field_24C) + 3) & 0xFFFFFFFC);
+			u16 Model = Spool_GetModel(*v6, this->mRegion);
+
+			this->mModel = Model;
+			if (*(u8*)((i32***)0x6B2454)[this->mRegion * 17][Model] & 0x10)
+				this->mFlags |= 0x20;
+			else
+				this->mFlags &= ~0x20;
+			this->mFlags &= ~1;
+
+			this->field_24C = reinterpret_cast<i16*>(&v6[1]);
+		}
+		break;
+
+	case 0x2134:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mVel.vx = (i32)vx << 12;
+			this->mVel.vy = (i32)vy << 12;
+			this->mVel.vz = (i32)vz << 12;
+		}
+		break;
+
+	case 0x2137:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mAngles.vx = vx;
+			this->mAngles.vy = vy;
+			this->mAngles.vz = vz;
+		}
+		break;
+
+	case 0x2127:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mAngVel.vx = vx;
+			this->mAngVel.vy = vy;
+			this->mAngVel.vz = vz;
+		}
+		break;
+
+	case 0x2128:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mAngAcc.vx = vx;
+			this->mAngAcc.vy = vy;
+			this->mAngAcc.vz = vz;
+		}
+		break;
+
+	default:
+		CBaddy::SetVariable(a2);
+		break;
+	}
 }
 
 // @Ok
@@ -139,10 +378,47 @@ void CPlatform::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @BIGTODO
+// @Ok
+// @Matching
 void CPlatform::DoPhysics(void)
 {
-	printf("void CPlatform::DoPhysics(void)");
+	this->field_A8 = gTrajectoryVector;
+
+	if (this->field_2B0 | this->field_2B4)
+	{
+		CBaddy::DoPhysics(0);
+		return;
+	}
+
+	if (this->attributeArr[2] == 0)
+	{
+		i32 step;
+		if (Trig_GetLevelID() == 0x301 && this->field_80 >= 4)
+			step = 2;
+		else
+			step = 1;
+
+		for (i32 i = 0; i < this->field_80; i += step)
+		{
+			this->mVel += this->mAcc;
+			this->mVel.KillSmall();
+			this->mPos += this->mVel;
+			this->mAngles += this->mAngVel;
+			this->mAngles.Mask();
+			this->mAngVel += this->mAngAcc;
+			this->mAngVel.KillSmall();
+		}
+	}
+	else if (this->attributeArr[2] == 3)
+	{
+		this->mVel += this->mAcc;
+		this->mVel.KillSmall();
+		this->mPos += this->mVel;
+		this->mAngles += this->mAngVel;
+		this->mAngles.Mask();
+		this->mAngVel += this->mAngAcc;
+		this->mAngVel.KillSmall();
+	}
 }
 
 // @Ok
@@ -158,6 +434,14 @@ i16 CPlatform::GetVariable(u16 a2)
 
 void validate_CPlatform(void){
 	VALIDATE_SIZE(CPlatform, 0x35C);
+
+	VALIDATE(CPlatform, field_324, 0x324);
+	VALIDATE(CPlatform, field_326, 0x326);
+	VALIDATE(CPlatform, field_328, 0x328);
+
+	VALIDATE(CPlatform, field_32A, 0x32A);
+	VALIDATE(CPlatform, field_32C, 0x32C);
+	VALIDATE(CPlatform, field_32E, 0x32E);
 
 	VALIDATE(CPlatform, field_330, 0x330);
 
