@@ -137,10 +137,165 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 // @Ok
 EXPORT CVector gCarnageVector;
 
-// @MEDIUMTODO
+// tentative: XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0).
+// Not in idb_globals.txt yet, values are a guess (indices go up to Rnd(6)&~1, so needs 6 entries).
+EXPORT i32 gCarnageGettingGrabbedXa[6] = { 0x48, 6, 0x48, 6, 0x48, 6 };
+EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x11, 6, 0x11, 6, 0x11, 6 };
+
+// @NotOk
+// residue: case 3 (CVector normal/scale/add math not fully reverse engineered), see attempts file.
 void CCarnage::GettingGrabbed(void)
 {
-    printf("CCarnage::GettingGrabbed(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			this->mVel.vz = 0;
+			this->mVel.vy = 0;
+			this->mVel.vx = 0;
+
+			this->field_218 &= ~7;
+			this->RunAnim(0x1Du, 0, -1);
+
+			if (gWhatIf)
+			{
+				i32 idx = Rnd(6) & ~1;
+				this->PlayXA(gCarnageGettingGrabbedWhatIfXa[idx], gCarnageGettingGrabbedWhatIfXa[idx + 1], 60);
+			}
+			else
+			{
+				i32 idx = Rnd(6) & ~1;
+				this->PlayXA(gCarnageGettingGrabbedXa[idx], gCarnageGettingGrabbedXa[idx + 1], 60);
+			}
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 1:
+		{
+			typedef u8 (CPlayer::*GrabUpdateFn)(CVector*, i16*);
+			union { GrabUpdateFn fn; u32 addr; } u;
+			u.addr = 0x004BB810;
+			u8 grabbed = (MechList->*u.fn)(&this->mPos, &this->mAngles.vy);
+
+			if (grabbed && (this->field_2A8 & 0x40))
+			{
+				if (MechList->field_E1C & 0x4000000)
+				{
+					if (this->mAnim != 0x1F)
+						this->RunAnim(0x1F, 0, -1);
+					return;
+				}
+
+				if (!this->mAnimFinished)
+					return;
+
+				if (MechList->field_E1C == 0x8000000)
+					return;
+
+				this->RunAnim(0x1E, 0, -1);
+				return;
+			}
+
+			this->field_2A8 &= ~0x40;
+			this->RunAnim(0x22u, 0, -1);
+
+			this->field_324 = 0;
+			new CAIProc_MonitorAttack(this, 0xD, 0x38000, 6, 0x10);
+
+			if (gWhatIf)
+			{
+				i32 idx = Rnd(4) & ~1;
+				this->PlayXA(gCarnageWhatIfXa[idx], gCarnageWhatIfXa[idx + 1], 60);
+			}
+			else
+			{
+				i32 idx = Rnd(4) & ~1;
+				this->PlayXA(gCarnageXa[idx], gCarnageXa[idx + 1], 60);
+			}
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 2:
+		{
+			if (this->mAnimFinished && MechList->field_E1C != 0x8000000)
+				this->RunAnim(0x1Eu, 0, -1);
+
+			this->mAngles.vy = MechList->mAngles.vy;
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 3:
+		{
+			if (this->field_288 & 0x10)
+			{
+				this->field_288 &= ~0x10;
+
+				SHitInfo hitInfo;
+				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
+				hitInfo.field_0 = 0xE;
+				hitInfo.field_4 = 0xB;
+				hitInfo.field_8 = 0xC;
+
+				MechList->Hit(&hitInfo);
+			}
+
+			if (this->field_128 >= 0xA)
+			{
+				if (!(this->field_324 & 1))
+				{
+					this->field_324 |= 1;
+					SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+				}
+			}
+
+			if (this->field_128 < 0xA)
+			{
+				CVector delta;
+				delta.vx = this->mPos.vx - MechList->mPos.vx;
+				delta.vy = 0;
+				delta.vz = this->mPos.vz - MechList->mPos.vz;
+
+				if (delta.Length() < 0x80)
+				{
+					CVector scaled = delta * 12;
+					VectorNormal(reinterpret_cast<VECTOR*>(&scaled), reinterpret_cast<VECTOR*>(&scaled));
+					CVector target = MechList->mPos + scaled;
+					this->mPos = target;
+				}
+			}
+
+			if (this->field_128 > 0xA)
+			{
+				if (this->field_194 & 0x40000)
+				{
+					this->field_194 &= ~0x40000;
+					this->field_194 |= 0x20000;
+				}
+			}
+
+			if (!this->mAnimFinished)
+				return;
+
+			this->field_194 &= ~0x20000;
+			this->field_194 |= 0x40000;
+			this->RunAnim(0, 0, -1);
+
+			this->field_31C.bothFlags = 2;
+			this->dumbAssPad = 0;
+			this->mAngles.vy = (this->mAngles.vy - 0x800) & 0xFFF;
+			break;
+		}
+
+		default:
+			DoAssert(0, "Unknown state");
+			break;
+	}
 }
 
 // @MEDIUMTODO
