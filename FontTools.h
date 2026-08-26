@@ -72,9 +72,9 @@ class Font : public CClass
 
 		i32 field_54;
 		i32 field_58;
-		u8 field_5C;
-		u8 field_5D;
-		u8 field_5E;
+		u8 mSavedRed;
+		u8 mSavedGreen;
+		u8 mSavedBlue;
 		u8 field_5F[256];
 
 		u8* field_160;

@@ -13,13 +13,70 @@
 
 // @Ok
 Font* FontManager::FontTab[NUM_FONTS_TAB];
-//#define G_FONT_TAB (FontManager::FontTab)
-#define G_FONT_TAB (reinterpret_cast<Font**>(0x005FAD5C))
+#define G_FONT_TAB (FontManager::FontTab)
+//#define G_FONT_TAB (reinterpret_cast<Font**>(0x005FAD5C))
 
-// @SMALLTODO
-void Font::handleEscapeChar(char)
+// @Ok
+// @Matching
+void Font::handleEscapeChar(char c)
 {
-    printf("Font::handleEscapeChar(char)");
+	i32 code = this->isEscapeChar(c);
+	print_if_false(code != 0, "Not an escape code");
+
+	if (code == 250)
+	{
+	}
+	else if (code == 254)
+	{
+		this->mRed = this->mSavedRed;
+		this->mGreen = this->mSavedGreen;
+		this->mBlue = this->mSavedBlue;
+	}
+	else if (code == 253)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 0;
+		this->mGreen = 128;
+		this->mBlue = 255;
+	}
+	else if (code == 252)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 255;
+		this->mGreen = 128;
+		this->mBlue = 0;
+	}
+	else if (code == 251)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 64;
+		this->mGreen = 64;
+		this->mBlue = 64;
+	}
+	else if (code == 249)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 128;
+		this->mGreen = 64;
+		this->mBlue = 64;
+	}
+	else if (code == 248)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 64;
+		this->mGreen = 128;
+		this->mBlue = 64;
+	}
 }
 
 // @Ok
@@ -485,53 +542,37 @@ void FontManager::AllShadowOn(void)
 }
 
 
-// @SMALLTODO
-//
+// @Ok
+// @Matching
 void FontManager::UnloadFont(Font* pFont)
 {
-	typedef void (*func_ptr)(Font*);
-	func_ptr func = (func_ptr)0x0043F5D0;
-
-	func(pFont);
-	return;
-	/*
-	i32 count = 0;
-	for (; count < 6; count++)
+	i32 count;
+	for (count = 0; count < NUM_FONTS_TAB; count++)
 	{
-		if (FontManager::FontTab[count] && !strcmp(FontManager::FontTab[count]->field_38, pFont->field_38))
+		if (G_FONT_TAB[count] && !strcmp(G_FONT_TAB[count]->field_38, pFont->field_38))
 			break;
 	}
 
-	print_if_false(count < 6, "Font %s is not in table", &pFont->field_38);
+	print_if_false(count < 6, "Font %s is not in table", pFont->field_38);
 
-
-	FontManager::FontTab[count]->unload();
-
-	if (FontManager::FontTab[count])
-		delete FontManager::FontTab[count];
-
-	FontManager::FontTab[count] = 0;
-	*/
+	G_FONT_TAB[count]->unload();
+	delete G_FONT_TAB[count];
+	G_FONT_TAB[count] = 0;
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void FontManager::UnloadAllFonts(void)
 {
-	typedef void (*func_ptr)(void);
-	func_ptr func = (func_ptr)0x0043F6D0;
-	func();
-	return;
-	/*
-	for (i32 i = 0; i < 6; i++)
+	for (i32 i = 0; i < NUM_FONTS_TAB; i++)
 	{
-		if (FontManager::FontTab[i])
+		if (G_FONT_TAB[i])
 		{
-			FontManager::FontTab[i]->unload();
-			delete FontManager::FontTab[i];
-			FontManager::FontTab[i] = 0;
+			G_FONT_TAB[i]->unload();
+			delete G_FONT_TAB[i];
+			G_FONT_TAB[i] = 0;
 		}
 	}
-	*/
 }
 
 // @Ok
@@ -678,30 +719,25 @@ i32 Font::height(char* txt)
 	//return this->heightAboveBaseline(txt) + this->heightBelowBaseline(txt);
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 i32 Font::width(const char* pStr)
 {
-	typedef i32 (FASTCALL *func_ptr)(Font*, void*, const char*);
-	func_ptr func = (func_ptr)0x0043EA60;
-
-	return func(this, 0, pStr);
-
-	/*
 	i32 width = 0;
 	while (*pStr)
 	{
-		char c = *pStr;
-		if (c != 255)
+		i32 c = *pStr;
+		if (c != 0xFF)
 		{
-			i32 v6 = (u8)this->field_5F[c];
-			if (v6 == 255)
+			u32 idx = this->field_5F[c];
+			if ((i32)idx == 0xFF)
 			{
-				if (!this->isEscapeChar(c))
-					width += 80 * (u8)this->pCharTab[0].W / 100;
+				if (!this->isEscapeChar(*pStr))
+					width += 80 * this->pCharTab[0].W / 100;
 			}
 			else
 			{
-				width += this->field_C + (u8)this->pCharTab[v6].W;
+				width += this->field_C + this->pCharTab[idx].W;
 			}
 		}
 
@@ -709,7 +745,6 @@ i32 Font::width(const char* pStr)
 	}
 
 	return (width * this->field_34) >> 12;
-	*/
 }
 
 // @Ok
@@ -760,6 +795,9 @@ void validate_Font(void)
 	VALIDATE(Font, Clut, 0x50);
 
 	VALIDATE(Font, field_58, 0x58);
+	VALIDATE(Font, mSavedRed, 0x5C);
+	VALIDATE(Font, mSavedGreen, 0x5D);
+	VALIDATE(Font, mSavedBlue, 0x5E);
 	VALIDATE(Font, field_5F, 0x5F);
 
 	VALIDATE(Font, field_160, 0x160);
