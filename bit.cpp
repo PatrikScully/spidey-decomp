@@ -1877,10 +1877,43 @@ i32 CFT4Bit::Fade(i32 a2)
 	return 0;
 }
 
-// @MEDIUMTODO
-i32 Bit_MakeSpriteRing(CVector*, i32, i32, i32, i32, i32, i32, i32)
+// @NotOk
+// residue: 72 mnemonic diffs (411 bytes vs original 406). Fields, offsets and
+// param roles are all verified against the already-@Ok CFlatBit::CFlatBit,
+// CFT4Bit::CFT4Bit and CFT4Bit::SetAnim bodies. The remaining gap is a single
+// MSVC6 inlining choice: the original keeps CFT4Bit::CFT4Bit (0x408B80) as a
+// real out-of-line call inside "new CFlatBit()" (it inlines CBit::CBit inside
+// itself), but our build keeps CBit::CBit alone as the real call instead and
+// inlines CFT4Bit's and CFlatBit's tails. 14 source-shape hypotheses tried
+// (declaration order, statement order, helper calls vs raw field writes,
+// hoisting locals, file position), none changed which level stays real. See
+// bit.attempts.md for the full log.
+i32 Bit_MakeSpriteRing(CVector *pCenter, i32 count, i32 velScale, i32 animIndex, i32 scale, i32 field3E, i32 transDecay, i32 frigDeltaZ)
 {
-	return 0x420690;
+	for (i32 i = 0; i < count; i++)
+	{
+		i32 angle = ((i * 0x1000) / count) & 0xFFF;
+		CVector vel(rcossin_tbl[angle].cos * velScale, 0, rcossin_tbl[angle].sin * velScale);
+
+		CFlatBit *p = new CFlatBit();
+
+		if (p)
+		{
+			p->mVel = vel;
+			p->mPos = *pCenter;
+
+			p->SetAnim(animIndex);
+			p->SetSemiTransparent();
+
+			p->SetScale(scale);
+			p->field_3E = field3E;
+			p->SetTransDecay(transDecay);
+		}
+
+		p->mFrigDeltaZ = frigDeltaZ;
+	}
+
+	return 0;
 }
 
 // @Ok
