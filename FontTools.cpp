@@ -237,7 +237,31 @@ Font::~Font(void)
 {
 }
 
-// @MEDIUMTODO
+// @NotOk
+// @Note: fully decompiled (not a forward stub anymore), not yet matching. cmpsum residue: 260 mnemonic
+// diffs (down from 326 on the first draft; built is 574 instructions vs the original's 445, so real
+// missing-CSE/extra-recomputation remains, not just scheduling noise). Two passes over pStr: pass 1
+// measures each character (width, ascent, descent) into 4 parallel 64-entry stack arrays indexed by
+// character position (mirrors the original's [esp+0x40]/[esp+0x140]/[esp+0x240]/[esp+0x340] stack
+// layout, confirmed by manually tracking push-depth-adjusted stack offsets through the whole function),
+// then picks the text block's top-left pixel from field_4 (X align, 3-way if-chain, not a jump table in
+// the original) and field_8 (Y align, 4-way jump table). Pass 2 walks the string again and draws each
+// glyph's SlicedImage2 via its own virtual draw(), plus a second shifted draw() when field_21 (shadow)
+// is set (offset by field_24/field_28 scaled line steps, matching the original's shadow-pass asm).
+// this->field_54 is an optional callback object (always null in the constructor) invoked per character;
+// its class is unknown so its vtable is called through raw function pointer casts (slots 0x14, 0x18,
+// 0x20, confirmed by counting pushed args at each call site). 0xFF in pStr is a line-break/skip marker.
+// Attempts so far (2, targeting the two biggest diff clusters): (1) stopped caching pCharTab[tmp].pImage
+// in a local pointer and re-derived it at every field write/call, matching the original's own redundant
+// re-derivation pattern (this alone dropped 326 -> 260 diffs); (2) field_4's dispatch rewritten from a
+// switch to an explicit if/else-if chain to match the original's compare-chain shape instead of a
+// possible jump table (switch has 4 cases for field_8 in the original, which IS a jump table, but only
+// 3 for field_4, which is NOT). Also tried reordering the 4 local arrays and the scalar locals to match
+// the original's exact stack-slot order (0x10/0x14/0x18/0x1C/0x20/0x24/0x28/0x2C): zero effect, MSVC6's
+// allocator did not follow declaration order here. Below the 15-hypothesis medium-size bar and well
+// below the 10-per-cluster large-size bar in CLAUDE.md; needs a dedicated follow-up session working the
+// remaining clusters top-down with the same push-depth-normalized disassembly technique used to derive
+// this draft (script kept in the attempts log). Runtime-untested (not hooked, PATCH_PUSH_RET not added).
 void Font::draw(
 		i32 x,
 		i32 y,
@@ -245,10 +269,243 @@ void Font::draw(
 		i32 drawFirst,
 		f32 last)
 {
-	typedef void (FASTCALL *func_ptr)(Font*, void*, i32, i32, const char*, i32, f32);
-	func_ptr func = (func_ptr)0x0043E4C0;
+	if (this->field_34 == 0 && this->field_30 == 0)
+		return;
 
-	func(this, 0, x, y, pStr, drawFirst, last);
+	// per-character metrics, one slot per character (assert below caps this at 64)
+	i32 arrWidthBefore[64];   // width accumulated before this glyph (only used by the field_54 callback)
+	i32 arrBaseline[64];      // running -max(Baseline*field_34) seen so far on this line
+	i32 arrBaselinePos[64];   // same value, positive (only used by the field_54 callback)
+	i32 arrWidthAt[64];       // width accumulated before this glyph (used by pass 2 to place the glyph)
+
+	i32 totalWidth = 0;
+	i32* pBaseline = arrBaseline;
+	i32* pWidthBefore = arrWidthBefore;
+	i32 charIndex = 0;
+	i32 maxBelow = 0;
+	i32* pBaselinePos = arrBaselinePos;
+	const char* p = pStr;
+	i32 maxAbove = 0;
+
+	i32* pWidthAt = arrWidthAt;
+
+	if (*p)
+	{
+		do
+		{
+			i32 c = *p;
+
+			if (c == 0x000000FF)
+			{
+				charIndex++;
+				pBaseline++;
+				pBaselinePos++;
+				pWidthBefore++;
+				pWidthAt++;
+				p++;
+				continue;
+			}
+
+			print_if_false(charIndex < 64, "too many characters");
+
+			c = *p;
+			u32 tmp = this->field_5F[c];
+
+			if ((i32)tmp != 0x000000FF)
+			{
+				*pWidthAt = totalWidth;
+
+				i32 h = this->pCharTab[tmp].H;
+				i32 baseline = this->pCharTab[tmp].Baseline;
+
+				i32 below = (h - baseline) * this->field_34;
+				if (below > maxBelow)
+					maxBelow = below;
+
+				i32 above = baseline * this->field_34;
+				if (above > maxAbove)
+					maxAbove = above;
+
+				*pBaseline = -above;
+
+				if (this->field_54)
+				{
+					typedef void (FASTCALL *notify_func)(void*, i32*, i32*);
+
+					*pWidthBefore = totalWidth;
+					*pBaselinePos = above;
+
+					i32* vtable = *reinterpret_cast<i32**>(this->field_54);
+					notify_func fn = reinterpret_cast<notify_func>(vtable[5]);
+					fn(reinterpret_cast<void*>(this->field_54), pWidthAt, pBaseline);
+				}
+
+				if (this->field_30)
+				{
+					i32 fw = this->fixedCharWidth(c);
+					i32 delta = (fw << 12) - this->pCharTab[tmp].W * this->field_34;
+					*pWidthAt = totalWidth + delta;
+
+					totalWidth += this->fixedCharWidth(c) << 12;
+				}
+				else
+				{
+					totalWidth += (this->pCharTab[tmp].W + this->field_C) * this->field_34;
+				}
+			}
+			else if (this->isEscapeChar(c))
+			{
+				// escape char: contributes no width
+			}
+			else
+			{
+				totalWidth += (this->pCharTab[0].W * this->field_34 * 80) / 100;
+			}
+
+			charIndex++;
+			pBaseline++;
+			pBaselinePos++;
+			pWidthBefore++;
+			pWidthAt++;
+			p++;
+		} while (*p);
+	}
+
+	i32 xStart;
+	i32 alignMode = this->field_4;
+
+	if (alignMode == 0)
+	{
+		xStart = x << 12;
+	}
+	else if (alignMode == 1)
+	{
+		xStart = (x << 12) - (totalWidth >> 1);
+	}
+	else if (alignMode == 2)
+	{
+		xStart = (x << 12) - totalWidth;
+	}
+	else
+	{
+		xStart = 0;
+	}
+
+	i32 yStart;
+	switch (this->field_8)
+	{
+		case 0:
+			yStart = (y << 12) + maxAbove;
+			break;
+		case 1:
+			yStart = (y << 12) + ((maxAbove + maxBelow) >> 1) - maxBelow;
+			break;
+		case 2:
+			yStart = y << 12;
+			break;
+		case 3:
+			yStart = (y << 12) - maxBelow;
+			break;
+		default:
+			yStart = totalWidth;
+			break;
+	}
+
+	i32 lineStepA = this->field_24 * this->field_34;
+	i32 lineStepB = this->field_28 * this->field_34;
+
+	charIndex = 0;
+	p = pStr;
+
+	if (*p)
+	{
+		i32* pWidthAt2 = arrWidthAt;
+		i32* pWidthBefore2 = arrWidthBefore;
+		i32* pBaselinePos2 = arrBaselinePos;
+		i32* pBaseline2 = arrBaseline;
+
+		do
+		{
+			i32 c = *p;
+
+			if (c == 0x000000FF)
+			{
+				charIndex++;
+				pWidthAt2++;
+				pBaseline2++;
+				pBaselinePos2++;
+				pWidthBefore2++;
+				p++;
+				continue;
+			}
+
+			u32 tmp = this->field_5F[c];
+
+			if ((i32)tmp == 0x000000FF)
+			{
+				if (this->isEscapeChar(c))
+					this->handleEscapeChar(*p);
+			}
+			else
+			{
+				this->pCharTab[tmp].pImage->field_C = this->field_34;
+				this->pCharTab[tmp].pImage->field_4 = 0;
+				this->pCharTab[tmp].pImage->field_6 = 1;
+				this->pCharTab[tmp].pImage->field_7 = this->mRed;
+				this->pCharTab[tmp].pImage->field_8 = this->mGreen;
+				this->pCharTab[tmp].pImage->field_9 = this->mBlue;
+
+				if (this->field_54)
+				{
+					typedef void (FASTCALL *color_func)(void*, u8*, u8*, u8*);
+
+					i32* vtable = *reinterpret_cast<i32**>(this->field_54);
+					color_func fn = reinterpret_cast<color_func>(vtable[6]);
+					fn(reinterpret_cast<void*>(this->field_54),
+							&this->pCharTab[tmp].pImage->field_7,
+							&this->pCharTab[tmp].pImage->field_8,
+							&this->pCharTab[tmp].pImage->field_9);
+				}
+
+				i32 drawX = ((*pWidthAt2 + xStart) >> 12) - 1;
+				double drawY = static_cast<double>((*pBaseline2 + yStart) >> 12) - 0.5;
+				this->pCharTab[tmp].pImage->draw(drawX, static_cast<i32>(drawY), drawFirst, last);
+
+				if (this->field_21)
+				{
+					this->pCharTab[tmp].pImage->field_4 = 1;
+					this->pCharTab[tmp].pImage->field_6 = 2;
+					this->pCharTab[tmp].pImage->field_7 = this->field_2C;
+					this->pCharTab[tmp].pImage->field_8 = this->field_2C;
+					this->pCharTab[tmp].pImage->field_9 = this->field_2C;
+
+					i32 drawX2 = ((*pWidthAt2 + lineStepA + xStart) >> 12) - 1;
+					double drawY2 = static_cast<double>((*pBaseline2 + lineStepB + yStart) >> 12) - 0.5;
+					this->pCharTab[tmp].pImage->draw(drawX2, static_cast<i32>(drawY2), drawFirst, last + 1.0f);
+				}
+
+				if (this->field_54)
+				{
+					typedef void (FASTCALL *pos_func)(void*, i32, i32, i32, i32);
+
+					i32* vtable = *reinterpret_cast<i32**>(this->field_54);
+					pos_func fn = reinterpret_cast<pos_func>(vtable[8]);
+					fn(reinterpret_cast<void*>(this->field_54),
+							*pWidthBefore2 + xStart,
+							*pBaselinePos2 + yStart,
+							*pBaseline2 + yStart,
+							charIndex);
+				}
+			}
+
+			charIndex++;
+			pWidthAt2++;
+			pBaseline2++;
+			pBaselinePos2++;
+			pWidthBefore2++;
+			p++;
+		} while (*p);
+	}
 }
 
 // @Ok
