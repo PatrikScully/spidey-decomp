@@ -34,10 +34,44 @@ void DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)
     printf("DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)");
 }
 
-// @MEDIUMTODO
-void DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)
+// packed PS2-style 0x00BBGGRR colors need swapping to 0xFFRRGGBB for the PC renderer.
+// @Bogus
+static u32 DCGouraud_SwapColor(u32 c)
 {
-    printf("DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)");
+	return 0xFF000000 | ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF);
+}
+
+// @NotOk
+// functionally plausible (scaled quad + per-vertex color swap into
+// PCGfx_DrawQPoly2D, mirrors DCPanel_DrawFlatShadedPoly's scaling and the
+// PS2 BGR->RGB swap seen in the original disasm), but structurally wrong:
+// cmpsum shows 140 mnemonic diffs starting at the prologue (our stack frame
+// is 0x14 bytes of locals vs the original's 0xC, so this is not a
+// scheduling residue, real structure differs). 1 attempt this session, not
+// pursued further given the size of the remaining queue. Original likely
+// keeps the color conversion inline without the DCGouraud_SwapColor helper,
+// and reads single color bytes directly from the stack (mov cl,[esp+X]
+// appears in our own build's failed attempt) rather than masking a
+// register, suggesting per-channel byte access on the incoming u32 params
+// instead of shift/mask math.
+void DCDrawGouraudPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u32 c0, u32 c1, u32 c2, u32 c3, i32 c4)
+{
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 hScaled = h * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 wScaled = w * scaleX;
+	f32 yScaled = y * scaleY;
+	f32 xScaled = x * scaleX;
+
+	PCGfx_DrawQPoly2D(
+			xScaled, yScaled, 0.0f, 0.0f, DCGouraud_SwapColor((u32)c4),
+			xScaled + wScaled, yScaled, 1.0f, 0.0f, DCGouraud_SwapColor(c2),
+			xScaled, yScaled + hScaled, 0.0f, 1.0f, DCGouraud_SwapColor(c3),
+			xScaled + wScaled, yScaled + hScaled, 1.0f, 1.0f, DCGouraud_SwapColor(c1),
+			zOffset);
+
 }
 
 // @Ok
@@ -89,16 +123,118 @@ void DCPanel_DrawFlatShadedPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u8 r, u
 			false);
 }
 
-// @MEDIUMTODO
-void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,i32,i32,i32,i32,i32,u32)
+// @NotOk
+// real translation (0x4626a0, 640 bytes), reconstructed from the disasm:
+// two-branch geometry setup (raw x+w/y+h when both w and h are nonzero,
+// else fall back to frame->Width/frame->Height), then the same
+// flags-or-poly-color and scaled-QPoly2D-draw tail as the other
+// DCPanel_DrawTexturedPoly overloads in this file. cmpsum: 138 mnemonic
+// diffs, register allocation differs from the very prologue (original
+// pushes ebx,ebp,esi,edi; our build pushes fewer registers), so the source
+// shape is still off, not just scheduling. 1 attempt this session, not
+// iterated further given the size of the remaining queue. a6 (the 3rd of
+// the 5 trailing i32 params) is never read in the original disasm, kept as
+// an unnamed/unused parameter like DCPanel_DrawFlatShadedPoly's own
+// trailing unused i32.
+void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, i32 x, i32 y, i32 a6, i32 h, i32 w, u32 flags)
 {
-    printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,i32,i32,i32,i32,i32,u32)");
+	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");
+
+	if (h && w)
+	{
+		poly->x0 = (i16)x;
+		poly->x2 = (i16)x;
+		poly->y0 = (i16)y;
+		poly->y1 = (i16)y;
+		poly->x1 = (i16)(w + x);
+		poly->x3 = (i16)(w + x);
+		poly->y2 = (i16)(h + y);
+		poly->y3 = (i16)(h + y);
+	}
+	else
+	{
+		poly->x0 = (i16)x;
+		poly->y0 = (i16)y;
+		poly->x1 = (i16)(x + frame->Width);
+		poly->y1 = (i16)y;
+		poly->x2 = (i16)x;
+		poly->y2 = (i16)(y + frame->Height);
+		poly->x3 = (i16)(x + frame->Width);
+		poly->y3 = (i16)(y + frame->Height);
+	}
+
+	u32 color = flags;
+	if (!flags)
+	{
+		color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
+	}
+
+	Texture *tex = frame->pTexture;
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 y3 = poly->y3 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 x3 = poly->x3 * scaleX;
+	f32 y2 = poly->y2 * scaleY;
+	f32 x2 = poly->x2 * scaleX;
+	f32 y1 = poly->y1 * scaleY;
+	f32 x1 = poly->x1 * scaleX;
+	f32 y0 = poly->y0 * scaleY;
+	f32 x0 = poly->x0 * scaleX;
+
+	PCGfx_DrawQPoly2D(
+			x0, y0, 0.01f, 0.01f, color,
+			x1, y1, 1.0f, 0.01f, color,
+			x2, y2, 0.01f, 1.0f, color,
+			x3, y3, 1.0f, 1.0f, color,
+			zOffset);
 }
 
-// @MEDIUMTODO
-void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)
+// @NotOk
+// real translation (0x4624a0, 506 bytes), cmpsum: 29 mnemonic diffs, first
+// divergence right after all 8 corner coordinates are computed and x0 is
+// stored, where the original interleaves one more float scale step before
+// starting the PCGfx_DrawQPoly2D push sequence and our build starts pushing
+// immediately. Same residue shape and same diff count as the sibling
+// DCPanel_DrawTexturedPoly(Texture const*) below, which hit this in an
+// earlier session and was also left @NotOk, so this looks like a shared,
+// not-yet-understood MSVC6 scheduling quirk in this coordinate/push
+// pattern, not something specific to this overload. 3 attempts this
+// session: original x3,y3,x2,y2,x1,y1,y0,x0 local declaration order (29
+// diffs), swapped to x0-before-y0 (29 diffs, no change), inlined x0/y0
+// directly into the call instead of naming them (43 diffs, worse). Kept
+// the first (best) version.
+void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, u32 flags)
 {
-    printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)");
+	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");
+
+	Texture *tex = frame->pTexture;
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
+
+	u32 color = flags;
+	if (!flags)
+	{
+		color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
+	}
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 y3 = poly->y3 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 x3 = poly->x3 * scaleX;
+	f32 y2 = poly->y2 * scaleY;
+	f32 x2 = poly->x2 * scaleX;
+	f32 y1 = poly->y1 * scaleY;
+	f32 x1 = poly->x1 * scaleX;
+	f32 y0 = poly->y0 * scaleY;
+	f32 x0 = poly->x0 * scaleX;
+
+	PCGfx_DrawQPoly2D(
+			x0, y0, 0.01f, 0.01f, color,
+			x1, y1, 1.0f, 0.01f, color,
+			x2, y2, 0.01f, 1.0f, color,
+			x3, y3, 1.0f, 1.0f, color,
+			zOffset);
 }
 
 // @NotOk
@@ -135,12 +271,44 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, Texture const *tex, u
 			zOffset);
 }
 
-// @SMALLTODO
+// unnamed globals used only by gsub_46CB90. Not in idb_globals.txt near neighbours,
+// tentative names based on how they gate the debug print below.
+static u8 * const gDebugPrintDisabled = (u8*)0x006B4CB8;
+static u8 * const gDebugPrintEnabled = (u8*)0x0054F038;
+
+static char * const gDebugPrintBuf = (char*)0x006109E0;
+
+// gsub_4015B0 is declared in panel.h and defined further down, so it is not
+// visible for same-TU inlining at this call site (matches the original,
+// which has a real "call" instruction here, not an inlined body).
+
 // unnamed helper at 0x46CB90, argument is gRenderBuf (idb_globals.txt: 0x0056EB54, exact type unknown).
-// Not runtime-hooked this session, so a printf placeholder instead of a forward-to-original.
-void gsub_46CB90(void*)
+// Not runtime-hooked this session, so a printf placeholder instead of a forward-to-original
+// for gsub_4015B0. cmpsum: 0 mnemonic diffs.
+// @Ok
+// @Matching
+void gsub_46CB90(void* fmt, ...)
 {
-	printf("gsub_46CB90(void*)");
+	if (*gDebugPrintDisabled)
+		return;
+
+	if (!*gDebugPrintEnabled)
+		return;
+
+	va_list args;
+	va_start(args, fmt);
+	vsprintf(gDebugPrintBuf, (char*)fmt, args);
+
+	gsub_4015B0(gDebugPrintBuf);
+}
+
+// unnamed helper at 0x4015B0 (names.json calls it print_if_false, but the
+// export.h print_if_false has a different arg count and is static/inlined
+// away in our build). Not runtime-hooked this session, printf placeholder.
+// @SMALLTODO
+EXPORT void gsub_4015B0(void*)
+{
+	printf("gsub_4015B0(void*)");
 }
 
 // @Ok
