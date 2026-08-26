@@ -570,19 +570,20 @@ void FontManager::UnloadFont(Font* pFont)
 	G_FONT_TAB[count] = 0;
 }
 
-// @NotOk
-// matched (0 diffs) only when G_FONT_TAB targets the repo array, but that
-// form crashes the game (see the note above G_FONT_TAB). 5 diffs under the
-// correct (game memory) form.
+// @Ok
+// @Matching
 void FontManager::UnloadAllFonts(void)
 {
-	for (i32 i = 0; i < NUM_FONTS_TAB; i++)
+	Font** pp = G_FONT_TAB;
+	Font** end = G_FONT_TAB + NUM_FONTS_TAB;
+	for (; (i32)pp < (i32)end; pp++)
 	{
-		if (G_FONT_TAB[i])
+		Font* p = *pp;
+		if (p)
 		{
-			G_FONT_TAB[i]->unload();
-			delete G_FONT_TAB[i];
-			G_FONT_TAB[i] = 0;
+			p->unload();
+			delete *pp;
+			*pp = 0;
 		}
 	}
 }
