@@ -1,6 +1,9 @@
 #include "m3dinit.h"
 #include "bit.h"
 #include "validate.h"
+#include "dcmodel.h"
+#include "pcdcMem.h"
+#include "mem.h"
 
 u32 M3d_FadeColour;
 
@@ -11,11 +14,102 @@ u32 Yres;
 EXPORT i32 PixelAspectX;
 EXPORT i32 PixelAspectY;
 
-
-// @SMALLTODO
-void DCClearRegion(i32)
+// One entry per DC region: a heap block holding an array of these items.
+// Item size 0x24 confirmed by the pointer stride in DCClearRegion's original code.
+// Field meanings beyond pData/field_C are unknown.
+struct SDCRegionItem
 {
-    printf("DCClearRegion(i32)");
+	void *pData;
+
+	PADDING(8);
+
+	u8 field_C;
+
+	PADDING(0x17);
+};
+
+// Unknown globals, tentative names. Only used from this file, no header entry.
+// Nearest named neighbours (idb_globals.txt): gPushOffsetOne at 0x5F6718 (before),
+// gGlobalSkaterModel at 0x5F6808 (dcmodel.cpp) which sits right after this array
+// ends, so this table is probably around 41 pointers long.
+// Declared i32 (not a pointer type): MSVC6 will not fold a "pointer to pointer"
+// tentative global to a plain immediate address, an i32 does.
+// gDCRegionItemCounts is volatile: the original re-reads it on every access
+// (loop bottom check) instead of caching the value in a register.
+static i32 * const gDCRegionItems = (i32 *)0x5F6764;
+static volatile i32 * const gDCRegionItemCounts = (volatile i32 *)0x5F6860;
+static i32 * const gDCRegionItemTotal = (i32 *)0x5F7298;
+
+// @NotOk
+// Residue: register allocation / prologue scheduling only, 40 mnemonic diffs,
+// same instruction COUNT and semantics, all downstream of one root cause.
+// The original computes the addresses of gDCRegionItems[a1] and
+// gDCRegionItemCounts[a1] once each (lea into ebp/edi) and pushes ebp/esi in
+// the prologue before the null check even though the early-return path does
+// not need them; our build always recomputes both via SIB addressing off a1
+// (kept in edi/edx) and never lifts an address into a dedicated register
+// until partway into the item-freeing loop, so it only pushes ebp there.
+// Both versions end up using the same 4 non-volatile registers overall
+// (ebx, esi, edi, ebp), just assigned/scheduled differently.
+// Tried and rejected (11 attempts, each rebuilt and diffed against the
+// original): 1) gDCRegionItems as void** (MSVC6 never folds a
+// pointer-to-pointer literal address to an immediate, always materializes a
+// real pointer variable and loads it, confirmed with an isolated cl.exe
+// test); 2) gDCRegionItems as i32* with casts at each use (fixes #1, folds
+// to a plain immediate, this is the version kept); 3) explicit
+// "i32 *pSlot = &gDCRegionItems[a1];" local, dereferenced everywhere (CSE'd
+// away completely, identical to plain indexing); 4) gDCRegionItemCounts
+// declared volatile (reproduces the per-access reload the original does,
+// and does make ebp appear caching a value, closest result, kept); 5) same
+// but gDCRegionItems also volatile (no change from #4); 6) explicit
+// volatile-qualified slot pointers for both arrays (identical to #4, still
+// CSE'd to the same shape); 7) count check folded into the for-loop
+// condition instead of a separate "i32 count" local (regressed, lost the
+// ebp caching entirely); 8) volatile slot pointers plus a separate "count"
+// local (identical to #4); 9) gDCRegionItems non-volatile with #4's counts
+// handling (identical output to #4, dropped the redundant volatile); 10)
+// composed "if (a && b)" flag check rewritten as nested ifs per tips.txt
+// (identical machine code, only label numbers changed); 11) wrapped the
+// whole body in "if (pRegion) {...}" instead of an early return (identical
+// prologue, no change). None of these change which register the compiler
+// picks to hold a live address versus recomputing it from a1, which is an
+// internal MSVC6 scheduling choice, not something these source shapes
+// control (same class of issue as the Utils_VblankProcessing CSE case in
+// CLAUDE.md's Matching tricks section).
+void DCClearRegion(i32 a1)
+{
+	SDCRegionItem *pRegion = (SDCRegionItem *)gDCRegionItems[a1];
+
+	if (pRegion == NULL)
+		return;
+
+	if ((pRegion->field_C & 0x10) && gDCRegionItemCounts[a1])
+		DCClearSkater();
+
+	i32 count = gDCRegionItemCounts[a1];
+	SDCRegionItem *pBase = (SDCRegionItem *)gDCRegionItems[a1];
+
+	if (count > 0)
+	{
+		SDCRegionItem *pItem = pBase;
+		i32 i = 0;
+
+		do
+		{
+			if (pItem->pData)
+				Mem_Delete2(pItem->pData);
+
+			pItem->pData = NULL;
+
+			i++;
+			pItem++;
+		} while (i < gDCRegionItemCounts[a1]);
+	}
+
+	gDCRegionItemTotal[0] -= gDCRegionItemCounts[a1];
+	syFree(pBase);
+	gDCRegionItemCounts[a1] = 0;
+	gDCRegionItems[a1] = (i32)NULL;
 }
 
 // @Ok

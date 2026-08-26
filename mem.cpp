@@ -304,6 +304,13 @@ void Mem_Shrink(void* p, size_t newsize)
 			newsize + MEMDIFF);
 }
 
+// Needed by DCClearRegion (m3dinit.cpp). Not decompiled here, plain stub.
+// @SMALLTODO
+void Mem_Delete2(void* p)
+{
+	printf("Mem_Delete2(void*)");
+}
+
 // @Ok
 // @Matching
 // @Leak
