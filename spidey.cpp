@@ -544,10 +544,47 @@ void CPlayer::CheckWebShot(void)
     printf("CPlayer::CheckWebShot(void)");
 }
 
-// @SMALLTODO
-void CPlayer::CheckZipWebAvailability(SLineInfo *,i32)
+// @NotOk
+// residue: header declared this void, real return is u8 (0/1), fixed here.
+// prologue, stack layout (sub esp,8), and every field/call address match.
+// remaining 66 diffs are pure register-role swaps: the branchless ternary
+// for v3 (this->field_E1C != 4 ? 16 : 8) puts the ternary result in eax and
+// Distance in ecx in the original, our build swaps them (ecx/eax reversed)
+// even though load order (field_E1C then Distance) already matches; same
+// swap propagates through the coordinate math below it. tried: explicit
+// if/else instead of ternary for v3 (broke the branchless codegen entirely,
+// worse: 67 diffs, reverted), single scalar `output` instead of i32[3]
+// (fixed the stack size mismatch from 0x14 to the original's 0x8, kept).
+u8 CPlayer::CheckZipWebAvailability(SLineInfo *pLineInfo, i32 a2)
 {
-    printf("CPlayer::CheckZipWebAvailability(SLineInfo *,i32)");
+	i32 v3 = (this->field_E1C != 4) ? 16 : 8;
+
+	if (pLineInfo->Distance <= v3)
+		return 0;
+
+	if (pLineInfo->Distance >= a2)
+		return 0;
+
+	if (pLineInfo->pFace[3] & 0x40000)
+		return 0;
+
+	gte_ldsvrtrow0((const SVECTOR*)&this->field_A8);
+
+	SVECTOR local;
+	local.vx = (this->field_C84.vx * this->field_EA8 - this->mPos.vx + pLineInfo->Position.vx) >> 12;
+	local.vy = (this->field_C84.vy * this->field_EA8 - this->mPos.vy + pLineInfo->Position.vy) >> 12;
+	local.vz = (this->field_C84.vz * this->field_EA8 - this->mPos.vz + pLineInfo->Position.vz) >> 12;
+
+	gte_ldv0(&local);
+	gte_rtv0();
+
+	i32 output;
+	gte_stlvnl0(&output);
+
+	if (this->field_E1C == 4)
+		return 1;
+
+	return output > 0x40;
 }
 
 // @Ok

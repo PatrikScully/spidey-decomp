@@ -344,7 +344,7 @@ class CPlayer : public CSuper
 		EXPORT void CheckSwingWebAvailability(SLineInfo *);
 		EXPORT void CheckSwitchToGrabbedMode(CVector const *,CVector *);
 		EXPORT void CheckWebShot(void);
-		EXPORT void CheckZipWebAvailability(SLineInfo *,i32);
+		EXPORT u8 CheckZipWebAvailability(SLineInfo *,i32);
 		EXPORT void CollideWithObject(CBody *);
 		EXPORT void CreateCombatImpactEffect(CVector *,i32);
 		EXPORT void CreateWebDrips(bool,bool);
