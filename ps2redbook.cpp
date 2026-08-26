@@ -204,8 +204,30 @@ void Redbook_XAStop(void)
 	G_CARNAGE_XA_RELATED_TWO = 30;
 }
 
-// @Ok
-// @Matching
+// @NotOk
+// residue: 12 mnemonic diffs vs original (cmpsum.sh), down from 105 before
+// the fix to Redbook_XAInit (see below). Instruction and byte counts match
+// exactly (210 instructions, 703 bytes both sides, confirmed by full decode)
+// so this is not a missing/extra store, only register/scheduling choice.
+// Four separate clusters, all resistant to source-shape changes after
+// dozens of tried hypotheses (see ps2redbook.attempts.md):
+// 1) prologue: original loads a1 into edi after all 4 callee-saved pushes;
+//    this build loads a1 into ebp after only 2 pushes (a3 gets the swapped
+//    role later in the function). Tried: caching a1/a3 in named locals,
+//    reordering the guard comparison, flipping operand order, unsigned vs
+//    signed forms. None changed the register choice.
+// 2) the inlined Redbook_XAInit() body has the same 2-diff residue here
+//    that the standalone function has (see Redbook_XAInit's comment).
+// 3) the inlined Redbook_XASetVol() body loads G_ADXT into ecx before
+//    negating the volume in the original; this build negates first and
+//    reloads G_ADXT into eax after. Caching G_ADXT in a local inside
+//    Redbook_XASetVol did not change this (and Redbook_XASetVol itself
+//    still matches standalone either way).
+// 4) the print_if_false condition at the end (a3 <= 0x100) is computed
+//    right after the ADXT_SetOutVol call in the original (interleaved
+//    before the 5 field stores); this build computes it right before the
+//    branch, after all 5 stores. Caching the comparison in a local before
+//    the stores did not change this either.
 u8 Redbook_XAPlay(int a1, int a2, int a3)
 {
 	if (a1 >= 0x4F)
@@ -281,16 +303,30 @@ void Redbook_XAReset(void)
 	G_REDBOOK_RELATED_THREE = 0;
 }
 
-// @Ok
-// @Matching
+// @NotOk
+// residue: 2 mnemonic diffs vs original (cmpsum.sh), down from 48 before
+// caching G_SB_USE_SEMAPHORES in the useSem local below. Instruction and
+// byte counts match exactly (73 instructions, 304 bytes both sides), so
+// this is pure scheduling residue, not a missing/extra store. The original
+// computes the "if (useSem)" comparison right after Redbook_XAReset()'s
+// first field store (interleaved into the inlined Reset body); this build
+// computes the comparison right before its use, after all of Reset's
+// field stores. The load itself is already hoisted to the right spot
+// (matches); only the compare's position differs. Tried caching the value
+// with different types (i32/u32/bool/const), reading it before/after the
+// guard and before/after Redbook_XAReset(), and manually inlining
+// Redbook_XAReset()'s body instead of calling it (identical codegen either
+// way). None moved the compare. See ps2redbook.attempts.md.
 void Redbook_XAInit(void)
 {
 	if (G_ADXT_INITIALIZED)
 		return;
 
+	i32 useSem = G_SB_USE_SEMAPHORES;
+
 	Redbook_XAReset();
 
-	if (G_SB_USE_SEMAPHORES)
+	if (useSem)
 		Sb_SemWait(G_SB_SEMAPHORE_ONE);
 
 	ADXT_Init();
@@ -317,8 +353,20 @@ void Redbook_XAInit(void)
 	G_ADXT_INITIALIZED = 1;
 }
 
-// @Ok
-// @Matching
+// @NotOk
+// residue: 7 mnemonic diffs vs original (cmpsum.sh reports 8, but 1 is a
+// comparison-window artifact: this build's version is 389 bytes vs the
+// original's 388, so a fixed-length slice clips the final ret; a full
+// decode confirms 88 instructions match on both sides). Down from 53
+// before the Redbook_XAInit fix. This is the same "hoist an independent
+// flag read/compare across intervening non-aliasing stores" pattern as
+// Redbook_XAInit, but more aggressive: the original hoists the read AND
+// compare of G_ADXT_INITIALIZED (Redbook_XAInit's own guard, inlined here)
+// all the way above the outer Redbook_XAReset() call's 13 field stores,
+// using cl (6-byte mov r8,mem encoding); this build reads it late into al
+// (5-byte special mov-al-moffs encoding) right before the branch. Same
+// root cause as Redbook_XAInit's residue; did not find a source shape
+// that reproduces it (see ps2redbook.attempts.md).
 void Redbook_XAInitAtStart(void)
 {
 	Redbook_XAReset();
