@@ -1435,10 +1435,95 @@ void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 	print_if_false(0, "Spidey_StoreTextureEntry(): Checksum not found: %8.8X\r\n", checksum);
 }
 
-// @SMALLTODO
-void Spidey_SwapSuitTextures(i32,i32)
+// @NotOk
+// known blocker: calls print_if_false, always inlined by our build (static
+// in export.h), while the original calls it out of line (retail body is a
+// single `ret`, confirmed via tools/functions - a no-op in the shipped
+// game). string confirmed: "SwapSuitTextures() called in hardware mode!"
+// (0x556644, printed when gLowGraphics==0, i.e. hardware mode), region
+// name "spidey" (0x556670) passed to Spool_FindRegion.
+// new global (no idb_globals.txt entry): gCostumeMeshPtrs (0x5F6764),
+// pointer array indexed directly by region id (not scaled), each entry
+// points at a per-region mesh-piece list, walked in lockstep with
+// CItemRelatedList[region] (ob.h) for word_6B2478[region] (export.h,
+// already used the same way in m3dutils.cpp, stride 34 u16 = 0x44 per
+// region) iterations. field offsets are guesses from the disassembly only
+// (no struct declared): the CItemRelatedList entry's first field (offset
+// 0) is a pointer to a sub-struct with a count at +6; the gCostumeMeshPtrs
+// entry (offset +4 from the stored pointer) is a pointer to a list of
+// entries (texture id at +2), stride 0x38 per entry, outer stride 0x24 for
+// the mesh-piece list and 4 for the CItemRelatedList sub-array. reuses
+// gCostumeTextureIds (spidey.cpp, Spidey_StoreTextureEntry) for the actual
+// texture id remap table. also declared gCostumeRegionEntries at the same
+// address as CItemRelatedList (0x6B2454) so this file can index it with a
+// plain array subscript (region*17) instead of casting CItemRelatedList's
+// established i32*** type to a byte pointer.
+// residue: 50 mnemonic diffs (down from 57), after widening outerCount to
+// i32 (original tests the full edx register after the 16-bit load, because
+// an earlier xor edx,edx in the same block left the upper half zero; ours
+// needs the wider type to reproduce that). one residue not tracked down:
+// our build loads gCostumeMeshPtrs/gCostumeRegionEntries as if they were
+// real relocatable globals (`mov esi,[reloc]; mov ecx,[esi+eax]`) instead
+// of folding the fixed address into the addressing mode
+// (`mov ecx,[eax*4+5F6764h]` in the original) even though the same
+// `static X* const = (X*)0xADDR` idiom folds fine elsewhere in the repo
+// (word_6B2478, export.h) - tried a simpler single-pointer type instead of
+// a double pointer, no change, left as residue given the print_if_false
+// blocker already rules out a full match on this function regardless.
+static void ** const gCostumeMeshPtrs = (void**)0x005F6764;
+static void ** const gCostumeRegionEntries = (void**)0x006B2454;
+
+void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 {
-    printf("Spidey_SwapSuitTextures(i32,i32)");
+	print_if_false(gLowGraphics != 0, "SwapSuitTextures() called in hardware mode!");
+
+	i32 region = Spool_FindRegion("spidey");
+	i32 byteOffset = region * 68;
+
+	i32 outerCount = *(i16*)((u8*)word_6B2478 + byteOffset);
+
+	if (outerCount > 0)
+	{
+		u8 *pRegionEntry = (u8*)gCostumeRegionEntries[region * 17];
+		u8 *pMeshList = (u8*)gCostumeMeshPtrs[region] + 4;
+
+		for (i32 i = outerCount; i != 0; i--)
+		{
+			u8 *pSub = *(u8**)pRegionEntry;
+			i16 innerCount = *(i16*)(pSub + 6);
+			u8 *pEntry = *(u8**)pMeshList;
+
+			if (innerCount > 0)
+			{
+				u16 *pTexId = (u16*)(pEntry + 2);
+
+				for (i32 j = innerCount; j != 0; j--)
+				{
+					i32 texId = *pTexId;
+					i32 *pSearch = gCostumeTextureIds + a1 * 16;
+					i32 k;
+
+					for (k = 0; k < 16; k++)
+					{
+						if (texId == pSearch[k])
+						{
+							i32 newId = gCostumeTextureIds[a2 * 16 + k];
+
+							if (newId != 0)
+								*pTexId = (u16)newId;
+
+							break;
+						}
+					}
+
+					pTexId = (u16*)((u8*)pTexId + 0x38);
+				}
+			}
+
+			pRegionEntry += 4;
+			pMeshList += 0x24;
+		}
+	}
 }
 
 // @SMALLTODO
