@@ -51,10 +51,26 @@ i32 M3dColij_GetLineInfo(SLineInfo *pInfo)
 	return 0;
 }
 
-// @SMALLTODO
-void M3dColij_LineInfoFixup(SLineInfo *)
+// @Ok
+// @Matching
+// Computes the world-space collision point: Position = StartCoords +
+// (EndCoords - StartCoords) * (Distance / Length), done per axis in 0x4000-scaled fixed
+// point via M3dMaths_MulDiv64, with an abs()/resign dance around each division.
+void M3dColij_LineInfoFixup(SLineInfo *pInfo)
 {
-    printf("M3dColij_LineInfoFixup(SLineInfo *)");
+	i32 ratio = M3dMaths_MulDiv64(pInfo->Distance, 0x4000, pInfo->Length);
+
+	i32 dx = pInfo->EndCoords.vx - pInfo->StartCoords.vx;
+	i32 dy = pInfo->EndCoords.vy - pInfo->StartCoords.vy;
+	i32 dz = pInfo->EndCoords.vz - pInfo->StartCoords.vz;
+
+	i32 scaledDx = M3dMaths_MulDiv64(my_abs(dx), ratio, 0x4000) * ((dx < 0) ? -1 : 1);
+	i32 scaledDy = M3dMaths_MulDiv64(my_abs(dy), ratio, 0x4000) * ((dy < 0) ? -1 : 1);
+	i32 scaledDz = M3dMaths_MulDiv64(my_abs(dz), ratio, 0x4000) * ((dz < 0) ? -1 : 1);
+
+	pInfo->Position.vx = pInfo->StartCoords.vx + scaledDx;
+	pInfo->Position.vy = pInfo->StartCoords.vy + scaledDy;
+	pInfo->Position.vz = pInfo->StartCoords.vz + scaledDz;
 }
 
 // @Ok
