@@ -124,6 +124,10 @@ struct SSmokeRingGT4
 	u16 pad5;
 };
 
+// @Bogus
+// internal helper, not a standalone function in the original (the field
+// copies are inlined directly in CSmokeRing::Display); factored out here
+// only to keep Display's source readable, no independent ground truth
 static void CopySmokeRingTemplate(SSmokeRingGT4* pDst, const SSmokeRingGT4* pSrc)
 {
 	pDst->tag = pSrc->tag;
