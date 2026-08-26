@@ -53,9 +53,6 @@ EXPORT i16 gEnvModelHashTable[256][MAXITEMSPERCHECKSUM];
 
 EXPORT SPSXRegion PSXRegion[MAXPSX];
 
-//#define G_PSXREGION (PSXRegion)
-#define G_PSXREGION (reinterpret_cast<SPSXRegion*>(0x006B2440))
-
 #define TEXTURE_CHECKSUM_TABLE_SIZE (MAXTEXTUREENTRIES)
 EXPORT Texture* TextureChecksumHashTable[TEXTURE_CHECKSUM_TABLE_SIZE];
 

@@ -149,6 +149,9 @@ void validate_POLY_F3(void);
 
 static const i32 MAXPSX = 40;
 EXPORT extern SPSXRegion PSXRegion[MAXPSX];
+
+//#define G_PSXREGION (PSXRegion)
+#define G_PSXREGION (reinterpret_cast<SPSXRegion*>(0x006B2440))
 EXPORT extern i32 EnvRegions[2];
 EXPORT extern i32 gSpoolCurrentOpenSpot;
 
