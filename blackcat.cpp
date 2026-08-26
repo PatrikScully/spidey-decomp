@@ -1,6 +1,8 @@
 #include "blackcat.h"
 #include "validate.h"
 #include "trig.h"
+#include "m3dutils.h"
+#include "utils.h"
 
 extern u8 submarinerDieRelated;
 extern CBaddy* BaddyList;
@@ -44,10 +46,121 @@ void CBlackCat::AI(void)
     printf("CBlackCat::AI(void)");
 }
 
-// @MEDIUMTODO
+// @NotOk
+// 4 leg/paw hook positions rotated into local (body) space via the
+// transposed body matrix, gives an X/Z footprint box (floor 32), then a
+// vertical offset (realRegisterArr[0]) rotated by the body matrix gives the
+// world space shadow center. functionally close but not matching:
+// cmpsum shows 179 mnemonic diffs, first divergence right at entry (the
+// original has an SEH frame push here that this source does not produce,
+// likely from some non-trivial local construction I have not found the
+// right shape for yet). semantics (hook ids 3/6/13/9, box floor 32,
+// CQuadBit lazily created into field_33C) verified against the disasm.
 void CBlackCat::DoMGSShadow(void)
 {
-    printf("CBlackCat::DoMGSShadow(void)");
+	SHook hook;
+	VECTOR pos0, pos1, pos2, pos3;
+
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+	hook.Offset = 3;
+	M3dUtils_GetDynamicHookPosition(&pos0, this, &hook);
+
+	hook.Offset = 6;
+	M3dUtils_GetDynamicHookPosition(&pos1, this, &hook);
+
+	hook.Offset = 13;
+	M3dUtils_GetDynamicHookPosition(&pos2, this, &hook);
+
+	hook.Offset = 9;
+	M3dUtils_GetDynamicHookPosition(&pos3, this, &hook);
+
+	i32 height = this->field_21E << 12;
+
+	CVector v0 = *reinterpret_cast<CVector*>(&pos0);
+	v0 -= this->mPos;
+	CVector v1 = *reinterpret_cast<CVector*>(&pos1);
+	v1 -= this->mPos;
+	CVector v2 = *reinterpret_cast<CVector*>(&pos2);
+	v2 -= this->mPos;
+	CVector v3 = *reinterpret_cast<CVector*>(&pos3);
+	v3 -= this->mPos;
+
+	CVector heightOffset;
+	heightOffset.vx = 0;
+	heightOffset.vy = height;
+	heightOffset.vz = 0;
+
+	MATRIX localMat;
+	M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+	gte_SetRotMatrix(&localMat);
+
+	CVector box[4] = { v0, v1, v2, v3 };
+
+	i32 maxX = 0x20;
+	i32 minX = box[0].vx;
+	i32 maxZ = box[0].vz;
+	i32 minZ = box[0].vz;
+
+	for (i32 i = 0; i < 4; i++)
+	{
+		box[i] >>= 12;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&box[i]));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&box[i]));
+
+		if (box[i].vx > maxX)
+		{
+			maxX = box[i].vx;
+		}
+		else if (box[i].vx < minX)
+		{
+			minX = box[i].vx;
+		}
+
+		if (box[i].vz > maxZ)
+		{
+			maxZ = box[i].vz;
+		}
+		else if (box[i].vz < minZ)
+		{
+			minZ = box[i].vz;
+		}
+	}
+
+	heightOffset >>= 12;
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&heightOffset));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&heightOffset));
+
+	print_if_false(1, "MGS shadow");
+
+	gte_SetRotMatrix(&this->mTransform);
+
+	i32 ry = this->realRegisterArr[0] << 12;
+
+	CVector corners[4];
+	for (i = 0; i < 4; i++)
+	{
+		corners[i].vx = this->mPos.vx + heightOffset.vx;
+		corners[i].vy = ry;
+		corners[i].vz = this->mPos.vz + heightOffset.vz;
+	}
+
+	if (!this->field_33C)
+	{
+		TotalBitUsage = 0;
+		this->field_33C = new CQuadBit();
+		TotalBitUsage = -1;
+
+		reinterpret_cast<CQuadBit*>(this->field_33C)->SetTexture(0, 0);
+	}
+
+	reinterpret_cast<CQuadBit*>(this->field_33C)->mFrigDeltaZ = 32;
+	reinterpret_cast<CQuadBit*>(this->field_33C)->SetTransparency(0x40);
+	reinterpret_cast<CQuadBit*>(this->field_33C)->SetSubtractiveTransparency();
+	reinterpret_cast<CQuadBit*>(this->field_33C)->SetCorners(corners[0], corners[1], corners[2], corners[3]);
 }
 
 // @Ok
