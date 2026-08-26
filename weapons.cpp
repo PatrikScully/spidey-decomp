@@ -5,6 +5,9 @@
 #include "camera.h"
 #include "spool.h"
 #include "utils.h"
+#include "db.h"
+#include "panel.h"
+#include "ps2m3d.h"
 
 CItem* CWeapons;
 extern SCamera gMikeCamera[2];
@@ -77,10 +80,212 @@ CSmokeRing::CSmokeRing(i32 NumSectors, u32 a3)
 	this->field_60 = -1;
 }
 
-// @MEDIUMTODO
+struct SSmokeRingScreenPoint
+{
+	i32 xyA;
+	i16 visibleA;
+
+	PADDING(2);
+
+	i32 xyB;
+	i16 visibleB;
+
+	PADDING(2);
+
+	i32 xyC;
+	i16 visibleC;
+	i16 minDepth;
+};
+
+static SSmokeRingScreenPoint* const gSmokeRingScreenPoints = reinterpret_cast<SSmokeRingScreenPoint*>(0x614CD4);
+
+struct SSmokeRingGT4
+{
+	u32 tag;
+
+	u8 r0,g0,b0,code;
+	i32 xy0;
+	u8 u0,v0;
+	u16 clut;
+
+	u8 r1,g1,b1,pad1;
+	i32 xy1;
+	u8 u1,v1;
+	u16 tpage;
+
+	u8 r2,g2,b2,pad2;
+	i32 xy2;
+	u8 u2,v2;
+	u16 pad3;
+
+	u8 r3,g3,b3,pad4;
+	i32 xy3;
+	u8 u3,v3;
+	u16 pad5;
+};
+
+static void CopySmokeRingTemplate(SSmokeRingGT4* pDst, const SSmokeRingGT4* pSrc)
+{
+	pDst->tag = pSrc->tag;
+
+	pDst->r0 = pSrc->r0;
+	pDst->g0 = pSrc->g0;
+	pDst->b0 = pSrc->b0;
+	pDst->code = pSrc->code;
+
+	pDst->u0 = pSrc->u0;
+	pDst->v0 = pSrc->v0;
+	pDst->clut = pSrc->clut;
+
+	pDst->r1 = pSrc->r1;
+	pDst->g1 = pSrc->g1;
+	pDst->b1 = pSrc->b1;
+	pDst->pad1 = pSrc->pad1;
+
+	pDst->u1 = pSrc->u1;
+	pDst->v1 = pSrc->v1;
+	pDst->tpage = pSrc->tpage;
+
+	pDst->r2 = pSrc->r2;
+	pDst->g2 = pSrc->g2;
+	pDst->b2 = pSrc->b2;
+	pDst->pad2 = pSrc->pad2;
+
+	pDst->u2 = pSrc->u2;
+	pDst->v2 = pSrc->v2;
+	pDst->pad3 = pSrc->pad3;
+
+	pDst->r3 = pSrc->r3;
+	pDst->g3 = pSrc->g3;
+	pDst->b3 = pSrc->b3;
+	pDst->pad4 = pSrc->pad4;
+
+	pDst->u3 = pSrc->u3;
+	pDst->v3 = pSrc->v3;
+	pDst->pad5 = pSrc->pad5;
+}
+
+// @NotOk
 void CSmokeRing::Display(void)
 {
-    printf("CSmokeRing::Display(void)");
+	for (i32 i = 0; i < this->mNumSectors; i++)
+	{
+		SSmokeRingScreenPoint* pPoint = &gSmokeRingScreenPoints[i];
+		i32 depth;
+
+		depth = Transform(&this->mpSectors[i].field_80, &pPoint->xyA);
+		if (pPoint->xyA == 0x3FF03FF || pPoint->xyA == 0x3FFFC00 ||
+			pPoint->xyA == (i32)0xFC0003FF || pPoint->xyA == (i32)0xFC00FC00 ||
+			depth < -20000 || depth > 20000)
+		{
+			pPoint->visibleA = 0;
+		}
+		else
+		{
+			pPoint->minDepth = (i16)depth;
+			pPoint->visibleA = 1;
+		}
+
+		depth = Transform(&this->mpSectors[i].field_74, &pPoint->xyB);
+		if (pPoint->xyB == 0x3FF03FF || pPoint->xyB == 0x3FFFC00 ||
+			pPoint->xyB == (i32)0xFC0003FF || pPoint->xyB == (i32)0xFC00FC00 ||
+			depth < -20000 || depth > 20000)
+		{
+			pPoint->visibleB = 0;
+		}
+		else
+		{
+			pPoint->visibleB = 1;
+			if (depth < pPoint->minDepth)
+				pPoint->minDepth = (i16)depth;
+		}
+
+		depth = Transform(&this->mpSectors[i].field_68, &pPoint->xyC);
+		if (pPoint->xyC == 0x3FF03FF || pPoint->xyC == 0x3FFFC00 ||
+			pPoint->xyC == (i32)0xFC0003FF || pPoint->xyC == (i32)0xFC00FC00 ||
+			depth < -20000 || depth > 20000)
+		{
+			pPoint->visibleC = 0;
+		}
+		else
+		{
+			pPoint->visibleC = 1;
+			if (depth < pPoint->minDepth)
+				pPoint->minDepth = (i16)depth;
+		}
+	}
+
+	SSmokeRingGT4* pTemplate1 = reinterpret_cast<SSmokeRingGT4*>(&this->mpSectors[0]);
+	SSmokeRingGT4* pTemplate2 = reinterpret_cast<SSmokeRingGT4*>(reinterpret_cast<u8*>(&this->mpSectors[0]) + 0x34);
+
+	SSmokeRingScreenPoint prev = gSmokeRingScreenPoints[0];
+
+	for (i32 j = 1; j <= this->mNumSectors; j++)
+	{
+		SSmokeRingScreenPoint* pCur = (j == this->mNumSectors) ? &gSmokeRingScreenPoints[0] : &gSmokeRingScreenPoints[j];
+
+		i16 depth = pCur->minDepth;
+		if (depth < prev.minDepth)
+			depth = prev.minDepth;
+
+		SSmokeRingGT4* pBuiltPoly1 = 0;
+		SSmokeRingGT4* pBuiltPoly2 = 0;
+
+		if (!this->field_66 || depth != 0)
+		{
+			if (this->field_60 & (1 << j))
+			{
+				if (prev.visibleA && prev.visibleB && pCur->visibleA && pCur->visibleB)
+				{
+					if ((u8*)pPoly + sizeof(SSmokeRingGT4) > PolyBufferEnd)
+						return;
+
+					SSmokeRingGT4* pNewPoly = (SSmokeRingGT4*)pPoly;
+					pPoly = (u32*)((u8*)pPoly + sizeof(SSmokeRingGT4));
+
+					gsub_46CB90((void*)"stubbed out: setTexWindow");
+					gsub_46CB90((void*)"stubbed out: setTexWindow");
+					CopySmokeRingTemplate(pNewPoly, pTemplate1);
+
+					pNewPoly->xy0 = prev.xyA;
+					pNewPoly->xy1 = pCur->xyA;
+					pNewPoly->xy2 = prev.xyB;
+					pNewPoly->xy3 = pCur->xyB;
+
+					pBuiltPoly1 = pNewPoly;
+				}
+
+				if (prev.visibleC && prev.visibleB && pCur->visibleC && pCur->visibleB)
+				{
+					if ((u8*)pPoly + sizeof(SSmokeRingGT4) > PolyBufferEnd)
+						return;
+
+					SSmokeRingGT4* pNewPoly = (SSmokeRingGT4*)pPoly;
+					pPoly = (u32*)((u8*)pPoly + sizeof(SSmokeRingGT4));
+
+					CopySmokeRingTemplate(pNewPoly, pTemplate2);
+
+					pNewPoly->xy0 = prev.xyB;
+					pNewPoly->xy1 = pCur->xyB;
+					pNewPoly->xy2 = prev.xyC;
+					pNewPoly->xy3 = pCur->xyC;
+
+					pBuiltPoly2 = pNewPoly;
+				}
+			}
+		}
+
+		if (pBuiltPoly1)
+			gsub_46CB90((void*)gRenderBuf);
+
+		if (pBuiltPoly2)
+			gsub_46CB90((void*)gRenderBuf);
+
+		gsub_46CB90((void*)gRenderBuf);
+		gsub_46CB90((void*)gRenderBuf);
+
+		prev = *pCur;
+	}
 }
 
 // @Ok
@@ -390,6 +595,8 @@ void validate_CSmokeRing(void)
 	VALIDATE(CSmokeRing, field_58, 0x58);
 	VALIDATE(CSmokeRing, field_5C, 0x5C);
 	VALIDATE(CSmokeRing, field_60, 0x60);
+
+	VALIDATE(CSmokeRing, field_66, 0x66);
 
 	VALIDATE(CSmokeRing, field_68, 0x68);
 	VALIDATE(CSmokeRing, field_6A, 0x6A);
