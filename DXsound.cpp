@@ -2269,13 +2269,103 @@ BOOL CALLBACK EnumControllersCallback(
 #endif
 }
 
-// @MEDIUMTODO
-void ParseWavHeader(char *,tWAVEFORMATEX **,long *,u8 **)
+// @NotOk
+// No PC address at all, proven dead code: scanned every CALL in the whole
+// .text section against the mmioOpenA/mmioDescend/mmioRead/mmioClose/
+// mmioAscend import thunks, the only call sites anywhere in the binary are
+// inside DXSOUND_Load's own inlined copy of this same parsing logic (see
+// loadWAV above and dxsound.attempts.md). The Mac source has a standalone
+// ParseWavHeader (spiderman_names.txt 0x166040), the PC port folded it
+// (and DXSOUND_CreateDSBuffer) straight into DXSOUND_Load instead. Kept as
+// a real translation, same chunk-walk as loadWAV, adapted to its
+// pointer-to-pointer output style, since nothing calls it it cannot be
+// exercised or verified.
+void ParseWavHeader(char *fileName, tWAVEFORMATEX **ppwfx, long *pSize, u8 **ppData)
 {
-    printf("ParseWavHeader(char *,tWAVEFORMATEX **,long *,u8 **)");
+#ifdef _WIN32
+	char path[0x100];
+	MMIOINFO mmioinfo;
+	MMCKINFO ckRiff;
+	MMCKINFO ckIn;
+	MMCKINFO ckData;
+	i32 fileSize;
+
+	*ppwfx = 0;
+	*ppData = 0;
+
+	strcpy(path, "AUDIO\\");
+	strcat(path, fileName);
+
+	HANDLE h = gdFsOpen(path, 0);
+	if (!h)
+		return;
+
+	gdFsGetFileSize((i32)h, &fileSize);
+	u8* fileBuf = (u8*)malloc(fileSize);
+	if (gdFsRead((i32)h, fileSize / 0x800, fileBuf))
+	{
+		free(fileBuf);
+		gdFsClose(h);
+		return;
+	}
+	gdFsClose(h);
+
+	memset(&mmioinfo, 0, sizeof(mmioinfo));
+	mmioinfo.fccIOProc = FOURCC_MEM;
+	mmioinfo.pchBuffer = (HPSTR)fileBuf;
+	mmioinfo.cchBuffer = fileSize;
+	mmioinfo.adwInfo[0] = 0;
+
+	HMMIO hmmio = mmioOpen(fileName, &mmioinfo, MMIO_READ);
+	ckRiff.fccType = mmioStringToFOURCC("WAVE", 0);
+	if (!hmmio)
+	{
+		free(fileBuf);
+		return;
+	}
+
+	if (mmioDescend(hmmio, &ckRiff, 0, MMIO_FINDRIFF) == 0)
+	{
+		tWAVEFORMATEX* pwfx = (tWAVEFORMATEX*)malloc(sizeof(WAVEFORMATEX));
+
+		ckIn.ckid = mmioStringToFOURCC("fmt ", 0);
+		mmioDescend(hmmio, &ckIn, &ckRiff, MMIO_FINDCHUNK);
+		mmioRead(hmmio, (HPSTR)pwfx, sizeof(WAVEFORMATEX));
+		mmioAscend(hmmio, &ckIn, 0);
+
+		if (pwfx->wFormatTag == WAVE_FORMAT_PCM)
+		{
+			ckData.ckid = mmioStringToFOURCC("data", 0);
+			mmioDescend(hmmio, &ckData, &ckRiff, MMIO_FINDCHUNK);
+
+			if (ckData.cksize)
+			{
+				*pSize = (ckData.cksize + 3) & ~3;
+				u8* pData = (u8*)malloc(*pSize);
+				memset(pData, 0, *pSize);
+				if (pData)
+					mmioRead(hmmio, (HPSTR)pData, ckData.cksize);
+				*ppData = pData;
+			}
+		}
+
+		*ppwfx = pwfx;
+	}
+
+	mmioClose(hmmio, 0);
+	free(fileBuf);
+#endif
 }
 
 // @MEDIUMTODO
+// Investigated, not attempted: no PC address, no caller anywhere in this
+// file, and unlike loadWAV/ParseWavHeader there is no sibling function to
+// tie its logic to either (checked every CALL in the 0x500000-0x520000
+// range against tools/names.json, nothing unnamed calls in from outside
+// that range points here). The Mac source has it at
+// spiderman_names.txt 0x164670, so it is real on that platform, but with no
+// PC code and no call site to infer behaviour from, writing a body here
+// would be a guess dressed up as a translation. Left as a stub.
 void initialSettings(void)
 {
     printf("initialSettings(void)");
@@ -2379,7 +2469,17 @@ void DXPOLY_SetAddressUAndV(DWORD addressU, DWORD addressV)
 }
 
 // @NotOk
-// Missing low graphics
+// No standalone PC address (fully inlined into DXPOLY_EndScene, same as
+// loadWAV into DXSOUND_Load), not verifiable on its own. Its real inlined
+// form in DXPOLY_EndScene's disasm walks gSceneBuffer FORWARD from index 0
+// to 4096 inclusive (matches the array size, u32 gSceneBuffer[0x1001], and
+// DXPOLY_DrawPoly's `a2 <= 4096` bound check), fixed here (was counting
+// down from 4096, wrong direction and off by one on the low end). Also:
+// the real disasm calls two unnamed helpers (0x514B10, 0x514C60, chosen by
+// a bit in pPoly->field_8) and a third (0x514DA0) per polygon instead of
+// DXPOLY_SetTexture/SetBlendMode/etc, none of which are in this session's
+// assigned range; left as-is since decompiling those is a separate task.
+// Missing low graphics.
 void renderScene(void)
 {
 #ifdef _WIN32
@@ -2390,11 +2490,11 @@ void renderScene(void)
 	else
 	{
 		for (
-				i32 i = 4096;
-				i >= 0;
-				i--)
+				i32 i = 0;
+				i <= 4096;
+				i++)
 		{
-			
+
 			DXPOLY* pPoly = gSceneBuffer[i];
 			if (gDxPolyRelated && gHudOffset > 0 && i == gHudOffset)
 				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZENABLE, 0);
