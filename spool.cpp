@@ -1015,10 +1015,26 @@ i32 Spool_FindRegion(const char *pName)
 	return -1;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 u32 Spool_GetModel(u32 Checksum, i32 Region)
 {
-	return 0x26052024;
+	print_if_false(Region >= 0 && Region < MAXPSX, "Bad region number sent to Spool_GetModel");
+	print_if_false(PSXRegion[Region].Usable != 0, "PSX not usable in call to Spool_GetModel");
+
+	u32* pChecksum = PSXRegion[Region].pModelChecksums;
+	u32 numModels = reinterpret_cast<u32*>(PSXRegion[Region].ppModels)[-1];
+
+	for (u32 i = 0; i < numModels; i++)
+	{
+		if (*pChecksum == Checksum)
+			return i;
+
+		pChecksum++;
+	}
+
+	print_if_false(0, "Model checksum not found in call to Spool_GetModel");
+	return 0;
 }
 
 // @NotOk
