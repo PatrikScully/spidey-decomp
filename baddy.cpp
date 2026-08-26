@@ -1117,10 +1117,112 @@ void CBaddy::SetVariable(u16 a2)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 i16 CBaddy::GetVariable(u16 a2)
 {
-	return 696969;
+	extern i32 gGameFmvPad;
+
+	switch (a2)
+	{
+		case 0x2139:
+			return DifficultyLevel;
+
+		case 0x2136:
+			return gGameFmvPad;
+
+		case 0x2132:
+		{
+			if (MechList)
+			{
+				u32 dist = Utils_XZDist(&this->mPos, &MechList->mPos);
+				return dist > 0x1FFF ? 0x1FFF : dist;
+			}
+
+			return 0x1FFF;
+		}
+
+		case 0x2133:
+		{
+			if (!MechList)
+				return 0;
+
+			CVector v = this->mPos;
+			v.vy -= this->field_220 << 12;
+
+			return Utils_LineOfSight(&v, &MechList->mPos, 0, 0);
+		}
+
+		case 0x212E:
+			return this->field_216;
+
+		case 0x212C:
+			return this->field_210;
+
+		case 0x212D:
+			return this->field_20F;
+
+		case 0x2140:
+			return this->mPos.vx >> 12;
+
+		case 0x2141:
+			return this->mPos.vy >> 12;
+
+		case 0x2142:
+			return this->mPos.vz >> 12;
+
+		case 0x2150:
+			if (!MechList)
+				return 0;
+			return MechList->mPos.vx >> 12;
+
+		case 0x2151:
+			if (!MechList)
+				return 0;
+			return MechList->mPos.vy >> 12;
+
+		case 0x2152:
+			if (!MechList)
+				return 0;
+			return MechList->mPos.vz >> 12;
+
+		case 0x2100:
+			return this->mHealth;
+
+		case 0x2129:
+			return Rnd((u16)*this->field_24C++);
+
+		case 0x2120:
+		{
+			u8 idx = (u8)*this->field_24C;
+			this->field_24C++;
+			print_if_false(idx < 6, "Bad register index");
+			return this->realRegisterArr[idx];
+		}
+
+		case 0x212A:
+			print_if_false(this->mNode != 0xFFFF, "V_MY_NODE in script object with no node");
+			return this->mNode;
+
+		case 0x212B:
+		{
+			u16 opcode = *this->field_24C;
+			this->field_24C++;
+
+			if (opcode & 0x2000)
+				opcode = this->GetVariable(opcode);
+
+			u16 *links = reinterpret_cast<u16*>(Trig_GetLinksPointer(opcode & 0xFFFF));
+			if (!*links)
+				return 0;
+
+			return links[1];
+		}
+
+		default:
+			print_if_false(0, "Unknown script variable");
+			return 0;
+	}
 }
 
 // @BIGTODO
