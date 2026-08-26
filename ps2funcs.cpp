@@ -33,6 +33,10 @@ EXPORT int gRtpsRelatedNoClue;
 EXPORT int gRtpsRelatedNoClue2;
 EXPORT int gRtpsRelatedNoClue3;
 
+EXPORT VECTOR gFtwOp12;
+EXPORT VECTOR gWtfOP12;
+EXPORT VECTOR gOp12Result;
+
 static unsigned char stubGte = 1;
 
 u8 gPrintStubbed = 1;
@@ -63,10 +67,13 @@ void validate_MATRIX(void){
 	VALIDATE(MATRIX, t, 0x14);
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void gte_op0(void)
 {
-	printf("void gte_op0(void)");
+	gGeneralLongVector.vx = gWtfOP12.vy * gFtwOp12.vz - gWtfOP12.vz * gFtwOp12.vy;
+	gGeneralLongVector.vy = gWtfOP12.vz * gFtwOp12.vx - gFtwOp12.vz * gWtfOP12.vx;
+	gGeneralLongVector.vz = gFtwOp12.vy * gWtfOP12.vx - gWtfOP12.vy * gFtwOp12.vx;
 }
 
 // @Ok
@@ -158,11 +165,6 @@ void gte_rtpt(void){
 	if ( !stubGte )
 		stubbed_printf("stubbed out: gte_rtpt()");
 }
-
-EXPORT VECTOR gFtwOp12;
-EXPORT VECTOR gWtfOP12;
-EXPORT VECTOR gOp12Result;
-
 
 // @Ok
 void gte_op12(void)
