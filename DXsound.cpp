@@ -1036,26 +1036,101 @@ void DXPOLY_BeginScene(void)
 #endif
 }
 
+// byte flag: when set (and the poly has no blend mode), DXPOLY_DrawPoly draws
+// straight away instead of queueing into gSceneBuffer for the EndScene flush.
+static u8* const gDxPolyImmediateDraw = (u8*)0x6BBAA5;
+// base value for the depth bucket math below, tentative name/purpose guess.
+static i32* const gDxPolyDepthBucketBase = (i32*)0x6BBAA8;
+
 // @NotOk
-// need the low graphics stuff
+// 199 mnemonic diffs left, see dxsound.attempts.md. Behaviour:
+// with low graphics on and not on render pass 1, a near plane visibility
+// test on the poly's first/second/last (and, for 4+ verts, third/fourth)
+// vertex runs first and can discard the poly outright. Then: a forced slot
+// (a2 >= 0) always goes straight into that gSceneBuffer slot; otherwise, if
+// gDxPolyImmediateDraw is set and the poly has no blend mode, it draws right
+// now instead of queueing; otherwise it goes into a depth-sorted bucket
+// derived from depth and depthBias.
 void DXPOLY_DrawPoly(
 		DXPOLY* pPoly,
 		i32 a2,
-		i32,
-		f32)
+		i32 depthBias,
+		f32 depth)
 {
-	if ( !gInBeginScene )
+	if (!gInBeginScene)
 		DXERR_printf("drawing outside scene\r\n");
+
 	if (gLowGraphics && dword_6B7A8C != 1)
 	{
-		// @FIXME
-		DXERR_printf("DO ME");
+		f32 dx1 = pPoly->field_10[1].field_0 - pPoly->field_10[0].field_0;
+		f32 dy1 = pPoly->field_10[1].field_4 - pPoly->field_10[0].field_4;
+		i32 lastIdx = pPoly->field_C - 1;
+		f32 dxN = pPoly->field_10[lastIdx].field_0 - pPoly->field_10[0].field_0;
+		f32 dyN = pPoly->field_10[lastIdx].field_4 - pPoly->field_10[0].field_4;
+
+		f32 dx2 = 0.0f, dy2 = 0.0f, dx3 = 0.0f, dy3 = 0.0f;
+		if (lastIdx > 2)
+		{
+			dx2 = pPoly->field_10[1].field_0 - pPoly->field_10[2].field_0;
+			dy2 = pPoly->field_10[1].field_4 - pPoly->field_10[2].field_4;
+			dx3 = pPoly->field_10[3].field_0 - pPoly->field_10[2].field_0;
+			dy3 = pPoly->field_10[3].field_4 - pPoly->field_10[2].field_4;
+		}
+
+		f32 cross1 = dyN * dx1 - dxN * dy1;
+		u8 cull1 = (dword_6B7A8C == 3) ? (cross1 >= 0.0f) : (cross1 <= 0.0f);
+
+		if (pPoly->field_C > 3)
+		{
+			f32 cross2 = dy3 * dx2 - dx3 * dy2;
+			u8 cull2 = (dword_6B7A8C == 3) ? (cross2 >= 0.0f) : (cross2 <= 0.0f);
+
+			if (cull1 != cull2)
+				return;
+		}
+		else if (!cull1)
+		{
+			return;
+		}
 	}
-	else
+
+	if (a2 >= 0)
 	{
 		print_if_false(a2 <= 4096, "Invalid forced slot number!");
 		pPoly->pNext = gSceneBuffer[a2];
 		gSceneBuffer[a2] = pPoly;
+	}
+	else if (*gDxPolyImmediateDraw && pPoly->mBlendMode == 0)
+	{
+#ifdef _WIN32
+		DXPOLY_SetTexture(pPoly->field_4);
+		DXPOLY_SetBlendMode(pPoly->mBlendMode);
+
+		DXPOLY_SetAddressUAndV(
+				(pPoly->field_A & 2) ? 1 : 3,
+				(pPoly->field_A & 4) ? 1 : 3);
+
+		DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
+		DXPOLY_SetFilterMode((pPoly->field_A & 0x10) == 0);
+
+		g_D3DDevice7->DrawPrimitive(
+				D3DPT_TRIANGLEFAN,
+				324,
+				&pPoly->field_10[0],
+				pPoly->field_C,
+				0);
+#endif
+	}
+	else
+	{
+		i32 bucket = *gDxPolyDepthBucketBase - (i32)(depth * -4096.0f) + depthBias;
+		if (bucket < 0)
+			bucket = 0;
+		else if (bucket > 0x1000)
+			bucket = 0x1000;
+
+		pPoly->pNext = gSceneBuffer[bucket];
+		gSceneBuffer[bucket] = pPoly;
 	}
 }
 
