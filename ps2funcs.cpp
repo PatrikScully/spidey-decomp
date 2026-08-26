@@ -694,9 +694,9 @@ int ratan2(int x, int y)
 }
 
 
-// @NotOk
-// Globals
-u16 GetClut(int, int a2)
+// @Ok
+// @Matching
+i32 GetClut(int, int a2)
 {
 	return a2 - gClutRelated;
 }

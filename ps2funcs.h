@@ -151,7 +151,8 @@ EXPORT MATRIX* M3dMaths_RotMatrixYXZ(SVECTOR *a1, MATRIX *a2);
 
 EXPORT i32 ratan2(i32, i32);
 
-EXPORT u16 GetClut(i32, i32);
+// original mangled name is ?GetClut@@YAHHH@Z (returns int, not u16)
+EXPORT i32 GetClut(i32, i32);
 
 EXPORT void M3dAsm_LineColijPreprocessItems(CItem*, i32, SLineInfo*, u16);
 EXPORT void M3dAsm_LineColijPreprocessItemsZoned(CItem**, i32, SLineInfo*, u16);
