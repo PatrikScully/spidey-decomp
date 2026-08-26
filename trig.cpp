@@ -50,8 +50,8 @@ EXPORT SCommandPoint* HashTable[256];
 
 // @Ok
 EXPORT i32 RestartNode = 0xFFFF;
-//#define G_RESTARTNODE (RestartNode)
-#define G_RESTARTNODE (*reinterpret_cast<i32*>(0x0055804C))
+// G_RESTARTNODE moved to trig.h (needed by front.cpp too now, one
+// definition in the owning header per the G_* placement rule).
 
 // @Ok
 EXPORT i32 IsRestartDeath;
@@ -344,6 +344,16 @@ void Trig_ExecuteRestart(void)
 
 	Trig_ZeroPendingList();
 	ExecuteCommandList(v4, G_RESTARTNODE, 1);
+}
+
+// Mac symbol not confirmed, address 0x4DEB50. Called from Front_LoadGame
+// (front.cpp) with the restart-point TRG name; presumably loads the TRG
+// file for that name (matches the other Trig_/TRG loading calls in this
+// file), but the body has not been looked at yet.
+// @BIGTODO
+void Trig_LoadTRG(char *pName)
+{
+	printf("Trig_LoadTRG(char *)");
 }
 
 // @Ok

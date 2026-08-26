@@ -51,10 +51,11 @@ struct SSaveGame
 {
 	u32 mChecksum;
 
-	// @FIXME: figure out proper size
-	char field_4[1];
-
-	PADDING(0xD-0x4-1);
+	// Sized from Front_LoadGame (front.cpp): the highest byte written/read
+	// there is field_4[7] (offsets 0x68285D through 0x682863 relative to
+	// gSaveGame at 0x682858), still inside the old padding block before
+	// mRestartPointName at 0xD, so this does not move any other field.
+	char field_4[9];
 
 	char mRestartPointName[50];
 

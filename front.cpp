@@ -7,8 +7,18 @@
 #include "ps2pad.h"
 #include "powerup.h"
 #include "dcmemcard.h"
+#include "PCShell.h"
+#include "ps2lowsfx.h"
+#include "panel.h"
+#include "spidey.h"
+#include "camera.h"
+#include "screen.h"
+#include "ps2redbook.h"
 
 CMenu* pYesNoMenu;
+
+// idb_globals.txt: 0x005FAED0 gPausedMenu.
+CMenu* gPausedMenu;
 
 EXPORT i32 gFrontGauge;
 
@@ -16,6 +26,22 @@ SSaveGame gSaveGame;
 
 // @FIXME add content
 SLevel Levels[FRONT_NUM_LEVELS];
+
+// Tentative names, no idb_globals.txt entries. CMenu::Display spawns a
+// small effect record (looks like a highlight/arrow indicator, ~0x28 bytes,
+// many i16 position fields) out of a bump-allocated buffer when the
+// selection moves to a new entry, guarded by these two globals: current
+// write position and one-past-the-end of the buffer. Field layout of the
+// record itself is not understood (no consumer of this buffer has been
+// decompiled yet), so CMenu::Display below pokes it by raw byte offset
+// instead of a named struct.
+#define gMenuHighlightBufPos (*reinterpret_cast<u8**>(0x0056FB04))
+#define gMenuHighlightBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+
+// idb_globals.txt: 0x0054D341 gPrintStubbed. Guards debug stubbed_printf
+// calls in both CMenu::Display and Front_LoadGame below (not menu-specific,
+// despite the guess made before the idb name turned up).
+#define gPrintStubbed (*reinterpret_cast<u8*>(0x0054D341))
 
 // @Ok
 // @Matching
@@ -25,10 +51,166 @@ INLINE void CMenu::KillBox(void)
 	this->ptr_to = 0;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Faithful translation of the disassembly, one honest build attempt only
+// (not iterated further, see front.attempts.md). cmpsum: 288 mnemonic
+// diffs, but the built function is the SAME length as the original both in
+// bytes (1091) and decoded instruction count (358) - strong evidence the
+// logic is right and this is register allocation / statement ordering, not
+// a missing or extra chunk of code. Implemented mainly to unblock
+// Front_Display's leaf-first requirement: Front_Display calls this twice in
+// the same TU, and leaving it a two-line printf stub risks getting inlined
+// into Front_Display under this build's /Ob2, corrupting that function's
+// codegen too (same class of problem as CMenu::ProcessMouse, see the
+// comment near that one).
+// Two things make a real matching attempt on this function its own
+// project: (1) the fixed-point gouraud color blend (three near-identical
+// lerp+scale+clamp blocks, tween weight from the existing Sine() table) is
+// exactly the kind of dense fixed-point math DEFECTS.txt's
+// M3dMaths_SquareRoot0 note describes spending 12+ hours on without a full
+// explanation; (2) the "just selected this entry" effect spawned near the
+// end writes ~15 fields into a bump-allocated ~0x28-byte record
+// (gMenuHighlightBufPos/End) whose struct is completely undocumented - no
+// consumer of that buffer has been decompiled yet, so the fields below are
+// raw offset pokes with guessed meanings (position pairs for what is
+// probably a highlight arrow/box), not a named struct member list.
 void CMenu::Display(void)
 {
-	printf("void CMenu::Display(void)");
+	if (this->ptr_to && this->ptr_to->field_30 == 0)
+		return;
+
+	Mess_SetTextJustify(this->mJustification);
+
+	i32 y = this->mY;
+
+	for (i32 i = this->mCursorLine;
+			i < this->mNumLines && i < (this->mCursorLine + this->field_1B);
+			i++)
+	{
+		y += this->mEntry[i].unk_a;
+
+		if (!this->mEntry[i].unk_b)
+			continue;
+
+		if (this->mEntry[i].val_a <= 0)
+		{
+			y += this->mLineSep;
+			continue;
+		}
+
+		if (i == this->mLine)
+		{
+			if (this->field_1E & 0xFF)
+			{
+				i32 weight = Sine(this->field_20);
+				this->field_20 += 200;
+
+				i32 r = ((this->mEntry[i].unk_c + this->mEntry[i].field_11) >> 1)
+					+ (((this->mEntry[i].unk_c - this->mEntry[i].field_11) * weight) >> 13);
+				i32 g = ((this->mEntry[i].unk_d + this->mEntry[i].field_12) >> 1)
+					+ (((this->mEntry[i].unk_d - this->mEntry[i].field_12) * weight) >> 13);
+				i32 b = ((this->mEntry[i].unk_e + this->mEntry[i].field_13) >> 1)
+					+ (((this->mEntry[i].unk_e - this->mEntry[i].field_13) * weight) >> 13);
+
+				r = r * 350 / 256;
+				g = g * 350 / 256;
+				b = b * 350 / 256;
+				if (r > 255) r = 255;
+				if (g > 255) g = 255;
+				if (b > 255) b = 255;
+
+				Mess_SetRGB(static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b), 0);
+
+				i32 sr = ((this->mEntry[i].field_14 + this->mEntry[i].field_17) >> 1)
+					+ (((this->mEntry[i].field_14 - this->mEntry[i].field_17) * weight) >> 13);
+				i32 sg = ((this->mEntry[i].field_15 + this->mEntry[i].field_18) >> 1)
+					+ (((this->mEntry[i].field_15 - this->mEntry[i].field_18) * weight) >> 13);
+				i32 sb = ((this->mEntry[i].field_16 + this->mEntry[i].field_19) >> 1)
+					+ (((this->mEntry[i].field_16 - this->mEntry[i].field_19) * weight) >> 13);
+
+				sr = sr * 350 / 256;
+				sg = sg * 350 / 256;
+				sb = sb * 350 / 256;
+				if (sr > 255) sr = 255;
+				if (sg > 255) sg = 255;
+				if (sb > 255) sb = 255;
+
+				Mess_SetRGBBottom(static_cast<u8>(sr), static_cast<u8>(sg), static_cast<u8>(sb));
+			}
+			else
+			{
+				Mess_SetRGB(this->mEntry[i].unk_c, this->mEntry[i].unk_d, this->mEntry[i].unk_e, 0);
+				Mess_SetRGBBottom(this->mEntry[i].field_14, this->mEntry[i].field_15, this->mEntry[i].field_16);
+			}
+		}
+		else
+		{
+			Mess_SetRGB(this->mEntry[i].field_11, this->mEntry[i].field_12, this->mEntry[i].field_13, 0);
+			Mess_SetRGBBottom(this->mEntry[i].field_17, this->mEntry[i].field_18, this->mEntry[i].field_19);
+		}
+
+		Mess_TextWidth(this->mEntry[i].name);
+		i32 drawResult = Mess_DrawText(this->mX, y, this->mEntry[i].name, 0, 0x1000);
+
+		if (this->field_16 && i == this->field_17 && this->mJustification == 0)
+		{
+			i32 highlightOffset = (this->mEntry[i].val_a * drawResult) / 512
+				+ (this->mEntry[i].val_a * 14) / 256;
+
+			u8* rec = gMenuHighlightBufPos;
+			u8* next = rec + 0x28;
+
+			if (next <= gMenuHighlightBufEnd)
+			{
+				gMenuHighlightBufPos = next;
+
+				if (!gPrintStubbed)
+					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
+				if (!gPrintStubbed)
+					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
+
+				i16 yMinus5 = static_cast<i16>(y - 5);
+				i16 xBase = static_cast<i16>(this->mX - highlightOffset);
+				i16 xBaseMinus20 = static_cast<i16>(xBase - 20);
+				i16 yMinus11 = static_cast<i16>(yMinus5 - 6);
+				i16 yPlus1 = static_cast<i16>(yMinus5 + 6);
+				i16 highlightOffset2 = static_cast<i16>(highlightOffset + this->mX);
+				i16 highlightOffset2Plus20 = static_cast<i16>(highlightOffset2 + 20);
+
+				*reinterpret_cast<u8*>(rec + 4) = 0x96;
+				*reinterpret_cast<u8*>(rec + 5) = 0;
+				*reinterpret_cast<u8*>(rec + 6) = 0;
+				*reinterpret_cast<i16*>(rec + 0xA) = yMinus5;
+				*reinterpret_cast<i16*>(rec + 8) = xBase;
+				*reinterpret_cast<i16*>(rec + 0xC) = xBaseMinus20;
+				*reinterpret_cast<i16*>(rec + 0x10) = xBaseMinus20;
+				*reinterpret_cast<i16*>(rec + 0xE) = yMinus11;
+				*reinterpret_cast<i16*>(rec + 0x12) = yPlus1;
+				*reinterpret_cast<u8*>(rec + 0x18) = 0x96;
+				*reinterpret_cast<u8*>(rec + 0x19) = 0;
+				*reinterpret_cast<u8*>(rec + 0x1A) = 0;
+				*reinterpret_cast<i16*>(rec + 0x1E) = yMinus5;
+				*reinterpret_cast<i16*>(rec + 0x1C) = highlightOffset2;
+				*reinterpret_cast<i16*>(rec + 0x22) = yMinus11;
+				*reinterpret_cast<i16*>(rec + 0x20) = highlightOffset2Plus20;
+				*reinterpret_cast<i16*>(rec + 0x24) = highlightOffset2Plus20;
+				*reinterpret_cast<i16*>(rec + 0x26) = yPlus1;
+
+				stubbed_printf(reinterpret_cast<char*>(0x0056EB54));
+				stubbed_printf(reinterpret_cast<char*>(0x0056EB54));
+			}
+		}
+
+		y += this->mLineSep;
+	}
+
+	if (this->ptr_to)
+	{
+		this->ptr_to->Display();
+
+		if (this->mZoomBoxType == 2)
+			this->ptr_to->field_24 = 1;
+	}
 }
 
 // @Ok
@@ -110,10 +292,164 @@ void Front_ClearScreen(void)
 	ClearImage();
 }
 
-// @MEDIUMTODO
+// Tentative names, no name in idb_globals.txt for these three. Shared with
+// CheckForPadUnplugged and Front_Display, which both load pointers from the
+// same fixed addresses to draw the same blinking text. Not yet implemented
+// anywhere else in the repo, so kept file-local for now.
+#define gFrontPadTextOne (*reinterpret_cast<char**>(0x0054B764))
+#define gFrontPadTextTwo (*reinterpret_cast<char**>(0x0054B768))
+#define gFrontPadTextThree (*reinterpret_cast<char**>(0x0054BBC8))
+
+// Tentative names/globals for Front_Display, no idb_globals.txt entries
+// unless noted. gFrontDrawPolyFlag/gFrontShowTrainingTip/gFrontMysteryFlag
+// are booleans gating one-off draw blocks; gFrontHintY is a persistent
+// animated y-coordinate (this file's only writer); gFrontScreenState is the
+// front-end screen-type switch selector; gFrontControllerTwoMenu is a
+// second CMenu* right after the already-named gPausedMenu (0x5FAED0, from
+// idb_globals.txt); the seven 0x54Bxxx/0x54BBC8 entries are char* text
+// pointers, same pattern as gFrontYesText/gFrontPadTextOne above.
+#define gFrontDrawPolyFlag (*reinterpret_cast<i32*>(0x0060CFE0))
+#define gFrontShowTrainingTip (*reinterpret_cast<i32*>(0x0068293C))
+#define gFrontHintY (*reinterpret_cast<i16*>(0x0054A7E0))
+#define gFrontScreenState (*reinterpret_cast<i32*>(0x005FAECC))
+#define gFrontControllerTwoMenu (*reinterpret_cast<CMenu**>(0x005FAED4))
+#define gFrontTrainingTextOne (*reinterpret_cast<char**>(0x0054B76C))
+#define gFrontTrainingTextTwo (*reinterpret_cast<char**>(0x0054B890))
+#define gFrontPausedText (*reinterpret_cast<char**>(0x0054B74C))
+#define gFrontHintText (*reinterpret_cast<char**>(0x0054B748))
+#define gFrontYesNoPromptText (*reinterpret_cast<char**>(0x0054B784))
+// Same address as gsub_430880 (nullsub_3), see PCShell.cpp/shell.cpp for
+// precedent on calling it with a dummy arg via a function-pointer cast.
+#define gFrontMysteryValueOne (*reinterpret_cast<i32*>(0x005512EC))
+// idb_globals.txt: 0x005FB1B0 gInitRelatedTwo (already a plain, non-fixed
+// repo global in init.cpp; only read here, so a file-local fixed-address
+// macro is enough, no need to touch init.cpp/init.h for a single caller).
+#define G_INIT_RELATED_TWO (*reinterpret_cast<i32*>(0x005FB1B0))
+
+// Forward-declared instead of #include "spidey.h": Front_Display below
+// only uses the pointer VALUE (cast to u8* for a raw offset read), so the
+// full CPlayer definition is not needed and pulling in spidey.h's huge
+// dependency graph is not worth it for one field read.
+class CPlayer;
+extern CPlayer* MechList;
+
+// @NotOk
+// residue: 2 mnemonic diffs after several iterations (down from 145 on the
+// first honest pass; see front.attempts.md for the hypothesis log). Both
+// remaining diffs are in the screen-state switch/blink-text tail: (1) the
+// switch selector load uses one register (eax) where the original uses two
+// (ecx then eax=ecx-1); (2) the original keeps two separate `ret`
+// instructions at the very end of the two TTime-blink paths (different
+// `add esp` cleanup amounts, 0x28 vs 0x14, so the original toolchain never
+// merged them), while this build's optimizer merges them into one shared
+// `ret` regardless of how the two `return;` statements are written in
+// source - tried explicit early-return restructuring, no change, this
+// looks like a genuine compiler-side tail-merge decision, not something
+// source shape controls. Instruction counts otherwise match (220 vs 219,
+// the one missing `ret` accounts for the whole gap). The switch's jump
+// table bytes are not in tools/functions/<addr>.bin (the extraction stops
+// at the last real instruction), so the case body order (screen states
+// 1,2,3,4 in address order 0x440C40/0x440CB6/0x440CC9/0x440D51) is
+// inferred from normal compiler layout, not read directly. `MechList->field_E2`
+// is accessed by raw pointer offset instead of adding a new field to
+// CPlayer in spidey.h - that struct is huge and shared with many other
+// already-`@Ok`
+// files, not safe to touch from a front.cpp-only session (same caution as
+// the SLevel/init.cpp note on Front_LoadGame below).
 void Front_Display(void)
 {
-    printf("Front_Display(void)");
+	// same address as gsub_430880 (nullsub_3), declared and defined in
+	// PCShell.cpp; see shell.cpp for the same local-extern precedent.
+	extern void gsub_430880(void);
+
+	if (gFrontDrawPolyFlag)
+		Panel_DrawFlatShadedPoly(0x13, 0xBA, 0xC2, 0x2A, 0, 0, 0, 0, 0);
+
+	if (G_POST_WATER_EFFECT)
+		gsub_430880();
+
+	Mess_SetTextJustify(0);
+
+	if (gFrontShowTrainingTip && (Vblanks & 0x20))
+	{
+		Mess_SetRGB(0x80, 0x80, 0x80, 0);
+		Mess_SetScale(0x100);
+		Mess_DrawText(0x100, 0x32, gFrontTrainingTextOne, 0, 0x1000);
+		Mess_DrawText(0x100, 0xC8, gFrontTrainingTextTwo, 0, 0x1000);
+	}
+
+	if (MechList
+			&& *reinterpret_cast<i16*>(reinterpret_cast<u8*>(MechList) + 0xE2) <= 0
+			&& G_INIT_RELATED_TWO == 1)
+	{
+		Mess_SetRGB(0x80, 0x80, 0x80, 0);
+		Mess_SetScale(0x180);
+		Mess_DrawText(0x100, gFrontHintY, gFrontHintText, 0, 0x1000);
+
+		gFrontHintY += 8;
+		if (gFrontHintY > 0x78)
+			gFrontHintY = 0x78;
+	}
+
+	Mess_SetScale(0x100);
+
+	i32 screenState = gFrontScreenState;
+
+	switch (screenState)
+	{
+		case 1:
+			Mess_SetScale(0x100);
+			Mess_SetRGB(0x7F, 0x19, 0x21, 0);
+			Mess_DrawText(0x100, 0x32, gFrontPausedText, 0, 0x1000);
+			((void(*)(i32,i32))gsub_430880)(gFrontMysteryValueOne, 0xAD);
+			print_if_false(gPausedMenu != 0, reinterpret_cast<char*>(0x0054AC34));
+			gPausedMenu->mX = 0x100;
+			gPausedMenu->Display();
+			PCSHELL_DrawMouseCursor();
+			return;
+
+		case 2:
+			if (!gFrontControllerTwoMenu)
+				return;
+			gFrontControllerTwoMenu->Display();
+			return;
+
+		case 3:
+			Mess_SetScale(0x100);
+			Mess_SetRGB(0x7F, 0x19, 0x21, 0);
+			Mess_DrawText(0x100, 0x32, gFrontPausedText, 0, 0x1000);
+			((void(*)(i32,i32))gsub_430880)(gFrontMysteryValueOne, 0xAD);
+			Mess_SetRGB(0x4D, 0x53, 0x69, 0);
+			Mess_SetScale(0x100);
+			Mess_DrawText(0x100, 0x4B, gFrontYesNoPromptText, 0, 0x1000);
+			pYesNoMenu->Display();
+			PCSHELL_DrawMouseCursor();
+			return;
+
+		case 4:
+			Mess_SetScale(0x100);
+			Mess_SetRGB(0x7F, 0x19, 0x21, 0);
+			Mess_DrawText(0x100, 0x32, gFrontPausedText, 0, 0x1000);
+			Front_RGBRed();
+			break;
+
+		default:
+			return;
+	}
+
+	if (G_SCONTROL[0].Type == 0)
+	{
+		if ((TTime / 10) & 1)
+		{
+			Mess_DrawText(0x100, 0xB0, gFrontPadTextOne, 0, 0x1000);
+			Mess_DrawText(0x100, 0xC0, gFrontPadTextTwo, 0, 0x1000);
+		}
+
+		return;
+	}
+
+	if ((TTime / 10) & 1)
+		Mess_DrawText(0x100, 0xB8, gFrontPadTextThree, 0, 0x1000);
 }
 
 // @Ok
@@ -166,6 +502,13 @@ static u8* const gFrontCardExists = (u8*)0x005FAD98;
 #define gFrontYesText (*reinterpret_cast<char**>(0x0054B780))
 #define gFrontNoText (*reinterpret_cast<char**>(0x0054B77C))
 
+// Tentative name, no idb_globals.txt entry (sits in the gap between named
+// gPostWaterEffect 0x5FAE98 and pYesNoMenu 0x5FAEAC). Used by CMenu::Update
+// as a held-direction repeat counter: reset to 0 when the mouse/trigger
+// state resets, incremented once per frame the cursor does not move,
+// checked against CMenu::scrollbar_one for the auto-repeat rate.
+#define gMenuNavRepeatTimer (*reinterpret_cast<i32*>(0x005FAEA0))
+
 // @Bogus
 // Plain non-throwing placement new. The original builds pYesNoMenu with a
 // raw CClass::operator new call plus a manual constructor call (no SEH
@@ -207,19 +550,142 @@ void Front_Init(void)
 	pYesNoMenu->mY = 0x74;
 }
 
-// @MEDIUMTODO
-void Front_LoadGame(SSaveGame *,i32,bool)
-{
-    printf("Front_LoadGame(SSaveGame *,i32,bool)");
-}
+// Tentative names/globals for Front_LoadGame, no idb_globals.txt entries
+// unless noted. gFrontSlotCounter/gFrontSlotShuffleTable implement a
+// non-repeating random digit picker (Utils_Jumble reshuffles the table of 9
+// once every 9 draws); gFrontCameraModeFlagOne/Two are two byte flags set
+// from the pre-call RestartNode value, meaning unclear without a consumer.
+#define gFrontSlotCounter (*reinterpret_cast<i32*>(0x00682944))
+static i32 gFrontSlotShuffleTable[9] = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+#define gFrontCameraModeFlagOne (*reinterpret_cast<u8*>(0x0056FB78))
+#define gFrontCameraModeFlagTwo (*reinterpret_cast<u8*>(0x0056FBF4))
 
-// Tentative names, no name in idb_globals.txt for these three. Shared with
-// CheckForPadUnplugged and Front_Display, which both load pointers from the
-// same fixed addresses to draw the same blinking text. Not yet implemented
-// anywhere else in the repo, so kept file-local for now.
-#define gFrontPadTextOne (*reinterpret_cast<char**>(0x0054B764))
-#define gFrontPadTextTwo (*reinterpret_cast<char**>(0x0054B768))
-#define gFrontPadTextThree (*reinterpret_cast<char**>(0x0054BBC8))
+// @NotOk
+// residue: 156 mnemonic diffs (cmpsum), instruction counts close (206
+// original vs 208 built). One honest attempt, not iterated further (see
+// front.attempts.md). This function allocates and constructs a CPlayer and
+// a CCamera with plain `new` expressions, which is exactly why the
+// original has an SEH frame (exception-safe cleanup if a constructor
+// throws, same reason CMenu::Zoom's `new CExpandingBox(...)` has one, see
+// that comment). Matching MSVC6's SEH scope-table generation by hand is not
+// realistic in one session. The residue is not pure register-naming noise
+// either: a saved-RestartNode local ends up zeroing a register (ebx) early
+// for a different reason than the original, and that zero register then
+// gets reused as the "compare against 0" operand for several later
+// `!gPrintStubbed`-style checks, turning the original's `test al,al` into
+// `cmp al,bl` in a few places - a real, if minor, mnemonic-level diff, not
+// just an operand/address difference.
+// SLevel's field_C/field_10 are read here as one raw 32-bit value at
+// offset +0xC (not through named struct fields) instead of widening
+// SLevel::field_C from u16 to i32: `Levels[35].field_C = 0xFFEC;` in
+// init.cpp sits inside an already-`@Ok` function in a file this session
+// does not own, and widening the field would change that store's
+// instruction encoding (2-byte immediate becomes 4-byte) - not safe to
+// risk from here. The raw 32-bit read still gets the right VALUE, because
+// `Levels[]` is a zero-initialized BSS global and the upper 16 bits are
+// currently unnamed padding right after field_C.
+void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
+{
+	// same address as gsub_430880 (nullsub_3), declared and defined in
+	// PCShell.cpp; see shell.cpp for the same local-extern precedent.
+	extern void gsub_430880(void);
+
+	i32 savedRestartNode = RestartNode;
+
+	if (gSaveGame.field_4[1] == 'f' && gSaveGame.field_4[3] == '1')
+	{
+		print_if_false(gFrontSlotCounter < 9, reinterpret_cast<char*>(0x0054ACCC));
+
+		gSaveGame.field_4[4] = static_cast<char>(gFrontSlotShuffleTable[gFrontSlotCounter] + '0');
+		gSaveGame.field_4[5] = '_';
+		gSaveGame.field_4[6] = 't';
+		gSaveGame.field_4[7] = 0;
+		gSaveGame.mRestartPointName[0] = 0;
+
+		gFrontSlotCounter++;
+		if (gFrontSlotCounter >= 9)
+		{
+			gFrontSlotCounter = 0;
+			Utils_Jumble(gFrontSlotShuffleTable, 9);
+		}
+	}
+
+	SLevel* pLevel = Front_FindLevel(gSaveGame.field_4);
+
+	if (pLevel)
+	{
+		i32 field_10 = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(pLevel) + 0x10);
+		i32 field_C = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(pLevel) + 0xC);
+
+		gSaveGame.field_84 |= field_10;
+		gSaveGame.field_90 |= field_C;
+
+		if (*reinterpret_cast<u8*>(0x0060CFC5) && Utils_CompareStrings(gSaveGame.field_4, reinterpret_cast<char*>(0x0054A808)))
+			gSaveGame.field_84 |= 0x2000000;
+	}
+
+	SFX_SpoolOutLevelSFX();
+
+	char levelId[5];
+	levelId[0] = gSaveGame.field_4[0];
+	levelId[1] = gSaveGame.field_4[1];
+	levelId[2] = gSaveGame.field_4[2];
+	levelId[3] = gSaveGame.field_4[3];
+	levelId[4] = 0;
+	SFX_SpoolInLevelSFX(levelId);
+
+	Spidey_SetUserFunction(0, 0);
+	((void(*)(i32))gsub_430880)(2000);
+	Trig_LoadTRG(gSaveGame.field_4);
+
+	gFrontGauge = 0;
+	((void(*)(i32))gsub_430880)(4);
+
+	CPlayer* player = new CPlayer();
+
+	if (a2)
+	{
+		RestartNode = savedRestartNode;
+	}
+	else if (pSave->mRestartPointName[0])
+	{
+		Trig_SetRestart(pSave->mRestartPointName);
+	}
+
+	new CCamera(player);
+
+	if (!gPrintStubbed)
+		stubbed_printf(reinterpret_cast<char*>(0x00549620));
+	gFrontCameraModeFlagOne = 0;
+
+	if (!gPrintStubbed)
+		stubbed_printf(reinterpret_cast<char*>(0x00549620));
+	gFrontCameraModeFlagTwo = 0;
+
+	G_REDBOOK_XA_CURRENT_PRIORITY = -1;
+	Trig_ExecuteRestart();
+
+	CVector v;
+	v.vx = 0;
+	v.vy = 0;
+	v.vz = 0;
+
+	char *pName = &reinterpret_cast<char*>(Trig_GetPosition(&v, RestartNode))[6];
+	char *pDestBuf = &gSaveGame.mRestartPointName[0];
+	i32 i = 0;
+
+	while (*pName)
+	{
+		i++;
+		*pDestBuf++ = *pName++;
+		print_if_false((u8)(i < 50), reinterpret_cast<char*>(0x0054ACA4));
+	}
+
+	*pDestBuf = 0;
+
+	CameraList->SetMode(CAMERAMODE_DEMO);
+	Screen_StartCircularFadeIn(0x20, 8);
+}
 
 // @Ok
 // @Matching
@@ -579,11 +1045,191 @@ void CMenu::SetLine(char Line)
 	}
 }
 
+// CMenu::ProcessMouse (0x50C8A0) is defined in PCShell.cpp, not here: its
+// address sits next to the PCSHELL_* functions, and the original CMenu::Update
+// calls it with a plain direct call, same TU boundary as CMenu::EntryEnable
+// (see the comment on that function in PCShell.cpp).
+
 // Mac symbol Update__5CMenuFv, address 0x440600
-// @SMALLTODO
+// @NotOk
+// residue: 182 mnemonic diffs (cmpsum), all one cascade from a single
+// register choice in the repeat-timer check (original keeps the timer
+// counter in edi across the whole "if (timer<=20) skip" / idiv-by-
+// scrollbar_one block, reusing edi right after for the 0x400 constant;
+// our build loads it into eax directly and never touches edi there).
+// Everything before this point (leading push order, the disabled-entry
+// skip loop, the ProcessMouse call site, the direction of the timer<=20
+// check, the up/down navigation do-whiles) matches. 7 hypotheses tried,
+// logged in front.attempts.md; below the 15-hypothesis minimum for a
+// medium function, so left @NotOk rather than @AlmostMatching.
 void CMenu::Update(void)
 {
-	printf("CMenu::Update(void)");
+	if ((u8)this->mLine > 40)
+		return;
+
+	while (!(this->mEntry[this->mLine].unk_b && this->mEntry[this->mLine].what == 0))
+	{
+		this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_A;
+		this->mEntry[this->mLine].val_a = this->mEntry[this->mLine].field_A;
+
+		this->mLine++;
+		if (this->mLine >= this->mNumLines)
+			this->mLine = 0;
+
+		this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_8;
+		this->mEntry[this->mLine].val_a = this->mEntry[this->mLine].field_A;
+	}
+
+	i32 startLine = this->mLine;
+	i32 mouseRes = this->ProcessMouse();
+
+	if (mouseRes != 2 && PCSHELL_CheckTriggers(0x3003, 0, 0))
+	{
+		i32 timer = gMenuNavRepeatTimer;
+
+		if (timer != 0)
+		{
+			if (timer <= 20)
+				goto skipMove;
+			if (timer % this->scrollbar_one != 0)
+				goto skipMove;
+		}
+
+		{
+			if (PCSHELL_CheckTriggers(0x1001, 0, 0))
+			{
+				G_SCONTROL[0].Up.Triggered = 0;
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_A;
+
+				do
+				{
+					if (this->mLine != 0)
+					{
+						this->mLine--;
+						this->field_20 = 0x400;
+					}
+					else if (this->scrollbar_zero)
+					{
+						this->mLine = this->mNumLines - 1;
+						this->field_20 = 0x400;
+					}
+				}
+				while (!(this->mEntry[this->mLine].unk_b && this->mEntry[this->mLine].what == 0));
+
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_8;
+			}
+
+			if (PCSHELL_CheckTriggers(0x2002, 0, 0))
+			{
+				G_SCONTROL[0].Down.Triggered = 0;
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_A;
+
+				do
+				{
+					this->mLine++;
+					if (this->mLine < this->mNumLines)
+					{
+						this->field_20 = 0x400;
+					}
+					else if (this->scrollbar_zero)
+					{
+						this->mLine = 0;
+						this->field_20 = 0x400;
+					}
+					else
+					{
+						this->mLine--;
+					}
+				}
+				while (!(this->mEntry[this->mLine].unk_b && this->mEntry[this->mLine].what == 0));
+
+				this->mEntry[this->mLine].val_b = this->mEntry[this->mLine].field_8;
+			}
+		}
+
+skipMove:
+		gMenuNavRepeatTimer++;
+	}
+	else
+	{
+		gMenuNavRepeatTimer = 0;
+	}
+
+	if (this->mLine != startLine)
+		SFX_Play(0x29, 0x3FFF, 0);
+
+	for (i32 i = 0; i < this->mNumLines; i++)
+	{
+		if (this->mEntry[i].val_a >= this->mEntry[i].val_b)
+		{
+			this->mEntry[i].val_a = this->mEntry[i].val_a + 40;
+			if (this->mEntry[i].val_a > this->mEntry[i].val_b)
+				this->mEntry[i].val_a = this->mEntry[i].val_b;
+		}
+
+		if (this->mEntry[i].val_a <= this->mEntry[i].val_b)
+		{
+			this->mEntry[i].val_a = this->mEntry[i].val_a - 40;
+			if (this->mEntry[i].val_a < this->mEntry[i].val_b)
+				this->mEntry[i].val_a = this->mEntry[i].val_b;
+		}
+	}
+
+	if (mouseRes == 0 && this->mLine != startLine)
+	{
+		if (this->mLine < this->mCursorLine)
+		{
+			this->mCursorLine = this->mLine;
+		}
+		else
+		{
+			i32 activeCount = 0;
+
+			if (this->mCursorLine <= this->mLine)
+			{
+				for (i32 k = this->mCursorLine; k <= this->mLine; k++)
+					if (this->mEntry[k].unk_b)
+						activeCount++;
+			}
+
+			if (activeCount > this->field_1B)
+			{
+				if (this->mLine == 0)
+				{
+					this->mCursorLine = 0;
+				}
+				else
+				{
+					i32 visible = 0;
+
+					do
+					{
+						if (this->mEntry[this->mCursorLine].unk_b)
+						{
+							visible++;
+							if (visible == this->field_1B)
+								break;
+						}
+
+						this->mCursorLine--;
+					}
+					while (this->mCursorLine != 0);
+				}
+			}
+		}
+	}
+
+	if (!this->ptr_to)
+		return;
+
+	if ((u16)this->field_32 <= this->field_1B)
+	{
+		this->ptr_to->field_28 = 0;
+	}
+	else
+	{
+		this->ptr_to->field_28 = (this->mCursorLine * 256) / (this->field_32 - this->field_1B);
+	}
 }
 
 // @Ok
@@ -607,10 +1253,13 @@ void validate_CMenu(void)
 	VALIDATE(CMenu, mLine, 0x14);
 
 	VALIDATE(CMenu, mCursorLine, 0x15);
+	VALIDATE(CMenu, field_16, 0x16);
+	VALIDATE(CMenu, field_17, 0x17);
 	VALIDATE(CMenu, mNumLines,  0x1A);
 	VALIDATE(CMenu, field_1B,  0x1B);
 	VALIDATE(CMenu, mZoomBoxType,  0x1C);
 	VALIDATE(CMenu, field_1E, 0x1E);
+	VALIDATE(CMenu, field_20, 0x20);
 	VALIDATE(CMenu, mX, 0x24);
 	VALIDATE(CMenu, mY, 0x28);
 	VALIDATE(CMenu, mLineSep, 0x2C);

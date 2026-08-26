@@ -77,13 +77,14 @@ public:
 	EXPORT void Display(void);
 	EXPORT void KillBox(void);
 	EXPORT void Update(void);
+	EXPORT i32 ProcessMouse(void);
 
 	CExpandingBox* ptr_to;
 	u16 menu_width;
 	i16 text_val_b;
 	i32 width_val_a;
 
-	char scrollbar_one;
+	u8 scrollbar_one;
 	char scrollbar_zero;
 
 	u8 mJustification;
@@ -93,7 +94,14 @@ public:
 	u8 mLine;
 	u8 mCursorLine;
 
-	PADDING(4);
+	// Found in CMenu::Display: field_16 gates a "just selected this entry"
+	// highlight-particle spawn (bool-like), field_17 is compared against the
+	// loop index to see which line it applies to (a "previously selected
+	// line" index, guess).
+	u8 field_16;
+	u8 field_17;
+
+	PADDING(2);
 
 	u8 mNumLines;
 	u8 field_1B;
@@ -103,7 +111,9 @@ public:
 
 	i16 field_1E;
 
-	PADDING(4);
+	i16 field_20;
+
+	PADDING(2);
 
 	i32 mX;
 	i32 mY;
@@ -134,6 +144,7 @@ EXPORT void Front_Update(void);
 EXPORT void PrintPaused(void);
 
 EXPORT extern CMenu* pYesNoMenu;
+EXPORT extern CMenu* gPausedMenu;
 const i32 FRONT_NUM_LEVELS = 41;
 EXPORT extern SLevel Levels[FRONT_NUM_LEVELS];
 
