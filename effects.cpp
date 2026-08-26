@@ -361,11 +361,83 @@ CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)
 	printf("CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)");
 }
 
-// @MEDIUMTODO
-CElectrify::CElectrify(CSuper*, i32)
+// @Ok
+// @AlmostMatching: 15 hypotheses tried (base ctor arg, mFlags vs mInquiry field,
+// if/else nesting shape, auto_inline pragma on ChooseRandomPositions, storing
+// the loop index instead of 0, caching &pSuper->field_114 in a pointer local,
+// G_PSXREGION instead of the relocatable PSXRegion global, ppModels instead of
+// pPSX offset fix, a temp for the second DCMem_New size, hoisting the loop
+// counter out of the for-statement, shl vs plain multiply for the first
+// DCMem_New size, u8 vs i32 for the region local (worse, reverted), swapping
+// the multiply operand order, renaming the loop counter). All 133 instructions
+// match in count and mnemonic. The only byte diffs left are relocated call
+// targets, string addresses and the vtable pointer (all excused), plus 4
+// instructions (0x43900e/439013/439018/43902d/439030 in the original) that
+// are pure register-allocator colour choices (ecx vs eax, edx vs ecx) on the
+// same operations with the same shape, no semantic difference.
+CElectrify::CElectrify(CSuper* pSuper, i32 a2)
+	: CSimpleTexturedRibbon(a2)
 {
-	printf("CElectrify::CElectrify(CSuper*, int)");
+	print_if_false(pSuper != 0, "NULL pSuper");
+	print_if_false((pSuper->mFlags >> 1) & 1, "pSuper not ready for CElectrify");
+
+	SHandle superHandle = Mem_MakeHandle(pSuper);
+	this->field_5C = superHandle.pWhatever;
+	this->field_60 = superHandle.Id;
+
+	SHandle *pField114 = &pSuper->field_114;
+	print_if_false(Mem_RecoverPointer(pField114) == 0, "CElectrify already attached");
+
+	SHandle selfHandle = Mem_MakeHandle(this);
+	pField114->pWhatever = selfHandle.pWhatever;
+	i32 region = pSuper->mRegion;
+	pField114->Id = selfHandle.Id;
+
+	print_if_false(G_PSXREGION[region].ppModels != 0, "No models for CElectrify");
+
+	this->field_50 = reinterpret_cast<i32*>(G_PSXREGION[pSuper->mRegion].ppModels)[-1];
+	this->field_4C = DCMem_New(this->field_50 * 8, 0, 1, 0, 1);
+	this->field_54 = reinterpret_cast<CVector*>(DCMem_New(this->field_50 * 12, 0, 1, 0, 1));
+
+	for (i32 j = 0; j < this->field_50; j++)
+		reinterpret_cast<u16*>(this->field_4C)[j * 4 + 3] = static_cast<u16>(j);
+
+	this->SetTexture(Spool_FindTextureChecksum("Electro"));
+	this->SetWidth(0x19);
+	this->SetRGB(0, 0x20, 0x80);
+	this->SetSemiTransparent();
+
+	i32 subType = *reinterpret_cast<u16*>(reinterpret_cast<u8*>(pSuper) + 0x38);
+
+	if (subType != 50)
+	{
+		if (subType != 0x133)
+			this->field_58 = 0x64;
+		else
+			this->field_58 = 0xB4;
+	}
+	else
+	{
+		this->field_58 = 0x40;
+	}
+
+	this->ChooseRandomPositions(0, 1);
 }
+
+// keep the MSVC inliner away, same trick as shell.cpp/PCShell.cpp: this stub
+// lives in the same TU as its caller (CElectrify::CElectrify), and the
+// original calls it as a real out-of-line function.
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
+// @MEDIUMTODO
+void CElectrify::ChooseRandomPositions(i32, i32)
+{
+	printf("CElectrify::ChooseRandomPositions(i32, i32)");
+}
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @Ok
 void INLINE Effects_UnElectrify(CSuper* pSuper)
@@ -400,6 +472,13 @@ void Effects_Electrify(CSuper* pSuper)
 void validate_CElectrify(void)
 {
 	VALIDATE_SIZE(CElectrify, 0x64);
+
+	VALIDATE(CElectrify, field_4C, 0x4C);
+	VALIDATE(CElectrify, field_50, 0x50);
+	VALIDATE(CElectrify, field_54, 0x54);
+	VALIDATE(CElectrify, field_58, 0x58);
+	VALIDATE(CElectrify, field_5C, 0x5C);
+	VALIDATE(CElectrify, field_60, 0x60);
 }
 
 void validate_CSkinGoo(void)

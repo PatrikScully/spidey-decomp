@@ -59,9 +59,24 @@ class CRhinoWallImpact : public CQuadBit
 class CElectrify : public CSimpleTexturedRibbon
 {
 	public:
-		PADDING(24);
+		EXPORT CElectrify(CSuper*, int a2);
 
-		EXPORT CElectrify(CSuper*, int);
+		EXPORT void ChooseRandomPositions(i32, i32);
+
+		// @FIXME guessed layout, entries are 8 bytes, only the field at +6
+		// (u16) is written by the constructor
+		void *field_4C;
+
+		i32 field_50;
+
+		// array of field_50 CVector entries
+		CVector *field_54;
+
+		i32 field_58;
+
+		// SHandle wrapping the owning CSuper
+		void *field_5C;
+		u32 field_60;
 };
 
 struct SSkinGooSource
