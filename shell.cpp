@@ -17,6 +17,8 @@
 #include "spidey.h"
 #include "ps2m3d.h"
 #include "init.h"
+#include "ps2redbook.h"
+#include "m3dutils.h"
 
 #include <cstring>
 
@@ -83,6 +85,9 @@ SAnimFrame* gBackgroundAnimFrame;
 
 const i32 NUM_SAVE_GAME_SLOTS = 8;
 EXPORT SSaveGame gSaveGameSlots[NUM_SAVE_GAME_SLOTS];
+
+// sin/cos pair table, i16[2*n] = sin(n), i16[2*n+1] = cos(n), n = angle & 0xFFF
+static i16 * const word_610C48 = (i16*)0x610C48;
 
 // @Ok
 // @Matching
@@ -515,10 +520,68 @@ void Shell_StoryBoards(void)
     printf("Shell_StoryBoards(void)");
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void Shell_TitleScreen(void)
 {
-    printf("Shell_TitleScreen(void)");
+	Front_ClearScreen();
+	DrawSync();
+	Pad_ClearTriggers(gSControl);
+	Pad_Update();
+	Pad_ClearTriggers(gSControl);
+
+	Sprite2* v0 = new Sprite2("title.bmp", 1, 0, 0, 3);
+
+	// same address as gsub_430880 (nullsub_3), declared and defined in
+	// PCShell.cpp; cast to accept the (unused) dummy arg this call site passes.
+	extern void gsub_430880(void);
+	((void(*)(i32))gsub_430880)(3);
+
+	Redbook_XAPlay(0x43, 0xD, 0);
+
+	while (1)
+	{
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1u, -1);
+
+		v0->screenHeight();
+
+		v0->draw(0, 0, 8, -1.0f);
+
+		Front_MiniUpdate();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		++TTime;
+		Pad_Update();
+
+		if (PCSHELL_CheckTriggers(0x40010, 1, 1))
+			break;
+
+		gsub_430880();
+		PCSHELL_Relax();
+	}
+
+	gSControl[0].Start.Triggered = 0;
+	delete v0;
+
+	Redbook_XAStop();
+	Mess_DeleteAll();
+
+	Utils_InitialRand(Vblanks);
+
+	for (i32 i = 10000; i > 0; i--)
+		Rnd(10);
+
+	// tentative: 9 i32 game-address array, no name in idb_globals.txt (nearest
+	// neighbours are gTrainingSeconds 0x551288 and gCheats 0x5513E0)
+	static i32 * const gTitleScreenShuffleTable = (i32*)0x5512A0;
+	Utils_Jumble(gTitleScreenShuffleTable, 9);
+
+	Front_ClearScreen();
+	DrawSync();
+	Pad_ClearTriggers(gSControl);
 }
 
 // @Ok
@@ -688,9 +751,96 @@ CShellMysterioHeadCircle::CShellMysterioHeadCircle(CDummy *pDummy)
 	++gShellMysterioRelated;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Residue: register allocation only (63 mnemonic diffs, all downstream of one root
+// cause). All three sin/cos table lookups (heading, field_108-phase, field_104-phase)
+// read the SAME masked-index twice (offset +0 and +2 into word_610C48). The original
+// computes the byte offset ONCE via an explicit "shl reg,2" then does two plain
+// [reg+610C48h]/[reg+610C48h+2] reads; our build always folds the *4 into SIB-scaled
+// addressing per read ([reg*4+610C48h]) instead, twice. Tried: masked index as a plain
+// i32 local (word_610C48[2*idx], word_610C48[2*idx+1]) - SIB every time; an i16* local
+// pre-advanced by 2*idx with [0]/[1] indexing - reduced diffs (74->63, this is the kept
+// version) but still SIB-addresses instead of reusing the pointer; a manually pre-*2
+// index folded before the array subscript - regressed (66). The same "index used twice"
+// shape DOES compile to the shl+plain-offset form in CShellEmber::Move's idx7c case in
+// this same file, so this is source-shape-dependent, not a hard compiler limit; ran out
+// of iteration budget this session to find the exact trigger. Everything else (dead
+// hook.Offset=1 init before the real value, the two-step truncating +=0xF63C/+=0xDA1C
+// on the i16 struct fields, the branch polarity on the field_110 Rnd reset, the
+// reinterpret_cast<CSuper*>(pDummy) reuse for M3d_BuildTransform/GetDynamicHookPosition)
+// is verified correct against the disassembly. 6 attempts.
 void CShellGoldFish::AI(void)
 {
+	CDummy *pDummy = static_cast<CDummy*>(Mem_RecoverPointer(&this->field_F8));
+
+	if (!pDummy)
+	{
+		this->Die();
+		return;
+	}
+
+	M3d_BuildTransform(reinterpret_cast<CSuper*>(pDummy));
+
+	if (this->field_10C)
+		this->field_10C--;
+
+	if (!this->field_10C)
+	{
+		this->field_10C = Rnd(0x190) + 0x14;
+		this->mAngVel.vy = -this->mAngVel.vy;
+	}
+
+	if (this->field_110)
+		this->field_110--;
+
+	if (!this->field_110)
+	{
+		this->field_110 = 0x14;
+
+		if (this->mAngVel.vy < 0)
+			this->mAngVel.vy = -0x28 - Rnd(0x5A);
+		else
+			this->mAngVel.vy = Rnd(0x5A) + 0x28;
+	}
+
+	if (this->field_100)
+		this->mAngVel.vy <<= 1;
+
+	this->field_114 += this->mAngVel.vy;
+	i16 *tblHeading = word_610C48 + 2 * (this->field_114 & 0xFFF);
+	i32 sinH = tblHeading[0];
+	i32 cosH = tblHeading[1];
+
+	i32 phase108 = this->field_108;
+	i32 idx108 = phase108 & 0xFFF;
+	i32 magVal = word_610C48[2 * idx108];
+	this->field_108 = phase108 + 0xA;
+
+	i32 phase104 = this->field_104;
+	i32 idx104 = phase104 & 0xFFF;
+	i32 bobVal = word_610C48[2 * idx104];
+	this->field_104 = phase104 + 0x50;
+
+	SHook hook;
+	hook.Offset = 1;
+
+	i32 mag = (magVal * 500) / 4096 + 0x8FC;
+	hook.Part.vx = (mag * sinH) >> 12;
+	hook.Part.vz = (mag * cosH) >> 12;
+	hook.Part.vz += 0xF63C;
+
+	hook.Offset = bobVal * 600 / 4096 - 0x5DC;
+	hook.Offset += 0xDA1C;
+
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->mPos),
+			reinterpret_cast<CSuper*>(pDummy),
+			&hook);
+
+	if (this->mAngVel.vy > 0)
+		this->mAngles.vy = this->field_114;
+	else
+		this->mAngles.vy = this->field_114 + 0x800;
 }
 
 // @Ok
@@ -789,10 +939,52 @@ CShellSimbyMeltSplat::CShellSimbyMeltSplat(CVector* pVec)
 	this->mType = 21;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Residue: register allocation only. Logic verified correct (spiral position update,
+// fade-out of R/G/B intensities, flicker-scaled color repack). Two spots resist matching
+// after 14 tried source shapes (see attempts log): (1) this->field_80 should load into
+// ecx as the very first memory read of the function, before mVel.vy/mPos.vy; every source
+// order tried instead loads mVel.vy/mPos.vy first, or (when field_80 is moved first) pulls
+// field_7C forward too early. (2) the final mCodeBGR repack: the original packs the
+// field_88 contribution via a bare "mov cl,dh" byte extraction (no explicit shift), ours
+// always emits sar+and+or for all three channels.
 void CShellEmber::Move(void)
 {
-	printf("CShellEmber::Move");
+	this->mPos.vy -= this->mVel.vy;
+	i32 idx80 = this->field_80 & 0xFFF;
+	this->field_80 += 100;
+	i32 amp = (this->field_78 * word_610C48[2 * idx80]) >> 12;
+
+	i32 phase7c = this->field_7C;
+	i32 idx7c = phase7c & 0xFFF;
+	this->mPos.vx = amp * word_610C48[2 * idx7c] + this->field_68;
+	this->mPos.vz = amp * word_610C48[2 * idx7c + 1] + this->field_70;
+	this->field_7C = phase7c + 100;
+
+	if (this->field_74)
+	{
+		this->field_74--;
+	}
+	else
+	{
+		i32 v84 = this->field_84 < 15 ? 0 : this->field_84 - 15;
+		this->field_84 = v84;
+
+		i32 v88 = this->field_88 < 15 ? 0 : this->field_88 - 15;
+		this->field_88 = v88;
+
+		i32 v8c = this->field_8C < 15 ? 0 : this->field_8C - 15;
+		this->field_8C = v8c;
+
+		if (!(v84 | v88 | v8c))
+			this->Die();
+	}
+
+	i32 flicker = Rnd(0x100);
+	this->mCodeBGR = (((this->field_8C * flicker) >> 8) << 16)
+		| (((this->field_88 * flicker) >> 8) << 8)
+		| ((this->field_84 * flicker) >> 8)
+		| (this->mCodeBGR & 0xFF000000u);
 }
 
 // @Ok
@@ -1104,8 +1296,6 @@ void INLINE CDummy::FadeBack(void)
 	this->field_1FC = 1;
 	this->field_1F8 = 0;
 }
-
-static const i16 *word_610C48 = (i16*)0x610C48;
 
 // @NotOk
 // Global
