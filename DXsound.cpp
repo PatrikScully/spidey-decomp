@@ -906,19 +906,86 @@ i32 DXINPUT_StopForceFeedbackEffect(void)
 }
 
 
-// @MEDIUMTODO
-// low graphics stuff
-EXPORT void gsub_514DB0(LPVOID,
-			i32,
-			i32,
-			LONG,
-			u32,
-			f32,
-			i32,
-			f32,
-			f32)
+// Tentative globals for the low graphics scanline setup below. Names and
+// guessed roles are ours, not confirmed against his IDB (idb_globals.txt has
+// nothing at these addresses except gLowGraphicsRelated, already known).
+static void* gLowGraphicsSurface;             // 0x2E096D4, cached lpSurface
+static i32 gLowGraphicsPixelCount;            // 0x2E096DC, width * height
+static u8* const gLowGraphicsPaletteDirty = (u8*)0x2E096E1; // set 1 here, cleared by gsub_514ED0
+static i32* const gLowGraphicsColor16 = (i32*)0x2E096D0;    // packed 16 bit color, read first thing in gsub_514ED0
+static i32 gLowGraphicsWidth;                 // 0x568F90, cached every call
+static i32 gLowGraphicsHeight;                // 0x568F98, cached, used to detect a size change
+static i32 gLowGraphicsColor16Cache;          // 0x568F94, early copy of the color param, not read back here
+static f32 gLowGraphicsFadeColor;             // 0x2E04568
+static i32 gLowGraphicsColorRelated;          // 0x282854C
+static f32 gLowGraphicsHalfWidth;             // 0xADC4EC
+static f32 gLowGraphicsHalfHeight;            // 0xADC4F0
+// Two small descriptor structs the fog/backdrop code reads back elsewhere
+// (not in this file). Field layout is a guess from the store pattern only.
+static void* gLowGraphicsFadeDescPtrA;        // 0xADC4E0, set to a fixed address
+static void* gLowGraphicsFadeDescPtrB;        // 0xADC4E4, set to a fixed address
+static i32 gLowGraphicsFadeDescUnused14;      // 0xADC4F4
+static i32 gLowGraphicsViewWidth;             // 0x2828548
+static i32 gLowGraphicsViewUnused8;           // 0x2828550
+static i32 gLowGraphicsViewHeight;            // 0x2828554
+
+// @NotOk
+// Low graphics scanline table setup, called once per BeginScene before the
+// MMX blit in gsub_514ED0. Reallocates gLowGraphicsRelated (16 bytes per
+// scanline) only when the height changes; pitch is read from the caller but
+// never used here, matches the original (dead parameter). 40 mnemonic diffs
+// left (down from 46 first draft), residue is register/scheduling choice
+// around the free/malloc branch and the final color16 store, see
+// dxsound.attempts.md.
+EXPORT void gsub_514DB0(
+		LPVOID lpSurface,
+		i32 width,
+		i32 height,
+		LONG pitch,
+		u32 color16,
+		f32 fadeColor,
+		i32 colorRelated,
+		f32 halfWidth,
+		f32 halfHeight)
 {
-	printf("void gsub_514DB0(LPVOID,");
+	gLowGraphicsFadeColor = fadeColor;
+	gLowGraphicsColorRelated = colorRelated;
+	gLowGraphicsHalfHeight = halfHeight;
+	gLowGraphicsWidth = width;
+	gLowGraphicsSurface = lpSurface;
+	gLowGraphicsHalfWidth = halfWidth;
+	*gLowGraphicsPaletteDirty = 1;
+	gLowGraphicsColor16Cache = color16;
+
+	if (height != gLowGraphicsHeight)
+	{
+		void* oldBuf = gLowGraphicsRelated;
+		gLowGraphicsHeight = height;
+
+		if (oldBuf)
+			free(oldBuf);
+
+		gLowGraphicsRelated = malloc(gLowGraphicsHeight * 0x10);
+		memset(gLowGraphicsRelated, 0, gLowGraphicsHeight * 0x10);
+	}
+
+	gLowGraphicsFadeDescPtrA = (void*)0x2828558;
+	gLowGraphicsFadeDescPtrB = (void*)0xADC4F8;
+	gLowGraphicsFadeDescUnused14 = 0;
+	gLowGraphicsViewWidth = gLowGraphicsWidth;
+	gLowGraphicsViewUnused8 = 0;
+	gLowGraphicsViewHeight = gLowGraphicsHeight;
+
+	if (gLowGraphicsWidth >= 0 && gLowGraphicsHeight < 0)
+	{
+		gLowGraphicsFadeDescUnused14 = 0;
+		gLowGraphicsViewWidth = 0;
+		gLowGraphicsViewUnused8 = 0;
+		gLowGraphicsViewHeight = 0;
+	}
+
+	gLowGraphicsPixelCount = gLowGraphicsWidth * gLowGraphicsHeight;
+	*gLowGraphicsColor16 = gLowGraphicsColor16Cache;
 }
 
 // @Ok
