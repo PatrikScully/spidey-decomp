@@ -244,10 +244,54 @@ CItemFrag::CItemFrag(u32 *pFace, CVector *pVertices, CVector *pVel, i32 a4)
 	this->mType = 0x17;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CItemFrag::Move(void)
 {
-    printf("CItemFrag::Move(void)");
+	this->field_88 += this->mVel;
+	this->field_94 += this->mVel;
+	this->field_A0 += this->mVel;
+	this->field_AC += this->mVel;
+
+	this->mVel.vy += 0x2000;
+
+	if (this->field_88.vy > this->field_84)
+	{
+		i32 delta = this->field_84 - this->field_88.vy;
+
+		this->field_88.vy += delta;
+		this->field_94.vy += delta;
+		this->field_A0.vy += delta;
+		this->field_AC.vy += delta;
+
+		this->mVel.vy = -this->mVel.vy >> 2;
+		this->mVel.vx >>= 1;
+		this->mVel.vz >>= 1;
+	}
+
+	this->mPos = this->field_88;
+	this->mPosB = this->field_94;
+	this->mPosC = this->field_A0;
+	this->mPosD = this->field_AC;
+
+	this->mPos.vx += (Rnd(41) - 20) << 12;
+	this->mPos.vz += (Rnd(41) - 20) << 12;
+	this->mPosB.vx += (Rnd(41) - 20) << 12;
+	this->mPosB.vz += (Rnd(41) - 20) << 12;
+	this->mPosC.vx += (Rnd(41) - 20) << 12;
+	this->mPosC.vz += (Rnd(41) - 20) << 12;
+	this->mPosD.vx += (Rnd(41) - 20) << 12;
+	this->mPosD.vz += (Rnd(41) - 20) << 12;
+
+	++this->mAge;
+	if (this->mAge >= this->mLifetime)
+	{
+		this->Die();
+		return;
+	}
+
+	i32 v = ((this->mLifetime - this->mAge) << 7) / this->mLifetime;
+	this->mTint = v | (v << 8) | (v << 16);
 }
 
 // @Ok
