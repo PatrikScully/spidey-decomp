@@ -127,7 +127,12 @@ class CElectroLine : public CElectro
 		EXPORT CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u32*);
 		EXPORT virtual ~CElectroLine(void);
 
-		PADDING(8);
+		// offset 0x64: CElectro::Setup's a8 (u16), written through a raw
+		// offset cast in Setup, not named here to keep Setup untouched.
+		PADDING(4);
+
+		u16 field_68;
+		u16 field_6A;
 };
 
 class CVertexWobble : public CBit
