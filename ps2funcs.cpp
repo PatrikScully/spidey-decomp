@@ -418,9 +418,8 @@ void gte_ldopv2(VECTOR *a1)
 }
 
 
-// @NotOk
-// Garbage revisit
-// vertex register is not vector, i added one to it so it doesn't crash, it's trash
+// @Ok
+// @Matching
 void gte_ldlv0(const VECTOR *a1)
 {
   *(VECTOR *)vertexRegister = *a1;
