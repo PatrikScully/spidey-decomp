@@ -9,6 +9,9 @@
 #include "my_assert.h"
 #include "ps2redbook.h"
 #include "stubs.h"
+#include "ps2pad.h"
+#include "ps2gamefmv.h"
+#include "camera.h"
 
 extern CBody *EnvironmentalObjectList;
 extern CBody *ControlBaddyList;
@@ -31,6 +34,60 @@ EXPORT u16 gUtilsRelatedFive;
 EXPORT u16 gUtilsRelatedSix;
 EXPORT u16 gUtilsRelatedSeven;
 
+// two packed 16 bit vblank countdown timers, THPS2 declares GameFade in utils.h
+//#define G_GAME_FADE (GameFade)
+#define G_GAME_FADE (*reinterpret_cast<volatile i32*>(0x006B4C9C))
+
+// gates the delayed XA restart, also checked by Logic, Display and Front_Update
+//#define G_POST_WATER_EFFECT (gPostWaterEffect)
+#define G_POST_WATER_EFFECT (*reinterpret_cast<i32*>(0x005FAE98))
+
+const u32 crc32_tab[] = {
+	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
+	0xe963a535, 0x9e6495a3,	0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
+	0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2,
+	0xf3b97148, 0x84be41de,	0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
+	0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec,	0x14015c4f, 0x63066cd9,
+	0xfa0f3d63, 0x8d080df5,	0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
+	0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,	0x35b5a8fa, 0x42b2986c,
+	0xdbbbc9d6, 0xacbcf940,	0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
+	0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423,
+	0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
+	0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,	0x76dc4190, 0x01db7106,
+	0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
+	0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
+	0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
+	0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457, 0x65b0d9c6, 0x12b7e950,
+	0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
+	0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7,
+	0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0,
+	0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa,
+	0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
+	0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81,
+	0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
+	0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683, 0xe3630b12, 0x94643b84,
+	0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
+	0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
+	0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc,
+	0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5, 0xd6d6a3e8, 0xa1d1937e,
+	0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
+	0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55,
+	0x316e8eef, 0x4669be79, 0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
+	0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe, 0xb2bd0b28,
+	0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
+	0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f,
+	0x72076785, 0x05005713, 0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
+	0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242,
+	0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
+	0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69,
+	0x616bffd3, 0x166ccf45, 0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2,
+	0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db, 0xaed16a4a, 0xd9d65adc,
+	0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
+	0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693,
+	0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
+	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
+};
+
 // @Ok
 void Utils_Init(void)
 {
@@ -48,10 +105,36 @@ void Utils_Init(void)
 	gUtilsRelatedSeven = 512;
 }
 
-// @SMALLTODO
+// counts vsyncs with no pad input since the last press, resets on any input. guess based on use
+// alongside Pad_IdleTime in MyVSync (found by scanning tools/functions/*.bin for the address)
+static i32 * const gIdleVsyncCount = (i32*)0x006B4CA4;
+
+// reentrancy guard, set for the duration of MyVSync. tentative name, no idb match
+static u8 * const gInVsync = (u8*)0x006B4CB8;
+
+// written by PShell_EndTrainingInit/PShell_EndTrainingUpdate. tentative name, no idb match
+static i32 * const gTrainingRelated = (i32*)0x0060CFB0;
+
+// @Ok
+// @Matching
 void MyVSync(void)
 {
-    printf("MyVSync(void)");
+	*gInVsync = 1;
+	Vblanks++;
+
+	if (!G_GAME_FMV_ACTIVE)
+		(*gIdleVsyncCount)++;
+
+	if (!Pad_IdleTime)
+		*gIdleVsyncCount = 0;
+
+	if (!G_POST_WATER_EFFECT && !*gTrainingRelated)
+		gTimerRelated++;
+
+	if (DoVblankProcessing)
+		Utils_VblankProcessing();
+
+	*gInVsync = 0;
 }
 
 // @Ok
@@ -97,10 +180,57 @@ void Utils_CalcPerps(CVector * a1,CVector * a2,CVector * a3)
 	gte_stlvnl(reinterpret_cast<VECTOR*>(a3));
 }
 
-// @MEDIUMTODO
-void Utils_CalcUnitFacingCamera(CVector const *,CVector const *,CVector *)
+// @Ok
+// @Matching
+void Utils_CalcUnitFacingCamera(CVector const * a1, CVector const * a2, CVector * a3)
 {
-    printf("Utils_CalcUnitFacingCamera(CVector const *,CVector const *,CVector *)");
+	CVector delta1;
+	delta1.vx = (a2->vx - a1->vx) >> 12;
+	delta1.vy = (a2->vy - a1->vy) >> 12;
+	delta1.vz = (a2->vz - a1->vz) >> 12;
+
+	if (delta1.vx > 500 || delta1.vy > 500 || delta1.vz > 500)
+	{
+		delta1.vx >>= 4;
+		delta1.vy >>= 4;
+		delta1.vz >>= 4;
+	}
+
+	CVector delta2;
+	delta2.vx = gMikeCamera[0].Position.vx - (a1->vx >> 12);
+	delta2.vy = gMikeCamera[0].Position.vy - (a1->vy >> 12);
+	delta2.vz = gMikeCamera[0].Position.vz - (a1->vz >> 12);
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&delta1));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&delta2));
+	gte_op0();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(a3));
+
+	CVector shifted;
+	shifted.vx = a3->vx >> 8;
+	shifted.vy = a3->vy >> 8;
+	shifted.vz = a3->vz >> 8;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&shifted));
+	gte_sqr0();
+
+	VECTOR squared;
+	gte_stlvnl(&squared);
+
+	i32 mag = M3dMaths_SquareRoot0(squared.vx + squared.vy + squared.vz);
+
+	if (mag < 5)
+	{
+		a3->vx = 0;
+		a3->vy = 0;
+		a3->vz = 0;
+	}
+	else
+	{
+		a3->vx = (a3->vx / mag) << 4;
+		a3->vy = (a3->vy / mag) << 4;
+		a3->vz = (a3->vz / mag) << 4;
+	}
 }
 
 // @Ok
@@ -148,11 +278,84 @@ void Utils_CalcWallPerps(CVector * a1,CVector * a2,CVector * a3)
 	}
 }
 
-// @SMALLTODO
-u32 Utils_CalculateSpatialAttenuation(CVector const *,i32,i32)
+// scratch rotation matrix for camera-relative transforms, same address CPlayer::RenderLookaroundReticle
+// uses (spidey.cpp, stru_56F224). 0x56F224 falls inside gMikeCamera[1] by struct offset (Focus.pad through
+// Angles/Transform, per SCamera's validated layout), so it looks like a coincidental overlap rather than
+// a real SCamera field, same class of thing tips.txt warns about ("global boundaries... unreliable").
+// Kept as its own address, matching the existing spidey.cpp precedent, instead of indexing into gMikeCamera[1].
+static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
+
+// @NotOk
+// NOT AlmostMatching: instruction counts do NOT match (original 124, this
+// build 123, over the same 347-byte window), so per CLAUDE.md's "verify
+// byte length" rule this is a real code-shape gap, not pure scheduling
+// residue. Confirmed by inspection: the original preserves one value in
+// edi across the whole function (push/pop edi in the prologue/epilogue);
+// this build carries the equivalent value in edx instead (a caller-saved
+// register needing no push/pop) and pops esi at a different point in the
+// epilogue, a genuine register-allocation/structural difference, not a
+// same-length swap. 21 mnemonic diffs left (cmpsum.sh), all in the final
+// stereo-pan pack in each angle branch. 16 distinct source hypotheses
+// tried (logged in wt/utils.attempts.md): separate field-store vs
+// constructor-call vs const-local for the camera position temp,
+// single-reused vs multi CVector locals, dx/dy/dz temps vs inline field
+// exprs, moving gte_SetRotMatrix before/after the delta vector build
+// (fixed the whole first half), v.vx&&v.vz vs (v.vz|v.vx) zero check,
+// shared vs per-branch pan computation (per-branch matched, fixed a big
+// chunk), and five orderings of the final hi/lo pack (lo-before-hi fixed
+// another chunk). None reproduced the edi-preservation shape. Needs a
+// source form that keeps one value alive across the whole function in a
+// callee-saved register the way the original does.
+u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 {
-    printf("Utils_CalculateSpatialAttenuation(CVector const *,i32,i32)");
-	return 0x28032025;
+	const CVector camPos(
+			gMikeCamera[0].Position.vx << 12,
+			gMikeCamera[0].Position.vy << 12,
+			gMikeCamera[0].Position.vz << 12);
+	i32 dist = Utils_CrapDist(*a1, camPos);
+
+	if (dist <= a2)
+		return 0xFFF0FFF;
+
+	if (dist >= a3)
+		return 0;
+
+	i32 atten = ((a3 - dist) * 4095) / a3;
+
+	gte_SetRotMatrix(gCameraViewMatrix);
+
+	i32 dx = (a1->vx >> 12) - gMikeCamera[0].Position.vx;
+	i32 dy = (a1->vy >> 12) - gMikeCamera[0].Position.vy;
+	i32 dz = (a1->vz >> 12) - gMikeCamera[0].Position.vz;
+
+	CVector v;
+	v.vx = dx;
+	v.vy = dy;
+	v.vz = dz;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&v));
+	gte_rtir();
+
+	gsub_46D9B0(reinterpret_cast<VECTOR*>(&v));
+
+	if (!(v.vz | v.vx))
+		return (atten << 16) | atten;
+
+	i32 angle = (1024 - ratan2(v.vz, v.vx)) & 0xFFF;
+
+	i32 hi, lo;
+	if (angle < 2048)
+	{
+		lo = atten - ((rcossin_tbl[angle & 0xFFF].sin * (atten / 2)) >> 12);
+		hi = atten;
+	}
+	else
+	{
+		hi = atten + ((rcossin_tbl[angle & 0xFFF].sin * (atten / 2)) >> 12);
+		lo = atten;
+	}
+
+	return (hi << 16) | lo;
 }
 
 // @Ok
@@ -206,10 +409,94 @@ u32 Utils_Dist(const CVector &a1, const CVector &a2)
 	return M3dMaths_SquareRoot0(((a1 - a2) >> 12).SquaredLength());
 }
 
-// @SMALLTODO
+// tentative name: this is dereferenced twice ([ptr+4] then [that+0]) to fill icon metrics
+// below. Referenced by Spool_FindTextureEntry/Spool_ReloadAll/Spool_TextureAccess
+// (spool.cpp), so it looks like a texture/resource source, but the inner struct fields
+// read here (offsets 0, 4, 8, 0xA) are not decoded anywhere else yet.
+static void ** const gIconInfoSource = (void**)0x0056EA98;
+
+// unknown HUD/icon table at 0x6B4904..0x6B49E7 (6 slots, 0x28 bytes stride). field layout
+// not understood, kept as raw offsets matching the disassembly. every use of
+// gIconInfoSource's inner pointer is re-read from memory (not cached, volatile), matching
+// the original's 4 separate [ecx+4] reloads per slot.
+// Residue for the @NotOk below: functionally faithful (same field values/order, same loop bound) but MSVC6
+// picks very different register allocation and, in places, a different arithmetic shape for
+// the same value (e.g. dx computation) once the raw-offset writes are this dense; tried a
+// version without the volatile inner-pointer re-read (48 diffs, whole [ecx+4] cluster got
+// hoisted out of the loop as one-time reads) and the current volatile version (43 diffs,
+// less hoisting but the dx/esi arithmetic still gets restructured). Did not reach a byte
+// match; leaving as a real, honest translation rather than forcing an @AlmostMatching claim
+// without the full attempt count this size class needs.
+// @NotOk
 void Utils_InitLoadIcons(void)
 {
-    printf("Utils_InitLoadIcons(void)");
+	char * const info = reinterpret_cast<char*>(*gIconInfoSource);
+	// the inner pointer at info+4 is re-read from memory on every use below (volatile),
+	// matching the original's repeated "mov edx,[ecx+4]" reloads instead of caching it.
+#define ICON_INNER (*reinterpret_cast<i32 * volatile *>(info + 4))
+
+	i16 bx = 0x30;
+	i16 di = 0x60;
+	i32 ebp = 0x2C202020;
+	i32 esi = 0;
+	i32 eax = 0;
+
+	do
+	{
+		*reinterpret_cast<i32*>(eax + 0x006B4920) = 0x9000000;
+
+		i32 dx = esi + esi * 4;
+		*reinterpret_cast<i16*>(eax + 0x006B4928) = bx;
+		*reinterpret_cast<i16*>(eax + 0x006B4930) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B4938) = bx;
+		dx = dx + dx * 8 + 0xE;
+		*reinterpret_cast<i16*>(eax + 0x006B4940) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B492A) = (i16)dx;
+		*reinterpret_cast<i16*>(eax + 0x006B4932) = (i16)dx;
+		dx = *reinterpret_cast<i16*>(eax + 0x006B492A);
+		dx += 0x20;
+		*reinterpret_cast<i16*>(eax + 0x006B493A) = (i16)dx;
+		*reinterpret_cast<i16*>(eax + 0x006B4942) = (i16)dx;
+		*reinterpret_cast<i32*>(eax + 0x006B4924) = ebp;
+
+		eax += 0x28;
+
+		*reinterpret_cast<i32*>(eax + 0x006B4904) = ICON_INNER[0];
+		*reinterpret_cast<i32*>(eax + 0x006B490C) = ICON_INNER[1];
+		*reinterpret_cast<i16*>(eax + 0x006B4914) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 8);
+		*reinterpret_cast<i32*>(eax + 0x006B49C0) = 0x9000000;
+		*reinterpret_cast<i16*>(eax + 0x006B491C) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 0xA);
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B4902);
+		*reinterpret_cast<i16*>(eax + 0x006B49C8) = bx;
+		*reinterpret_cast<i16*>(eax + 0x006B49D0) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B49D8) = bx;
+		dx += 0x100;
+		*reinterpret_cast<i16*>(eax + 0x006B49E0) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B49CA) = (i16)dx;
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B490A);
+		dx += 0x100;
+		*reinterpret_cast<i16*>(eax + 0x006B49D2) = (i16)dx;
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B4912);
+		dx += 0x100;
+		*reinterpret_cast<i16*>(eax + 0x006B49DA) = (i16)dx;
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B491A);
+		dx += 0x100;
+		esi++;
+		*reinterpret_cast<i16*>(eax + 0x006B49E2) = (i16)dx;
+		*reinterpret_cast<i32*>(eax + 0x006B49C4) = ebp;
+
+		*reinterpret_cast<i32*>(eax + 0x006B49CC) = ICON_INNER[0];
+		*reinterpret_cast<i32*>(eax + 0x006B49D4) = ICON_INNER[1];
+		*reinterpret_cast<i16*>(eax + 0x006B49DC) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 8);
+		*reinterpret_cast<i16*>(eax + 0x006B49E4) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 0xA);
+	}
+	while (eax < 0xC8);
+
+#undef ICON_INNER
 }
 
 // @Ok
@@ -384,10 +671,80 @@ void Utils_SetBaddyVisibilityInBox(CVector const * min,CVector const * max,bool 
 	}
 }
 
-// @MEDIUMTODO
-void Utils_SetVisibilityByName(char const *,i32,i32,bool)
+// @NotOk
+// residue: 68 mnemonic diffs (cmpsum.sh). The overall algorithm matches (CRC32 of the
+// name over crc32_tab, copy the name into a local buffer, format each index a2..a3 as a
+// zero-padded 2-digit string appended to the buffer, continue the CRC over those 2 digits,
+// look the result up via Spool_FindEnviroItem, toggle CItem::mFlags bit 0). The CRC loop and
+// the per-index digit/CRC/lookup loop both byte-match (only relocated addresses/call
+// targets differ). Residue is the middle "copy a1 into name[]" loop: whenever it is written
+// as its own C loop over the same a1 the CRC loop already walked, MSVC6 fuses the two passes
+// into one interleaved loop (seeds the CRC accumulator into the SAME register slot used for
+// the copy index, stores intermediate state to a stack spill) instead of the original's two
+// fully separate loops. Tried: shared vs per-loop "first char" value, pointer-walk vs
+// index-based vs *dst++=*src++ copy style, matching Utils_CopyString's established idiom -
+// none reproduced two independent loops. 5 hypotheses, logged in wt/utils.attempts.md.
+void Utils_SetVisibilityByName(char const * a1, i32 a2, i32 a3, bool a4)
 {
-    printf("Utils_SetVisibilityByName(char const *,i32,i32,bool)");
+	print_if_false(a2 >= 0 && a2 < 100, "Utils_SetVisibilityByName: bad index");
+	print_if_false(a3 >= 0 && a3 < 100, "Utils_SetVisibilityByName: bad index");
+	print_if_false(a1 != NULL, "Utils_SetVisibilityByName: bad name");
+
+	u32 crc = ~0U;
+	{
+		const unsigned char *p = reinterpret_cast<const unsigned char*>(a1);
+		while (*p)
+		{
+			crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+		}
+	}
+
+	char name[16];
+	i32 len = 0;
+	{
+		const char *p = a1;
+		while (*p)
+		{
+			name[len] = *p;
+			len++;
+			p++;
+		}
+	}
+
+	print_if_false(len < 13, "Utils_SetVisibilityByName: name too long");
+	name[len + 2] = 0;
+
+	if (a2 > a3)
+		return;
+
+	u32 hashLo = crc & 0xFF;
+	u32 hashHi = crc >> 8;
+
+	for (i32 i = a2; i <= a3; i++)
+	{
+		if (i < 10)
+		{
+			name[len] = '0';
+			name[len + 1] = (char)(i + '0');
+		}
+		else
+		{
+			name[len] = (char)(i / 10 + '0');
+			name[len + 1] = (char)(i % 10 + '0');
+		}
+
+		u32 h = crc32_tab[((u8)name[len] ^ hashLo) & 0xFF] ^ hashHi;
+		h = crc32_tab[((u8)name[len + 1] ^ (h & 0xFF)) & 0xFF] ^ (h >> 8);
+
+		CItem *item = Spool_FindEnviroItem(h);
+		if (item)
+		{
+			if (a4)
+				item->mFlags &= ~1;
+			else
+				item->mFlags |= 1;
+		}
+	}
 }
 
 // @Ok
@@ -475,14 +832,6 @@ i32 Utils_ShiftFilter(i32 a1,i32 a2,i32 delta, i32 a4)
 	
 	return ((a2 - a1) >> delta) + a1;
 }
-
-// two packed 16 bit vblank countdown timers, THPS2 declares GameFade in utils.h
-//#define G_GAME_FADE (GameFade)
-#define G_GAME_FADE (*reinterpret_cast<volatile i32*>(0x006B4C9C))
-
-// gates the delayed XA restart, also checked by Logic, Display and Front_Update
-//#define G_POST_WATER_EFFECT (gPostWaterEffect)
-#define G_POST_WATER_EFFECT (*reinterpret_cast<i32*>(0x005FAE98))
 
 // @Ok
 // @AlmostMatching: G_POST_WATER_EFFECT (0x5FAE98) is compared from memory instead of a cached register,
@@ -926,52 +1275,6 @@ INLINE int Rnd(i32 n)
 	return result;
 }
 
-const u32 crc32_tab[] = {
-	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
-	0xe963a535, 0x9e6495a3,	0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
-	0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2,
-	0xf3b97148, 0x84be41de,	0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-	0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec,	0x14015c4f, 0x63066cd9,
-	0xfa0f3d63, 0x8d080df5,	0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
-	0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,	0x35b5a8fa, 0x42b2986c,
-	0xdbbbc9d6, 0xacbcf940,	0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
-	0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423,
-	0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
-	0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,	0x76dc4190, 0x01db7106,
-	0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
-	0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
-	0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
-	0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457, 0x65b0d9c6, 0x12b7e950,
-	0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
-	0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7,
-	0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0,
-	0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa,
-	0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
-	0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81,
-	0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
-	0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683, 0xe3630b12, 0x94643b84,
-	0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
-	0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
-	0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc,
-	0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5, 0xd6d6a3e8, 0xa1d1937e,
-	0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
-	0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55,
-	0x316e8eef, 0x4669be79, 0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
-	0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe, 0xb2bd0b28,
-	0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
-	0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f,
-	0x72076785, 0x05005713, 0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
-	0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242,
-	0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
-	0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69,
-	0x616bffd3, 0x166ccf45, 0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2,
-	0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db, 0xaed16a4a, 0xd9d65adc,
-	0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
-	0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693,
-	0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
-	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
-};
-
 // @Ok
 // @Matching
 u32 Utils_GenerateCRC(const char* buf)
@@ -1009,10 +1312,13 @@ int Utils_LinearFilter(
 	return a2;
 }
 
-// @MEDIUMTODO
-void Utils_GetVecFromMagDir(CVector*, int, CSVector*)
+// @Ok
+// @Matching
+void Utils_GetVecFromMagDir(CVector * a1, int a2, CSVector * a3)
 {
-	printf("void Utils_GetVecFromMagDir(CVector*, int, CSVector*)");
+	a1->vx = -(((rcossin_tbl[a3->vx & 0xFFF].cos * a2) >> 12) * rcossin_tbl[a3->vy & 0xFFF].sin);
+	a1->vy = rcossin_tbl[a3->vx & 0xFFF].sin * a2;
+	a1->vz = -(((rcossin_tbl[a3->vx & 0xFFF].cos * a2) >> 12) * rcossin_tbl[a3->vy & 0xFFF].cos);
 }
 
 // @Ok
@@ -1045,10 +1351,20 @@ i32 Utils_XZDist(const CVector* a1, const CVector *a2)
 	return M3dMaths_SquareRoot0(v2 + v3);
 }
 
-// @MEDIUMTODO
-void Utils_RotateY(CVector*, CVector*, i32)
+// @NotOk
+// residue: 9 mnemonic diffs (cmpsum.sh). The original computes the table index
+// (angle&0xFFF)<<2 as a standalone instruction before any table read, then reads
+// cos/sin/sin/cos through that same index 4 times. Every source shape tried here (plain
+// rcossin_tbl[angle] indexing, a cached SSinCos* / reference, an explicit byte-offset
+// pointer, volatile) makes MSVC6 fold the FIRST field read into a direct scaled-index
+// load and only start reusing a materialized address register from the SECOND read
+// onward, which does not match. 7 hypotheses tried, logged in wt/utils.attempts.md.
+void Utils_RotateY(CVector * a1, CVector * a2, i32 a3)
 {
-	printf("void Utils_RotateY(CVector*, CVector*, i32)");
+	SSinCos const * sc = &rcossin_tbl[a3 & 0xFFF];
+	a1->vx = ((a2->vx >> 3) * sc->cos + (a2->vz >> 3) * sc->sin) >> 9;
+	a1->vy = a2->vy;
+	a1->vz = ((a2->vz >> 3) * sc->cos - (a2->vx >> 3) * sc->sin) >> 9;
 }
 
 #include "my_patch.h"

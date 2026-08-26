@@ -455,6 +455,12 @@ void gte_rtir(void){
 	FixedXForm(gRotMatrix, &gOp12Result, &gGeneralLongVector);
 }
 
+// @SMALLTODO
+void gsub_46D9B0(VECTOR *a1)
+{
+    printf("gsub_46D9B0(VECTOR *a1)");
+}
+
 // @Ok
 void M3dMaths_SetIdentityRotation(MATRIX *a1)
 {
