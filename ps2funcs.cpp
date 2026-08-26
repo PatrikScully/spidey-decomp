@@ -8,6 +8,11 @@
 #include "stubs.h"
 #include "PCGfx.h"
 #include "pcdcMem.h"
+#include "ps2gamefmv.h"
+#include "ps2redbook.h"
+#include "ps2lowsfx.h"
+#include "ps2pad.h"
+#include "PCTex.h"
 
 #include <cstdlib>
 
@@ -608,10 +613,51 @@ void M3dAsm_LineColijPreprocessItems(CItem* pItem, i32 ModelTable, SLineInfo* pI
 	func(pItem, ModelTable, pInfo, Inquiry);
 }
 
-// @SMALLTODO
-void DCSetFatalError(i32)
+// idb_globals.txt: DCFatalError @ 0x6150E4
+i32 DCFatalError;
+
+// @Ok
+// @Matching
+void DCSetFatalError(i32 a1)
 {
-	printf("void DCSetFatalError(i32)");
+	DCFatalError = a1;
+
+	if (PCGfx_IsInScene())
+	{
+		PCGfx_EndScene(1);
+
+		// same address as gsub_430880 (nullsub_3), declared and defined in
+		// PCShell.cpp; extern here, cast to accept the (unused) dummy arg this
+		// call site passes, so it is a real cross-TU direct call.
+		extern void gsub_430880(void);
+		((void(*)(i32))gsub_430880)(4);
+	}
+
+	GameFMV_StopFMV();
+	Redbook_XAExit();
+	SFX_ShutDown();
+	DCPad_ShutDownVibrations();
+	PCTex_ReleaseAllTextures();
+
+	if (DCFatalError == 2)
+	{
+		// same address as gsub_430880 (nullsub_3), declared and defined in
+		// PCShell.cpp; extern here so this call is a real cross-TU direct
+		// call instead of an indirect register call.
+		extern void gsub_430880(void);
+		gsub_430880();
+	}
+	else
+	{
+		sbExitSystem();
+
+		// same address as buIsReady (pcdcBkup.h) but called here with no argument
+		// pushed, so it is probably a different function whose body got folded
+		// into buIsReady's at link time. Cast to a real cross-TU direct call.
+		extern i32 buIsReady(i32);
+		((void(*)(void))buIsReady)();
+	}
+
 	exit(0);
 }
 
