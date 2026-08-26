@@ -9,6 +9,8 @@
 #include "my_assert.h"
 #include "ps2redbook.h"
 #include "stubs.h"
+#include "ps2pad.h"
+#include "ps2gamefmv.h"
 
 extern CBody *EnvironmentalObjectList;
 extern CBody *ControlBaddyList;
@@ -31,6 +33,14 @@ EXPORT u16 gUtilsRelatedFive;
 EXPORT u16 gUtilsRelatedSix;
 EXPORT u16 gUtilsRelatedSeven;
 
+// two packed 16 bit vblank countdown timers, THPS2 declares GameFade in utils.h
+//#define G_GAME_FADE (GameFade)
+#define G_GAME_FADE (*reinterpret_cast<volatile i32*>(0x006B4C9C))
+
+// gates the delayed XA restart, also checked by Logic, Display and Front_Update
+//#define G_POST_WATER_EFFECT (gPostWaterEffect)
+#define G_POST_WATER_EFFECT (*reinterpret_cast<i32*>(0x005FAE98))
+
 // @Ok
 void Utils_Init(void)
 {
@@ -48,10 +58,36 @@ void Utils_Init(void)
 	gUtilsRelatedSeven = 512;
 }
 
-// @SMALLTODO
+// counts vsyncs with no pad input since the last press, resets on any input. guess based on use
+// alongside Pad_IdleTime in MyVSync (found by scanning tools/functions/*.bin for the address)
+static i32 * const gIdleVsyncCount = (i32*)0x006B4CA4;
+
+// reentrancy guard, set for the duration of MyVSync. tentative name, no idb match
+static u8 * const gInVsync = (u8*)0x006B4CB8;
+
+// written by PShell_EndTrainingInit/PShell_EndTrainingUpdate. tentative name, no idb match
+static i32 * const gTrainingRelated = (i32*)0x0060CFB0;
+
+// @Ok
+// @Matching
 void MyVSync(void)
 {
-    printf("MyVSync(void)");
+	*gInVsync = 1;
+	Vblanks++;
+
+	if (!G_GAME_FMV_ACTIVE)
+		(*gIdleVsyncCount)++;
+
+	if (!Pad_IdleTime)
+		*gIdleVsyncCount = 0;
+
+	if (!G_POST_WATER_EFFECT && !*gTrainingRelated)
+		gTimerRelated++;
+
+	if (DoVblankProcessing)
+		Utils_VblankProcessing();
+
+	*gInVsync = 0;
 }
 
 // @Ok
@@ -475,14 +511,6 @@ i32 Utils_ShiftFilter(i32 a1,i32 a2,i32 delta, i32 a4)
 	
 	return ((a2 - a1) >> delta) + a1;
 }
-
-// two packed 16 bit vblank countdown timers, THPS2 declares GameFade in utils.h
-//#define G_GAME_FADE (GameFade)
-#define G_GAME_FADE (*reinterpret_cast<volatile i32*>(0x006B4C9C))
-
-// gates the delayed XA restart, also checked by Logic, Display and Front_Update
-//#define G_POST_WATER_EFFECT (gPostWaterEffect)
-#define G_POST_WATER_EFFECT (*reinterpret_cast<i32*>(0x005FAE98))
 
 // @Ok
 // @AlmostMatching: G_POST_WATER_EFFECT (0x5FAE98) is compared from memory instead of a cached register,
