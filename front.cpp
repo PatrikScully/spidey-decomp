@@ -4,6 +4,8 @@
 #include "mess.h"
 #include "ps2funcs.h"
 #include "trig.h"
+#include "ps2pad.h"
+#include "powerup.h"
 
 CMenu* pYesNoMenu;
 
@@ -165,10 +167,38 @@ void Front_LoadGame(SSaveGame *,i32,bool)
     printf("Front_LoadGame(SSaveGame *,i32,bool)");
 }
 
-// @SMALLTODO
+// Tentative names, no name in idb_globals.txt for these three. Shared with
+// CheckForPadUnplugged and Front_Display, which both load pointers from the
+// same fixed addresses to draw the same blinking text. Not yet implemented
+// anywhere else in the repo, so kept file-local for now.
+#define gFrontPadTextOne (*reinterpret_cast<char**>(0x0054B764))
+#define gFrontPadTextTwo (*reinterpret_cast<char**>(0x0054B768))
+#define gFrontPadTextThree (*reinterpret_cast<char**>(0x0054BBC8))
+
+// @Ok
+// @Matching
 void Front_MiniUpdate(void)
 {
-    printf("Front_MiniUpdate(void)");
+	i32 type = G_SCONTROL[0].Type;
+
+	if (type != -1)
+	{
+		if (type != 0)
+			return;
+
+		Mess_SetRGB(0xFF, 0, 0, 0);
+
+		if ((TTime / 10) & 1)
+		{
+			Mess_DrawText(0x100, 0xB0, gFrontPadTextOne, 0, 0x1000);
+			Mess_DrawText(0x100, 0xC0, gFrontPadTextTwo, 0, 0x1000);
+		}
+
+		return;
+	}
+
+	if ((TTime / 10) & 1)
+		Mess_DrawText(0x100, 0xB8, gFrontPadTextThree, 0, 0x1000);
 }
 
 // @Ok
