@@ -202,6 +202,12 @@ INLINE CSpecialDisplay::~CSpecialDisplay(void)
 }
 
 // @Ok
+// base vtable slot for Display, needed by CSpecialDisplay subclasses that do not override it (e.g. CTexturedRibbon)
+void CSpecialDisplay::Display(void)
+{
+}
+
+// @Ok
 // @AlmostMatching: slightly out of order due ot the AttachTo
 CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 {
@@ -554,9 +560,16 @@ void DisplayGLineList(void**)
 {
 }
 
-// @MEDIUMTODO
-void DisplaySpecialDisplayList(void**)
+// @Ok
+// @Matching
+void DisplaySpecialDisplayList(void** a1)
 {
+	CSpecialDisplay* p = reinterpret_cast<CSpecialDisplay*>(*a1);
+	while (p)
+	{
+		p->Display();
+		p = reinterpret_cast<CSpecialDisplay*>(p->mNext);
+	}
 }
 
 // @MEDIUMTODO
