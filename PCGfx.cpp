@@ -725,10 +725,109 @@ void PCGfx_DrawTPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u
     printf("PCGfx_DrawTPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)");
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawTPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)
+// @NotOk
+// A world space triangle (3x (x,y,z,w,uv,color)) fed through the same fog
+// pipeline as PCGfx_ClipSendIndexedVertList (no near plane clip here, just
+// straight per vertex processing), then submitPoly(verts,3). Confirmed field
+// mapping from the disasm: field_0=x, field_4=y, field_14=w, field_18=uv,
+// field_8=(1/z - gRenderInitOne[0])/gRenderInitTwo[0], field_C=gRenderInitOne[2]*z
+// (the ORIGINAL z, not 1/z, re-read from the arg after the fdiv already
+// consumed it, confirmed for all 3 vertices), field_10=color after the same
+// brighten step as ClipSendIndexedVertList ((c>>1&0x7F7F7F)+0x0F0F0F, skipped
+// when the low 3 bytes are already 0), then gsub_506D70(1/z,color) when
+// gNonRendderSettingE, then field_14/field_18 *= field_C when !gLowGraphics.
+// The original INLINES gsub_506D70's real body for vertex 1 (tips.txt's
+// inline-cutoff note: first call site inlined, later ones become real calls)
+// but calls it out of line for vertex 2 and vertex 3; our gsub_506D70 is a
+// forward-to-original stub, not the real fog table math (setupFog's tables
+// are out of scope, see pcgfx.attempts.md), so vertex 1's region can not
+// match regardless of inlining. cmpsum: 180 mnemonic diffs at 0x5081f0.
+// residue: our frame is 0x64 bytes vs the original's 0x60 (one extra local
+// slot even with per vertex block scoping to force reuse across the 3
+// vertices, attempt 2), and the gPcGfxDrawRelated |= 4 load/store is
+// scheduled earlier by our compiler than the original regardless of where
+// the statement sits between the verts[] pointer assignments (attempt 1:
+// statement placed before verts[]; attempt 2: placed between verts[1] and
+// verts[2] assignment, matching the original's apparent position; both
+// produced the identical instruction stream). 2 hypotheses tried, below the
+// 15+ bar for a medium (850 byte) function, logged in pcgfx.attempts.md.
+void PCGfx_DrawTPoly3D(
+		f32 x1, f32 y1, f32 z1, f32 w1, f32 uv1, u32 color1,
+		f32 x2, f32 y2, f32 z2, f32 w2, f32 uv2, u32 color2,
+		f32 x3, f32 y3, f32 z3, f32 w3, f32 uv3, u32 color3)
 {
-    printf("PCGfx_DrawTPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)");
+	_DXVERT vtx[3];
+	_DXVERT *verts[3];
+
+	verts[0] = &vtx[0];
+	verts[1] = &vtx[1];
+	gPcGfxDrawRelated |= 4;
+	verts[2] = &vtx[2];
+
+	{
+		f32 invZ = 1.0f / z1;
+		vtx[0].field_0 = x1;
+		vtx[0].field_4 = y1;
+		vtx[0].field_14 = w1;
+		vtx[0].field_18 = uv1;
+		vtx[0].field_8 = (invZ - gRenderInitOne[0]) / gRenderInitTwo[0];
+		vtx[0].field_C = gRenderInitOne[2] * z1;
+		if ((color1 & 0xFFFFFF) == 0)
+			vtx[0].field_10 = color1;
+		else
+			vtx[0].field_10 = (color1 & 0xFF000000) | (((color1 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+		if (gNonRendderSettingE)
+			vtx[0].field_10 = gsub_506D70(invZ, vtx[0].field_10);
+		if (!gLowGraphics)
+		{
+			vtx[0].field_14 *= vtx[0].field_C;
+			vtx[0].field_18 *= vtx[0].field_C;
+		}
+	}
+
+	{
+		f32 invZ = 1.0f / z2;
+		vtx[1].field_0 = x2;
+		vtx[1].field_4 = y2;
+		vtx[1].field_14 = w2;
+		vtx[1].field_18 = uv2;
+		vtx[1].field_8 = (invZ - gRenderInitOne[0]) / gRenderInitTwo[0];
+		vtx[1].field_C = gRenderInitOne[2] * z2;
+		if ((color2 & 0xFFFFFF) == 0)
+			vtx[1].field_10 = color2;
+		else
+			vtx[1].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+		if (gNonRendderSettingE)
+			vtx[1].field_10 = gsub_506D70(invZ, vtx[1].field_10);
+		if (!gLowGraphics)
+		{
+			vtx[1].field_14 *= vtx[1].field_C;
+			vtx[1].field_18 *= vtx[1].field_C;
+		}
+	}
+
+	{
+		f32 invZ = 1.0f / z3;
+		vtx[2].field_0 = x3;
+		vtx[2].field_4 = y3;
+		vtx[2].field_14 = w3;
+		vtx[2].field_18 = uv3;
+		vtx[2].field_8 = (invZ - gRenderInitOne[0]) / gRenderInitTwo[0];
+		vtx[2].field_C = gRenderInitOne[2] * z3;
+		if ((color3 & 0xFFFFFF) == 0)
+			vtx[2].field_10 = color3;
+		else
+			vtx[2].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+		if (gNonRendderSettingE)
+			vtx[2].field_10 = gsub_506D70(invZ, vtx[2].field_10);
+		if (!gLowGraphics)
+		{
+			vtx[2].field_14 *= vtx[2].field_C;
+			vtx[2].field_18 *= vtx[2].field_C;
+		}
+	}
+
+	submitPoly(verts, 3);
 }
 
 // @MEDIUMTODO
