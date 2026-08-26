@@ -3,6 +3,11 @@
 // #define BOOT_GAME
 #define MODEL_PREVIEW
 
+// dev-only: skip the CD-ROM disc check so the game runs under Wine without
+// a real mixed-mode disc. Off by default. Never uncomment this on a branch
+// meant for an upstream PR.
+// #define SPIDEY_NO_CD_CHECK
+
 #include <stdlib.h>
 
 // #define LOCK_VALIDATION
@@ -629,6 +634,17 @@ static int my_video_player(const char*, i32)
 void game_patches(void)
 {
 	//PATCH_CALL(0x004707BE, my_video_player);
+
+#ifdef SPIDEY_NO_CD_CHECK
+	// dev-only: skip the CD-ROM disc check (WinMain check and the periodic
+	// recheck both call this helper) so the game runs without a real
+	// mixed-mode disc under Wine. Never merge this into an upstream PR,
+	// stays on our fork's main branch only, off unless SPIDEY_NO_CD_CHECK
+	// is defined at build time.
+	*(unsigned char*)0x005163E0 = 0x32; // xor al,al
+	*(unsigned char*)0x005163E1 = 0xC0;
+	*(unsigned char*)0x005163E2 = 0xC3; // ret
+#endif
 
 	patch_alloc();
 
