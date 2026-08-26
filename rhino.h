@@ -64,7 +64,7 @@ public:
 
 	i32 field_330;
 
-	PADDING(0x338 - 0x330 - 4);
+	i32 field_334;
 
 	i32 field_338;
 

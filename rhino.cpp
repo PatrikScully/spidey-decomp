@@ -158,9 +158,239 @@ void CRhino::AttackPlayer(void)
 }
 
 // @MEDIUMTODO
+// Best-effort translation of a large (0x480-byte) 13-state switch. Case 5
+// (the horn-impale sphere cast against MechList, gNumDomes-gated) is the
+// least certain part: the exact SHitInfo-like fields and the mAngVel.vy /
+// mAngAcc.vy resets are inferred from struct offsets, not confirmed by a
+// build match.
 void CRhino::ChargePlayer(void)
 {
-    printf("CRhino::ChargePlayer(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_310 = 0x64;
+			this->Neutralize();
+
+			new CAIProc_LookAt(this, MechList, 0, 2, 0x50, 0);
+
+			this->field_330 = Rnd(30) + 0x5A;
+
+			if (this->field_31C.bothFlags == 8)
+			{
+				this->dumbAssPad = 2;
+			}
+			else
+			{
+				this->PlaySingleAnim(9, 0, -1);
+				SFX_PlayPos(0x8049, &this->mPos, 0);
+				SFX_PlayPos(0x804A, &this->mPos, 0);
+				this->field_334 = Rnd(30) + 0x3C;
+				this->dumbAssPad++;
+			}
+			break;
+		case 1:
+			this->RunTimer(&this->field_334);
+			this->DoPhysics(0);
+
+			if (!this->mAnimFinished)
+				break;
+
+			if (Utils_GetValueFromDifficultyLevel(1, 1, 0, 0) == 0
+				&& !this->LineOfSightCheck(&MechList->mPos, 1))
+			{
+				this->field_31C.bothFlags = 0x16;
+				this->dumbAssPad = 0;
+				break;
+			}
+
+			if (this->field_334)
+			{
+				this->PlaySingleAnim(9, 0, -1);
+				SFX_PlayPos(0x8049, &this->mPos, 0);
+			}
+			else
+			{
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+			this->DoPhysics(0);
+			this->field_330 -= this->field_80;
+
+			if (this->field_288 & 2)
+			{
+				this->field_288 &= ~2;
+			}
+			else if (this->field_330 <= 0)
+			{
+				break;
+			}
+
+			this->field_330 = 0;
+
+			if (MechList->field_AD4)
+			{
+				this->field_31C.bothFlags = 0xD;
+				this->dumbAssPad = 0;
+				break;
+			}
+
+			this->PlaySingleAnim(4, 0, -1);
+			SFX_PlayPos(0x8042, &this->mPos, 0);
+			this->field_31C.bothFlags = 8;
+			this->dumbAssPad++;
+			break;
+		case 3:
+			if (!this->mAnimFinished)
+				break;
+
+			this->PlaySingleAnim(5, 0, -1);
+
+			new CAIProc_AccZ(this,
+				Utils_GetValueFromDifficultyLevel(0x50, 0x50, 0x50, 0x50),
+				-Utils_GetValueFromDifficultyLevel(500, 500, 500, 600),
+				8);
+
+			this->field_218 &= ~2;
+			this->field_334 = Utils_CrapXZDist(this->mPos, MechList->mPos);
+			this->dumbAssPad = 5;
+			break;
+		case 5:
+			if (this->GonnaHitWall(1) & 0xD)
+				break;
+
+			if (this->mAnimFinished && (this->mAnim == 5 || this->mAnim == 0xC))
+			{
+				this->PlaySingleAnim(5, 0, -1);
+			}
+
+			{
+				i32 dist = Utils_CrapXZDist(this->mPos, MechList->mPos);
+				bool handled = false;
+
+				if (dist < Utils_GetValueFromDifficultyLevel(0x258, 0x190, 0x154, 0x12C))
+				{
+					CVector unused(0, 0, 0);
+
+					this->MarkAIProcList(0, 0x100, 0);
+					this->mAngVel.vy = 0;
+					this->mAngAcc.vy = 0;
+
+					if (!gNumDomes)
+					{
+						if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x2AF8))
+						{
+							this->field_31C.bothFlags = 9;
+							this->dumbAssPad = 0;
+							handled = true;
+						}
+					}
+					else if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x1800))
+					{
+						SHitInfo hit;
+						hit.field_C = MechList->mPos - this->mPos;
+						hit.field_0 = 0xE;
+						hit.field_4 = 0xC;
+						hit.field_8 = 0x1E;
+
+						MechList->Hit(&hit);
+
+						this->PlaySingleAnim(0xC, 0, -1);
+						this->field_218 |= 1;
+						this->MarkAIProcList(0, 0x100, 0);
+						this->dumbAssPad = 0xA;
+						this->field_330 = 5;
+						this->field_344 = gAttackRelated;
+						handled = true;
+					}
+				}
+
+				if (handled)
+					break;
+
+				if (this->field_288 & 8)
+				{
+					this->field_288 &= ~8;
+					this->field_218 |= 2;
+				}
+
+				if (!this->mAnimFinished)
+					break;
+
+				if ((this->field_218 & 2) && this->field_334 < dist)
+					break;
+
+				this->field_330 += this->field_80;
+				this->field_334 = dist;
+
+				if (this->field_330 < 0x12C)
+					break;
+
+				this->PlaySingleAnim(8, 0, -1);
+				new CAIProc_AccZ(this, 0x50, 0, 8);
+				this->dumbAssPad = 7;
+			}
+			break;
+		case 7:
+			if (this->GonnaHitWall(1) & 0xD)
+				break;
+
+			if (!(this->field_288 & 8))
+				break;
+
+			this->field_288 &= ~8;
+			this->Neutralize();
+			this->mCBodyFlags |= 0x10;
+			this->field_31C.bothFlags = 2;
+			this->dumbAssPad = 0;
+			break;
+		case 10:
+			if (this->GonnaHitWall(1) & 0xD)
+				break;
+
+			this->field_330 -= this->field_80;
+
+			if (this->field_330 > 0)
+				break;
+
+			this->PlaySingleAnim(8, 0, -1);
+			new CAIProc_AccZ(this, 0x50, 0, 8);
+			this->dumbAssPad++;
+			break;
+		case 11:
+			if (this->GonnaHitWall(1) & 0xD)
+				break;
+
+			if (!(this->field_288 & 8))
+				break;
+
+			this->field_288 &= ~8;
+
+			if (!(this->field_218 & 1))
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+				break;
+			}
+
+			this->Neutralize();
+			new CAIProc_LookAt(this, MechList, 0, 2, 0x1E, 0);
+			this->PlaySingleAnim(0x14, 0, -1);
+			SFX_PlayPos(((gAttackRelated & 1) == 0 ? 1 : 0) | 0x8046, &this->mPos, 0);
+			this->mCBodyFlags |= 0x10;
+			this->dumbAssPad++;
+			break;
+		case 12:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @Ok
@@ -1916,6 +2146,7 @@ void validate_CRhino(void){
 	VALIDATE(CRhino, field_324, 0x324);
 	VALIDATE(CRhino, field_328, 0x328);
 	VALIDATE(CRhino, field_330, 0x330);
+	VALIDATE(CRhino, field_334, 0x334);
 
 	VALIDATE(CRhino, field_338, 0x338);
 
