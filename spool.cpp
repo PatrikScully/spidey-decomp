@@ -11,6 +11,8 @@
 #include "my_assert.h"
 #include "SpideyDX.h"
 #include "psx_types.h"
+#include "ps2funcs.h"
+#include "vram.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -269,26 +271,41 @@ void NewTextureEntry(u32 checksum)
 }
 
 // @NotOk
-// review when removed unused textures is done
+// reviewed while doing Spool_RemoveUnusedTextures (only caller, inlined
+// there). Logic matches (bound check, null-bucket search, pNext advance) but
+// the compiler always places the "search empty buckets" loop as the
+// fall-through path and the "already have a texture" short path as a forward
+// jump, no matter how the source is written (if/else either order, goto
+// either polarity, do-while vs raw goto, operand order swapped, cached local
+// vs global re-test, for(;;)+break single loop). Original does the opposite
+// (short path falls through, search is the jump target). See
+// Spool_RemoveUnusedTextures's comment for the residue this causes.
 INLINE Texture* NextTexture(void)
 {
-	Texture* res = 0;
+	Texture* res;
 
-	if (HashIndex < TEXTURE_CHECKSUM_TABLE_SIZE)
+	if (HashIndex >= TEXTURE_CHECKSUM_TABLE_SIZE)
+		return 0;
+
+	if (0 == pCurrentTex)
+		goto search;
+
+	res = pCurrentTex;
+	pCurrentTex = pCurrentTex->pNext;
+	return res;
+
+search:
+	do
 	{
-		while (pCurrentTex == 0)
-		{
-			HashIndex++;
-			pCurrentTex = TextureChecksumHashTable[HashIndex];
+		HashIndex++;
+		pCurrentTex = TextureChecksumHashTable[HashIndex];
 
-			if (TEXTURE_CHECKSUM_TABLE_SIZE <= HashIndex)
-				return 0;
-		}
+		if (TEXTURE_CHECKSUM_TABLE_SIZE <= HashIndex)
+			return 0;
+	} while (0 == pCurrentTex);
 
-		res = pCurrentTex;
-		pCurrentTex = pCurrentTex->pNext;
-	}
-
+	res = pCurrentTex;
+	pCurrentTex = pCurrentTex->pNext;
 
 	return res;
 }
@@ -407,9 +424,8 @@ INLINE void RemoveTextureEntry(Texture* pTexture)
 	if (pTexture == TextureChecksumHashTable[checksum])
 		TextureChecksumHashTable[checksum] = pTexture->pNext;
 
-	Texture** pFreeList = reinterpret_cast<Texture**>(&gSpoolInitRelated);
-	pTexture->pNext = *pFreeList;
-	*pFreeList = pTexture;
+	pTexture->pNext = gSpoolTexturesRelated;
+	gSpoolTexturesRelated = pTexture;
 }
 
 // @Ok
@@ -1138,14 +1154,49 @@ void ClearRegion(i32 a1, i32 a2)
 	func(a1, a2);
 }
 
-// @BIGTODO
+// @NotOk
+// residue: 61 mnemonic diffs left, all downstream of one point.
+// Everything from "if (pTex->pPalette)" onward (palette usage decrement,
+// ClearImage debug print, PCTex_ReleaseTexture, VRAMRectUnpack, the
+// RemoveTextureEntry unlink incl. the gSpoolTexturesRelated free-list push)
+// is the SAME mnemonic sequence as the original, just shifted by a constant
+// offset. The one real divergence is the very first NextTexture() null
+// check: original falls through into the "already have a texture" case and
+// jumps forward into the "search empty buckets" loop; every build of ours
+// does the opposite (falls through into search, jumps to the short case).
+// 9 source hypotheses tried for that one branch (see NextTexture's comment
+// and spool.attempts.md), all producing byte-identical output to each other.
+// Root cause understood (compiler always makes the loop body the
+// fall-through target for this control flow) but not reproduced from C
+// source. Below the discipline's 15-hypothesis minimum for a 294 byte
+// function, left @NotOk rather than tagging @AlmostMatching early.
 void Spool_RemoveUnusedTextures(void)
 {
-	// @FIXME
-	typedef void (*func_ptr)(void);
-	func_ptr func = (func_ptr)0x004C9680;
+	GotoStartOfTextureList();
 
-	func();
+	Texture* pTex;
+	while ((pTex = NextTexture()) != 0)
+	{
+		if ((pTex->field_12 & 0xF) == 0 || pTex->Usage != 0)
+			continue;
+
+		if (pTex->pPalette)
+		{
+			print_if_false(pTex->pPalette->Usage != 0, "Palette usage counter error!");
+			pTex->pPalette->Usage--;
+		}
+
+		if (!gClearImagePrint)
+			stubbed_printf("stubbed out: ClearImage");
+
+		PCTex_ReleaseTexture(pTex->clut, true);
+
+		// original really does read x and y together as one 32-bit pointer
+		// into the packed VRAM rect, same idiom as NewTextureEntry's x/y clear
+		VRAMRectUnpack(*reinterpret_cast<tagSVRAMRect**>(&pTex->x));
+
+		RemoveTextureEntry(pTex);
+	}
 }
 
 // @Ok
