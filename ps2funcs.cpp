@@ -630,8 +630,8 @@ void M3dMaths_ScaleMatrix(CItem *a1, MATRIX *a2)
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// @Matching
 void M3dMaths_CopyMat(MATRIX* a1, MATRIX* a2)
 {
 	memcpy(reinterpret_cast<void*>(a2), reinterpret_cast<void*>(a1), 3*3*2);
