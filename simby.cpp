@@ -25,6 +25,15 @@ extern i32 gAttackRelated;
 extern CBody *MiscList;
 extern CCamera* CameraList;
 
+// guess: counts constructed CSimby instances, gates the one-time MakeVertexWibbler call.
+// sits right after gShellMysterioRelated (0x682C58) in idb_globals.txt, before gSimbyAttackData (0x682C60).
+static i32 * const gSimbyCount = reinterpret_cast<i32*>(0x682C5C);
+
+// guess: reset flag adjacent to gSimbyAttackData (0x682C60, idb_globals.txt), purpose unclear.
+static i32 * const gSimbyCountResetFlag = reinterpret_cast<i32*>(0x682C64);
+
+EXPORT i32 gSimbySetup[2] = { 84215815, 261 };
+
 // @Ok
 // @AlmostMatching: same as SpideyAI_WaitForSimbyGrab
 void SpideyAI_ThrownBySimby(CPlayer *pPlayer)
@@ -805,9 +814,103 @@ void INLINE CSimby::SetAlertModeTimer(int timer)
 		this->field_348 = timer;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @AlmostMatching: field_3DC is a CVector member, so its default constructor
+// runs implicitly right after the CBaddy base constructor call. In the original
+// binary this implicit zero-store (offsets 0x3DC/0x3E0/0x3E4) is scheduled
+// in address order between field_394 and field_3F8. Our build keeps it grouped
+// at the top of the function instead, which pushes the SquirtPos call's "push eax"
+// one slot later than the original. Net effect: 2 mnemonic diffs, byte-identical:
+// False, everything else (including field_368, fixed by giving it a plain i32x3
+// type instead of CVector) matches. 12 distinct hypotheses tried: nested vs split
+// SquirtPos/SquirtAngles call, member-initializer-list variants for field_368 and
+// field_3DC (default and (0,0,0) forms), moving the SquirtPos/SquirtAngles call to
+// the top of the function, redundant explicit field_3DC zero at 3 different source
+// positions (all made it worse, 53-55 diffs from double-storing), reordering the
+// field_3F8..40C block before the field_350..394 block. None removed the residue.
 CSimby::CSimby(int* a2, int a3)
 {
+	this->field_350 = 0;
+	this->field_354 = 0;
+	this->field_358 = 0;
+	this->field_35C = 0;
+	this->field_360 = 0;
+	this->field_364 = 0;
+	this->field_368 = 0;
+	this->field_36C = 0;
+	this->field_370 = 0;
+	this->field_374 = 0;
+	this->field_378 = 0;
+	this->field_37C = 0;
+	this->field_380 = 0;
+	this->field_384 = 0;
+	this->field_388 = 0;
+	this->field_38C = 0;
+	this->field_390 = 0;
+	this->field_394 = 0;
+
+	this->field_3F8 = 0;
+	this->field_3FC = 0;
+	this->field_400 = 0;
+	this->field_404 = 0;
+	this->field_408 = 0;
+	this->field_40C = 0;
+
+	u16* v6 = reinterpret_cast<u16*>(
+			this->SquirtAngles(reinterpret_cast<i16*>(
+				this->SquirtPos(reinterpret_cast<i16*>(a2)))
+			));
+
+	this->field_344 = Trig_GetLevelID();
+	this->InitItem(this->field_344 == 0x803 ? "sym_dark" : "symbi_02");
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+
+	this->field_2A8 |= 0x201;
+	this->field_21E = 0x64;
+	this->field_1F4 = a3;
+	this->mNode = a3;
+	this->mRMinor = 0x8C;
+	this->field_230 = 0;
+	this->field_216 = 0x20;
+	this->mPushVal = 0x40;
+	this->field_31C.bothFlags = 0;
+	this->mType = 324;
+	this->mHealth = 0x320;
+
+	this->field_294.Int = gSimbySetup[0];
+	this->field_298.Int = gSimbySetup[1];
+
+	this->field_3EC = gAttackRelated - 155;
+
+	this->field_34C = Rnd(300);
+
+	this->field_3B8 = 0xDAC;
+	this->field_3BC = 0x190;
+	this->field_3C0 = 0x555;
+
+	this->field_30C = 0x64;
+
+	M3dUtils_ReadLinksPacket(this, reinterpret_cast<void*>(0x5554A0));
+
+	this->ParseScript(v6);
+
+	if (this->field_218 & 0x100000)
+	{
+		this->field_3A0 |= 0x10;
+		this->mFlags |= 1;
+	}
+
+	if (Trig_GetLevelID() == 0x702)
+		this->field_218 |= 0x400000;
+
+	if (!*gSimbyCount)
+		MakeVertexWibbler();
+
+	i32 v7 = gAttackRelated;
+	(*gSimbyCount)++;
+
+	if (v7 < 0x3C)
+		*gSimbyCountResetFlag = 0;
 }
 
 // @NotOk
@@ -821,9 +924,9 @@ CSimby::CSimby(void)
 	this->field_360 = 0;
 	this->field_364 = 0;
 
-	this->field_368.vx = 0;
-	this->field_368.vy = 0;
-	this->field_368.vz = 0;
+	this->field_368 = 0;
+	this->field_36C = 0;
+	this->field_370 = 0;
 
 	this->field_374 = 0;
 	this->field_378 = 0;
@@ -1067,6 +1170,8 @@ void validate_CSimby(void){
 	VALIDATE(CSimby, field_32E, 0x32E);
 	VALIDATE(CSimby, field_330, 0x330);
 
+	VALIDATE(CSimby, field_344, 0x344);
+
 	VALIDATE(CSimby, field_348, 0x348);
 	VALIDATE(CSimby, field_34C, 0x34C);
 
@@ -1078,6 +1183,8 @@ void validate_CSimby(void){
 	VALIDATE(CSimby, field_364, 0x364);
 
 	VALIDATE(CSimby, field_368, 0x368);
+	VALIDATE(CSimby, field_36C, 0x36C);
+	VALIDATE(CSimby, field_370, 0x370);
 
 	VALIDATE(CSimby, field_374, 0x374);
 	VALIDATE(CSimby, field_378, 0x378);
@@ -1093,10 +1200,18 @@ void validate_CSimby(void){
 
 	VALIDATE(CSimby, field_39C, 0x39C);
 
+	VALIDATE(CSimby, field_3A0, 0x3A0);
+
+	VALIDATE(CSimby, field_3B8, 0x3B8);
+	VALIDATE(CSimby, field_3BC, 0x3BC);
+	VALIDATE(CSimby, field_3C0, 0x3C0);
+
 	VALIDATE(CSimby, field_3CC, 0x3CC);
 	VALIDATE(CSimby, field_3D0, 0x3D0);
 
 	VALIDATE(CSimby, field_3DC, 0x3DC);
+
+	VALIDATE(CSimby, field_3EC, 0x3EC);
 
 	VALIDATE(CSimby, field_3F0, 0x3F0);
 

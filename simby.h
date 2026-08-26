@@ -48,7 +48,9 @@ public:
 	i16 field_32E;
 	i32 field_330;
 
-	PADDING(0x348-0x330-4);
+	PADDING(0x344-0x330-4);
+
+	i32 field_344;
 
 	i32 field_348;
 	i32 field_34C;
@@ -60,7 +62,9 @@ public:
 	i32 field_360;
 	i32 field_364;
 
-	CVector field_368;
+	i32 field_368;
+	i32 field_36C;
+	i32 field_370;
 
 	i32 field_374;
 	i32 field_378;
@@ -75,7 +79,15 @@ public:
 
 	i32 field_39C;
 
-	PADDING(0x3CC-0x39C-4);
+	i32 field_3A0;
+
+	PADDING(0x3B8-0x3A4);
+
+	i32 field_3B8;
+	i32 field_3BC;
+	i32 field_3C0;
+
+	PADDING(0x3CC-0x3C0-4);
 
 	i32 field_3CC;
 	i32 field_3D0;
@@ -84,7 +96,9 @@ public:
 
 	CVector field_3DC;
 
-	PADDING(0x3F0-0x3E4-4);
+	PADDING(0x3EC-0x3E8);
+
+	i32 field_3EC;
 
 	i32 field_3F0;
 
