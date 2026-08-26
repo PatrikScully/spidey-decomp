@@ -174,11 +174,14 @@ class CSearchlight : public CBody
 		CVector field_110;
 		CVector field_11C;
 
-		PADDING(0x12C-0x11C-sizeof(CVector));
+		i32 field_128;
 
 		u8 field_12C;
 
-		PADDING(0x138-0x12C-1);
+		PADDING(0x130-0x12C-1);
+
+		i32 field_130;
+		i32 field_134;
 
 		CVector field_138[66];
 };

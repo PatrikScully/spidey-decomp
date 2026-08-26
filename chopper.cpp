@@ -1563,9 +1563,94 @@ CSearchlight::~CSearchlight(void)
 	this->DeleteFrom(reinterpret_cast<CBody**>(&ControlBaddyList));
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4337392.bin. Kill-flag check (mFlags bit 0)
+// then a waypoint timer identical in shape to CChopper::FollowWaypoints (field_100 runs
+// to 240, then swaps field_104/field_110 to the next Trig link and recomputes the per
+// frame step field_11C), aims at the interpolated point via Utils_CalcAim, and calls
+// CalculateSearchlight with the result. When CheckPointInScreenTri last flagged a hit
+// (field_12C), a second timer (field_130/field_128) periodically spawns a
+// CMachineGunBullet-style spark line near MechList using two GTE-perpendicular jitter
+// vectors (Utils_CalcPerps around MechList->field_C84) and plays SFX 0x8074. The spark
+// jitter math is a best-effort reconstruction of the control flow shape, not
+// instruction verified: the exact fixed point scaling could not be traced byte for byte
+// by hand. cmpsum: 175 mnemonic diffs, first divergence right at the kill-flag check
+// (missing an inlined jump table entry). 1 attempt (structural reconstruction only).
+// Needs real work.
 void CSearchlight::AI(void)
 {
+	if (this->mFlags & 1)
+	{
+		this->mFlags &= ~1;
+		this->Die();
+		return;
+	}
+
+	this->field_100 += this->field_80;
+	if (this->field_100 >= 0xF0)
+	{
+		u16* LinksPointer = Trig_GetLinksPointer(this->field_FC);
+		this->field_100 -= 0xF0;
+
+		print_if_false(LinksPointer[0] != 0, "No path for searchlight");
+
+		this->field_F8 = this->field_FC;
+		this->field_104 = this->field_110;
+		this->field_FC = LinksPointer[1];
+		Trig_GetPosition(&this->field_110, this->field_FC);
+
+		this->field_11C = (this->field_110 - this->field_104) / 0xF0;
+	}
+
+	CVector target = this->field_104 + this->field_11C * this->field_100;
+
+	CSVector aimDir;
+	aimDir.vx = 0;
+	aimDir.vy = 0;
+	aimDir.vz = 0;
+	Utils_CalcAim(&aimDir, &this->mPos, &target);
+
+	this->CalculateSearchlight(&aimDir);
+
+	if (!this->field_12C)
+	{
+		this->field_130 = 0;
+		return;
+	}
+
+	this->field_130 += this->field_80;
+
+	if (this->field_130 <= 0xA)
+	{
+		return;
+	}
+	else if (this->field_130 <= 0x1E)
+	{
+		this->field_128 += this->field_80;
+		if (this->field_128 <= 8)
+			return;
+
+		this->field_128 -= 8;
+
+		CVector camPos = CameraList->mPos;
+		camPos.vy += 0x200000;
+
+		CVector perpA, perpB;
+		Utils_CalcPerps(&MechList->field_C84, &perpB, &perpA);
+
+		CVector jitterA = perpA * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].sin) >> 0xC);
+		CVector jitterB = perpB * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].cos) >> 0xC);
+
+		CVector sparkStart = camPos + jitterA + jitterB;
+		CVector sparkEnd = MechList->mPos;
+
+		SFX_Play(0x8074, 0x2000, 0);
+		new CMachineGunBullet(&sparkStart, &sparkEnd);
+	}
+	else if (this->field_130 > 0x41)
+	{
+		this->field_130 = 0xA;
+	}
 }
 
 // @Ok
@@ -1793,7 +1878,10 @@ void validate_CSearchlight(void)
 	VALIDATE(CSearchlight, field_104, 0x104);
 	VALIDATE(CSearchlight, field_110, 0x110);
 	VALIDATE(CSearchlight, field_11C, 0x11C);
+	VALIDATE(CSearchlight, field_128, 0x128);
 	VALIDATE(CSearchlight, field_12C, 0x12C);
+	VALIDATE(CSearchlight, field_130, 0x130);
+	VALIDATE(CSearchlight, field_134, 0x134);
 	VALIDATE(CSearchlight, field_138, 0x138);
 
 	VALIDATE_VTABLE(CSearchlight, SpecialRenderer, 5);
