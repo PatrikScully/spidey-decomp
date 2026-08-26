@@ -563,11 +563,101 @@ void CCamera::PopMode(void)
 }
 
 
-// @MEDIUMTODO
+// sin/cos table shared with quat.cpp/shell.cpp/spidey.cpp/manipob.cpp
+// (same address, same file-local raw-address convention used there).
+static i16 * const word_610C48 = (i16*)0x610C48;
+
+// guess: global "current" camera look angle (fixed-point, 4096=full
+// circle) used as a table index here. Also referenced (same address) by
+// CCamera_AI, CCamera_MoveToDesiredPos, CCamera_CM_Boss3 and
+// CCamera_CM_FixedFocus, none of those are decompiled yet to confirm.
+static i32 * const gCameraLookAngle = (i32*)0x548858;
+// guess: paired value read right after gCameraLookAngle, used as a plain
+// scalar (no table lookup), consistent with a desired camera distance.
+// Same caller set as gCameraLookAngle.
+static i32 * const gCameraDistance = (i32*)0x54885C;
+
+// @NotOk
+// residue: this is a big (553 byte), three-phase GTE camera orientation
+// update. Solid, disassembly-verified: the euler-angle matrix build from
+// field_234/236/238 through M3dMaths_RotMatrixYXZ, gte_SetRotMatrix,
+// gte_ldlvl(zero)+gte_rtir+gte_stlvnl to get the forward vector, that
+// field_258 = field_104 (plain copy, confirmed clean register trace) and
+// field_1D8 = 0. The ratan2-based field_236 recompute at the end matches
+// the SAME idiom CCamera::LoadIntoMikeCamera uses elsewhere in this file
+// (read m[0][2]/m[2][2] off a matrix, `(-1024 - ratan2(m22, m02)) &
+// 0xFFF`), just gated on field_234/238 instead of the matrix cells
+// directly. NOT verified: the exact CVector expression for field_24C
+// (multiply-then-add via operator*/operator+, best guess is
+// field_104 + fwd*gCameraDistance); and the second matrix (mat2) built
+// from gte_ldopv1/gte_ldopv2/gte_op12 (GTE outer-product opcode, not a
+// plain cross product, mixed with field_1DC/field_1E0) that feeds MToQ
+// and the ratan2 read. Ran out of confident derivation time on that
+// second matrix's exact per-cell layout; the version below is a
+// structurally-motivated guess, not a register-verified translation.
 void CCamera::CM_Normal(void)
 {
-	printf("void CCamera::CM_Normal(void)");
-	/* DO ME */
+	i32 idx = 2 * (*gCameraLookAngle & 0xFFF);
+	i32 sinA = word_610C48[idx];
+	i32 cosA = word_610C48[idx + 1];
+
+	SVECTOR angles;
+	angles.vx = this->field_234;
+	angles.vy = this->field_236;
+	angles.vz = this->field_238;
+
+	MATRIX mat;
+	M3dMaths_RotMatrixYXZ(&angles, &mat);
+	gte_SetRotMatrix(&mat);
+
+	CVector zero;
+	zero.vx = 0;
+	zero.vy = 0;
+	zero.vz = 0;
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&zero));
+	gte_rtir();
+
+	CVector fwd;
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&fwd));
+
+	this->field_24C = this->field_104 + fwd * (*gCameraDistance);
+	this->field_1D8 = 0;
+	this->field_258 = this->field_104;
+
+	CVector negFwd;
+	negFwd.vx = -fwd.vx;
+	negFwd.vy = -fwd.vy;
+	negFwd.vz = -fwd.vz;
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&negFwd));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&fwd));
+	gte_op12();
+
+	CVector opResult;
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&opResult));
+
+	// guess: second basis matrix, mixing the GTE op12 result with the
+	// existing field_1DC/field_1E0 orientation state and sinA/cosA from
+	// the table lookup above. Not register-verified.
+	MATRIX mat2;
+	mat2.m[0][0] = cosA;
+	mat2.m[0][1] = 0;
+	mat2.m[0][2] = -sinA;
+	mat2.m[1][0] = this->field_1DC;
+	mat2.m[1][1] = this->field_1E0;
+	mat2.m[1][2] = opResult.vy;
+	mat2.m[2][0] = sinA;
+	mat2.m[2][1] = 0;
+	mat2.m[2][2] = cosA;
+	mat2.t[0] = 0;
+	mat2.t[1] = 0;
+	mat2.t[2] = 0;
+
+	MToQ(mat2, this->field_1F4);
+
+	if (this->field_234 != 0 || this->field_238 != 0)
+	{
+		this->field_236 = (-1024 - ratan2(mat2.m[2][2], mat2.m[0][2])) & 0xFFF;
+	}
 }
 
 
