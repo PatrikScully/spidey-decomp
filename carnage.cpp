@@ -2146,10 +2146,18 @@ CCarnage::CCarnage(i16 *a2, i32 a3)
 	CreateSonicBubbleVertexWobbler();
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CreateSonicBubbleVertexWobbler(void)
 {
-	printf("void CreateSonicBubbleVertexWobbler(void)");
+	u8 indices[0x25] =
+	{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+		13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+		25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36
+	};
+
+	new CVertexWobble(gObjFileRegion, Spool_GetModel(0xE9DD4877, gObjFileRegion), 0x25, indices, 0x14, 0xF, 0x12C, 0x12C);
 }
 
 // @Ok
