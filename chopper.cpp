@@ -1883,10 +1883,68 @@ void Chopper_CreateSearchlight(const u32* a1, u32* a2)
 	*a2 = reinterpret_cast<u32>(new CSearchlight(v3));
 }
 
-// @MEDIUMTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4340240.bin. Same
+// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
+// projection idiom as CSniperTarget::DrawTargetRecticle, applied per vertex of
+// field_138[] (the CVector[66] light-cone mesh CalculateSearchlight fills). If the beam
+// source (field_138[0]) is too close to the camera (depth < 200) the whole draw is
+// skipped. Otherwise it resets field_12C (the CheckPointInScreenTri hit flag, re-armed
+// every render) and draws the beam as a flat-shaded (PCGfx_UseTexture with no texture)
+// triangle strip walking the near/far vertex pairs. This is a best-effort schematic:
+// the per-vertex draw call parameters were not traced byte for byte, only the GTE
+// transform and the overall loop/early-out shape are grounded in the disassembly.
+// cmpsum: 498 mnemonic diffs, first divergence right at the prologue register
+// allocation. 1 attempt (structural reconstruction only). Needs real work.
 void CSearchlight::SpecialRenderer(void)
 {
-	printf("CSearchlight::SpecialRenderer(void)");
+	gte_SetRotMatrix(gCameraViewMatrix);
+	m3d_ZeroTransVector();
+
+	CVector camPos = *gCameraViewPos;
+	CVector relPos = (this->field_138[0] >> 12) - camPos;
+
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_rtps();
+
+	i32 depth;
+	gte_stlvnl2(&depth);
+
+	i16 screenXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+	if (depth < 200)
+		return;
+
+	this->field_12C = 0;
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+
+	f32 prevX = static_cast<f32>(screenXY[0]);
+	f32 prevY = static_cast<f32>(screenXY[1]);
+
+	for (i32 i = 1; i < 66; i++)
+	{
+		CVector rel = (this->field_138[i] >> 12) - camPos;
+
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&rel));
+		gte_rtps();
+		gte_stlvnl2(&depth);
+		gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+		f32 x = static_cast<f32>(screenXY[0]);
+		f32 y = static_cast<f32>(screenXY[1]);
+
+		PCGfx_DrawQPoly2D(
+				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
+				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
+				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
+				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
+				0.0f);
+
+		prevX = x;
+		prevY = y;
+	}
 }
 
 // @Ok
