@@ -234,7 +234,14 @@ void GotoStartOfTextureList(void)
 
 // @NotOk
 // @Validate
-// assignment to x should be 2 not 4
+// no standalone address: every call site in the shipped PC binary got this
+// inlined (confirmed nowhere in the whole .text section as its own
+// function). Cross-checked field by field against the inlined copy at
+// 0x4C9C6B..0x4C9CD7 inside ProcessNewPSX: every store here matches,
+// INCLUDING the 4-byte `x` write (it really does clear both x and y in one
+// mov, `mov [eax+1Ch],ebp` in the original, so the old "should be 2 not 4"
+// note here was wrong). Left @NotOk because there is no address to run
+// cmpsum against, not because of a known bug.
 void NewTextureEntry(u32 checksum)
 {
 	print_if_false(
@@ -260,7 +267,7 @@ void NewTextureEntry(u32 checksum)
 	pTex->u1 = 0;
 	pTex->v1 = 0;
 
-	// @FIXME
+	// original really does write 4 bytes here, clearing x and y together
 	*reinterpret_cast<u32*>(&pTex->x) = 0;
 }
 
