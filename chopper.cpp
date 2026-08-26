@@ -140,11 +140,92 @@ void CChopper::TrackSpidey(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
 // @FIXME name does not have a V
+// @Note: reconstructed from tools/functions/4352816.bin. States 0/1 mirror the
+// GetToPos fallthrough idiom used in FollowWaypoints. State 2 walks the
+// waypoint's links (G_OFFSETLIST), pulsing every linked trigger except a
+// special type-1002 link, which is remembered as the gun target. State 3's
+// interpolation block (Trig_GetPosition + CVector lerp into field_3A8) is a
+// best-effort reconstruction of the control flow shape, not fully instruction
+// verified. cmpsum: 223 mnemonic diffs; MSVC6 did not emit the original's
+// jump-table dispatch for this switch (built an if-chain instead), first
+// divergence right at the dispatch. 1 attempt, not iterated. Needs real work.
 void CChopper::FireMachineGunAtWaypointV(void)
 {
-	printf("void CChopper::FireMachineGunAtWaypoint(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->MarkAIProcList(0, 256, 0);
+			this->SetHeightMode(4);
+			this->dumbAssPad++;
+		case 1:
+			if (this->GetToPos(&this->field_33C))
+			{
+				this->SetHeightMode(5);
+				this->field_3C4 = 1;
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+		{
+			print_if_false(1u, "Bad register index");
+
+			u16* LinksPointer = Trig_GetLinksPointer(this->realRegisterArr[0]);
+			i32 found = 0;
+
+			for (i32 i = 0; i < LinksPointer[0]; i++)
+			{
+				i16 link = LinksPointer[1 + i];
+
+				if (found == 0 && G_OFFSETLIST[link][0] == 1002)
+					found = link;
+				else
+					Trig_SendPulseToNode(link);
+			}
+
+			if (found == 0)
+			{
+				this->field_384 = 0;
+				this->field_31C.bothFlags = 1;
+				this->dumbAssPad = 0;
+			}
+			else
+			{
+				print_if_false(1u, "Bad register index");
+				this->realRegisterArr[1] = 0;
+				print_if_false(1u, "Bad register index");
+				this->realRegisterArr[2] = 0;
+
+				this->dumbAssPad++;
+				this->field_384 = 2;
+
+				if (this->field_3C4)
+				{
+					this->field_3C4 = 0;
+					print_if_false(1u, "Bad register index");
+
+					Trig_GetPosition(&this->field_3B8, this->realRegisterArr[0]);
+
+					print_if_false(1u, "Bad register index");
+					CVector target;
+					Trig_GetPosition(&target, this->realRegisterArr[1]);
+
+					print_if_false(1u, "Bad register index");
+
+					for (i32 j = 0; j < 4; j++)
+					{
+						this->field_3B8 += (target - this->field_3B8) * this->realRegisterArr[2];
+						this->field_3A8 = this->field_3B8;
+					}
+				}
+			}
+			break;
+		}
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @Ok
