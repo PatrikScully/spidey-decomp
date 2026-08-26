@@ -12,7 +12,7 @@ class CMessage;
 
 class CLizMan : public CBaddy {
 public:
-	EXPORT CLizMan(i16 *,i32);
+	EXPORT CLizMan(i16*, i32);
 
 	EXPORT void PlaySingleAnim(i16, i32, i32);
 	EXPORT void StandStill(void);
@@ -28,13 +28,18 @@ public:
 	EXPORT void Guard(void);
 	EXPORT i32 ScanNearbyNodesForJumpTarget(void);
 	EXPORT void CalculateJumpPositionArray(CVector*);
+	EXPORT void DoLizmanPhysics(void);
+	EXPORT void CheckFallBack(void);
 
 	PADDING(0x4);
 
 	i32 field_328;
 	i32 field_32C;
 
-	PADDING(0x338-0x32C-4);
+	i16 field_330;
+	PADDING(2);
+	i16 field_334;
+	PADDING(2);
 
 	i32 field_338;
 
@@ -50,7 +55,8 @@ public:
 
 	u8 field_390;
 
-	PADDING(0x398-0x390-1);
+	PADDING(3);
+	i32 field_394;
 
 	i32 field_398;
 	u8 field_39C;
@@ -59,8 +65,8 @@ public:
 	PADDING(0x3AC - 0x39C - 4);
 
 	i32 field_3AC;
-
-	PADDING(0x3B8-0x3AC-4);
+	i32 field_3B0;
+	CVector* field_3B4;
 };
 
 void validate_CLizMan(void);
