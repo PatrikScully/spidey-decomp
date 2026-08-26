@@ -137,16 +137,22 @@ class CFadePalettes : public CNonRenderedBit
 		void *field_3C[0xC0];
 
 		// pointers to allocated fade-tracking blocks, one per active 256 colour
-		// palette. Cap checked against 0x44 in the constructor, array itself
-		// runs to offset 0x450 (one spare slot).
-		void *field_33C[0x45];
+		// palette. Cap checked against 0x44 in the constructor.
+		void *field_33C[0x44];
+
+		// region-table index used by Move() to look up a validity flag
+		// (print_if_false "Region became unusable"). Never written by the
+		// code decompiled so far; guess based on offset math only.
+		i32 field_44C;
 
 		i32 field_450;
 		i32 field_454;
 
-		u8 field_458;
-		u8 field_459;
-		u8 field_45A;
+		// Move() reads these with movsx (signed), unlike field_45D/E/F below
+		// which are read as plain unsigned bytes; kept signed here to match.
+		i8 field_458;
+		i8 field_459;
+		i8 field_45A;
 
 		u8 field_45B;
 
