@@ -12,6 +12,7 @@
 #include "m3dcolij.h"
 #include "m3dzone.h"
 #include "effects.h"
+#include "zrhinog.h"
 
 
 EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
@@ -536,10 +537,109 @@ void CRhino::SlideFromHit(i32,i32,CVector *)
     printf("CRhino::SlideFromHit(i32,i32,CVector *)");
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Logic and field stores verified against the disasm (barrel-punch loop over
+// EnvironmentalObjectList mirrors FuckUpSomeBarrels, the SHitInfo send is the
+// same struct/vtable-slot-0xC=Hit idiom as CheckIfPlayerHit). Residue: the
+// original keeps the case-3 upper bound (this switch has cases 0-3) alive in
+// ebp for the whole function ("mov ebp,3" once at entry) and reuses that same
+// register both as the switch bound compare AND later as the literal "3"
+// stored into field_31C.bothFlags (case1's else) and this->dumbAssPad
+// (case2's else). Writing plain literal 3 in both spots did not make the
+// compiler cache it the same way; the cascade from that one instruction is
+// most of the diff count. Attempts targeting this: (1) plain literals in
+// both spots, 96 diffs; (2) a named local `i32 three = 3;` at the top of the
+// function, reused at both stores instead of the literal, no change (96
+// diffs, identical cascade) - the compiler did not keep it live in a
+// register across the switch. Did not reach the 15-hypothesis bar for
+// @AlmostMatching.
 void CRhino::StompGround(void)
 {
-    printf("CRhino::StompGround(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			this->field_324 = 0;
+			this->field_328 = 0;
+			this->PlayXAPlease(0x13, 1, 1);
+			this->PlaySingleAnim(0x13, 0, -1);
+			this->dumbAssPad++;
+			break;
+		case 1:
+			if (this->field_128 < 0x11)
+			{
+				return;
+			}
+
+			this->ShakePad();
+			SFX_PlayPos(0x804B, &this->mPos, 0);
+			CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+			Effects_RhinoStomp(this);
+			this->dumbAssPad++;
+
+			if (this->field_31C.bothFlags == 0x14)
+			{
+				i32 barrels = 0;
+
+				for (
+						CBody *cur = EnvironmentalObjectList;
+						cur && barrels < 2;
+						cur = reinterpret_cast<CBody*>(cur->mNextItem))
+				{
+					if (cur->mType == 401)
+					{
+						if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+						{
+							reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
+							barrels++;
+						}
+					}
+				}
+			}
+			else
+			{
+				if (MechList->field_AD4 && (MechList->field_8E8 || MechList->field_8E9))
+				{
+					SHitInfo hit;
+					hit.field_C.vx = 0;
+					hit.field_C.vy = 0;
+					hit.field_C.vz = 0;
+					hit.field_0 = 6;
+					hit.field_4 = 0xD;
+					hit.field_8 = 0x1E;
+
+					MechList->Hit(&hit);
+					MechList->KnockSpideyFromCrawlPosition();
+				}
+
+				this->dumbAssPad = 3;
+			}
+			break;
+		case 2:
+			if (this->mAnimFinished)
+			{
+				if (this->field_31C.bothFlags == 0x14)
+				{
+					this->field_31C.bothFlags = 2;
+				}
+				else
+				{
+					this->field_31C.bothFlags = 3;
+				}
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @Ok
