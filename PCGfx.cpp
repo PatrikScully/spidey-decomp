@@ -948,10 +948,54 @@ void PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)
     printf("PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)");
 }
 
-// @MEDIUMTODO
-void ZCLIP_VERT(_DXVERT *,_DXVERT *,_DXVERT *,f32)
+// @NotOk
+// interpolates a new vertex where the b->c edge crosses the plane field_8 == t
+// residue: original uses a 0x10 byte local frame and different FPU stack
+// scheduling around the field_8 store and the bx/by/cx/cy multiplies (101
+// mnemonic diffs at 0x506f90 as of this attempt, 2 hypotheses tried so far,
+// logged in pcgfx.attempts.md). functionally faithful.
+void ZCLIP_VERT(_DXVERT *out, _DXVERT *b, _DXVERT *c, f32 t)
 {
-    printf("ZCLIP_VERT(_DXVERT *,_DXVERT *,_DXVERT *,f32)");
+	print_if_false(c->field_8 != b->field_8, "Zero denominator computing scale!");
+	print_if_false(t != 0.0f, "Zero denominator computing clip inverse!");
+
+	f32 frac = (t - b->field_8) / (c->field_8 - b->field_8);
+	out->field_8 = t;
+
+	f32 invT = 1.0f / t;
+
+	f32 bx = b->field_0 * b->field_8;
+	f32 by = b->field_4 * b->field_8;
+	f32 cx = c->field_0 * c->field_8;
+	f32 cy = c->field_4 * c->field_8;
+
+	out->field_C = gRenderInitOne[2] * invT;
+	out->field_0 = ((cx - bx) * frac + bx) * invT;
+	out->field_4 = ((cy - by) * frac + by) * invT;
+
+	out->field_14 = (c->field_14 - b->field_14) * frac + b->field_14;
+	out->field_18 = (c->field_18 - b->field_18) * frac + b->field_18;
+
+	u32 colorB = b->field_10;
+	u32 colorC = c->field_10;
+
+	i32 chB_A = (colorB >> 24) & 0xFF;
+	i32 chC_A = (colorC >> 24);
+	i32 newA = (i32)((f32)(chC_A - chB_A) * frac) + chB_A;
+
+	i32 chB_R = (colorB >> 16) & 0xFF;
+	i32 chC_R = (colorC >> 16) & 0xFF;
+	i32 newR = (i32)((f32)(chC_R - chB_R) * frac) + chB_R;
+
+	i32 chB_G = (colorB >> 8) & 0xFF;
+	i32 chC_G = (colorC >> 8) & 0xFF;
+	i32 newG = (i32)((f32)(chC_G - chB_G) * frac) + chB_G;
+
+	i32 chB_B = colorB & 0xFF;
+	i32 chC_B = colorC & 0xFF;
+	i32 newB = (i32)((f32)(chC_B - chB_B) * frac) + chB_B;
+
+	out->field_10 = ((newA & 0xFF) << 24) | ((newR & 0xFF) << 16) | ((newG & 0xFF) << 8) | (newB & 0xFF);
 }
 
 // @Ok
