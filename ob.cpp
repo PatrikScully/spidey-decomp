@@ -784,6 +784,7 @@ void validate_CSuper(void)
 
 	VALIDATE(CSuper, field_184, 0x184);
 	VALIDATE(CSuper, field_188, 0x188);
+	VALIDATE(CSuper, mLinkData, 0x18C);
 	VALIDATE(CSuper, actualcsuperend, 0x190);
 }
 

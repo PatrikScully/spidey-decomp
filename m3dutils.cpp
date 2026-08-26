@@ -1,9 +1,74 @@
 #include "m3dutils.h"
 #include "validate.h"
 
-// @SMALLTODO
-void M3dUtils_ReadLinksPacket(CSuper*, void*)
-{}
+// @Ok
+// @AlmostMatching: loop2's redundant numLinks>0 re-test folds differently than
+// the original (je vs jle branch, missing jump-into-loop-middle optimization,
+// reordered found/not-found tail store). 17 hypotheses tried (see
+// m3dutils.attempts.md), residue is 17 mnemonic diffs, instruction count matches.
+void M3dUtils_ReadLinksPacket(CSuper *a1, void *a2)
+{
+	i32 numLinks;
+	i32 v4;
+	i32 i;
+	i32 offset;
+
+	numLinks = *reinterpret_cast<u16*>(reinterpret_cast<char*>(a2) + 2);
+	a1->mLinkData = reinterpret_cast<char*>(a2) + 4;
+
+	v4 = word_6B2478[34 * a1->mRegion];
+	i32 size1 = 24 * v4;
+	i32 size2 = 12 * numLinks;
+	a1->field_184 = DCMem_New(size1, 0, 1, 0, 1);
+	a1->field_188 = DCMem_New(size2, 0, 1, 0, 1);
+
+	if (numLinks > 0)
+	{
+		offset = 0;
+		i = numLinks;
+		do
+		{
+			offset += 0xC;
+			reinterpret_cast<i16*>(reinterpret_cast<char*>(a1->field_188) + offset)[-1] = 0;
+			reinterpret_cast<i16*>(reinterpret_cast<char*>(a1->field_188) + offset)[-2] = 0;
+			reinterpret_cast<i16*>(reinterpret_cast<char*>(a1->field_188) + offset)[-3] = 0;
+			reinterpret_cast<i16*>(reinterpret_cast<char*>(a1->field_188) + offset)[-4] = 0;
+			reinterpret_cast<i16*>(reinterpret_cast<char*>(a1->field_188) + offset)[-5] = 0;
+			reinterpret_cast<i16*>(reinterpret_cast<char*>(a1->field_188) + offset)[-6] = 0;
+			i--;
+		} while (i != 0);
+	}
+
+	if (numLinks != 0)
+	{
+		offset = 0;
+		i = numLinks;
+		do
+		{
+			char *link = reinterpret_cast<char*>(a1->mLinkData);
+			u16 wanted = *reinterpret_cast<u16*>(link + offset + 2);
+
+			i32 j;
+			for (j = 0; j < numLinks; j++)
+			{
+				if (wanted == *reinterpret_cast<u16*>(link + j * 0xC))
+					break;
+			}
+
+			if (j != numLinks)
+			{
+				*reinterpret_cast<u16*>(link + offset + 0xA) = j;
+			}
+			else
+			{
+				*reinterpret_cast<u16*>(reinterpret_cast<char*>(a1->mLinkData) + offset + 0xA) = 0xFFFF;
+			}
+
+			offset += 0xC;
+			i--;
+		} while (i != 0);
+	}
+}
 
 // @NotOk
 // Revisit and fix globals
