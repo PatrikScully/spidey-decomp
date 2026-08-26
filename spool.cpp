@@ -446,13 +446,44 @@ void Spool_ClearEnvironmentRegions(void)
 	ClearRegion(EnvRegions[0], 1);
 }
 
-// @SMALLTODO
-SAnimFrame* Spool_FindAnim(char *a1,i32 a2)
+// @NotOk
+// close but not matching: register allocation residue in the name-compare
+// loop (original uses a `ebp - a1` delta trick instead of a second walking
+// pointer). 3 hypotheses tried (pointer pair, pure indices, hybrid), best is
+// 59 mnemonic diffs, logged in spool.attempts.md.
+SAnimFrame* Spool_FindAnim(char *a1, i32 a2)
 {
-	typedef SAnimFrame* (*func_ptr)(char*, i32);
-	func_ptr func = (func_ptr)0x004CAB50;
+	for (AnimPacket* pPacketInfo = AnimPackets; pPacketInfo; pPacketInfo = pPacketInfo->pNext)
+	{
+		u32* pPacket = pPacketInfo->pPacket;
+		u32 numAnims = *pPacket;
+		char* pEntry = reinterpret_cast<char*>(pPacket + 1);
 
-	return func(a1, a2);
+		for (u32 i = 0; i < numAnims; i++)
+		{
+			char* pA = a1;
+			char* pB = pEntry;
+			char ca = *pA & 0xDF;
+			char cb = *pB & 0xDF;
+
+			i32 count;
+			for (count = 0; ca == cb && ca && cb && count < 8; count++)
+			{
+				pA++;
+				ca = *pA & 0xDF;
+				pB++;
+				cb = *pB & 0xDF;
+			}
+
+			if ((!ca && !cb) || count == 8)
+				return reinterpret_cast<SAnimFrame*>(pEntry + 0xC);
+
+			u32 numFrames = *reinterpret_cast<u32*>(pEntry + 8);
+			pEntry += numFrames * 8 + 0xC;
+		}
+	}
+
+	return 0;
 }
 
 // @Ok
