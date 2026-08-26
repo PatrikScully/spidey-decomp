@@ -1,3 +1,5 @@
+#include <cstdlib>
+
 #include "platform.h"
 #include "ps2lowsfx.h"
 #include "utils.h"
@@ -11,11 +13,161 @@
 extern CBody* EnvironmentalObjectList;
 extern const char* gObjFile;
 extern CSVector gTrajectoryVector;
+extern i32 TTime;
 
-// @MEDIUMTODO
+// gGravity (0x60F7B0): set by Physics_SetGravity (0x466C70, confirmed by scanning the original
+// function bytes for this address), a CVector. Physics_SetGravity also caches its Length() at
+// 0x60F7BC and a normalized copy at 0x60F888, neither of which we need here.
+static CVector * const gGravity = (CVector*)0x60F7B0;
+
+// @NotOk
+// residue: (1) the CVector operator-/operator>> in the movement-toward-target block get inlined
+// by our compiler (they are declared INLINE in vector.h), the original calls them out of line here;
+// (2) fine-grained register/stack allocation in the MechList push-out-of-box block differs (values
+// land in different registers/stack slots than the original, same logic). Both are toolchain/codegen
+// residue, not logic differences. Full attempt log in CPlatform_AI.attempts.md.
 void CPlatform::AI(void)
 {
-    printf("CPlatform::AI(void)");
+	if (this->pMessage)
+		this->CleanUpMessages(1, 0);
+
+	i32 half = this->field_80 >> 1;
+
+	if (this->field_324)
+	{
+		i32 amt = this->field_324;
+		if (amt >= half)
+			amt = half;
+		this->field_324 -= amt;
+		this->mScale.vx += this->field_32A * amt;
+	}
+
+	if (this->field_326)
+	{
+		i32 amt = this->field_326;
+		if (amt >= half)
+			amt = half;
+		this->field_326 -= amt;
+		this->mScale.vy += this->field_32C * amt;
+	}
+
+	if (this->field_328)
+	{
+		i32 amt = this->field_328;
+		if (amt < half)
+			half = amt;
+		this->field_328 -= half;
+		this->mScale.vz += this->field_32E * half;
+	}
+
+	this->mAcc = ZeroVector;
+
+	if (!this->field_334)
+		this->field_338++;
+
+	this->field_214 = this->mInputFlags;
+	if (this->mInputFlags & 1)
+	{
+		this->field_210++;
+		this->mInputFlags &= ~1;
+	}
+
+	if (this->field_20C)
+	{
+		if (this->field_230)
+			this->field_230--;
+		else
+			this->ParseScript(reinterpret_cast<u16*>(this->field_24C));
+	}
+
+	if (this->field_218 & 1)
+	{
+		CVector delta = (this->mPos - this->field_240) >> 12;
+
+		if (this->field_344.vz * delta.vz + this->field_344.vy * delta.vy + this->field_344.vx * delta.vx < 0)
+		{
+			this->mPos = this->field_240;
+		}
+
+		if ((this->field_240 - this->mPos).Length() > this->attributeArr[0])
+		{
+			CSVector aim;
+			Utils_CalcAim(&aim, &this->mPos, &this->field_240);
+			Utils_GetVecFromMagDir(&this->mVel, this->attributeArr[0], &aim);
+		}
+		else
+		{
+			this->mPos = this->field_240;
+			this->mVel.vx = 0;
+			this->mVel.vy = 0;
+			this->mVel.vz = 0;
+			this->field_218 &= ~1;
+		}
+	}
+
+	if (this->field_20E)
+		this->mAcc += *gGravity;
+
+	this->DoPhysics();
+
+	if (this->field_340 != -1 && TTime % this->field_340 == 0)
+	{
+		SFX_ModifyPos(this->field_33C, &this->mPos, 0);
+	}
+
+	this->field_334 = 0;
+
+	if ((this->field_218 & 4) && MechList)
+	{
+		CVector *mechPos = &MechList->mPos;
+		i32 mx = mechPos->vx;
+		i32 my = mechPos->vy;
+		i32 mz = mechPos->vz;
+		i32 xHi = this->mPos.vx + this->field_350.vx;
+
+		if (mx < xHi)
+		{
+			i32 xLo = this->mPos.vx - this->field_350.vx;
+
+			if (mx > xLo)
+			{
+				i32 zHi = this->mPos.vz + this->field_350.vz;
+
+				if (mz < zHi)
+				{
+					i32 zLo = this->mPos.vz - this->field_350.vz;
+
+					if (mz > zLo)
+					{
+						i32 yHi = this->mPos.vy + this->field_350.vy;
+
+						if (my < yHi)
+						{
+							i32 yLo = this->mPos.vy - this->field_350.vy;
+
+							if (my > yLo)
+							{
+								if (abs(this->mVel.vx) > abs(this->mVel.vz))
+								{
+									if (this->mVel.vx > 0)
+										mechPos->vx = xHi + 0x40000;
+									else
+										mechPos->vx = xLo - 0x40000;
+								}
+								else if (this->mVel.vz)
+								{
+									if (this->mVel.vz > 0)
+										mechPos->vz = zHi + 0x40000;
+									else
+										mechPos->vz = zLo - 0x40000;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // @Ok
@@ -282,6 +434,14 @@ i16 CPlatform::GetVariable(u16 a2)
 
 void validate_CPlatform(void){
 	VALIDATE_SIZE(CPlatform, 0x35C);
+
+	VALIDATE(CPlatform, field_324, 0x324);
+	VALIDATE(CPlatform, field_326, 0x326);
+	VALIDATE(CPlatform, field_328, 0x328);
+
+	VALIDATE(CPlatform, field_32A, 0x32A);
+	VALIDATE(CPlatform, field_32C, 0x32C);
+	VALIDATE(CPlatform, field_32E, 0x32E);
 
 	VALIDATE(CPlatform, field_330, 0x330);
 

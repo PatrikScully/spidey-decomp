@@ -89,7 +89,7 @@ public:
 	u8 field_212;
 	u8 field_213;
 
-	PADDING(1);
+	u16 field_214;
 
 	i16 field_216;
 	i32 field_218;
