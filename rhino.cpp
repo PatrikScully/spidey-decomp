@@ -622,10 +622,148 @@ void CRhino::DieRhino(void)
 	}
 }
 
-// @MEDIUMTODO
+static i16 * const gRhinoDazedStarAngle = reinterpret_cast<i16*>(0x00552070);
+static i16 * const gRhinoDazedStarSpeed = reinterpret_cast<i16*>(0x00682B64);
+
+// @NotOk
+// Structural approximation, not verified against a build. The disasm shows
+// three loops of near-identical CFT4Bit dust-puff bookkeeping over
+// field_3E4[5], field_3F8[5] and (in the 3rd loop) field_40C[5], each puff
+// created lazily, faded once mAnim (its field_40) drops to <=4, then freed
+// and slot-cleared. The 3rd loop also updates a pair of per-slot i16 angle
+// tables at fixed addresses (0x552070 / 0x682B64) through the game's
+// fixed-point sin/cos table at 0x610C48 to orbit small stars around the
+// head; that fixed-point math is not reproduced with confidence here, only
+// the general shape (position each star from a hook and an orbit offset).
 void CRhino::DoDazedEffect(void)
 {
-    printf("CRhino::DoDazedEffect(void)");
+	bool doFirst = this->mAnim == 0x11 || this->mAnim == 0x12;
+	bool doSecond = this->mAnim == 0x11;
+	i32 i;
+
+	for (i = 0; i < 5; i++)
+	{
+		CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_3E4[i]);
+
+		if (doFirst)
+		{
+			if (!p)
+			{
+				p = new CFT4Bit();
+				p->SetAnim(0);
+				p->SetScale(0x80);
+				p->SetSemiTransparent();
+				p->SetTint(0x40, 0x20, 0);
+			}
+		}
+		else if (p)
+		{
+			if (p->mFrame > 4)
+			{
+				delete p;
+				p = 0;
+			}
+			else
+			{
+				u8 fade = p->mFrame - 4;
+				p->SetTint(0x40, fade >> 1, 0);
+			}
+		}
+
+		if (p)
+		{
+			CVector pos = this->mPos;
+			pos.vy += 0x10;
+			p->SetPos(pos);
+		}
+	}
+
+	for (i = 0; i < 5; i++)
+	{
+		CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_3F8[i]);
+
+		if (doSecond)
+		{
+			if (!p)
+			{
+				p = new CFT4Bit();
+				p->SetAnim(0);
+				p->SetScale(0xA0);
+				p->SetSemiTransparent();
+				p->SetTint(0x60, 0x30, 0);
+			}
+		}
+		else if (p)
+		{
+			if (p->mFrame > 4)
+			{
+				delete p;
+				p = 0;
+			}
+			else
+			{
+				u8 fade = p->mFrame - 4;
+				p->SetTint(0x60, fade >> 1, 0);
+			}
+		}
+
+		if (p)
+		{
+			CVector pos = this->mPos;
+			pos.vy += 0x10;
+			p->SetPos(pos);
+		}
+	}
+
+	if (!this->mAnim)
+	{
+		for (i = 0; i < 5; i++)
+		{
+			CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_40C[i]);
+
+			gRhinoDazedStarAngle[i] += this->field_80;
+
+			VECTOR hookPos;
+			SHook hook;
+			hook.Part.vx = 0;
+			hook.Part.vy = 0;
+			hook.Part.vz = 0;
+			hook.Offset = 0xF;
+			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+			bool ready = true;
+
+			if (!p)
+			{
+				p = new CFT4Bit();
+
+				if (p)
+				{
+					p->SetAnim(1);
+					p->SetSemiTransparent();
+				}
+				else
+				{
+					ready = false;
+				}
+			}
+
+			if (ready && p)
+			{
+				p->SetTransparency(0x40);
+				p->SetAnimSpeed(0x80);
+				p->SetScale(0x80);
+
+				hookPos.vy += gRhinoDazedStarAngle[i] >> 6;
+
+				CVector pos;
+				pos.vx = hookPos.vx;
+				pos.vy = hookPos.vy;
+				pos.vz = hookPos.vz;
+				p->SetPos(pos);
+			}
+		}
+	}
 }
 
 // @MEDIUMTODO
