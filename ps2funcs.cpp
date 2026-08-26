@@ -307,8 +307,8 @@ void gte_gpf0()
 
 EXPORT int lzc;
 
-// @NotOk
-// Stupid function, can be extremely simplified
+// @Ok
+// @Matching
 void gte_stlzc(int *a1)
 {
   int v1; // esi
@@ -322,7 +322,7 @@ void gte_stlzc(int *a1)
     v2 = 0;
     do
     {
-      v1 *= 2;
+      v1 <<= 1;
       ++v2;
     }
     while ( v1 < 0 );
@@ -333,7 +333,7 @@ void gte_stlzc(int *a1)
 	v3 = 0;
     do
     {
-      v1 *= 2;
+      v1 <<= 1;
       ++v3;
     }
     while ( v1 >= 0 );
