@@ -1,4 +1,9 @@
 #include "screen.h"
+#include "db.h"
+#include "panel.h"
+#include "camera.h"
+#include "ps2funcs.h"
+#include "psx_types.h"
 
 
 EXPORT bool gScreenTarget;
@@ -16,10 +21,82 @@ EXPORT u8 gCircularFadeRelatedThree;
 EXPORT u8 gCircularFadeRelatedFour;
 
 
-// @SMALLTODO
+// guess: pointer to some "current view/clip" record, only known from the disasm (loaded
+// as a pointer from this fixed address, then two u16 fields at +8/+0xA read as a Y-range
+// clip test). No idb_globals.txt entry for this address, name and layout are our guess.
+#define G_VIEW_CLIP_INFO (*reinterpret_cast<u8**>(0x0064E514))
+
+// @NotOk
+// residue: 54 mnemonic diffs (from 66 before the G_VIEW_CLIP_INFO fix), all a register
+// scheduling mismatch in the relative-position computation (the original loads all 3
+// target components plus camera.vx up front, ours loads them in declaration order).
+// See screen.attempts.md. Semantics otherwise look right (target reticle: transform the
+// target position relative to the camera through the GTE, clip test against a Y range,
+// then fill a POLY_F3 (arrow head) + POLY_F4 (arrow shaft) pair from the allocated poly
+// buffer; both primitive setup calls are guarded by gPrintStubbed like the rest of this
+// stubbed PC port, the other two gsub_46CB90("") calls are not guarded, matching the
+// original bytes).
 void Screen_DrawArrow(void)
 {
-    printf("Screen_DrawArrow(void)");
+	if (!gScreenTarget)
+		return;
+
+	u32 *next = pPoly + 15;
+	if ((u8*)next >= PolyBufferEnd)
+		return;
+	POLY_F3 *tri = (POLY_F3*)pPoly;
+	pPoly = next;
+
+	VECTOR relPos;
+	relPos.vx = (gTargetRelated.vx >> 12) - gMikeCamera[0].Position.vx;
+	relPos.vy = (gTargetRelated.vy >> 12) - gMikeCamera[0].Position.vy;
+	relPos.vz = (gTargetRelated.vz >> 12) - gMikeCamera[0].Position.vz;
+
+	gte_ldlv0(&relPos);
+	gte_rtps();
+	i32 stlv[3];
+	gte_stlvnl2(stlv);
+
+	u8 *clip = G_VIEW_CLIP_INFO;
+	u16 clipMin = *(u16*)(clip + 8);
+	u16 clipMax = *(u16*)(clip + 0xA);
+	if ((u32)relPos.vy < clipMin || (u32)relPos.vy > clipMax)
+		return;
+
+	i32 sxy;
+	gte_stsxy(&sxy);
+	i32 screenX = (i16)sxy;
+	i32 screenY = (i16)(sxy >> 16);
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: setPolyF3");
+
+	tri->code = 0xA0;
+	tri->x0 = (i16)screenX;
+	tri->y0 = (i16)screenY;
+	tri->x1 = (i16)(screenX - 12);
+	tri->y1 = (i16)(screenY - 12);
+	tri->x2 = (i16)(screenX + 12);
+	tri->y2 = (i16)(screenY - 12);
+
+	gsub_46CB90((void*)0x0056EB54);
+
+	POLY_F4 *quad = (POLY_F4*)((u8*)tri + 0x14);
+	quad->code = 0xA0;
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: setPolyF4");
+
+	quad->x0 = (i16)(screenX - 6);
+	quad->x1 = (i16)(screenX - 6);
+	quad->y0 = (i16)(screenY - 12);
+	quad->y2 = (i16)(screenY - 12);
+	quad->x2 = (i16)(screenX + 6);
+	quad->x3 = (i16)(screenX + 6);
+	quad->y1 = (i16)(screenY - 24);
+	quad->y3 = (i16)(screenY - 24);
+
+	gsub_46CB90((void*)0x0056EB54);
 }
 
 // @MEDIUMTODO
