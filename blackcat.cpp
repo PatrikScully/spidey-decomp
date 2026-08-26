@@ -3,9 +3,14 @@
 #include "trig.h"
 #include "m3dutils.h"
 #include "utils.h"
+#include "ps2m3d.h"
+#include "m3dcolij.h"
+#include "ps2lowsfx.h"
+#include "spidey.h"
 
 extern u8 submarinerDieRelated;
 extern CBaddy* BaddyList;
+extern CPlayer* MechList;
 
 EXPORT SLight M3d_BlackCatLight =
 {
@@ -40,10 +45,229 @@ void BlackCat_RelocatableModuleClear(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// state machine: field_31C.bothFlags picks the outer phase (1 = climb down
+// from a ledge, 2 = walk to the player using SynthesizeAnalogueInput, 4 =
+// idle anim), dumbAssPad is the sub state inside each phase. field_324 is a
+// trig link id to look at, field_188 is a guessed turret-style head object
+// with a pan/tilt pair at +0x24 (type unknown, offset used raw).
+// cmpsum: 289 mnemonic diffs on a 1146 byte function, first divergence near
+// entry (my code loads the al flag differently than the original's cmp
+// al,bl idiom). functional shape (calls, order, branches) verified against
+// the disasm but not iterated to a match.
 void CBlackCat::AI(void)
 {
-    printf("CBlackCat::AI(void)");
+	if (submarinerDieRelated)
+	{
+		if (Trig_GetLevelID() != 0x803)
+		{
+			this->Die(0);
+			return;
+		}
+	}
+
+	if (this->mAnim == 8)
+	{
+		if (!(this->field_218 & 1) && this->field_128 >= 0x12)
+		{
+			SFX_PlayPos(0x819B, &this->mPos, 0);
+			this->field_218 |= 1;
+		}
+	}
+	else
+	{
+		this->field_218 &= ~1;
+	}
+
+	this->DoPhysics();
+
+	if (this->pMessage)
+	{
+		this->CleanUpMessages(1, 0);
+	}
+
+	switch (this->field_31C.bothFlags)
+	{
+		case 1:
+			switch (this->dumbAssPad)
+			{
+				case 0:
+				{
+					CVector aimTarget;
+					aimTarget.vx = MechList->mPos.vx;
+					aimTarget.vy = this->mPos.vy;
+					aimTarget.vz = MechList->mPos.vz;
+					Utils_CalcAim(&this->mAngles, &this->mPos, &aimTarget);
+
+					i32 groundHeight = Utils_GetGroundHeight(&this->mPos, 0, 0x800, 0);
+					if (groundHeight != -1)
+					{
+						this->field_32C = 0x2000;
+						this->realRegisterArr[0] = groundHeight >> 12;
+						this->dumbAssPad++;
+					}
+					break;
+				}
+				case 1:
+				{
+					print_if_false(1, "CBlackCat::AI climb down");
+					i32 landingY = (this->realRegisterArr[0] - this->field_21E) << 12;
+					if (this->mPos.vy > landingY)
+					{
+						SFX_PlayPos(0x819A, &this->mPos, 0);
+						this->RunAnim(7, 0, -1);
+						this->mPos.vy = landingY;
+						this->field_32C = 0;
+						this->mVel.vx = 0;
+						this->mVel.vy = 0;
+						this->mVel.vz = 0;
+						this->dumbAssPad++;
+					}
+					break;
+				}
+				case 2:
+					if (this->mAnimFinished)
+					{
+						this->field_31C.bothFlags = 2;
+						this->dumbAssPad = 0;
+					}
+					break;
+				default:
+					print_if_false(0, "CBlackCat::AI bad sub state (1)");
+					break;
+			}
+			break;
+
+		case 2:
+			switch (this->dumbAssPad)
+			{
+				case 0:
+					this->field_340 = 1;
+					this->field_348 = 1;
+					this->dumbAssPad = 1;
+					// fall through
+
+				case 1:
+					if (this->field_340)
+					{
+						this->SynthesizeAnalogueInput();
+					}
+					else
+					{
+						if (Trig_GetLevelID() == 0x803)
+						{
+							this->field_31C.bothFlags = 4;
+							this->dumbAssPad = 0;
+						}
+						else
+						{
+							this->Die(0);
+						}
+					}
+					break;
+
+				default:
+					print_if_false(0, "CBlackCat::AI bad sub state (2)");
+					break;
+			}
+			break;
+
+		case 4:
+			if (this->mAnim != 0 || this->mAnimFinished != 0)
+			{
+				this->RunAnim(0, 0, -1);
+			}
+			break;
+
+		default:
+			print_if_false(0, "CBlackCat::AI bad state");
+			break;
+	}
+
+	CSVector lookAngle;
+
+	if (this->field_324)
+	{
+		VECTOR hookPos;
+		M3dUtils_GetHookPosition(&hookPos, this, 0x10);
+
+		CVector trigPos;
+		Trig_GetPosition(&trigPos, this->field_324);
+
+		MATRIX localMat;
+		M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+		gte_SetRotMatrix(&localMat);
+
+		CVector delta;
+		delta.vx = (trigPos.vx - hookPos.vx) >> 12;
+		delta.vy = (trigPos.vy - hookPos.vy) >> 12;
+		delta.vz = (trigPos.vz - hookPos.vz) >> 12;
+
+		delta <<= 12;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&delta));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&delta));
+
+		CVector zero;
+		zero.vx = 0;
+		zero.vy = 0;
+		zero.vz = 0;
+		Utils_CalcAim(&lookAngle, &zero, &delta);
+	}
+
+	if (this->field_188)
+	{
+		// @FIXME guess: field_188 points at a turret-style head/eye object
+		// with a pan/tilt angle pair at offset 0x24
+		i16 *panTilt = reinterpret_cast<i16*>(this->field_188) + 0x12;
+
+		i32 dx = lookAngle.vx - panTilt[0];
+		if (dx > 0x800) dx -= 0x1000;
+		else if (dx < -0x800) dx += 0x1000;
+
+		if (dx > 0x30)
+		{
+			dx = 0x30;
+		}
+		else if (dx < -0x30)
+		{
+			dx = -0x30;
+		}
+		panTilt[0] = static_cast<i16>(panTilt[0] + dx);
+
+		i32 dy = lookAngle.vy - panTilt[1];
+		if (dy > 0x800) dy -= 0x1000;
+		else if (dy < -0x800) dy += 0x1000;
+
+		if (dy > 0x30)
+		{
+			dy = 0x30;
+		}
+		else if (dy < -0x30)
+		{
+			dy = -0x30;
+		}
+		panTilt[1] = static_cast<i16>(panTilt[1] + dy);
+
+		if ((this->mFlags & 4) && this->field_340)
+		{
+			if ((panTilt[0] | panTilt[1]) == 0)
+			{
+				this->mFlags &= ~4;
+			}
+		}
+	}
+
+	if (this->mFlags & 4)
+	{
+		this->ApplyPose(gUnkPose);
+	}
+	else
+	{
+		M3d_BuildTransform(this);
+	}
+
+	this->DoMGSShadow();
 }
 
 // @NotOk
@@ -102,8 +326,9 @@ void CBlackCat::DoMGSShadow(void)
 	i32 minX = box[0].vx;
 	i32 maxZ = box[0].vz;
 	i32 minZ = box[0].vz;
+	i32 i;
 
-	for (i32 i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 	{
 		box[i] >>= 12;
 		gte_ldlvl(reinterpret_cast<VECTOR*>(&box[i]));
