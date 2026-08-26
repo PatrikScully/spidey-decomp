@@ -60,6 +60,12 @@ EXPORT void Utils_VblankProcessing(void);
 #define Sine(a) ((*(SSinCos *)(&rcossin_tbl+((a)&4095))).sin)
 #define Cosine(a) ((*(SSinCos *)(&rcossin_tbl+((a)&4095))).cos)
 
+// gates the delayed XA restart, also checked by Logic, Display and
+// Front_Update (moved here from utils.cpp so front.cpp can use it too, per
+// the G_* "one definition in the owning header" rule).
+//#define G_POST_WATER_EFFECT (gPostWaterEffect)
+#define G_POST_WATER_EFFECT (*reinterpret_cast<i32*>(0x005FAE98))
+
 void patch_utils(void);
 
 #endif

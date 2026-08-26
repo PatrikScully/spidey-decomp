@@ -144,6 +144,7 @@ EXPORT void Front_Update(void);
 EXPORT void PrintPaused(void);
 
 EXPORT extern CMenu* pYesNoMenu;
+EXPORT extern CMenu* gPausedMenu;
 const i32 FRONT_NUM_LEVELS = 41;
 EXPORT extern SLevel Levels[FRONT_NUM_LEVELS];
 

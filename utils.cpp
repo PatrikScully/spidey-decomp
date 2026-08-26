@@ -38,9 +38,8 @@ EXPORT u16 gUtilsRelatedSeven;
 //#define G_GAME_FADE (GameFade)
 #define G_GAME_FADE (*reinterpret_cast<volatile i32*>(0x006B4C9C))
 
-// gates the delayed XA restart, also checked by Logic, Display and Front_Update
-//#define G_POST_WATER_EFFECT (gPostWaterEffect)
-#define G_POST_WATER_EFFECT (*reinterpret_cast<i32*>(0x005FAE98))
+// G_POST_WATER_EFFECT moved to utils.h (needed by front.cpp too now, one
+// definition in the owning header per the G_* placement rule).
 
 const u32 crc32_tab[] = {
 	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,

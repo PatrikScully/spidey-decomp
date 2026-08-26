@@ -9,8 +9,12 @@
 #include "dcmemcard.h"
 #include "PCShell.h"
 #include "ps2lowsfx.h"
+#include "panel.h"
 
 CMenu* pYesNoMenu;
+
+// idb_globals.txt: 0x005FAED0 gPausedMenu.
+CMenu* gPausedMenu;
 
 EXPORT i32 gFrontGauge;
 
@@ -283,10 +287,164 @@ void Front_ClearScreen(void)
 	ClearImage();
 }
 
-// @MEDIUMTODO
+// Tentative names, no name in idb_globals.txt for these three. Shared with
+// CheckForPadUnplugged and Front_Display, which both load pointers from the
+// same fixed addresses to draw the same blinking text. Not yet implemented
+// anywhere else in the repo, so kept file-local for now.
+#define gFrontPadTextOne (*reinterpret_cast<char**>(0x0054B764))
+#define gFrontPadTextTwo (*reinterpret_cast<char**>(0x0054B768))
+#define gFrontPadTextThree (*reinterpret_cast<char**>(0x0054BBC8))
+
+// Tentative names/globals for Front_Display, no idb_globals.txt entries
+// unless noted. gFrontDrawPolyFlag/gFrontShowTrainingTip/gFrontMysteryFlag
+// are booleans gating one-off draw blocks; gFrontHintY is a persistent
+// animated y-coordinate (this file's only writer); gFrontScreenState is the
+// front-end screen-type switch selector; gFrontControllerTwoMenu is a
+// second CMenu* right after the already-named gPausedMenu (0x5FAED0, from
+// idb_globals.txt); the seven 0x54Bxxx/0x54BBC8 entries are char* text
+// pointers, same pattern as gFrontYesText/gFrontPadTextOne above.
+#define gFrontDrawPolyFlag (*reinterpret_cast<i32*>(0x0060CFE0))
+#define gFrontShowTrainingTip (*reinterpret_cast<i32*>(0x0068293C))
+#define gFrontHintY (*reinterpret_cast<i16*>(0x0054A7E0))
+#define gFrontScreenState (*reinterpret_cast<i32*>(0x005FAECC))
+#define gFrontControllerTwoMenu (*reinterpret_cast<CMenu**>(0x005FAED4))
+#define gFrontTrainingTextOne (*reinterpret_cast<char**>(0x0054B76C))
+#define gFrontTrainingTextTwo (*reinterpret_cast<char**>(0x0054B890))
+#define gFrontPausedText (*reinterpret_cast<char**>(0x0054B74C))
+#define gFrontHintText (*reinterpret_cast<char**>(0x0054B748))
+#define gFrontYesNoPromptText (*reinterpret_cast<char**>(0x0054B784))
+// Same address as gsub_430880 (nullsub_3), see PCShell.cpp/shell.cpp for
+// precedent on calling it with a dummy arg via a function-pointer cast.
+#define gFrontMysteryValueOne (*reinterpret_cast<i32*>(0x005512EC))
+// idb_globals.txt: 0x005FB1B0 gInitRelatedTwo (already a plain, non-fixed
+// repo global in init.cpp; only read here, so a file-local fixed-address
+// macro is enough, no need to touch init.cpp/init.h for a single caller).
+#define G_INIT_RELATED_TWO (*reinterpret_cast<i32*>(0x005FB1B0))
+
+// Forward-declared instead of #include "spidey.h": Front_Display below
+// only uses the pointer VALUE (cast to u8* for a raw offset read), so the
+// full CPlayer definition is not needed and pulling in spidey.h's huge
+// dependency graph is not worth it for one field read.
+class CPlayer;
+extern CPlayer* MechList;
+
+// @NotOk
+// residue: 2 mnemonic diffs after several iterations (down from 145 on the
+// first honest pass; see front.attempts.md for the hypothesis log). Both
+// remaining diffs are in the screen-state switch/blink-text tail: (1) the
+// switch selector load uses one register (eax) where the original uses two
+// (ecx then eax=ecx-1); (2) the original keeps two separate `ret`
+// instructions at the very end of the two TTime-blink paths (different
+// `add esp` cleanup amounts, 0x28 vs 0x14, so the original toolchain never
+// merged them), while this build's optimizer merges them into one shared
+// `ret` regardless of how the two `return;` statements are written in
+// source - tried explicit early-return restructuring, no change, this
+// looks like a genuine compiler-side tail-merge decision, not something
+// source shape controls. Instruction counts otherwise match (220 vs 219,
+// the one missing `ret` accounts for the whole gap). The switch's jump
+// table bytes are not in tools/functions/<addr>.bin (the extraction stops
+// at the last real instruction), so the case body order (screen states
+// 1,2,3,4 in address order 0x440C40/0x440CB6/0x440CC9/0x440D51) is
+// inferred from normal compiler layout, not read directly. `MechList->field_E2`
+// is accessed by raw pointer offset instead of adding a new field to
+// CPlayer in spidey.h - that struct is huge and shared with many other
+// already-`@Ok`
+// files, not safe to touch from a front.cpp-only session (same caution as
+// the SLevel/init.cpp note on Front_LoadGame below).
 void Front_Display(void)
 {
-    printf("Front_Display(void)");
+	// same address as gsub_430880 (nullsub_3), declared and defined in
+	// PCShell.cpp; see shell.cpp for the same local-extern precedent.
+	extern void gsub_430880(void);
+
+	if (gFrontDrawPolyFlag)
+		Panel_DrawFlatShadedPoly(0x13, 0xBA, 0xC2, 0x2A, 0, 0, 0, 0, 0);
+
+	if (G_POST_WATER_EFFECT)
+		gsub_430880();
+
+	Mess_SetTextJustify(0);
+
+	if (gFrontShowTrainingTip && (Vblanks & 0x20))
+	{
+		Mess_SetRGB(0x80, 0x80, 0x80, 0);
+		Mess_SetScale(0x100);
+		Mess_DrawText(0x100, 0x32, gFrontTrainingTextOne, 0, 0x1000);
+		Mess_DrawText(0x100, 0xC8, gFrontTrainingTextTwo, 0, 0x1000);
+	}
+
+	if (MechList
+			&& *reinterpret_cast<i16*>(reinterpret_cast<u8*>(MechList) + 0xE2) <= 0
+			&& G_INIT_RELATED_TWO == 1)
+	{
+		Mess_SetRGB(0x80, 0x80, 0x80, 0);
+		Mess_SetScale(0x180);
+		Mess_DrawText(0x100, gFrontHintY, gFrontHintText, 0, 0x1000);
+
+		gFrontHintY += 8;
+		if (gFrontHintY > 0x78)
+			gFrontHintY = 0x78;
+	}
+
+	Mess_SetScale(0x100);
+
+	i32 screenState = gFrontScreenState;
+
+	switch (screenState)
+	{
+		case 1:
+			Mess_SetScale(0x100);
+			Mess_SetRGB(0x7F, 0x19, 0x21, 0);
+			Mess_DrawText(0x100, 0x32, gFrontPausedText, 0, 0x1000);
+			((void(*)(i32,i32))gsub_430880)(gFrontMysteryValueOne, 0xAD);
+			print_if_false(gPausedMenu != 0, reinterpret_cast<char*>(0x0054AC34));
+			gPausedMenu->mX = 0x100;
+			gPausedMenu->Display();
+			PCSHELL_DrawMouseCursor();
+			return;
+
+		case 2:
+			if (!gFrontControllerTwoMenu)
+				return;
+			gFrontControllerTwoMenu->Display();
+			return;
+
+		case 3:
+			Mess_SetScale(0x100);
+			Mess_SetRGB(0x7F, 0x19, 0x21, 0);
+			Mess_DrawText(0x100, 0x32, gFrontPausedText, 0, 0x1000);
+			((void(*)(i32,i32))gsub_430880)(gFrontMysteryValueOne, 0xAD);
+			Mess_SetRGB(0x4D, 0x53, 0x69, 0);
+			Mess_SetScale(0x100);
+			Mess_DrawText(0x100, 0x4B, gFrontYesNoPromptText, 0, 0x1000);
+			pYesNoMenu->Display();
+			PCSHELL_DrawMouseCursor();
+			return;
+
+		case 4:
+			Mess_SetScale(0x100);
+			Mess_SetRGB(0x7F, 0x19, 0x21, 0);
+			Mess_DrawText(0x100, 0x32, gFrontPausedText, 0, 0x1000);
+			Front_RGBRed();
+			break;
+
+		default:
+			return;
+	}
+
+	if (G_SCONTROL[0].Type == 0)
+	{
+		if ((TTime / 10) & 1)
+		{
+			Mess_DrawText(0x100, 0xB0, gFrontPadTextOne, 0, 0x1000);
+			Mess_DrawText(0x100, 0xC0, gFrontPadTextTwo, 0, 0x1000);
+		}
+
+		return;
+	}
+
+	if ((TTime / 10) & 1)
+		Mess_DrawText(0x100, 0xB8, gFrontPadTextThree, 0, 0x1000);
 }
 
 // @Ok
@@ -392,14 +550,6 @@ void Front_LoadGame(SSaveGame *,i32,bool)
 {
     printf("Front_LoadGame(SSaveGame *,i32,bool)");
 }
-
-// Tentative names, no name in idb_globals.txt for these three. Shared with
-// CheckForPadUnplugged and Front_Display, which both load pointers from the
-// same fixed addresses to draw the same blinking text. Not yet implemented
-// anywhere else in the repo, so kept file-local for now.
-#define gFrontPadTextOne (*reinterpret_cast<char**>(0x0054B764))
-#define gFrontPadTextTwo (*reinterpret_cast<char**>(0x0054B768))
-#define gFrontPadTextThree (*reinterpret_cast<char**>(0x0054BBC8))
 
 // @Ok
 // @Matching
