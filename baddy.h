@@ -163,7 +163,7 @@ public:
 
 	CVector field_2FC;
 	i32 field_308;
-	PADDING(0x310 - 0x308 - 4);
+	i32 field_30C;
 
 	i32 field_310;
 	i16 field_314;
