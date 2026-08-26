@@ -97,7 +97,8 @@ struct POLY_F4
 	i16 y3;
 };
 
-EXPORT void gsub_46CB90(void*);
+EXPORT void gsub_4015B0(void*);
+EXPORT void gsub_46CB90(void*, ...);
 
 EXPORT void Panel_CreateHealthBar(CBody*, i32);
 EXPORT void Panel_DestroyCompass(void);

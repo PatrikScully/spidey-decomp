@@ -135,12 +135,44 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, Texture const *tex, u
 			zOffset);
 }
 
-// @SMALLTODO
+// unnamed globals used only by gsub_46CB90. Not in idb_globals.txt near neighbours,
+// tentative names based on how they gate the debug print below.
+static u8 * const gDebugPrintDisabled = (u8*)0x006B4CB8;
+static u8 * const gDebugPrintEnabled = (u8*)0x0054F038;
+
+static char * const gDebugPrintBuf = (char*)0x006109E0;
+
+// gsub_4015B0 is declared in panel.h and defined further down, so it is not
+// visible for same-TU inlining at this call site (matches the original,
+// which has a real "call" instruction here, not an inlined body).
+
 // unnamed helper at 0x46CB90, argument is gRenderBuf (idb_globals.txt: 0x0056EB54, exact type unknown).
-// Not runtime-hooked this session, so a printf placeholder instead of a forward-to-original.
-void gsub_46CB90(void*)
+// Not runtime-hooked this session, so a printf placeholder instead of a forward-to-original
+// for gsub_4015B0. cmpsum: 0 mnemonic diffs.
+// @Ok
+// @Matching
+void gsub_46CB90(void* fmt, ...)
 {
-	printf("gsub_46CB90(void*)");
+	if (*gDebugPrintDisabled)
+		return;
+
+	if (!*gDebugPrintEnabled)
+		return;
+
+	va_list args;
+	va_start(args, fmt);
+	vsprintf(gDebugPrintBuf, (char*)fmt, args);
+
+	gsub_4015B0(gDebugPrintBuf);
+}
+
+// unnamed helper at 0x4015B0 (names.json calls it print_if_false, but the
+// export.h print_if_false has a different arg count and is static/inlined
+// away in our build). Not runtime-hooked this session, printf placeholder.
+// @SMALLTODO
+EXPORT void gsub_4015B0(void*)
+{
+	printf("gsub_4015B0(void*)");
 }
 
 // @Ok
