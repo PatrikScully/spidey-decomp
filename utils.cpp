@@ -307,10 +307,94 @@ u32 Utils_Dist(const CVector &a1, const CVector &a2)
 	return M3dMaths_SquareRoot0(((a1 - a2) >> 12).SquaredLength());
 }
 
-// @SMALLTODO
+// tentative name: this is dereferenced twice ([ptr+4] then [that+0]) to fill icon metrics
+// below. Referenced by Spool_FindTextureEntry/Spool_ReloadAll/Spool_TextureAccess
+// (spool.cpp), so it looks like a texture/resource source, but the inner struct fields
+// read here (offsets 0, 4, 8, 0xA) are not decoded anywhere else yet.
+static void ** const gIconInfoSource = (void**)0x0056EA98;
+
+// unknown HUD/icon table at 0x6B4904..0x6B49E7 (6 slots, 0x28 bytes stride). field layout
+// not understood, kept as raw offsets matching the disassembly. every use of
+// gIconInfoSource's inner pointer is re-read from memory (not cached, volatile), matching
+// the original's 4 separate [ecx+4] reloads per slot.
+// Residue for the @NotOk below: functionally faithful (same field values/order, same loop bound) but MSVC6
+// picks very different register allocation and, in places, a different arithmetic shape for
+// the same value (e.g. dx computation) once the raw-offset writes are this dense; tried a
+// version without the volatile inner-pointer re-read (48 diffs, whole [ecx+4] cluster got
+// hoisted out of the loop as one-time reads) and the current volatile version (43 diffs,
+// less hoisting but the dx/esi arithmetic still gets restructured). Did not reach a byte
+// match; leaving as a real, honest translation rather than forcing an @AlmostMatching claim
+// without the full attempt count this size class needs.
+// @NotOk
 void Utils_InitLoadIcons(void)
 {
-    printf("Utils_InitLoadIcons(void)");
+	char * const info = reinterpret_cast<char*>(*gIconInfoSource);
+	// the inner pointer at info+4 is re-read from memory on every use below (volatile),
+	// matching the original's repeated "mov edx,[ecx+4]" reloads instead of caching it.
+#define ICON_INNER (*reinterpret_cast<i32 * volatile *>(info + 4))
+
+	i16 bx = 0x30;
+	i16 di = 0x60;
+	i32 ebp = 0x2C202020;
+	i32 esi = 0;
+	i32 eax = 0;
+
+	do
+	{
+		*reinterpret_cast<i32*>(eax + 0x006B4920) = 0x9000000;
+
+		i32 dx = esi + esi * 4;
+		*reinterpret_cast<i16*>(eax + 0x006B4928) = bx;
+		*reinterpret_cast<i16*>(eax + 0x006B4930) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B4938) = bx;
+		dx = dx + dx * 8 + 0xE;
+		*reinterpret_cast<i16*>(eax + 0x006B4940) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B492A) = (i16)dx;
+		*reinterpret_cast<i16*>(eax + 0x006B4932) = (i16)dx;
+		dx = *reinterpret_cast<i16*>(eax + 0x006B492A);
+		dx += 0x20;
+		*reinterpret_cast<i16*>(eax + 0x006B493A) = (i16)dx;
+		*reinterpret_cast<i16*>(eax + 0x006B4942) = (i16)dx;
+		*reinterpret_cast<i32*>(eax + 0x006B4924) = ebp;
+
+		eax += 0x28;
+
+		*reinterpret_cast<i32*>(eax + 0x006B4904) = ICON_INNER[0];
+		*reinterpret_cast<i32*>(eax + 0x006B490C) = ICON_INNER[1];
+		*reinterpret_cast<i16*>(eax + 0x006B4914) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 8);
+		*reinterpret_cast<i32*>(eax + 0x006B49C0) = 0x9000000;
+		*reinterpret_cast<i16*>(eax + 0x006B491C) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 0xA);
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B4902);
+		*reinterpret_cast<i16*>(eax + 0x006B49C8) = bx;
+		*reinterpret_cast<i16*>(eax + 0x006B49D0) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B49D8) = bx;
+		dx += 0x100;
+		*reinterpret_cast<i16*>(eax + 0x006B49E0) = di;
+		*reinterpret_cast<i16*>(eax + 0x006B49CA) = (i16)dx;
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B490A);
+		dx += 0x100;
+		*reinterpret_cast<i16*>(eax + 0x006B49D2) = (i16)dx;
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B4912);
+		dx += 0x100;
+		*reinterpret_cast<i16*>(eax + 0x006B49DA) = (i16)dx;
+
+		dx = *reinterpret_cast<i16*>(eax + 0x006B491A);
+		dx += 0x100;
+		esi++;
+		*reinterpret_cast<i16*>(eax + 0x006B49E2) = (i16)dx;
+		*reinterpret_cast<i32*>(eax + 0x006B49C4) = ebp;
+
+		*reinterpret_cast<i32*>(eax + 0x006B49CC) = ICON_INNER[0];
+		*reinterpret_cast<i32*>(eax + 0x006B49D4) = ICON_INNER[1];
+		*reinterpret_cast<i16*>(eax + 0x006B49DC) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 8);
+		*reinterpret_cast<i16*>(eax + 0x006B49E4) = *reinterpret_cast<i16*>(reinterpret_cast<char*>(ICON_INNER) + 0xA);
+	}
+	while (eax < 0xC8);
+
+#undef ICON_INNER
 }
 
 // @Ok
