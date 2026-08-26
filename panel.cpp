@@ -2,6 +2,11 @@
 #include "spool.h"
 #include "l1a3bomb.h"
 #include "spidey.h"
+#include "db.h"
+#include "ps2funcs.h"
+#include "PCGfx.h"
+#include "m3dinit.h"
+#include "SpideyDX.h"
 
 #include "validate.h"
 
@@ -35,10 +40,53 @@ void DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)
     printf("DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)");
 }
 
-// @MEDIUMTODO
-void DCPanel_DrawFlatShadedPoly(f32,i32,i32,i32,i32,u8,u8,u8,i32,i32)
+// @Ok
+// @Matching
+void DCPanel_DrawFlatShadedPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u8 r, u8 g, u8 b, i32, i32 blendMode)
 {
-    printf("DCPanel_DrawFlatShadedPoly(f32,i32,i32,i32,i32,u8,u8,u8,i32,i32)");
+	u8 alpha = 0xFF;
+
+	if (blendMode == 1)
+	{
+		PCGfx_UseTexture(blendMode, (DCGfx_BlendingMode)blendMode);
+		alpha = 0x7F;
+	}
+	else if (blendMode == 2)
+	{
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+		alpha = 0x7F;
+	}
+	else if (blendMode == 3)
+	{
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+		alpha = 0xDC;
+	}
+	else
+	{
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+	}
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 hScaled = h * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 wScaled = w * scaleX;
+	f32 yScaled = y * scaleY;
+	f32 xScaled = x * scaleX;
+
+	u32 color = (alpha << 24) | (r << 16) | (g << 8) | b;
+
+	PCGfx_DrawQuad2D(
+			xScaled,
+			yScaled,
+			wScaled,
+			hScaled,
+			0.0f,
+			0.0f,
+			1.0f,
+			1.0f,
+			color,
+			zOffset,
+			false);
 }
 
 // @MEDIUMTODO
@@ -57,6 +105,14 @@ void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)
 void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,Texture const *,u32)
 {
     printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,Texture const *,u32)");
+}
+
+// @SMALLTODO
+// unnamed helper at 0x46CB90, argument is gRenderBuf (idb_globals.txt: 0x0056EB54, exact type unknown).
+// Not runtime-hooked this session, so a printf placeholder instead of a forward-to-original.
+void gsub_46CB90(void*)
+{
+	printf("gsub_46CB90(void*)");
 }
 
 // @Ok
@@ -90,10 +146,61 @@ void Panel_DisplayTimer(void)
     printf("Panel_DisplayTimer(void)");
 }
 
-// @SMALLTODO
-void Panel_DrawFlatShadedPoly(i32,i32,i32,i32,u8,u8,u8,i32,i32)
+// @Ok
+// @Matching
+int Panel_DrawFlatShadedPoly(i32 x, i32 y, i32 w, i32 h, u8 r, u8 g, u8 b, i32, i32 a9)
 {
-    printf("Panel_DrawFlatShadedPoly(i32,i32,i32,i32,u8,u8,u8,i32,i32)");
+	if ((u8*)pPoly + sizeof(POLY_F4) > PolyBufferEnd)
+	{
+		return 0;
+	}
+
+	POLY_F4* p = (POLY_F4*)pPoly;
+	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+
+	if (!gPrintStubbed)
+	{
+		gsub_46CB90((void*)"Panel_DrawFlatShadedPoly");
+	}
+
+	p->r0 = r;
+	p->b0 = b;
+	p->g0 = g;
+
+	p->x0 = (i16)x;
+	p->y0 = (i16)y;
+	p->x1 = (i16)(x + w);
+	p->y1 = (i16)y;
+	p->x2 = (i16)x;
+	p->y2 = (i16)(y + h);
+	p->x3 = (i16)(x + w);
+	p->y3 = (i16)(y + h);
+
+	gsub_46CB90((void*)0x0056EB54);
+
+	if (a9)
+	{
+		if (!gPrintStubbed)
+		{
+			gsub_46CB90((void*)"Panel_DrawFlatShadedPoly: extra");
+		}
+
+		if ((u8*)pPoly + 8 > PolyBufferEnd)
+		{
+			return 0;
+		}
+
+		pPoly = (u32*)((u8*)pPoly + 8);
+
+		if (!gPrintStubbed)
+		{
+			gsub_46CB90((void*)"Panel_DrawFlatShadedPoly: extra2");
+		}
+
+		gsub_46CB90((void*)0x0056EB54);
+	}
+
+	return (int)p;
 }
 
 // @Ok
@@ -296,10 +403,41 @@ int Panel_DrawTexturedPoly(SAnimFrame* pFrame, int a2)
 	return Panel_DrawTexturedPoly(pFrame->pTexture, a2);
 }
 
-// @SMALLTODO
-int Panel_DrawTexturedPoly(Texture*, int)
+// @Ok
+// @Matching
+int Panel_DrawTexturedPoly(Texture* pTexture, int a2)
 {
-	return 0x28052024;
+	if (!pTexture)
+	{
+		return 0;
+	}
+
+	print_if_false(a2 < 0x1000, "Panel_DrawTexturedPoly");
+
+	if ((u8*)pPoly + sizeof(POLY_FT4) > PolyBufferEnd)
+	{
+		return 0;
+	}
+
+	POLY_FT4* p = (POLY_FT4*)pPoly;
+	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_FT4));
+
+	p->tag = 0x09000000;
+	*(u32*)&p->r0 = 0x2C808080;
+
+	u32 u0v0clut = *(u32*)&pTexture->u0;
+	u32 u1v1tpage = *(u32*)&pTexture->u1;
+	u32 u2v2u3v3 = *(u32*)&pTexture->u2;
+	u16 u3v3 = *(u16*)&pTexture->u3;
+
+	*(u32*)&p->u0 = u0v0clut;
+	*(u32*)&p->u1 = u1v1tpage;
+	*(u32*)&p->u2 = u2v2u3v3;
+	*(u16*)&p->u3 = u3v3;
+
+	gsub_46CB90((void*)0x0056EB54);
+
+	return (int)p;
 }
 
 void validate_SAnimFrame(void)
@@ -387,4 +525,29 @@ void validate_POLY_FT4(void)
 
 void validate_POLY_GT4(void)
 {
+}
+
+void validate_POLY_F4(void)
+{
+	VALIDATE_SIZE(POLY_F4, 0x18);
+
+	VALIDATE(POLY_F4, tag, 0x0);
+
+	VALIDATE(POLY_F4, r0, 0x4);
+	VALIDATE(POLY_F4, g0, 0x5);
+	VALIDATE(POLY_F4, b0, 0x6);
+
+	VALIDATE(POLY_F4, code, 0x7);
+
+	VALIDATE(POLY_F4, x0, 0x8);
+	VALIDATE(POLY_F4, y0, 0xA);
+
+	VALIDATE(POLY_F4, x1, 0xC);
+	VALIDATE(POLY_F4, y1, 0xE);
+
+	VALIDATE(POLY_F4, x2, 0x10);
+	VALIDATE(POLY_F4, y2, 0x12);
+
+	VALIDATE(POLY_F4, x3, 0x14);
+	VALIDATE(POLY_F4, y3, 0x16);
 }
