@@ -4,6 +4,7 @@
 #include "dcmodel.h"
 #include "pcdcMem.h"
 #include "mem.h"
+#include "PCGfx.h"
 
 u32 M3d_FadeColour;
 
@@ -137,10 +138,134 @@ void M3dInit_ParsePSX(i32)
     printf("M3dInit_ParsePSX(i32)");
 }
 
-// @MEDIUMTODO
-void M3dInit_SetFoggingParams(long,long,u32)
+// Fog transition state. Tentative names, no idb_globals.txt entries for these
+// addresses. gFogFar/gFogNear are the current (persistent, cross-call) fog
+// distances; gFogFarRate/gFogNearRate are per-step deltas used to animate a
+// transition to a new target over gFogTransitionSteps calls (elsewhere, not
+// in this file). gFogRangeShift/gFogRangeShiftFinal hold a power-of-two shift
+// count so the range normalises to around 0x1000. gFogColorIsWhite flags
+// whether M3d_FadeColour's RGB is fully white (0xFFFFFF after channel swap).
+static i32 * const gFogTransitionSteps = (i32 *)0x64E558;
+static i32 * const gFogNear = (i32 *)0x64E560;
+static i32 * const gFogFar = (i32 *)0x64E568;
+static i32 * const gFogFarRate = (i32 *)0x6191D8;
+static i32 * const gFogNearRate = (i32 *)0x628600;
+static i32 * const gFogRangeShift = (i32 *)0x61B5DC;
+static i32 * const gFogRangeShiftFinal = (i32 *)0x5FC1E4;
+static i32 * const gFogNearCopy = (i32 *)0x5FC1E0;
+static i32 * const gFogFarCopy = (i32 *)0x5FC1DC;
+static i32 * const gFogColorIsWhite = (i32 *)0x54D384;
+
+// @NotOk
+// Residue: 81 mnemonic diffs, same operations and same semantics (verified by
+// hand against the original disassembly instruction by instruction), pure
+// register allocation / prologue scheduling. The original pushes ebx, esi,
+// edi ALL early (before the power-of-two check even runs) and never needs a
+// 4th callee-saved register; our build always needs one more (ebp), which it
+// uses first to hold Min across both branches of the transition-vs-snap if,
+// then recycles for the two literal-0 stores (gFogTransitionSteps=0 and
+// gFogRangeShift=0) later in the function. 9 hypotheses tried, each rebuilt
+// and diffed: 1) direct translation matching the disassembly's apparent
+// shape; 2) moved the gFogTransitionSteps store to the top of the transition
+// branch (matches the original's instruction order there); 3) added a named
+// "oldFar" local for the pre-existing gFogFar value (matches ebx being
+// loaded before the divide); 4) swapped the print_if_false condition to
+// "Range == (Range & -Range)" instead of the reverse (matches the original's
+// "cmp esi,eax" operand order, confirmed with an isolated cl.exe test); 5)
+// introduced curFar/curNear as function-scope locals shared by both branches
+// so the tail gFogNearCopy/gFogFarCopy stores reuse the same register the
+// branches wrote instead of re-reading the globals (this is what pulled in
+// the extra ebp, since Min is now referenced on both branches); 6) changed
+// the color channel-swap formula from "|" to "+" between the mask and the
+// shifted/byte parts, since the original uses "add" not "or" for combining
+// non-overlapping bit fields; 7) changed the first gFogRangeShift store from
+// "= shift" to a literal "= 0" to try to stop the compiler sharing one
+// zero register between it and the transition-steps store (no effect); 8)
+// split the packed-color computation into named "color"/"byte2" locals
+// matching the original's single M3d_FadeColour read reused for both parts;
+// 9) tried bundling "shift" into the same top-of-function declaration as
+// curFar/curNear (isolated cl.exe test only, regressed to needing an even
+// earlier push edi with no other benefit, reverted). Confirmed via an
+// isolated cl.exe test that print_if_false is NOT the inlining problem
+// documented elsewhere in CLAUDE.md for this call site (it compiles to a
+// real out-of-line call here, not inlined). The parameter order for the
+// PCGfx_SetFogParams call (far*scale, near*scale, packedColor) was derived
+// by hand-tracing the stack slot reuse in the original (the function reuses
+// its own now-dead Min argument slot as scratch for the two float
+// conversions instead of doing "sub esp,N"), and matches once cross-checked
+// against PCGfx_SetFogParams's own (already @Ok @Matching) definition. Same
+// class of hard-to-reproduce register-allocation/prologue-timing residue as
+// DCClearRegion above and the documented Utils_VblankProcessing CSE case.
+void M3dInit_SetFoggingParams(long Dummy, long Min, u32 Range)
 {
-    printf("M3dInit_SetFoggingParams(long,long,u32)");
+	print_if_false(Range == (Range & -Range), "Fogging range must be a power of two");
+
+	i32 curFar, curNear;
+
+	if (Dummy > 0)
+	{
+		curFar = *gFogFar;
+
+		*gFogTransitionSteps = Dummy;
+		*gFogFarRate = (Min - curFar) / Dummy;
+
+		curNear = *gFogNear;
+		*gFogNearRate = (Min + (i32)Range - curNear) / Dummy;
+	}
+	else
+	{
+		curFar = Min;
+		curNear = Min + Range;
+
+		*gFogTransitionSteps = 0;
+		*gFogFar = curFar;
+		*gFogNear = curNear;
+	}
+
+	i32 shift = 0;
+	*gFogRangeShift = 0;
+
+	if (Range < 0x1000)
+	{
+		do
+		{
+			Range <<= 1;
+			shift++;
+		} while (Range < 0x1000);
+
+		*gFogRangeShift = shift;
+	}
+
+	if (Range > 0x1000)
+	{
+		do
+		{
+			Range >>= 1;
+			shift--;
+		} while (Range > 0x1000);
+
+		*gFogRangeShift = shift;
+	}
+
+	*gFogRangeShiftFinal = shift;
+
+	u32 color = M3d_FadeColour;
+	u32 byte2 = ((u8 *)&M3d_FadeColour)[2];
+	u32 packed = (color & 0xFF00FF00) + ((byte2 + ((color & 0xFF) << 16)));
+
+	*gFogNearCopy = curNear;
+	*gFogFarCopy = curFar;
+
+	if ((packed & 0xFFFFFF) == 0xFFFFFF)
+	{
+		*gFogColorIsWhite = 1;
+		PCGfx_SetFogParams((f32)*gFogFar * 100.0f, (f32)*gFogNear * 100.0f, packed);
+	}
+	else
+	{
+		*gFogColorIsWhite = 0;
+		PCGfx_SetFogParams((f32)*gFogFar * 0.98f, (f32)*gFogNear * 0.98f, packed);
+	}
 }
 
 // @Ok
