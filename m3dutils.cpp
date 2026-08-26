@@ -57,10 +57,11 @@ void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*)
 	printf("void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*)");
 }
 
-// @SMALLTODO
-void M3dUtils_ReadHooksPacket(CSuper*, void*)
+// @Ok
+// @Matching
+void M3dUtils_ReadHooksPacket(CSuper *a1, void *a2)
 {
-	printf("void M3dUtils_ReadHooksPacket(CSuper*, void*)");
+	Animations[17 * a1->mRegion + 2] = reinterpret_cast<i32>(reinterpret_cast<char*>(a2) + 4);
 }
 
 void validate_SHook(void)
