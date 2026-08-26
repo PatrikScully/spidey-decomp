@@ -1044,10 +1044,98 @@ INLINE CChopperMissile::CChopperMissile(
 	this->CommonInitialisation();
 }
 
-// @MEDIUMTODO
-void CSearchlight::CalculateSearchlight(CSVector*)
+// @NotOk
+// @Note: reconstructed from tools/functions/4338352.bin. Casts a ray from mPos along
+// a2's direction (Utils_GetVecFromMagDir then M3dColij_InitLineInfo/M3dZone_LineToItem)
+// to find where the beam hits geometry, computes an apparent beam radius from the hit
+// distance (sqrt-smoothed when the hit is close, linear scale otherwise), then builds
+// two GTE cross-product basis vectors perpendicular to the beam (same
+// gte_ldopv1/ldopv2/op12/stlvnl/VectorNormal idiom as CChopper::StartStrafeOnslaught)
+// and sweeps a 32-segment fan of points using rcossin_tbl into field_138[] (CVector[66],
+// the light cone mesh). The exact fixed point scaling inside the fan loop and the
+// near/far radius blend are a best-effort reconstruction of the control flow shape from
+// the disassembly, not instruction verified: heavy PS1 GTE fixed point math with a
+// stack layout that could not be traced byte for byte by hand.
+// cmpsum: 307 mnemonic diffs, first divergence right at the prologue register
+// allocation. 1 attempt (structural reconstruction only). Needs real work.
+void CSearchlight::CalculateSearchlight(CSVector* a2)
 {
-	printf("CSearchlight::CalculateSearchlight(CSVector*)");
+	CVector beamDir;
+	Utils_GetVecFromMagDir(&beamDir, 0x1000, a2);
+
+	CVector endPos = this->mPos + beamDir;
+
+	SLineInfo lineinfo;
+	lineinfo.StartCoords = this->mPos;
+	lineinfo.EndCoords = endPos;
+	lineinfo.MinCoords.vx = 0;
+	lineinfo.MinCoords.vy = 0;
+	lineinfo.MinCoords.vz = 0;
+	lineinfo.MaxCoords.vx = 0;
+	lineinfo.MaxCoords.vy = 0;
+	lineinfo.MaxCoords.vz = 0;
+	lineinfo.iLo = 0;
+	lineinfo.iHi = 0;
+	lineinfo.jLo = 0;
+	lineinfo.jHi = 0;
+	lineinfo.Distance = 0;
+	lineinfo.Length = 0;
+	lineinfo.pItem = 0;
+	lineinfo.Position.vx = 0;
+	lineinfo.Position.vy = 0;
+	lineinfo.Position.vz = 0;
+	lineinfo.Normal.vx = 0;
+	lineinfo.Normal.vy = 0;
+	lineinfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineinfo);
+	M3dZone_LineToItem(&lineinfo, 1);
+
+	i32 radius = 0x400;
+
+	if (lineinfo.pItem)
+	{
+		i32 dist = lineinfo.Distance;
+
+		if (dist < 0xFE9)
+		{
+			double t = (double)(0x1000 - dist) / 0x1000;
+			radius = (i32)(sqrt(t) * 0x1000);
+		}
+		else
+		{
+			radius = (dist * (0x1000 - dist)) >> 12;
+		}
+	}
+
+	CVector up(0, 4096, 0);
+	CVector right;
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&beamDir));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&up));
+	gte_op12();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+	VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
+
+	CVector up2;
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&right));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&beamDir));
+	gte_op12();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
+	VectorNormal(reinterpret_cast<VECTOR*>(&up2), reinterpret_cast<VECTOR*>(&up2));
+
+	this->field_138[0] = this->mPos;
+	this->field_138[1] = endPos;
+
+	for (i32 i = 0; i < 32; i++)
+	{
+		i32 s = rcossin_tbl[(i << 7) & 0xFFF].sin;
+		i32 c = rcossin_tbl[(i << 7) & 0xFFF].cos;
+
+		CVector offset = ((right * s) + (up2 * c)) >> 12;
+
+		this->field_138[2 + i * 2] = this->mPos + (offset * (radius >> 12));
+		this->field_138[3 + i * 2] = endPos + (offset * (radius >> 12));
+	}
 }
 
 // @NotOk
