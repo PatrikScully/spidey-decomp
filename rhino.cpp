@@ -863,10 +863,65 @@ u8 CRhino::LineOfSightCheck(CVector const *a2, i32 a3)
 	return lineInfo.pItem == 0;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRhino::PlaySounds(void)
 {
-    printf("CRhino::PlaySounds(void)");
+	switch (this->mAnim)
+	{
+		case 12:
+			if (!(this->field_388 & 1) && this->field_128 >= 3)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 1;
+			}
+			else if (!(this->field_388 & 2) && this->field_128 >= 0xD)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 2;
+			}
+			else if (!(this->field_388 & 4) && this->field_128 >= 0x15)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 4;
+			}
+			else if (!(this->field_388 & 8) && this->field_128 >= 0x1E)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 8;
+			}
+			break;
+		case 5:
+			if (!(this->field_388 & 1) && this->field_128 >= 0)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 1;
+			}
+			else if (!(this->field_388 & 2) && this->field_128 >= 8)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 2;
+			}
+			break;
+		case 2:
+			if (!(this->field_388 & 1) && this->field_128 >= 0)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 1;
+			}
+			else if (!(this->field_388 & 2) && this->field_128 >= 0xF)
+			{
+				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				this->field_388 |= 2;
+			}
+			break;
+		case 18:
+			if (!(this->field_388 & 1) && this->field_128 >= 0x15)
+			{
+				this->field_388 |= 1;
+			}
+			break;
+	}
 }
 
 // @Ok
