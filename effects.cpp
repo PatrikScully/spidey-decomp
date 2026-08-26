@@ -16,6 +16,18 @@ CElectroLine::CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u
 	printf("CElectroLine::CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u32*)");
 }
 
+// @MEDIUMTODO
+CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)
+{
+	printf("CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)");
+}
+
+// @MEDIUMTODO
+void CVertexWobble::Move(void)
+{
+	printf("CVertexWobble::Move(void)");
+}
+
 // @Ok
 CElectroLine::~CElectroLine(void)
 {
@@ -456,4 +468,9 @@ void validate_CElectro(void)
 void validate_CElectroLine(void)
 {
 	VALIDATE_SIZE(CElectroLine, 0x6C);
+}
+
+void validate_CVertexWobble(void)
+{
+	VALIDATE_SIZE(CVertexWobble, 0x60);
 }

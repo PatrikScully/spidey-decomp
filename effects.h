@@ -115,6 +115,16 @@ class CElectroLine : public CElectro
 		PADDING(8);
 };
 
+class CVertexWobble : public CBit
+{
+	public:
+		EXPORT CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32);
+		EXPORT virtual void Move(void);
+
+		u8 fullPad[0x24];
+};
+
+void validate_CVertexWobble(void);
 void validate_CElectrify(void);
 void validate_CSkinGoo(void);
 void validate_SSkinGooSource(void);

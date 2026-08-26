@@ -14,6 +14,8 @@
 #include "camera.h"
 #include "m3dzone.h"
 #include "my_assert.h"
+#include "spool.h"
+#include "effects.h"
 
 static SStateFlags gSimbyFlags;
 extern CPlayer* MechList;
@@ -869,9 +871,34 @@ void Simby_CreateSimby(const unsigned int *stack, unsigned int *result)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void MakeVertexWibbler(void)
-{}
+{
+	u8 v1[6];
+	v1[0] = 2;
+	v1[1] = 3;
+	v1[2] = 4;
+	v1[3] = 9;
+	v1[4] = 8;
+	v1[5] = 7;
+
+	new CVertexWobble(
+			Spool_FindRegion(Trig_GetLevelID() == 0x803 ? "sym_dark" : "symbi_02"),
+			1, 6, v1, 0x50, 0x50, 0xC8, 0x96);
+
+	u8 v2[6];
+	v2[0] = 0xB;
+	v2[1] = 0xA;
+	v2[2] = 0;
+	v2[3] = 1;
+	v2[4] = 6;
+	v2[5] = 5;
+
+	new CVertexWobble(
+			Spool_FindRegion(Trig_GetLevelID() == 0x803 ? "sym_dark" : "symbi_02"),
+			1, 6, v2, 0x50, 0x50, 0xC8, 0x96);
+}
 
 // @NotOk
 // can't get it to match should be good enough

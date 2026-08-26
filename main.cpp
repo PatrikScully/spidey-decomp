@@ -421,6 +421,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CDamagedSoftSpotEffect();
 	validate_CElectro();
 	validate_CElectroLine();
+	validate_CVertexWobble();
 	validate_CFireyExplosion();
 	validate_CFlamingImpactWeb();
 	validate_CTripWire();
