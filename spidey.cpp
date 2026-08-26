@@ -5,6 +5,7 @@
 #include "screen.h"
 #include "ps2funcs.h"
 #include <cmath>
+#include <cstring>
 #include "ps2lowsfx.h"
 #include "ps2redbook.h"
 #include "utils.h"
@@ -16,6 +17,7 @@
 #include "ps2lowsfx.h"
 #include "spool.h"
 #include "DXinit.h"
+#include "dcfileio.h"
 #include "my_assert.h"
 #include "texture.h"
 
@@ -1442,10 +1444,124 @@ void Spidey_LoadAlternativeHealthIcon(i32 a1)
 	}
 }
 
-// @MEDIUMTODO
-void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
+// globals for Spidey_LoadAlternativeTextureSet below:
+// gRegionReloadRelated (0x55627C): from idb_globals.txt, last spool region
+// index reloaded by this function, cleared with ClearRegion before a new
+// region loads.
+// gAltTexSetNames (0x5512C0): array of string pointers, no idb_globals.txt
+// entry nearby, tentative name, guessed from usage (indexed by a2, passed
+// to Spool_PSX to load a region for the low graphics path).
+// gAltTexSetFileSuffix (0x556694/0x556698): raw 5 bytes (4+1) appended to
+// the copied suit name to build a file path checked with FileIO_FileExists.
+// written as raw memory (not strcat) because a real strcat call needs an
+// extra register (ebx) to keep the buffer alive across the call, which the
+// original does not use here; the original builds the suffix inline
+// (strlen via scasb, then two raw stores), reproduced the same way below.
+// content is a guess since it does not affect code matching (only the data
+// address relocates).
+static i32 * const gRegionReloadRelated = (i32*)0x0055627C;
+#define gAltTexSetNames ((char**)0x005512C0)
+static i32 * const gAltTexSetFileSuffixLo = (i32*)0x00556694;
+static u8 * const gAltTexSetFileSuffixHi = (u8*)0x00556698;
+
+extern char SuitNames[11][32];
+
+// @NotOk
+// known blocker: calls print_if_false, which our compiler always inlines
+// (it is static in export.h) while the original calls it out of line (see
+// CLAUDE.md "print_if_false inlining" note, also hit by the neighbouring
+// Spidey_BagHead/Spidey_SwapSuitTextures in this file). that alone rules
+// out a full match on the hardware-renderer branch below.
+// residue on the low graphics branch (print_if_false not reached there):
+// 45 mnemonic diffs, all one cluster from the Spool_PSX(gAltTexSetNames[a2])
+// call onward. cmpsum against a fresh build with gAltTexSetNames written as
+// a #define (not a `char** const` global) matches the original's single
+// `mov ecx,[esi*4+5512Ch]` fold, but the following call-argument push for
+// Spidey_SwapSuitTextures still schedules one instruction earlier than the
+// original relative to the two field stores (gRegionReloadRelated,
+// PSXRegion[region].Protected); reordering the three statements in source
+// made it worse (120 diffs), not better, so left as scheduling residue.
+// attempts logged in ~/Documents/spidey-work/wt/spidey.attempts.md.
+void Spidey_LoadAlternativeTextureSet(u32 const *, i32 a2)
 {
-    printf("Spidey_LoadAlternativeTextureSet(u32 const *,i32)");
+	if (gLowGraphics)
+	{
+		if (CurrentSuit == a2)
+			return;
+
+		if (a2 == 6)
+		{
+			if (!*gBagHeadModeOne)
+				Spidey_BagHead(*gBagHeadScaleFactor, 1);
+
+			goto checkModeTwo;
+		}
+		else
+		{
+			if (*gBagHeadModeOne == 1)
+				Spidey_BagHead(*gBagHeadScaleFactor, 0);
+
+			if (a2 == 10)
+			{
+				if (!*gBagHeadModeTwo)
+					Spidey_BagHead(*gBagHeadScaleFactor, 2);
+
+				goto afterModeTwo;
+			}
+		}
+
+checkModeTwo:
+		if (*gBagHeadModeTwo == 1)
+			Spidey_BagHead(*gBagHeadScaleFactor, 0);
+
+afterModeTwo:
+		if (*gRegionReloadRelated >= 0)
+		{
+			ClearRegion(*gRegionReloadRelated, 1);
+		}
+
+		i32 oldSuit = CurrentSuit;
+		CurrentSuit = a2;
+
+		if (a2 == 1)
+		{
+			*gRegionReloadRelated = -1;
+			Spidey_SwapSuitTextures(oldSuit, a2);
+		}
+		else
+		{
+			i32 region = Spool_PSX(gAltTexSetNames[a2], 0);
+			*gRegionReloadRelated = region;
+			PSXRegion[region].Protected = 1;
+			Spidey_SwapSuitTextures(oldSuit, a2);
+		}
+	}
+	else
+	{
+		print_if_false(a2 >= 1 && a2 <= 10, "Spidey_LoadAlternativeTextureSet(): suit out of range\r\n");
+
+		char path[0x20];
+		Utils_CopyString(SuitNames[a2], path, sizeof(path));
+
+		i32 len = strlen(path);
+		*(i32*)(path + len) = *gAltTexSetFileSuffixLo;
+		path[len + 4] = *gAltTexSetFileSuffixHi;
+
+		if (!FileIO_FileExists(path))
+		{
+			a2 = 1;
+		}
+
+		if (CurrentSuit != a2)
+		{
+			ClearRegion(*gCurrentCostumeRegionIndex, 1);
+			CurrentSuit = a2;
+
+			i32 region = Spool_PSX(SuitNames[a2], 0);
+			*gCurrentCostumeRegionIndex = (u8)region;
+			PSXRegion[region].Protected = 1;
+		}
+	}
 }
 
 // globals for Spidey_StoreTextureEntry below (no idb_globals.txt entry,
