@@ -662,7 +662,8 @@ void Utils_SetBaddyVisibilityInBox(CVector const * min,CVector const * max,bool 
 	}
 }
 
-// @NotOk residue: 68 mnemonic diffs (cmpsum.sh). The overall algorithm matches (CRC32 of the
+// @NotOk
+// residue: 68 mnemonic diffs (cmpsum.sh). The overall algorithm matches (CRC32 of the
 // name over crc32_tab, copy the name into a local buffer, format each index a2..a3 as a
 // zero-padded 2-digit string appended to the buffer, continue the CRC over those 2 digits,
 // look the result up via Spool_FindEnviroItem, toggle CItem::mFlags bit 0). The CRC loop and
@@ -1341,7 +1342,8 @@ i32 Utils_XZDist(const CVector* a1, const CVector *a2)
 	return M3dMaths_SquareRoot0(v2 + v3);
 }
 
-// @NotOk residue: 9 mnemonic diffs (cmpsum.sh). The original computes the table index
+// @NotOk
+// residue: 9 mnemonic diffs (cmpsum.sh). The original computes the table index
 // (angle&0xFFF)<<2 as a standalone instruction before any table read, then reads
 // cos/sin/sin/cos through that same index 4 times. Every source shape tried here (plain
 // rcossin_tbl[angle] indexing, a cached SSinCos* / reference, an explicit byte-offset
