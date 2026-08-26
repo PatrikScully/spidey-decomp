@@ -17,6 +17,8 @@
 #include "mem.h"
 #include "spool.h"
 #include "chunk.h"
+#include "ps2m3d.h"
+#include "message.h"
 
 
 EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
@@ -43,6 +45,7 @@ EXPORT u32 gRhinoSound;
 extern i32 DifficultyLevel;
 
 u8 gActuatorRelated;
+EXPORT SStateFlags gRhinoStateFlags;
 extern CBody* EnvironmentalObjectList;
 extern CPlayer* MechList;
 extern i32 gAttackRelated;
@@ -57,10 +60,396 @@ void Rhino_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = Rhino_CreateRhino;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Best-effort translation of the main per-frame dispatcher, not verified
+// against a build. This will not byte-match regardless of source shape:
+// print_if_false is static (inlined by our compiler, out-of-line in the
+// original, a documented repo-wide issue). The message-queue walk
+// (this->pMessage) and the two CAIProc_LookAt/CAIProc_AccZ-adjacent camera
+// field sets (field_2A4/field_2A8 "BossCamSpinRate"/"BossCamStationaryRadius"
+// literal 0x100 writes) are translated close to the disasm; the trailing
+// dust-puff spawn block (mirrors DoDazedEffect's CFT4Bit pattern) is a rough
+// approximation of the exact hook offsets used.
 void CRhino::AI(void)
 {
-    printf("CRhino::AI(void)");
+	if (this->field_3D0)
+	{
+		this->field_3D0 -= this->field_80;
+		if (this->field_3D0 < 0)
+		{
+			this->field_3D0 = 0;
+		}
+	}
+
+	if (this->field_31C.bothFlags == 2)
+	{
+		this->field_3D4 += this->field_80;
+		if (this->field_3D4 > 0x168)
+		{
+			this->field_31C.bothFlags = 0x14;
+			this->dumbAssPad = 0;
+		}
+	}
+	else
+	{
+		this->field_3D4 = 0;
+	}
+
+	if (!this->field_3D8 && !MechList->field_E18)
+	{
+		CameraList->SetMode(CAMERAMODE_USER);
+		print_if_false(1, "bad value send to BossCamSpinRate");
+		CameraList->field_2A4 = 0x100;
+		print_if_false(1, "bad value send to BossCamStationaryRadius");
+		CameraList->field_2A8 = 0x100;
+
+		gBossRelated = reinterpret_cast<i32>(this);
+		this->field_3D8 = 1;
+	}
+
+	this->field_35C++;
+
+	if (!(this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 4))
+	{
+		this->DoPhysics(0);
+	}
+
+	if (this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 0x40)
+	{
+		if (this->field_324)
+		{
+			i32 dy = this->mPos.vy - MechList->mPos.vy;
+			i32 sign = dy >> 31;
+			i32 absDy = (dy ^ sign) - sign;
+
+			if (absDy > 0x64000)
+			{
+				this->RunTimer(&this->field_324);
+				if (!this->field_324)
+				{
+					this->field_31C.bothFlags = 0xD;
+					this->dumbAssPad = 0;
+				}
+			}
+			else
+			{
+				this->field_324 = 0;
+			}
+		}
+
+		if (this->field_328)
+		{
+			this->RunTimer(&this->field_328);
+			if (!this->field_328)
+			{
+				this->field_31C.bothFlags = 0xD;
+				this->dumbAssPad = 0;
+			}
+		}
+
+		if (this->field_32C)
+		{
+			this->RunTimer(&this->field_32C);
+			if (!this->field_32C)
+			{
+				this->PlayXAPlease(0xF, 3, 1);
+			}
+		}
+	}
+	else
+	{
+		this->field_328 = 0;
+		this->field_324 = 0;
+	}
+
+	if (this->pMessage)
+	{
+		for (CMessage *msg = this->pMessage; msg; msg = msg->mNext)
+		{
+			if (this->field_31C.bothFlags != 0x15 || msg->field_14 >= 0xB)
+			{
+				switch (msg->field_14)
+				{
+					case 5:
+					case 17:
+						Effects_UnElectrify(this);
+						if (this->field_338)
+						{
+							SFX_Stop(this->field_338);
+						}
+						this->field_338 = 0;
+						break;
+					case 14:
+					{
+						void *p = Mem_RecoverPointer(&this->field_104);
+						if (p)
+						{
+							reinterpret_cast<CTrapWebEffect*>(p)->Burst();
+						}
+						break;
+					}
+				}
+			}
+
+			msg->field_10 |= 1;
+		}
+
+		this->CleanUpMessages(0, 0);
+	}
+
+	if (this->mAIProcList)
+	{
+		this->mAIProcList->Execute();
+		this->CleanUpAIProcList(0);
+	}
+
+	this->field_348 = 0;
+
+	if (this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 0x10)
+	{
+		this->field_2A8 |= 0x10000;
+	}
+	else
+	{
+		this->field_2A8 &= ~0x10000;
+	}
+
+	if (this->field_31C.bothFlags == 0x16)
+	{
+		this->mCBodyFlags |= 0x10;
+		this->field_310 = 0;
+
+		if (!this->DetermineFightState(0))
+		{
+			this->field_31C.bothFlags = 1;
+			this->dumbAssPad = 0;
+		}
+	}
+	else if ((this->field_31C.bothFlags == 2 || this->field_31C.bothFlags == 1)
+		&& !(gAttackRelated & 3))
+	{
+		if (this->DetermineFightState(0))
+		{
+			this->field_328 = 0;
+			this->field_324 = 0;
+		}
+		else if (!this->field_328)
+		{
+			this->field_328 = Utils_GetValueFromDifficultyLevel(0x2710, 0x1B58, 0x1388, 0xBB8);
+		}
+	}
+
+	this->PlaySounds();
+
+	if (this->field_31C.bothFlags)
+	{
+		this->SetHeight(0, 0x64, 0x258);
+	}
+
+	switch (this->field_31C.bothFlags)
+	{
+		case 0:
+			this->RhinoInit();
+			this->SetHeight(0, 0x64, 0x258);
+			break;
+		case 2:
+			this->field_1F0 = 0;
+			switch (this->dumbAssPad)
+			{
+				case 0:
+					this->Neutralize();
+					this->dumbAssPad++;
+					break;
+				case 1:
+					if (this->mAnim)
+					{
+						this->PlaySingleAnim(0, 0, -1);
+					}
+					break;
+				default:
+					print_if_false(0, "Unknown substate.");
+					break;
+			}
+			break;
+		case 12:
+			this->GetShocked();
+			break;
+		case 10:
+		case 11:
+			this->StuckInWall();
+			break;
+		case 1:
+			this->FollowWaypoints();
+			break;
+		case 7:
+		case 8:
+			this->field_358 = gAttackRelated;
+			this->field_2A8 |= 0x20000000;
+			this->ChargePlayer();
+			break;
+		case 6:
+			this->field_358 = gAttackRelated;
+			this->field_2A8 |= 0x20000000;
+			this->AttackPlayer();
+			break;
+		case 9:
+			this->HitWall();
+			break;
+		case 14:
+			this->field_358 = gAttackRelated;
+			this->TakeHit();
+			break;
+		case 3:
+			this->Laugh();
+			break;
+		case 15:
+			this->GetLaunched();
+			break;
+		case 4:
+			this->field_358 = gAttackRelated;
+			this->field_2A8 |= 0x20000000;
+			this->ChargePlayer();
+			break;
+		case 5:
+			this->field_358 = gAttackRelated;
+			this->ChasePlayer(1);
+			break;
+		case 16:
+		case 17:
+			this->field_358 = gAttackRelated;
+			this->GetTrapped();
+			break;
+		case 18:
+			this->field_358 = gAttackRelated;
+
+			if (!(this->field_2A8 & 8))
+			{
+				this->field_31C.bothFlags = 0x16;
+				this->dumbAssPad = 0;
+			}
+			else
+			{
+				switch (this->dumbAssPad)
+				{
+					case 0:
+						this->Neutralize();
+						this->dumbAssPad++;
+						break;
+					case 1:
+						if (this->mAnim)
+						{
+							this->PlaySingleAnim(0, 0, -1);
+						}
+						break;
+					default:
+						print_if_false(0, "Unknown substate.");
+						break;
+				}
+			}
+			break;
+		case 13:
+		case 20:
+			this->field_358 = gAttackRelated;
+			this->StompGround();
+			break;
+		case 21:
+			this->DieRhino();
+			break;
+		default:
+			print_if_false(0, "Unknown state!");
+			break;
+	}
+
+	if (this->mAnimFinished)
+	{
+		if (this->mAnim == 0)
+		{
+			this->PlaySingleAnim(0, 0, -1);
+		}
+		else if (this->mAnim == 2)
+		{
+			this->PlaySingleAnim(2, 0, -1);
+		}
+		else if (this->mAnim == 5)
+		{
+			this->PlaySingleAnim(5, 0, -1);
+		}
+	}
+
+	if (this->field_348 & 2)
+	{
+		this->mTransform.t[1] = 0x8000;
+	}
+	else
+	{
+		this->mTransform.t[1] = 0;
+	}
+
+	M3d_BuildTransform(this);
+	this->DoMGSShadow();
+	this->DoDazedEffect();
+
+	if ((this->mAnim == 0 && this->field_128 >= 0x15 && this->field_128 <= 0x26)
+		|| (this->mAnim == 9 && this->field_128 >= 0 && this->field_128 <= 9)
+		|| (this->mAnim == 0xF && this->field_128 >= 1 && this->field_128 <= 0xC))
+	{
+		if (!(this->field_218 & 4))
+		{
+			SFX_PlayPos(((gAttackRelated & 1) == 0 ? 1 : 0) | 0x8040, &this->mPos, 0);
+			this->field_218 |= 4;
+		}
+
+		VECTOR hookPos;
+		SHook hook;
+
+		hook.Part.vx = -0x20;
+		hook.Part.vy = 0x80;
+		hook.Part.vz = -0x280;
+		hook.Offset = 0xF;
+		M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+		hookPos.vy += 0x30;
+		hookPos.vz += -0x20;
+
+		CVector puffPos;
+		puffPos.vx = hookPos.vx;
+		puffPos.vy = hookPos.vy;
+		puffPos.vz = hookPos.vz;
+
+		CFT4Bit *puff0 = new CFT4Bit();
+
+		if (puff0)
+		{
+			puff0->SetAnim(1);
+			puff0->SetSemiTransparent();
+			puff0->SetTransparency(0x40);
+			puff0->SetAnimSpeed(0x80);
+			puff0->SetScale(0x80);
+			puff0->SetPos(puffPos);
+		}
+
+		hook.Part.vx = 0x20;
+		hook.Part.vy = 0x80;
+		hook.Part.vz = -0x280;
+		hook.Offset = 0xF;
+		M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+		hookPos.vz += -0x20;
+
+		puffPos.vx = hookPos.vx;
+		puffPos.vy = hookPos.vy;
+		puffPos.vz = hookPos.vz;
+
+		CFT4Bit *puff1 = new CFT4Bit();
+
+		if (puff1)
+		{
+			puff1->SetAnim(3);
+			puff1->SetSemiTransparent();
+			puff1->SetTransparency(0x40);
+			puff1->SetAnimSpeed(0x80);
+			puff1->SetScale(0x80);
+			puff1->SetPos(puffPos);
+		}
+	}
 }
 
 // @NotOk
@@ -2368,6 +2757,7 @@ void validate_CRhino(void){
 
 	VALIDATE(CRhino, field_324, 0x324);
 	VALIDATE(CRhino, field_328, 0x328);
+	VALIDATE(CRhino, field_32C, 0x32C);
 	VALIDATE(CRhino, field_330, 0x330);
 	VALIDATE(CRhino, field_334, 0x334);
 
@@ -2380,10 +2770,13 @@ void validate_CRhino(void){
 	VALIDATE(CRhino, field_354, 0x354);
 
 	VALIDATE(CRhino, field_358, 0x358);
+	VALIDATE(CRhino, field_35C, 0x35C);
 	VALIDATE(CRhino, field_360, 0x360);
 	VALIDATE(CRhino, field_388, 0x388);
 
 	VALIDATE(CRhino, field_3D0, 0x3D0);
+	VALIDATE(CRhino, field_3D4, 0x3D4);
+	VALIDATE(CRhino, field_3D8, 0x3D8);
 
 	VALIDATE(CRhino, field_3DC, 0x3DC);
 	VALIDATE(CRhino, field_3E0, 0x3E0);
