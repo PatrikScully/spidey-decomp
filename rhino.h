@@ -49,7 +49,7 @@ public:
 	EXPORT void GetShocked(void);
 	EXPORT void GetTrapped(void);
 	EXPORT void GonnaHitWall(i32);
-	EXPORT void LineOfSightCheck(CVector const *,i32);
+	EXPORT u8 LineOfSightCheck(CVector const *,i32);
 	EXPORT void PlaySounds(void);
 	EXPORT void PlayXAPlease(i32,i32,i32);
 	EXPORT void SetUpStuckHorn(SLineInfo *,i32);

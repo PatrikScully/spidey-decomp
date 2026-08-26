@@ -9,6 +9,8 @@
 #include "camera.h"
 #include "ai.h"
 #include "my_assert.h"
+#include "m3dcolij.h"
+#include "m3dzone.h"
 
 
 EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
@@ -343,10 +345,50 @@ void CRhino::GonnaHitWall(i32)
     printf("CRhino::GonnaHitWall(i32)");
 }
 
-// @MEDIUMTODO
-void CRhino::LineOfSightCheck(CVector const *,i32)
+// @NotOk
+// Real raycast, but not the full original. The original also builds an aim
+// matrix (calls at 0x4E7760/0x4E7840/0x470430 near the entry, likely a
+// direction/normal setup for the trace) and, if the trace hits something,
+// walks past up to 2 hit items whose model checksum (Spool_GetModelChecksum)
+// is in a small allow-list at 0x55AD18 (count at 0x55AD5C), retrying the
+// trace from the hit point. None of that residue is reproduced here, only
+// the core InitLineInfo/LineToItem trace against this->mPos -> *a2. Needed
+// as a real (non-inlinable) body so callers like DetermineFightState do not
+// get the printf stub const-folded into their own codegen.
+u8 CRhino::LineOfSightCheck(CVector const *a2, i32 a3)
 {
-    printf("CRhino::LineOfSightCheck(CVector const *,i32)");
+	SLineInfo lineInfo;
+
+	lineInfo.StartCoords.vx = 0;
+	lineInfo.StartCoords.vy = 0;
+	lineInfo.StartCoords.vz = 0;
+	lineInfo.EndCoords.vx = 0;
+	lineInfo.EndCoords.vy = 0;
+	lineInfo.EndCoords.vz = 0;
+
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	lineInfo.StartCoords = this->mPos;
+	lineInfo.EndCoords = *a2;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, a3);
+
+	return lineInfo.pItem == 0;
 }
 
 // @MEDIUMTODO
