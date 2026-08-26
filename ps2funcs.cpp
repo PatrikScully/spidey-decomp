@@ -455,10 +455,29 @@ void m3d_ZeroTransVector(void)
   translationVector.vz = 0;
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void VectorNormal(VECTOR* a1, VECTOR* a2)
 {
-	printf("void VectorNormal(VECTOR* a1, VECTOR* a2)");
+	float fx = (float)a1->vx;
+	float fy = (float)a1->vy;
+	float fz = (float)a1->vz;
+
+	float lenSq = fx * fx + fy * fy + fz * fz;
+
+	if (lenSq == 0.0f)
+	{
+		a2->vx = 0;
+		a2->vy = 0x1000;
+		a2->vz = 0;
+		return;
+	}
+
+	float len = (float)sqrt((double)lenSq);
+
+	a2->vx = (i32)((float)(a1->vx << 12) / len);
+	a2->vy = (i32)((float)(a1->vy << 12) / len);
+	a2->vz = (i32)((float)(a1->vz << 12) / len);
 }
 
 // @Ok
