@@ -2007,10 +2007,19 @@ void CGlow::SetRGB(u8 r, u8 g, u8 b)
 	}
 }
 
-// @MEDIUMTODO
-void Bit_ReduceRGB(unsigned int*, int)
+// @Ok
+// @Matching
+void Bit_ReduceRGB(u32* p, i32 amount)
 {
-	printf("Bit_ReduceRGB");
+	u8 b = *p;
+	u8 g = *p >> 8;
+	u8 r = *p >> 16;
+
+	b = (b >= amount) ? b - amount : 0;
+	g = (g >= amount) ? g - amount : 0;
+	r = (r >= amount) ? r - amount : 0;
+
+	*p = (*p & 0xFF000000) | (r << 16) | (g << 8) | b;
 }
 
 // @Ok
