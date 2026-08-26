@@ -1144,6 +1144,17 @@ void CPlayer::SwitchToDeathMode(bool)
     printf("CPlayer::SwitchToDeathMode(bool)");
 }
 
+// helper for CPlayer::SwitchToSynthesizedInput below: the original does
+// "read vtable[0], call with arg 1" (scalar deleting destructor) on two
+// untyped pointers. SVTableSlot0Deletable is a throwaway class with
+// nothing but a virtual destructor, so `delete` on a pointer cast to it
+// reproduces that exact call shape without needing the __thiscall keyword
+// (rejected by this build's compiler flags, error C4234).
+struct SVTableSlot0Deletable
+{
+	virtual ~SVTableSlot0Deletable() {}
+};
+
 // @NotOk
 // residue: 92 mnemonic diffs on one honest pass, not iterated further
 // given the function's size (319 bytes, medium tier) and the amount of
@@ -1162,22 +1173,12 @@ void CPlayer::SwitchToDeathMode(bool)
 // confidence; done via explicit pointer casts instead.
 // this->mVel is CBody's (ob.h) field at 0x60-0x6B, matches the three
 // field_60/64/68 zero stores exactly.
-// the two "vtable[0] with arg 1" calls are scalar-deleting-destructor
-// style virtual dispatch on an untyped pointer (field_AB8's recovered
-// pointer, and mHeldObject, even though mHeldObject is declared CManipOb*
-// with its own virtual destructor - using a plain `delete` there is not
-// safe here since CBody virtuals earlier in the hierarchy could put the
-// destructor at a different vtable slot than the one this disassembly
-// reads directly at offset 0). SVTableSlot0Deletable is a throwaway class
-// with nothing but a virtual destructor so `delete` on a pointer cast to
-// it reproduces the exact "read vtable[0], call with arg 1" shape without
-// needing the __thiscall keyword (rejected by this build's compiler
-// flags).
-struct SVTableSlot0Deletable
-{
-	virtual ~SVTableSlot0Deletable() {}
-};
-
+// the two vtable[0] calls (on Mem_RecoverPointer's result and on
+// mHeldObject) use SVTableSlot0Deletable above; mHeldObject is declared
+// CManipOb* with its own virtual destructor but a plain `delete` on it is
+// not safe here, since CBody virtuals earlier in the hierarchy could put
+// the destructor at a different vtable slot than the one this disassembly
+// reads directly at offset 0.
 // gSpideySFXEntry[21] (0x6A830C) and gSpideySFXEntry[0] (0x6A82B8) are
 // both inside the already-declared gSpideySFXEntry[300] array (top of this
 // file) - both addresses land exactly on an element boundary, so no new
@@ -1299,12 +1300,8 @@ CPlayer::~CPlayer(void)
     printf("CPlayer::~CPlayer(void)");
 }
 
-// @NotOk
-// known blocker: this calls print_if_false, which our compiler always
-// inlines (it is static in export.h) while the original calls it out of
-// line (see CLAUDE.md "print_if_false inlining" note). that alone rules
-// out a full match here, independent of anything else in this function.
-// new globals (no idb_globals.txt entry, tentative names from usage):
+// globals for Spidey_BagHead below (no idb_globals.txt entry, tentative
+// names from usage):
 // gBagHeadModeOne/Two: bool flags for a2==1 / a2==2, stored at 0x60CFF4/F8.
 // gCurrentCostumeRegionIndex (0x6B4679): u8 index into CItemRelatedList
 // (already named in ob.h, stride 0x44/68, same array Spidey_SwapSuitTextures
@@ -1312,11 +1309,6 @@ CPlayer::~CPlayer(void)
 // gBagHeadScaleFactor (0x556280): stores a1 verbatim, write-only here.
 // gBagHeadOffsetTable1/2 (0x556284 / 0x556368): i16[3]-per-entry lookup
 // tables selected by a2==1 / a2==2, walked in lockstep with the vertex loop.
-// residue beyond print_if_false: the source pointer (into gSpideyHeadModel)
-// is computed in the original via a two-step subtract-then-add that
-// algebraically cancels down to (gSpideyHeadModel+2); written here as the
-// simplified direct form, which is very unlikely to reproduce the exact
-// original instruction sequence, but it is functionally identical to it.
 static i32 * const gBagHeadModeOne = (i32*)0x0060CFF4;
 static i32 * const gBagHeadModeTwo = (i32*)0x0060CFF8;
 static u8 * const gCurrentCostumeRegionIndex = (u8*)0x006B4679;
@@ -1324,6 +1316,16 @@ static i32 * const gBagHeadScaleFactor = (i32*)0x00556280;
 static i16 * const gBagHeadOffsetTable1 = (i16*)0x00556284;
 static i16 * const gBagHeadOffsetTable2 = (i16*)0x00556368;
 
+// @NotOk
+// known blocker: this calls print_if_false, which our compiler always
+// inlines (it is static in export.h) while the original calls it out of
+// line (see CLAUDE.md "print_if_false inlining" note). that alone rules
+// out a full match here, independent of anything else in this function.
+// residue beyond print_if_false: the source pointer (into gSpideyHeadModel)
+// is computed in the original via a two-step subtract-then-add that
+// algebraically cancels down to (gSpideyHeadModel+2); written here as the
+// simplified direct form, which is very unlikely to reproduce the exact
+// original instruction sequence, but it is functionally identical to it.
 void Spidey_BagHead(i32 a1, i32 a2)
 {
 	print_if_false(gSpideyHeadModel != 0, "Error");
@@ -1446,6 +1448,28 @@ void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
     printf("Spidey_LoadAlternativeTextureSet(u32 const *,i32)");
 }
 
+// globals for Spidey_StoreTextureEntry below (no idb_globals.txt entry,
+// tentative names from usage):
+// gGlobalTextureEntryCount (0x6A9050): running count into gGlobalTextureEntries.
+// gGlobalTextureEntries (0x6A8000): array of {Texture* pTexture; i16 mA2; i16 mA3;
+// u32 mChecksum;} (stride 0xC), terminated by a pTexture==0 sentinel entry.
+// gSuitChecksumTable (0x53C1A4): i32[16] per suit (stride 0x40), checksum lookup.
+// gCostumeTextureIds (0x6A8D74): i32 (zero-extended u16 value) per
+// (suit*16+slot) slot, same table Spidey_SwapSuitTextures indexes.
+static i32 * const gGlobalTextureEntryCount = (i32*)0x006A9050;
+
+struct SGlobalTextureEntry
+{
+	const Texture *pTexture;
+	i16 mA2;
+	i16 mA3;
+	u32 mChecksum;
+};
+static SGlobalTextureEntry * const gGlobalTextureEntries = (SGlobalTextureEntry*)0x006A8000;
+
+static i32 * const gSuitChecksumTable = (i32*)0x0053C1A4;
+static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
+
 // @NotOk
 // known blocker: the fail path calls print_if_false, always inlined by our
 // build (static in export.h), while the original calls it out of line
@@ -1455,14 +1479,6 @@ void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
 // for a message with one %X format spec), so this passes the checksum as
 // a printf-style value, which is functionally sensible either way since
 // the call does nothing in retail.
-// new globals (no idb_globals.txt entry, tentative names from usage):
-// gGlobalTextureEntryCount (0x6A9050): running count into gGlobalTextureEntries.
-// gGlobalTextureEntries (0x6A8000): array of {Texture* pTexture; i16 mA2; i16 mA3;
-// u32 mChecksum;} (stride 0xC), terminated by a pTexture==0 sentinel entry.
-// gSuitChecksumTable (0x53C1A4): i32[16] per suit (stride 0x40), checksum lookup.
-// gCostumeTextureIds (0x6A8D74): i32 (zero-extended u16 value) per
-// (suit*16+slot) slot, same table
-// Spidey_SwapSuitTextures indexes (not yet decompiled in this session).
 // preserved bug: the gLowGraphics==0 search loop compares
 // gGlobalTextureEntries[count] (the NEXT free slot, loop-invariant) against
 // the checksum on every iteration instead of gGlobalTextureEntries[i] -
@@ -1484,20 +1500,6 @@ void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
 // instead of the original's flat ecx-offset form. tried a do-while instead
 // of for (to drop a redundant count>0 recheck at loop entry): made it
 // worse (52 diffs), reverted.
-static i32 * const gGlobalTextureEntryCount = (i32*)0x006A9050;
-
-struct SGlobalTextureEntry
-{
-	const Texture *pTexture;
-	i16 mA2;
-	i16 mA3;
-	u32 mChecksum;
-};
-static SGlobalTextureEntry * const gGlobalTextureEntries = (SGlobalTextureEntry*)0x006A8000;
-
-static i32 * const gSuitChecksumTable = (i32*)0x0053C1A4;
-static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
-
 void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 {
 	if (!gLowGraphics)
@@ -1554,6 +1556,26 @@ void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 	print_if_false(0, "Spidey_StoreTextureEntry(): Checksum not found: %8.8X\r\n", checksum);
 }
 
+// globals for Spidey_SwapSuitTextures below (no idb_globals.txt entry):
+// gCostumeMeshPtrs (0x5F6764), pointer array indexed directly by region id
+// (not scaled), each entry points at a per-region mesh-piece list, walked
+// in lockstep with CItemRelatedList[region] (ob.h) for word_6B2478[region]
+// (export.h, already used the same way in m3dutils.cpp, stride 34 u16 =
+// 0x44 per region) iterations. field offsets are guesses from the
+// disassembly only (no struct declared): the CItemRelatedList entry's
+// first field (offset 0) is a pointer to a sub-struct with a count at +6;
+// the gCostumeMeshPtrs entry (offset +4 from the stored pointer) is a
+// pointer to a list of entries (texture id at +2), stride 0x38 per entry,
+// outer stride 0x24 for the mesh-piece list and 4 for the CItemRelatedList
+// sub-array. reuses gCostumeTextureIds (spidey.cpp,
+// Spidey_StoreTextureEntry) for the actual texture id remap table. also
+// declared gCostumeRegionEntries at the same address as CItemRelatedList
+// (0x6B2454) so this file can index it with a plain array subscript
+// (region*17) instead of casting CItemRelatedList's established i32***
+// type to a byte pointer.
+static void ** const gCostumeMeshPtrs = (void**)0x005F6764;
+static void ** const gCostumeRegionEntries = (void**)0x006B2454;
+
 // @NotOk
 // known blocker: calls print_if_false, always inlined by our build (static
 // in export.h), while the original calls it out of line (retail body is a
@@ -1561,22 +1583,6 @@ void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 // game). string confirmed: "SwapSuitTextures() called in hardware mode!"
 // (0x556644, printed when gLowGraphics==0, i.e. hardware mode), region
 // name "spidey" (0x556670) passed to Spool_FindRegion.
-// new global (no idb_globals.txt entry): gCostumeMeshPtrs (0x5F6764),
-// pointer array indexed directly by region id (not scaled), each entry
-// points at a per-region mesh-piece list, walked in lockstep with
-// CItemRelatedList[region] (ob.h) for word_6B2478[region] (export.h,
-// already used the same way in m3dutils.cpp, stride 34 u16 = 0x44 per
-// region) iterations. field offsets are guesses from the disassembly only
-// (no struct declared): the CItemRelatedList entry's first field (offset
-// 0) is a pointer to a sub-struct with a count at +6; the gCostumeMeshPtrs
-// entry (offset +4 from the stored pointer) is a pointer to a list of
-// entries (texture id at +2), stride 0x38 per entry, outer stride 0x24 for
-// the mesh-piece list and 4 for the CItemRelatedList sub-array. reuses
-// gCostumeTextureIds (spidey.cpp, Spidey_StoreTextureEntry) for the actual
-// texture id remap table. also declared gCostumeRegionEntries at the same
-// address as CItemRelatedList (0x6B2454) so this file can index it with a
-// plain array subscript (region*17) instead of casting CItemRelatedList's
-// established i32*** type to a byte pointer.
 // residue: 50 mnemonic diffs (down from 57), after widening outerCount to
 // i32 (original tests the full edx register after the 16-bit load, because
 // an earlier xor edx,edx in the same block left the upper half zero; ours
@@ -1589,8 +1595,6 @@ void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 // (word_6B2478, export.h) - tried a simpler single-pointer type instead of
 // a double pointer, no change, left as residue given the print_if_false
 // blocker already rules out a full match on this function regardless.
-static void ** const gCostumeMeshPtrs = (void**)0x005F6764;
-static void ** const gCostumeRegionEntries = (void**)0x006B2454;
 
 void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 {
