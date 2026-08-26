@@ -60,7 +60,11 @@ public:
 	i32 field_324;
 	i32 field_328;
 
-	PADDING(0x338 - 0x328 - 4);
+	PADDING(0x330 - 0x328 - 4);
+
+	i32 field_330;
+
+	PADDING(0x338 - 0x330 - 4);
 
 	i32 field_338;
 
@@ -76,7 +80,11 @@ public:
 
 	i32 field_358;
 
-	PADDING(0x388-0x358-4);
+	PADDING(0x360 - 0x358 - 4);
+
+	i32 field_360;
+
+	PADDING(0x388 - 0x360 - 4);
 
 	i32 field_388;
 

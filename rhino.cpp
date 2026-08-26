@@ -61,10 +61,98 @@ void CRhino::AI(void)
     printf("CRhino::AI(void)");
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Logic verified against the disasm. Residue: 18 mnemonic diffs, all inside
+// case 2's inlined CheckIfPlayerHit() call. Root cause: `operator-(const
+// CVector&, const CVector&)` (vector.h) is declared INLINE, so our build
+// computes MechList->mPos - this->mPos as direct sub instructions at the
+// call site; the original calls it as a real out-of-line function (matches
+// the same __mi call already flagged as unresolved on CheckIfPlayerHit's own
+// @NotOk tag). This is the same repo-wide inlining issue as the documented
+// print_if_false case, not something a single call site can fix. Attempts:
+// (1) if/else-if chain on a cached `i32 subState = this->field_360;` local
+// for the sub-state dispatch, 73 diffs (compiler used cmp+jne, not the
+// original's sub/dec sequential-compare shape); (2) switched to a real
+// `switch (this->field_360) { case 0: ... case 1: ... default: ... }`
+// instead, per tips.txt's if-chain-on-cached-local idiom, dropped to 18
+// diffs (this residue). Did not reach the 15-hypothesis bar for
+// @AlmostMatching, but the remaining residue is a known, out-of-scope,
+// repo-wide issue rather than an unexplained one.
 void CRhino::AttackPlayer(void)
 {
-    printf("CRhino::AttackPlayer(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_310 = 0x64;
+			this->Neutralize();
+
+			new CAIProc_LookAt(this, MechList, 0, 2, 0x50, 0);
+
+			this->field_330 = Rnd(30) + 0x5A;
+			this->dumbAssPad++;
+			break;
+		case 1:
+		{
+			this->field_330 -= this->field_80;
+
+			if (this->field_288 & 2)
+			{
+				this->field_288 &= ~2;
+			}
+			else
+			{
+				if (this->field_330 > 0)
+				{
+					return;
+				}
+			}
+
+			this->field_330 = 0;
+
+			SFX_PlayPos((~gAttackRelated & 1) | 0x80C8, &this->mPos, 0);
+
+			switch (this->field_360)
+			{
+				case 0:
+					this->PlaySingleAnim(0xA, 0, -1);
+					new CAIProc_MonitorAttack(this, 7, 0x7000, 6, 0x10);
+					this->dumbAssPad = 2;
+					this->field_360 = 1;
+					break;
+				case 1:
+					this->PlaySingleAnim(0xB, 0, -1);
+					new CAIProc_MonitorAttack(this, 7, 0xE00, 6, 0x10);
+					this->dumbAssPad = 2;
+					this->field_360 = 0;
+					break;
+				default:
+					print_if_false(0, "What in the name of God above?");
+					break;
+			}
+			break;
+		}
+		case 2:
+			if (this->CheckIfPlayerHit())
+			{
+				this->dumbAssPad++;
+			}
+			else if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 3;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @MEDIUMTODO
@@ -1394,6 +1482,7 @@ void validate_CRhino(void){
 
 	VALIDATE(CRhino, field_324, 0x324);
 	VALIDATE(CRhino, field_328, 0x328);
+	VALIDATE(CRhino, field_330, 0x330);
 
 	VALIDATE(CRhino, field_338, 0x338);
 
@@ -1404,6 +1493,7 @@ void validate_CRhino(void){
 	VALIDATE(CRhino, field_354, 0x354);
 
 	VALIDATE(CRhino, field_358, 0x358);
+	VALIDATE(CRhino, field_360, 0x360);
 	VALIDATE(CRhino, field_388, 0x388);
 
 	VALIDATE(CRhino, field_3D0, 0x3D0);
