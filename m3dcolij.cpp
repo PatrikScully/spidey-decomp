@@ -22,10 +22,33 @@ i32 TriggerCollisionCheck;
 // @FIXME - check ppc version to address this
 i16 gUnkPose[1];
 
-// @SMALLTODO
-void M3dColij_GetLineInfo(SLineInfo *)
+// guess: scratch rotation matrix, sits right before gLineInfo in the binary (0x5FBE18,
+// gLineInfo is 0x5FBE38, exactly sizeof(MATRIX)=0x20 apart) but is not part of the
+// SLineInfo struct itself (SLineInfo::WorldCst already validated at its own offset 0x48).
+// No idb_globals.txt entry for this address, name and boundary are our guess.
+static MATRIX * const gLineColijRotMatrix = (MATRIX*)0x005FBE18;
+
+// guess: pointer to the current "eye" vector used for the line-of-sight GTE view setup.
+// No idb_globals.txt entry, name is our guess.
+#define G_CURRENT_COLIJ_VECTOR (*reinterpret_cast<SVECTOR**>(0x005FBD20))
+
+// @Ok
+// @Matching
+// Return type fixed from void to i32 (the original returns 0 if pInfo->pItem is null,
+// 1 otherwise).
+i32 M3dColij_GetLineInfo(SLineInfo *pInfo)
 {
-    printf("M3dColij_GetLineInfo(SLineInfo *)");
+	if (pInfo->pItem)
+	{
+		M3dMaths_RotMatrixYXZ((SVECTOR*)&pInfo->pItem->mAngles, gLineColijRotMatrix);
+		gte_SetRotMatrix(gLineColijRotMatrix);
+		gte_ldv0(G_CURRENT_COLIJ_VECTOR);
+		gte_rtv0();
+		gte_stsv((SVECTOR*)&pInfo->Normal);
+		return 1;
+	}
+
+	return 0;
 }
 
 // @SMALLTODO
