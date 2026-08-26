@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "my_assert.h"
 #include "mem.h"
+#include "ps2funcs.h"
 
 #include "validate.h"
 
@@ -30,10 +31,78 @@ CElectroLine::CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u
 	printf("CElectroLine::CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u32*)");
 }
 
-// @MEDIUMTODO
-CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)
+// @NotOk
+// residue: 85 of 193 mnemonic diffs. globals (G_PSXREGION) and field
+// semantics worked out from the disasm (see effects.attempts.md), first
+// ~55 instructions (all the print_if_false chain up to the a3/a4 null
+// checks) match with only register-swap noise (ebx/ebp swapped throughout
+// but same shape). The remaining loops diverge more: the original keeps a3
+// and a4 live in registers across the validation loop, the entry-fill
+// loop's field_54 walk uses a pointer-advance-early shape like
+// CVertexWobble::Move, and it reuses an already-zero register (ebp) for
+// some of the "!= 0" checks via cmp instead of test. Not chased to a full
+// match, values are correct per the field mapping in effects.attempts.md.
+CVertexWobble::CVertexWobble(u32 a1, u32 a2, u32 a3, u8* a4, i32 a5, i32 a6, i32 a7, i32 a8)
 {
-	printf("CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)");
+	print_if_false(a1 < static_cast<u32>(MAXPSX), "Region out of range");
+	print_if_false(G_PSXREGION[a1].Usable != 0, "PSX not usable");
+
+	SHandle handle = Mem_MakeHandle(G_PSXREGION[a1].pPSX);
+	this->field_3C = handle.pWhatever;
+	this->field_40 = handle.Id;
+
+	print_if_false(a2 < reinterpret_cast<u32*>(G_PSXREGION[a1].ppModels)[-1], "Model index out of range");
+
+	this->field_4C = G_PSXREGION[a1].ppModels[a2];
+
+	print_if_false(a3 != 0, "Zero NumVerts");
+	print_if_false(a4 != 0, "NULL vertex list");
+
+	u32 i;
+	for (i = 0; i < a3; i++)
+		print_if_false(a4[i] < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_4C) + 2), "Vertex index out of range");
+
+	this->field_50 = a3;
+	this->field_54 = DCMem_New(a3 * sizeof(SVertexWobbleEntry), 0, 1, 0, 1);
+
+	this->field_58.vx = 0;
+	this->field_58.vy = 0;
+	this->field_58.vz = 0;
+
+	SVertexWobbleEntry *entries = reinterpret_cast<SVertexWobbleEntry*>(this->field_54);
+
+	for (i = 0; i < a3; i++)
+	{
+		SVertexWobbleEntry *entry = &entries[i];
+		entry->vertexIndex = a4[i];
+
+		i16 *vertex = reinterpret_cast<i16*>(reinterpret_cast<u8*>(this->field_4C) + 0x1C + entry->vertexIndex * 8);
+		entry->vx = vertex[0];
+		entry->vy = vertex[1];
+		entry->vz = vertex[2];
+
+		this->field_58.vx += entry->vx;
+		this->field_58.vy += entry->vy;
+		this->field_58.vz += entry->vz;
+
+		entry->amplitude = static_cast<u16>(Rnd(a7) + a7);
+		entry->phaseSpeed = static_cast<i16>(Rnd(a8) + a8);
+		entry->phase = static_cast<i16>(Rnd(a5 + a6));
+	}
+
+	this->field_58 /= static_cast<i32>(a3);
+
+	for (i = 0; i < a3; i++)
+	{
+		SVertexWobbleEntry *entry = &entries[i];
+
+		entry->dx = static_cast<i16>(entry->vx - this->field_58.vx);
+		entry->dy = static_cast<i16>(entry->vy - this->field_58.vy);
+		entry->dz = static_cast<i16>(entry->vz - this->field_58.vz);
+
+		i32 sq = entry->dx * entry->dx + entry->dy * entry->dy + entry->dz * entry->dz;
+		entry->distance = static_cast<i16>(M3dMaths_SquareRoot0(sq));
+	}
 }
 
 // @NotOk
