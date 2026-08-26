@@ -973,7 +973,8 @@ void CPlayer::SetFloorCamera(i32 a3)
 	}
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void CPlayer::SetFirstContactDetails(void)
 {
 	if (!this->field_354)
