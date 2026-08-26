@@ -579,10 +579,59 @@ void* Trig_GetLinkInfoList(
 
 }
 
-// @MEDIUMTODO
+// gSaveGame (shell.h SSaveGame, defined in front.cpp) needs the full G_* macro treatment
+// repo-wide (see CLAUDE.md, "gSaveGame needs G_* macro treatment"). Its field_4 is untyped
+// there (@FIXME: figure out proper size) and holds the current level code string "lXaXm";
+// offset 6 is a literal 'a' this function skips. Fixed game address used directly until
+// shell.h/front.cpp get the shared macro (gSaveGame base is 0x00682858, this is +4).
+static char * const gLevelCodeStr = reinterpret_cast<char*>(0x0068285C);
+
+// @NotOk
+// Residue: 3 mnemonic diffs, one per char-range branch. Original does `sub ecx,0x30/0x31/
+// 0x51`, ours does `add ecx,-0x30/-0x31/-0x51`, same result. 24 source variants tried
+// (declaration order, signedness, temporaries, +=/-=, shift amount, combiner operator,
+// helper-function indirection...), all produce the same add. Looks like a genuine MSVC6
+// /O2 quirk for "32-bit value live-in from before a branch, adjusted then shifted then
+// or'd". See trig.attempts.md.
 int Trig_GetLevelID(void)
 {
-	return 0x686868;
+	char levelPrefix = gLevelCodeStr[0];
+	i32 areaCode = static_cast<i8>(gLevelCodeStr[1]);
+
+	if (levelPrefix != 'd' && levelPrefix != 'D')
+	{
+		if (static_cast<u32>(areaCode) >= '0' && static_cast<u32>(areaCode) <= '9')
+		{
+			i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+			areaCode += -'0';
+			missionDigit -= '0';
+			return missionDigit | (areaCode << 8);
+		}
+
+		if (static_cast<u32>(areaCode) >= 'A' && static_cast<u32>(areaCode) <= 'Z')
+		{
+			i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+			areaCode += -0x31;
+			missionDigit -= '0';
+			return missionDigit | (areaCode << 8);
+		}
+
+		if (static_cast<u32>(areaCode) >= 'a' && static_cast<u32>(areaCode) <= 'z')
+		{
+			i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+			areaCode += -0x51;
+			missionDigit -= '0';
+			return missionDigit | (areaCode << 8);
+		}
+	}
+	else
+	{
+		areaCode = 0x99;
+	}
+
+	i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+	missionDigit -= '0';
+	return missionDigit | (areaCode << 8);
 }
 
 // @BIGTODO
