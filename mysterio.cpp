@@ -11,7 +11,10 @@
 #include "m3dcolij.h"
 #include "spidey.h"
 #include "front.h"
+#include "pal.h"
 #include "mem.h"
+
+extern struct tag_S_Pal *pPaletteList;
 
 EXPORT SLight M3d_MysterioLight =
 {
@@ -37,10 +40,56 @@ EXPORT i32 gFadePalettesActive;
 EXPORT u8 gPaletteFadeRGB[3];
 EXPORT u8 gPaletteFadeRGB2[3];
 
-// @MEDIUMTODO
-CFadePalettes::CFadePalettes(u8,u8,u8)
+// @NotOk
+CFadePalettes::CFadePalettes(u8 a1, u8 a2, u8 a3)
 {
-    printf("CFadePalettes::CFadePalettes(u8,u8,u8)");
+	print_if_false(gFadePalettesActive == 0, "Tried to create two global fade palettes");
+	gFadePalettesActive = 1;
+
+	this->field_458 = a1 >> 3;
+	this->field_459 = a2 >> 3;
+	this->field_45A = a3 >> 3;
+	this->field_45C = 1;
+
+	this->field_45D = gPaletteFadeRGB[0];
+	this->field_45E = gPaletteFadeRGB[1];
+	this->field_45F = gPaletteFadeRGB[2];
+
+	tag_S_Pal * volatile pPal = pPaletteList;
+	if (pPal)
+	{
+		do
+		{
+			u16 hi = pPal->Clut >> 6;
+			u8 flags = pPal->flags;
+			u16 lo = (pPal->Clut & 0x3F) << 4;
+
+			if (flags & 1)
+			{
+				print_if_false(this->field_450 < 0xC0, "More 16C palettes used than expected");
+				this->field_3C[this->field_450] = DCMem_New(0x44, 1, 1, 0, 1);
+				*reinterpret_cast<u16*>(this->field_3C[this->field_450]) = lo;
+				*reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[this->field_450]) + 2) = hi;
+				StoreImage();
+				StoreImage();
+				this->field_450++;
+			}
+			else
+			{
+				print_if_false(this->field_454 < 0x44, "More 256C palettes used than expected");
+				this->field_33C[this->field_454] = DCMem_New(0x404, 1, 1, 0, 1);
+				*reinterpret_cast<u16*>(this->field_33C[this->field_454]) = lo;
+				*reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[this->field_454]) + 2) = hi;
+				StoreImage();
+				StoreImage();
+				this->field_454++;
+			}
+
+			pPal = pPal->pNext;
+		} while (pPal);
+	}
+
+	DrawSync();
 }
 
 // @Ok
