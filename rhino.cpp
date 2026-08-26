@@ -109,10 +109,71 @@ INLINE i32 CRhino::CheckIfPlayerHit(void)
 	return 0;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRhino::DieRhino(void)
 {
-    printf("CRhino::DieRhino(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			SFX_PlayPos(0x8043, &this->mPos, 0);
+			this->field_310 = 0;
+			this->Neutralize();
+			this->mCBodyFlags &= ~0x10;
+			this->field_2A8 |= 0x1000;
+			this->field_1F8 = 0;
+			this->StopMyXA();
+			this->PlaySingleAnim(0x1D, 0, -1);
+			this->PlayXAPlease(0x16, 1, 0);
+			this->dumbAssPad++;
+
+			MechList->SetIgnoreInputTimer(0x8000);
+
+			{
+				CCamera *camera = CameraList;
+				if (camera)
+				{
+					camera->SetMode(CAMERAMODE_DEMO);
+					camera->field_100 = 1;
+					camera->mTripod = this;
+					camera->field_140 = 1;
+					camera->field_13C = this;
+					camera->SetCamXOffset(0, 0);
+					camera->SetCamYOffset(0, 0);
+					camera->SetCamZOffset(0, 0);
+					camera->SetCamXZDistance(0x1A8, 0);
+					camera->SetCamYDistance(-0x68, 0);
+				}
+			}
+			break;
+		case 1:
+			if (CameraList)
+			{
+				i16 angle = this->field_80;
+				angle <<= 5;
+				angle += CameraList->field_236;
+				CameraList->SetCamAngle(angle, 16);
+			}
+
+			if (this->mAnimFinished)
+			{
+				this->dumbAssPad = 4;
+			}
+			break;
+		case 3:
+			break;
+		case 4:
+			this->field_1F8 += this->field_80;
+			if (this->field_1F8 > 0x3C)
+			{
+				this->Die(0);
+				this->dumbAssPad = 3;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @MEDIUMTODO
