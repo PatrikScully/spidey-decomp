@@ -29,6 +29,7 @@ EXPORT void Mem_AlignedDelete(void *);
 EXPORT void AddToFreeList(SBlockHeader *pNewFreeBlock, i32 Heap);
 EXPORT void Mem_Init(void);
 EXPORT void Mem_Delete(void*);
+EXPORT void Mem_Delete2(void*);
 EXPORT void Mem_Shrink(void*, size_t);
 EXPORT void Mem_CoreShrink(void*, size_t);
 EXPORT void Mem_ShrinkX(void*, size_t);
