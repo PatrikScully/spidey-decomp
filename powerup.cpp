@@ -3,6 +3,7 @@
 #include "trig.h"
 #include "exp.h"
 #include "my_assert.h"
+#include "utils.h"
 
 #include "validate.h"
 
@@ -10,10 +11,60 @@ extern i32 TotalBitUsage;
 CBody* PowerUpList;
 i32 TTime;
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CPowerUp::DoPhysics(void)
 {
-	printf("CPowerUp::DoPhysics");
+	this->mAngles.vy = (this->mAngles.vy + this->mAngVel.vy * (i16)this->field_80) & 0xFFF;
+
+	if (this->field_103)
+	{
+		if (!this->field_104 && this->field_10C < 0 && this->field_10C > -5)
+		{
+			if (TTime & 1)
+			{
+				i32 height = Utils_GetGroundHeight(&this->field_110, 0, 0x1F40, 0);
+				if (height == -1)
+				{
+					this->field_10C--;
+					if (this->field_10C <= -5)
+					{
+						this->field_104 = 1;
+					}
+					return;
+				}
+
+				this->field_10C = height;
+				return;
+			}
+			return;
+		}
+
+		CVector* pVel = &this->mVel;
+		CVector* pWork = &this->field_110;
+		*pWork += *pVel;
+
+		this->mVel.vy += this->mAcc.vy;
+		this->mVel.vy -= this->mVel.vy >> this->mFric.vy;
+
+		if (!this->field_104)
+		{
+			i32 threshold = this->field_10C - (this->field_105 << 12);
+			if (this->field_110.vy > threshold && this->mVel.vy > 0)
+			{
+				this->field_110.vy = threshold;
+				pVel->vx = 0;
+				pVel->vy = 0;
+				pVel->vz = 0;
+				this->field_103 = 0;
+			}
+		}
+
+		this->mPos = this->field_110;
+		return;
+	}
+
+	this->mPos = this->field_110;
 }
 
 // @Ok
@@ -245,10 +296,16 @@ void validate_CPowerUp(void)
 	VALIDATE(CPowerUp, mIs3d, 0x101);
 	VALIDATE(CPowerUp, mDropping, 0x102);
 
+	VALIDATE(CPowerUp, field_103, 0x103);
+	VALIDATE(CPowerUp, field_104, 0x104);
+	VALIDATE(CPowerUp, field_105, 0x105);
+
 	VALIDATE(CPowerUp, mNodeIndex, 0x106);
 	VALIDATE(CPowerUp, field_108, 0x108);
 
 	VALIDATE(CPowerUp, field_10C, 0x10C);
+
+	VALIDATE(CPowerUp, field_110, 0x110);
 
 	VALIDATE(CPowerUp, field_11E, 0x11E);
 	VALIDATE(CPowerUp, field_120, 0x120);
