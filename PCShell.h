@@ -31,7 +31,7 @@ EXPORT void PCSHELL_Shutdown(void);
 EXPORT u8 PCSHELL_UpdateMouse(void);
 EXPORT void displayControllerScreen(void);
 EXPORT void initActionMaps(void);
-EXPORT void processControllerScreen(void);
+EXPORT u8 processControllerScreen(void);
 EXPORT void resetActionMaps(bool);
 
 void validate_SActionMap(void);

@@ -8,6 +8,10 @@
 #include "PCGfx.h"
 #include "shell.h"
 #include "mess.h"
+#include "ps2pad.h"
+#include "db.h"
+#include "main.h"
+#include "utils.h"
 
 #include <cstring>
 
@@ -38,6 +42,9 @@ char* STR_KB_CONFIG = "keyboard configuration";
 char* STR_JOY_CONFIG = "joystick configuration";
 
 EXPORT i32 gShellTitleBarRelated;
+
+// set while the controller screen waits for the player to press a new key or button
+EXPORT i32 gShellWaitingForInput;
 
 // @Ok
 // @Matching
@@ -221,11 +228,119 @@ INLINE void PCSHELL_CoordsPCtoDC(i32* pX, i32* pY)
 	*pY = (f32)(*pY * 240) / (f32)gDxResolutionY;
 }
 
-// @SMALLTODO
-void PCSHELL_DoControllerConfig(bool)
+// forward declaration, defined further down with displayControllerScreen
+void shell_optimized_func(i32, i32, i32);
+
+// unnamed helpers called from PCSHELL_DoControllerConfig; bodies defined further down
+// so they are not visible for same-TU inlining at their call sites (matches the original,
+// which has real "call" instructions at each site, not inlined bodies).
+EXPORT void gsub_430680(void);
+EXPORT void gsub_430880(void);
+EXPORT void gsub_515850(void);
+
+// @Ok
+// @Matching
+void PCSHELL_DoControllerConfig(bool isKeyboard)
 {
-    printf("PCSHELL_DoControllerConfig(bool)");
+	gControllerMenu = new CMenu(30, 60, 1u, 256, 256, 15);
+	gControllerMenuTwo = new CMenu(332, 60, 1u, 256, 256, 15);
+
+	gActionMapRelated = isKeyboard == 0;
+	gShellWaitingForInput = 0;
+	gShellTitleBarRelated = 0;
+
+	initActionMaps();
+
+	gControllerMenuTwo->scrollbar_zero = 1;
+	gControllerMenu->scrollbar_zero = 1;
+
+	gControllerMenu->Zoom(0);
+	gControllerMenuTwo->Zoom(0);
+
+	gControllerMenuTwo->mLine = isKeyboard != 0 ? 0 : 4;
+	gControllerMenu->mLine = gControllerMenuTwo->mLine;
+
+	u8 done;
+	do
+	{
+		i32 startVblanks = Vblanks;
+
+		gsub_430880();
+
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1, -1);
+
+		PShell_NormalFont();
+
+		gControllerMenu->Display();
+		gControllerMenuTwo->Display();
+
+		shell_optimized_func(384, 222, 0);
+
+		char* configName = !gActionMapRelated ? STR_KB_CONFIG : STR_JOY_CONFIG;
+
+		Shell_DrawTitleBar(gShellTitleBarRelated, 25, configName, 1, 0, 150, -21, 29);
+		Shell_DrawBackground();
+
+		if (!(gRenderTest & 0x10) && gCursorSprite && PCINPUT_GetMouseStatus())
+		{
+			gCursorSprite->draw(gShellMouseX, gShellMouseY, 0, 0);
+		}
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		done = processControllerScreen();
+
+		gsub_430680();
+		WinYield();
+		Sleep(10);
+
+		Pause(startVblanks - Vblanks + 2);
+	} while (!done);
+
+	gsub_430680();
+	Pad_ClearTriggers(G_SCONTROL);
+
+	delete gControllerMenu;
+	delete gControllerMenuTwo;
+	gControllerMenu = 0;
+	gControllerMenuTwo = 0;
+
+	gsub_515850();
 }
+
+// PCSHELL_DoControllerConfig's original calls this as a real out-of-line function, keep the MSVC inliner away
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
+// unnamed helper called once per controller config screen frame, address 0x430680.
+// original bytes disassemble to an empty function (no args used), name is a names.json guess ("optimized_unused_garbage")
+// @SMALLTODO
+EXPORT void gsub_430680(void)
+{
+	printf("gsub_430680(void)");
+}
+
+// unnamed helper called once at the top of every controller config screen frame, address 0x430880 (named "nullsub_3" in the IDA export)
+// @SMALLTODO
+EXPORT void gsub_430880(void)
+{
+	printf("gsub_430880(void)");
+}
+
+// unnamed helper called once after PCSHELL_DoControllerConfig's loop ends, address 0x515850
+// @SMALLTODO
+EXPORT void gsub_515850(void)
+{
+	printf("gsub_515850(void)");
+}
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @MEDIUMTODO
 void PCSHELL_DoDisplayOptions(void)
@@ -369,11 +484,18 @@ u8 PCSHELL_UpdateMouse(void)
 	return 0;
 }
 
+// PCSHELL_DoControllerConfig's original calls this as a real out-of-line function, keep the MSVC inliner away
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
 // @Bogus
 void shell_optimized_func(i32, i32, i32)
 {
 	printf("void shell_optimized_func(i32, i32, i32)");
 }
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @Ok
 void displayControllerScreen(void)
@@ -476,11 +598,19 @@ void initActionMaps(void)
 	gControllerMenuTwo->AddEntry("");
 }
 
+// PCSHELL_DoControllerConfig's original calls this as a real out-of-line function, keep the MSVC inliner away
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
 // @MEDIUMTODO
-void processControllerScreen(void)
+u8 processControllerScreen(void)
 {
-    printf("processControllerScreen(void)");
+	printf("u8 processControllerScreen(void)");
+	return 0x26082026;
 }
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @Ok
 // @Matching
