@@ -13,8 +13,14 @@
 
 // @Ok
 Font* FontManager::FontTab[NUM_FONTS_TAB];
-#define G_FONT_TAB (FontManager::FontTab)
-//#define G_FONT_TAB (reinterpret_cast<Font**>(0x005FAD5C))
+// FontManager::LoadFont is not hooked (patch_FontTools only hooks
+// GetFontName/AllShadowOff/AllShadowOn/GetFont/Font::Font), so the array
+// still gets filled by the original game code at game memory. The macro
+// must target game memory here, not the repo array, or GetFont (hooked)
+// always searches an empty array and returns null (crashed
+// Mess_SetCurrentFont, null Font* deref in G_MESS_FONT = *pFont).
+//#define G_FONT_TAB (FontManager::FontTab)
+#define G_FONT_TAB (reinterpret_cast<Font**>(0x005FAD5C))
 
 // @Ok
 // @Matching
@@ -542,8 +548,12 @@ void FontManager::AllShadowOn(void)
 }
 
 
-// @Ok
-// @Matching
+// @NotOk
+// matched (0 diffs) only when G_FONT_TAB targets the repo array, but that
+// form crashes the game (see the note above G_FONT_TAB): GetFont is hooked
+// and LoadFont is not, so the array must stay on game memory while this
+// file is only partially hooked. 84 diffs under the correct (game memory)
+// form.
 void FontManager::UnloadFont(Font* pFont)
 {
 	i32 count;
@@ -560,8 +570,10 @@ void FontManager::UnloadFont(Font* pFont)
 	G_FONT_TAB[count] = 0;
 }
 
-// @Ok
-// @Matching
+// @NotOk
+// matched (0 diffs) only when G_FONT_TAB targets the repo array, but that
+// form crashes the game (see the note above G_FONT_TAB). 5 diffs under the
+// correct (game memory) form.
 void FontManager::UnloadAllFonts(void)
 {
 	for (i32 i = 0; i < NUM_FONTS_TAB; i++)
