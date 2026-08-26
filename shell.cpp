@@ -789,10 +789,54 @@ CShellSimbyMeltSplat::CShellSimbyMeltSplat(CVector* pVec)
 	this->mType = 21;
 }
 
-// @MEDIUMTODO
+static i16 * const word_610C48 = (i16*)0x610C48;
+
+// @NotOk
+// Residue: register allocation only. Logic verified correct (spiral position update,
+// fade-out of R/G/B intensities, flicker-scaled color repack). Two spots resist matching
+// after 14 tried source shapes (see attempts log): (1) this->field_80 should load into
+// ecx as the very first memory read of the function, before mVel.vy/mPos.vy; every source
+// order tried instead loads mVel.vy/mPos.vy first, or (when field_80 is moved first) pulls
+// field_7C forward too early. (2) the final mCodeBGR repack: the original packs the
+// field_88 contribution via a bare "mov cl,dh" byte extraction (no explicit shift), ours
+// always emits sar+and+or for all three channels.
 void CShellEmber::Move(void)
 {
-	printf("CShellEmber::Move");
+	this->mPos.vy -= this->mVel.vy;
+	i32 idx80 = this->field_80 & 0xFFF;
+	this->field_80 += 100;
+	i32 amp = (this->field_78 * word_610C48[2 * idx80]) >> 12;
+
+	i32 phase7c = this->field_7C;
+	i32 idx7c = phase7c & 0xFFF;
+	this->mPos.vx = amp * word_610C48[2 * idx7c] + this->field_68;
+	this->mPos.vz = amp * word_610C48[2 * idx7c + 1] + this->field_70;
+	this->field_7C = phase7c + 100;
+
+	if (this->field_74)
+	{
+		this->field_74--;
+	}
+	else
+	{
+		i32 v84 = this->field_84 < 15 ? 0 : this->field_84 - 15;
+		this->field_84 = v84;
+
+		i32 v88 = this->field_88 < 15 ? 0 : this->field_88 - 15;
+		this->field_88 = v88;
+
+		i32 v8c = this->field_8C < 15 ? 0 : this->field_8C - 15;
+		this->field_8C = v8c;
+
+		if (!(v84 | v88 | v8c))
+			this->Die();
+	}
+
+	i32 flicker = Rnd(0x100);
+	this->mCodeBGR = (((this->field_8C * flicker) >> 8) << 16)
+		| (((this->field_88 * flicker) >> 8) << 8)
+		| ((this->field_84 * flicker) >> 8)
+		| (this->mCodeBGR & 0xFF000000u);
 }
 
 // @Ok
@@ -1104,8 +1148,6 @@ void INLINE CDummy::FadeBack(void)
 	this->field_1FC = 1;
 	this->field_1F8 = 0;
 }
-
-static const i16 *word_610C48 = (i16*)0x610C48;
 
 // @NotOk
 // Global
