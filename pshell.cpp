@@ -9,6 +9,7 @@
 #include "db.h"
 #include "tweak.h"
 #include "ps2pad.h"
+#include "panel.h"
 
 #include <cstring>
 
@@ -283,10 +284,91 @@ void PShell_BigFont(void)
 	Mess_SetCurrentFont("font_big.fnt");
 }
 
-// @SMALLTODO
-void PShell_DrawHighlight(i32,i32,i32,i32)
+// byte right after gPostWaterEffect (0x5FAE98, i32, utils.cpp). No exact name
+// in the maintainer's IDB for this one; tentative, guessed from this use
+// (picks the box z-offset sign, close to the water-effect/post-process flags).
+static u8 * const gDrawHighlightZFlag = (u8*)0x5FAE9D;
+
+// @Ok
+// @AlmostMatching: 5 mnemonic diffs out of 122 instructions, all in the
+// pPoly/p setup right after print_if_false. Original loads pPoly straight
+// into esi and pre-adds a4+4 into ebp as an eager separate instruction,
+// reused later via a plain add; our build always routes pPoly through eax
+// first and folds the +4 into the later y0 computation as a 3-operand lea.
+// 12 distinct hypotheses tried targeting this exact cluster (declaration
+// order forward/reverse, split vs combined statement, volatile, pointer-unit
+// vs byte-cast arithmetic, basing the increment on p vs pPoly), residue did
+// not move. See pshell.attempts.md.
+void PShell_DrawHighlight(i32 a1, i32 a2, i32 a3, i32 a4)
 {
-    printf("PShell_DrawHighlight(i32,i32,i32,i32)");
+	Texture* pTex = Spool_FindTextureEntry(0xE90B5F6E);
+	print_if_false(pTex != 0, "Missing title bar texture");
+
+	POLY_GT4* p = (POLY_GT4*)pPoly;
+	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_GT4));
+	i32 v1 = a4 + 4;
+
+	p->tag = 0xC000000;
+	p->code = 0x3E;
+
+	*(u32*)&p->u0 = *(u32*)&pTex->u0;
+	*(u32*)&p->u1 = *(u32*)&pTex->u1;
+	*(u32*)&p->u2 = *(u32*)&pTex->u2;
+	*(u16*)&p->u3 = *(u16*)&pTex->u3;
+
+	p->tpage = (p->tpage & ~0x40) | 0x20;
+
+	p->u1 -= 1;
+	p->u3 -= 1;
+
+	p->r0 = 0x40;
+	p->g0 = 0x40;
+	p->r2 = 0x40;
+	p->g2 = 0x40;
+
+	i32 y0 = a2;
+	i32 x1 = a3;
+	p->b0 = 0x7B;
+	p->b2 = 0x7B;
+	i32 x0 = a1;
+
+	y0 += 3;
+	x1 += x0;
+
+	p->y0 = (i16)y0;
+	p->y1 = (i16)y0;
+
+	y0 += v1;
+
+	p->r1 = 0;
+	p->g1 = 0;
+	p->b1 = 0;
+	p->r3 = 0;
+	p->g3 = 0;
+	p->b3 = 0;
+
+	p->x0 = (i16)x0;
+	p->x1 = (i16)x1;
+	p->x2 = (i16)x0;
+	p->y2 = (i16)y0;
+	p->x3 = (i16)x1;
+	p->y3 = (i16)y0;
+
+	gsub_46CB90((void*)0x0056EB54);
+
+	i32 sort = G_SORT;
+	if (sort >= 0xFFE && sort <= 0xFFF)
+	{
+		DCDrawGouraudPoly(-2.0f, p, pTex, a3 < 0);
+	}
+	else if (*gDrawHighlightZFlag)
+	{
+		DCDrawGouraudPoly(2.0f, p, pTex, a3 < 0);
+	}
+	else
+	{
+		DCDrawGouraudPoly(-2.0f, p, pTex, a3 < 0);
+	}
 }
 
 // @SMALLTODO
