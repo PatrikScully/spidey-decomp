@@ -803,10 +803,200 @@ void PCGfx_DrawQuad2D(
 	gPcGfxSlotNumber = -1;
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawTPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)
+// @NotOk
+// A screen space triangle (3x (x,y,u,v,color) plus one shared zOffset),
+// builds its own DXPOLY inline and calls DXPOLY_DrawPoly (0x503100) directly
+// instead of going through submitPoly, confirmed from the disasm: manual
+// pointer walk into gDxPolys (ebp = &gDxPolys[gEndSceneRelatedTwo] via
+// idx*0xF0), not the array-of-pointers shape submitPoly/DrawQuad2D use. The
+// zOffset preamble (gPcGfxDrawRelated &=~4, conditional gPcGfxSlotNumber set,
+// v13=gRenderInitTwo[1]*zOffset + gRenderInitOne[0 or 1] depending on sign,
+// print_if_false "invalid zOffset!" at 0x568304) and the per vertex color
+// brighten/fog clamp loop are the exact same idioms as PCGfx_DrawQuad2D and
+// submitPoly (reused verbatim), field_8/field_C are shared across all 3
+// vertices (single v27/v32, matches DrawQuad2D, this is a 2D/flat triangle
+// not a perspective one). One real difference from DrawQuad2D confirmed by
+// the disasm: the low graphics branch has the "if (!(mBlendMode&4))
+// field_4=1.0f" step per vertex, the hardware branch here does NOT (DrawQuad2D
+// has it in both branches), kept as is since the bytes say so. 0x71C720/
+// 0x71C734 read as gChosenBlendingMode/gProcessedTextureFlags (u16 loads,
+// matches their repo types) rather than new globals. 0x50F3C0 is
+// PCTex_GetDirect3DTexture (same call shape as DrawQuad2D's texture lookup),
+// not a new unnamed helper as an earlier session guessed.
+// cmpsum: 208 mnemonic diffs at 0x507da0. 4 hypotheses tried, 2 confirmed
+// fixes kept: (1) writing the zOffset sign check as a genuine if/else
+// computing v13 in each branch let the compiler CSE the shared
+// gRenderInitTwo[1]*zOffset multiply out after the compare, matching the
+// original's compare-then-multiply order (a plain "cache the multiply in a
+// local, then branch on a separate bool" version materialized the bool into
+// al with extra movs and did not match); (2) flipping the branch to
+// `if (zOffset >= 0.0f)` (add gRenderInitOne[0] first) instead of
+// `if (zOffset < 0.0f)` matched the original's fall through/jump sense
+// exactly, fixing one instruction level diff. The remaining residue starts
+// at the print_if_false("invalid zOffset!") call: our build still calls it
+// out of line here (register allocation differs enough that edi is not live
+// the same way, so the call shape and everything downstream shifts), which
+// is the repo wide print_if_false inlining problem CLAUDE.md documents
+// under "Matching discipline" (static in export.h, gets inlined at some call
+// sites and not others depending on register pressure); fixing that needs a
+// real out of line print_if_false, not a change local to this function.
+// 4 hypotheses is short of the 10+ per cluster bar for a >1000 byte
+// function, logged in pcgfx.attempts.md.
+void PCGfx_DrawTPoly2D(
+		f32 x0, f32 y0, f32 u0, f32 v0, u32 color0,
+		f32 x1, f32 y1, f32 u1, f32 v1, u32 color1,
+		f32 x2, f32 y2, f32 u2, f32 v2, u32 color2,
+		f32 zOffset)
 {
-    printf("PCGfx_DrawTPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)");
+	gPcGfxDrawRelated &= 0xFFFFFFFB;
+
+	if (zOffset <= 6.0f)
+		gPcGfxSlotNumber = (i32)zOffset;
+
+	f32 v13;
+	if (zOffset >= 0.0f)
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[0];
+	else
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[1];
+
+	f32 v24 = v13;
+	print_if_false(v24 > 0.0f, "invalid zOffset!");
+
+	f32 v27 = (v24 - gRenderInitOne[0]) / gRenderInitTwo[0];
+	f32 v32 = gRenderInitOne[2] / v24;
+
+	SDXPolyField dxPolyFields[3];
+
+	dxPolyFields[0].field_0 = x0;
+	dxPolyFields[0].field_4 = y0;
+	dxPolyFields[0].field_14 = u0;
+	dxPolyFields[0].field_18 = v0;
+	dxPolyFields[0].field_10 = color0;
+	dxPolyFields[0].field_8 = v27;
+	dxPolyFields[0].field_C = v32;
+
+	dxPolyFields[1].field_0 = x1;
+	dxPolyFields[1].field_4 = y1;
+	dxPolyFields[1].field_14 = u1;
+	dxPolyFields[1].field_18 = v1;
+	dxPolyFields[1].field_10 = color1;
+	dxPolyFields[1].field_8 = v27;
+	dxPolyFields[1].field_C = v32;
+
+	dxPolyFields[2].field_0 = x2;
+	dxPolyFields[2].field_4 = y2;
+	dxPolyFields[2].field_14 = u2;
+	dxPolyFields[2].field_18 = v2;
+	dxPolyFields[2].field_10 = color2;
+	dxPolyFields[2].field_8 = v27;
+	dxPolyFields[2].field_C = v32;
+
+	if (gEndSceneRelatedTwo >= 15360)
+	{
+		gEndSceneRelatedTwo++;
+		return;
+	}
+
+	DXPOLY *p = &gDxPolys[gEndSceneRelatedTwo++];
+	i32 blendMode = gPcGfxBlendModeRelated;
+	f32 fogMax = 0.0f;
+
+	if (gLowGraphics)
+	{
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		p->field_C = 3;
+
+		for (i32 i = 0; i < 3; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			if (!(p->mBlendMode & 4))
+				dst->field_4 = 1.0f;
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+	}
+	else
+	{
+		LPDIRECTDRAWSURFACE7 Direct3DTexture;
+		if (gUseTextureRelated < 0)
+			Direct3DTexture = 0;
+		else
+			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+		p->field_4 = Direct3DTexture;
+		p->mBlendMode = gChosenBlendingMode;
+		p->field_A = gProcessedTextureFlags;
+		p->field_C = 3;
+
+		for (i32 i = 0; i < 3; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+
+		if (gChosenBlendingMode)
+		{
+			blendMode = 0;
+		}
+	}
+
+	DXPOLY_DrawPoly(p, gPcGfxSlotNumber, blendMode, fogMax);
+	gPcGfxSlotNumber = -1;
 }
 
 // @NotOk
