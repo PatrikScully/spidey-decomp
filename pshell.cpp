@@ -5,6 +5,10 @@
 #include "ps2lowsfx.h"
 #include "shell.h"
 #include "PCShell.h"
+#include "front.h"
+#include "db.h"
+#include "tweak.h"
+#include "ps2pad.h"
 
 #include <cstring>
 
@@ -216,10 +220,60 @@ i32 PShell_ActivateCheat(char * pStr)
 	return -1;
 }
 
-// @SMALLTODO
+// byte right after TimeAttackComplete (0x60CFC6) and gWhatIf (0x60CFC5, ob.cpp).
+// Neither TimeAttackComplete nor this byte are declared in the repo yet; the
+// maintainer's IDB names TimeAttackComplete but not this one.
+static u8 * const gPracticeDifficultyFlag = (u8*)0x60CFC7;
+
+// @NotOk
+// residue: full instruction-count match not yet reached, register scheduling
+// around the two Pad_Set*Mapping calls differs from the original. Not
+// re-verified after this session ended; see pshell.attempts.md.
 void PShell_ApplyGameState(void)
 {
-    printf("PShell_ApplyGameState(void)");
+	i8 v1 = gSaveGame.mDifficulty;
+	i16 v2 = G_GAMESTATE[11];
+	i16 v3 = G_GAMESTATE[12];
+	i16 v4 = gSaveGame.mDigitalMapping[3];
+	i16 v5 = gSaveGame.mAnalogueMapping[0];
+
+	DifficultyLevel = v1;
+	gSaveGame.field_98 = v2;
+	i16 v6 = gSaveGame.mDigitalMapping[2];
+	G_GAMESTATE[4] = v5;
+	i16 v7 = gSaveGame.mAnalogueMapping[1];
+	gSaveGame.field_94 = v3;
+	u8 v8 = gBootRomSoundMode;
+	G_GAMESTATE[3] = v4;
+	*gPracticeDifficultyFlag = (v1 == 0);
+	G_GAMESTATE[2] = v6;
+	i16 v9 = G_GAMESTATE[13];
+	G_GAMESTATE[5] = v7;
+	i16 v10 = gSaveGame.mAnalogueMapping[2];
+	gSaveGame.field_A0 = v8;
+	i16 v11 = gSaveGame.mDigitalMapping[1];
+	gSaveGame.field_9C = v9;
+	i16 v12 = gSaveGame.mDigitalMapping[0];
+	G_GAMESTATE[6] = v10;
+	i16 v13 = gSaveGame.mAnalogueMapping[3];
+	G_GAMESTATE[1] = v11;
+
+	Pad_SetDigitalMapping(gSControl, v12, v11, v6, v4);
+
+	G_GAMESTATE[7] = v13;
+	i16 v14 = gSaveGame.field_A4;
+	G_GAMESTATE[0] = v12;
+
+	DoubleBuffer[0].Disp.screen.x = v14;
+	DoubleBuffer[1].Disp.screen.x = v14;
+
+	i16 v15 = gSaveGame.field_A8;
+
+	DoubleBuffer[0].Disp.screen.y = v15;
+	DoubleBuffer[1].Disp.screen.y = v15;
+
+	Pad_SetAnalogueMapping(gSControl, 3, 2, 1, 0,
+			G_GAMESTATE[4], G_GAMESTATE[5], G_GAMESTATE[6], G_GAMESTATE[7]);
 }
 
 // @Ok
@@ -355,12 +409,47 @@ int CExpandingBox::Display(){
 	return 0x14072024;
 }
 
-// @BIGTODO
+// @NotOk
+// residue not yet resolved, see pshell.attempts.md
 i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 {
-	printf("i32 CExpandingBox::ScrollBarHitTest(int a2, int a3)");
+	if (!this->field_24 || !this->field_30)
+		return 0;
 
-	return 0x14072024;
+	i16 v1 = this->field_1C;
+	v1 -= 14;
+
+	if (a2 < (u16)v1)
+		return 0;
+
+	i16 v2 = this->field_20;
+
+	if (a2 > (u16)(v1 + 14))
+		return 0;
+
+	if (a3 < (u16)(v2 - 3))
+		return 0;
+
+	i16 v3 = this->field_8;
+
+	if (a3 > (u16)((u16)(v3 + 6) + (u16)(v2 - 3)))
+		return 0;
+
+	i32 v4 = ((this->field_8 - this->field_2C - 8) * this->field_28 >> 8) + v2 + 4;
+
+	if (a3 <= (u16)(v2 + 7))
+		return 1;
+
+	if (a3 < (u16)(v3 + v2 - 5))
+		return 2;
+
+	if (a3 >= (u16)v4)
+		return 4;
+
+	if (a3 > this->field_2C + (u16)v4)
+		return 5;
+
+	return 3;
 }
 
 static u8 gCheatRelatedOne;
@@ -430,8 +519,10 @@ void validate_CExpandingBox(void)
 
 	VALIDATE(CExpandingBox, field_20, 0x20);
 	VALIDATE(CExpandingBox, field_24, 0x24);
+	VALIDATE(CExpandingBox, field_28, 0x28);
 
 	VALIDATE(CExpandingBox, field_2C, 0x2C);
+	VALIDATE(CExpandingBox, field_30, 0x30);
 }
 
 void validate_SCheat(void)

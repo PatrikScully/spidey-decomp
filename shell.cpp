@@ -1778,6 +1778,15 @@ void validate_SSaveGame(void)
 	VALIDATE(SSaveGame, field_7B, 0x7B);
 
 	VALIDATE(SSaveGame, field_88, 0x88);
+
+	VALIDATE(SSaveGame, field_94, 0x94);
+	VALIDATE(SSaveGame, field_98, 0x98);
+	VALIDATE(SSaveGame, field_9C, 0x9C);
+	VALIDATE(SSaveGame, field_A0, 0xA0);
+	VALIDATE(SSaveGame, field_A4, 0xA4);
+	VALIDATE(SSaveGame, field_A8, 0xA8);
+	VALIDATE(SSaveGame, mDigitalMapping, 0xAC);
+	VALIDATE(SSaveGame, mAnalogueMapping, 0xB4);
 }
 
 void validate_SScore(void)

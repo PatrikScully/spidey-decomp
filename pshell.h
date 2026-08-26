@@ -27,12 +27,9 @@ public:
 	i32 field_1C;
 	i32 field_20;
 	i32 field_24;
-
-	PADDING(4);
-
+	i32 field_28;
 	i32 field_2C;
-
-	PADDING(0x34-0x2C-4);
+	i32 field_30;
 
 	EXPORT CExpandingBox(i32 a2,i32 a3,i32 a4,i32 a5,i32 a6,i32 a7,i32 a8,i32 a9,i32 a10);
 	EXPORT virtual ~CExpandingBox(void) OVERRIDE;
