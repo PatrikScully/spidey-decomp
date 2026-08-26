@@ -915,7 +915,7 @@ static u8* const gLowGraphicsPaletteDirty = (u8*)0x2E096E1; // set 1 here, clear
 static i32* const gLowGraphicsColor16 = (i32*)0x2E096D0;    // packed 16 bit color, read first thing in gsub_514ED0
 static i32 gLowGraphicsWidth;                 // 0x568F90, cached every call
 static i32 gLowGraphicsHeight;                // 0x568F98, cached, used to detect a size change
-static i32 gLowGraphicsColor16Cache;          // 0x568F94, early copy of the color param, not read back here
+static i32 gLowGraphicsPitch;                 // 0x568F94, cached every call, read back as a row stride in gsub_514ED0
 static f32 gLowGraphicsFadeColor;             // 0x2E04568
 static i32 gLowGraphicsColorRelated;          // 0x282854C
 static f32 gLowGraphicsHalfWidth;             // 0xADC4EC
@@ -932,10 +932,8 @@ static i32 gLowGraphicsViewHeight;            // 0x2828554
 // @NotOk
 // Low graphics scanline table setup, called once per BeginScene before the
 // MMX blit in gsub_514ED0. Reallocates gLowGraphicsRelated (16 bytes per
-// scanline) only when the height changes; pitch is read from the caller but
-// never used here, matches the original (dead parameter). 40 mnemonic diffs
-// left (down from 46 first draft), residue is register/scheduling choice
-// around the free/malloc branch and the final color16 store, see
+// scanline) only when the height changes; caches pitch as a plain row
+// stride read back later by gsub_514ED0. 41 mnemonic diffs left, see
 // dxsound.attempts.md.
 EXPORT void gsub_514DB0(
 		LPVOID lpSurface,
@@ -955,7 +953,7 @@ EXPORT void gsub_514DB0(
 	gLowGraphicsSurface = lpSurface;
 	gLowGraphicsHalfWidth = halfWidth;
 	*gLowGraphicsPaletteDirty = 1;
-	gLowGraphicsColor16Cache = color16;
+	gLowGraphicsPitch = pitch;
 
 	if (height != gLowGraphicsHeight)
 	{
@@ -985,7 +983,7 @@ EXPORT void gsub_514DB0(
 	}
 
 	gLowGraphicsPixelCount = gLowGraphicsWidth * gLowGraphicsHeight;
-	*gLowGraphicsColor16 = gLowGraphicsColor16Cache;
+	*gLowGraphicsColor16 = color16;
 }
 
 // @Ok
@@ -1146,11 +1144,124 @@ void DXPOLY_EnableTexAlpha(bool a1)
 #endif
 }
 
-// @MEDIUMTODO
-// low graphics related and uses mmx :O
+// Two callees this function needs that are outside our assigned range
+// (0x513FF0, 0x511860). Forwarded to the original rather than guessed at,
+// same pattern as ClearRegion in spool.cpp.
+typedef i32 (*func_513FF0_t)(i32, i32, void*, i32);
+static const func_513FF0_t gsub_513FF0 = (func_513FF0_t)0x00513FF0;
+typedef void (*func_511860_t)(i32, i32);
+static const func_511860_t gsub_511860 = (func_511860_t)0x00511860;
+
+// One entry of the per scanline table gsub_514DB0 allocates into
+// gLowGraphicsRelated (16 bytes/row). mReady gates whether the row
+// participates in the copy below; mTexA/mTexB are two chains of unknown
+// "texture" objects (offset 0x40 = next, 0x44 = a row-write callback taking
+// (node, dest), 0x48 = a u16 word count used to size the write). Struct
+// layout guessed from the disasm only, not confirmed against his IDB.
+struct SLowGraphicsScanline
+{
+	u8 mReady;
+	u8 pad[7];
+	void* mTexA;
+	void* mTexB;
+};
+struct SLowGraphicsTexNode
+{
+	u8 pad0[0x40];
+	SLowGraphicsTexNode* pNext;
+	void (*mWriteRow)(SLowGraphicsTexNode*, void*);
+	u16 mRowWords;
+};
+
+// @NotOk
+// Low graphics frame flush: builds an 8 bit RGB fade color from the packed
+// 16 bit gLowGraphicsColor16 (skips everything if it is negative), hands a
+// small local table of it to gsub_513FF0/gsub_511860 (both out of scope, not
+// attempted, real purpose unclear beyond "fog/fade related"), then walks
+// gLowGraphicsRelated's per scanline texture node chains and MMX-copies each
+// node's 0x40 byte row into the destination surface at gLowGraphicsSurface.
+// 276 mnemonic diffs, one honest first-pass attempt, not run through the
+// full matching discipline given how much of the callee/struct layout is
+// guesswork, not verified against decomp.me. See dxsound.attempts.md.
 void gsub_514ED0(void)
 {
-	printf("void gsub_514ED0(void)");
+	i32 color = *gLowGraphicsColor16;
+
+	if (color >= 0)
+	{
+		i32 color16 = color & 0xFFFF;
+
+		i32 r8 = ((color16 >> 11) & 0x1F) * 255 / 31;
+		i32 g8 = ((color16 >> 5) & 0x3F) * 255 / 63;
+		i32 b8 = (color16 & 0x1F) * 255 / 31;
+
+		f32 fadeShade = gLowGraphicsFadeColor / 128000.0f;
+
+		// Best effort only, exact field usage of this local table is not
+		// confirmed (see dxsound.attempts.md).
+		i32 fadeTable[5][7] = {0};
+		for (i32 i = 0; i < 5; i++)
+		{
+			fadeTable[i][0] = (i32)fadeShade;
+			fadeTable[i][1] = r8;
+			fadeTable[i][2] = g8;
+		}
+
+		if (gLowGraphicsPixelCount > 0)
+		{
+			for (i32 i = 3; i >= 0; i--)
+				fadeTable[i][3] = b8;
+
+			i32 result = gsub_513FF0(0, 0, fadeTable, 4);
+			if (result >= 3)
+			{
+				stateLog("%s", (char*)0x563D88);
+			}
+
+			gsub_511860(0, 0);
+		}
+	}
+
+	// This alignment nudge (round up to the next multiple of 8, unless
+	// already aligned) matches the disasm but its purpose here is unclear.
+	u8* alignedScratch = (u8*)0x2E086D0;
+	if (((u32)alignedScratch & 7) != 0)
+		alignedScratch = (u8*)(((u32)alignedScratch & ~7) + 8);
+
+	SLowGraphicsScanline* scanlines = (SLowGraphicsScanline*)gLowGraphicsRelated;
+	u8* dest = (u8*)gLowGraphicsSurface;
+
+	for (i32 y = 0; y < gLowGraphicsHeight; y++)
+	{
+		u8* rowDest = dest;
+
+		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+			rowDest = alignedScratch;
+
+		for (i32 which = 0; which < 2; which++)
+		{
+			SLowGraphicsTexNode* node = which == 0
+					? (SLowGraphicsTexNode*)scanlines[y].mTexA
+					: (SLowGraphicsTexNode*)scanlines[y].mTexB;
+
+			while (node)
+			{
+				node->mWriteRow(node, rowDest + node->mRowWords * 2);
+				node = node->pNext;
+			}
+		}
+
+		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+		{
+			// MMX 64 byte block copy, alignedScratch -> dest, matches the
+			// original's 8x movq loop.
+			memcpy(dest, alignedScratch, ((gLowGraphicsWidth * 2 + 0x3F) / 0x40) * 0x40);
+		}
+
+		dest += gLowGraphicsPitch;
+	}
+
+	*gLowGraphicsPaletteDirty = 0;
 }
 
 // @Ok
