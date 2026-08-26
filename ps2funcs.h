@@ -126,6 +126,13 @@ EXPORT void gte_ldopv2(VECTOR *a1);
 EXPORT void gte_ldlv0(const VECTOR *a1);
 EXPORT void gte_stsxy3(i32 *a1, i32 *a2, i32 *a3);
 EXPORT void gte_rtir(void);
+
+// unnamed GTE store, address 0x0046D9B0. called by Utils_CalculateSpatialAttenuation
+// right after gte_rtir(), stores 2 of the 3 result fields (offset 0 and offset 8 of
+// the destination are read by the caller, offset 4 is not). guess: another
+// store-long-vector variant next to gte_stlvnl/gte_stlvnl0/gte_stlvnl2.
+EXPORT void gsub_46D9B0(VECTOR *a1);
+
 EXPORT void M3dMaths_SetIdentityRotation(MATRIX *a1);
 EXPORT void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3);
 EXPORT void MulMatrix(MATRIX *a1, MATRIX *a2);

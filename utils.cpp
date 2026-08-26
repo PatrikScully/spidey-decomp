@@ -11,6 +11,7 @@
 #include "stubs.h"
 #include "ps2pad.h"
 #include "ps2gamefmv.h"
+#include "camera.h"
 
 extern CBody *EnvironmentalObjectList;
 extern CBody *ControlBaddyList;
@@ -184,11 +185,75 @@ void Utils_CalcWallPerps(CVector * a1,CVector * a2,CVector * a3)
 	}
 }
 
-// @SMALLTODO
-u32 Utils_CalculateSpatialAttenuation(CVector const *,i32,i32)
+// scratch rotation matrix for camera-relative transforms, same address CPlayer::RenderLookaroundReticle
+// uses (spidey.cpp, stru_56F224). 0x56F224 falls inside gMikeCamera[1] by struct offset (Focus.pad through
+// Angles/Transform, per SCamera's validated layout), so it looks like a coincidental overlap rather than
+// a real SCamera field, same class of thing tips.txt warns about ("global boundaries... unreliable").
+// Kept as its own address, matching the existing spidey.cpp precedent, instead of indexing into gMikeCamera[1].
+static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
+
+// @Ok
+// @AlmostMatching: 21 mnemonic diffs left (cmpsum.sh), all in the final stereo-pan pack in each
+// angle branch (both branches show the same shape). MSVC6 picks edx as the scratch copy of
+// atten there, ours picks edi; same instruction count (124 vs our 123) and same total byte
+// length (347), so this is register-coloring residue, not a missing store. 16 distinct source
+// hypotheses tried (logged in wt/utils.attempts.md, above the medium-function 15 minimum):
+// separate field-store vs constructor-call vs const-local for the camera position temp,
+// single-reused vs multi CVector locals, dx/dy/dz temps vs inline field exprs, moving
+// gte_SetRotMatrix before/after the delta vector build (this fixed the whole first half),
+// v.vx&&v.vz vs (v.vz|v.vx) zero check, shared vs per-branch pan computation (per-branch
+// matched, fixed a big chunk), and five orderings of the final hi/lo pack (lo-before-hi
+// fixed another chunk, further reordering did not move the last 21).
+u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 {
-    printf("Utils_CalculateSpatialAttenuation(CVector const *,i32,i32)");
-	return 0x28032025;
+	const CVector camPos(
+			gMikeCamera[0].Position.vx << 12,
+			gMikeCamera[0].Position.vy << 12,
+			gMikeCamera[0].Position.vz << 12);
+	i32 dist = Utils_CrapDist(*a1, camPos);
+
+	if (dist <= a2)
+		return 0xFFF0FFF;
+
+	if (dist >= a3)
+		return 0;
+
+	i32 atten = ((a3 - dist) * 4095) / a3;
+
+	gte_SetRotMatrix(gCameraViewMatrix);
+
+	i32 dx = (a1->vx >> 12) - gMikeCamera[0].Position.vx;
+	i32 dy = (a1->vy >> 12) - gMikeCamera[0].Position.vy;
+	i32 dz = (a1->vz >> 12) - gMikeCamera[0].Position.vz;
+
+	CVector v;
+	v.vx = dx;
+	v.vy = dy;
+	v.vz = dz;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&v));
+	gte_rtir();
+
+	gsub_46D9B0(reinterpret_cast<VECTOR*>(&v));
+
+	if (!(v.vz | v.vx))
+		return (atten << 16) | atten;
+
+	i32 angle = (1024 - ratan2(v.vz, v.vx)) & 0xFFF;
+
+	i32 hi, lo;
+	if (angle < 2048)
+	{
+		lo = atten - ((rcossin_tbl[angle & 0xFFF].sin * (atten / 2)) >> 12);
+		hi = atten;
+	}
+	else
+	{
+		hi = atten + ((rcossin_tbl[angle & 0xFFF].sin * (atten / 2)) >> 12);
+		lo = atten;
+	}
+
+	return (hi << 16) | lo;
 }
 
 // @Ok
