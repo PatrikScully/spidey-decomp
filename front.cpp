@@ -503,6 +503,13 @@ void CMenu::SetLine(char Line)
 	}
 }
 
+// Mac symbol Update__5CMenuFv, address 0x440600
+// @SMALLTODO
+void CMenu::Update(void)
+{
+	printf("CMenu::Update(void)");
+}
+
 // @Ok
 CMenu::~CMenu()
 {

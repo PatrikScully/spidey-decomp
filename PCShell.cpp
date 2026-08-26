@@ -12,6 +12,8 @@
 #include "db.h"
 #include "main.h"
 #include "utils.h"
+#include "ps2lowsfx.h"
+#include "DXinit.h"
 
 #include <cstring>
 
@@ -342,10 +344,235 @@ EXPORT void gsub_515850(void)
 #pragma auto_inline(on)
 #endif
 
-// @MEDIUMTODO
+// menu line text, addresses 0x54BBCC / 0x54BBD4 / 0x54BBD8. content unverified
+// (no access to the original data section), text is a guess based on what the
+// three lines do (resolution, colour depth, brightness).
+static char* STR_DISPLAY_RESOLUTION = "resolution";
+static char* STR_DISPLAY_COLOR_DEPTH = "colour depth";
+static char* STR_DISPLAY_BRIGHTNESS = "brightness";
+
+// title bar text, address 0x54B7CC. content unverified, guess.
+static char* STR_DISPLAY_OPTIONS_TITLE = "display options";
+
+// sprintf format strings, addresses 0x568868 (resolution line, 2 ints) and
+// 0x568864 (colour depth and brightness lines, reused for both, 1 int each).
+// content unverified, guesses based on the values passed to sprintf.
+static char* FMT_DISPLAY_RESOLUTION = "%dx%d";
+static char* FMT_DISPLAY_NUMBER = "%d";
+
+// pending colour depth chosen in the display options menu, applied on Confirm.
+// address 0x2E098E4, tentative name. Nearest idb_globals.txt neighbours are
+// 0x2E09810 gDisplayDeviceIndex, 0x2E09814 gMMXSupport and 0x2E098E8
+// gMissingCD; this address does not fall inside any of them.
+static u32 gPendingColorDepth;
+
+// pending resolution chosen in the display options menu, applied on Confirm.
+// addresses 0x2E096F8 / 0x2E0970C, tentative names. They fall between
+// idb_globals.txt's 0x2E096D8 gLowGraphicsRelated and 0x2E09710 "Data"
+// (our gDisplayModeContext), not inside either.
+static u32 gPendingResolutionX;
+static u32 gPendingResolutionY;
+
+// @NotOk
 void PCSHELL_DoDisplayOptions(void)
 {
-    printf("PCSHELL_DoDisplayOptions(void)");
+	CMenu* menu = new CMenu(0x10E, 0x6E, 2u, 0x100, 0x100, 0x14);
+
+	i32 brightness = gBrightnessRelated;
+
+	// eases the shell box towards x=384 every frame, starting at x=512
+	// (slides in from further right). the volatile write forces MSVC to
+	// store the immediate directly to the stack slot right here (matching
+	// the original), instead of homing it in a register for the whole
+	// function, which changes unrelated register allocation.
+	i32 easeX;
+	*(volatile i32*)&easeX = 0x200;
+
+	u32 depth = DXINIT_GetNextColorDepth(0);
+
+	if (depth != gPendingColorDepth)
+	{
+		u32 first = depth;
+
+		do
+		{
+			depth = DXINIT_GetNextColorDepth(depth);
+		} while (depth != first && depth != gPendingColorDepth);
+	}
+
+	gPendingColorDepth = depth;
+
+	menu->AddEntry(STR_DISPLAY_RESOLUTION);
+	menu->AddEntry(STR_DISPLAY_COLOR_DEPTH);
+	menu->AddEntry(STR_DISPLAY_BRIGHTNESS);
+
+	menu->scrollbar_zero = 1;
+	menu->Zoom(0);
+	menu->SetLine(0);
+
+	if (!g3DAccelator || !gMMXSupport)
+		menu->EntryEnable(1, 0);
+
+	gShellTitleBarRelated = 0;
+
+	for (;;)
+	{
+		i32 startVblanks = Vblanks;
+
+		gsub_430880();
+
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1, -1);
+
+		shell_optimized_func(easeX, 0xDE, 0);
+
+		Shell_DrawBackground();
+		Shell_DrawTitleBar(gShellTitleBarRelated, 0x26, STR_DISPLAY_OPTIONS_TITLE, 1, 0, 0x96, -21, 29);
+
+		if (menu->FinishedZooming())
+		{
+			char text[0x40];
+
+			PShell_SmallFont();
+
+			sprintf(text, FMT_DISPLAY_RESOLUTION, gPendingResolutionX, gPendingResolutionY);
+			Mess_DrawText(0x15E, 0x6D, text, 0, 0x1000);
+
+			if (!g3DAccelator || !gMMXSupport)
+				Mess_SetRGB(26, 23, 41, 0);
+
+			Mess_SetRGB(0x80, 0x80, 0x80, 0);
+
+			sprintf(text, FMT_DISPLAY_NUMBER, gPendingColorDepth);
+			Mess_DrawText(0x15E, 0x81, text, 0, 0x1000);
+
+			Mess_SetRGB(0x80, 0x80, 0x80, 0);
+
+			sprintf(text, FMT_DISPLAY_NUMBER, brightness);
+			Mess_DrawText(0x15E, 0x95, text, 0, 0x1000);
+
+			PShell_NormalFont();
+		}
+
+		menu->Display();
+
+		if (!(gRenderTest & 0x10) && gCursorSprite && PCINPUT_GetMouseStatus())
+		{
+			gCursorSprite->draw(gShellMouseX, gShellMouseY, 0, 0);
+		}
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		Pad_Update();
+
+		gShellTitleBarRelated = PShell_MoveTowards(gShellTitleBarRelated, 0xA4);
+		easeX = PShell_MoveTowards(easeX, 0x180);
+
+		menu->Update();
+
+		if (menu->FinishedZooming())
+		{
+			if (PCSHELL_CheckTriggers(0x10110, 1, 1))
+			{
+				G_SCONTROL->Start.Triggered = 0;
+				G_SCONTROL->X.Triggered = 0;
+
+				SFX_Play(0x23, 0x2000, 0);
+				DXINIT_SetDisplayOptions(gDxResolutionX, gDxResolutionY, gColorCount, 0, brightness);
+			}
+
+			if (PCSHELL_CheckTriggers(0x20220, 1, 1))
+			{
+				G_SCONTROL->Start.Triggered = 0;
+				G_SCONTROL->Circle.Triggered = 0;
+
+				SFX_Play(0x23, 0x2000, 0);
+				DXINIT_SetDisplayOptions(gDxResolutionX, gDxResolutionY, gColorCount, 0, brightness);
+
+				PCINPUT_SetMouseBounds(0, 0, gDxResolutionX - 32, gDxResolutionY - 32);
+				PCINPUT_SetMousePosition((gDxResolutionX - 32) >> 1, (gDxResolutionY - 32) >> 1);
+
+				break;
+			}
+
+			i32 line = menu->mLine;
+
+			if (line == 0)
+			{
+				if (PCSHELL_CheckTriggers(0xC00C, 1, 0))
+				{
+					G_SCONTROL->Right.Triggered = 0;
+					G_SCONTROL->Left.Triggered = 0;
+
+					u8 found;
+
+					if (PCSHELL_CheckTriggers(0x4004, 1, 1))
+					{
+						found = DXINIT_GetPrevResolution(&gPendingResolutionX, &gPendingResolutionY, gPendingColorDepth, 0, 0);
+					}
+					else
+					{
+						found = DXINIT_GetNextResolution(&gPendingResolutionX, &gPendingResolutionY, gPendingColorDepth, 0, 0);
+					}
+
+					if (found)
+						SFX_Play(0x1F, 0x2000, 0);
+				}
+			}
+
+			if (line == 1)
+			{
+				if (PCSHELL_CheckTriggers(0xC00C, 1, 0))
+				{
+					if (PCSHELL_CheckTriggers(0x4004, 1, 1))
+					{
+						gPendingColorDepth = DXINIT_GetPrevColorDepth(gPendingColorDepth);
+					}
+					else if (PCSHELL_CheckTriggers(0x8008, 1, 1))
+					{
+						gPendingColorDepth = DXINIT_GetNextColorDepth(gPendingColorDepth);
+					}
+
+					SFX_Play(0x1F, 0x2000, 0);
+
+					if (!DXINIT_GetNextResolution(&gPendingResolutionX, &gPendingResolutionY, gPendingColorDepth, 0, 1))
+					{
+						DXINIT_GetPrevResolution(&gPendingResolutionX, &gPendingResolutionY, gPendingColorDepth, 0, 1);
+					}
+				}
+			}
+
+			if (line == 2)
+			{
+				if (PCSHELL_CheckTriggers(0x4004, 1, 1) && brightness > 0)
+				{
+					brightness--;
+					SFX_Play(0x1F, 0x2000, 0);
+				}
+				else if (PCSHELL_CheckTriggers(0x8008, 1, 1) && brightness < 9)
+				{
+					brightness++;
+					SFX_Play(0x1F, 0x2000, 0);
+				}
+			}
+		}
+
+		gsub_430680();
+		WinYield();
+		Sleep(10);
+
+		Pause(startVblanks - Vblanks + 2);
+	}
+
+	Pad_ClearTriggers(G_SCONTROL);
+
+	delete menu;
+
+	SPIDEYDX_SaveSettings();
 }
 
 // @Ok

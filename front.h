@@ -76,6 +76,7 @@ public:
 	EXPORT void Zoom(i32);
 	EXPORT void Display(void);
 	EXPORT void KillBox(void);
+	EXPORT void Update(void);
 
 	CExpandingBox* ptr_to;
 	u16 menu_width;
