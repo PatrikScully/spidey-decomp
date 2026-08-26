@@ -1179,10 +1179,82 @@ CPlayer::~CPlayer(void)
     printf("CPlayer::~CPlayer(void)");
 }
 
-// @SMALLTODO
-void Spidey_BagHead(i32,i32)
+// @NotOk
+// known blocker: this calls print_if_false, which our compiler always
+// inlines (it is static in export.h) while the original calls it out of
+// line (see CLAUDE.md "print_if_false inlining" note). that alone rules
+// out a full match here, independent of anything else in this function.
+// new globals (no idb_globals.txt entry, tentative names from usage):
+// gBagHeadModeOne/Two: bool flags for a2==1 / a2==2, stored at 0x60CFF4/F8.
+// gCurrentCostumeRegionIndex (0x6B4679): u8 index into CItemRelatedList
+// (already named in ob.h, stride 0x44/68, same array Spidey_SwapSuitTextures
+// indexes the same way).
+// gBagHeadScaleFactor (0x556280): stores a1 verbatim, write-only here.
+// gBagHeadOffsetTable1/2 (0x556284 / 0x556368): i16[3]-per-entry lookup
+// tables selected by a2==1 / a2==2, walked in lockstep with the vertex loop.
+// residue beyond print_if_false: the source pointer (into gSpideyHeadModel)
+// is computed in the original via a two-step subtract-then-add that
+// algebraically cancels down to (gSpideyHeadModel+2); written here as the
+// simplified direct form, which is very unlikely to reproduce the exact
+// original instruction sequence, but it is functionally identical to it.
+static i32 * const gBagHeadModeOne = (i32*)0x0060CFF4;
+static i32 * const gBagHeadModeTwo = (i32*)0x0060CFF8;
+static u8 * const gCurrentCostumeRegionIndex = (u8*)0x006B4679;
+static i32 * const gBagHeadScaleFactor = (i32*)0x00556280;
+static i16 * const gBagHeadOffsetTable1 = (i16*)0x00556284;
+static i16 * const gBagHeadOffsetTable2 = (i16*)0x00556368;
+
+void Spidey_BagHead(i32 a1, i32 a2)
 {
-    printf("Spidey_BagHead(i32,i32)");
+	print_if_false(gSpideyHeadModel != 0, "Error");
+
+	*gBagHeadModeOne = (a2 == 1);
+	*gBagHeadModeTwo = (a2 == 2);
+
+	u8 regionIndex = *gCurrentCostumeRegionIndex;
+	*gBagHeadScaleFactor = a1;
+
+	u8 *pRegion = (u8*)CItemRelatedList + regionIndex * 0x44;
+	u8 *pSub = *(u8**)(pRegion + 0x1C);
+	i16 count = *(i16*)(pSub + 2);
+	i16 *pDest = (i16*)(pSub + 0x1C);
+
+	if (count > 0)
+	{
+		u8 *pSrc = (u8*)gSpideyHeadModel + 2;
+		i16 *pTable1 = gBagHeadOffsetTable1;
+		i16 *pTable2 = gBagHeadOffsetTable2;
+
+		for (i32 i = count; i != 0; i--)
+		{
+			if (!(*(pSrc + 4) & 0x12))
+			{
+				if (a2 == 1)
+				{
+					pDest[0] = pTable1[0];
+					pDest[1] = pTable1[1];
+					pDest[2] = pTable1[2];
+				}
+				else if (a2 == 2)
+				{
+					pDest[0] = pTable2[0];
+					pDest[1] = pTable2[1];
+					pDest[2] = pTable2[2];
+				}
+				else
+				{
+					pDest[0] = (i32)(*(i16*)(pSrc - 2)) * a1 >> 12;
+					pDest[1] = (i32)(*(i16*)(pSrc)) * a1 >> 12;
+					pDest[2] = (i32)(*(i16*)(pSrc + 2)) * a1 >> 12;
+				}
+			}
+
+			pDest = (i16*)((u8*)pDest + 8);
+			pSrc += 8;
+			pTable1 = (i16*)((u8*)pTable1 + 6);
+			pTable2 = (i16*)((u8*)pTable2 + 6);
+		}
+	}
 }
 
 // @Ok
