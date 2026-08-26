@@ -806,10 +806,113 @@ CChopper::~CChopper(void)
 		SFX_Stop(this->field_324);
 }
 
-// @MEDIUMTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4346880.bin (missile homing AI:
+// timer decay, difficulty-based speed ramp, aim via Utils_CalcAim/
+// Utils_TurnTowards, step toward target, hit check, then either pulse the
+// target's links and Explode, or re-target to the next type-1002 link).
+// The stepping loop (0x425572-0x42562f) and the final link-walk branch are
+// best-effort reconstructions of the control flow shape, not fully
+// instruction-verified. cmpsum: 200 mnemonic diffs, first divergence right at
+// the field_120 timer decrement (source-level if/else shape differs from the
+// original's branchless sub/clamp). 1 attempt, not iterated. Needs real work.
 void CChopperMissile::AI(void)
 {
-	printf("void CChopperMissile::AI(void)");
+	if (this->field_120)
+	{
+		if (this->field_120 <= this->field_80)
+			this->field_120 = 0;
+		else
+			this->field_120 -= this->field_80;
+	}
+
+	if (this->field_FC == 2)
+		return;
+
+	if (DifficultyLevel == 1 || DifficultyLevel == 0)
+	{
+		if (this->field_108 < 0x2A000)
+		{
+			this->field_108 += this->field_80 << 13;
+			if (this->field_108 > 0x2A000)
+				this->field_108 = 0x2A000;
+		}
+	}
+	else
+	{
+		if (this->field_108 < 0x40000)
+		{
+			this->field_108 += this->field_80 << 13;
+			if (this->field_108 > 0x40000)
+				this->field_108 = 0x40000;
+		}
+	}
+
+	CSVector aimDir;
+	aimDir.vx = 0;
+	aimDir.vy = 0;
+	aimDir.vz = 0;
+	Utils_CalcAim(&aimDir, &this->mPos, &this->field_110);
+
+	CSVector newAngles;
+	if (Utils_CrapDist(this->mPos, this->field_110) > 0x200)
+		Utils_TurnTowards(aimDir, &newAngles, &this->mAngVel, this->mAngAcc, this->field_108 >> 12);
+	else
+		newAngles = aimDir;
+
+	this->mAngles = newAngles;
+
+	Utils_GetVecFromMagDir(&this->mVel, this->field_108 >> 12, &this->mAngles);
+
+	bool hitTarget = false;
+	CVector pos = this->mPos;
+
+	for (i32 steps = 0; steps < this->field_80; steps += 2)
+	{
+		pos += this->mVel * 2;
+
+		if (Utils_Dist(pos, this->field_110) < 0x80)
+		{
+			hitTarget = true;
+			break;
+		}
+	}
+
+	this->mPos = pos;
+	this->field_F8->SetPos(this->mPos);
+	SFX_ModifyPos(this->field_10C, &this->mPos, 0);
+
+	if (!hitTarget)
+		return;
+
+	if (this->field_FC != 0 && this->field_FC != 1)
+		return;
+
+	u16* LinksPointer = Trig_GetLinksPointer(this->field_100);
+
+	if (this->field_FC == 0)
+	{
+		if (LinksPointer[0])
+		{
+			for (i32 i = 0; i < LinksPointer[0]; i++)
+				Trig_SendPulseToNode(LinksPointer[1 + i]);
+		}
+		this->Explode();
+	}
+	else
+	{
+		if (LinksPointer[0])
+		{
+			i32 v9 = LinksPointer[1];
+			if (*G_OFFSETLIST[v9] == 1002)
+			{
+				this->field_100 = v9;
+				Trig_GetPosition(&this->field_110, v9);
+				return;
+			}
+		}
+		this->Explode();
+	}
 }
 
 // @Ok
@@ -1650,6 +1753,7 @@ void validate_CChopperMissile(void)
 	VALIDATE(CChopperMissile, field_FC, 0xFC);
 	VALIDATE(CChopperMissile, field_100, 0x100);
 	VALIDATE(CChopperMissile, field_104, 0x104);
+	VALIDATE(CChopperMissile, field_108, 0x108);
 
 	VALIDATE(CChopperMissile, field_10C, 0x10C);
 

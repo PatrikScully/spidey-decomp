@@ -251,8 +251,7 @@ class CChopperMissile : public CBody
 		i32 field_FC;
 		i32 field_100;
 		i32 field_104;
-
-		PADDING(4);
+		i32 field_108;
 
 		i32 field_10C;
 		CVector field_110;
