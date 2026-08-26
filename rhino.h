@@ -57,7 +57,10 @@ public:
 	EXPORT void StompGround(void);
 	EXPORT void StuckInWall(void);
 
-	PADDING(0x344 - 0x324);
+	i32 field_324;
+	i32 field_328;
+
+	PADDING(0x344 - 0x328 - 4);
 
 	i32 field_344;
 	i32 field_348;

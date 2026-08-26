@@ -554,11 +554,123 @@ void Rhino_RelocatableModuleClear(void)
 }
 
 
-// @MEDIUMTODO
-i32 CRhino::DetermineFightState(i32)
+// @NotOk
+// Logic and field stores match (verified against the disasm instruction by
+// instruction). Residue: this->mPlayerDist is declared u16 in ob.h (CBody,
+// offset 0xE4), but the original reads/compares it with the full 32-bit eax
+// register ("mov eax,[esi+0E4h]" then "cmp eax,1388h"/"cmp eax,0C8h" etc,
+// not movzx+16-bit ops), which only happens if the real field is 32-bit.
+// mPlayerDist is shared CBody state used elsewhere (ob.cpp, powerup.cpp), so
+// I did not change its type from this single file. That single 16-vs-32-bit
+// mismatch changes instruction encoding size and cascades into every jump
+// target after it in this function. A second, smaller residue: the shared
+// "return 0" epilogue in the original (used by 4 different early-return
+// sites) compiles here as separate inlined epilogues per site. Attempts: (1)
+// initial translation matched field order but stack frame was 0xC too big
+// (SMoveToInfo local instead of a plain CVector, fixed); (2) LineOfSightCheck
+// was still a printf stub and got inlined into this function, masking all
+// downstream codegen (fixed by giving it a real, if incomplete, body, see
+// its own tag); (3) swapped the LineOfSightCheck if/else branch order to
+// match the original's fallthrough-is-false layout (fixed one cluster); (4)
+// manual sar/xor/sub abs() instead of the cstdlib abs() call, to match the
+// original's idiom instead of the cdq-based intrinsic expansion (fixed).
+i32 CRhino::DetermineFightState(i32 a2)
 {
-	printf("i32 CRhino::DetermineFightState(i32)");
-	return 0x28072024;
+	i32 dy = this->mPos.vy - MechList->mPos.vy;
+	i32 originalFlags = this->field_31C.bothFlags;
+	i32 sign = dy >> 31;
+	i32 absDy = (dy ^ sign) - sign;
+
+	if (absDy > 0x64000)
+	{
+		if (!this->field_324)
+		{
+			this->field_324 = Utils_GetValueFromDifficultyLevel(400, 200, 120, 120);
+		}
+		return 0;
+	}
+
+	if (!this->LineOfSightCheck(&MechList->mPos, 1))
+	{
+		if (this->field_1F0)
+		{
+			return 0;
+		}
+
+		CVector v;
+		v.vx = 0;
+		v.vy = 0;
+		v.vz = 0;
+		this->GetWaypointNearTarget(&MechList->mPos, 0x12C000, this->field_21D, &v);
+		this->field_21D++;
+
+		if (Utils_CrapXZDist(this->mPos, v) < 0x104)
+		{
+			return 0;
+		}
+
+		if (this->PathCheck(&this->mPos, &v, 0, 100))
+		{
+			return 0;
+		}
+
+		this->field_1A8[1] = v;
+		this->field_1F0 = 1;
+		this->field_31C.bothFlags = 1;
+		this->dumbAssPad = 0;
+		this->field_218 |= 0x10;
+		return 1;
+	}
+	else
+	{
+		if (this->field_218 & 0x10)
+		{
+			this->PlayXAPlease(0x12, 1, 1);
+			this->field_218 &= ~0x10;
+		}
+
+		if (gAttackRelated - this->field_358 < 0x96 && MechList->field_AD4)
+		{
+			this->field_31C.bothFlags = 0xD;
+			this->dumbAssPad = 0;
+		}
+		else if (this->mPlayerDist < 0x1388)
+		{
+			if (MechList->field_E1C & 0x80)
+			{
+				return 0;
+			}
+
+			if (MechList->field_E1C & 0x800000)
+			{
+				if (this->mPlayerDist < 0xC8)
+				{
+					return 0;
+				}
+				this->field_31C.bothFlags = 5;
+			}
+			else if (this->mPlayerDist < 0xC8)
+			{
+				this->field_31C.bothFlags = 6;
+			}
+			else if (this->mPlayerDist < 0x1F4)
+			{
+				this->field_31C.bothFlags = 5;
+			}
+			else
+			{
+				this->field_31C.bothFlags = a2 ? 8 : 7;
+			}
+
+			this->dumbAssPad = 0;
+		}
+	}
+
+	if (originalFlags != this->field_31C.bothFlags)
+	{
+		this->Baddy_SendSignal();
+	}
+	return originalFlags != this->field_31C.bothFlags;
 }
 
 // @Ok
@@ -973,6 +1085,9 @@ void CRhinoNasalSteam::Move(void)
 
 void validate_CRhino(void){
 	VALIDATE_SIZE(CRhino, 0x424);
+
+	VALIDATE(CRhino, field_324, 0x324);
+	VALIDATE(CRhino, field_328, 0x328);
 
 	VALIDATE(CRhino, field_344, 0x344);
 	VALIDATE(CRhino, field_348, 0x348);
