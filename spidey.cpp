@@ -2122,33 +2122,55 @@ void spideyLog(char *,...)
     printf("spideyLog(char *,...)");
 }
 
-// @MEDIUMTODO
-// understand ppModels
+// @NotOk
+// gCostumeRegionEntries[Region * 17] holds a per-region pointer table (same
+// table Spidey_SwapSuitTextures/Spidey_BagHead already use); index 7 is the
+// head model entry. entry+2 (u16) is the vertex/part count, entry+0x1C is
+// the raw data the copy pulls from. DCMem_New args (size, 1, 1, 0, 1)
+// confirmed against the push order in the disassembly.
+// residue: 22 mnemonic diffs, all downstream of one thing: the original
+// compiles the count*8-byte copy into a bare `rep movsd` with no remainder
+// handling (dword count computed via a reused decremented register, then
+// masked with 0x3FFFFFFE, which is a no-op for realistic sizes). every
+// tried source shape that reaches `rep movsd` at all (memcpy with a runtime
+// byte count, `size*8`, `size<<3`, or a byte count precomputed into its own
+// variable) always adds the standard MSVC6 remainder tail (`shr ecx,2; rep
+// movsd; and ecx,3; rep movsb`), confirmed identical to the already-matched
+// Bitmap256::Bitmap256 (0x413670) memcpy call. every tried plain pointer
+// loop (dword while-loop, dword for-loop with array indexing, do-while
+// copying 2 dwords per iteration, the original sketch's 4-u16-field-store
+// loop) compiles to a real load/store loop instead of `rep movsd` at all,
+// since this compiler only lowers to `rep movsd` for an actual memcpy call.
+// attempts (9): memcpy(dst,src,8*size) -> rep movsd + tail, 31 diffs;
+// u16 4-field manual loop (matches an earlier sketch) -> real loop, 31
+// diffs; struct-of-2-u32 array assignment loop -> real per-field loop, no
+// movsd; dword pointer while(n--) *d++=*s++ -> real loop; dword pointer
+// for(i<n) dst[i]=src[i] -> real loop, best result, 22 diffs (kept); if
+// (size) { do {2 stores} while(--size); } -> real loop, 27 diffs; memcpy
+// with count precomputed then count*4 -> same as plain memcpy, 31 diffs;
+// memcpy(dst,src,size<<3) -> same tail, 29 diffs. kept the dword
+// for-loop version (22 diffs) as the closest honest translation; the
+// remaining diffs are the prologue push order (original pushes
+// ebx/esi/edi unconditionally up front, ours defers push until the
+// registers are actually needed) which is fallout of never reaching
+// `rep movsd`, not a separate issue.
 void Spidey_CopyHeadModel(i32 Region)
 {
-	// @FIXME
-	return;
-
 	if (!gSpideyHeadModel)
 	{
-		u16 * ptr = reinterpret_cast<u16*>(PSXRegion[Region].ppModels[7]);
+		void **pEntry = reinterpret_cast<void**>(gCostumeRegionEntries[Region * 17]);
+		u16 *ptr = reinterpret_cast<u16*>(pEntry[7]);
 		u16 size = ptr[1];
 
-		u16* result = static_cast<u16*>(DCMem_New(8 * size, 1, 1, 0, 1));
+		u16 *result = static_cast<u16*>(DCMem_New(8 * size, 1, 1, 0, 1));
 		gSpideyHeadModel = static_cast<void*>(result);
 
-		for (u16 *i = &reinterpret_cast<u16*>(ptr)[14];
-				size-- != 0;
-				i += 4)
-		{
-			result[0] = i[0];
-			result[1] = i[1];
-			result[2] = i[2];
-			result[3] = i[3];
+		u32 *dst = reinterpret_cast<u32*>(result);
+		u32 *src = reinterpret_cast<u32*>(reinterpret_cast<u8*>(ptr) + 0x1C);
+		i32 n = size * 2;
 
-			result += 4;
-		}
-
+		for (i32 i = 0; i < n; i++)
+			dst[i] = src[i];
 	}
 }
 
