@@ -11,6 +11,9 @@
 #include "ps2redbook.h"
 #include "spidey.h"
 #include "m3dzone.h"
+#include "m3dutils.h"
+#include "ps2m3d.h"
+#include "message.h"
 #include "web.h"
 #include "ai.h"
 #include "ps2lowsfx.h"
@@ -138,21 +141,475 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 EXPORT CVector gCarnageVector;
 
 // @MEDIUMTODO
+// callee CCarnage::ThrowBlades needs. Not one of this file's assigned functions, stubbed only
+// so ThrowBlades compiles and can be attempted (leaf-first rule).
+CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
+{
+	printf("CSymbioteBlade::CSymbioteBlade(const CVector&, const CVector&)");
+}
+
+// tentative: XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0).
+// Not in idb_globals.txt yet, values are a guess (indices go up to Rnd(6)&~1, so needs 6 entries).
+EXPORT i32 gCarnageGettingGrabbedXa[6] = { 0x48, 6, 0x48, 6, 0x48, 6 };
+EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x11, 6, 0x11, 6, 0x11, 6 };
+
+// tentative: XA lines played while winding up to throw blades (CCarnage::ThrowBlades case 0).
+EXPORT i32 gCarnageThrowBladesXa[6] = { 0x48, 7, 0x48, 7, 0x48, 7 };
+EXPORT i32 gCarnageThrowBladesWhatIfXa[6] = { 0x11, 7, 0x11, 7, 0x11, 7 };
+
+// @NotOk
+// residue: case 3 (CVector normal/scale/add math not fully reverse engineered), see attempts file.
 void CCarnage::GettingGrabbed(void)
 {
-    printf("CCarnage::GettingGrabbed(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			this->mVel.vz = 0;
+			this->mVel.vy = 0;
+			this->mVel.vx = 0;
+
+			this->field_218 &= ~7;
+			this->RunAnim(0x1Du, 0, -1);
+
+			if (gWhatIf)
+			{
+				i32 idx = Rnd(6) & ~1;
+				this->PlayXA(gCarnageGettingGrabbedWhatIfXa[idx], gCarnageGettingGrabbedWhatIfXa[idx + 1], 60);
+			}
+			else
+			{
+				i32 idx = Rnd(6) & ~1;
+				this->PlayXA(gCarnageGettingGrabbedXa[idx], gCarnageGettingGrabbedXa[idx + 1], 60);
+			}
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 1:
+		{
+			typedef u8 (CPlayer::*GrabUpdateFn)(CVector*, i16*);
+			union { GrabUpdateFn fn; u32 addr; } u;
+			u.addr = 0x004BB810;
+			u8 grabbed = (MechList->*u.fn)(&this->mPos, &this->mAngles.vy);
+
+			if (grabbed && (this->field_2A8 & 0x40))
+			{
+				if (MechList->field_E1C & 0x4000000)
+				{
+					if (this->mAnim != 0x1F)
+						this->RunAnim(0x1F, 0, -1);
+					return;
+				}
+
+				if (!this->mAnimFinished)
+					return;
+
+				if (MechList->field_E1C == 0x8000000)
+					return;
+
+				this->RunAnim(0x1E, 0, -1);
+				return;
+			}
+
+			this->field_2A8 &= ~0x40;
+			this->RunAnim(0x22u, 0, -1);
+
+			this->field_324 = 0;
+			new CAIProc_MonitorAttack(this, 0xD, 0x38000, 6, 0x10);
+
+			if (gWhatIf)
+			{
+				i32 idx = Rnd(4) & ~1;
+				this->PlayXA(gCarnageWhatIfXa[idx], gCarnageWhatIfXa[idx + 1], 60);
+			}
+			else
+			{
+				i32 idx = Rnd(4) & ~1;
+				this->PlayXA(gCarnageXa[idx], gCarnageXa[idx + 1], 60);
+			}
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 2:
+		{
+			if (this->mAnimFinished && MechList->field_E1C != 0x8000000)
+				this->RunAnim(0x1Eu, 0, -1);
+
+			this->mAngles.vy = MechList->mAngles.vy;
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 3:
+		{
+			if (this->field_288 & 0x10)
+			{
+				this->field_288 &= ~0x10;
+
+				SHitInfo hitInfo;
+				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
+				hitInfo.field_0 = 0xE;
+				hitInfo.field_4 = 0xB;
+				hitInfo.field_8 = 0xC;
+
+				MechList->Hit(&hitInfo);
+			}
+
+			if (this->field_128 >= 0xA)
+			{
+				if (!(this->field_324 & 1))
+				{
+					this->field_324 |= 1;
+					SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+				}
+			}
+
+			if (this->field_128 < 0xA)
+			{
+				CVector delta;
+				delta.vx = this->mPos.vx - MechList->mPos.vx;
+				delta.vy = 0;
+				delta.vz = this->mPos.vz - MechList->mPos.vz;
+
+				if (delta.Length() < 0x80)
+				{
+					CVector scaled = delta * 12;
+					VectorNormal(reinterpret_cast<VECTOR*>(&scaled), reinterpret_cast<VECTOR*>(&scaled));
+					CVector target = MechList->mPos + scaled;
+					this->mPos = target;
+				}
+			}
+
+			if (this->field_128 > 0xA)
+			{
+				if (this->field_194 & 0x40000)
+				{
+					this->field_194 &= ~0x40000;
+					this->field_194 |= 0x20000;
+				}
+			}
+
+			if (!this->mAnimFinished)
+				return;
+
+			this->field_194 &= ~0x20000;
+			this->field_194 |= 0x40000;
+			this->RunAnim(0, 0, -1);
+
+			this->field_31C.bothFlags = 2;
+			this->dumbAssPad = 0;
+			this->mAngles.vy = (this->mAngles.vy - 0x800) & 0xFFF;
+			break;
+		}
+
+		default:
+			DoAssert(0, "Unknown state");
+			break;
+	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: not fully verified against a rebuild yet, see attempts file. Structural translation of a
+// 6-way switch(dumbAssPad); needs the new CSymbioteBlade stub above (leaf callee, out of this file's
+// assigned list).
 void CCarnage::ThrowBlades(void)
 {
-    printf("CCarnage::ThrowBlades(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			this->field_218 |= 4;
+
+			if (this->mAnim != 0x25)
+			{
+				this->RunAnim(0x25u, 0, -1);
+
+				if (gWhatIf)
+				{
+					i32 idx = Rnd(6) & ~1;
+					this->PlayXA(gCarnageThrowBladesWhatIfXa[idx], gCarnageThrowBladesWhatIfXa[idx + 1], 60);
+				}
+				else
+				{
+					i32 idx = Rnd(6) & ~1;
+					this->PlayXA(gCarnageThrowBladesXa[idx], gCarnageThrowBladesXa[idx + 1], 60);
+				}
+
+				return;
+			}
+
+			if (this->field_128 < 0xA)
+				return;
+
+			SHook hook;
+			hook.Part.vx = 0;
+			hook.Part.vy = 0;
+			hook.Part.vz = 0;
+			hook.Offset = 0x11;
+
+			VECTOR hookPos;
+			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+
+			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 1:
+		{
+			if (!this->mAnimFinished)
+				return;
+
+			this->RunAnim(5, 0, -1);
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 2:
+		{
+			if (this->field_128 < 0xA)
+				return;
+
+			SHook hook;
+			hook.Part.vx = 0;
+			hook.Part.vy = 0;
+			hook.Part.vz = 0;
+			hook.Offset = 0xD;
+
+			VECTOR hookPos;
+			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+
+			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 3:
+		{
+			if (this->field_128 < 0x1A)
+				return;
+
+			SHook hook;
+			hook.Part.vx = 0;
+			hook.Part.vy = 0;
+			hook.Part.vz = 0;
+			hook.Offset = 0x11;
+
+			VECTOR hookPos;
+			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+
+			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 4:
+		{
+			if (!this->mAnimFinished)
+				return;
+
+			if (MechList->field_E1C & 0x800000)
+			{
+				this->field_218 &= ~4;
+				this->RunAnim(0x26u, 0, -1);
+				this->dumbAssPad++;
+				break;
+			}
+
+			CSVector aim1;
+			Utils_CalcAim(&aim1, &gCarnageVector, &this->mPos);
+
+			CSVector aim2;
+			Utils_CalcAim(&aim2, &gCarnageVector, &MechList->mPos);
+
+			i32 diff = aim2.vy - aim1.vy;
+			if (diff > 0x800)
+				diff -= 0x1000;
+			else if (diff < -0x800)
+				diff += 0x1000;
+
+			if (my_abs(diff) < 0x17C && !MechList->field_AD4)
+			{
+				this->RunAnim(0x26u, 0, -1);
+				this->dumbAssPad++;
+				break;
+			}
+
+			if (Rnd(4) != 0)
+			{
+				this->RunAnim(5, 0, -1);
+				this->dumbAssPad -= 2;
+			}
+			else
+			{
+				this->field_218 &= ~4;
+				this->dumbAssPad++;
+			}
+			break;
+		}
+
+		case 5:
+		{
+			if (!this->mAnimFinished)
+				return;
+
+			this->field_31C.bothFlags = 2;
+			this->dumbAssPad = 0;
+			break;
+		}
+
+		default:
+			DoAssert(0, "Unknown state");
+			break;
+	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: not fully verified against a rebuild yet, see attempts file. Master per-frame AI dispatcher:
+// physics/shadow update, pending-message processing loop (message type dispatch approximated, the
+// exact type constants are a guess since they only drive a data jump table, not comparable bytes),
+// then the big switch(field_31C.bothFlags) that calls into the other CCarnage behaviour methods, then
+// a "web wrap" CNonRenderedBit lazily created via Mem_MakeHandle (tail section is a rough approximation,
+// the raw disasm around it was not fully understood).
 void CCarnage::AI(void)
 {
-    printf("CCarnage::AI(void)");
+	if (this->field_340)
+	{
+		this->field_340 -= this->field_80;
+		if (this->field_340 < 0)
+			this->field_340 = 0;
+	}
+
+	i32 state = this->field_31C.bothFlags;
+	this->field_194 = 0x44000;
+
+	print_if_false(1, "AI");
+
+	if (state == 0x2000)
+		CameraList->field_2A8 = 0;
+	else
+		CameraList->field_2A8 = 0x80;
+
+	this->DoSonicBubbleProcessing();
+	M3d_BuildTransform(this);
+	this->DoPhysics();
+
+	this->field_364 = this->mPos.vy + (this->field_21E << 12);
+	this->DoMGSShadow();
+
+	CMessage *msg = this->pMessage;
+	if (msg)
+	{
+		do
+		{
+			i32 current = this->field_31C.bothFlags;
+			if (current != 0x800)
+			{
+				switch (msg->field_14 - 5)
+				{
+					case 0:
+					case 1:
+						if (this->field_104.pWhatever)
+						{
+							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_104));
+							if (effect)
+								effect->Burst();
+							this->field_104.pWhatever = 0;
+						}
+						break;
+
+					case 2:
+					case 3:
+						if (this->field_10C.pWhatever)
+						{
+							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_10C));
+							if (effect)
+								effect->Burst();
+							this->field_10C.pWhatever = 0;
+						}
+						break;
+
+					case 4:
+					case 5:
+					case 6:
+						if (current == 0x80)
+						{
+							this->field_1F8 = 0;
+							this->dumbAssPad = 2;
+						}
+						else
+						{
+							this->field_218 &= ~7;
+							this->mVel.vz = 0;
+							this->mVel.vy = 0;
+							this->mVel.vx = 0;
+							this->field_31C.bothFlags = 0x80;
+							this->dumbAssPad = 0;
+						}
+						break;
+
+					default:
+						this->field_31C.bothFlags = 0x100;
+						this->dumbAssPad = 0;
+						break;
+				}
+			}
+
+			msg->field_10 |= 1;
+			msg = msg->mNext;
+		} while (msg);
+	}
+
+	this->CleanUpMessages(0, 0);
+
+	if (this->mAIProcList)
+		this->mAIProcList->Execute();
+
+	this->CleanUpAIProcList(0);
+
+	if (this->field_328 > this->field_80)
+	{
+		this->field_328 -= this->field_80;
+
+		if (!this->field_32C)
+		{
+			CNonRenderedBit *wrap = new CNonRenderedBit();
+			if (wrap)
+			{
+				print_if_false(this != 0, "AI");
+				print_if_false(this->mType == 0x13A, "AI");
+				this->field_32C = wrap;
+			}
+			else
+			{
+				this->field_32C = 0;
+			}
+		}
+	}
+	else
+	{
+		this->field_328 = 0;
+
+		if (this->field_32C)
+		{
+			delete reinterpret_cast<CNonRenderedBit*>(this->field_32C);
+			this->field_32C = 0;
+		}
+	}
 }
 
 // @MEDIUMTODO
@@ -878,10 +1335,128 @@ void CCarnage::DoSonicBubbleProcessing(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Same MGS-shadow idiom as CBlackCat::DoMGSShadow (blackcat.cpp): 4 hook positions rotated into
+// local space to get an X/Z footprint box, then a vertical offset rotated by the body matrix gives
+// the world space shadow center, applied to a lazily-created CQuadBit. CCarnage additionally guards
+// on mFlags bit 0 and field_364, tearing down field_368 (the shadow quad) and returning early when
+// either is set (jump table target 0x42036B in the original). Hook ids are 3, 6, 0x11, 0xD (different
+// from CBlackCat's 3, 6, 13, 9). Not yet matching, see attempts file.
 void CCarnage::DoMGSShadow(void)
 {
-	printf("void CCarnage::DoMGSShadow(void)");
+	if ((this->mFlags & 1) || this->field_364 == -1)
+	{
+		delete this->field_368;
+		this->field_368 = 0;
+		return;
+	}
+
+	SHook hook;
+	VECTOR pos[4];
+	pos[0].vx = pos[0].vy = pos[0].vz = 0;
+	pos[1].vx = pos[1].vy = pos[1].vz = 0;
+	pos[2].vx = pos[2].vy = pos[2].vz = 0;
+	pos[3].vx = pos[3].vy = pos[3].vz = 0;
+
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	hook.Offset = 3;
+	M3dUtils_GetDynamicHookPosition(&pos[0], this, &hook);
+
+	hook.Offset = 6;
+	M3dUtils_GetDynamicHookPosition(&pos[1], this, &hook);
+
+	hook.Offset = 0x11;
+	M3dUtils_GetDynamicHookPosition(&pos[2], this, &hook);
+
+	hook.Offset = 0xD;
+	M3dUtils_GetDynamicHookPosition(&pos[3], this, &hook);
+
+	i32 height = this->field_21E << 12;
+
+	CVector box[4];
+	box[0] = *reinterpret_cast<CVector*>(&pos[0]);
+	box[0] -= this->mPos;
+	box[1] = *reinterpret_cast<CVector*>(&pos[1]);
+	box[1] -= this->mPos;
+	box[2] = *reinterpret_cast<CVector*>(&pos[2]);
+	box[2] -= this->mPos;
+	box[3] = *reinterpret_cast<CVector*>(&pos[3]);
+	box[3] -= this->mPos;
+
+	MATRIX localMat;
+	M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+	gte_SetRotMatrix(&localMat);
+
+	i32 maxX = 0x20;
+	i32 minX = box[0].vx;
+	i32 maxZ = box[0].vz;
+	i32 minZ = box[0].vz;
+	i32 i;
+
+	for (i = 0; i < 4; i++)
+	{
+		box[i] >>= 12;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&box[i]));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&box[i]));
+
+		if (box[i].vx > maxX)
+		{
+			maxX = box[i].vx;
+		}
+		else if (box[i].vx < minX)
+		{
+			minX = box[i].vx;
+		}
+
+		if (box[i].vz > maxZ)
+		{
+			maxZ = box[i].vz;
+		}
+		else if (box[i].vz < minZ)
+		{
+			minZ = box[i].vz;
+		}
+	}
+
+	CVector heightOffset;
+	heightOffset.vx = 0;
+	heightOffset.vy = height;
+	heightOffset.vz = 0;
+
+	heightOffset >>= 12;
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&heightOffset));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&heightOffset));
+
+	gte_SetRotMatrix(&this->mTransform);
+
+	i32 ry = this->field_364;
+
+	CVector corners[4];
+	for (i = 0; i < 4; i++)
+	{
+		corners[i].vx = this->mPos.vx + heightOffset.vx;
+		corners[i].vy = ry;
+		corners[i].vz = this->mPos.vz + heightOffset.vz;
+	}
+
+	if (!this->field_368)
+	{
+		TotalBitUsage = 0;
+		this->field_368 = new CQuadBit();
+		TotalBitUsage = -1;
+
+		this->field_368->SetTexture(0u, 0u);
+	}
+
+	this->field_368->mFrigDeltaZ = 0x20;
+	this->field_368->SetTransparency(0x40);
+	this->field_368->SetSubtractiveTransparency();
+	this->field_368->SetCorners(corners[0], corners[1], corners[2], corners[3]);
 }
 
 // @Ok
@@ -1847,10 +2422,84 @@ void CSonicRipple::CalcPos(
 	a2->vz = this->mPos.vz + this->field_74.vz * ((v4 * rcossin_tbl[a4 & 0xFFF].cos) >> 12);
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CSonicRipple::Move(void)
 {
-    printf("CSonicRipple::Move(void)");
+	this->field_74.vx = gMikeCamera[0].Position.vx - (this->mPos.vx >> 12);
+	this->field_74.vy = gMikeCamera[0].Position.vy - (this->mPos.vy >> 12);
+	this->field_74.vz = gMikeCamera[0].Position.vz - (this->mPos.vz >> 12);
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&this->field_68));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&this->field_74));
+	gte_op0();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&this->field_74));
+
+	CVector shifted;
+	shifted.vx = this->field_74.vx >> 8;
+	shifted.vy = this->field_74.vy >> 8;
+	shifted.vz = this->field_74.vz >> 8;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&shifted));
+	gte_sqr0();
+
+	VECTOR squared;
+	gte_stlvnl(&squared);
+
+	i32 mag = M3dMaths_SquareRoot0(squared.vx + squared.vy + squared.vz);
+
+	this->field_74.vx = (this->field_74.vx / mag) << 4;
+	this->field_74.vy = (this->field_74.vy / mag) << 4;
+	this->field_74.vz = (this->field_74.vz / mag) << 4;
+
+	this->field_84 += this->field_82;
+
+	i32 angle1 = this->field_84;
+
+	this->CalcPos(&this->mStart, angle1, this->field_58);
+	angle1 += this->field_86;
+
+	i32 angle2 = this->field_58;
+	SLineSeg *seg = this->mSegs;
+	i32 i;
+	for (i = 0; i < this->mNumSegs - 1; i++)
+	{
+		angle2 += this->field_5C;
+		this->CalcPos(&seg->End, angle1, angle2);
+		angle1 += this->field_86;
+		seg++;
+	}
+
+	this->CalcPos(&seg->End, angle1, this->field_5A);
+
+	this->field_5E += this->field_60;
+	this->mAge++;
+
+	if (this->mAge > this->field_62)
+	{
+		i32 fade = this->field_64;
+		i32 r = this->mSegs[0].r;
+		i32 g = this->mSegs[0].g;
+		i32 b = this->mSegs[0].b;
+		r = (r > fade) ? r - fade : 0;
+		g = (g > fade) ? g - fade : 0;
+		b = (b > fade) ? b - fade : 0;
+
+		if ((b | g | r) == 0)
+		{
+			this->Die();
+			return;
+		}
+
+		seg = this->mSegs;
+		for (i = 0; i < this->mNumSegs; i++)
+		{
+			seg->r = r;
+			seg->g = g;
+			seg->b = b;
+			seg++;
+		}
+	}
 }
 
 // @Ok
@@ -2146,10 +2795,18 @@ CCarnage::CCarnage(i16 *a2, i32 a3)
 	CreateSonicBubbleVertexWobbler();
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CreateSonicBubbleVertexWobbler(void)
 {
-	printf("void CreateSonicBubbleVertexWobbler(void)");
+	u8 indices[0x25] =
+	{
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+		13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+		25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36
+	};
+
+	new CVertexWobble(gObjFileRegion, Spool_GetModel(0xE9DD4877, gObjFileRegion), 0x25, indices, 0x14, 0xF, 0x12C, 0x12C);
 }
 
 // @Ok
@@ -2238,6 +2895,9 @@ void validate_CCarnage(void){
 	VALIDATE(CCarnage, field_35C, 0x35C);
 
 	VALIDATE(CCarnage, field_360, 0x360);
+
+	VALIDATE(CCarnage, field_364, 0x364);
+	VALIDATE(CCarnage, field_368, 0x368);
 
 	VALIDATE(CCarnage, field_36C, 0x36C);
 	VALIDATE(CCarnage, field_370, 0x370);
