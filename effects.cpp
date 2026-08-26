@@ -10,6 +10,20 @@ extern i32 CurrentSuit;
 
 EXPORT i32 gTextureRelated;
 
+// per-vertex wobble state for CVertexWobble, 22 bytes. tentative layout from
+// CVertexWobble::CVertexWobble and CVertexWobble::Move.
+struct SVertexWobbleEntry
+{
+	i16 vx, vy, vz;   // snapshot of the vertex position at construction time
+	i16 dx, dy, dz;   // delta from the average centre at construction time
+	u8 vertexIndex;   // index into the model's own vertex table
+	u8 field_0D;
+	i16 distance;     // sqrt(dx*dx+dy*dy+dz*dz) at construction time
+	u16 amplitude;
+	i16 phaseSpeed;
+	i16 phase;
+};
+
 // @SMALLTODO
 CElectroLine::CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u32*)
 {
@@ -22,10 +36,38 @@ CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)
 	printf("CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)");
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: 47 of 83 mnemonic diffs. Semantics match (verified by reading
+// the disasm field by field): for each entry, phase += phaseSpeed, then
+// newRadius = distance + amplitude + sin(phase)*amplitude/4096, then each
+// axis of the target vertex is centre + delta*newRadius/distance. The
+// original compiler advances the field_54 walk pointer BEFORE it is done
+// reading the current entry's remaining fields (dx/dy/dz/vertexIndex are
+// all read through negative offsets off the already-bumped pointer, e.g.
+// [ecx-24h] right after `add ecx,16h`). A plain SVertexWobbleEntry* loop
+// produces the same values in the same order but not that exact
+// pointer-advance-early shape; two source variants tried (indexed array
+// access, then a walking pointer with post-increment) gave identical
+// output. See effects.attempts.md.
 void CVertexWobble::Move(void)
 {
-	printf("CVertexWobble::Move(void)");
+	print_if_false(Mem_RecoverPointer(reinterpret_cast<SHandle*>(&this->field_3C)) != 0, "NULL CVertexWobble handle");
+
+	SVertexWobbleEntry *entry = reinterpret_cast<SVertexWobbleEntry*>(this->field_54);
+
+	for (i32 i = 0; i < this->field_50; i++, entry++)
+	{
+		entry->phase += entry->phaseSpeed;
+
+		i32 sinVal = rcossin_tbl[entry->phase & 0xFFF].sin;
+		i32 newRadius = (sinVal * entry->amplitude) / 4096 + entry->distance + entry->amplitude;
+
+		i16 *vertex = reinterpret_cast<i16*>(reinterpret_cast<u8*>(this->field_4C) + 0x1C + entry->vertexIndex * 8);
+
+		vertex[0] = static_cast<i16>(entry->dx * newRadius / entry->distance + this->field_58.vx);
+		vertex[1] = static_cast<i16>(entry->dy * newRadius / entry->distance + this->field_58.vy);
+		vertex[2] = static_cast<i16>(entry->dz * newRadius / entry->distance + this->field_58.vz);
+	}
 }
 
 // @Ok
@@ -552,4 +594,11 @@ void validate_CElectroLine(void)
 void validate_CVertexWobble(void)
 {
 	VALIDATE_SIZE(CVertexWobble, 0x60);
+
+	VALIDATE(CVertexWobble, field_3C, 0x3C);
+	VALIDATE(CVertexWobble, field_40, 0x40);
+	VALIDATE(CVertexWobble, field_4C, 0x4C);
+	VALIDATE(CVertexWobble, field_50, 0x50);
+	VALIDATE(CVertexWobble, field_54, 0x54);
+	VALIDATE(CVertexWobble, field_58, 0x58);
 }

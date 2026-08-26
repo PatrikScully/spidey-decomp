@@ -136,7 +136,25 @@ class CVertexWobble : public CBit
 		EXPORT CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32);
 		EXPORT virtual void Move(void);
 
-		u8 fullPad[0x24];
+		// SHandle wrapping G_PSXREGION[Region].pPSX
+		void *field_3C;
+		u32 field_40;
+
+		PADDING(8);
+
+		// SModel* for the chosen model piece (G_PSXREGION[Region].ppModels[a2])
+		void *field_4C;
+
+		// number of wobbling vertices
+		i32 field_50;
+
+		// array of field_50 SVertexWobbleEntry (22 bytes each), see effects.cpp
+		void *field_54;
+
+		// average/centre position of the wobbling vertices
+		CSVector field_58;
+
+		PADDING(2);
 };
 
 void validate_CVertexWobble(void);
