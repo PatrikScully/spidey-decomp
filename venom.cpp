@@ -10,6 +10,7 @@
 #include "trig.h"
 #include "camera.h"
 #include "ps2funcs.h"
+#include "my_assert.h"
 
 
 extern CBody* EnvironmentalObjectList;
@@ -475,9 +476,38 @@ void CVenom::AdjustWaterModel(void)
 
 }
 
-// @MEDIUMTODO
-void CVenom::PulseL6A4Node(bool)
+// @Ok
+// @Matching
+void CVenom::PulseL6A4Node(bool a2)
 {
+	CVector v3;
+
+	for (i32 i = 1; i < NumNodes; i++)
+	{
+		if (*G_OFFSETLIST[i] == 1)
+		{
+			Trig_GetPosition(&v3, i);
+
+			if (a2)
+			{
+				if (!(v3.vz | v3.vy | v3.vx))
+				{
+					Trig_SendPulseToNode(i);
+					return;
+				}
+			}
+			else
+			{
+				if (v3.vx == 0x3E8000 && !(v3.vz | v3.vy))
+				{
+					Trig_SendPulseToNode(i);
+					return;
+				}
+			}
+		}
+	}
+
+	DoAssert(0, "Node not found");
 }
 
 
