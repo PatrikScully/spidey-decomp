@@ -751,10 +751,54 @@ void CRhino::SetUpStuckHorn(SLineInfo *,i32)
     printf("CRhino::SetUpStuckHorn(SLineInfo *,i32)");
 }
 
-// @MEDIUMTODO
-void CRhino::SlideFromHit(i32,i32,CVector *)
+// @NotOk
+// Best-effort translation, not verified against a build. PathCheck's third
+// CVector* out-param and the exact source of the divisors used in the
+// ratio computation (guessed as delta.vx / delta.vz here) are uncertain.
+void CRhino::SlideFromHit(i32 a2, i32 a3, CVector *a4)
 {
-    printf("CRhino::SlideFromHit(i32,i32,CVector *)");
+	CVector delta = *a4 / a2;
+	CVector target = this->mPos + delta;
+
+	CVector unused(0, 0, 0);
+	i32 result = this->PathCheck(&this->mPos, &target, &unused, 0x37);
+
+	if (result == 0)
+	{
+		this->field_1F8 = a3;
+	}
+	else if (result == 2)
+	{
+		if (a4->vx || a4->vz)
+		{
+			i32 signX = a4->vx >> 31;
+			i32 absX = (a4->vx ^ signX) - signX;
+
+			i32 signZ = a4->vz >> 31;
+			i32 absZ = (a4->vz ^ signZ) - signZ;
+
+			i32 ratio;
+
+			if (absX > absZ)
+			{
+				ratio = (a4->vx * a3) / delta.vx;
+			}
+			else
+			{
+				ratio = (a4->vz * a3) / delta.vz;
+			}
+
+			this->field_1F8 = ratio;
+
+			if (ratio > 1)
+			{
+				this->field_1F8 = ratio + 1;
+				this->mVel = delta << this->field_1F8;
+				this->field_31C.bothFlags = 0xF;
+				this->dumbAssPad = 0;
+			}
+		}
+	}
 }
 
 // @NotOk
