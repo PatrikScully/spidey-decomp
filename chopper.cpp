@@ -12,6 +12,8 @@
 #include "chunk.h"
 #include "ps2pad.h"
 #include "front.h"
+#include "m3dcolij.h"
+#include "m3dzone.h"
 #include <cmath>
 #include "ai.h"
 
@@ -932,10 +934,83 @@ void CMachineGunBullet::Move(void)
 	printf("CMachineGunBullet::Move(void)");
 }
 
-// @MEDIUMTODO
-void CMachineGunBullet::Common(CVector*, CVector*)
+// @NotOk
+// @Note: collision/raycast setup (dir/length/clamp/SLineInfo/InitLineInfo/
+// LineToItem) reconstructed from the disassembly of tools/functions/4328896.bin
+// and cross-checked against the SLineInfo layout in m3dcolij.h. The final
+// mStart target-selection block (below the pItem hit check) is a best-effort
+// reconstruction of the control flow shape, not instruction-verified: the
+// original reuses a stack slot there in a way not fully traced.
+// cmpsum: 162 mnemonic diffs, first divergence right after the dir=*a3-*a2
+// operator- call. 1 attempt (structural reconstruction only, no source-shape
+// iteration yet). Below the 15-hypothesis bar in CLAUDE.md, needs real work.
+void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 {
-	printf("CMachineGunBullet::Common(CVector*, CVector*)");
+	this->field_9C = 4;
+	this->SetRGB0(0, 0, 0);
+	this->SetRGB1(255, 255, 255);
+
+	this->mCodeBGR0 |= 0x2000000;
+
+	CVector dir = *a3 - *a2;
+	this->field_7C = dir.Length();
+	print_if_false(this->field_7C != 0, "Zero length in CMachineGunBullet::Common");
+
+	this->field_68 = dir.vx * this->field_7C;
+	this->field_6C = dir.vy * this->field_7C;
+	this->field_70 = dir.vz * this->field_7C;
+
+	if (this->field_7C < 5000)
+		this->field_7C = 5000;
+
+	SLineInfo lineinfo;
+	lineinfo.StartCoords = *a2;
+	lineinfo.EndCoords.vx = this->field_68 * this->field_7C + a2->vx;
+	lineinfo.EndCoords.vy = this->field_6C * this->field_7C + a2->vy;
+	lineinfo.EndCoords.vz = this->field_70 * this->field_7C + a2->vz;
+
+	lineinfo.MaxCoords.vx = 0;
+	lineinfo.MaxCoords.vy = 0;
+	lineinfo.MaxCoords.vz = 0;
+
+	lineinfo.Position.vx = 0;
+	lineinfo.Position.vy = 0;
+	lineinfo.Position.vz = 0;
+
+	lineinfo.Normal.vx = 0;
+	lineinfo.Normal.vy = 0;
+	lineinfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineinfo);
+	M3dZone_LineToItem(&lineinfo, 1);
+
+	if (lineinfo.pItem)
+	{
+		this->field_88 = 1;
+		this->field_80 = (i16)lineinfo.Position.vx;
+		this->field_82 = (i16)lineinfo.Position.vy;
+		this->field_84 = (i16)lineinfo.Position.vz;
+
+		CVector delta;
+		delta.vx = lineinfo.Position.vx - a2->vx;
+		delta.vy = lineinfo.Position.vy - a2->vy;
+		delta.vz = lineinfo.Position.vz - a2->vz;
+		this->field_78 = delta.Length();
+	}
+
+	this->field_74 = Rnd(200) - 250;
+
+	this->mStart = *a2;
+
+	if (this->field_88)
+	{
+		if (this->field_78 >= this->field_7C)
+			this->mStart = lineinfo.Position - dir * this->field_74;
+		else
+			this->mStart = *a2 + dir * this->field_74;
+	}
+
+	this->mEnd = lineinfo.Position;
 }
 
 // @Ok
@@ -1464,12 +1539,19 @@ void validate_CMachineGunBullet(void)
 	VALIDATE(CMachineGunBullet, field_6C, 0x6C);
 	VALIDATE(CMachineGunBullet, field_70, 0x70);
 
+	VALIDATE(CMachineGunBullet, field_74, 0x74);
+	VALIDATE(CMachineGunBullet, field_78, 0x78);
+	VALIDATE(CMachineGunBullet, field_7C, 0x7C);
+
 	VALIDATE(CMachineGunBullet, field_80, 0x80);
 	VALIDATE(CMachineGunBullet, field_82, 0x82);
 	VALIDATE(CMachineGunBullet, field_84, 0x84);
 
+	VALIDATE(CMachineGunBullet, field_88, 0x88);
+
 	VALIDATE(CMachineGunBullet, field_8C, 0x8C);
 	VALIDATE(CMachineGunBullet, field_94, 0x94);
+	VALIDATE(CMachineGunBullet, field_9C, 0x9C);
 
 	VALIDATE(CMachineGunBullet, field_A4, 0xA4);
 
