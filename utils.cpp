@@ -310,8 +310,8 @@ void Utils_RotateWorldToObject(CBody * a1,CVector * a2,CVector * a3)
 	gRotMatrix[2][0] = mOne.m[2][0];
 	gRotMatrix[2][2] = mOne.m[2][2];
 
-	MTC2(reinterpret_cast<i32*>(&sVec.vx), GT_ZERO);
-	MTC2(reinterpret_cast<i32*>(&sVec.vz), GT_ONE);
+	MTC2(*reinterpret_cast<i32*>(&sVec.vx), GT_ZERO);
+	MTC2(*reinterpret_cast<i32*>(&sVec.vz), GT_ONE);
 
 	gte_mvmva(1, 0, 0, 3, 0);
 	gte_stsv(&sVec);

@@ -8,6 +8,11 @@
 #include "stubs.h"
 #include "PCGfx.h"
 #include "pcdcMem.h"
+#include "ps2gamefmv.h"
+#include "ps2redbook.h"
+#include "ps2lowsfx.h"
+#include "ps2pad.h"
+#include "PCTex.h"
 
 #include <cstdlib>
 
@@ -26,6 +31,11 @@ EXPORT i16 gRotMatrix[3][3];
 
 EXPORT int vertexRegister[4];
 
+// guesses: not in idb_globals.txt. Positioned right after vertexRegister ("V0"),
+// same shape, used by MTC2 the same way for register indices 2/3 ("V1") and 4/5 ("V2").
+EXPORT int gVertexRegister1[4];
+EXPORT int gVertexRegister2[4];
+
 EXPORT VECTOR translationVector;
 EXPORT VECTOR gGeneralLongVector;
 
@@ -33,15 +43,90 @@ EXPORT int gRtpsRelatedNoClue;
 EXPORT int gRtpsRelatedNoClue2;
 EXPORT int gRtpsRelatedNoClue3;
 
+EXPORT VECTOR gFtwOp12;
+EXPORT VECTOR gWtfOP12;
+EXPORT VECTOR gOp12Result;
+
 static unsigned char stubGte = 1;
 
 u8 gPrintStubbed = 1;
 u8 gClearImagePrint = 1;
 
-// @SMALLTODO
-void MTC2(i32*, GTREGType)
+// @Ok
+// @Matching
+void MTC2(i32 a1, GTREGType a2)
 {
-	printf("void MTC2(i32*, GTREGType)");
+	print_if_false(a2 >= 0 && a2 < 0x16, "Invalid GTE register specified to MTC2.");
+
+	switch (a2)
+	{
+	case GT_ZERO:
+		vertexRegister[0] = (i16)a1;
+		vertexRegister[1] = a1 >> 16;
+		break;
+	case GT_ONE:
+		vertexRegister[2] = (i16)a1;
+		break;
+	case GT_TWO:
+		gVertexRegister1[0] = (i16)a1;
+		gVertexRegister1[1] = a1 >> 16;
+		break;
+	case GT_THREE:
+		gVertexRegister1[2] = (i16)a1;
+		break;
+	case GT_FOUR:
+		gVertexRegister2[0] = a1 & 0xFFFF;
+		gVertexRegister2[1] = a1 >> 16;
+		break;
+	case GT_FIVE:
+		gVertexRegister2[2] = (i16)a1;
+		break;
+	case GT_SIX:
+		print_if_false(0, "MTC2 tried to write to IR0.");
+		break;
+	case GT_SEVEN:
+		gOp12Result.vx = a1;
+		break;
+	case GT_EIGHT:
+		gOp12Result.vy = a1;
+		break;
+	case GT_NINE:
+		gOp12Result.vz = a1;
+		break;
+	case GT_TEN:
+		print_if_false(0, "MTC2 tried to write to MAC0.");
+		break;
+	case GT_ELEVEN:
+		gGeneralLongVector.vx = a1;
+		break;
+	case GT_TWELVE:
+		gGeneralLongVector.vy = a1;
+		break;
+	case GT_THIRTEEN:
+		gGeneralLongVector.vz = a1;
+		break;
+	case GT_FOURTEEN:
+		print_if_false(0, "MTC2 tried to write to RotMat.");
+		break;
+	case GT_FIFTEEN:
+		gRotMatrix[2][2] = (i16)a1;
+		break;
+	case GT_SIXTEEN:
+		translationVector.vx = a1;
+		break;
+	case GT_SEVENTEEN:
+		translationVector.vy = a1;
+		break;
+	case GT_EIGHTEEN:
+		translationVector.vz = a1;
+		break;
+	case GT_NINETEEN:
+	case GT_TWENTY:
+	case GT_TWENTYONE:
+	default:
+		print_if_false(0, "Unhandled case.");
+		break;
+	}
 }
 
 // @Bogus
@@ -51,10 +136,13 @@ void setPolyGT4(void)
 		stubbed_printf("stubbed out: setPolyGT4");
 }
 
-// @MEDIUMTODO
-void TransMatrix(MATRIX*, VECTOR*)
+// @Ok
+// @Matching
+void TransMatrix(MATRIX* a1, VECTOR* a2)
 {
-	printf("void TransMatrix(MATRIX*, VECTOR*)");
+	a1->t[0] = a2->vx;
+	a1->t[1] = a2->vy;
+	a1->t[2] = a2->vz;
 }
 
 void validate_MATRIX(void){
@@ -63,29 +151,24 @@ void validate_MATRIX(void){
 	VALIDATE(MATRIX, t, 0x14);
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void gte_op0(void)
 {
-	printf("void gte_op0(void)");
+	gGeneralLongVector.vx = gWtfOP12.vy * gFtwOp12.vz - gWtfOP12.vz * gFtwOp12.vy;
+	gGeneralLongVector.vy = gWtfOP12.vz * gFtwOp12.vx - gFtwOp12.vz * gWtfOP12.vx;
+	gGeneralLongVector.vz = gFtwOp12.vy * gWtfOP12.vx - gWtfOP12.vy * gFtwOp12.vx;
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void gte_SetRotMatrix(MATRIX* a1)
 {
-
-	typedef void (*func_ptr)(MATRIX*);
-	func_ptr func = (func_ptr)0x0046D7B0;
-
-	func(a1);
-	return;
-
-	/*
 	for (int i = 0; i < 3; i++){
 		for (int j = 0; j < 3; j++){
 			gRotMatrix[i][j] = a1->m[i][j];
 		}
 	}
-	*/
 }
 
 // @MEDIUMTODO
@@ -167,11 +250,6 @@ void gte_rtpt(void){
 		stubbed_printf("stubbed out: gte_rtpt()");
 }
 
-EXPORT VECTOR gFtwOp12;
-EXPORT VECTOR gWtfOP12;
-EXPORT VECTOR gOp12Result;
-
-
 // @Ok
 void gte_op12(void)
 {
@@ -229,8 +307,8 @@ void gte_gpf0()
 
 EXPORT int lzc;
 
-// @NotOk
-// Stupid function, can be extremely simplified
+// @Ok
+// @Matching
 void gte_stlzc(int *a1)
 {
   int v1; // esi
@@ -244,7 +322,7 @@ void gte_stlzc(int *a1)
     v2 = 0;
     do
     {
-      v1 *= 2;
+      v1 <<= 1;
       ++v2;
     }
     while ( v1 < 0 );
@@ -255,7 +333,7 @@ void gte_stlzc(int *a1)
 	v3 = 0;
     do
     {
-      v1 *= 2;
+      v1 <<= 1;
       ++v3;
     }
     while ( v1 >= 0 );
@@ -274,7 +352,18 @@ void gte_stsv(SVECTOR *a1)
 
 
 // @NotOk
-// Revisit, maybe with validator???
+// Residue: fixed the matrix-multiply formula (the old code indexed gRotMatrix wrong, e.g. reused
+// [0][1]/[1][1] across rows); this version is the correct row*vector dot product and matches the
+// assert calls/strings/globals exactly, but the row computation (0x46E185-0x46E207) still
+// diverges (81 mnemonic diffs). The original reads v7->vx/vy/vz fresh from memory via a memory
+// operand on each `imul` (9 total memory reads, no register caching across the 3 row statements).
+// Every source shape tried here (single combined expression per row, split accumulation
+// statements, an i32* index instead of VECTOR* field access, a volatile VECTOR*) makes our
+// compiler either hoist v7->vx/vy/vz into 3 registers once and reuse them across all 3 rows
+// (undershoots: fewer loads than the original), or (with volatile) reload on every single use
+// including within one row (overshoots: more loads than the original). Could not find a source
+// shape that reproduces "exactly one memory read per field per row, no more, no less" (4
+// attempts, see attempts log; below the 15-hypothesis medium-size bar, revisit).
 void gte_mvmva(int _sf, int mx, int a3, int cv, int lm)
 {
   VECTOR *v7; // eax
@@ -289,9 +378,10 @@ void gte_mvmva(int _sf, int mx, int a3, int cv, int lm)
   if ( a3 )
     v7 = &gOp12Result;
 
-  gGeneralLongVector.vx = v7->vz * gRotMatrix[0][2] + v7->vy * gRotMatrix[0][1] + v7->vx * gRotMatrix[0][0];
-  gGeneralLongVector.vy = v7->vz * gRotMatrix[1][1] + v7->vy * gRotMatrix[0][1] + v7->vx * gRotMatrix[0][2];
-  gGeneralLongVector.vz = v7->vz * gRotMatrix[2][1] + v7->vy * gRotMatrix[2][0] + v7->vx * gRotMatrix[1][2];
+  gGeneralLongVector.vx = gRotMatrix[0][0] * v7->vx + gRotMatrix[0][1] * v7->vy + gRotMatrix[0][2] * v7->vz;
+  gGeneralLongVector.vy = gRotMatrix[1][0] * v7->vx + gRotMatrix[1][1] * v7->vy + gRotMatrix[1][2] * v7->vz;
+  gGeneralLongVector.vz = gRotMatrix[2][0] * v7->vx + gRotMatrix[2][1] * v7->vy + gRotMatrix[2][2] * v7->vz;
+
   if ( _sf == 1 )
   {
     gGeneralLongVector.vx = gGeneralLongVector.vx >> 12;
@@ -340,16 +430,16 @@ void gte_ldopv2(VECTOR *a1)
 }
 
 
-// @NotOk
-// Garbage revisit
-// vertex register is not vector, i added one to it so it doesn't crash, it's trash
+// @Ok
+// @Matching
 void gte_ldlv0(const VECTOR *a1)
 {
   *(VECTOR *)vertexRegister = *a1;
 }
 
 
-// @NotOk
+// @Ok
+// @Matching
 void gte_stsxy3(int *a1, int *a2, int *a3)
 {
   *a1 = (gOp12Result.vx & 0xFFFF) | (gOp12Result.vy << 16);
@@ -382,7 +472,15 @@ void M3dMaths_SetIdentityRotation(MATRIX *a1)
 }
 
 // @NotOk
-// Revisit, with validator
+// Residue: the maths (row*col dot product of a1*a2 into a3, each >>12) was already right; walking
+// pointers over a1/a2/a3 (instead of a1->m[i][j] direct indexing) got 3 mnemonic diffs down to 87
+// (from 109), matching the original's incremental-pointer read/store shape. The remaining diffs
+// are in the register allocation of the 9 dot-product statements (which of eax/ebx/ecx/edx/edi/
+// ebp/esi holds which of v3..v20 at each point) and the exact read/store instruction-scheduling
+// interleave for the a1/a3 walks (the original peeks 2 elements ahead before advancing the
+// pointer at a few points, not a uniform 1-at-a-time walk). 4 attempts tried (direct indexing;
+// walking pointer for a1/a2 reads only; + walking pointer for a3 store; declaration-order swap of
+// p3), see attempts log. Below the 15-hypothesis medium-size bar, revisit.
 void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3)
 {
   int v3; // [sp+0h] [-78h]
@@ -404,33 +502,38 @@ void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3)
   int v19; // [sp+40h] [-38h]
   int v20; // [sp+44h] [-34h]
 
-  v12 = a1->m[0][0];
-  v13 = a1->m[0][1];
-  v14 = a1->m[0][2];
-  v15 = a1->m[1][0];
-  v16 = a1->m[1][1];
-  v17 = a1->m[1][2];
-  v18 = a1->m[2][0];
-  v19 = a1->m[2][1];
-  v20 = a1->m[2][2];
-  v3 = a2->m[0][0];
-  v4 = a2->m[0][1];
-  v5 = a2->m[0][2];
-  v6 = a2->m[1][0];
-  v7 = a2->m[1][1];
-  v8 = a2->m[1][2];
-  v9 = a2->m[2][0];
-  v10 = a2->m[2][1];
-  v11 = a2->m[2][2];
-  a3->m[0][0] = (v12 * v3 + v13 * v6 + v14 * v9) >> 12;
-  a3->m[0][1] = (v12 * v4 + v13 * v7 + v14 * v10) >> 12;
-  a3->m[0][2] = (v12 * v5 + v13 * v8 + v14 * v11) >> 12;
-  a3->m[1][0] = (v15 * v3 + v16 * v6 + v17 * v9) >> 12;
-  a3->m[1][1] = (v15 * v4 + v16 * v7 + v17 * v10) >> 12;
-  a3->m[1][2] = (v15 * v5 + v16 * v8 + v17 * v11) >> 12;
-  a3->m[2][0] = (v18 * v3 + v19 * v6 + v20 * v9) >> 12;
-  a3->m[2][1] = (v18 * v4 + v19 * v7 + v20 * v10) >> 12;
-  a3->m[2][2] = (v18 * v5 + v19 * v8 + v20 * v11) >> 12;
+  i16* p1 = &a1->m[0][0];
+  v12 = *p1; p1++;
+  v13 = *p1; p1++;
+  v14 = *p1; p1++;
+  v15 = *p1; p1++;
+  v16 = *p1; p1++;
+  v17 = *p1; p1++;
+  v18 = *p1; p1++;
+  v19 = *p1; p1++;
+  v20 = *p1;
+
+  i16* p2 = &a2->m[0][0];
+  v3 = *p2; p2++;
+  v4 = *p2; p2++;
+  v5 = *p2; p2++;
+  v6 = *p2; p2++;
+  v7 = *p2; p2++;
+  v8 = *p2; p2++;
+  v9 = *p2; p2++;
+  v10 = *p2; p2++;
+  v11 = *p2;
+
+  i16* p3 = &a3->m[0][0];
+  *p3 = (v12 * v3 + v13 * v6 + v14 * v9) >> 12; p3++;
+  *p3 = (v12 * v4 + v13 * v7 + v14 * v10) >> 12; p3++;
+  *p3 = (v12 * v5 + v13 * v8 + v14 * v11) >> 12; p3++;
+  *p3 = (v15 * v3 + v16 * v6 + v17 * v9) >> 12; p3++;
+  *p3 = (v15 * v4 + v16 * v7 + v17 * v10) >> 12; p3++;
+  *p3 = (v15 * v5 + v16 * v8 + v17 * v11) >> 12; p3++;
+  *p3 = (v18 * v3 + v19 * v6 + v20 * v9) >> 12; p3++;
+  *p3 = (v18 * v4 + v19 * v7 + v20 * v10) >> 12; p3++;
+  *p3 = (v18 * v5 + v19 * v8 + v20 * v11) >> 12;
 }
 
 
@@ -456,10 +559,29 @@ void m3d_ZeroTransVector(void)
   translationVector.vz = 0;
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void VectorNormal(VECTOR* a1, VECTOR* a2)
 {
-	printf("void VectorNormal(VECTOR* a1, VECTOR* a2)");
+	float fx = (float)a1->vx;
+	float fy = (float)a1->vy;
+	float fz = (float)a1->vz;
+
+	float lenSq = fx * fx + fy * fy + fz * fz;
+
+	if (lenSq == 0.0f)
+	{
+		a2->vx = 0;
+		a2->vy = 0x1000;
+		a2->vz = 0;
+		return;
+	}
+
+	float len = (float)sqrt((double)lenSq);
+
+	a2->vx = (i32)((float)(a1->vx << 12) / len);
+	a2->vy = (i32)((float)(a1->vy << 12) / len);
+	a2->vz = (i32)((float)(a1->vz << 12) / len);
 }
 
 // @Ok
@@ -533,8 +655,8 @@ void M3dMaths_ScaleMatrix(CItem *a1, MATRIX *a2)
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// @Matching
 void M3dMaths_CopyMat(MATRIX* a1, MATRIX* a2)
 {
 	memcpy(reinterpret_cast<void*>(a2), reinterpret_cast<void*>(a1), 3*3*2);
@@ -597,9 +719,9 @@ int ratan2(int x, int y)
 }
 
 
-// @NotOk
-// Globals
-u16 GetClut(int, int a2)
+// @Ok
+// @Matching
+i32 GetClut(int, int a2)
 {
 	return a2 - gClutRelated;
 }
@@ -614,10 +736,51 @@ void M3dAsm_LineColijPreprocessItems(CItem* pItem, i32 ModelTable, SLineInfo* pI
 	func(pItem, ModelTable, pInfo, Inquiry);
 }
 
-// @SMALLTODO
-void DCSetFatalError(i32)
+// idb_globals.txt: DCFatalError @ 0x6150E4
+i32 DCFatalError;
+
+// @Ok
+// @Matching
+void DCSetFatalError(i32 a1)
 {
-	printf("void DCSetFatalError(i32)");
+	DCFatalError = a1;
+
+	if (PCGfx_IsInScene())
+	{
+		PCGfx_EndScene(1);
+
+		// same address as gsub_430880 (nullsub_3), declared and defined in
+		// PCShell.cpp; extern here, cast to accept the (unused) dummy arg this
+		// call site passes, so it is a real cross-TU direct call.
+		extern void gsub_430880(void);
+		((void(*)(i32))gsub_430880)(4);
+	}
+
+	GameFMV_StopFMV();
+	Redbook_XAExit();
+	SFX_ShutDown();
+	DCPad_ShutDownVibrations();
+	PCTex_ReleaseAllTextures();
+
+	if (DCFatalError == 2)
+	{
+		// same address as gsub_430880 (nullsub_3), declared and defined in
+		// PCShell.cpp; extern here so this call is a real cross-TU direct
+		// call instead of an indirect register call.
+		extern void gsub_430880(void);
+		gsub_430880();
+	}
+	else
+	{
+		sbExitSystem();
+
+		// same address as buIsReady (pcdcBkup.h) but called here with no argument
+		// pushed, so it is probably a different function whose body got folded
+		// into buIsReady's at link time. Cast to a real cross-TU direct call.
+		extern i32 buIsReady(i32);
+		((void(*)(void))buIsReady)();
+	}
+
 	exit(0);
 }
 

@@ -31,10 +31,35 @@ EXPORT extern i32 Pal16Y;
 EXPORT extern u8 gPrintStubbed;
 EXPORT extern u8 gClearImagePrint;
 
+// values 0..21 (0x15) are the valid range MTC2 accepts; some of those are
+// reserved and MTC2 asserts on them (GT_SIX/GT_TEN/GT_FOURTEEN, see MTC2 for
+// the exact assert strings pulled from the original binary). Only GT_ZERO
+// and GT_ONE names are backed by real call sites (utils.cpp); the rest are
+// tentative sequential names, not hardware register names.
 enum GTREGType
 {
 	GT_ZERO = 0,
 	GT_ONE = 1,
+	GT_TWO = 2,
+	GT_THREE = 3,
+	GT_FOUR = 4,
+	GT_FIVE = 5,
+	GT_SIX = 6,
+	GT_SEVEN = 7,
+	GT_EIGHT = 8,
+	GT_NINE = 9,
+	GT_TEN = 10,
+	GT_ELEVEN = 11,
+	GT_TWELVE = 12,
+	GT_THIRTEEN = 13,
+	GT_FOURTEEN = 14,
+	GT_FIFTEEN = 15,
+	GT_SIXTEEN = 16,
+	GT_SEVENTEEN = 17,
+	GT_EIGHTEEN = 18,
+	GT_NINETEEN = 19,
+	GT_TWENTY = 20,
+	GT_TWENTYONE = 21,
 };
 
 struct SLineInfo;
@@ -126,7 +151,8 @@ EXPORT MATRIX* M3dMaths_RotMatrixYXZ(SVECTOR *a1, MATRIX *a2);
 
 EXPORT i32 ratan2(i32, i32);
 
-EXPORT u16 GetClut(i32, i32);
+// original mangled name is ?GetClut@@YAHHH@Z (returns int, not u16)
+EXPORT i32 GetClut(i32, i32);
 
 EXPORT void M3dAsm_LineColijPreprocessItems(CItem*, i32, SLineInfo*, u16);
 EXPORT void M3dAsm_LineColijPreprocessItemsZoned(CItem**, i32, SLineInfo*, u16);
@@ -134,7 +160,10 @@ EXPORT void M3dAsm_LineColijPreprocessItemsZoned(CItem**, i32, SLineInfo*, u16);
 EXPORT void TransMatrix(MATRIX*, VECTOR*);
 
 EXPORT void setPolyGT4(void);
-EXPORT void MTC2(i32*, GTREGType);
+// takes the register VALUE directly, not a pointer (confirmed from the original
+// disasm: case handlers never dereference the first arg slot, they split/store it
+// directly). The old `i32*` prototype was a placeholder that didn't match.
+EXPORT void MTC2(i32, GTREGType);
 
 
 EXPORT void DCSetFatalError(i32);
