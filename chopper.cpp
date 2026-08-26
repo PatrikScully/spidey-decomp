@@ -864,10 +864,54 @@ void CSearchlight::CalculateSearchlight(CSVector*)
 	printf("CSearchlight::CalculateSearchlight(CSVector*)");
 }
 
-// @MEDIUMTODO
-void CSearchlight::CheckPointInScreenTri(u32, u32, u32, u32)
+// @NotOk
+// @Note: algorithm confirmed correct (bbox reject then 3 edge-function sign tests
+// against a triangle-orientation constant, verified with a symbolic instruction
+// trace against tools/functions/4339760.bin). 115 mnemonic diffs left, register
+// allocation / local order residue, all in the packed-arg unpacking prologue.
+// 2 declaration-order attempts tried (forward, reverse); reverse was worse (140
+// diffs). Below the 15-hypothesis bar in CLAUDE.md, needs more work.
+void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 {
-	printf("CSearchlight::CheckPointInScreenTri(u32, u32, u32, u32)");
+	i32 px = (i16)p;
+	i32 py = (i16)(p >> 16);
+	i32 ax = (i16)a;
+	i32 ay = (i16)(a >> 16);
+	i32 bx = (i16)b;
+	i32 by = (i16)(b >> 16);
+	i32 cx = (i16)c;
+	i32 cy = (i16)(c >> 16);
+
+	if (px < ax && px < bx && px < cx)
+		return;
+	if (px > ax && px > bx && px > cx)
+		return;
+	if (py < ay && py < by && py < cy)
+		return;
+	if (py > ay && py > by && py > cy)
+		return;
+
+	i32 d0 = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+
+	i32 e1 = (cx - bx) * (py - by) - (px - bx) * (cy - by);
+	if (d0 < 0 && e1 > 0)
+		return;
+	if (d0 > 0 && e1 < 0)
+		return;
+
+	i32 e2 = (ax - cx) * (py - cy) - (px - cx) * (ay - cy);
+	if (d0 < 0 && e2 > 0)
+		return;
+	if (d0 > 0 && e2 < 0)
+		return;
+
+	i32 e3 = (bx - ax) * (py - ay) - (px - ax) * (by - ay);
+	if (d0 < 0 && e3 > 0)
+		return;
+	if (d0 > 0 && e3 < 0)
+		return;
+
+	this->field_12C = 1;
 }
 
 // @BIGTODO
@@ -1402,6 +1446,7 @@ void validate_CSearchlight(void)
 	VALIDATE(CSearchlight, field_104, 0x104);
 	VALIDATE(CSearchlight, field_110, 0x110);
 	VALIDATE(CSearchlight, field_11C, 0x11C);
+	VALIDATE(CSearchlight, field_12C, 0x12C);
 	VALIDATE(CSearchlight, field_138, 0x138);
 
 	VALIDATE_VTABLE(CSearchlight, SpecialRenderer, 5);
