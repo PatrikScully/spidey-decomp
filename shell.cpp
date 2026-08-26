@@ -774,10 +774,137 @@ static CRecordBox* gShowRecordBox;
 // tentative default title text, no idb_globals.txt match near 0x54BBA0.
 static char* gShowRecordTitle = "High Scores";
 
-// @MEDIUMTODO
-void Shell_ShowRecord(char const *,char const *,STrainingMission *)
+// @NotOk
+// Residue: the whole SEH/exception-unwind prologue+epilogue in the original
+// (push -1; push offset handler; mov eax,fs:0; push eax; mov fs:0,esp ... down
+// to mov fs:0,ecx at the end) is missing from our build, which cascades into
+// ~167 mnemonic diffs (register allocation follows from the extra saved
+// registers/EH-state slot the frame provides). Everything else about the
+// function (all callees, globals, loop shape, CRecordBox construction/
+// destruction, string/global addresses) is verified correct against the
+// disassembly; see shell.attempts.md for 7 distinct hypotheses tried against
+// this ONE root cause (all builds, all rebuilt+cmpsum'd): plain heap
+// new+delete (own local pointer, immediate); heap new stored to a global with
+// no delete in the function; heap new+delete with an intervening loop and an
+// early return that skips the delete (matches the original's own control
+// flow exactly); explicit __try/__except (produces a bigger, ebp-based,
+// two-value frame, does not match); explicit __try/__finally (same, does not
+// match); constructor definition moved after the call site to test whether
+// visibility-order suppresses same-TU "can this throw" analysis (no
+// difference, trivial ctor still got inlined regardless); a genuine
+// stack-allocated (non-heap) local object of a class with a virtual
+// destructor (THIS reproduces the exact original frame shape byte-for-byte:
+// single push, esp-based, no ebp) but contradicts the original's confirmed
+// heap allocation of CRecordBox (push 0x44; call CClass::operator new,
+// present in the real disassembly, not something I can explain away). No
+// combination tried gets a real heap allocation to carry the frame. Full
+// instruction-byte accounting of the 686-byte original (iced_x86 decodes
+// exactly 686 bytes with no gaps) rules out a second, still-unidentified
+// stack object hiding in the body. Left for a future session with deeper
+// tooling (IDA) to confirm what MSVC6 construct produces an exception frame
+// around a plain heap allocation.
+void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 {
-    printf("Shell_ShowRecord(char const *,char const *,STrainingMission *)");
+	// same pattern as Shell_ScreenAdjust/Shell_TitleScreen above: defined once
+	// in PCShell.cpp, called here through a local extern.
+	extern void gsub_430880(void);
+	extern void gsub_430680(void);
+
+	print_if_false(gShellInitialized != 0, "Called Shell_ShowRecord() without shell initialised");
+
+	Pause(1);
+
+	// DrawSync(), written out by hand instead of calling the ps2funcs.h
+	// INLINE version: that one calls export.h's static stubbed_printf, which
+	// our compiler inlines away (no varargs to block it, unlike
+	// print_if_false), so it would never emit the original's real
+	// "call 0046CB90h". gsub_46CB90 (panel.cpp) is the actual out-of-line
+	// implementation at that address, already @Ok/@Matching there.
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	gShowRecordBox = new CRecordBox(0x75, 0x50, pMission);
+
+	gShellMenuEase = 0x200;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 vblanksSnapshot = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1u, -1);
+
+		Shell_DrawBackground();
+
+		Shell_DrawTitleBar(0x80, 0x26, gShowRecordTitle, 1, 0, 0x96, -21, 0x1D);
+
+		Mess_SetRGB(0x60u, 0x60u, 0x60u, 0);
+		Mess_SetTextJustify(0);
+		Mess_DrawText(0x100, 0x41, pMission->field_0, 0, 0x1000u);
+
+		gShowRecordBox->Display();
+
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 0x180);
+
+		Pad_Update();
+
+		if (*gShellMenuAbort)
+			return;
+
+		CheckForPadUnplugged();
+
+		if (PCSHELL_CheckTriggers(0x20220, 1, 1))
+			break;
+
+		if (Vblanks == vblanksSnapshot)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+
+		if (!DoVblankProcessing)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
+
+	G_SCONTROL[0].Circle.Triggered = 0;
+	SFX_Play(0x23, 0x2000, 0);
+
+	delete gShowRecordBox;
+
+	Pause(1);
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	Pad_ClearTriggers(G_SCONTROL);
+
+	gShellMenuEase = 0x200;
 }
 
 // @MEDIUMTODO
