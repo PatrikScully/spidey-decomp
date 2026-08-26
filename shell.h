@@ -77,7 +77,10 @@ struct SSaveGame
 	PADDING(0x7B-0x79);
 
 	u8 field_7B;
-	PADDING(0x80-0x7B-1);
+
+	// PShell_MaybeUnlockStuff stores its "which unlock popup" result here
+	u8 field_7C;
+	PADDING(0x80-0x7C-1);
 
 	// ActivateCheat costume unlock bitmask (SECRTWAR/MIGUELOH/TRISNTNL/
 	// SYNOPTIC/XILRTRNS/KICKME/MRWATSON/SMLVIII/CLUBNOIR cheats)

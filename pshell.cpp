@@ -545,10 +545,89 @@ void PShell_MaybeSaveGame(void)
     printf("PShell_MaybeSaveGame(void)");
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void PShell_MaybeUnlockStuff(void)
 {
-    printf("PShell_MaybeUnlockStuff(void)");
+	i32 unlocked = -1;
+
+	i32 i;
+
+	i32 allComplete = 1;
+	for (i = 0; i < 0x22; i++)
+	{
+		if (!gSaveGame.field_56[i])
+		{
+			allComplete = 0;
+		}
+	}
+
+	if (allComplete)
+	{
+		u8 oldFlags = (u8)gSaveGame.field_80;
+		gSaveGame.mCheatStoryboardFlag = 1;
+
+		if (!(oldFlags & 4))
+		{
+			unlocked = 2;
+		}
+
+		gSaveGame.field_80 |= 4;
+		gSaveGame.field_84 |= 0x1000000;
+
+		if (DifficultyLevel == 3)
+		{
+			if (!((u8)gSaveGame.field_80 & 8))
+			{
+				unlocked = 3;
+			}
+
+			gSaveGame.field_80 |= 8;
+		}
+	}
+
+	if (gSaveGame.field_8C == -1)
+	{
+		gSaveGame.field_80 |= 2;
+	}
+
+	i32 idx1 = Front_GetLevelIndex("l4a1_t");
+	print_if_false(idx1 != -1, "Could not find l4a1_t ???");
+	if (gSaveGame.field_56[idx1])
+	{
+		gSaveGame.field_80 |= 0x40;
+	}
+
+	i32 idx2 = Front_GetLevelIndex("l6a4_t");
+	print_if_false(idx2 != -1, "Could not find l6a4_t ???");
+	if (gSaveGame.field_56[idx2])
+	{
+		gSaveGame.field_80 |= 0x80;
+	}
+
+	i32 allGold = 1;
+	for (i = 0; i < 0x22; i++)
+	{
+		if (gSaveGame.field_56[i] < 2)
+		{
+			allGold = 0;
+		}
+	}
+
+	if (allGold)
+	{
+		if (!((u8)gSaveGame.field_80 & 0x10))
+		{
+			unlocked = 4;
+		}
+
+		gSaveGame.field_80 |= 0x10;
+	}
+
+	if (unlocked != -1)
+	{
+		gSaveGame.field_7C = (u8)unlocked;
+	}
 }
 
 // @Ok

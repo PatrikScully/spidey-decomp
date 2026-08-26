@@ -1969,6 +1969,7 @@ void validate_SSaveGame(void)
 	VALIDATE(SSaveGame, field_78, 0x78);
 
 	VALIDATE(SSaveGame, field_7B, 0x7B);
+	VALIDATE(SSaveGame, field_7C, 0x7C);
 
 	VALIDATE(SSaveGame, field_80, 0x80);
 	VALIDATE(SSaveGame, field_84, 0x84);
