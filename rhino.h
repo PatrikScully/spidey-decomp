@@ -48,7 +48,7 @@ public:
 	EXPORT void GetLaunched(void);
 	EXPORT void GetShocked(void);
 	EXPORT void GetTrapped(void);
-	EXPORT void GonnaHitWall(i32);
+	EXPORT i32 GonnaHitWall(i32);
 	EXPORT u8 LineOfSightCheck(CVector const *,i32);
 	EXPORT void PlaySounds(void);
 	EXPORT void PlayXAPlease(i32,i32,i32);
@@ -60,11 +60,11 @@ public:
 	i32 field_324;
 	i32 field_328;
 
-	PADDING(0x330 - 0x328 - 4);
+	i32 field_32C;
 
 	i32 field_330;
 
-	PADDING(0x338 - 0x330 - 4);
+	i32 field_334;
 
 	i32 field_338;
 
@@ -80,7 +80,7 @@ public:
 
 	i32 field_358;
 
-	PADDING(0x360 - 0x358 - 4);
+	i32 field_35C;
 
 	i32 field_360;
 
@@ -92,7 +92,10 @@ public:
 
 	i32 field_3D0;
 
-	PADDING(0x3DC - 0x3D0 - 4);
+	i32 field_3D4;
+	u8 field_3D8;
+
+	PADDING(3);
 
 	i32 field_3DC;
 	u32 field_3E0;
