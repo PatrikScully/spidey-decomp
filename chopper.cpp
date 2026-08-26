@@ -1200,10 +1200,110 @@ void CSniperTarget::AI(void)
 	printf("CSniperTarget::AI(void)");
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4329728.bin. Sweeps mStart/mEnd along the
+// bullet's direction (field_5C base, field_68/6C/70 = direction*length, field_74/field_78
+// the travelled distance for each end, field_7C the total length) 300 units per frame,
+// clamped once field_74 passes field_7C. Once the visible line reaches or passes its
+// target it tests a hit against MechList (M3dColij_LineToSphere), recovers the owning
+// CSniperTarget/CChopper handles, always spawns a CGlowFlash spark at mEnd, additionally
+// spawns a CSniperTarget::BulletResult-style hit report and, on an environment hit
+// (not the player), a CSniperSplat decal, then plays one of two SFX_PlayPos variant
+// pairs depending on hit type before calling Die(). The exact per-frame interpolation
+// arithmetic and the CGlowFlash/CSniperSplat argument values are a best-effort
+// reconstruction of the control flow shape from the disassembly, not instruction
+// verified: this function has an SEH prologue (local object needing unwind support) and
+// the stack layout for the innermost blend math could not be traced byte for byte by
+// hand. cmpsum: 434 mnemonic diffs, first divergence right at the prologue (missing the
+// SEH frame setup entirely). 1 attempt (structural reconstruction only). Needs real
+// work.
 void CMachineGunBullet::Move(void)
 {
-	printf("CMachineGunBullet::Move(void)");
+	this->field_74 += 300;
+	this->field_78 += 300;
+
+	CVector* dir = reinterpret_cast<CVector*>(&this->field_68);
+	CVector* base = reinterpret_cast<CVector*>(&this->field_5C);
+
+	if (this->field_74 < 0)
+	{
+		this->mStart = *base;
+	}
+	else if (this->field_74 <= this->field_7C)
+	{
+		this->mStart = *base + (*dir * this->field_74);
+	}
+	else
+	{
+		this->mStart = *base + (*dir * this->field_7C);
+	}
+
+	if (this->field_78 < 0)
+	{
+		this->mEnd = *base;
+	}
+	else if (this->field_78 <= this->field_7C)
+	{
+		this->mEnd = *base + (*dir * this->field_78);
+	}
+	else
+	{
+		this->mEnd = *base + (*dir * this->field_7C);
+	}
+
+	bool hitPlayer = false;
+	bool hitEnv = false;
+
+	if (this->field_74 > this->field_7C)
+	{
+		if (this->field_88)
+			hitEnv = true;
+	}
+	else
+	{
+		CVector zero(0, 0, 0);
+		if (!M3dColij_LineToSphere(&this->mStart, &this->mEnd, &zero, reinterpret_cast<CBody*>(MechList), 0, 0x1000))
+			return;
+
+		hitPlayer = true;
+	}
+
+	CSniperTarget* pSniper = static_cast<CSniperTarget*>(Mem_RecoverPointer(&this->field_8C));
+	CChopper* pChopper = static_cast<CChopper*>(Mem_RecoverPointer(&this->field_94));
+
+	print_if_false(!(pSniper && pChopper), "Both sniper and chopper owner");
+
+	if (!hitEnv && !hitPlayer)
+		return;
+
+	new CGlowFlash(&this->mEnd, 5, 0xFFu, 0xFFu, 0xFFu, 0, 0xFFu, 0x40u, 0u, 0, 9, 0, 1, 0xC, 0x28, 6, 0x14, 1, 1);
+
+	if (hitEnv)
+	{
+		SVECTOR normal;
+		new CSniperSplat(&this->mEnd, &normal);
+	}
+
+	if (pSniper)
+		pSniper->BulletResult(hitPlayer);
+
+	if (pChopper && hitPlayer && MechList->field_8E8)
+	{
+		CVector dirVec = this->mEnd - this->mStart;
+		i32 len = dirVec.Length();
+		if (len > 0xE74)
+			pChopper->field_37C = 0x12C;
+	}
+
+	u32 sfxId;
+	if (hitEnv)
+		sfxId = (Rnd(2) ? 0x76 : 0x75) | 0x8000;
+	else
+		sfxId = (Rnd(2) ? 0x28 : 0x27) | 0x8000;
+
+	SFX_PlayPos(sfxId, &this->mEnd, 0);
+
+	this->Die();
 }
 
 // @NotOk
