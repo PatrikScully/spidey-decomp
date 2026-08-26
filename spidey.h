@@ -261,7 +261,13 @@ class CPlayer : public CSuper
 
 		CManipOb* mHeldObject;
 
-		PADDING(0xE70-0xE48-4);
+		PADDING(0xE64-0xE48-4);
+
+		// @FIXME guess the type, used as a scalar-deleting-destructor
+		// pointer (vtable[0](1)) in CPlayer::SwitchToDeathMode
+		i32* field_E64;
+
+		PADDING(0xE70-0xE64-4);
 
 		SHandle hLockTarget;
 
