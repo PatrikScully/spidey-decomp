@@ -13,8 +13,8 @@
 
 // @Ok
 Font* FontManager::FontTab[NUM_FONTS_TAB];
-//#define G_FONT_TAB (FontManager::FontTab)
-#define G_FONT_TAB (reinterpret_cast<Font**>(0x005FAD5C))
+#define G_FONT_TAB (FontManager::FontTab)
+//#define G_FONT_TAB (reinterpret_cast<Font**>(0x005FAD5C))
 
 // @Ok
 // @Matching
@@ -542,33 +542,22 @@ void FontManager::AllShadowOn(void)
 }
 
 
-// @SMALLTODO
-//
+// @Ok
+// @Matching
 void FontManager::UnloadFont(Font* pFont)
 {
-	typedef void (*func_ptr)(Font*);
-	func_ptr func = (func_ptr)0x0043F5D0;
-
-	func(pFont);
-	return;
-	/*
-	i32 count = 0;
-	for (; count < 6; count++)
+	i32 count;
+	for (count = 0; count < NUM_FONTS_TAB; count++)
 	{
-		if (FontManager::FontTab[count] && !strcmp(FontManager::FontTab[count]->field_38, pFont->field_38))
+		if (G_FONT_TAB[count] && !strcmp(G_FONT_TAB[count]->field_38, pFont->field_38))
 			break;
 	}
 
-	print_if_false(count < 6, "Font %s is not in table", &pFont->field_38);
+	print_if_false(count < 6, "Font %s is not in table", pFont->field_38);
 
-
-	FontManager::FontTab[count]->unload();
-
-	if (FontManager::FontTab[count])
-		delete FontManager::FontTab[count];
-
-	FontManager::FontTab[count] = 0;
-	*/
+	G_FONT_TAB[count]->unload();
+	delete G_FONT_TAB[count];
+	G_FONT_TAB[count] = 0;
 }
 
 // @SMALLTODO
