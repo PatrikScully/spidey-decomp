@@ -6,9 +6,15 @@
 #include "ai.h"
 #include "message.h"
 #include "spidey.h"
+#include "trig.h"
+#include "ps2m3d.h"
 
-extern i32 DifficultyLevel; 
+extern i32 DifficultyLevel;
 extern CPlayer* MechList;
+
+// guess: random XA speech sub-id table, picked with Rnd(5) when the player
+// gets close to a waiting hostage in CHostage::FollowWaypoints.
+EXPORT i32 gHostageXaSubIds[5] = { 0, 1, 2, 4, 0xC };
 
 // @Ok
 // @Matching
@@ -18,10 +24,110 @@ void Hostage_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = Hostage_CreateHostage;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Real translation, hand-traced against the disasm (message loop over
+// pMessage, mAIProcList->Execute(), then a 7-way switch on field_324 whose
+// bodies turned out to be exactly the ALREADY-MATCHING CHostage::WaitForPlayer/
+// FollowWaypoints/BegMotherfucker/GetUp/DisappearBitch/DieHostage, inlined by
+// the original compiler since they are same-TU calls; case 4 and case 5 are
+// literally GetUp() and DisappearBitch() inlined, confirmed byte-for-byte
+// against those two functions' own disassembly). Residue: MSVC6 caches the
+// literal 6 in ebp throughout our build (used for the field_324==6 checks
+// and the switch's bounds compare) where the original caches 1 instead (used
+// for the pMsg->field_10 |= 1 and CycleAnim(0, 1) and dumbAssPad = 1 sites).
+// That single register-allocation choice cascades into every address/operand
+// after it. Fixed one real bug while chasing this: the field_40 "call for
+// help" counter must compare against the OLD value before incrementing
+// (pMsg->field_40++ < 0xF), not the pre-incremented value.
 void CHostage::AI(void)
 {
-    printf("CHostage::AI(void)");
+	this->DoPhysics(0);
+	M3d_BuildTransform(this);
+
+	for (CMessage* pMsg = this->pMessage; pMsg; pMsg = pMsg->mNext)
+	{
+		if ((this->field_2A8 & 0x1000) || this->field_324 == 6 || pMsg->field_14 >= 0xB)
+		{
+			switch (pMsg->field_14)
+			{
+				case 1:
+					if (this->field_324 == 3)
+					{
+						pMsg->field_40 = -60;
+						continue;
+					}
+
+					if (pMsg->field_40++ < 0xF)
+						continue;
+
+					this->TellSomebodyToShootMe();
+					break;
+
+				case 2:
+					this->field_324 = 3;
+					this->dumbAssPad = 0;
+					this->field_32C = pMsg->mHandle;
+					break;
+
+				case 3:
+					this->field_324 = 6;
+					this->dumbAssPad = 0;
+					break;
+			}
+		}
+
+		pMsg->field_10 |= 1;
+	}
+
+	this->CleanUpMessages(0, 0);
+
+	if (this->mAIProcList)
+	{
+		this->mAIProcList->Execute();
+		this->CleanUpAIProcList(0);
+	}
+
+	switch (this->field_324)
+	{
+		case 0:
+		{
+			i32 groundHeight = Utils_GetGroundHeight(&this->mPos, 300, 300, 0);
+			if (groundHeight != -1)
+			{
+				this->field_2A0 = groundHeight;
+				this->mPos.vy = groundHeight - (this->field_21E << 12);
+				this->field_29C = this->mPos.vy;
+			}
+
+			this->CycleAnim(0, 1);
+			this->field_324 = 1;
+			this->dumbAssPad = 0;
+			this->field_230 = Rnd(120) + 120;
+			break;
+		}
+		case 1:
+			this->WaitForPlayer();
+			break;
+		case 2:
+			this->FollowWaypoints();
+			break;
+		case 3:
+			this->BegMotherfucker();
+			break;
+		case 4:
+			this->GetUp();
+			break;
+		case 5:
+			this->DisappearBitch();
+			break;
+		case 6:
+			this->DieHostage();
+			break;
+	}
+
+	this->mShadowPos.vx = this->mPos.vx;
+	this->mShadowPos.vy = this->mPos.vy + (this->field_21E << 12);
+	this->mShadowPos.vz = this->mPos.vz;
 }
 
 // @Ok
@@ -81,10 +187,67 @@ void CHostage::DieHostage(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CHostage::FollowWaypoints(void)
 {
-    printf("CHostage::FollowWaypoints(void)");
+	SMoveToInfo moveInfo;
+	moveInfo.field_0.vx = 0;
+	moveInfo.field_0.vy = 0;
+	moveInfo.field_0.vz = 0;
+
+	if ((this->field_218 & 1) && !(this->field_218 & 2))
+	{
+		if (this->DistanceToPlayer(10) < 0x200)
+		{
+			this->field_218 |= 2;
+			Redbook_XAPlayPos(7, gHostageXaSubIds[Rnd(5)], &this->mPos, 100);
+		}
+	}
+
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			Trig_GetPosition(&moveInfo.field_0, this->field_1F4);
+			moveInfo.field_C = 0xF0;
+			moveInfo.field_10 = 0x50;
+			moveInfo.field_14 = 0x1C7;
+
+			new CAIProc_MoveTo(this, &moveInfo, 1);
+
+			this->SetHeight(1, 0x64, 0x258);
+			this->dumbAssPad++;
+
+			if (this->field_2F0 & 8)
+				goto done;
+		case 1:
+			this->SetHeight(0, 0x64, 0x258);
+
+			if (this->field_288 & 1)
+			{
+				this->field_288 &= ~1;
+
+				if (this->GetNextWaypoint())
+				{
+					this->dumbAssPad = 0;
+					return;
+				}
+
+				this->CycleAnim(this->field_298.Bytes[0], 1);
+
+done:
+				this->dumbAssPad = 0;
+				this->field_324 = 5;
+			}
+			else
+			{
+				this->RunAppropriateAnim();
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 EXPORT i32 gMaleHostageOne[2] = { 0x3030404, 4 };
