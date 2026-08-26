@@ -16,10 +16,67 @@ Font* FontManager::FontTab[NUM_FONTS_TAB];
 //#define G_FONT_TAB (FontManager::FontTab)
 #define G_FONT_TAB (reinterpret_cast<Font**>(0x005FAD5C))
 
-// @SMALLTODO
-void Font::handleEscapeChar(char)
+// @Ok
+// @Matching
+void Font::handleEscapeChar(char c)
 {
-    printf("Font::handleEscapeChar(char)");
+	i32 code = this->isEscapeChar(c);
+	print_if_false(code != 0, "Not an escape code");
+
+	if (code == 250)
+	{
+	}
+	else if (code == 254)
+	{
+		this->mRed = this->mSavedRed;
+		this->mGreen = this->mSavedGreen;
+		this->mBlue = this->mSavedBlue;
+	}
+	else if (code == 253)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 0;
+		this->mGreen = 128;
+		this->mBlue = 255;
+	}
+	else if (code == 252)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 255;
+		this->mGreen = 128;
+		this->mBlue = 0;
+	}
+	else if (code == 251)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 64;
+		this->mGreen = 64;
+		this->mBlue = 64;
+	}
+	else if (code == 249)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 128;
+		this->mGreen = 64;
+		this->mBlue = 64;
+	}
+	else if (code == 248)
+	{
+		this->mSavedRed = this->mRed;
+		this->mSavedGreen = this->mGreen;
+		this->mSavedBlue = this->mBlue;
+		this->mRed = 64;
+		this->mGreen = 128;
+		this->mBlue = 64;
+	}
 }
 
 // @Ok
@@ -760,6 +817,9 @@ void validate_Font(void)
 	VALIDATE(Font, Clut, 0x50);
 
 	VALIDATE(Font, field_58, 0x58);
+	VALIDATE(Font, mSavedRed, 0x5C);
+	VALIDATE(Font, mSavedGreen, 0x5D);
+	VALIDATE(Font, mSavedBlue, 0x5E);
 	VALIDATE(Font, field_5F, 0x5F);
 
 	VALIDATE(Font, field_160, 0x160);
