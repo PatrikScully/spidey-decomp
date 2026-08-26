@@ -10,6 +10,7 @@
 #include "spidey.h"
 #include "exp.h"
 #include <cmath>
+#include <new>
 
 EXPORT CThug* gGlobalThug;
 EXPORT CThug* gThugList;
@@ -502,10 +503,62 @@ void CThug::PlaySounds(void)
 
 }
 
-// @MEDIUMTODO
+// @NotOk
+// spit attack particles: 6 short-lived CGLineParticle spawned from a
+// mouth hook (SHook offset 13), heading roughly forward+90 degrees.
+// cmpsum: 119 mnemonic diffs on 468 bytes. first divergence is the
+// field_128 guard: the original does an early jl-to-return0 that my early
+// return compiles to a different branch shape.
 i32 CThug::MonitorSpitPlease(void)
 {
-	return 0x11062024;
+	if (this->field_128 < 0x1E)
+	{
+		return 0;
+	}
+
+	if ((this->mFlags & 0x80) && Utils_CrapDist(this->mPos, MechList->mPos) < 0xFA0)
+	{
+		SFX_PlayPos(0x8011, &this->mPos, 0);
+
+		CSVector angle = this->mAngles;
+		angle.vy += 0x400;
+
+		CVector dir;
+		Utils_GetVecFromMagDir(&dir, -0x100, &angle);
+		dir >>= 8;
+
+		SHook hook;
+		hook.Part.vx = 0;
+		hook.Part.vy = 0x14;
+		hook.Part.vz = static_cast<i16>(0xFF9C);
+		hook.Offset = 13;
+
+		VECTOR hookPos;
+		M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+		i32 count = 6;
+		do
+		{
+			i32 a = Rnd(3) + 4;
+			i32 b = (Rnd(3) + 4) * a;
+			i32 size = b * 0x60;
+
+			void *mem = CBit::operator new(size);
+			CGLineParticle *particle = 0;
+			if (mem)
+			{
+				particle = ::new (mem) CGLineParticle(*reinterpret_cast<CVector*>(&hookPos), dir, 0x14, 1);
+			}
+
+			particle->SetRGB0(0x30, 0x60, 0x30);
+			particle->SetRGB1(0, 0, 0);
+			particle->mCodeBGR0 |= 0x2000000;
+
+			count--;
+		} while (count != 0);
+	}
+
+	return 1;
 }
 
 // @Ok
