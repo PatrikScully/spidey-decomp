@@ -634,13 +634,58 @@ int Trig_GetLevelID(void)
 	return missionDigit | (areaCode << 8);
 }
 
-// @BIGTODO
+// @NotOk
+// Residue: 1 mnemonic diff in the default (unrecognized node type) path. Original does
+// `mov eax,[pos]; add eax,0xC`, ours does `mov ecx,[pos]; lea eax,[ecx+0xC]`, same result.
+// Could not reproduce the lea in an isolated repro with the same switch shape; the real
+// cause looks like whole-function register pressure. See trig.attempts.md.
 u16* Trig_GetPosition(CVector* pos, i32 node)
 {
-	typedef u16* (*func_ptr)(CVector*, i32);
-	func_ptr func = (func_ptr)0x004E3940;
+	print_if_false(node >= 0 && node < NumNodes, "Bad node sent to Trig_GetPosition");
 
-	return func(pos, node);
+	u16* trigNodePtr = reinterpret_cast<u16*>(G_OFFSETLIST[node]);
+	i32 trigNodeValue = *trigNodePtr;
+
+	u8* pRaw;
+
+	switch (trigNodeValue)
+	{
+		case 1:
+		case 7:
+			pRaw = SkipFlags(reinterpret_cast<u8*>(trigNodePtr) + 8 + trigNodePtr[3] * 2) + 3;
+			break;
+		case 5:
+		case 20:
+			pRaw = reinterpret_cast<u8*>(trigNodePtr) + 9 + trigNodePtr[2] * 2;
+			break;
+		case 500:
+		case 501:
+			pRaw = reinterpret_cast<u8*>(trigNodePtr) + 5;
+			break;
+		case 1002:
+			trigNodePtr++;
+			// fallthrough
+		case 3:
+		case 8:
+		case 10:
+		case 12:
+		case 13:
+		case 1000:
+		case 1001:
+			pRaw = reinterpret_cast<u8*>(trigNodePtr) + 7 + trigNodePtr[1] * 2;
+			break;
+		default:
+			print_if_false(0, "Unrecognized node type in\n Trig_GetPosition");
+			return reinterpret_cast<u16*>(reinterpret_cast<u32>(pos) + 0xC);
+	}
+
+	i32* pAligned = reinterpret_cast<i32*>(reinterpret_cast<u32>(pRaw) & ~3);
+
+	pos->vx = pAligned[0] << 0xC;
+	pos->vy = pAligned[1] << 0xC;
+	pos->vz = pAligned[2] << 0xC;
+
+	return reinterpret_cast<u16*>(pAligned + 3);
 }
 
 // @Ok
