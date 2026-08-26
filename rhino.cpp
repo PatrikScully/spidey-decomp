@@ -426,10 +426,67 @@ void CRhino::StompGround(void)
     printf("CRhino::StompGround(void)");
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRhino::StuckInWall(void)
 {
-    printf("CRhino::StuckInWall(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_348 |= 2;
+			this->field_218 &= ~8;
+			new CAIProc_StateSwitchSendMessage(this, 0x0C);
+			this->dumbAssPad++;
+		case 1:
+			if (this->field_288 & 1)
+			{
+				this->field_288 &= ~1;
+				this->field_230 = MechList->field_E18 ? 900 : Utils_GetValueFromDifficultyLevel(200, 150, 120, 90);
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+			this->RunTimer(&this->field_230);
+			if (this->field_230 > 0x3C)
+			{
+				if (!MechList->field_E18)
+				{
+					this->field_230 = 0x3C;
+				}
+			}
+
+			this->field_348 |= 2;
+			if (this->mAnimFinished)
+			{
+				if (this->field_230)
+				{
+					this->PlaySingleAnim(0x16, 0, -1);
+				}
+				else
+				{
+					this->PlaySingleAnim(0x19, 0, -1);
+					this->dumbAssPad++;
+					this->field_31C.bothFlags = 0xB;
+					SFX_PlayPos(0x8048, &this->mPos, 0);
+
+					if (this->field_218 & 8)
+					{
+						this->PlayXAPlease(9, 2, 1);
+					}
+				}
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @Ok
@@ -876,6 +933,7 @@ void validate_CRhino(void){
 	VALIDATE_SIZE(CRhino, 0x424);
 
 	VALIDATE(CRhino, field_344, 0x344);
+	VALIDATE(CRhino, field_348, 0x348);
 
 	VALIDATE(CRhino, field_358, 0x358);
 	VALIDATE(CRhino, field_388, 0x388);
