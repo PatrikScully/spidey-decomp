@@ -57,7 +57,9 @@ class CPowerUp : public CBody
 		u16 field_11E;
 		u16 field_120;
 
-		PADDING(0x124-0x120-2);
+		// guess: random model variant offset, set in the constructor from
+		// Rnd(20) + 90. Only ever written there, no other reader found.
+		i16 field_122;
 
 		u8 field_124;
 
