@@ -1289,7 +1289,27 @@ void PCGfx_DrawTPoly3D(
 	submitPoly(verts, 3);
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Session 2026-08-26: confirmed the two print_if_false calls both check
+// drawScale (same string "Improbable draw scale" at 0x54ADDC both times,
+// against 0.0 then 256.0, both doubles), and confirmed the split branch
+// (else, below) matches the disasm instruction for instruction, including
+// the recursive PCGfx_DrawTexture2D(TextureSplitID,...) call shape and the
+// x_off/y_off wraparound. What was NOT reproduced this session: the real
+// disasm for the single texture branch (0x506637-0x5068da) builds the
+// PCGfx_DrawQuad2D call from a viewport clamp (right/bottom edges clamped
+// against 0x73C794/0x73C790, read as some viewport max, not yet named) and
+// TWO different code paths selected by a bit of a6 (0x5067ad has a pure
+// fixed point path using magic constant division by 0x66666667/0x88888889,
+// i.e. integer divide by ~2.5 and ~1.8, vs 0x5067ab's float fild/fmul/fdiv
+// chain), producing 4 values (probably u0/v0/u1/v1 fractions for partial
+// visibility when the rect is clipped by the viewport) that feed the final
+// call alongside TextureWScale/TextureHScale. The call below is a
+// functional approximation only (untruncated rect, full 0..TextureWScale/
+// TextureHScale UV, no viewport clipping), not a translation of that
+// clamp/fraction math, so it will not match and may not even be fully
+// correct at the clipped edges. Left @NotOk, not iterated against
+// compare.py, the real fix needs the viewport clamp fully worked out first.
 void PCGfx_DrawTexture2D(
 		i32 a1,
 		i32 x,
@@ -1355,20 +1375,18 @@ void PCGfx_DrawTexture2D(
 
 
 
-			/*
 			PCGfx_DrawQuad2D(
-					drawScale,
-					v31,
-					v32,
-					v33,
-					v46,
-					v45,
-					v34,
-					a8,
+					(f32)v36,
+					(f32)hateThiShit,
+					(f32)adjusted_width,
+					(f32)adjusted_height,
+					0.0f,
+					0.0f,
+					TextureWScale,
+					TextureHScale,
 					color,
-					v25,
+					(f32)v25,
 					0);
-			*/
 		}
 	}
 	else
