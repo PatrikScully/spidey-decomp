@@ -751,7 +751,11 @@ EXPORT i32 gBlendingModes[DCGfx_BlendingMode_MAX + 1] =
 };
 
 // @NotOk
-// missing low graphics stuff
+// residue: 6 mnemonic diffs at 0x5062c0, all one spot: original computes
+// (gChosenBlendingMode-1)<<4 as "add ecx,-1; shl ecx,4" (subtract-then-shift
+// in that instruction order), ours (and 2 rewrites of the same expression)
+// compile to "shl ecx,4; sub ecx,0x10" (MSVC distributes the shift over the
+// subtraction either way). 3 hypotheses tried, logged in pcgfx.attempts.md.
 void PCGfx_ProcessTexture(
 		_tagKMSTRIPHEAD *,
 		i32 a2,
@@ -775,8 +779,27 @@ void PCGfx_ProcessTexture(
 
 	if (gLowGraphics)
 	{
+		gPcGfxDrawRelated &= 0xFFFFFF85;
+
+		if (a2 >= 0)
+		{
+			gPcGfxDrawRelated |= 2;
+
+			if (PCTex_TextureHasAlpha(a2))
+				gPcGfxDrawRelated |= 0x40;
+		}
+
+		if (gChosenBlendingMode >= 1 && gChosenBlendingMode <= 4)
+		{
+			gPcGfxDrawRelated |= ((gChosenBlendingMode - 1) << 4) | 8;
+		}
 	}
-	else if (a2 >= 0)
+	else if (a2 < 0)
+	{
+		DXPOLY_SetTexture(0);
+		gProcessedTextureFlags = 0;
+	}
+	else
 	{
 		IDirectDrawSurface7* Direct3DTexture = PCTex_GetDirect3DTexture(a2);
 		DXPOLY_SetTexture(Direct3DTexture);
@@ -797,11 +820,6 @@ void PCGfx_ProcessTexture(
 
 		if ((v9 & 4) == 0)
 			gProcessedTextureFlags |= 4;
-	}
-	else
-	{
-		DXPOLY_SetTexture(0);
-		gProcessedTextureFlags = 0;
 	}
 }
 
