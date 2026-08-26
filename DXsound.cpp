@@ -2,8 +2,10 @@
 #include "DXinit.h"
 #include "SpideyDX.h"
 #include "validate.h"
+#include "pcdcFile.h"
 
 #include <cstring>
+#include <cstdlib>
 
 EXPORT LPDIRECTDRAWSURFACE7 gDDSurface7;
 EXPORT bool gTexAlpha = false;
@@ -904,19 +906,84 @@ i32 DXINPUT_StopForceFeedbackEffect(void)
 }
 
 
-// @MEDIUMTODO
-// low graphics stuff
-EXPORT void gsub_514DB0(LPVOID,
-			i32,
-			i32,
-			LONG,
-			u32,
-			f32,
-			i32,
-			f32,
-			f32)
+// Tentative globals for the low graphics scanline setup below. Names and
+// guessed roles are ours, not confirmed against his IDB (idb_globals.txt has
+// nothing at these addresses except gLowGraphicsRelated, already known).
+static void* gLowGraphicsSurface;             // 0x2E096D4, cached lpSurface
+static i32 gLowGraphicsPixelCount;            // 0x2E096DC, width * height
+static u8* const gLowGraphicsPaletteDirty = (u8*)0x2E096E1; // set 1 here, cleared by gsub_514ED0
+static i32* const gLowGraphicsColor16 = (i32*)0x2E096D0;    // packed 16 bit color, read first thing in gsub_514ED0
+static i32 gLowGraphicsWidth;                 // 0x568F90, cached every call
+static i32 gLowGraphicsHeight;                // 0x568F98, cached, used to detect a size change
+static i32 gLowGraphicsPitch;                 // 0x568F94, cached every call, read back as a row stride in gsub_514ED0
+static f32 gLowGraphicsFadeColor;             // 0x2E04568
+static i32 gLowGraphicsColorRelated;          // 0x282854C
+static f32 gLowGraphicsHalfWidth;             // 0xADC4EC
+static f32 gLowGraphicsHalfHeight;            // 0xADC4F0
+// Two small descriptor structs the fog/backdrop code reads back elsewhere
+// (not in this file). Field layout is a guess from the store pattern only.
+static void* gLowGraphicsFadeDescPtrA;        // 0xADC4E0, set to a fixed address
+static void* gLowGraphicsFadeDescPtrB;        // 0xADC4E4, set to a fixed address
+static i32 gLowGraphicsFadeDescUnused14;      // 0xADC4F4
+static i32 gLowGraphicsViewWidth;             // 0x2828548
+static i32 gLowGraphicsViewUnused8;           // 0x2828550
+static i32 gLowGraphicsViewHeight;            // 0x2828554
+
+// @NotOk
+// Low graphics scanline table setup, called once per BeginScene before the
+// MMX blit in gsub_514ED0. Reallocates gLowGraphicsRelated (16 bytes per
+// scanline) only when the height changes; caches pitch as a plain row
+// stride read back later by gsub_514ED0. 41 mnemonic diffs left, see
+// dxsound.attempts.md.
+EXPORT void gsub_514DB0(
+		LPVOID lpSurface,
+		i32 width,
+		i32 height,
+		LONG pitch,
+		u32 color16,
+		f32 fadeColor,
+		i32 colorRelated,
+		f32 halfWidth,
+		f32 halfHeight)
 {
-	printf("void gsub_514DB0(LPVOID,");
+	gLowGraphicsFadeColor = fadeColor;
+	gLowGraphicsColorRelated = colorRelated;
+	gLowGraphicsHalfHeight = halfHeight;
+	gLowGraphicsWidth = width;
+	gLowGraphicsSurface = lpSurface;
+	gLowGraphicsHalfWidth = halfWidth;
+	*gLowGraphicsPaletteDirty = 1;
+	gLowGraphicsPitch = pitch;
+
+	if (height != gLowGraphicsHeight)
+	{
+		void* oldBuf = gLowGraphicsRelated;
+		gLowGraphicsHeight = height;
+
+		if (oldBuf)
+			free(oldBuf);
+
+		gLowGraphicsRelated = malloc(gLowGraphicsHeight * 0x10);
+		memset(gLowGraphicsRelated, 0, gLowGraphicsHeight * 0x10);
+	}
+
+	gLowGraphicsFadeDescPtrA = (void*)0x2828558;
+	gLowGraphicsFadeDescPtrB = (void*)0xADC4F8;
+	gLowGraphicsFadeDescUnused14 = 0;
+	gLowGraphicsViewWidth = gLowGraphicsWidth;
+	gLowGraphicsViewUnused8 = 0;
+	gLowGraphicsViewHeight = gLowGraphicsHeight;
+
+	if (gLowGraphicsWidth >= 0 && gLowGraphicsHeight < 0)
+	{
+		gLowGraphicsFadeDescUnused14 = 0;
+		gLowGraphicsViewWidth = 0;
+		gLowGraphicsViewUnused8 = 0;
+		gLowGraphicsViewHeight = 0;
+	}
+
+	gLowGraphicsPixelCount = gLowGraphicsWidth * gLowGraphicsHeight;
+	*gLowGraphicsColor16 = color16;
 }
 
 // @Ok
@@ -967,26 +1034,98 @@ void DXPOLY_BeginScene(void)
 #endif
 }
 
+// base value for the depth bucket math below, tentative name/purpose guess.
+static i32* const gDxPolyDepthBucketBase = (i32*)0x6BBAA8;
+
 // @NotOk
-// need the low graphics stuff
+// 199 mnemonic diffs left, see dxsound.attempts.md. Behaviour:
+// with low graphics on and not on render pass 1, a near plane visibility
+// test on the poly's first/second/last (and, for 4+ verts, third/fourth)
+// vertex runs first and can discard the poly outright. Then: a forced slot
+// (a2 >= 0) always goes straight into that gSceneBuffer slot; otherwise, if
+// gDxPolyRelated is set and the poly has no blend mode, it draws right
+// now instead of queueing; otherwise it goes into a depth-sorted bucket
+// derived from depth and depthBias.
 void DXPOLY_DrawPoly(
 		DXPOLY* pPoly,
 		i32 a2,
-		i32,
-		f32)
+		i32 depthBias,
+		f32 depth)
 {
-	if ( !gInBeginScene )
+	if (!gInBeginScene)
 		DXERR_printf("drawing outside scene\r\n");
+
 	if (gLowGraphics && dword_6B7A8C != 1)
 	{
-		// @FIXME
-		DXERR_printf("DO ME");
+		f32 dx1 = pPoly->field_10[1].field_0 - pPoly->field_10[0].field_0;
+		f32 dy1 = pPoly->field_10[1].field_4 - pPoly->field_10[0].field_4;
+		i32 lastIdx = pPoly->field_C - 1;
+		f32 dxN = pPoly->field_10[lastIdx].field_0 - pPoly->field_10[0].field_0;
+		f32 dyN = pPoly->field_10[lastIdx].field_4 - pPoly->field_10[0].field_4;
+
+		f32 dx2 = 0.0f, dy2 = 0.0f, dx3 = 0.0f, dy3 = 0.0f;
+		if (lastIdx > 2)
+		{
+			dx2 = pPoly->field_10[1].field_0 - pPoly->field_10[2].field_0;
+			dy2 = pPoly->field_10[1].field_4 - pPoly->field_10[2].field_4;
+			dx3 = pPoly->field_10[3].field_0 - pPoly->field_10[2].field_0;
+			dy3 = pPoly->field_10[3].field_4 - pPoly->field_10[2].field_4;
+		}
+
+		f32 cross1 = dyN * dx1 - dxN * dy1;
+		u8 cull1 = (dword_6B7A8C == 3) ? (cross1 >= 0.0f) : (cross1 <= 0.0f);
+
+		if (pPoly->field_C > 3)
+		{
+			f32 cross2 = dy3 * dx2 - dx3 * dy2;
+			u8 cull2 = (dword_6B7A8C == 3) ? (cross2 >= 0.0f) : (cross2 <= 0.0f);
+
+			if (cull1 != cull2)
+				return;
+		}
+		else if (!cull1)
+		{
+			return;
+		}
 	}
-	else
+
+	if (a2 >= 0)
 	{
 		print_if_false(a2 <= 4096, "Invalid forced slot number!");
 		pPoly->pNext = gSceneBuffer[a2];
 		gSceneBuffer[a2] = pPoly;
+	}
+	else if (gDxPolyRelated && pPoly->mBlendMode == 0)
+	{
+#ifdef _WIN32
+		DXPOLY_SetTexture(pPoly->field_4);
+		DXPOLY_SetBlendMode(pPoly->mBlendMode);
+
+		DXPOLY_SetAddressUAndV(
+				(pPoly->field_A & 2) ? 1 : 3,
+				(pPoly->field_A & 4) ? 1 : 3);
+
+		DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
+		DXPOLY_SetFilterMode((pPoly->field_A & 0x10) == 0);
+
+		g_D3DDevice7->DrawPrimitive(
+				D3DPT_TRIANGLEFAN,
+				324,
+				&pPoly->field_10[0],
+				pPoly->field_C,
+				0);
+#endif
+	}
+	else
+	{
+		i32 bucket = *gDxPolyDepthBucketBase - (i32)(depth * -4096.0f) + depthBias;
+		if (bucket < 0)
+			bucket = 0;
+		else if (bucket > 0x1000)
+			bucket = 0x1000;
+
+		pPoly->pNext = gSceneBuffer[bucket];
+		gSceneBuffer[bucket] = pPoly;
 	}
 }
 
@@ -1002,11 +1141,124 @@ void DXPOLY_EnableTexAlpha(bool a1)
 #endif
 }
 
-// @MEDIUMTODO
-// low graphics related and uses mmx :O
+// Two callees this function needs that are outside our assigned range
+// (0x513FF0, 0x511860). Forwarded to the original rather than guessed at,
+// same pattern as ClearRegion in spool.cpp.
+typedef i32 (*func_513FF0_t)(i32, i32, void*, i32);
+static const func_513FF0_t gsub_513FF0 = (func_513FF0_t)0x00513FF0;
+typedef void (*func_511860_t)(i32, i32);
+static const func_511860_t gsub_511860 = (func_511860_t)0x00511860;
+
+// One entry of the per scanline table gsub_514DB0 allocates into
+// gLowGraphicsRelated (16 bytes/row). mReady gates whether the row
+// participates in the copy below; mTexA/mTexB are two chains of unknown
+// "texture" objects (offset 0x40 = next, 0x44 = a row-write callback taking
+// (node, dest), 0x48 = a u16 word count used to size the write). Struct
+// layout guessed from the disasm only, not confirmed against his IDB.
+struct SLowGraphicsScanline
+{
+	u8 mReady;
+	u8 pad[7];
+	void* mTexA;
+	void* mTexB;
+};
+struct SLowGraphicsTexNode
+{
+	u8 pad0[0x40];
+	SLowGraphicsTexNode* pNext;
+	void (*mWriteRow)(SLowGraphicsTexNode*, void*);
+	u16 mRowWords;
+};
+
+// @NotOk
+// Low graphics frame flush: builds an 8 bit RGB fade color from the packed
+// 16 bit gLowGraphicsColor16 (skips everything if it is negative), hands a
+// small local table of it to gsub_513FF0/gsub_511860 (both out of scope, not
+// attempted, real purpose unclear beyond "fog/fade related"), then walks
+// gLowGraphicsRelated's per scanline texture node chains and MMX-copies each
+// node's 0x40 byte row into the destination surface at gLowGraphicsSurface.
+// 276 mnemonic diffs, one honest first-pass attempt, not run through the
+// full matching discipline given how much of the callee/struct layout is
+// guesswork, not verified against decomp.me. See dxsound.attempts.md.
 void gsub_514ED0(void)
 {
-	printf("void gsub_514ED0(void)");
+	i32 color = *gLowGraphicsColor16;
+
+	if (color >= 0)
+	{
+		i32 color16 = color & 0xFFFF;
+
+		i32 r8 = ((color16 >> 11) & 0x1F) * 255 / 31;
+		i32 g8 = ((color16 >> 5) & 0x3F) * 255 / 63;
+		i32 b8 = (color16 & 0x1F) * 255 / 31;
+
+		f32 fadeShade = gLowGraphicsFadeColor / 128000.0f;
+
+		// Best effort only, exact field usage of this local table is not
+		// confirmed (see dxsound.attempts.md).
+		i32 fadeTable[5][7] = {0};
+		for (i32 i = 0; i < 5; i++)
+		{
+			fadeTable[i][0] = (i32)fadeShade;
+			fadeTable[i][1] = r8;
+			fadeTable[i][2] = g8;
+		}
+
+		if (gLowGraphicsPixelCount > 0)
+		{
+			for (i32 i = 3; i >= 0; i--)
+				fadeTable[i][3] = b8;
+
+			i32 result = gsub_513FF0(0, 0, fadeTable, 4);
+			if (result >= 3)
+			{
+				stateLog("%s", (char*)0x563D88);
+			}
+
+			gsub_511860(0, 0);
+		}
+	}
+
+	// This alignment nudge (round up to the next multiple of 8, unless
+	// already aligned) matches the disasm but its purpose here is unclear.
+	u8* alignedScratch = (u8*)0x2E086D0;
+	if (((u32)alignedScratch & 7) != 0)
+		alignedScratch = (u8*)(((u32)alignedScratch & ~7) + 8);
+
+	SLowGraphicsScanline* scanlines = (SLowGraphicsScanline*)gLowGraphicsRelated;
+	u8* dest = (u8*)gLowGraphicsSurface;
+
+	for (i32 y = 0; y < gLowGraphicsHeight; y++)
+	{
+		u8* rowDest = dest;
+
+		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+			rowDest = alignedScratch;
+
+		for (i32 which = 0; which < 2; which++)
+		{
+			SLowGraphicsTexNode* node = which == 0
+					? (SLowGraphicsTexNode*)scanlines[y].mTexA
+					: (SLowGraphicsTexNode*)scanlines[y].mTexB;
+
+			while (node)
+			{
+				node->mWriteRow(node, rowDest + node->mRowWords * 2);
+				node = node->pNext;
+			}
+		}
+
+		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+		{
+			// MMX 64 byte block copy, alignedScratch -> dest, matches the
+			// original's 8x movq loop.
+			memcpy(dest, alignedScratch, ((gLowGraphicsWidth * 2 + 0x3F) / 0x40) * 0x40);
+		}
+
+		dest += gLowGraphicsPitch;
+	}
+
+	*gLowGraphicsPaletteDirty = 0;
 }
 
 // @Ok
@@ -1082,17 +1334,24 @@ EXPORT void gsub_515270(void)
 }
 
 // @NotOk
-// fix names for enums
+// 396 mnemonic diffs, mostly a divergent prologue register allocation for
+// the whole function (the very first instructions already differ), one
+// real fix this session: gDxPolyRelated is (a1>>1)&1 stored once and reused
+// (not (a1&2)!=0 recomputed per use), and it is the same global 0x6BBAA5
+// DXPOLY_DrawPoly's immediate-draw check reads (fixed there too, was a
+// separate invented gDxPolyImmediateDraw pointer). Fix names for enums:
+// most of the SetRenderState/SetTextureStageState arguments below are raw
+// D3DRENDERSTATETYPE/D3DTEXTURESTAGESTATETYPE numbers, not enum names.
 void DXPOLY_Init(u32 a1)
 {
 	if ( gLowGraphics )
 		gsub_515270();
 
-	gDxPolyRelated = (a1 & 2) != 0;
+	gDxPolyRelated = (a1 >> 1) & 1;
 	gDepthCompareIndex = 4;
 	byte_6B7A80 = 0;
-	gDepthBuffering = (a1 & 2) != 0;
-	gDepthWriting = (a1 & 2) != 0;
+	gDepthBuffering = gDxPolyRelated;
+	gDepthWriting = gDxPolyRelated;
 	gTexAlpha = false;
 	gCurrentFilterIndex = 1;
 	gFogStart = 0.1f;
@@ -1234,10 +1493,159 @@ void DXPOLY_SaveScreen(void)
 #endif
 }
 
-// @MEDIUMTODO
-void DXPOLY_SaveSurfaceAsBMP(char *,void *,i32,i32,i32,_DDPIXELFORMAT *,bool)
+// @NotOk
+// Writes a bottom-up 24 bit BGR BMP of a surface to disk. Understands 4
+// source pixel formats (555, 555 with a top alpha bit, 565, 4444) plus a
+// 32 bit 0x00RRGGBB path; `flag` picks an alternate 32 bit source read (top
+// byte only, replicated to R/G/B) matching the disasm's al!=0 branch at the
+// per pixel loop, exact meaning not confirmed. Any other format prints an
+// error and returns without writing. 279 mnemonic diffs. Functionally
+// translated from the disasm, not run through matching discipline (huge
+// function, most of the residue would be in the per-format shift/mask
+// bookkeeping, which the compiler encodes as a small lookup table we do not
+// reproduce), not
+// verified against decomp.me. See dxsound.attempts.md.
+void DXPOLY_SaveSurfaceAsBMP(
+		char* filename,
+		void* pData,
+		i32 width,
+		i32 height,
+		i32 pitch,
+		_DDPIXELFORMAT* pf,
+		bool flag)
 {
-    printf("DXPOLY_SaveSurfaceAsBMP(char *,void *,i32,i32,i32,_DDPIXELFORMAT *,bool)");
+#ifdef _WIN32
+	u8 use32BitSrc = 0;
+	i32 rShift = 0, gShift = 0, bShift = 0, rBits = 0, gBits = 0, bBits = 0;
+	u32 rMask = 0, gMask = 0, bMask = 0;
+
+	if (pf->dwRGBBitCount == 16)
+	{
+		u32 r = pf->dwRBitMask;
+		u32 g = pf->dwGBitMask;
+		u32 b = pf->dwBBitMask;
+		u32 a = pf->dwRGBAlphaBitMask;
+
+		if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0x8000)
+		{
+			rMask = r; gMask = g; bMask = b;
+			rShift = 10; gShift = 5; bShift = 0;
+			rBits = 5; gBits = 5; bBits = 5;
+		}
+		else if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0)
+		{
+			if (flag)
+				return;
+
+			rMask = r; gMask = g; bMask = b;
+			rShift = 10; gShift = 5; bShift = 0;
+			rBits = 5; gBits = 5; bBits = 5;
+		}
+		else if (r == 0xF800 && g == 0x7E0 && b == 0x1F && a == 0)
+		{
+			rMask = r; gMask = g; bMask = b;
+			rShift = 11; gShift = 5; bShift = 0;
+			rBits = 5; gBits = 6; bBits = 5;
+		}
+		else if (r == 0xF00 && g == 0xF0 && b == 0xF && a == 0xF000)
+		{
+			rMask = r; gMask = g; bMask = b;
+			rShift = 8; gShift = 4; bShift = 0;
+			rBits = 4; gBits = 4; bBits = 4;
+		}
+		else
+		{
+			print_if_false(0, "SaveTex(): Unknown format = [%8.8X, %8.8X, %8.8X, %8.8X]\r\n", r, g, b, a);
+			return;
+		}
+	}
+	else if (pf->dwRGBBitCount == 0x20 &&
+			pf->dwRBitMask == 0xFF0000 && pf->dwGBitMask == 0xFF00 && pf->dwBBitMask == 0xFF)
+	{
+		use32BitSrc = 1;
+	}
+	else
+	{
+		print_if_false(0, "SaveTex(): Unknown format = [%8.8X, %8.8X, %8.8X, %8.8X]\r\n",
+				pf->dwRBitMask, pf->dwGBitMask, pf->dwBBitMask, pf->dwRGBAlphaBitMask);
+		return;
+	}
+
+	i32 rowBytes = ((width * 3 + 3) / 4) * 4;
+	i32 imageSize = rowBytes * height;
+
+	FILE* f = fopen(filename, "wb");
+	if (!f)
+	{
+		print_if_false(0, "SaveSurfaceAsBMP(): Problems creating: %s...\r\n", filename);
+		return;
+	}
+
+	BITMAPFILEHEADER bmfh;
+	memset(&bmfh, 0, sizeof(bmfh));
+	bmfh.bfType = 0x4D42;
+	bmfh.bfSize = imageSize + 0x36;
+	bmfh.bfOffBits = 0x36;
+	fwrite(&bmfh, 0xE, 1, f);
+
+	BITMAPINFOHEADER bmih;
+	memset(&bmih, 0, sizeof(bmih));
+	bmih.biSize = 0x28;
+	bmih.biWidth = width;
+	bmih.biHeight = height;
+	bmih.biPlanes = 1;
+	bmih.biBitCount = 0x18;
+	fwrite(&bmih, 0x28, 1, f);
+
+	u8* row = (u8*)malloc(rowBytes);
+	u8* srcRow = (u8*)pData + (height - 1) * pitch;
+
+	for (i32 y = height; y > 0; y--)
+	{
+		u8* dst = row;
+		u16* src16 = (u16*)srcRow;
+		u32* src32 = (u32*)srcRow;
+
+		for (i32 x = width; x > 0; x--)
+		{
+			u32 r, g, b;
+
+			if (use32BitSrc)
+			{
+				u32 px = *src32++;
+				if (flag)
+				{
+					b = (px >> 24) & 0xFF;
+					g = b;
+					r = b;
+				}
+				else
+				{
+					r = (px >> 16) & 0xFF;
+					g = (px >> 8) & 0xFF;
+					b = px & 0xFF;
+				}
+			}
+			else
+			{
+				u32 px = *src16++;
+				r = ((px & rMask) >> rShift) << (8 - rBits);
+				g = ((px & gMask) >> gShift) << (8 - gBits);
+				b = ((px & bMask) >> bShift) << (8 - bBits);
+			}
+
+			*dst++ = (u8)b;
+			*dst++ = (u8)g;
+			*dst++ = (u8)r;
+		}
+
+		fwrite(row, rowBytes, 1, f);
+		srcRow -= pitch;
+	}
+
+	fclose(f);
+	free(row);
+#endif
 }
 
 // @Ok
@@ -1422,10 +1830,56 @@ void DXSOUND_Close(i32 a1)
 #endif
 }
 
-// @MEDIUMTODO
-void DXSOUND_CreateDSBuffer(char *,i32)
+// @NotOk
+// No standalone PC address (fully inlined into DXSOUND_Load in the original).
+// DXSOUND_Load does not call this, it has its own inline copy of the same
+// logic, still 238 mnemonic diffs against 0x503B40 as of this comment. Not
+// verifiable on its own, tag follows DXSOUND_Load once that matches.
+void DXSOUND_CreateDSBuffer(char *fileName, i32 index)
 {
-    printf("DXSOUND_CreateDSBuffer(char *,i32)");
+#ifdef _WIN32
+	LPVOID ptr1 = 0;
+	DWORD len1 = 0;
+	LPVOID ptr2 = 0;
+	DWORD len2 = 0;
+	WAVEFORMATEX wfx;
+	long size;
+	DSBUFFERDESC dsbd;
+
+	u8* pData = loadWAV(fileName, &wfx, &size);
+	if (!pData)
+	{
+		stateLog("\t\tERROR Loading WAV file %s!!!\r\n", fileName);
+		return;
+	}
+
+	memset(&dsbd, 0, sizeof(dsbd));
+	dsbd.dwSize = sizeof(dsbd);
+	dsbd.dwFlags = DSBCAPS_STATIC | DSBCAPS_CTRLFREQUENCY | DSBCAPS_CTRLPAN | DSBCAPS_CTRLVOLUME;
+	dsbd.dwBufferBytes = size;
+	dsbd.lpwfxFormat = &wfx;
+
+	HRESULT hr = g_pDS->CreateSoundBuffer(&dsbd, &gDxSoundBuffers[index], 0);
+	DS_ERROR_LOG_AND_QUIT(hr);
+
+	hr = gDxSoundBuffers[index]->Lock(0, size, &ptr1, &len1, &ptr2, &len2, DSBLOCK_ENTIREBUFFER);
+	if (hr == DSERR_BUFFERLOST)
+	{
+		hr = gDxSoundBuffers[index]->Restore();
+		DS_ERROR_LOG_AND_QUIT(hr);
+		hr = gDxSoundBuffers[index]->Lock(0, size, &ptr1, &len1, &ptr2, &len2, DSBLOCK_ENTIREBUFFER);
+	}
+	DS_ERROR_LOG_AND_QUIT(hr);
+
+	memcpy(ptr1, pData, len1);
+	if (ptr2)
+		memcpy(ptr2, pData + len1, len2);
+
+	hr = gDxSoundBuffers[index]->Unlock(ptr1, len1, ptr2, len2);
+	DS_ERROR_LOG_AND_QUIT(hr);
+
+	free(pData);
+#endif
 }
 
 // @Ok
@@ -1477,10 +1931,160 @@ i32 DXSOUND_IsPlaying(i32 a1)
 	return v5 & 4;
 }
 
-// @SMALLTODO
-void DXSOUND_Load(char *)
+// Table of 64 sound names per audio group, only DXSOUND_Load reads it.
+// Group 0 starts with "missing", "s_burn". Owner TU is the audio group code.
+// Macro, not a static pointer variable: a stored pointer forces a memory load
+// at every use, the original computes the address as a constant offset.
+#define gAudioGroupSoundNames ((char**)0x0055AD64)
+
+// @NotOk
+// loadWAV and DXSOUND_CreateDSBuffer are both fully inlined here on PC (neither
+// has its own PC address), whole body written inline instead of calling out
+// to them. 238 mnemonic diffs left against 0x503B40 (down from 430 in the
+// first draft), 6 attempts logged so far, see dxsound.attempts.md.
+void DXSOUND_Load(char *groupName)
 {
-    printf("DXSOUND_Load(char *)");
+#ifdef _WIN32
+	if (!g_pDS)
+		return;
+
+	i32 group = AUDIOGROUPS_GetGroup(groupName);
+	if (group == -1)
+	{
+		stateLog("\tCould not loads sound for %s\r\n", groupName);
+		return;
+	}
+
+	i32 index = group != 1 ? 0x40 : 0;
+	char** pName = &gAudioGroupSoundNames[group * 64];
+
+	for (i32 i = 0; i < 64; i++)
+	{
+		char fileName[0x100];
+
+		if (!*pName)
+			return;
+
+		strcpy(fileName, *pName);
+		if (strlen(fileName))
+		{
+			strcat(fileName, ".wav");
+
+			// DXSOUND_CreateDSBuffer(fileName, index++) inlined
+			i32 dsIndex = index++;
+
+			// loadWAV(fileName, &wfx, &size) inlined
+			char path[0x100];
+			u8* pData = 0;
+			MMIOINFO mmioinfo;
+			MMCKINFO ckRiff;
+			MMCKINFO ckIn;
+			MMCKINFO ckData;
+			i32 fileSize = 0;
+			WAVEFORMATEX wfx;
+			long size = 0;
+			LPVOID ptr1 = 0;
+			DWORD len2 = 0;
+
+			strcpy(path, "AUDIO\\");
+			strcat(path, fileName);
+
+			HANDLE h = gdFsOpen(path, 0);
+			if (h)
+			{
+				gdFsGetFileSize((i32)h, &fileSize);
+				u8* fileBuf = (u8*)malloc(fileSize);
+				if (gdFsRead((i32)h, fileSize / 0x800, fileBuf))
+				{
+					free(fileBuf);
+					gdFsClose(h);
+				}
+				else
+				{
+					gdFsClose(h);
+
+					memset(&mmioinfo, 0, sizeof(mmioinfo));
+					mmioinfo.fccIOProc = FOURCC_MEM;
+					mmioinfo.pchBuffer = (HPSTR)fileBuf;
+					mmioinfo.cchBuffer = fileSize;
+					mmioinfo.adwInfo[0] = 0;
+
+					HMMIO hmmio = mmioOpen(fileName, &mmioinfo, MMIO_READ);
+					ckRiff.fccType = mmioStringToFOURCC("WAVE", 0);
+					if (hmmio)
+					{
+						if (mmioDescend(hmmio, &ckRiff, 0, MMIO_FINDRIFF) == 0)
+						{
+							ckIn.ckid = mmioStringToFOURCC("fmt ", 0);
+							mmioDescend(hmmio, &ckIn, &ckRiff, MMIO_FINDCHUNK);
+							mmioRead(hmmio, (HPSTR)&wfx, sizeof(WAVEFORMATEX));
+							mmioAscend(hmmio, &ckIn, 0);
+
+							if (wfx.wFormatTag == WAVE_FORMAT_PCM)
+							{
+								ckData.ckid = mmioStringToFOURCC("data", 0);
+								mmioDescend(hmmio, &ckData, &ckRiff, MMIO_FINDCHUNK);
+
+								if (ckData.cksize)
+								{
+									size = (ckData.cksize + 3) & ~3;
+									pData = (u8*)malloc(size);
+									memset(pData, 0, size);
+									if (pData)
+										mmioRead(hmmio, (HPSTR)pData, ckData.cksize);
+								}
+							}
+						}
+
+						mmioClose(hmmio, 0);
+					}
+
+					free(fileBuf);
+				}
+			}
+
+			if (!pData)
+			{
+				stateLog("\t\tERROR Loading WAV file %s!!!\r\n", fileName);
+			}
+			else
+			{
+				DSBUFFERDESC dsbd;
+				memset(&dsbd, 0, sizeof(dsbd));
+				dsbd.dwSize = sizeof(dsbd);
+				dsbd.dwFlags = DSBCAPS_STATIC | DSBCAPS_CTRLFREQUENCY | DSBCAPS_CTRLPAN | DSBCAPS_CTRLVOLUME;
+				dsbd.dwBufferBytes = size;
+				dsbd.lpwfxFormat = &wfx;
+
+				DWORD len1 = 0;
+				LPVOID ptr2 = 0;
+
+				HRESULT hr = g_pDS->CreateSoundBuffer(&dsbd, &gDxSoundBuffers[dsIndex], 0);
+				DS_ERROR_LOG_AND_QUIT(hr);
+
+				hr = gDxSoundBuffers[dsIndex]->Lock(0, size, &ptr1, &len1, &ptr2, &len2, DSBLOCK_ENTIREBUFFER);
+				if (hr == DSERR_BUFFERLOST)
+				{
+					hr = gDxSoundBuffers[dsIndex]->Restore();
+					DS_ERROR_LOG_AND_QUIT(hr);
+					hr = gDxSoundBuffers[dsIndex]->Lock(0, size, &ptr1, &len1, &ptr2, &len2, DSBLOCK_ENTIREBUFFER);
+				}
+				DS_ERROR_LOG_AND_QUIT(hr);
+
+				memcpy(ptr1, pData, len1);
+				if (ptr2)
+					memcpy(ptr2, pData + len1, len2);
+
+				hr = gDxSoundBuffers[dsIndex]->Unlock(ptr1, len1, ptr2, len2);
+				DS_ERROR_LOG_AND_QUIT(hr);
+
+				free(pData);
+			}
+		}
+
+		pName++;
+	}
+#endif
 }
 
 // @Ok
@@ -1665,22 +2269,185 @@ BOOL CALLBACK EnumControllersCallback(
 #endif
 }
 
-// @MEDIUMTODO
-void ParseWavHeader(char *,tWAVEFORMATEX **,long *,u8 **)
+// @NotOk
+// No PC address at all, proven dead code: scanned every CALL in the whole
+// .text section against the mmioOpenA/mmioDescend/mmioRead/mmioClose/
+// mmioAscend import thunks, the only call sites anywhere in the binary are
+// inside DXSOUND_Load's own inlined copy of this same parsing logic (see
+// loadWAV above and dxsound.attempts.md). The Mac source has a standalone
+// ParseWavHeader (spiderman_names.txt 0x166040), the PC port folded it
+// (and DXSOUND_CreateDSBuffer) straight into DXSOUND_Load instead. Kept as
+// a real translation, same chunk-walk as loadWAV, adapted to its
+// pointer-to-pointer output style, since nothing calls it it cannot be
+// exercised or verified.
+void ParseWavHeader(char *fileName, tWAVEFORMATEX **ppwfx, long *pSize, u8 **ppData)
 {
-    printf("ParseWavHeader(char *,tWAVEFORMATEX **,long *,u8 **)");
+#ifdef _WIN32
+	char path[0x100];
+	MMIOINFO mmioinfo;
+	MMCKINFO ckRiff;
+	MMCKINFO ckIn;
+	MMCKINFO ckData;
+	i32 fileSize;
+
+	*ppwfx = 0;
+	*ppData = 0;
+
+	strcpy(path, "AUDIO\\");
+	strcat(path, fileName);
+
+	HANDLE h = gdFsOpen(path, 0);
+	if (!h)
+		return;
+
+	gdFsGetFileSize((i32)h, &fileSize);
+	u8* fileBuf = (u8*)malloc(fileSize);
+	if (gdFsRead((i32)h, fileSize / 0x800, fileBuf))
+	{
+		free(fileBuf);
+		gdFsClose(h);
+		return;
+	}
+	gdFsClose(h);
+
+	memset(&mmioinfo, 0, sizeof(mmioinfo));
+	mmioinfo.fccIOProc = FOURCC_MEM;
+	mmioinfo.pchBuffer = (HPSTR)fileBuf;
+	mmioinfo.cchBuffer = fileSize;
+	mmioinfo.adwInfo[0] = 0;
+
+	HMMIO hmmio = mmioOpen(fileName, &mmioinfo, MMIO_READ);
+	ckRiff.fccType = mmioStringToFOURCC("WAVE", 0);
+	if (!hmmio)
+	{
+		free(fileBuf);
+		return;
+	}
+
+	if (mmioDescend(hmmio, &ckRiff, 0, MMIO_FINDRIFF) == 0)
+	{
+		tWAVEFORMATEX* pwfx = (tWAVEFORMATEX*)malloc(sizeof(WAVEFORMATEX));
+
+		ckIn.ckid = mmioStringToFOURCC("fmt ", 0);
+		mmioDescend(hmmio, &ckIn, &ckRiff, MMIO_FINDCHUNK);
+		mmioRead(hmmio, (HPSTR)pwfx, sizeof(WAVEFORMATEX));
+		mmioAscend(hmmio, &ckIn, 0);
+
+		if (pwfx->wFormatTag == WAVE_FORMAT_PCM)
+		{
+			ckData.ckid = mmioStringToFOURCC("data", 0);
+			mmioDescend(hmmio, &ckData, &ckRiff, MMIO_FINDCHUNK);
+
+			if (ckData.cksize)
+			{
+				*pSize = (ckData.cksize + 3) & ~3;
+				u8* pData = (u8*)malloc(*pSize);
+				memset(pData, 0, *pSize);
+				if (pData)
+					mmioRead(hmmio, (HPSTR)pData, ckData.cksize);
+				*ppData = pData;
+			}
+		}
+
+		*ppwfx = pwfx;
+	}
+
+	mmioClose(hmmio, 0);
+	free(fileBuf);
+#endif
 }
 
 // @MEDIUMTODO
+// Investigated, not attempted: no PC address, no caller anywhere in this
+// file, and unlike loadWAV/ParseWavHeader there is no sibling function to
+// tie its logic to either (checked every CALL in the 0x500000-0x520000
+// range against tools/names.json, nothing unnamed calls in from outside
+// that range points here). The Mac source has it at
+// spiderman_names.txt 0x164670, so it is real on that platform, but with no
+// PC code and no call site to infer behaviour from, writing a body here
+// would be a guess dressed up as a translation. Left as a stub.
 void initialSettings(void)
 {
     printf("initialSettings(void)");
 }
 
-// @MEDIUMTODO
-void loadWAV(char *,tWAVEFORMATEX *,long *)
+// @NotOk
+// No standalone PC address (fully inlined into DXSOUND_Load in the original,
+// alongside DXSOUND_CreateDSBuffer). DXSOUND_Load has its own inline copy and
+// does not call this. Reads AUDIO\<fileName> through the PKR file system and
+// parses it with mmio from memory. Returns the sample data, *pSize is the
+// size rounded up to 4. Not verifiable on its own.
+u8* loadWAV(char *fileName, tWAVEFORMATEX *pwfx, long *pSize)
 {
-    printf("loadWAV(char *,tWAVEFORMATEX *,long *)");
+#ifdef _WIN32
+	char path[0x100];
+	u8* pData = 0;
+	MMIOINFO mmioinfo;
+	MMCKINFO ckRiff;
+	MMCKINFO ckIn;
+	MMCKINFO ckData;
+	i32 fileSize;
+
+	strcpy(path, "AUDIO\\");
+	strcat(path, fileName);
+
+	HANDLE h = gdFsOpen(path, 0);
+	if (!h)
+		return 0;
+
+	gdFsGetFileSize((i32)h, &fileSize);
+	u8* fileBuf = (u8*)malloc(fileSize);
+	if (gdFsRead((i32)h, fileSize / 0x800, fileBuf))
+	{
+		free(fileBuf);
+		gdFsClose(h);
+		return 0;
+	}
+	gdFsClose(h);
+
+	memset(&mmioinfo, 0, sizeof(mmioinfo));
+	mmioinfo.fccIOProc = FOURCC_MEM;
+	mmioinfo.pchBuffer = (HPSTR)fileBuf;
+	mmioinfo.cchBuffer = fileSize;
+	mmioinfo.adwInfo[0] = 0;
+
+	HMMIO hmmio = mmioOpen(fileName, &mmioinfo, MMIO_READ);
+	ckRiff.fccType = mmioStringToFOURCC("WAVE", 0);
+	if (!hmmio)
+	{
+		free(fileBuf);
+		return 0;
+	}
+
+	if (mmioDescend(hmmio, &ckRiff, 0, MMIO_FINDRIFF) == 0)
+	{
+		ckIn.ckid = mmioStringToFOURCC("fmt ", 0);
+		mmioDescend(hmmio, &ckIn, &ckRiff, MMIO_FINDCHUNK);
+		mmioRead(hmmio, (HPSTR)pwfx, sizeof(WAVEFORMATEX));
+		mmioAscend(hmmio, &ckIn, 0);
+
+		if (pwfx->wFormatTag == WAVE_FORMAT_PCM)
+		{
+			ckData.ckid = mmioStringToFOURCC("data", 0);
+			mmioDescend(hmmio, &ckData, &ckRiff, MMIO_FINDCHUNK);
+
+			if (ckData.cksize)
+			{
+				*pSize = (ckData.cksize + 3) & ~3;
+				pData = (u8*)malloc(*pSize);
+				memset(pData, 0, *pSize);
+				if (pData)
+					mmioRead(hmmio, (HPSTR)pData, ckData.cksize);
+			}
+		}
+	}
+
+	mmioClose(hmmio, 0);
+	free(fileBuf);
+	return pData;
+#else
+	return 0;
+#endif
 }
 
 // @Ok
@@ -1702,7 +2469,17 @@ void DXPOLY_SetAddressUAndV(DWORD addressU, DWORD addressV)
 }
 
 // @NotOk
-// Missing low graphics
+// No standalone PC address (fully inlined into DXPOLY_EndScene, same as
+// loadWAV into DXSOUND_Load), not verifiable on its own. Its real inlined
+// form in DXPOLY_EndScene's disasm walks gSceneBuffer FORWARD from index 0
+// to 4096 inclusive (matches the array size, u32 gSceneBuffer[0x1001], and
+// DXPOLY_DrawPoly's `a2 <= 4096` bound check), fixed here (was counting
+// down from 4096, wrong direction and off by one on the low end). Also:
+// the real disasm calls two unnamed helpers (0x514B10, 0x514C60, chosen by
+// a bit in pPoly->field_8) and a third (0x514DA0) per polygon instead of
+// DXPOLY_SetTexture/SetBlendMode/etc, none of which are in this session's
+// assigned range; left as-is since decompiling those is a separate task.
+// Missing low graphics.
 void renderScene(void)
 {
 #ifdef _WIN32
@@ -1713,11 +2490,11 @@ void renderScene(void)
 	else
 	{
 		for (
-				i32 i = 4096;
-				i >= 0;
-				i--)
+				i32 i = 0;
+				i <= 4096;
+				i++)
 		{
-			
+
 			DXPOLY* pPoly = gSceneBuffer[i];
 			if (gDxPolyRelated && gHudOffset > 0 && i == gHudOffset)
 				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZENABLE, 0);
