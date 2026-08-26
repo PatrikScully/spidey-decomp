@@ -70,11 +70,119 @@ CCopLaserPing::~CCopLaserPing(void)
 {
 }
 
-// @MEDIUMTODO
-i32 CCop::WallHitCheck(CVector*, CVector*, i32)
+// @NotOk
+// Real, semantically-checked translation (fields, arg order and PathCheck's
+// out-param confirmed by hand-tracing every stack offset against the
+// original). Frame size is 0x28 vs the original's 0x24 and the field_218/
+// posBuf setup block is scheduled in a different order, so this is not a
+// byte match yet. Residue: our locals (v1, v2, posBuf) each get their own
+// stack slot; the original interleaves and reuses the incoming a2/a3 stack
+// slots directly as scratch space (confirmed: the dead a2 argument slot at
+// [esp+0x38] holds the function's "result" local for the rest of the run).
+// Not chased further yet, logged for whoever picks this up next.
+i32 CCop::WallHitCheck(CVector* a2, CVector* a3, i32 a4)
 {
-	printf("i32 CCop::WallHitCheck(CVector*, CVector*, i32)");
-	return 0x29072024;
+	i32 result = 1;
+
+	i32 adjY = this->mPos.vy + ((this->field_21E - 20) << 12);
+
+	CVector v1;
+	v1.vx = a2->vx;
+	v1.vy = adjY;
+	v1.vz = a2->vz;
+
+	CVector v2;
+	v2.vx = this->mPos.vx;
+	v2.vy = adjY;
+	v2.vz = this->mPos.vz;
+
+	CVector posBuf;
+	posBuf.vx = 0;
+	posBuf.vy = 0;
+	posBuf.vz = 0;
+
+	this->field_218 &= ~0x500;
+
+	i32 pathResult = this->PathCheck(&v2, &v1, &posBuf, 55);
+
+	if (pathResult == 4)
+	{
+		this->field_1F8 = 0;
+		return 3;
+	}
+
+	if (pathResult != 2)
+	{
+		this->field_218 |= 0x100;
+		this->field_1F8 = a4 - 1;
+
+		if (this->mHealth > 0)
+		{
+			if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(a2, 0))
+			{
+				this->field_2A8 &= ~0x10000000;
+				return result;
+			}
+
+			this->mHealth = 0;
+		}
+
+		return result;
+	}
+
+	i32 dx = posBuf.vx - this->mPos.vx;
+	i32 dxSign = dx >> 31;
+	i32 absDx = (dx ^ dxSign) - dxSign;
+
+	i32 dz = posBuf.vz - this->mPos.vz;
+	i32 dzSign = dz >> 31;
+	i32 absDz = (dz ^ dzSign) - dzSign;
+
+	i32 dividend;
+	i32 divisor;
+
+	if (absDx <= absDz)
+	{
+		i32 a3zSign = a3->vz >> 31;
+		divisor = (a3->vz ^ a3zSign) - a3zSign;
+		dividend = absDz;
+	}
+	else
+	{
+		i32 a3xSign = a3->vx >> 31;
+		divisor = (a3->vx ^ a3xSign) - a3xSign;
+		dividend = absDx;
+	}
+
+	this->field_1F8 = dividend / divisor;
+
+	if (this->field_1F8 > a4)
+	{
+		this->field_1F8 = a4;
+	}
+	else
+	{
+		result = 2;
+	}
+
+	posBuf.vx = a3->vx * this->field_1F8 + this->mPos.vx;
+	posBuf.vy = this->mPos.vy;
+	posBuf.vz = a3->vz * this->field_1F8 + this->mPos.vz;
+
+	this->field_218 |= 0x400;
+
+	if (this->mHealth > 0)
+	{
+		if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(&posBuf, 0))
+		{
+			this->field_2A8 &= ~0x10000000;
+			return result;
+		}
+
+		this->mHealth = 0;
+	}
+
+	return result;
 }
 
 // @Ok
