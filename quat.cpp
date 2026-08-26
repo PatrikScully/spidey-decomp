@@ -2,10 +2,61 @@
 #include "validate.h"
 #include "ps2funcs.h"
 
-// @MEDIUMTODO
+// guess: cyclic next-axis lookup table {1, 2, 0}, referenced only here.
+// no name in the maintainer's idb_globals.txt near 0x551B70 (0x551B80 is
+// gRelocTable, this table sits right before it).
+static i32 * const gQuatAxisNext = (i32*)0x551B70;
+
+// @Ok
+// @Matching
 void MToQ(MATRIX const & a1, CQuat& a2)
 {
-	printf("void MToQ(MATRIX const & a1, CQuat& a2)");
+	i32 trace = a1.m[0][0] + a1.m[1][1] + a1.m[2][2];
+
+	if (trace > 0)
+	{
+		i32 s = M3dMaths_SquareRoot0((trace + 4096) << 12);
+		a2.w = s >> 1;
+		i32 scale = 0x800000 / s;
+		a2.x = ((a1.m[1][2] - a1.m[2][1]) * scale) >> 12;
+		a2.y = ((a1.m[2][0] - a1.m[0][1]) * scale) >> 12;
+		a2.z = ((a1.m[0][2] - a1.m[1][0]) * scale) >> 12;
+		return;
+	}
+
+	i32 i = 0;
+	if (a1.m[1][1] > a1.m[0][0]) i = 1;
+	if (a1.m[2][2] > a1.m[i][i]) i = 2;
+
+	i32 j = gQuatAxisNext[i];
+	i32 k = gQuatAxisNext[j];
+
+	i32 s = M3dMaths_SquareRoot0((a1.m[i][i] - a1.m[k][k] - a1.m[j][j] + 4096) << 12);
+
+	switch (i)
+	{
+		case 0: a2.x = s >> 1; break;
+		case 1: a2.y = s >> 1; break;
+		case 2: a2.z = s >> 1; break;
+	}
+
+	i32 scale = 0x800000 / s;
+
+	a2.w = ((a1.m[j][k] - a1.m[k][j]) * scale) >> 12;
+
+	switch (j)
+	{
+		case 0: a2.x = ((a1.m[i][0] + a1.m[0][i]) * scale) >> 12; break;
+		case 1: a2.y = ((a1.m[i][1] + a1.m[1][i]) * scale) >> 12; break;
+		case 2: a2.z = ((a1.m[i][2] + a1.m[2][i]) * scale) >> 12; break;
+	}
+
+	switch (k)
+	{
+		case 0: a2.x = ((a1.m[i][0] + a1.m[0][i]) * scale) >> 12; break;
+		case 1: a2.y = ((a1.m[i][1] + a1.m[1][i]) * scale) >> 12; break;
+		case 2: a2.z = ((a1.m[i][2] + a1.m[2][i]) * scale) >> 12; break;
+	}
 }
 
 
