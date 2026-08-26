@@ -19,6 +19,7 @@
 #include "DXinit.h"
 #include "dcfileio.h"
 #include "reloc.h"
+#include "baddy.h"
 #include "my_assert.h"
 #include "texture.h"
 
@@ -917,10 +918,146 @@ void CPlayer::LockTargetTorsoAngle(void)
     printf("CPlayer::LockTargetTorsoAngle(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::NotifyKill(u16)
+// globals for CPlayer::NotifyKill below (no idb_globals.txt entries nearby,
+// all tentative names, guessed from usage):
+// gKillTaunt* (0x55649C..0x5564E1): six 2-byte-stride {group,variant} pick
+// tables, one per (early/late damage window) x (a2 special id) combination.
+// gKillTauntHistory1..5 (0x6A7FE8..0x6A7FF8): last 5 played sound ids, used
+// to avoid repeats.
+// gKillTauntLastVariant (0x6A9070): last picked variant index (write-only
+// here).
+// gKillNotifyCallCount (0x60CFBC): call counter, incremented on every call
+// regardless of outcome.
+static u8 * const gKillTauntTableEarlySpecial = (u8*)0x005564D0;
+static u8 * const gKillTauntTableEarly144 = (u8*)0x005564D8;
+static u8 * const gKillTauntTableEarlyOther = (u8*)0x0055649C;
+static u8 * const gKillTauntTableLateSpecial = (u8*)0x005564D4;
+static u8 * const gKillTauntTableLate144 = (u8*)0x005564E0;
+static u8 * const gKillTauntTableLateOther = (u8*)0x005564BC;
+static i32 * const gKillTauntHistory1 = (i32*)0x006A7FE8;
+static i32 * const gKillTauntHistory2 = (i32*)0x006A7FEC;
+static i32 * const gKillTauntHistory3 = (i32*)0x006A7FF0;
+static i32 * const gKillTauntHistory4 = (i32*)0x006A7FF4;
+static i32 * const gKillTauntHistory5 = (i32*)0x006A7FF8;
+static i32 * const gKillTauntLastVariant = (i32*)0x006A9070;
+static i32 * const gKillNotifyCallCount = (i32*)0x0060CFBC;
+
+// @NotOk
+// residue: 122 mnemonic diffs. the baddy-list scan, the two damage-window
+// conditions, all six table picks, the repeat-check against the history and
+// the final shift+play all match structurally (same globals, same call
+// targets, same table addresses, same branch conditions), but the original
+// spills "elapsed" (gTimerRelated - field_35C) to a stack slot and reloads
+// it from there on every retry through the pick loop, while our build keeps
+// it live in a register across retries instead. See attempts log for what
+// was tried.
+void CPlayer::NotifyKill(u16 a2)
 {
-    printf("CPlayer::NotifyKill(u16)");
+	if (this->field_354 && Rnd(2))
+	{
+		CBaddy *b = BaddyList;
+
+		while (b)
+		{
+			if ((b->mCBodyFlags & 0x200) && b->mHealth > 0 && (b->field_2A8 & 0x20))
+				goto done;
+
+			b = (CBaddy*)b->mNextItem;
+		}
+
+		{
+			i32 elapsed = gTimerRelated - this->field_35C;
+			i32 groupIndex;
+			i32 variantIndex;
+			bool checkRepeat;
+			i32 soundId;
+
+retry:
+			checkRepeat = true;
+
+			if (elapsed < 0xF0 && (this->field_358 - this->mHealth) < 0xA)
+			{
+				if (a2 == 0x132 || a2 == 0x140)
+				{
+					i32 idx = Rnd(4) & 0xFE;
+					groupIndex = gKillTauntTableEarlySpecial[idx];
+					variantIndex = gKillTauntTableEarlySpecial[idx + 1];
+					checkRepeat = false;
+				}
+				else if (a2 == 0x144)
+				{
+					i32 idx = Rnd(8) & 0xFE;
+					groupIndex = gKillTauntTableEarly144[idx];
+					variantIndex = gKillTauntTableEarly144[idx + 1];
+					checkRepeat = false;
+				}
+				else
+				{
+					i32 idx = Rnd(0x20) & 0xFE;
+					groupIndex = gKillTauntTableEarlyOther[idx];
+					variantIndex = gKillTauntTableEarlyOther[idx + 1];
+				}
+			}
+			else if (elapsed > 0x4B0 && (this->field_358 - this->mHealth) > 0x32)
+			{
+				if (a2 == 0x132 || a2 == 0x140)
+				{
+					i32 idx = Rnd(4) & 0xFE;
+					groupIndex = gKillTauntTableLateSpecial[idx];
+					variantIndex = gKillTauntTableLateSpecial[idx + 1];
+					checkRepeat = false;
+				}
+				else if (a2 == 0x144)
+				{
+					i32 idx = Rnd(4) & 0xFE;
+					groupIndex = gKillTauntTableLate144[idx];
+					variantIndex = gKillTauntTableLate144[idx + 1];
+					checkRepeat = false;
+				}
+				else
+				{
+					i32 idx = Rnd(0x14) & 0xFE;
+					groupIndex = gKillTauntTableLateOther[idx];
+					variantIndex = gKillTauntTableLateOther[idx + 1];
+				}
+			}
+			else
+			{
+				goto done;
+			}
+
+			soundId = (groupIndex << 4) + variantIndex;
+			*gKillTauntLastVariant = variantIndex;
+
+			if (checkRepeat &&
+				(*gKillTauntHistory1 == soundId ||
+				 *gKillTauntHistory2 == soundId ||
+				 *gKillTauntHistory3 == soundId ||
+				 *gKillTauntHistory4 == soundId ||
+				 *gKillTauntHistory5 == soundId))
+			{
+				goto retry;
+			}
+
+			{
+				i32 h2 = *gKillTauntHistory2;
+				i32 h3 = *gKillTauntHistory3;
+				i32 h4 = *gKillTauntHistory4;
+				i32 h5 = *gKillTauntHistory5;
+
+				*gKillTauntHistory1 = h2;
+				*gKillTauntHistory2 = h3;
+				*gKillTauntHistory3 = h4;
+				*gKillTauntHistory4 = h5;
+				*gKillTauntHistory5 = soundId;
+
+				Redbook_XAPlay(groupIndex, variantIndex, 0x14);
+			}
+		}
+	}
+
+done:
+	(*gKillNotifyCallCount)++;
 }
 
 // @MEDIUMTODO
