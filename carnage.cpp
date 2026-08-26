@@ -1847,10 +1847,84 @@ void CSonicRipple::CalcPos(
 	a2->vz = this->mPos.vz + this->field_74.vz * ((v4 * rcossin_tbl[a4 & 0xFFF].cos) >> 12);
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CSonicRipple::Move(void)
 {
-    printf("CSonicRipple::Move(void)");
+	this->field_74.vx = gMikeCamera[0].Position.vx - (this->mPos.vx >> 12);
+	this->field_74.vy = gMikeCamera[0].Position.vy - (this->mPos.vy >> 12);
+	this->field_74.vz = gMikeCamera[0].Position.vz - (this->mPos.vz >> 12);
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&this->field_68));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&this->field_74));
+	gte_op0();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&this->field_74));
+
+	CVector shifted;
+	shifted.vx = this->field_74.vx >> 8;
+	shifted.vy = this->field_74.vy >> 8;
+	shifted.vz = this->field_74.vz >> 8;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&shifted));
+	gte_sqr0();
+
+	VECTOR squared;
+	gte_stlvnl(&squared);
+
+	i32 mag = M3dMaths_SquareRoot0(squared.vx + squared.vy + squared.vz);
+
+	this->field_74.vx = (this->field_74.vx / mag) << 4;
+	this->field_74.vy = (this->field_74.vy / mag) << 4;
+	this->field_74.vz = (this->field_74.vz / mag) << 4;
+
+	this->field_84 += this->field_82;
+
+	i32 angle1 = this->field_84;
+
+	this->CalcPos(&this->mStart, angle1, this->field_58);
+	angle1 += this->field_86;
+
+	i32 angle2 = this->field_58;
+	SLineSeg *seg = this->mSegs;
+	i32 i;
+	for (i = 0; i < this->mNumSegs - 1; i++)
+	{
+		angle2 += this->field_5C;
+		this->CalcPos(&seg->End, angle1, angle2);
+		angle1 += this->field_86;
+		seg++;
+	}
+
+	this->CalcPos(&seg->End, angle1, this->field_5A);
+
+	this->field_5E += this->field_60;
+	this->mAge++;
+
+	if (this->mAge > this->field_62)
+	{
+		i32 fade = this->field_64;
+		i32 r = this->mSegs[0].r;
+		i32 g = this->mSegs[0].g;
+		i32 b = this->mSegs[0].b;
+		r = (r > fade) ? r - fade : 0;
+		g = (g > fade) ? g - fade : 0;
+		b = (b > fade) ? b - fade : 0;
+
+		if ((b | g | r) == 0)
+		{
+			this->Die();
+			return;
+		}
+
+		seg = this->mSegs;
+		for (i = 0; i < this->mNumSegs; i++)
+		{
+			seg->r = r;
+			seg->g = g;
+			seg->b = b;
+			seg++;
+		}
+	}
 }
 
 // @Ok
