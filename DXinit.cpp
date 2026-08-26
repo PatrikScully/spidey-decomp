@@ -61,6 +61,11 @@ EXPORT LPDIRECT3D7 g_D3D7;
 LPDIRECT3DDEVICE7 g_D3DDevice7;
 D3DDEVICEDESC7 gD3DDevCaps;
 
+// the original lives in the DXPOLY block (0x5027A0) and is a plain call from
+// DXINIT_ShutDown and shutdownDirect3D7, so keep the MSVC inliner away from it
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
 // @Ok
 void gsub_5027A0(void)
 {
@@ -73,13 +78,261 @@ void gsub_5027A0(void)
 		}
 	}
 }
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
-// @MEDIUMTODO
-i32 AUDIOGROUPS_GetGroup(char *)
+// @Ok
+// @Matching
+// group is never set on the default path, the original returns whatever sits in
+// its stack slot (the name pointer), so the -1 check in DXSOUND_Load never hits
+i32 AUDIOGROUPS_GetGroup(char *name)
 {
-    printf("AUDIOGROUPS_GetGroup(char *)");
-	return 0x06042025;
+	i32 group;
+
+	strlwr(name);
+
+	switch (name[1])
+	{
+	case 'p':
+		group = 1;
+		break;
+	case '1':
+		switch (name[3])
+		{
+		case '1':
+			group = 2;
+			break;
+		case '2':
+			group = 3;
+			break;
+		case '3':
+			group = 4;
+			break;
+		case '4':
+			group = 5;
+			break;
+		}
+		break;
+	case '2':
+		switch (name[3])
+		{
+		case '1':
+			group = 6;
+			break;
+		case '2':
+			group = 7;
+			break;
+		}
+		break;
+	case '3':
+		switch (name[3])
+		{
+		case '1':
+			group = 8;
+			break;
+		case '2':
+			group = 9;
+			break;
+		case '3':
+			group = 10;
+			break;
+		case '4':
+			group = 11;
+			break;
+		case '5':
+			group = 12;
+			break;
+		}
+		break;
+	case '4':
+		group = 13;
+		break;
+	case '5':
+		switch (name[3])
+		{
+		case '1':
+			group = 14;
+			break;
+		case '2':
+			group = 15;
+			break;
+		case '3':
+			group = 16;
+			break;
+		case '4':
+			group = 17;
+			break;
+		case '5':
+			group = 18;
+			break;
+		case '6':
+			group = 19;
+			break;
+		case '7':
+			group = 20;
+			break;
+		}
+		break;
+	case '6':
+		switch (name[3])
+		{
+		case '1':
+			group = 21;
+			break;
+		case '2':
+			group = 22;
+			break;
+		case '3':
+			group = 23;
+			break;
+		case '4':
+			group = 24;
+			break;
+		}
+		break;
+	case '7':
+		switch (name[3])
+		{
+		case '1':
+			group = 25;
+			break;
+		case '2':
+			group = 26;
+			break;
+		case '3':
+			group = 27;
+			break;
+		case '4':
+			group = 28;
+			break;
+		case '5':
+			group = 29;
+			break;
+		}
+		break;
+	case '8':
+		switch (name[3])
+		{
+		case '1':
+			group = 30;
+			break;
+		case '2':
+			group = 31;
+			break;
+		case '3':
+			group = 32;
+			break;
+		case '4':
+			group = 33;
+			break;
+		case '5':
+			group = 34;
+			break;
+		case '6':
+			group = 35;
+			break;
+		}
+		break;
+	case '9':
+		switch (name[3])
+		{
+		case '1':
+			group = 36;
+			break;
+		case '2':
+			group = 37;
+			break;
+		case '3':
+			group = 38;
+			break;
+		case '4':
+			group = 39;
+			break;
+		}
+		break;
+	case 'b':
+		switch (name[3])
+		{
+		case '1':
+			group = 40;
+			break;
+		case '2':
+			group = 41;
+			break;
+		case '3':
+			group = 42;
+			break;
+		case '4':
+			group = 43;
+			break;
+		}
+		break;
+	case 'c':
+		switch (name[3])
+		{
+		case '1':
+			group = 44;
+			break;
+		case '2':
+			group = 45;
+			break;
+		case '3':
+			group = 46;
+			break;
+		case '4':
+			group = 47;
+			break;
+		}
+		break;
+	case 'd':
+		switch (name[3])
+		{
+		case '1':
+			group = 48;
+			break;
+		case '2':
+			group = 49;
+			break;
+		case '3':
+			group = 50;
+			break;
+		}
+		break;
+	case 'e':
+		switch (name[3])
+		{
+		case 'u':
+			group = 0;
+			break;
+		case '1':
+			group = 51;
+			break;
+		case '2':
+			group = 52;
+			break;
+		case '3':
+			group = 53;
+			break;
+		case '4':
+			group = 54;
+			break;
+		}
+		break;
+	case 'f':
+		group = 55;
+		break;
+	case 'g':
+		group = 56;
+		break;
+	case 'h':
+		group = 57;
+		break;
+	}
+
+	return group;
 }
+
 
 // @Ok
 void DXINIT_DirectX8(
@@ -465,8 +718,8 @@ void FreePushOffsets(void)
 	gPushOffsetOne = 0;
 }
 
-// @NotOk
-// @Note: looks fine but registers are saved at different places
+// @Ok
+// @Matching
 void LoadPushOffsets(void)
 {
 	char path[32];
@@ -509,14 +762,14 @@ void LoadPushOffsets(void)
 					gPushOffsetAddr[i].field_4 = v21;
 				}
 			}
-		}
-		else
-		{
-			DXERR_printf("Out of memory loading: %s [%i entries]\r\n", path, gPushOffsetOne);
-			gPushOffsetOne = 0;
-		}
+			else
+			{
+				DXERR_printf("Out of memory loading: %s [%i entries]\r\n", path, gPushOffsetOne);
+				gPushOffsetOne = 0;
+			}
 
-		free(fileBuf);
+			free(fileBuf);
+		}
 	}
 }
 
@@ -1944,10 +2197,117 @@ INLINE void initDirectSound8(HWND hwnd)
 #endif
 }
 
-// @MEDIUMTODO
-void shutdownDirect3D7(i32)
+// @Ok
+// @Matching
+// only the __LINE__ values pushed for displayD3DError differ
+// the two surface clears and the DeleteAttachedSurface only display and exit,
+// they do not run DXINIT_ShutDown like the other error checks
+void shutdownDirect3D7(i32 releaseAll)
 {
-    printf("shutdownDirect3D7(i32)");
+#ifdef _WIN32
+	HRESULT hr;
+
+	if (g_D3DDevice7)
+	{
+		hr = g_D3DDevice7->Release();
+		D3D_ERROR_LOG_AND_QUIT(hr);
+		g_D3DDevice7 = 0;
+	}
+
+	DDBLTFX fx;
+	memset(&fx, 0, sizeof(fx));
+	fx.dwSize = sizeof(fx);
+	fx.dwFillColor = 0xFF000000;
+
+	if (g_pDDS_SaveScreen)
+	{
+		if (gDxOptionRelated)
+		{
+			hr = g_pDDS_SaveScreen->Blt(&gRect, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+		}
+		else
+		{
+			hr = g_pDDS_SaveScreen->Blt(0, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+		}
+
+		if (hr)
+		{
+			DISPLAY_D3D_ERROR(hr);
+			if (FAILED(hr))
+			{
+				exit(hr);
+			}
+		}
+	}
+
+	if (g_pDDS_Scene)
+	{
+		hr = g_pDDS_Scene->Blt(0, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+		if (hr)
+		{
+			DISPLAY_D3D_ERROR(hr);
+			if (FAILED(hr))
+			{
+				exit(hr);
+			}
+		}
+	}
+
+	if (releaseAll)
+	{
+		if (g_pDDS_SaveScreen)
+		{
+			g_pDDS_Scene->Release();
+			hr = g_pDDS_SaveScreen->Release();
+			D3D_ERROR_LOG_AND_QUIT(hr);
+			g_pDDS_SaveScreen = 0;
+			g_pDDS_Scene = 0;
+		}
+
+		if (pDDS)
+		{
+			hr = pDDS->Release();
+			D3D_ERROR_LOG_AND_QUIT(hr);
+			pDDS = 0;
+		}
+
+		if (g_pClipper)
+		{
+			hr = g_pClipper->Release();
+			D3D_ERROR_LOG_AND_QUIT(hr);
+			g_pClipper = 0;
+		}
+	}
+	else if (gDxOptionRelated && pDDS)
+	{
+		hr = g_pDDS_Scene->DeleteAttachedSurface(0, pDDS);
+		if (hr)
+		{
+			DISPLAY_D3D_ERROR(hr);
+			if (FAILED(hr))
+			{
+				exit(hr);
+			}
+		}
+
+		hr = pDDS->Release();
+		D3D_ERROR_LOG_AND_QUIT(hr);
+		pDDS = 0;
+	}
+
+	if (g_D3D7)
+	{
+		g_D3D7->Release();
+		g_D3D7 = 0;
+	}
+
+	if (releaseAll && lpDD)
+	{
+		hr = lpDD->Release();
+		D3D_ERROR_LOG_AND_QUIT(hr);
+		lpDD = 0;
+	}
+#endif
 }
 
 // @Ok
