@@ -210,16 +210,88 @@ CGrenadeWave::~CGrenadeWave(void)
 {
 }
 
-// @MEDIUMTODO
-CItemFrag::CItemFrag(u32 *,CVector *,CVector *,i32)
+// @Ok
+// @Matching
+CItemFrag::CItemFrag(u32 *pFace, CVector *pVertices, CVector *pVel, i32 a4)
 {
-    printf("CItemFrag::CItemFrag(u32 *,CVector *,CVector *,i32)");
+	this->SetSemiTransparent();
+
+	this->mTint = 0x808080;
+
+	this->field_70 = pFace[3];
+	this->field_74 = pFace[4];
+	this->field_78 = pFace[5];
+	this->field_7C = pFace[6];
+	this->field_80 = pFace[7];
+
+	u32 idx = pFace[1];
+	u8 idx0 = idx & 0xFF;
+	u8 idx1 = (idx >> 8) & 0xFF;
+	u8 idx2 = (idx >> 16) & 0xFF;
+	u8 idx3 = idx >> 24;
+
+	this->field_88 = pVertices[idx0];
+	this->field_94 = pVertices[idx1];
+	this->field_A0 = pVertices[idx2];
+	this->field_AC = pVertices[idx3];
+
+	this->mVel = *pVel;
+
+	i32 lifetime = Rnd(30);
+	this->field_84 = a4;
+
+	this->mLifetime = lifetime + 1;
+	this->mType = 0x17;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CItemFrag::Move(void)
 {
-    printf("CItemFrag::Move(void)");
+	this->field_88 += this->mVel;
+	this->field_94 += this->mVel;
+	this->field_A0 += this->mVel;
+	this->field_AC += this->mVel;
+
+	this->mVel.vy += 0x2000;
+
+	if (this->field_88.vy > this->field_84)
+	{
+		i32 delta = this->field_84 - this->field_88.vy;
+
+		this->field_88.vy += delta;
+		this->field_94.vy += delta;
+		this->field_A0.vy += delta;
+		this->field_AC.vy += delta;
+
+		this->mVel.vy = -this->mVel.vy >> 2;
+		this->mVel.vx >>= 1;
+		this->mVel.vz >>= 1;
+	}
+
+	this->mPos = this->field_88;
+	this->mPosB = this->field_94;
+	this->mPosC = this->field_A0;
+	this->mPosD = this->field_AC;
+
+	this->mPos.vx += (Rnd(41) - 20) << 12;
+	this->mPos.vz += (Rnd(41) - 20) << 12;
+	this->mPosB.vx += (Rnd(41) - 20) << 12;
+	this->mPosB.vz += (Rnd(41) - 20) << 12;
+	this->mPosC.vx += (Rnd(41) - 20) << 12;
+	this->mPosC.vz += (Rnd(41) - 20) << 12;
+	this->mPosD.vx += (Rnd(41) - 20) << 12;
+	this->mPosD.vz += (Rnd(41) - 20) << 12;
+
+	++this->mAge;
+	if (this->mAge >= this->mLifetime)
+	{
+		this->Die();
+		return;
+	}
+
+	i32 v = ((this->mLifetime - this->mAge) << 7) / this->mLifetime;
+	this->mTint = v | (v << 8) | (v << 16);
 }
 
 // @Ok
@@ -572,6 +644,12 @@ void Exp_GlowFlash(
 void validate_CItemFrag(void)
 {
 	VALIDATE_SIZE(CItemFrag, 0xB8);
+
+	VALIDATE(CItemFrag, field_84, 0x84);
+	VALIDATE(CItemFrag, field_88, 0x88);
+	VALIDATE(CItemFrag, field_94, 0x94);
+	VALIDATE(CItemFrag, field_A0, 0xA0);
+	VALIDATE(CItemFrag, field_AC, 0xAC);
 }
 
 void validate_CGlowFlash(void)
