@@ -103,10 +103,283 @@ INLINE void CFadePalettes::FadeDown(void)
 	}
 }
 
-// @MEDIUMTODO
+static u8 * const gPSXRegionActiveFlags = (u8*)0x6B244A;
+// tentative, not in the maintainer's IDB. Nearest named neighbours are
+// PSXRegion at 0x6B2440 and CItemRelatedList's identical "index*17" region
+// table at 0x6B2454 (ob.h, also used by CMysterio's ctor and platform.cpp);
+// guessing a byte flag per region slot with the same stride and indexing.
+
+// @NotOk
+// residue: cmpsum against 0x45c030 shows 406 mnemonic diffs starting at the
+// very first instruction (ebp vs esi as the "this" register), so this is
+// functional-shape only, not register-verified. High confidence on the
+// overall algorithm, from a full stack-slot trace of the original: RGB1555
+// palette entries in field_3C/field_33C are nudged 3 units per channel, per
+// call, toward a paired "target" table one step closer, plus an optional
+// gPaletteFadeRGB/gPaletteFadeRGB2 clamp gated by field_45C, split into two
+// symmetrical phases picked by field_45B (0 = fading toward
+// field_458/459/45A, 1 = fading back toward field_45D/45E/45F, 3 = Die()).
+// Low confidence on: the exact field_44C region-flag indexing shape, and
+// whether the two field_3C/field_33C blend loops really get duplicated per
+// phase in the compiled output (written that way here, matching the
+// disassembly's four separate un-shared loop bodies) or whether some other
+// source shape produces the same four copies. Only one attempt made past
+// the initial translation (this is a >1000 byte function; the "Matching
+// discipline" 10-hypotheses-per-cluster bar was not met, so this stays
+// @NotOk rather than @AlmostMatching).
 void CFadePalettes::Move(void)
 {
-    printf("CFadePalettes::Move(void)");
+	print_if_false(
+			gPSXRegionActiveFlags[this->field_44C * 17 * 4] != 0,
+			"Region became unusable");
+
+	switch (this->field_45B)
+	{
+		case 0:
+		{
+			if (this->mAge > 0xB)
+			{
+				this->mAge = 0;
+				this->field_45B = 2;
+				return;
+			}
+			this->mAge++;
+
+			if (this->field_45C)
+			{
+				i32 r = gPaletteFadeRGB[0] >> 3;
+				i32 g = gPaletteFadeRGB[1] >> 3;
+				i32 b = gPaletteFadeRGB[2] >> 3;
+
+				i32 tr = this->field_458;
+				i32 tg = this->field_459;
+				i32 tb = this->field_45A;
+
+				if (r > tr) { r -= 3; if (r < tr) r = tr; }
+				else { r += 3; if (r > tr) r = tr; }
+
+				if (g > tg) { g -= 3; if (g < tg) g = tg; }
+				else { g += 3; if (g > tg) g = tg; }
+
+				if (b > tb) { b -= 3; if (b < tb) b = tb; }
+				else { b += 3; if (b > tb) b = tb; }
+
+				gPaletteFadeRGB[0] = static_cast<u8>(r << 3);
+				gPaletteFadeRGB[1] = static_cast<u8>(g << 3);
+				gPaletteFadeRGB[2] = static_cast<u8>(b << 3);
+
+				gPaletteFadeRGB2[0] = static_cast<u8>(r << 3);
+				gPaletteFadeRGB2[1] = static_cast<u8>(g << 3);
+				gPaletteFadeRGB2[2] = static_cast<u8>(b << 3);
+			}
+
+			{
+				i32 i;
+
+				for (i = 0; i < this->field_450; i++)
+				{
+					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 4);
+					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 0x24);
+
+					for (i32 j = 0; j < 16; j++)
+					{
+						u16 target = pHi[j];
+
+						if (target & 0x7FFF)
+						{
+							u16 current = pLo[j];
+
+							i32 tr = target & 0x1F;
+							i32 tg = (target >> 5) & 0x1F;
+							i32 tb = (target >> 10) & 0x1F;
+
+							i32 cr = current & 0x1F;
+							i32 cg = (current >> 5) & 0x1F;
+							i32 cb = (current >> 10) & 0x1F;
+
+							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
+							else { tr += 3; if (tr > cr) tr = cr; }
+
+							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
+							else { tg += 3; if (tg > cg) tg = cg; }
+
+							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
+							else { tb += 3; if (tb > cb) tb = cb; }
+
+							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
+						}
+					}
+
+					_LoadImage();
+				}
+
+				for (i = 0; i < this->field_454; i++)
+				{
+					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 4);
+					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 0x204);
+
+					for (i32 j = 0; j < 256; j++)
+					{
+						u16 target = pHi[j];
+
+						if (target & 0x7FFF)
+						{
+							u16 current = pLo[j];
+
+							i32 tr = target & 0x1F;
+							i32 tg = (target >> 5) & 0x1F;
+							i32 tb = (target >> 10) & 0x1F;
+
+							i32 cr = current & 0x1F;
+							i32 cg = (current >> 5) & 0x1F;
+							i32 cb = (current >> 10) & 0x1F;
+
+							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
+							else { tr += 3; if (tr > cr) tr = cr; }
+
+							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
+							else { tg += 3; if (tg > cg) tg = cg; }
+
+							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
+							else { tb += 3; if (tb > cb) tb = cb; }
+
+							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
+						}
+					}
+
+					_LoadImage();
+				}
+			}
+
+			break;
+		}
+
+		case 1:
+		{
+			if (this->mAge > 0xB)
+			{
+				this->mAge = 0;
+				this->field_45B = 3;
+				return;
+			}
+			this->mAge++;
+
+			if (this->field_45C)
+			{
+				i32 r = gPaletteFadeRGB[0] >> 3;
+				i32 g = gPaletteFadeRGB[1] >> 3;
+				i32 b = gPaletteFadeRGB[2] >> 3;
+
+				i32 tr = this->field_45D;
+				i32 tg = this->field_45E;
+				i32 tb = this->field_45F;
+
+				if (r > tr) { r -= 3; if (r < tr) r = tr; }
+				else { r += 3; if (r > tr) r = tr; }
+
+				if (g > tg) { g -= 3; if (g < tg) g = tg; }
+				else { g += 3; if (g > tg) g = tg; }
+
+				if (b > tb) { b -= 3; if (b < tb) b = tb; }
+				else { b += 3; if (b > tb) b = tb; }
+
+				gPaletteFadeRGB[0] = static_cast<u8>(r << 3);
+				gPaletteFadeRGB[1] = static_cast<u8>(g << 3);
+				gPaletteFadeRGB[2] = static_cast<u8>(b << 3);
+
+				gPaletteFadeRGB2[0] = static_cast<u8>(r << 3);
+				gPaletteFadeRGB2[1] = static_cast<u8>(g << 3);
+				gPaletteFadeRGB2[2] = static_cast<u8>(b << 3);
+			}
+
+			{
+				i32 i;
+
+				for (i = 0; i < this->field_450; i++)
+				{
+					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 4);
+					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 0x24);
+
+					for (i32 j = 0; j < 16; j++)
+					{
+						u16 target = pHi[j];
+
+						if (target & 0x7FFF)
+						{
+							u16 current = pLo[j];
+
+							i32 tr = target & 0x1F;
+							i32 tg = (target >> 5) & 0x1F;
+							i32 tb = (target >> 10) & 0x1F;
+
+							i32 cr = current & 0x1F;
+							i32 cg = (current >> 5) & 0x1F;
+							i32 cb = (current >> 10) & 0x1F;
+
+							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
+							else { tr += 3; if (tr > cr) tr = cr; }
+
+							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
+							else { tg += 3; if (tg > cg) tg = cg; }
+
+							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
+							else { tb += 3; if (tb > cb) tb = cb; }
+
+							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
+						}
+					}
+
+					_LoadImage();
+				}
+
+				for (i = 0; i < this->field_454; i++)
+				{
+					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 4);
+					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 0x204);
+
+					for (i32 j = 0; j < 256; j++)
+					{
+						u16 target = pHi[j];
+
+						if (target & 0x7FFF)
+						{
+							u16 current = pLo[j];
+
+							i32 tr = target & 0x1F;
+							i32 tg = (target >> 5) & 0x1F;
+							i32 tb = (target >> 10) & 0x1F;
+
+							i32 cr = current & 0x1F;
+							i32 cg = (current >> 5) & 0x1F;
+							i32 cb = (current >> 10) & 0x1F;
+
+							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
+							else { tr += 3; if (tr > cr) tr = cr; }
+
+							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
+							else { tg += 3; if (tg > cg) tg = cg; }
+
+							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
+							else { tb += 3; if (tb > cb) tb = cb; }
+
+							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
+						}
+					}
+
+					_LoadImage();
+				}
+			}
+
+			break;
+		}
+
+		case 3:
+			this->Die();
+			break;
+
+		default:
+			break;
+	}
 }
 
 // @Ok
