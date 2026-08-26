@@ -2,6 +2,7 @@
 #include "spool.h"
 #include "utils.h"
 #include "my_assert.h"
+#include "mem.h"
 
 #include "validate.h"
 
@@ -35,6 +36,43 @@ CElectro::~CElectro(void)
 
 	if (this->field_50)
 		Mem_Delete(this->field_50);
+}
+
+// @Ok
+// @Matching
+// Setup is used only by CElectroLine::CElectroLine, but writes to a field
+// (a8, u16) at offset 0x64, which is right past CElectro's own validated
+// size (CSimpleTexturedRibbon 0x4C + field_4C 4 + field_50/field_54 8 +
+// field_58 CVector 12 = 0x64). Every real caller passes a CElectroLine
+// (0x6C, PADDING(8) at 0x64), so this stays in bounds in practice. Kept as
+// a raw offset write instead of restructuring CElectro's validated layout,
+// since Setup is documented (via the Mac build) as CElectro's own member.
+void CElectro::Setup(i32 a1, i32 a2, u32 *a3, u8 a4, u8 a5, u8 a6, u16 a7, u16 a8)
+{
+	this->SetNumFaces(a1);
+	this->field_54 = DCMem_New((a1 * 3 + 3) * 4, 0, 1, 0, 1);
+
+	print_if_false(a2 != 0, "Zero NumTextures");
+	print_if_false(a2 < 20, "Suspicious NumTextures");
+
+	this->field_50 = DCMem_New(a2 * 4, 0, 1, 0, 1);
+	this->field_4C = a2;
+	print_if_false(a3 != 0, "NULL pChecksums");
+
+	for (a2 = 0; a2 < this->field_4C; a2++)
+	{
+		u32 checksum = *a3;
+		a3++;
+		reinterpret_cast<Texture**>(this->field_50)[a2] = Spool_FindTextureEntry(checksum);
+		print_if_false(reinterpret_cast<Texture**>(this->field_50)[a2] != 0, "Could not find CElectro texture");
+	}
+
+	this->SetTexture(reinterpret_cast<Texture**>(this->field_50)[0]);
+	this->SetRGB(a4, a5, a6);
+	this->SetSemiTransparent();
+	this->SetWidth(a7);
+
+	*reinterpret_cast<u16*>(reinterpret_cast<u8*>(this) + 0x64) = a8;
 }
 
 // @Ok
@@ -408,6 +446,7 @@ void validate_CElectro(void)
 {
 	VALIDATE_SIZE(CElectro, 0x64);
 
+	VALIDATE(CElectro, field_4C, 0x4C);
 	VALIDATE(CElectro, field_50, 0x50);
 	VALIDATE(CElectro, field_54, 0x54);
 
