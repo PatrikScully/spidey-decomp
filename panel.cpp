@@ -34,10 +34,44 @@ void DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)
     printf("DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)");
 }
 
-// @MEDIUMTODO
-void DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)
+// packed PS2-style 0x00BBGGRR colors need swapping to 0xFFRRGGBB for the PC renderer.
+// @Bogus
+static u32 DCGouraud_SwapColor(u32 c)
 {
-    printf("DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)");
+	return 0xFF000000 | ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF);
+}
+
+// @NotOk
+// functionally plausible (scaled quad + per-vertex color swap into
+// PCGfx_DrawQPoly2D, mirrors DCPanel_DrawFlatShadedPoly's scaling and the
+// PS2 BGR->RGB swap seen in the original disasm), but structurally wrong:
+// cmpsum shows 140 mnemonic diffs starting at the prologue (our stack frame
+// is 0x14 bytes of locals vs the original's 0xC, so this is not a
+// scheduling residue, real structure differs). 1 attempt this session, not
+// pursued further given the size of the remaining queue. Original likely
+// keeps the color conversion inline without the DCGouraud_SwapColor helper,
+// and reads single color bytes directly from the stack (mov cl,[esp+X]
+// appears in our own build's failed attempt) rather than masking a
+// register, suggesting per-channel byte access on the incoming u32 params
+// instead of shift/mask math.
+void DCDrawGouraudPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u32 c0, u32 c1, u32 c2, u32 c3, i32 c4)
+{
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 hScaled = h * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 wScaled = w * scaleX;
+	f32 yScaled = y * scaleY;
+	f32 xScaled = x * scaleX;
+
+	PCGfx_DrawQPoly2D(
+			xScaled, yScaled, 0.0f, 0.0f, DCGouraud_SwapColor((u32)c4),
+			xScaled + wScaled, yScaled, 1.0f, 0.0f, DCGouraud_SwapColor(c2),
+			xScaled, yScaled + hScaled, 0.0f, 1.0f, DCGouraud_SwapColor(c3),
+			xScaled + wScaled, yScaled + hScaled, 1.0f, 1.0f, DCGouraud_SwapColor(c1),
+			zOffset);
+
 }
 
 // @Ok
