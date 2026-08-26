@@ -12,6 +12,8 @@
 #include "spidey.h"
 #include "m3dzone.h"
 #include "m3dutils.h"
+#include "ps2m3d.h"
+#include "message.h"
 #include "web.h"
 #include "ai.h"
 #include "ps2lowsfx.h"
@@ -476,10 +478,138 @@ void CCarnage::ThrowBlades(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: not fully verified against a rebuild yet, see attempts file. Master per-frame AI dispatcher:
+// physics/shadow update, pending-message processing loop (message type dispatch approximated, the
+// exact type constants are a guess since they only drive a data jump table, not comparable bytes),
+// then the big switch(field_31C.bothFlags) that calls into the other CCarnage behaviour methods, then
+// a "web wrap" CNonRenderedBit lazily created via Mem_MakeHandle (tail section is a rough approximation,
+// the raw disasm around it was not fully understood).
 void CCarnage::AI(void)
 {
-    printf("CCarnage::AI(void)");
+	if (this->field_340)
+	{
+		this->field_340 -= this->field_80;
+		if (this->field_340 < 0)
+			this->field_340 = 0;
+	}
+
+	i32 state = this->field_31C.bothFlags;
+	this->field_194 = 0x44000;
+
+	print_if_false(1, "AI");
+
+	if (state == 0x2000)
+		CameraList->field_2A8 = 0;
+	else
+		CameraList->field_2A8 = 0x80;
+
+	this->DoSonicBubbleProcessing();
+	M3d_BuildTransform(this);
+	this->DoPhysics();
+
+	this->field_364 = this->mPos.vy + (this->field_21E << 12);
+	this->DoMGSShadow();
+
+	CMessage *msg = this->pMessage;
+	if (msg)
+	{
+		do
+		{
+			i32 current = this->field_31C.bothFlags;
+			if (current != 0x800)
+			{
+				switch (msg->field_14 - 5)
+				{
+					case 0:
+					case 1:
+						if (this->field_104.pWhatever)
+						{
+							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_104));
+							if (effect)
+								effect->Burst();
+							this->field_104.pWhatever = 0;
+						}
+						break;
+
+					case 2:
+					case 3:
+						if (this->field_10C.pWhatever)
+						{
+							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_10C));
+							if (effect)
+								effect->Burst();
+							this->field_10C.pWhatever = 0;
+						}
+						break;
+
+					case 4:
+					case 5:
+					case 6:
+						if (current == 0x80)
+						{
+							this->field_1F8 = 0;
+							this->dumbAssPad = 2;
+						}
+						else
+						{
+							this->field_218 &= ~7;
+							this->mVel.vz = 0;
+							this->mVel.vy = 0;
+							this->mVel.vx = 0;
+							this->field_31C.bothFlags = 0x80;
+							this->dumbAssPad = 0;
+						}
+						break;
+
+					default:
+						this->field_31C.bothFlags = 0x100;
+						this->dumbAssPad = 0;
+						break;
+				}
+			}
+
+			msg->field_10 |= 1;
+			msg = msg->mNext;
+		} while (msg);
+	}
+
+	this->CleanUpMessages(0, 0);
+
+	if (this->mAIProcList)
+		this->mAIProcList->Execute();
+
+	this->CleanUpAIProcList(0);
+
+	if (this->field_328 > this->field_80)
+	{
+		this->field_328 -= this->field_80;
+
+		if (!this->field_32C)
+		{
+			CNonRenderedBit *wrap = new CNonRenderedBit();
+			if (wrap)
+			{
+				print_if_false(this != 0, "AI");
+				print_if_false(this->mType == 0x13A, "AI");
+				this->field_32C = wrap;
+			}
+			else
+			{
+				this->field_32C = 0;
+			}
+		}
+	}
+	else
+	{
+		this->field_328 = 0;
+
+		if (this->field_32C)
+		{
+			delete reinterpret_cast<CNonRenderedBit*>(this->field_32C);
+			this->field_32C = 0;
+		}
+	}
 }
 
 // @MEDIUMTODO
