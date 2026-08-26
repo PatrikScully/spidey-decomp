@@ -9,6 +9,8 @@
 #include "db.h"
 #include "tweak.h"
 #include "ps2pad.h"
+#include "panel.h"
+#include "spidey.h"
 
 #include <cstring>
 
@@ -145,13 +147,162 @@ SCheat gCheats[NUM_CHEATS] =
 	},
 };
 
-// @MEDIUMTODO
+// these five and mCheatStoryboardFlag/field_78 now live as real fields in
+// SSaveGame (shell.h), found via ActivateCheat's cheat flag writes landing
+// inside gSaveGame's address range; see shell.h for per-field evidence.
+#define G_LEVEL_SELECT_FLAG (*reinterpret_cast<u32*>(0x0060CFD8))
+#define G_UNLIMITED_WEBBING_FLAG (*reinterpret_cast<i32*>(0x0060CFE8))
+#define G_PULSATING_HEAD_FLAG (*reinterpret_cast<i32*>(0x0060CFF0))
+#define G_INVULNERABLE_FLAG (*reinterpret_cast<i32*>(0x0060CFC8))
+
+// well past .data's raw file image (real BSS), zero at load
+#define G_STICKMAN_FLAG (*reinterpret_cast<i32*>(0x02E09BF4))
+#define G_TOON_SPIDEY_FLAG (*reinterpret_cast<i32*>(0x02E09BF0))
+
+// @NotOk
+// residue: 45 mnemonic diffs out of 95 instructions, same byte length (391).
+// Every case's logic and the switch dispatch itself match (jump table shape,
+// bounds check, eax=1 preset). The residue is that several cases compile as
+// load/modify/store (mov reg,[mem]; op reg,imm; mov[mem],reg) here where the
+// original folds to a single memory-immediate op (or dword ptr [mem],imm /
+// xor [mem],eax). Moving the newly-discovered cheat flags into real
+// SSaveGame fields (see shell.h) fixed most of the |= cases on
+// gSaveGame.field_80/84/88/8C/90 (confirmed via cmpsum, dropped 54 -> 45
+// diffs); the remaining ones are on plain fixed-address globals outside any
+// known struct (0x60CFE8, 0x60CFF0, 0x60CFC8, 0x2E09BF4, 0x2E09BF0) where no
+// such struct exists to attach them to. 11 hypotheses tried: explicit
+// return-per-case vs a shared result local with break (result+break fixed
+// the dispatch header, 68->54 diffs), G_* macro vs static const pointer for
+// the flag globals (no effect), an explicit bounds check before the switch
+// instead of relying on the jump table's own check (worse, 69 diffs),
+// dropping the CHEAT_WEAKNESS local in favor of inline G_MECHLIST casts (no
+// effect), moving the cheat flags into real SSaveGame struct fields
+// (improvement, see above), and XORing against the already-1 result local
+// instead of the literal 1 (no effect). See pshell.attempts.md.
 i32 ActivateCheat(i32 a1)
 {
-	typedef i32 (*func_ptr)(i32);
+	i32 result = 1;
 
-	func_ptr func = (func_ptr)0x0047C240;
-	return func(a1);
+	switch (a1)
+	{
+		case CHEAT_WEAKNESS:
+			if (G_MECHLIST)
+			{
+				((CPlayer*)G_MECHLIST)->mHealth = ((CPlayer*)G_MECHLIST)->mMaxHealth;
+			}
+			break;
+
+		case CHEAT_LEANEST:
+			gSaveGame.field_78 = 1;
+			gSaveGame.field_80 = -1;
+			gSaveGame.field_84 = -1;
+			gSaveGame.field_88 = -1;
+			gSaveGame.field_8C = -1;
+			gSaveGame.field_90 = -1;
+			gSaveGame.mCheatStoryboardFlag = 1;
+			G_LEVEL_SELECT_FLAG = 1;
+			break;
+
+		case CHEAT_GLANDS:
+			G_UNLIMITED_WEBBING_FLAG ^= 1;
+			break;
+
+		case CHEAT_EGOTRIP:
+			G_PULSATING_HEAD_FLAG ^= 1;
+			break;
+
+		case CHEAT_RULUR:
+			JoelJewCheatCode = !JoelJewCheatCode;
+			break;
+
+		case CHEAT_SECRTWAR:
+			gSaveGame.field_80 |= 4;
+			break;
+
+		case CHEAT_MIGUELOH:
+			gSaveGame.field_80 |= 2;
+			break;
+
+		case CHEAT_TRISNTNL:
+			gSaveGame.field_80 |= 8;
+			break;
+
+		case CHEAT_SYNOPTIC:
+			gSaveGame.field_80 |= 0x10;
+			break;
+
+		case CHEAT_XILRTRNS:
+			gSaveGame.field_80 |= 0x40;
+			break;
+
+		case CHEAT_KICKME:
+			gSaveGame.field_80 |= 0x20;
+			break;
+
+		case CHEAT_MRWATSON:
+			gSaveGame.field_80 |= 0x200;
+			break;
+
+		case CHEAT_SMLVIII:
+			gSaveGame.field_80 |= 0x100;
+			break;
+
+		case CHEAT_ROBRTSON:
+			gSaveGame.mCheatStoryboardFlag = !gSaveGame.mCheatStoryboardFlag;
+			break;
+
+		case CHEAT_KIRBYFAN:
+			gSaveGame.field_90 = 0x3F;
+			break;
+
+		case CHEAT_MMEWEB:
+			G_LEVEL_SELECT_FLAG = 1;
+			break;
+
+		case CHEAT_FANBOY:
+			gSaveGame.field_8C = -1;
+			break;
+
+		case CHEAT_CINEMA:
+			gSaveGame.field_88 = -1;
+			break;
+
+		case CHEAT_RGSGLLRY:
+			gSaveGame.field_84 = -1;
+			break;
+
+		case CHEAT_UATUSEES:
+			gWhatIf = !gWhatIf;
+			break;
+
+		case CHEAT_ADMNTIUM:
+			G_INVULNERABLE_FLAG ^= 1;
+			break;
+
+		case CHEAT_CLUBNOIR:
+			gSaveGame.field_80 |= 0x80;
+			break;
+
+		case CHEAT_STICKMAN:
+			if (G_STICKMAN_FLAG = !G_STICKMAN_FLAG)
+			{
+				G_TOON_SPIDEY_FLAG = 0;
+			}
+			break;
+
+		case CHEAT_FUNKYTWN:
+			if (G_TOON_SPIDEY_FLAG = !G_TOON_SPIDEY_FLAG)
+			{
+				G_STICKMAN_FLAG = 0;
+			}
+			break;
+
+		default:
+			result = 0;
+			break;
+	}
+
+	return result;
 }
 
 // @Ok
@@ -283,10 +434,93 @@ void PShell_BigFont(void)
 	Mess_SetCurrentFont("font_big.fnt");
 }
 
-// @SMALLTODO
-void PShell_DrawHighlight(i32,i32,i32,i32)
+// byte right after gPostWaterEffect (0x5FAE98, i32, utils.cpp). No exact name
+// in the maintainer's IDB for this one; tentative, guessed from this use
+// (picks the box z-offset sign, close to the water-effect/post-process flags).
+static u8 * const gDrawHighlightZFlag = (u8*)0x5FAE9D;
+
+// @NotOk
+// 5 mnemonic diffs out of 122 instructions, all in the pPoly/p setup right
+// after print_if_false. Original loads pPoly straight into esi and pre-adds
+// a4+4 into ebp as an eager separate instruction, reused later via a plain
+// add; our build always routes pPoly through eax first and folds the +4
+// into the later y0 computation as a 3-operand lea.
+// 12 distinct hypotheses tried targeting this exact cluster (declaration
+// order forward/reverse, split vs combined statement, volatile, pointer-unit
+// vs byte-cast arithmetic, basing the increment on p vs pPoly), residue did
+// not move. This is a 353-byte (medium-size) function, the discipline needs
+// at least 15 hypotheses before @AlmostMatching is allowed, so this stays
+// @NotOk until more are tried. See pshell.attempts.md.
+void PShell_DrawHighlight(i32 a1, i32 a2, i32 a3, i32 a4)
 {
-    printf("PShell_DrawHighlight(i32,i32,i32,i32)");
+	Texture* pTex = Spool_FindTextureEntry(0xE90B5F6E);
+	print_if_false(pTex != 0, "Missing title bar texture");
+
+	POLY_GT4* p = (POLY_GT4*)pPoly;
+	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_GT4));
+	i32 v1 = a4 + 4;
+
+	p->tag = 0xC000000;
+	p->code = 0x3E;
+
+	*(u32*)&p->u0 = *(u32*)&pTex->u0;
+	*(u32*)&p->u1 = *(u32*)&pTex->u1;
+	*(u32*)&p->u2 = *(u32*)&pTex->u2;
+	*(u16*)&p->u3 = *(u16*)&pTex->u3;
+
+	p->tpage = (p->tpage & ~0x40) | 0x20;
+
+	p->u1 -= 1;
+	p->u3 -= 1;
+
+	p->r0 = 0x40;
+	p->g0 = 0x40;
+	p->r2 = 0x40;
+	p->g2 = 0x40;
+
+	i32 y0 = a2;
+	i32 x1 = a3;
+	p->b0 = 0x7B;
+	p->b2 = 0x7B;
+	i32 x0 = a1;
+
+	y0 += 3;
+	x1 += x0;
+
+	p->y0 = (i16)y0;
+	p->y1 = (i16)y0;
+
+	y0 += v1;
+
+	p->r1 = 0;
+	p->g1 = 0;
+	p->b1 = 0;
+	p->r3 = 0;
+	p->g3 = 0;
+	p->b3 = 0;
+
+	p->x0 = (i16)x0;
+	p->x1 = (i16)x1;
+	p->x2 = (i16)x0;
+	p->y2 = (i16)y0;
+	p->x3 = (i16)x1;
+	p->y3 = (i16)y0;
+
+	gsub_46CB90((void*)0x0056EB54);
+
+	i32 sort = G_SORT;
+	if (sort >= 0xFFE && sort <= 0xFFF)
+	{
+		DCDrawGouraudPoly(-2.0f, p, pTex, a3 < 0);
+	}
+	else if (*gDrawHighlightZFlag)
+	{
+		DCDrawGouraudPoly(2.0f, p, pTex, a3 < 0);
+	}
+	else
+	{
+		DCDrawGouraudPoly(-2.0f, p, pTex, a3 < 0);
+	}
 }
 
 // @SMALLTODO
@@ -313,10 +547,89 @@ void PShell_MaybeSaveGame(void)
     printf("PShell_MaybeSaveGame(void)");
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void PShell_MaybeUnlockStuff(void)
 {
-    printf("PShell_MaybeUnlockStuff(void)");
+	i32 unlocked = -1;
+
+	i32 i;
+
+	i32 allComplete = 1;
+	for (i = 0; i < 0x22; i++)
+	{
+		if (!gSaveGame.field_56[i])
+		{
+			allComplete = 0;
+		}
+	}
+
+	if (allComplete)
+	{
+		u8 oldFlags = (u8)gSaveGame.field_80;
+		gSaveGame.mCheatStoryboardFlag = 1;
+
+		if (!(oldFlags & 4))
+		{
+			unlocked = 2;
+		}
+
+		gSaveGame.field_80 |= 4;
+		gSaveGame.field_84 |= 0x1000000;
+
+		if (DifficultyLevel == 3)
+		{
+			if (!((u8)gSaveGame.field_80 & 8))
+			{
+				unlocked = 3;
+			}
+
+			gSaveGame.field_80 |= 8;
+		}
+	}
+
+	if (gSaveGame.field_8C == -1)
+	{
+		gSaveGame.field_80 |= 2;
+	}
+
+	i32 idx1 = Front_GetLevelIndex("l4a1_t");
+	print_if_false(idx1 != -1, "Could not find l4a1_t ???");
+	if (gSaveGame.field_56[idx1])
+	{
+		gSaveGame.field_80 |= 0x40;
+	}
+
+	i32 idx2 = Front_GetLevelIndex("l6a4_t");
+	print_if_false(idx2 != -1, "Could not find l6a4_t ???");
+	if (gSaveGame.field_56[idx2])
+	{
+		gSaveGame.field_80 |= 0x80;
+	}
+
+	i32 allGold = 1;
+	for (i = 0; i < 0x22; i++)
+	{
+		if (gSaveGame.field_56[i] < 2)
+		{
+			allGold = 0;
+		}
+	}
+
+	if (allGold)
+	{
+		if (!((u8)gSaveGame.field_80 & 0x10))
+		{
+			unlocked = 4;
+		}
+
+		gSaveGame.field_80 |= 0x10;
+	}
+
+	if (unlocked != -1)
+	{
+		gSaveGame.field_7C = (u8)unlocked;
+	}
 }
 
 // @Ok

@@ -65,6 +65,80 @@ struct POLY_FT4
 
 struct POLY_GT4
 {
+	// offset: 0000
+	u32 tag;
+	// offset: 0004
+	u8 r0;
+	// offset: 0005
+	u8 g0;
+	// offset: 0006
+	u8 b0;
+	// offset: 0007
+	u8 code;
+	// offset: 0008
+	i16 x0;
+	// offset: 000A
+	i16 y0;
+	// offset: 000C
+	u8 u0;
+	// offset: 000D
+	u8 v0;
+	// offset: 000E
+	u16 clut;
+	// offset: 0010
+	u8 r1;
+	// offset: 0011
+	u8 g1;
+	// offset: 0012
+	u8 b1;
+	// offset: 0013
+	u8 p1;
+	// offset: 0014
+	i16 x1;
+	// offset: 0016
+	i16 y1;
+	// offset: 0018
+	u8 u1;
+	// offset: 0019
+	u8 v1;
+	// offset: 001A
+	u16 tpage;
+	// offset: 001C
+	u8 r2;
+	// offset: 001D
+	u8 g2;
+	// offset: 001E
+	u8 b2;
+	// offset: 001F
+	u8 p2;
+	// offset: 0020
+	i16 x2;
+	// offset: 0022
+	i16 y2;
+	// offset: 0024
+	u8 u2;
+	// offset: 0025
+	u8 v2;
+	// offset: 0026
+	u16 pad2;
+	// offset: 0028
+	u8 r3;
+	// offset: 0029
+	u8 g3;
+	// offset: 002A
+	u8 b3;
+	// offset: 002B
+	u8 p3;
+	// offset: 002C
+	i16 x3;
+	// offset: 002E
+	i16 y3;
+	// offset: 0030
+	u8 u3;
+	// offset: 0031
+	u8 v3;
+	// offset: 0032
+	u16 pad3;
 };
 
 struct POLY_F4

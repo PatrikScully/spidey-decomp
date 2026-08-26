@@ -33,8 +33,7 @@ EXPORT u16 Scale;
 
 // @Ok - must be extern to have the code match, reads are not aligned to 32 bits
 extern u16 Sort;
-//#define G_SORT (Sort)
-#define G_SORT (*reinterpret_cast<u16*>(0x0060D5A6))
+// G_SORT is now defined in mess.h (used from pshell.cpp too)
 
 EXPORT i32 gMessRelated;
 

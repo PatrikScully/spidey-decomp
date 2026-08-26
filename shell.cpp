@@ -2138,10 +2138,18 @@ void validate_SSaveGame(void)
 	VALIDATE(SSaveGame, field_3F, 0x3F);
 
 	VALIDATE(SSaveGame, mDifficulty, 0x54);
+	VALIDATE(SSaveGame, mCheatStoryboardFlag, 0x55);
+	VALIDATE(SSaveGame, field_56, 0x56);
+	VALIDATE(SSaveGame, field_78, 0x78);
 
 	VALIDATE(SSaveGame, field_7B, 0x7B);
+	VALIDATE(SSaveGame, field_7C, 0x7C);
 
+	VALIDATE(SSaveGame, field_80, 0x80);
+	VALIDATE(SSaveGame, field_84, 0x84);
 	VALIDATE(SSaveGame, field_88, 0x88);
+	VALIDATE(SSaveGame, field_8C, 0x8C);
+	VALIDATE(SSaveGame, field_90, 0x90);
 
 	VALIDATE(SSaveGame, field_94, 0x94);
 	VALIDATE(SSaveGame, field_98, 0x98);

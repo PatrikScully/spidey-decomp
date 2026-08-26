@@ -5,6 +5,10 @@
 
 #include "export.h"
 
+// used from mess.cpp and pshell.cpp, so it lives here (G_* macro placement rule)
+//#define G_SORT (Sort)
+#define G_SORT (*reinterpret_cast<u16*>(0x0060D5A6))
+
 struct SSimpleMessage
 {
 	const char* field_0;
