@@ -597,10 +597,195 @@ void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, 
 	submitPoly(verts, 4);
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawQPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)
+// @NotOk
+// Same shape as PCGfx_DrawTPoly2D (screen space poly, own DXPOLY build,
+// direct DXPOLY_DrawPoly call, manual gDxPolys pointer walk), just 4
+// vertices instead of 3 (field_C=4, loop count 4). Reuses the zOffset
+// preamble fix found on DrawTPoly2D this session (if/else computing v13 in
+// each branch so the compiler CSEs the shared gRenderInitTwo[1]*zOffset
+// multiply after the compare, `if (zOffset >= 0.0f)` branch order). One
+// notable difference from DrawTPoly2D confirmed in the disasm: the
+// print_if_false("invalid zOffset!") call here has NO "push edi" register
+// save before it (DrawTPoly2D's does), consistent with different register
+// pressure between the two functions, not a copy paste error.
+// cmpsum: 207 mnemonic diffs at 0x507910. The zOffset preamble and the
+// print_if_false call both matched cleanly this time (confirms the
+// DrawTPoly2D fixes generalise and that function's residue really was
+// register pressure specific, not a fundamental block). The residue here
+// starts well into the per vertex field copy block: our field_0/field_4/
+// field_14/field_18/field_10/field_8/field_C assignment order per vertex
+// (declared in that order for all 4 vertices) does not match the original's
+// scattered store order (it interleaves stores across all 4 vertices'
+// structs rather than finishing one vertex before the next, visible in the
+// disasm as stores to +0x34,+0x38,...+0x88 in a non-monotonic sequence).
+// One attempt at the vertex struct fields (declaration order matching field
+// layout, not the original's interleaved store order); short of the 10+
+// hypotheses per cluster bar for a >1000 byte function, logged in
+// pcgfx.attempts.md.
+void PCGfx_DrawQPoly2D(
+		f32 x0, f32 y0, f32 u0, f32 v0, u32 color0,
+		f32 x1, f32 y1, f32 u1, f32 v1, u32 color1,
+		f32 x2, f32 y2, f32 u2, f32 v2, u32 color2,
+		f32 x3, f32 y3, f32 u3, f32 v3, u32 color3,
+		f32 zOffset)
 {
-    printf("PCGfx_DrawQPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)");
+	gPcGfxDrawRelated &= 0xFFFFFFFB;
+
+	if (zOffset <= 6.0f)
+		gPcGfxSlotNumber = (i32)zOffset;
+
+	f32 v13;
+	if (zOffset >= 0.0f)
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[0];
+	else
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[1];
+
+	f32 v24 = v13;
+	print_if_false(v24 > 0.0f, "invalid zOffset!");
+
+	f32 v27 = (v24 - gRenderInitOne[0]) / gRenderInitTwo[0];
+	f32 v32 = gRenderInitOne[2] / v24;
+
+	SDXPolyField dxPolyFields[4];
+
+	dxPolyFields[0].field_0 = x0;
+	dxPolyFields[0].field_4 = y0;
+	dxPolyFields[0].field_14 = u0;
+	dxPolyFields[0].field_18 = v0;
+	dxPolyFields[0].field_10 = color0;
+	dxPolyFields[0].field_8 = v27;
+	dxPolyFields[0].field_C = v32;
+
+	dxPolyFields[1].field_0 = x1;
+	dxPolyFields[1].field_4 = y1;
+	dxPolyFields[1].field_14 = u1;
+	dxPolyFields[1].field_18 = v1;
+	dxPolyFields[1].field_10 = color1;
+	dxPolyFields[1].field_8 = v27;
+	dxPolyFields[1].field_C = v32;
+
+	dxPolyFields[2].field_0 = x2;
+	dxPolyFields[2].field_4 = y2;
+	dxPolyFields[2].field_14 = u2;
+	dxPolyFields[2].field_18 = v2;
+	dxPolyFields[2].field_10 = color2;
+	dxPolyFields[2].field_8 = v27;
+	dxPolyFields[2].field_C = v32;
+
+	dxPolyFields[3].field_0 = x3;
+	dxPolyFields[3].field_4 = y3;
+	dxPolyFields[3].field_14 = u3;
+	dxPolyFields[3].field_18 = v3;
+	dxPolyFields[3].field_10 = color3;
+	dxPolyFields[3].field_8 = v27;
+	dxPolyFields[3].field_C = v32;
+
+	if (gEndSceneRelatedTwo >= 15360)
+	{
+		gEndSceneRelatedTwo++;
+		return;
+	}
+
+	DXPOLY *p = &gDxPolys[gEndSceneRelatedTwo++];
+	i32 blendMode = gPcGfxBlendModeRelated;
+	f32 fogMax = 0.0f;
+
+	if (gLowGraphics)
+	{
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		p->field_C = 4;
+
+		for (i32 i = 0; i < 4; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			if (!(p->mBlendMode & 4))
+				dst->field_4 = 1.0f;
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+	}
+	else
+	{
+		LPDIRECTDRAWSURFACE7 Direct3DTexture;
+		if (gUseTextureRelated < 0)
+			Direct3DTexture = 0;
+		else
+			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+		p->field_4 = Direct3DTexture;
+		p->mBlendMode = gChosenBlendingMode;
+		p->field_A = gProcessedTextureFlags;
+		p->field_C = 4;
+
+		for (i32 i = 0; i < 4; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+
+		if (gChosenBlendingMode)
+		{
+			blendMode = 0;
+		}
+	}
+
+	DXPOLY_DrawPoly(p, gPcGfxSlotNumber, blendMode, fogMax);
+	gPcGfxSlotNumber = -1;
 }
 
 // @MEDIUMTODO
