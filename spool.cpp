@@ -11,6 +11,10 @@
 #include "my_assert.h"
 #include "SpideyDX.h"
 #include "psx_types.h"
+#include "ps2funcs.h"
+#include "vram.h"
+#include "m3dinit.h"
+#include "m3dzone.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -193,13 +197,17 @@ i32 Spool_PSX(
 }
 
 // @Ok
+// v5 points AT the pSkipped[v3+1] slot itself (the consecutive u32 slots
+// starting there are the Texture* array), not at whatever value is stored
+// there. Confirmed by disassembling this loop inlined into ClearRegion
+// (0x4CA858: esi = &pSkipped[v3+1], no extra deref before the walk).
 void DecrementTextureUsage(i32 region)
 {
 	i32 v3 = reinterpret_cast<i32*>(PSXRegion[region].ppModels)[-1];
 	u32* pSkipped = Spool_SkipPackets(PSXRegion[region].pPSX);
 
-	Texture** v5 = reinterpret_cast<Texture**>(pSkipped[v3 + 1]);
 	u32 v6 = pSkipped[v3];
+	Texture** v5 = reinterpret_cast<Texture**>(&pSkipped[v3 + 1]);
 
 	for (u32 i = 0; i < v6; i++)
 	{
@@ -269,26 +277,41 @@ void NewTextureEntry(u32 checksum)
 }
 
 // @NotOk
-// review when removed unused textures is done
+// reviewed while doing Spool_RemoveUnusedTextures (only caller, inlined
+// there). Logic matches (bound check, null-bucket search, pNext advance) but
+// the compiler always places the "search empty buckets" loop as the
+// fall-through path and the "already have a texture" short path as a forward
+// jump, no matter how the source is written (if/else either order, goto
+// either polarity, do-while vs raw goto, operand order swapped, cached local
+// vs global re-test, for(;;)+break single loop). Original does the opposite
+// (short path falls through, search is the jump target). See
+// Spool_RemoveUnusedTextures's comment for the residue this causes.
 INLINE Texture* NextTexture(void)
 {
-	Texture* res = 0;
+	Texture* res;
 
-	if (HashIndex < TEXTURE_CHECKSUM_TABLE_SIZE)
+	if (HashIndex >= TEXTURE_CHECKSUM_TABLE_SIZE)
+		return 0;
+
+	if (0 == pCurrentTex)
+		goto search;
+
+	res = pCurrentTex;
+	pCurrentTex = pCurrentTex->pNext;
+	return res;
+
+search:
+	do
 	{
-		while (pCurrentTex == 0)
-		{
-			HashIndex++;
-			pCurrentTex = TextureChecksumHashTable[HashIndex];
+		HashIndex++;
+		pCurrentTex = TextureChecksumHashTable[HashIndex];
 
-			if (TEXTURE_CHECKSUM_TABLE_SIZE <= HashIndex)
-				return 0;
-		}
+		if (TEXTURE_CHECKSUM_TABLE_SIZE <= HashIndex)
+			return 0;
+	} while (0 == pCurrentTex);
 
-		res = pCurrentTex;
-		pCurrentTex = pCurrentTex->pNext;
-	}
-
+	res = pCurrentTex;
+	pCurrentTex = pCurrentTex->pNext;
 
 	return res;
 }
@@ -407,9 +430,8 @@ INLINE void RemoveTextureEntry(Texture* pTexture)
 	if (pTexture == TextureChecksumHashTable[checksum])
 		TextureChecksumHashTable[checksum] = pTexture->pNext;
 
-	Texture** pFreeList = reinterpret_cast<Texture**>(&gSpoolInitRelated);
-	pTexture->pNext = *pFreeList;
-	*pFreeList = pTexture;
+	pTexture->pNext = gSpoolTexturesRelated;
+	gSpoolTexturesRelated = pTexture;
 }
 
 // @Ok
@@ -1120,32 +1142,162 @@ u32 Spool_GetModel(u32 Checksum, i32 Region)
 
 // @NotOk
 // understand this piece of shit
+// split walk idiom (i++; i=(u32*)((char*)i+i[0]+4);) instead of the combined
+// i=(u32*)((char*)i+i[1]+8), same idiom as Spool_GetPalette (see CLAUDE.md
+// matching tricks); confirmed against this loop inlined into ClearRegion's
+// DecrementTextureUsage call (0x4CA83E: original does a separate "add eax,4"
+// then "lea", our combined-expression form folded into one lea instead).
 INLINE u32 *Spool_SkipPackets(u32 *pPSX)
 {
 	u32 *i; // r4
-	for ( i = (u32 *)((char *)pPSX + pPSX[1]); *i != -1; i = (u32 *)((char *)i + i[1] + 8) );
+	for ( i = (u32 *)((char *)pPSX + pPSX[1]); *i != -1; )
+	{
+		i++;
+		i = (u32 *)((char *)i + i[0] + 4);
+	}
 
 	return i + 1;
 }
 
-// @BIGTODO
-void ClearRegion(i32 a1, i32 a2)
+// @NotOk
+// residue: 42 mnemonic diffs left (down from 49 once DecrementTextureUsage's
+// leaf Spool_SkipPackets got the split-walk idiom fix, and v5/v6 declaration
+// order was flipped to match). All remaining diffs are in the RemoveAnimPacket
+// packet-walk loop near the end: original advances the record pointer with two
+// separate "add edi,4" instructions (to reach the data pointer used both as
+// the RemoveAnimPacket argument and as the base for the final +size advance,
+// stashed across the call), our build always folds the two +4s into one
+// "add edi,8"/"lea" no matter how the source is written (plain pData=pRecord+2,
+// two "pRecord++;" statements, an explicit "id" local read before or after
+// the increments, a bool flag instead of reusing the cached compare). See
+// spool.attempts.md for the 9 hypotheses tried. Below the 15-hypothesis
+// minimum for a 614 byte function, left @NotOk rather than @AlmostMatching.
+void ClearRegion(i32 region, i32 a2)
 {
-	// @FIXME
-	typedef void (*func_ptr)(i32, i32);
-	func_ptr func = (func_ptr)0x004CA7A0;
+	if (region == -1)
+		return;
 
-	func(a1, a2);
+	print_if_false(region >= 0 && region < MAXPSX, "Bad region number sent to ClearRegion");
+
+	if (!PSXRegion[region].Filename[0])
+		return;
+
+	if (region == GrenadeExplosionRegion)
+		GrenadeExplosionRegion = -1;
+
+	if (region == SymBurnRegion)
+		SymBurnRegion = -1;
+
+	if (region == FireDomeRegion)
+		FireDomeRegion = -1;
+
+	if (region == FireRingRegion)
+		FireRingRegion = -1;
+
+	DecrementTextureUsage(region);
+
+	delete[] PSXRegion[region].pSuper;
+	PSXRegion[region].pSuper = 0;
+	PSXRegion[region].pAnimFile = 0;
+	PSXRegion[region].pColourPulseData = 0;
+	PSXRegion[region].pTexWibData = 0;
+	PSXRegion[region].Protected = 0;
+	PSXRegion[region].Usable = 0;
+	PSXRegion[region].pHooks = 0;
+	PSXRegion[region].ppModels = 0;
+
+	texClearChecksums(PSXRegion[region].Filename);
+
+	PSXRegion[region].Filename[0] = 0;
+	PSXRegion[region].LowRes = 0;
+
+	if (region == EnvRegions[0])
+	{
+		M3dZone_FreePSX(0);
+		EnvRegions[0] = -1;
+		gSpoolRegionRelatedOne = 0;
+		EnviroList = 0;
+		Spool_InitialiseEnvModelHashTable();
+	}
+
+	u32* pPSX = PSXRegion[region].pPSX;
+	u32* pRecord = reinterpret_cast<u32*>(reinterpret_cast<char*>(pPSX) + pPSX[1]);
+
+	while (*pRecord != 0xFFFFFFFF)
+	{
+		u32 size = pRecord[1];
+		u32* pData = pRecord + 2;
+
+		if (pRecord[0] == 0x45)
+			RemoveAnimPacket(pData);
+
+		pRecord = reinterpret_cast<u32*>(reinterpret_cast<char*>(pData) + size);
+	}
+
+	if (!gReloading)
+	{
+		while (gAccessRelated[region])
+		{
+			SAccess* pAccess = gAccessRelated[region];
+			gAccessRelated[region] = pAccess->pNext;
+			*pAccess->pLst = 0;
+			free(pAccess);
+			gNumAccesses--;
+		}
+	}
+
+	Mem_Delete(PSXRegion[region].pPSX);
+	PSXRegion[region].pPSX = 0;
+
+	DCClearRegion(region);
+
+	if (a2)
+		Spool_RemoveUnusedTextures();
 }
 
-// @BIGTODO
+// @NotOk
+// residue: 61 mnemonic diffs left, all downstream of one point.
+// Everything from "if (pTex->pPalette)" onward (palette usage decrement,
+// ClearImage debug print, PCTex_ReleaseTexture, VRAMRectUnpack, the
+// RemoveTextureEntry unlink incl. the gSpoolTexturesRelated free-list push)
+// is the SAME mnemonic sequence as the original, just shifted by a constant
+// offset. The one real divergence is the very first NextTexture() null
+// check: original falls through into the "already have a texture" case and
+// jumps forward into the "search empty buckets" loop; every build of ours
+// does the opposite (falls through into search, jumps to the short case).
+// 9 source hypotheses tried for that one branch (see NextTexture's comment
+// and spool.attempts.md), all producing byte-identical output to each other.
+// Root cause understood (compiler always makes the loop body the
+// fall-through target for this control flow) but not reproduced from C
+// source. Below the discipline's 15-hypothesis minimum for a 294 byte
+// function, left @NotOk rather than tagging @AlmostMatching early.
 void Spool_RemoveUnusedTextures(void)
 {
-	// @FIXME
-	typedef void (*func_ptr)(void);
-	func_ptr func = (func_ptr)0x004C9680;
+	GotoStartOfTextureList();
 
-	func();
+	Texture* pTex;
+	while ((pTex = NextTexture()) != 0)
+	{
+		if ((pTex->field_12 & 0xF) == 0 || pTex->Usage != 0)
+			continue;
+
+		if (pTex->pPalette)
+		{
+			print_if_false(pTex->pPalette->Usage != 0, "Palette usage counter error!");
+			pTex->pPalette->Usage--;
+		}
+
+		if (!gClearImagePrint)
+			stubbed_printf("stubbed out: ClearImage");
+
+		PCTex_ReleaseTexture(pTex->clut, true);
+
+		// original really does read x and y together as one 32-bit pointer
+		// into the packed VRAM rect, same idiom as NewTextureEntry's x/y clear
+		VRAMRectUnpack(*reinterpret_cast<tagSVRAMRect**>(&pTex->x));
+
+		RemoveTextureEntry(pTex);
+	}
 }
 
 // @Ok
