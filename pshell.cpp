@@ -409,12 +409,47 @@ int CExpandingBox::Display(){
 	return 0x14072024;
 }
 
-// @BIGTODO
+// @NotOk
+// residue not yet resolved, see pshell.attempts.md
 i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 {
-	printf("i32 CExpandingBox::ScrollBarHitTest(int a2, int a3)");
+	if (!this->field_24 || !this->field_30)
+		return 0;
 
-	return 0x14072024;
+	i16 v1 = this->field_1C;
+	v1 -= 14;
+
+	if (a2 < (u16)v1)
+		return 0;
+
+	i16 v2 = this->field_20;
+
+	if (a2 > (u16)(v1 + 14))
+		return 0;
+
+	if (a3 < (u16)(v2 - 3))
+		return 0;
+
+	i16 v3 = this->field_8;
+
+	if (a3 > (u16)((u16)(v3 + 6) + (u16)(v2 - 3)))
+		return 0;
+
+	i32 v4 = ((this->field_8 - this->field_2C - 8) * this->field_28 >> 8) + v2 + 4;
+
+	if (a3 <= (u16)(v2 + 7))
+		return 1;
+
+	if (a3 < (u16)(v3 + v2 - 5))
+		return 2;
+
+	if (a3 >= (u16)v4)
+		return 4;
+
+	if (a3 > this->field_2C + (u16)v4)
+		return 5;
+
+	return 3;
 }
 
 static u8 gCheatRelatedOne;
@@ -484,8 +519,10 @@ void validate_CExpandingBox(void)
 
 	VALIDATE(CExpandingBox, field_20, 0x20);
 	VALIDATE(CExpandingBox, field_24, 0x24);
+	VALIDATE(CExpandingBox, field_28, 0x28);
 
 	VALIDATE(CExpandingBox, field_2C, 0x2C);
+	VALIDATE(CExpandingBox, field_30, 0x30);
 }
 
 void validate_SCheat(void)
