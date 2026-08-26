@@ -1144,10 +1144,129 @@ void CPlayer::SwitchToDeathMode(bool)
     printf("CPlayer::SwitchToDeathMode(bool)");
 }
 
-// @SMALLTODO
-void CPlayer::SwitchToSynthesizedInput(i16 *)
+// @NotOk
+// residue: 92 mnemonic diffs on one honest pass, not iterated further
+// given the function's size (319 bytes, medium tier) and the amount of
+// still-undocumented struct territory it touches. instruction counts match
+// (106 original, 106 built), so nothing is missing or extra, this is pure
+// scheduling/register-allocation residue: notably the compiler hoists the
+// pInput/field_1B8 store to the very top of the function (cheapest
+// dependency, no other value ready yet) ahead of the mVel zeroing, even
+// though both are written in the same order as the original disassembly.
+// new header field: field_AB8 (SHandle) carved out of the old
+// 0x8ED-0xAC8 padding block (matches the Mem_RecoverPointer/Mem_MakeHandle
+// call shapes exactly, see validate_CPlayer). field_1A4, field_1B4,
+// field_1B8 (i16*, this is where the pInput parameter gets stored) are
+// NOT carved out (still raw offsets into existing padding) since there
+// was not enough context from this one function alone to name them with
+// confidence; done via explicit pointer casts instead.
+// this->mVel is CBody's (ob.h) field at 0x60-0x6B, matches the three
+// field_60/64/68 zero stores exactly.
+// the two "vtable[0] with arg 1" calls are scalar-deleting-destructor
+// style virtual dispatch on an untyped pointer (field_AB8's recovered
+// pointer, and mHeldObject, even though mHeldObject is declared CManipOb*
+// with its own virtual destructor - using a plain `delete` there is not
+// safe here since CBody virtuals earlier in the hierarchy could put the
+// destructor at a different vtable slot than the one this disassembly
+// reads directly at offset 0). SVTableSlot0Deletable is a throwaway class
+// with nothing but a virtual destructor so `delete` on a pointer cast to
+// it reproduces the exact "read vtable[0], call with arg 1" shape without
+// needing the __thiscall keyword (rejected by this build's compiler
+// flags).
+struct SVTableSlot0Deletable
 {
-    printf("CPlayer::SwitchToSynthesizedInput(i16 *)");
+	virtual ~SVTableSlot0Deletable() {}
+};
+
+// gSpideySFXEntry[21] (0x6A830C) and gSpideySFXEntry[0] (0x6A82B8) are
+// both inside the already-declared gSpideySFXEntry[300] array (top of this
+// file) - both addresses land exactly on an element boundary, so no new
+// global was needed for either. RunAnim (CSuper, ob.h) argument order
+// confirmed from the push sequence (cdecl reverses declaration order).
+void CPlayer::SwitchToSynthesizedInput(i16 *pInput)
+{
+	this->mVel.vx = 0;
+	this->mVel.vy = 0;
+	this->mVel.vz = 0;
+
+	this->field_1AC = 1;
+	*((u8*)this + 0x1B4) = 1;
+	*(i16**)((u8*)this + 0x1B8) = pInput;
+
+	this->field_AE5 = 0;
+	*((u8*)this + 0x1A4) = 0;
+	this->field_1A8 = 0;
+
+	CSmokeTrail **ppTrail = &this->field_584;
+
+	for (i32 i = 2; i != 0; i--)
+	{
+		if (*ppTrail)
+		{
+			(*ppTrail)->mFadeAway = 1;
+			*ppTrail = 0;
+		}
+
+		ppTrail++;
+	}
+
+	void *pRecovered = Mem_RecoverPointer(&this->field_AB8);
+
+	if (pRecovered)
+	{
+		delete reinterpret_cast<SVTableSlot0Deletable*>(pRecovered);
+		this->field_AB8 = Mem_MakeHandle(0);
+	}
+
+	if (this->mHeldObject)
+	{
+		delete reinterpret_cast<SVTableSlot0Deletable*>(this->mHeldObject);
+		this->mHeldObject = 0;
+
+		if (this->field_E1C & 0x10)
+		{
+			i32 *p = gSpideySFXEntry[21];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0x15, 0, -1);
+		}
+		else
+		{
+			i32 *p = gSpideySFXEntry[0];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0, 0, -1);
+		}
+	}
+
+	u8 *pClear = (u8*)this + 0x1C0;
+
+	for (i32 j = 20; j != 0; j--)
+	{
+		pClear[0] = 0;
+		pClear[1] = 0;
+		pClear[2] = 0;
+
+		pClear += 0x10;
+	}
 }
 
 // @MEDIUMTODO
@@ -2498,6 +2617,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_8EA, 0x8EA);
 
 	VALIDATE(CPlayer, gCamAngleLock, 0x8EC);
+
+	VALIDATE(CPlayer, field_AB8, 0xAB8);
 
 	VALIDATE(CPlayer, field_AC8, 0xAC8);
 
