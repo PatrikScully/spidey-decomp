@@ -259,6 +259,7 @@ class CSpecialDisplay : public CBit
 	public:
 		EXPORT CSpecialDisplay(void);
 		EXPORT ~CSpecialDisplay(void) OVERRIDE;
+		EXPORT virtual void Display(void);
 };
 
 class CSimpleTexturedRibbon : public CSpecialDisplay
@@ -269,7 +270,7 @@ class CSimpleTexturedRibbon : public CSpecialDisplay
 
 		EXPORT CSimpleTexturedRibbon(void);
 		EXPORT CSimpleTexturedRibbon(i32);
-		EXPORT void Display(void);
+		EXPORT virtual void Display(void) OVERRIDE;
 		EXPORT void SetNumFaces(i32);
 		EXPORT void SetOpaque(void);
 		EXPORT void SetTexture(Texture *);
@@ -584,6 +585,9 @@ EXPORT void Bit_SetSparkTrajectoryCone(const CSVector *);
 
 EXPORT void Bit_ReduceRGB(u32*, i32);
 EXPORT void Bit_SetSparkSize(u32);
+
+EXPORT void DisplaySpecialDisplayList(void**);
+
 EXPORT void Bit_Init(void);
 EXPORT void Bit_DeleteAll(void);
 EXPORT void Bit_UpdateQuickAnimLookups(void);

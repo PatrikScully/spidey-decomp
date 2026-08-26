@@ -202,6 +202,12 @@ INLINE CSpecialDisplay::~CSpecialDisplay(void)
 }
 
 // @Ok
+// base vtable slot for Display, needed by CSpecialDisplay subclasses that do not override it (e.g. CTexturedRibbon)
+void CSpecialDisplay::Display(void)
+{
+}
+
+// @Ok
 // @AlmostMatching: slightly out of order due ot the AttachTo
 CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 {
@@ -554,9 +560,16 @@ void DisplayGLineList(void**)
 {
 }
 
-// @MEDIUMTODO
-void DisplaySpecialDisplayList(void**)
+// @Ok
+// @Matching
+void DisplaySpecialDisplayList(void** a1)
 {
+	CSpecialDisplay* p = reinterpret_cast<CSpecialDisplay*>(*a1);
+	while (p)
+	{
+		p->Display();
+		p = reinterpret_cast<CSpecialDisplay*>(p->mNext);
+	}
 }
 
 // @MEDIUMTODO
@@ -1635,9 +1648,31 @@ void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, int a4, int a5)
 {
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CQuadBit::SetTexture(int a, int b){
-	
+	DoAssert(a >= 0 && static_cast<u32>(a) < NUM_ANIM_ENTRIES, "Bad lookup value sent to CQuadBit::SetTexture");
+
+	SAnimFrame* pAnim = gAnimTable[a];
+
+	DoAssert(b >= 0 && b < *(reinterpret_cast<i32*>(pAnim) - 1), "Bad frame sent to CQuadBit::SetTexture");
+
+	this->mpTexture = pAnim[b].pTexture;
+
+	if (a == 0 && b == 0)
+		this->mpTexture = Spool_FindTextureEntry("Shadow2");
+
+	if (this->mpTexture->field_12 & 0xF0)
+		this->mCodeBGR |= 0x20u;
+
+	// @FIXME
+	this->field_74 = *reinterpret_cast<u32*>(&this->mpTexture->u0);
+	// @FIXME
+	this->field_78 = *reinterpret_cast<u32*>(&this->mpTexture->u1);
+	// @FIXME
+	this->field_7C = *reinterpret_cast<u32*>(&this->mpTexture->u2);
+
+	this->field_80 = this->mpTexture->TexWin;
 }
 
 // @Ok
@@ -1994,10 +2029,19 @@ void CGlow::SetRGB(u8 r, u8 g, u8 b)
 	}
 }
 
-// @MEDIUMTODO
-void Bit_ReduceRGB(unsigned int*, int)
+// @Ok
+// @Matching
+void Bit_ReduceRGB(u32* p, i32 amount)
 {
-	printf("Bit_ReduceRGB");
+	u8 b = *p;
+	u8 g = *p >> 8;
+	u8 r = *p >> 16;
+
+	b = (b >= amount) ? b - amount : 0;
+	g = (g >= amount) ? g - amount : 0;
+	r = (r >= amount) ? r - amount : 0;
+
+	*p = (*p & 0xFF000000) | (r << 16) | (g << 8) | b;
 }
 
 // @Ok
