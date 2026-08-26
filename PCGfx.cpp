@@ -788,10 +788,166 @@ void PCGfx_DrawQPoly2D(
 	gPcGfxSlotNumber = -1;
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawQPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)
+// @NotOk
+// A world space quad (4x (x,y,z,w,uv,color)), split into 2 triangles
+// (v0,v1,v2) and (v0,v2,v3) and each clipped against the near plane before
+// submitting, confirmed from the disasm: PCGfx_ClipTriToNearPlane (0x506E40)
+// is called TWICE, and the per vertex post clip processing (fog blend via
+// gsub_506D70 gated on gNonRendderSettingE, field_C=gRenderInitOne[2]/
+// field_8, field_8 remapped to (field_8-gRenderInitOne[0])/gRenderInitTwo[0],
+// field_14/field_18 *= field_C gated on !gLowGraphics) is EXACTLY
+// PCGfx_ClipSendIndexedVertList's post clip loop, confirmed instruction for
+// instruction. The pre clip vertex build also matches ClipSendIndexedVertList
+// (not DrawTPoly3D): field_8 starts as 1.0f/z (raw invZ, BEFORE the clip),
+// not gRenderInitOne[2]*z, and the color brighten step runs before the clip
+// with no fog blend yet (fog blend only happens in the post clip loop).
+// Two helpers this session did NOT chase down and instead re-implemented
+// inline (matching ClipSendIndexedVertList's established shape rather than
+// forwarding): 0x508B40 (rebuilds v0 and v3's temp vertex fresh before the
+// second clip, since PCGfx_ClipTriToNearPlane can overwrite temp[0]'s slot)
+// and 0x508BA0/0x508CC0 (the second triangle's post clip loop and submit,
+// same shape as the first triangle's inline code and submitPoly call). The
+// print_if_false null checks ("verts[1] is null!"/"verts[2] is null!" at
+// 0x5682A0/0x56828C, confirmed matching ClipSendIndexedVertList's strings)
+// are confirmed only around the FIRST triangle's submit in the disasm; the
+// second triangle's checks (inside the unchased 0x508CC0) are assumed
+// symmetric here, not confirmed. cmpsum: 314 mnemonic diffs at 0x508550,
+// first divergence right at entry (the original stages ALL 4 vertices' raw
+// args into a big scratch block before building any temp vertex, our
+// straight per vertex build does not reproduce that staging order). One
+// honest structural attempt given the size and the 2 unresolved helper
+// bodies, consistent with PCGfx_ClipSendIndexedVertList's own residue this
+// session (same missing setupFog fog table dependency applies here too).
+void PCGfx_DrawQPoly3D(
+		f32 x0, f32 y0, f32 z0, f32 w0, f32 uv0, u32 color0,
+		f32 x1, f32 y1, f32 z1, f32 w1, f32 uv1, u32 color1,
+		f32 x2, f32 y2, f32 z2, f32 w2, f32 uv2, u32 color2,
+		f32 x3, f32 y3, f32 z3, f32 w3, f32 uv3, u32 color3)
 {
-    printf("PCGfx_DrawQPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)");
+	_DXVERT temp[4];
+	_DXVERT *verts[4];
+	_DXVERT out0, out1;
+	_DXVERT *out[2] = { &out0, &out1 };
+
+	gPcGfxDrawRelated |= 4;
+
+	temp[0].field_0 = x0;
+	temp[0].field_4 = y0;
+	temp[0].field_8 = 1.0f / z0;
+	temp[0].field_14 = w0;
+	temp[0].field_18 = uv0;
+	if ((color0 & 0xFFFFFF) == 0)
+		temp[0].field_10 = color0;
+	else
+		temp[0].field_10 = (color0 & 0xFF000000) | (((color0 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	temp[1].field_0 = x1;
+	temp[1].field_4 = y1;
+	temp[1].field_8 = 1.0f / z1;
+	temp[1].field_14 = w1;
+	temp[1].field_18 = uv1;
+	if ((color1 & 0xFFFFFF) == 0)
+		temp[1].field_10 = color1;
+	else
+		temp[1].field_10 = (color1 & 0xFF000000) | (((color1 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	temp[2].field_0 = x2;
+	temp[2].field_4 = y2;
+	temp[2].field_8 = 1.0f / z2;
+	temp[2].field_14 = w2;
+	temp[2].field_18 = uv2;
+	if ((color2 & 0xFFFFFF) == 0)
+		temp[2].field_10 = color2;
+	else
+		temp[2].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	verts[0] = &temp[0];
+	verts[1] = &temp[1];
+	verts[2] = &temp[2];
+
+	PCGfx_ClipTriToNearPlane(verts, out);
+
+	if (verts[0])
+	{
+		i32 count = verts[3] ? 4 : 3;
+
+		for (i32 k = 0; k < count; k++)
+		{
+			_DXVERT *v = verts[k];
+
+			if (gNonRendderSettingE)
+				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+
+			v->field_C = gRenderInitOne[2] / v->field_8;
+			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
+
+			if (!gLowGraphics)
+			{
+				v->field_14 *= v->field_C;
+				v->field_18 *= v->field_C;
+			}
+		}
+
+		print_if_false(verts[1] != 0, "verts[1] is null!");
+		print_if_false(verts[2] != 0, "verts[2] is null!");
+
+		gPcGfxDrawRelated |= 4;
+
+		submitPoly(verts, count);
+	}
+
+	// second triangle (v0, v2, v3): rebuild v0 and v3 fresh, v2 is reused
+	// unclipped from above (PCGfx_ClipTriToNearPlane never touches an input
+	// slot that stayed in front of the plane).
+	temp[0].field_0 = x0;
+	temp[0].field_4 = y0;
+	temp[0].field_8 = 1.0f / z0;
+	temp[0].field_14 = w0;
+	temp[0].field_18 = uv0;
+	if ((color0 & 0xFFFFFF) == 0)
+		temp[0].field_10 = color0;
+	else
+		temp[0].field_10 = (color0 & 0xFF000000) | (((color0 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	temp[3].field_0 = x3;
+	temp[3].field_4 = y3;
+	temp[3].field_8 = 1.0f / z3;
+	temp[3].field_14 = w3;
+	temp[3].field_18 = uv3;
+	if ((color3 & 0xFFFFFF) == 0)
+		temp[3].field_10 = color3;
+	else
+		temp[3].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	verts[0] = &temp[0];
+	verts[1] = &temp[2];
+	verts[2] = &temp[3];
+
+	PCGfx_ClipTriToNearPlane(verts, out);
+
+	if (verts[0])
+	{
+		i32 count = verts[3] ? 4 : 3;
+
+		for (i32 k = 0; k < count; k++)
+		{
+			_DXVERT *v = verts[k];
+
+			if (gNonRendderSettingE)
+				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+
+			v->field_C = gRenderInitOne[2] / v->field_8;
+			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
+
+			if (!gLowGraphics)
+			{
+				v->field_14 *= v->field_C;
+				v->field_18 *= v->field_C;
+			}
+		}
+
+		submitPoly(verts, count);
+	}
 }
 
 // @NotOk
