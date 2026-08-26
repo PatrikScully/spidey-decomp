@@ -49,7 +49,7 @@ public:
 	EXPORT void GetShocked(void);
 	EXPORT void GetTrapped(void);
 	EXPORT void GonnaHitWall(i32);
-	EXPORT void LineOfSightCheck(CVector const *,i32);
+	EXPORT u8 LineOfSightCheck(CVector const *,i32);
 	EXPORT void PlaySounds(void);
 	EXPORT void PlayXAPlease(i32,i32,i32);
 	EXPORT void SetUpStuckHorn(SLineInfo *,i32);
@@ -57,19 +57,42 @@ public:
 	EXPORT void StompGround(void);
 	EXPORT void StuckInWall(void);
 
-	PADDING(0x344 - 0x324);
+	i32 field_324;
+	i32 field_328;
+
+	PADDING(0x330 - 0x328 - 4);
+
+	i32 field_330;
+
+	PADDING(0x338 - 0x330 - 4);
+
+	i32 field_338;
+
+	PADDING(0x344 - 0x338 - 4);
 
 	i32 field_344;
+	i32 field_348;
 
-	PADDING(0x358-0x344-4);
+	i32 field_34C;
+	i32 field_350;
+
+	i32 field_354;
 
 	i32 field_358;
 
-	PADDING(0x388-0x358-4);
+	PADDING(0x360 - 0x358 - 4);
+
+	i32 field_360;
+
+	PADDING(0x388 - 0x360 - 4);
 
 	i32 field_388;
 
-	PADDING(0x3DC-0x388-4);
+	PADDING(0x3D0 - 0x388 - 4);
+
+	i32 field_3D0;
+
+	PADDING(0x3DC - 0x3D0 - 4);
 
 	i32 field_3DC;
 	u32 field_3E0;
@@ -77,7 +100,7 @@ public:
 	u32 field_3F8[5];
 	u32 field_40C[5];
 
-	PADDING(0x424-0x420);
+	i32 field_420;
 };
 
 class CRhinoNasalSteam : public CFlatBit

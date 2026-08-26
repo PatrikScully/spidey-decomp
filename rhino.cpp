@@ -9,6 +9,12 @@
 #include "camera.h"
 #include "ai.h"
 #include "my_assert.h"
+#include "m3dcolij.h"
+#include "m3dzone.h"
+#include "effects.h"
+#include "zrhinog.h"
+#include "web.h"
+#include "mem.h"
 
 
 EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
@@ -55,10 +61,98 @@ void CRhino::AI(void)
     printf("CRhino::AI(void)");
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Logic verified against the disasm. Residue: 18 mnemonic diffs, all inside
+// case 2's inlined CheckIfPlayerHit() call. Root cause: `operator-(const
+// CVector&, const CVector&)` (vector.h) is declared INLINE, so our build
+// computes MechList->mPos - this->mPos as direct sub instructions at the
+// call site; the original calls it as a real out-of-line function (matches
+// the same __mi call already flagged as unresolved on CheckIfPlayerHit's own
+// @NotOk tag). This is the same repo-wide inlining issue as the documented
+// print_if_false case, not something a single call site can fix. Attempts:
+// (1) if/else-if chain on a cached `i32 subState = this->field_360;` local
+// for the sub-state dispatch, 73 diffs (compiler used cmp+jne, not the
+// original's sub/dec sequential-compare shape); (2) switched to a real
+// `switch (this->field_360) { case 0: ... case 1: ... default: ... }`
+// instead, per tips.txt's if-chain-on-cached-local idiom, dropped to 18
+// diffs (this residue). Did not reach the 15-hypothesis bar for
+// @AlmostMatching, but the remaining residue is a known, out-of-scope,
+// repo-wide issue rather than an unexplained one.
 void CRhino::AttackPlayer(void)
 {
-    printf("CRhino::AttackPlayer(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_310 = 0x64;
+			this->Neutralize();
+
+			new CAIProc_LookAt(this, MechList, 0, 2, 0x50, 0);
+
+			this->field_330 = Rnd(30) + 0x5A;
+			this->dumbAssPad++;
+			break;
+		case 1:
+		{
+			this->field_330 -= this->field_80;
+
+			if (this->field_288 & 2)
+			{
+				this->field_288 &= ~2;
+			}
+			else
+			{
+				if (this->field_330 > 0)
+				{
+					return;
+				}
+			}
+
+			this->field_330 = 0;
+
+			SFX_PlayPos((~gAttackRelated & 1) | 0x80C8, &this->mPos, 0);
+
+			switch (this->field_360)
+			{
+				case 0:
+					this->PlaySingleAnim(0xA, 0, -1);
+					new CAIProc_MonitorAttack(this, 7, 0x7000, 6, 0x10);
+					this->dumbAssPad = 2;
+					this->field_360 = 1;
+					break;
+				case 1:
+					this->PlaySingleAnim(0xB, 0, -1);
+					new CAIProc_MonitorAttack(this, 7, 0xE00, 6, 0x10);
+					this->dumbAssPad = 2;
+					this->field_360 = 0;
+					break;
+				default:
+					print_if_false(0, "What in the name of God above?");
+					break;
+			}
+			break;
+		}
+		case 2:
+			if (this->CheckIfPlayerHit())
+			{
+				this->dumbAssPad++;
+			}
+			else if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 3;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @MEDIUMTODO
@@ -109,10 +203,71 @@ INLINE i32 CRhino::CheckIfPlayerHit(void)
 	return 0;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRhino::DieRhino(void)
 {
-    printf("CRhino::DieRhino(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			SFX_PlayPos(0x8043, &this->mPos, 0);
+			this->field_310 = 0;
+			this->Neutralize();
+			this->mCBodyFlags &= ~0x10;
+			this->field_2A8 |= 0x1000;
+			this->field_1F8 = 0;
+			this->StopMyXA();
+			this->PlaySingleAnim(0x1D, 0, -1);
+			this->PlayXAPlease(0x16, 1, 0);
+			this->dumbAssPad++;
+
+			MechList->SetIgnoreInputTimer(0x8000);
+
+			{
+				CCamera *camera = CameraList;
+				if (camera)
+				{
+					camera->SetMode(CAMERAMODE_DEMO);
+					camera->field_100 = 1;
+					camera->mTripod = this;
+					camera->field_140 = 1;
+					camera->field_13C = this;
+					camera->SetCamXOffset(0, 0);
+					camera->SetCamYOffset(0, 0);
+					camera->SetCamZOffset(0, 0);
+					camera->SetCamXZDistance(0x1A8, 0);
+					camera->SetCamYDistance(-0x68, 0);
+				}
+			}
+			break;
+		case 1:
+			if (CameraList)
+			{
+				i16 angle = this->field_80;
+				angle <<= 5;
+				angle += CameraList->field_236;
+				CameraList->SetCamAngle(angle, 16);
+			}
+
+			if (this->mAnimFinished)
+			{
+				this->dumbAssPad = 4;
+			}
+			break;
+		case 3:
+			break;
+		case 4:
+			this->field_1F8 += this->field_80;
+			if (this->field_1F8 > 0x3C)
+			{
+				this->Die(0);
+				this->dumbAssPad = 3;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @MEDIUMTODO
@@ -264,16 +419,219 @@ void CRhino::GetLaunched(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRhino::GetShocked(void)
 {
-    printf("CRhino::GetShocked(void)");
+	this->field_3D0 = 0x1E;
+
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->mCBodyFlags &= ~0x10;
+			this->field_348 |= 2;
+
+			Effects_Electrify(this);
+			new CAIProc_StateSwitchSendMessage(this, 0x11);
+
+			if (!this->field_338)
+			{
+				this->field_338 = SFX_PlayPos(0x80CC, &this->mPos, 0);
+			}
+
+			this->CycleAnim(0x1E, 1);
+
+			this->field_34C = Utils_GetValueFromDifficultyLevel(300, 300, 300, 300);
+			this->field_420 = (Utils_GetValueFromDifficultyLevel(250, 175, 125, 75) << 12) / this->field_34C;
+			this->field_354 = this->mHealth;
+
+			if (Rnd(4))
+			{
+				this->PlayXAPlease(0xB, 1, 0);
+			}
+			else
+			{
+				this->PlayXAPlease(0xC, 3, 0);
+			}
+
+			this->dumbAssPad++;
+			break;
+		case 1:
+		{
+			this->RunTimer(&this->field_34C);
+			this->field_348 |= 2;
+
+			i32 damage = this->GetShockDamage();
+			i16 v = (this->field_420 * this->field_34C) >> 0xC;
+			v += this->field_354;
+			this->mHealth = v - damage;
+
+			if (!this->field_34C)
+			{
+				this->RunAnim(0x1E, this->field_128, -1);
+			}
+
+			if (this->mAnimFinished)
+			{
+				if (this->field_338)
+				{
+					SFX_Stop(this->field_338);
+				}
+				this->field_338 = 0;
+
+				if (this->mHealth <= 0)
+				{
+					this->field_31C.bothFlags = 0x15;
+					this->dumbAssPad = 0;
+				}
+				else
+				{
+					this->mCBodyFlags |= 0x10;
+					this->CycleAnim(this->field_298.Bytes[0], 1);
+					this->PlayXAPlease(6, 3, 1);
+					this->field_31C.bothFlags = 2;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		}
+	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Logic and field stores verified against the disasm. Residue: case 1's
+// "field_1F8 <= 0" branch reads a value through a struct I could not
+// identify (Mem_RecoverPointer(&this->field_104), then a double pointer
+// indirection at +0x44 then +0x3C off that; modeled as raw char*/i32* casts
+// since the real struct/class is unknown). Attempts: (1) direct translation,
+// 129 diffs, first divergence was the shared "dumbAssPad++" tail (case 1's
+// early-outs and case 4's normal exit both jump to the SAME code in the
+// original, 0x480c89) compiling as separate inlined tails in my version;
+// (2) added a `goto common_inc;` label after the switch shared by both
+// call sites to match the original's actual jump target, which fixed that
+// specific cascade but a NEW one appeared at the multiply/shift computation
+// order (`this->field_1F8 = 5; this->field_34C = v;` store order vs the
+// `(v - field_34C) * 125 * 32 >> 12` computation, 130 diffs now, likely a
+// statement-order or intermediate-type issue in that expression I did not
+// resolve). Did not reach the 15-hypothesis bar for @AlmostMatching.
 void CRhino::GetTrapped(void)
 {
-    printf("CRhino::GetTrapped(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			new CAIProc_StateSwitchSendMessage(this, 0xE);
+			this->RunAnim(0x1A, 0, -1);
+			this->field_1F8 = 5;
+			this->field_34C = 0;
+			this->field_350 = 0;
+			this->dumbAssPad++;
+			break;
+		case 1:
+			if (this->mAnimFinished)
+			{
+				this->CycleAnim(0x1B, 1);
+			}
+
+			this->field_348 |= 1;
+
+			if (this->field_350 > 0)
+			{
+				this->field_350--;
+			}
+
+			this->field_1F8--;
+
+			if (this->field_1F8 <= 0)
+			{
+				void *p = Mem_RecoverPointer(&this->field_104);
+
+				if (!p)
+				{
+					goto common_inc;
+				}
+
+				{
+					char *inner = *reinterpret_cast<char**>(static_cast<char*>(p) + 0x44);
+					i32 v = *reinterpret_cast<i32*>(inner + 0x3C);
+
+					if (v == this->field_34C)
+					{
+						goto common_inc;
+					}
+
+					this->field_350 += ((v - this->field_34C) * 125 * 32) >> 0xC;
+					this->field_1F8 = 5;
+					this->field_34C = v;
+				}
+			}
+			break;
+		case 2:
+			this->RunTimer(&this->field_350);
+
+			if (this->field_350 <= 0)
+			{
+				this->RunAnim(0x1B, this->mAnim == 0x1B ? this->field_128 : 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 3:
+			this->field_348 |= 1;
+
+			if (this->mAnimFinished)
+			{
+				this->RunAnim(0x1C, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 4:
+			if (this->field_128 < 0xA)
+			{
+				this->field_348 |= 1;
+				break;
+			}
+
+			if (this->field_104.pWhatever)
+			{
+				void *p = Mem_RecoverPointer(&this->field_104);
+				if (p)
+				{
+					reinterpret_cast<CTrapWebEffect*>(p)->Burst();
+				}
+				this->field_104.pWhatever = 0;
+			}
+
+			this->field_31C.bothFlags = 0x11;
+			goto common_inc;
+		case 5:
+			if (this->mAnimFinished)
+			{
+				if (this->DetermineFightState(1))
+				{
+					if (this->field_31C.bothFlags == 5 || this->field_31C.bothFlags == 4)
+					{
+						if (this->DistanceToPlayer(0) > 500)
+						{
+							this->field_31C.bothFlags = 8;
+							this->dumbAssPad = 0;
+						}
+					}
+				}
+				else
+				{
+					this->PlaySingleAnim(0, 0, -1);
+					this->field_31C.bothFlags = 0x16;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+	return;
+
+common_inc:
+	this->dumbAssPad++;
 }
 
 // @MEDIUMTODO
@@ -282,10 +640,50 @@ void CRhino::GonnaHitWall(i32)
     printf("CRhino::GonnaHitWall(i32)");
 }
 
-// @MEDIUMTODO
-void CRhino::LineOfSightCheck(CVector const *,i32)
+// @NotOk
+// Real raycast, but not the full original. The original also builds an aim
+// matrix (calls at 0x4E7760/0x4E7840/0x470430 near the entry, likely a
+// direction/normal setup for the trace) and, if the trace hits something,
+// walks past up to 2 hit items whose model checksum (Spool_GetModelChecksum)
+// is in a small allow-list at 0x55AD18 (count at 0x55AD5C), retrying the
+// trace from the hit point. None of that residue is reproduced here, only
+// the core InitLineInfo/LineToItem trace against this->mPos -> *a2. Needed
+// as a real (non-inlinable) body so callers like DetermineFightState do not
+// get the printf stub const-folded into their own codegen.
+u8 CRhino::LineOfSightCheck(CVector const *a2, i32 a3)
 {
-    printf("CRhino::LineOfSightCheck(CVector const *,i32)");
+	SLineInfo lineInfo;
+
+	lineInfo.StartCoords.vx = 0;
+	lineInfo.StartCoords.vy = 0;
+	lineInfo.StartCoords.vz = 0;
+	lineInfo.EndCoords.vx = 0;
+	lineInfo.EndCoords.vy = 0;
+	lineInfo.EndCoords.vz = 0;
+
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	lineInfo.StartCoords = this->mPos;
+	lineInfo.EndCoords = *a2;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, a3);
+
+	return lineInfo.pItem == 0;
 }
 
 // @MEDIUMTODO
@@ -359,16 +757,172 @@ void CRhino::SlideFromHit(i32,i32,CVector *)
     printf("CRhino::SlideFromHit(i32,i32,CVector *)");
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Logic and field stores verified against the disasm (barrel-punch loop over
+// EnvironmentalObjectList mirrors FuckUpSomeBarrels, the SHitInfo send is the
+// same struct/vtable-slot-0xC=Hit idiom as CheckIfPlayerHit). Residue: the
+// original keeps the case-3 upper bound (this switch has cases 0-3) alive in
+// ebp for the whole function ("mov ebp,3" once at entry) and reuses that same
+// register both as the switch bound compare AND later as the literal "3"
+// stored into field_31C.bothFlags (case1's else) and this->dumbAssPad
+// (case2's else). Writing plain literal 3 in both spots did not make the
+// compiler cache it the same way; the cascade from that one instruction is
+// most of the diff count. Attempts targeting this: (1) plain literals in
+// both spots, 96 diffs; (2) a named local `i32 three = 3;` at the top of the
+// function, reused at both stores instead of the literal, no change (96
+// diffs, identical cascade) - the compiler did not keep it live in a
+// register across the switch. Did not reach the 15-hypothesis bar for
+// @AlmostMatching.
 void CRhino::StompGround(void)
 {
-    printf("CRhino::StompGround(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			this->field_324 = 0;
+			this->field_328 = 0;
+			this->PlayXAPlease(0x13, 1, 1);
+			this->PlaySingleAnim(0x13, 0, -1);
+			this->dumbAssPad++;
+			break;
+		case 1:
+			if (this->field_128 < 0x11)
+			{
+				return;
+			}
+
+			this->ShakePad();
+			SFX_PlayPos(0x804B, &this->mPos, 0);
+			CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+			Effects_RhinoStomp(this);
+			this->dumbAssPad++;
+
+			if (this->field_31C.bothFlags == 0x14)
+			{
+				i32 barrels = 0;
+
+				for (
+						CBody *cur = EnvironmentalObjectList;
+						cur && barrels < 2;
+						cur = reinterpret_cast<CBody*>(cur->mNextItem))
+				{
+					if (cur->mType == 401)
+					{
+						if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+						{
+							reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
+							barrels++;
+						}
+					}
+				}
+			}
+			else
+			{
+				if (MechList->field_AD4 && (MechList->field_8E8 || MechList->field_8E9))
+				{
+					SHitInfo hit;
+					hit.field_C.vx = 0;
+					hit.field_C.vy = 0;
+					hit.field_C.vz = 0;
+					hit.field_0 = 6;
+					hit.field_4 = 0xD;
+					hit.field_8 = 0x1E;
+
+					MechList->Hit(&hit);
+					MechList->KnockSpideyFromCrawlPosition();
+				}
+
+				this->dumbAssPad = 3;
+			}
+			break;
+		case 2:
+			if (this->mAnimFinished)
+			{
+				if (this->field_31C.bothFlags == 0x14)
+				{
+					this->field_31C.bothFlags = 2;
+				}
+				else
+				{
+					this->field_31C.bothFlags = 3;
+				}
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRhino::StuckInWall(void)
 {
-    printf("CRhino::StuckInWall(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_348 |= 2;
+			this->field_218 &= ~8;
+			new CAIProc_StateSwitchSendMessage(this, 0x0C);
+			this->dumbAssPad++;
+		case 1:
+			if (this->field_288 & 1)
+			{
+				this->field_288 &= ~1;
+				this->field_230 = MechList->field_E18 ? 900 : Utils_GetValueFromDifficultyLevel(200, 150, 120, 90);
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+			this->RunTimer(&this->field_230);
+			if (this->field_230 > 0x3C)
+			{
+				if (!MechList->field_E18)
+				{
+					this->field_230 = 0x3C;
+				}
+			}
+
+			this->field_348 |= 2;
+			if (this->mAnimFinished)
+			{
+				if (this->field_230)
+				{
+					this->PlaySingleAnim(0x16, 0, -1);
+				}
+				else
+				{
+					this->PlaySingleAnim(0x19, 0, -1);
+					this->dumbAssPad++;
+					this->field_31C.bothFlags = 0xB;
+					SFX_PlayPos(0x8048, &this->mPos, 0);
+
+					if (this->field_218 & 8)
+					{
+						this->PlayXAPlease(9, 2, 1);
+					}
+				}
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 // @Ok
@@ -394,11 +948,123 @@ void Rhino_RelocatableModuleClear(void)
 }
 
 
-// @MEDIUMTODO
-i32 CRhino::DetermineFightState(i32)
+// @NotOk
+// Logic and field stores match (verified against the disasm instruction by
+// instruction). Residue: this->mPlayerDist is declared u16 in ob.h (CBody,
+// offset 0xE4), but the original reads/compares it with the full 32-bit eax
+// register ("mov eax,[esi+0E4h]" then "cmp eax,1388h"/"cmp eax,0C8h" etc,
+// not movzx+16-bit ops), which only happens if the real field is 32-bit.
+// mPlayerDist is shared CBody state used elsewhere (ob.cpp, powerup.cpp), so
+// I did not change its type from this single file. That single 16-vs-32-bit
+// mismatch changes instruction encoding size and cascades into every jump
+// target after it in this function. A second, smaller residue: the shared
+// "return 0" epilogue in the original (used by 4 different early-return
+// sites) compiles here as separate inlined epilogues per site. Attempts: (1)
+// initial translation matched field order but stack frame was 0xC too big
+// (SMoveToInfo local instead of a plain CVector, fixed); (2) LineOfSightCheck
+// was still a printf stub and got inlined into this function, masking all
+// downstream codegen (fixed by giving it a real, if incomplete, body, see
+// its own tag); (3) swapped the LineOfSightCheck if/else branch order to
+// match the original's fallthrough-is-false layout (fixed one cluster); (4)
+// manual sar/xor/sub abs() instead of the cstdlib abs() call, to match the
+// original's idiom instead of the cdq-based intrinsic expansion (fixed).
+i32 CRhino::DetermineFightState(i32 a2)
 {
-	printf("i32 CRhino::DetermineFightState(i32)");
-	return 0x28072024;
+	i32 dy = this->mPos.vy - MechList->mPos.vy;
+	i32 originalFlags = this->field_31C.bothFlags;
+	i32 sign = dy >> 31;
+	i32 absDy = (dy ^ sign) - sign;
+
+	if (absDy > 0x64000)
+	{
+		if (!this->field_324)
+		{
+			this->field_324 = Utils_GetValueFromDifficultyLevel(400, 200, 120, 120);
+		}
+		return 0;
+	}
+
+	if (!this->LineOfSightCheck(&MechList->mPos, 1))
+	{
+		if (this->field_1F0)
+		{
+			return 0;
+		}
+
+		CVector v;
+		v.vx = 0;
+		v.vy = 0;
+		v.vz = 0;
+		this->GetWaypointNearTarget(&MechList->mPos, 0x12C000, this->field_21D, &v);
+		this->field_21D++;
+
+		if (Utils_CrapXZDist(this->mPos, v) < 0x104)
+		{
+			return 0;
+		}
+
+		if (this->PathCheck(&this->mPos, &v, 0, 100))
+		{
+			return 0;
+		}
+
+		this->field_1A8[1] = v;
+		this->field_1F0 = 1;
+		this->field_31C.bothFlags = 1;
+		this->dumbAssPad = 0;
+		this->field_218 |= 0x10;
+		return 1;
+	}
+	else
+	{
+		if (this->field_218 & 0x10)
+		{
+			this->PlayXAPlease(0x12, 1, 1);
+			this->field_218 &= ~0x10;
+		}
+
+		if (gAttackRelated - this->field_358 < 0x96 && MechList->field_AD4)
+		{
+			this->field_31C.bothFlags = 0xD;
+			this->dumbAssPad = 0;
+		}
+		else if (this->mPlayerDist < 0x1388)
+		{
+			if (MechList->field_E1C & 0x80)
+			{
+				return 0;
+			}
+
+			if (MechList->field_E1C & 0x800000)
+			{
+				if (this->mPlayerDist < 0xC8)
+				{
+					return 0;
+				}
+				this->field_31C.bothFlags = 5;
+			}
+			else if (this->mPlayerDist < 0xC8)
+			{
+				this->field_31C.bothFlags = 6;
+			}
+			else if (this->mPlayerDist < 0x1F4)
+			{
+				this->field_31C.bothFlags = 5;
+			}
+			else
+			{
+				this->field_31C.bothFlags = a2 ? 8 : 7;
+			}
+
+			this->dumbAssPad = 0;
+		}
+	}
+
+	if (originalFlags != this->field_31C.bothFlags)
+	{
+		this->Baddy_SendSignal();
+	}
+	return originalFlags != this->field_31C.bothFlags;
 }
 
 // @Ok
@@ -814,16 +1480,30 @@ void CRhinoNasalSteam::Move(void)
 void validate_CRhino(void){
 	VALIDATE_SIZE(CRhino, 0x424);
 
+	VALIDATE(CRhino, field_324, 0x324);
+	VALIDATE(CRhino, field_328, 0x328);
+	VALIDATE(CRhino, field_330, 0x330);
+
+	VALIDATE(CRhino, field_338, 0x338);
+
 	VALIDATE(CRhino, field_344, 0x344);
+	VALIDATE(CRhino, field_348, 0x348);
+	VALIDATE(CRhino, field_34C, 0x34C);
+	VALIDATE(CRhino, field_350, 0x350);
+	VALIDATE(CRhino, field_354, 0x354);
 
 	VALIDATE(CRhino, field_358, 0x358);
+	VALIDATE(CRhino, field_360, 0x360);
 	VALIDATE(CRhino, field_388, 0x388);
+
+	VALIDATE(CRhino, field_3D0, 0x3D0);
 
 	VALIDATE(CRhino, field_3DC, 0x3DC);
 	VALIDATE(CRhino, field_3E0, 0x3E0);
 	VALIDATE(CRhino, field_3E4, 0x3E4);
 	VALIDATE(CRhino, field_3F8, 0x3F8);
 	VALIDATE(CRhino, field_40C, 0x40C);
+	VALIDATE(CRhino, field_420, 0x420);
 }
 
 void validate_CRhinoNasalSteam(void)
