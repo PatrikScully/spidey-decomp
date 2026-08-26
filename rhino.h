@@ -60,12 +60,20 @@ public:
 	i32 field_324;
 	i32 field_328;
 
-	PADDING(0x344 - 0x328 - 4);
+	PADDING(0x338 - 0x328 - 4);
+
+	i32 field_338;
+
+	PADDING(0x344 - 0x338 - 4);
 
 	i32 field_344;
 	i32 field_348;
 
-	PADDING(0x358-0x348-4);
+	i32 field_34C;
+
+	PADDING(0x354 - 0x34C - 4);
+
+	i32 field_354;
 
 	i32 field_358;
 
@@ -73,7 +81,11 @@ public:
 
 	i32 field_388;
 
-	PADDING(0x3DC-0x388-4);
+	PADDING(0x3D0 - 0x388 - 4);
+
+	i32 field_3D0;
+
+	PADDING(0x3DC - 0x3D0 - 4);
 
 	i32 field_3DC;
 	u32 field_3E0;
@@ -81,7 +93,7 @@ public:
 	u32 field_3F8[5];
 	u32 field_40C[5];
 
-	PADDING(0x424-0x420);
+	i32 field_420;
 };
 
 class CRhinoNasalSteam : public CFlatBit

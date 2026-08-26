@@ -11,6 +11,7 @@
 #include "my_assert.h"
 #include "m3dcolij.h"
 #include "m3dzone.h"
+#include "effects.h"
 
 
 EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
@@ -327,10 +328,83 @@ void CRhino::GetLaunched(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRhino::GetShocked(void)
 {
-    printf("CRhino::GetShocked(void)");
+	this->field_3D0 = 0x1E;
+
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->mCBodyFlags &= ~0x10;
+			this->field_348 |= 2;
+
+			Effects_Electrify(this);
+			new CAIProc_StateSwitchSendMessage(this, 0x11);
+
+			if (!this->field_338)
+			{
+				this->field_338 = SFX_PlayPos(0x80CC, &this->mPos, 0);
+			}
+
+			this->CycleAnim(0x1E, 1);
+
+			this->field_34C = Utils_GetValueFromDifficultyLevel(300, 300, 300, 300);
+			this->field_420 = (Utils_GetValueFromDifficultyLevel(250, 175, 125, 75) << 12) / this->field_34C;
+			this->field_354 = this->mHealth;
+
+			if (Rnd(4))
+			{
+				this->PlayXAPlease(0xB, 1, 0);
+			}
+			else
+			{
+				this->PlayXAPlease(0xC, 3, 0);
+			}
+
+			this->dumbAssPad++;
+			break;
+		case 1:
+		{
+			this->RunTimer(&this->field_34C);
+			this->field_348 |= 2;
+
+			i32 damage = this->GetShockDamage();
+			i16 v = (this->field_420 * this->field_34C) >> 0xC;
+			v += this->field_354;
+			this->mHealth = v - damage;
+
+			if (!this->field_34C)
+			{
+				this->RunAnim(0x1E, this->field_128, -1);
+			}
+
+			if (this->mAnimFinished)
+			{
+				if (this->field_338)
+				{
+					SFX_Stop(this->field_338);
+				}
+				this->field_338 = 0;
+
+				if (this->mHealth <= 0)
+				{
+					this->field_31C.bothFlags = 0x15;
+					this->dumbAssPad = 0;
+				}
+				else
+				{
+					this->mCBodyFlags |= 0x10;
+					this->CycleAnim(this->field_298.Bytes[0], 1);
+					this->PlayXAPlease(6, 3, 1);
+					this->field_31C.bothFlags = 2;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		}
+	}
 }
 
 // @MEDIUMTODO
@@ -1089,17 +1163,24 @@ void validate_CRhino(void){
 	VALIDATE(CRhino, field_324, 0x324);
 	VALIDATE(CRhino, field_328, 0x328);
 
+	VALIDATE(CRhino, field_338, 0x338);
+
 	VALIDATE(CRhino, field_344, 0x344);
 	VALIDATE(CRhino, field_348, 0x348);
+	VALIDATE(CRhino, field_34C, 0x34C);
+	VALIDATE(CRhino, field_354, 0x354);
 
 	VALIDATE(CRhino, field_358, 0x358);
 	VALIDATE(CRhino, field_388, 0x388);
+
+	VALIDATE(CRhino, field_3D0, 0x3D0);
 
 	VALIDATE(CRhino, field_3DC, 0x3DC);
 	VALIDATE(CRhino, field_3E0, 0x3E0);
 	VALIDATE(CRhino, field_3E4, 0x3E4);
 	VALIDATE(CRhino, field_3F8, 0x3F8);
 	VALIDATE(CRhino, field_40C, 0x40C);
+	VALIDATE(CRhino, field_420, 0x420);
 }
 
 void validate_CRhinoNasalSteam(void)
