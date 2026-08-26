@@ -285,18 +285,27 @@ void Utils_CalcWallPerps(CVector * a1,CVector * a2,CVector * a3)
 // Kept as its own address, matching the existing spidey.cpp precedent, instead of indexing into gMikeCamera[1].
 static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 
-// @Ok
-// @AlmostMatching: 21 mnemonic diffs left (cmpsum.sh), all in the final stereo-pan pack in each
-// angle branch (both branches show the same shape). MSVC6 picks edx as the scratch copy of
-// atten there, ours picks edi; same instruction count (124 vs our 123) and same total byte
-// length (347), so this is register-coloring residue, not a missing store. 16 distinct source
-// hypotheses tried (logged in wt/utils.attempts.md, above the medium-function 15 minimum):
-// separate field-store vs constructor-call vs const-local for the camera position temp,
-// single-reused vs multi CVector locals, dx/dy/dz temps vs inline field exprs, moving
-// gte_SetRotMatrix before/after the delta vector build (this fixed the whole first half),
-// v.vx&&v.vz vs (v.vz|v.vx) zero check, shared vs per-branch pan computation (per-branch
-// matched, fixed a big chunk), and five orderings of the final hi/lo pack (lo-before-hi
-// fixed another chunk, further reordering did not move the last 21).
+// @NotOk
+// NOT AlmostMatching: instruction counts do NOT match (original 124, this
+// build 123, over the same 347-byte window), so per CLAUDE.md's "verify
+// byte length" rule this is a real code-shape gap, not pure scheduling
+// residue. Confirmed by inspection: the original preserves one value in
+// edi across the whole function (push/pop edi in the prologue/epilogue);
+// this build carries the equivalent value in edx instead (a caller-saved
+// register needing no push/pop) and pops esi at a different point in the
+// epilogue, a genuine register-allocation/structural difference, not a
+// same-length swap. 21 mnemonic diffs left (cmpsum.sh), all in the final
+// stereo-pan pack in each angle branch. 16 distinct source hypotheses
+// tried (logged in wt/utils.attempts.md): separate field-store vs
+// constructor-call vs const-local for the camera position temp,
+// single-reused vs multi CVector locals, dx/dy/dz temps vs inline field
+// exprs, moving gte_SetRotMatrix before/after the delta vector build
+// (fixed the whole first half), v.vx&&v.vz vs (v.vz|v.vx) zero check,
+// shared vs per-branch pan computation (per-branch matched, fixed a big
+// chunk), and five orderings of the final hi/lo pack (lo-before-hi fixed
+// another chunk). None reproduced the edi-preservation shape. Needs a
+// source form that keeps one value alive across the whole function in a
+// callee-saved register the way the original does.
 u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 {
 	const CVector camPos(
