@@ -2,6 +2,7 @@
 #include "spool.h"
 #include "l1a3bomb.h"
 #include "spidey.h"
+#include "db.h"
 
 #include "validate.h"
 
@@ -57,6 +58,14 @@ void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)
 void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,Texture const *,u32)
 {
     printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,Texture const *,u32)");
+}
+
+// @SMALLTODO
+// unnamed helper at 0x46CB90, argument is gRenderBuf (idb_globals.txt: 0x0056EB54, exact type unknown).
+// Not runtime-hooked this session, so a printf placeholder instead of a forward-to-original.
+void gsub_46CB90(void*)
+{
+	printf("gsub_46CB90(void*)");
 }
 
 // @Ok
@@ -296,10 +305,41 @@ int Panel_DrawTexturedPoly(SAnimFrame* pFrame, int a2)
 	return Panel_DrawTexturedPoly(pFrame->pTexture, a2);
 }
 
-// @SMALLTODO
-int Panel_DrawTexturedPoly(Texture*, int)
+// @Ok
+// @Matching
+int Panel_DrawTexturedPoly(Texture* pTexture, int a2)
 {
-	return 0x28052024;
+	if (!pTexture)
+	{
+		return 0;
+	}
+
+	print_if_false(a2 < 0x1000, "Panel_DrawTexturedPoly");
+
+	if ((u8*)pPoly + sizeof(POLY_FT4) > PolyBufferEnd)
+	{
+		return 0;
+	}
+
+	POLY_FT4* p = (POLY_FT4*)pPoly;
+	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_FT4));
+
+	p->tag = 0x09000000;
+	*(u32*)&p->r0 = 0x2C808080;
+
+	u32 u0v0clut = *(u32*)&pTexture->u0;
+	u32 u1v1tpage = *(u32*)&pTexture->u1;
+	u32 u2v2u3v3 = *(u32*)&pTexture->u2;
+	u16 u3v3 = *(u16*)&pTexture->u3;
+
+	*(u32*)&p->u0 = u0v0clut;
+	*(u32*)&p->u1 = u1v1tpage;
+	*(u32*)&p->u2 = u2v2u3v3;
+	*(u16*)&p->u3 = u3v3;
+
+	gsub_46CB90((void*)0x0056EB54);
+
+	return (int)p;
 }
 
 void validate_SAnimFrame(void)

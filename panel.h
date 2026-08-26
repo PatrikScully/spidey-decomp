@@ -67,6 +67,8 @@ struct POLY_GT4
 {
 };
 
+EXPORT void gsub_46CB90(void*);
+
 EXPORT void Panel_CreateHealthBar(CBody*, i32);
 EXPORT void Panel_DestroyCompass(void);
 EXPORT int Panel_DrawTexturedPoly(SAnimFrame*, int);
