@@ -101,10 +101,38 @@ void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)
     printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)");
 }
 
-// @MEDIUMTODO
-void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,Texture const *,u32)
+// @NotOk
+// real translation, 29 mnemonic diffs against 0x462930, not iterated
+// further this session
+void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, Texture const *tex, u32 flags)
 {
-    printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,Texture const *,u32)");
+	print_if_false(tex != 0, "no texture for draw textured poly.");
+
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
+
+	u32 color = flags;
+	if (!flags)
+	{
+		color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
+	}
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 y3 = poly->y3 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 x3 = poly->x3 * scaleX;
+	f32 y2 = poly->y2 * scaleY;
+	f32 x2 = poly->x2 * scaleX;
+	f32 y1 = poly->y1 * scaleY;
+	f32 x1 = poly->x1 * scaleX;
+	f32 y0 = poly->y0 * scaleY;
+	f32 x0 = poly->x0 * scaleX;
+
+	PCGfx_DrawQPoly2D(
+			x0, y0, 0.01f, 0.01f, color,
+			x1, y1, 1.0f, 0.01f, color,
+			x2, y2, 0.01f, 1.0f, color,
+			x3, y3, 1.0f, 1.0f, color,
+			zOffset);
 }
 
 // @SMALLTODO
