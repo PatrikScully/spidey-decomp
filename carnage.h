@@ -7,6 +7,22 @@
 #include "baddy.h"
 #include "reloc.h"
 #include "bit2.h"
+#include "main.h"
+
+// thrown blade projectile (CCarnage::ThrowBlades). Allocated via CClass::operator new
+// (0x455390 in the disasm, not CBit's pooled allocator), so it derives from CClass, not CBit.
+// Not in idb_globals.txt or spideypc_names.txt yet; name and ctor signature come from the Mac
+// build symbols (tools/prototypes.json: "CSymbioteBlade::CSymbioteBlade((CVector const &,CVector const &))",
+// size 0x13C from the CClass_new(0x13C) call). Fields are unknown, this is a stub the caller needs,
+// not one of this file's assigned functions.
+class CSymbioteBlade : public CClass
+{
+	public:
+		// @MEDIUMTODO
+		EXPORT CSymbioteBlade(const CVector&, const CVector&);
+
+		PADDING(0x13C - 0x4);
+};
 
 class CSonicRipple : public CGPolyLine
 {

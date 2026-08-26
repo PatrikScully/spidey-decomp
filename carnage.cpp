@@ -138,10 +138,22 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 // @Ok
 EXPORT CVector gCarnageVector;
 
+// @MEDIUMTODO
+// callee CCarnage::ThrowBlades needs. Not one of this file's assigned functions, stubbed only
+// so ThrowBlades compiles and can be attempted (leaf-first rule).
+CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
+{
+	printf("CSymbioteBlade::CSymbioteBlade(const CVector&, const CVector&)");
+}
+
 // tentative: XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0).
 // Not in idb_globals.txt yet, values are a guess (indices go up to Rnd(6)&~1, so needs 6 entries).
 EXPORT i32 gCarnageGettingGrabbedXa[6] = { 0x48, 6, 0x48, 6, 0x48, 6 };
 EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x11, 6, 0x11, 6, 0x11, 6 };
+
+// tentative: XA lines played while winding up to throw blades (CCarnage::ThrowBlades case 0).
+EXPORT i32 gCarnageThrowBladesXa[6] = { 0x48, 7, 0x48, 7, 0x48, 7 };
+EXPORT i32 gCarnageThrowBladesWhatIfXa[6] = { 0x11, 7, 0x11, 7, 0x11, 7 };
 
 // @NotOk
 // residue: case 3 (CVector normal/scale/add math not fully reverse engineered), see attempts file.
@@ -299,10 +311,169 @@ void CCarnage::GettingGrabbed(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: not fully verified against a rebuild yet, see attempts file. Structural translation of a
+// 6-way switch(dumbAssPad); needs the new CSymbioteBlade stub above (leaf callee, out of this file's
+// assigned list).
 void CCarnage::ThrowBlades(void)
 {
-    printf("CCarnage::ThrowBlades(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			this->field_218 |= 4;
+
+			if (this->mAnim != 0x25)
+			{
+				this->RunAnim(0x25u, 0, -1);
+
+				if (gWhatIf)
+				{
+					i32 idx = Rnd(6) & ~1;
+					this->PlayXA(gCarnageThrowBladesWhatIfXa[idx], gCarnageThrowBladesWhatIfXa[idx + 1], 60);
+				}
+				else
+				{
+					i32 idx = Rnd(6) & ~1;
+					this->PlayXA(gCarnageThrowBladesXa[idx], gCarnageThrowBladesXa[idx + 1], 60);
+				}
+
+				return;
+			}
+
+			if (this->field_128 < 0xA)
+				return;
+
+			SHook hook;
+			hook.Part.vx = 0;
+			hook.Part.vy = 0;
+			hook.Part.vz = 0;
+			hook.Offset = 0x11;
+
+			VECTOR hookPos;
+			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+
+			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 1:
+		{
+			if (!this->mAnimFinished)
+				return;
+
+			this->RunAnim(5, 0, -1);
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 2:
+		{
+			if (this->field_128 < 0xA)
+				return;
+
+			SHook hook;
+			hook.Part.vx = 0;
+			hook.Part.vy = 0;
+			hook.Part.vz = 0;
+			hook.Offset = 0xD;
+
+			VECTOR hookPos;
+			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+
+			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 3:
+		{
+			if (this->field_128 < 0x1A)
+				return;
+
+			SHook hook;
+			hook.Part.vx = 0;
+			hook.Part.vy = 0;
+			hook.Part.vz = 0;
+			hook.Offset = 0x11;
+
+			VECTOR hookPos;
+			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+
+			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 4:
+		{
+			if (!this->mAnimFinished)
+				return;
+
+			if (MechList->field_E1C & 0x800000)
+			{
+				this->field_218 &= ~4;
+				this->RunAnim(0x26u, 0, -1);
+				this->dumbAssPad++;
+				break;
+			}
+
+			CSVector aim1;
+			Utils_CalcAim(&aim1, &gCarnageVector, &this->mPos);
+
+			CSVector aim2;
+			Utils_CalcAim(&aim2, &gCarnageVector, &MechList->mPos);
+
+			i32 diff = aim2.vy - aim1.vy;
+			if (diff > 0x800)
+				diff -= 0x1000;
+			else if (diff < -0x800)
+				diff += 0x1000;
+
+			if (my_abs(diff) < 0x17C && !MechList->field_AD4)
+			{
+				this->RunAnim(0x26u, 0, -1);
+				this->dumbAssPad++;
+				break;
+			}
+
+			if (Rnd(4) != 0)
+			{
+				this->RunAnim(5, 0, -1);
+				this->dumbAssPad -= 2;
+			}
+			else
+			{
+				this->field_218 &= ~4;
+				this->dumbAssPad++;
+			}
+			break;
+		}
+
+		case 5:
+		{
+			if (!this->mAnimFinished)
+				return;
+
+			this->field_31C.bothFlags = 2;
+			this->dumbAssPad = 0;
+			break;
+		}
+
+		default:
+			DoAssert(0, "Unknown state");
+			break;
+	}
 }
 
 // @MEDIUMTODO
