@@ -57,6 +57,10 @@ u32 gPcGfxSkyColor;
 EXPORT i32 gEndSceneRelated = -1;
 EXPORT i32 gEndSceneRelatedTwo;
 
+// 0xAC08F0, set to 1 by PCGfx_ClipTriToNearPlane whenever it actually cuts a
+// triangle. Not in the maintainer's IDB globals list, name is our guess.
+u8 gTriWasClipped;
+
 // @Ok
 // @Matching
 i32 acG2Write(void*, void*, i32)
@@ -110,10 +114,65 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)
     printf("PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)");
 }
 
-// @SMALLTODO
-void PCGfx_ClipTriToNearPlane(_DXVERT **,_DXVERT *const *)
+// @NotOk
+// verts holds the 3 input triangle vertex pointers, plus a spare 4th slot
+// (verts[3]) used when clipping turns the triangle into a quad. out[0]/out[1]
+// are the two spare _DXVERT slots the caller passes in to receive the newly
+// interpolated vertices. residue: original tests countBehind with a
+// dec/je/dec/je/dec/jne chain (switch-style dispatch on a cached local, see
+// tips.txt); our separate ifs compile to plain cmp/jne instead. 67 mnemonic
+// diffs at 0x506e40 as of this attempt, 2 hypotheses tried, logged in
+// pcgfx.attempts.md.
+void PCGfx_ClipTriToNearPlane(_DXVERT **verts, _DXVERT *const *out)
 {
-    printf("PCGfx_ClipTriToNearPlane(_DXVERT **,_DXVERT *const *)");
+	static const i32 prevIdx[3] = {2, 0, 1};
+	static const i32 nextIdx[3] = {1, 2, 0};
+
+	i32 countBehind = 0;
+	i32 behindIdx = -1;
+	verts[3] = 0;
+	i32 frontIdx = -1;
+
+	for (i32 i = 2; i >= 0; i--)
+	{
+		if (verts[i]->field_8 < gRenderInitOne[0])
+		{
+			behindIdx = i;
+			countBehind++;
+		}
+		else
+		{
+			frontIdx = i;
+		}
+	}
+
+	if (countBehind == 1)
+	{
+		ZCLIP_VERT(out[0], verts[prevIdx[behindIdx]], verts[behindIdx], gRenderInitOne[0]);
+		ZCLIP_VERT(out[1], verts[nextIdx[behindIdx]], verts[behindIdx], gRenderInitOne[0]);
+
+		for (i32 i = 2; i > behindIdx; i--)
+			verts[i + 1] = verts[i];
+
+		verts[behindIdx] = out[0];
+		verts[behindIdx + 1] = out[1];
+		gTriWasClipped = 1;
+	}
+	if (countBehind == 2)
+	{
+		ZCLIP_VERT(out[0], verts[frontIdx], verts[prevIdx[frontIdx]], gRenderInitOne[0]);
+		ZCLIP_VERT(out[1], verts[frontIdx], verts[nextIdx[frontIdx]], gRenderInitOne[0]);
+
+		verts[prevIdx[frontIdx]] = out[0];
+		verts[nextIdx[frontIdx]] = out[1];
+		gTriWasClipped = 1;
+	}
+	if (countBehind == 3)
+	{
+		verts[2] = 0;
+		verts[1] = 0;
+		verts[0] = 0;
+	}
 }
 
 // @Ok
