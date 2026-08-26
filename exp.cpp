@@ -210,10 +210,38 @@ CGrenadeWave::~CGrenadeWave(void)
 {
 }
 
-// @MEDIUMTODO
-CItemFrag::CItemFrag(u32 *,CVector *,CVector *,i32)
+// @Ok
+// @Matching
+CItemFrag::CItemFrag(u32 *pFace, CVector *pVertices, CVector *pVel, i32 a4)
 {
-    printf("CItemFrag::CItemFrag(u32 *,CVector *,CVector *,i32)");
+	this->SetSemiTransparent();
+
+	this->mTint = 0x808080;
+
+	this->field_70 = pFace[3];
+	this->field_74 = pFace[4];
+	this->field_78 = pFace[5];
+	this->field_7C = pFace[6];
+	this->field_80 = pFace[7];
+
+	u32 idx = pFace[1];
+	u8 idx0 = idx & 0xFF;
+	u8 idx1 = (idx >> 8) & 0xFF;
+	u8 idx2 = (idx >> 16) & 0xFF;
+	u8 idx3 = idx >> 24;
+
+	this->field_88 = pVertices[idx0];
+	this->field_94 = pVertices[idx1];
+	this->field_A0 = pVertices[idx2];
+	this->field_AC = pVertices[idx3];
+
+	this->mVel = *pVel;
+
+	i32 lifetime = Rnd(30);
+	this->field_84 = a4;
+
+	this->mLifetime = lifetime + 1;
+	this->mType = 0x17;
 }
 
 // @MEDIUMTODO
@@ -572,6 +600,12 @@ void Exp_GlowFlash(
 void validate_CItemFrag(void)
 {
 	VALIDATE_SIZE(CItemFrag, 0xB8);
+
+	VALIDATE(CItemFrag, field_84, 0x84);
+	VALIDATE(CItemFrag, field_88, 0x88);
+	VALIDATE(CItemFrag, field_94, 0x94);
+	VALIDATE(CItemFrag, field_A0, 0xA0);
+	VALIDATE(CItemFrag, field_AC, 0xAC);
 }
 
 void validate_CGlowFlash(void)

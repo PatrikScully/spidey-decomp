@@ -91,7 +91,7 @@ class CFlameExplosion : public CNonRenderedBit
 		// @FIXME missing vmethod
 };
 
-class CItemFrag : public CBit
+class CItemFrag : public CQuadBit
 {
 	public:
 
@@ -100,8 +100,15 @@ class CItemFrag : public CBit
 
 		EXPORT virtual void Move(void);
 
-		u8 itemFragPad[0x7C];
+		// @FIXME guess: ground level the fragment lands on
+		i32 field_84;
 
+		// @FIXME guess: the 4 corner points, integrated with mVel/gravity,
+		// then copied to mPos/mPosB/mPosC/mPosD each Move for display
+		CVector field_88;
+		CVector field_94;
+		CVector field_A0;
+		CVector field_AC;
 };
 
 class CGlowFlash : public CGlow
