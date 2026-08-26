@@ -17,6 +17,7 @@
 #include "spool.h"
 #include "DXinit.h"
 #include "my_assert.h"
+#include "texture.h"
 
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
@@ -1326,10 +1327,109 @@ void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
     printf("Spidey_LoadAlternativeTextureSet(u32 const *,i32)");
 }
 
-// @SMALLTODO
-void Spidey_StoreTextureEntry(Texture const *,i16,i16)
+// @NotOk
+// known blocker: the fail path calls print_if_false, always inlined by our
+// build (static in export.h), while the original calls it out of line
+// (retail body is a single `ret`, confirmed against tools/functions -
+// it is a no-op in the shipped game). Exact argument order at that one
+// call site is ambiguous from the disassembly (only 2 stack slots pushed
+// for a message with one %X format spec), so this passes the checksum as
+// a printf-style value, which is functionally sensible either way since
+// the call does nothing in retail.
+// new globals (no idb_globals.txt entry, tentative names from usage):
+// gGlobalTextureEntryCount (0x6A9050): running count into gGlobalTextureEntries.
+// gGlobalTextureEntries (0x6A8000): array of {Texture* pTexture; i16 mA2; i16 mA3;
+// u32 mChecksum;} (stride 0xC), terminated by a pTexture==0 sentinel entry.
+// gSuitChecksumTable (0x53C1A4): i32[16] per suit (stride 0x40), checksum lookup.
+// gCostumeTextureIds (0x6A8D74): i16 per (suit*16+slot) slot, same table
+// Spidey_SwapSuitTextures indexes (not yet decompiled in this session).
+// preserved bug: the gLowGraphics==0 search loop compares
+// gGlobalTextureEntries[count] (the NEXT free slot, loop-invariant) against
+// the checksum on every iteration instead of gGlobalTextureEntries[i] -
+// the compiled code hoists the loop-invariant load/compare exactly like
+// this, so the "search" only ever matches on i==0 or never matches. this
+// looks like a genuine off-by-index bug in the original; reproduced
+// verbatim per repo convention (tips.txt: preserve source-level bugs).
+// residue: 43 mnemonic diffs (down from 70 on the first honest pass, after
+// two fixes: keeping the search as a real for-loop with the invariant
+// index instead of collapsing it to one check, and deferring the checksum
+// read into the count>0 branch instead of hoisting it unconditionally,
+// both confirmed against the disassembly). remaining diffs are mostly
+// register pressure (original keeps 3 callee-saved regs live across the
+// loop: ebx=cached checksum, esi=loop counter, edi=search pointer; ours
+// only needs 2, folding the checksum into a different register) and the
+// suit*16+slot indexing using scaled-index addressing instead of the
+// original's flat ecx-offset form. tried a do-while instead of for (to
+// drop a redundant count>0 recheck at loop entry): made it worse (52
+// diffs), reverted.
+static i32 * const gGlobalTextureEntryCount = (i32*)0x006A9050;
+
+struct SGlobalTextureEntry
 {
-    printf("Spidey_StoreTextureEntry(Texture const *,i16,i16)");
+	const Texture *pTexture;
+	i16 mA2;
+	i16 mA3;
+	u32 mChecksum;
+};
+static SGlobalTextureEntry * const gGlobalTextureEntries = (SGlobalTextureEntry*)0x006A8000;
+
+static i32 * const gSuitChecksumTable = (i32*)0x0053C1A4;
+static i16 * const gCostumeTextureIds = (i16*)0x006A8D74;
+
+void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
+{
+	if (!gLowGraphics)
+	{
+		i32 count = *gGlobalTextureEntryCount;
+
+		if (count > 0)
+		{
+			u32 checksum1 = pTexture->Checksum;
+
+			for (i32 j = 0; j < count; j++)
+			{
+				if (gGlobalTextureEntries[count].mChecksum == checksum1)
+				{
+					gGlobalTextureEntries[count].pTexture = pTexture;
+					return;
+				}
+			}
+		}
+
+		u32 checksum = pTexture->Checksum;
+		gGlobalTextureEntries[count].mChecksum = checksum;
+		gGlobalTextureEntries[count].pTexture = pTexture;
+		*gGlobalTextureEntryCount = count + 1;
+		gGlobalTextureEntries[count].mA2 = a2;
+		gGlobalTextureEntries[count].mA3 = a3;
+		gGlobalTextureEntries[count + 1].pTexture = 0;
+
+		return;
+	}
+
+	u32 checksum = pTexture->Checksum;
+	i32 *pEntry = gSuitChecksumTable + CurrentSuit * 16;
+	i32 i;
+
+	for (i = 0; i < 16; i++)
+	{
+		if ((u32)pEntry[i] == checksum)
+		{
+			gCostumeTextureIds[CurrentSuit * 16 + i] = pTexture->clut;
+			return;
+		}
+	}
+
+	for (i = 0; i < 16; i++)
+	{
+		if ((u32)gSuitChecksumTable[i] == checksum)
+		{
+			gCostumeTextureIds[i] = pTexture->clut;
+			return;
+		}
+	}
+
+	print_if_false(0, "Spidey_StoreTextureEntry(): Checksum not found: %8.8X\r\n", checksum);
 }
 
 // @SMALLTODO
