@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "shatter.h"
 #include "spidey.h"
+#include "spool.h"
 #include "trig.h"
 
 #include "validate.h"
@@ -119,10 +120,94 @@ void CPlatform::NotifyTrodUpon(CBody *,CVector const *,CSVector const *)
 	this->field_338 = 0;
 }
 
-// @MEDIUMTODO
-void CPlatform::SetVariable(u16)
+// @Ok
+// @Matching
+void CPlatform::SetVariable(u16 a2)
 {
-    printf("CPlatform::SetVariable(u16)");
+	switch (a2)
+	{
+	case 0x2123:
+		this->field_20E = *this->field_24C;
+		this->field_24C++;
+		break;
+
+	case 0x2124:
+		this->mModel = *this->field_24C;
+		this->field_24C++;
+		if (*(u8*)((i32***)0x6B2454)[this->mRegion * 17][this->mModel] & 0x10)
+			this->mFlags |= 0x20;
+		else
+			this->mFlags &= ~0x20;
+		break;
+
+	case 0x212F:
+		{
+			u32 *v6 = reinterpret_cast<u32*>((reinterpret_cast<u32>(this->field_24C) + 3) & 0xFFFFFFFC);
+			u16 Model = Spool_GetModel(*v6, this->mRegion);
+
+			this->mModel = Model;
+			if (*(u8*)((i32***)0x6B2454)[this->mRegion * 17][Model] & 0x10)
+				this->mFlags |= 0x20;
+			else
+				this->mFlags &= ~0x20;
+			this->mFlags &= ~1;
+
+			this->field_24C = reinterpret_cast<i16*>(&v6[1]);
+		}
+		break;
+
+	case 0x2134:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mVel.vx = (i32)vx << 12;
+			this->mVel.vy = (i32)vy << 12;
+			this->mVel.vz = (i32)vz << 12;
+		}
+		break;
+
+	case 0x2137:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mAngles.vx = vx;
+			this->mAngles.vy = vy;
+			this->mAngles.vz = vz;
+		}
+		break;
+
+	case 0x2127:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mAngVel.vx = vx;
+			this->mAngVel.vy = vy;
+			this->mAngVel.vz = vz;
+		}
+		break;
+
+	case 0x2128:
+		{
+			i16 vx = this->GetScriptValue();
+			i16 vy = this->GetScriptValue();
+			i16 vz = this->GetScriptValue();
+
+			this->mAngAcc.vx = vx;
+			this->mAngAcc.vy = vy;
+			this->mAngAcc.vz = vz;
+		}
+		break;
+
+	default:
+		CBaddy::SetVariable(a2);
+		break;
+	}
 }
 
 // @Ok
