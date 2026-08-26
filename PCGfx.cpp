@@ -10,9 +10,16 @@
 #include "spool.h"
 #include "ps2pad.h"
 #include "PCInput.h"
+#include "m3dinit.h"
 
 #include <cmath>
 #include <cstring>
+
+// my_malloc/my_free live in main.cpp (0x52A227/0x52A3C0, already
+// PATCH_PUSH_RET'd there), not declared in any header. Plain extern
+// declarations, not a redefinition.
+extern void *my_malloc(size_t s);
+extern void my_free(void *block);
 
 EXPORT i32 gAnotherGameResolutionX = gGameResolutionX;
 EXPORT i32 gAnotherGameResolutionY = gGameResolutionY;
@@ -1177,10 +1184,96 @@ INLINE void PCGfx_UseTexture(i32 a1, DCGfx_BlendingMode a2)
 	}
 }
 
-// @MEDIUMTODO
-void PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)
+// @NotOk
+// Naming work done this session (nearest neighbor check against
+// idb_globals.txt, see pcgfx.attempts.md): every global this function
+// touches turned out to already be a named repo global at a different
+// address than we thought: 0xAC08E0-style constants were not involved here,
+// instead 0x568158/0x628614=gGameResolutionY/Yres, 0x568154/0x61B5FC=
+// gGameResolutionX/Xres (m3dinit.h), 0xAC08DC=gTextureBlendingMode,
+// 0xAC08C4=gSceneRelated, 0x56815C=gIsRenderSettingE, 0xADB3A8/0xADB3AC=
+// gMaxTextureWidth/gTextureHeight all matched 1:1. Call targets identified
+// the same way: 0x50F0E0=PCTex_GetTextureSize (real call, not inlined,
+// matches its 3 arg shape), 0x510170/0x510190=PCTex_GetTextureSplitCount/
+// PCTex_GetTextureSplitID (same pair PCGfx_DrawTexture2D already uses),
+// 0x52A227/0x52A3C0=my_malloc/my_free (main.cpp already PATCH_PUSH_RETs
+// these two exact addresses). The malloc size is splitCount * 44, and 44 is
+// exactly sizeof(Texture), so the split path allocates a Texture[splitCount]
+// and recurses into itself once per piece, the same shape as
+// PCGfx_DrawTexture2D's split loop (same assert string "Split texture drawn
+// with x != 0." at 0x568348, confirmed from the binary). The kind <= 2 /
+// gUseTextureRelated / gTextureBlendingMode block at the top of the single
+// texture path is PCGfx_UseTexture(kind, DCGfx_BlendingMode_0) inlined
+// (matches PCGfx_UseTexture's body instruction for instruction); called
+// here instead of reproducing the inline, since PCGfx_UseTexture is already
+// @Ok.
+// NOT resolved: the exact mapping of a3/a4/a5/a6 into the 4 float values
+// built for the PCGfx_DrawQuad2D call (position vs size roles are a guess),
+// and a10's value in that call (passed through some local we could not
+// pin down). This is a genuine attempt, not a stub, but the coordinate
+// math in both the single texture and split branches is unverified.
+// cmpsum: 186 mnemonic diffs at 0x509d20, first divergence right at entry.
+void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32 a5, i32 a6, u8 tint)
 {
-    printf("PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)");
+	print_if_false(tex != 0, "no texture for draw texture poly.");
+
+	u16 kind = tex->clut;
+	i32 width, height;
+	PCTex_GetTextureSize(kind, &width, &height);
+
+	if (width <= gMaxTextureWidth && height <= gTextureHeight)
+	{
+		PCGfx_UseTexture(kind, DCGfx_BlendingMode_0);
+
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+
+		u32 t = tint;
+		u32 color = 0xFF000000u | (t << 16) | (t << 8) | t;
+
+		f32 y = (f32)a4 * scaleY;
+		f32 x = (f32)a3 * scaleX;
+		f32 w = (f32)a5 * scale;
+		f32 h = w * (f32)a6;
+
+		PCGfx_DrawQuad2D(h, w, x, y, 0.0f, 0.0f, 1.0f, 1.0f, color, 1.0f, 0);
+	}
+	else
+	{
+		i32 splitCount = PCTex_GetTextureSplitCount(kind);
+		Texture *pieces = (Texture *)my_malloc(splitCount * sizeof(Texture));
+
+		print_if_false(a3 == 0, "Split texture drawn with x != 0.");
+
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+
+		i32 xAccum = 0;
+		i32 yAccum = a4;
+
+		for (i32 i = 0; i < splitCount; i++)
+		{
+			i32 splitId = PCTex_GetTextureSplitID(kind, i);
+			pieces[i].clut = (u16)splitId;
+
+			i32 subWidth, subHeight;
+			PCTex_GetTextureSize(splitId, &subWidth, &subHeight);
+
+			i32 subScaleW = (i32)((f32)subWidth / (f32)width * scaleX);
+			i32 subScaleH = (i32)((f32)subHeight / (f32)height * scaleY);
+
+			PCPanel_DrawTexturedPoly(scale, &pieces[i], xAccum, yAccum, subScaleW, subScaleH, tint);
+
+			xAccum += subWidth;
+			if (xAccum >= width)
+			{
+				yAccum += subHeight;
+				xAccum = 0;
+			}
+		}
+
+		my_free(pieces);
+	}
 }
 
 // @NotOk
