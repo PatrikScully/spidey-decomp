@@ -132,11 +132,28 @@ class CFadePalettes : public CNonRenderedBit
 		EXPORT void Move(void);
 		EXPORT ~CFadePalettes(void);
 
-		PADDING(0x45B-0x3D+1);
+		// pointers to allocated fade-tracking blocks, one per active 16 colour
+		// palette. Cap checked against 0xC0 in the constructor.
+		void *field_3C[0xC0];
+
+		// pointers to allocated fade-tracking blocks, one per active 256 colour
+		// palette. Cap checked against 0x44 in the constructor, array itself
+		// runs to offset 0x450 (one spare slot).
+		void *field_33C[0x45];
+
+		i32 field_450;
+		i32 field_454;
+
+		u8 field_458;
+		u8 field_459;
+		u8 field_45A;
 
 		u8 field_45B;
 
-		PADDING(0x460-0x45B-1);
+		u8 field_45C;
+		u8 field_45D;
+		u8 field_45E;
+		u8 field_45F;
 };
 
 class CAngrySpark : public CQuadBit

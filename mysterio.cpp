@@ -11,6 +11,7 @@
 #include "m3dcolij.h"
 #include "spidey.h"
 #include "front.h"
+#include "mem.h"
 
 EXPORT SLight M3d_MysterioLight =
 {
@@ -25,6 +26,16 @@ EXPORT SLight M3d_MysterioLight =
 
 
 EXPORT SHandle gMystHandle;
+
+// tentative, address not in the maintainer's IDB. Guards "only one
+// CFadePalettes at a time" (message: "Tried to create two global fade
+// palettes"), set here and cleared in the destructor.
+EXPORT i32 gFadePalettesActive;
+
+// tentative, address not in the maintainer's IDB. Saved/restored triple of
+// RGB shift values, read by the constructor, written back by the destructor.
+EXPORT u8 gPaletteFadeRGB[3];
+EXPORT u8 gPaletteFadeRGB2[3];
 
 // @MEDIUMTODO
 CFadePalettes::CFadePalettes(u8,u8,u8)
@@ -49,10 +60,47 @@ void CFadePalettes::Move(void)
     printf("CFadePalettes::Move(void)");
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 CFadePalettes::~CFadePalettes(void)
 {
-    printf("CFadePalettes::~CFadePalettes(void)");
+	if (this->field_45B != 3)
+	{
+		for (i32 i = 0; i < this->field_450; i++)
+		{
+			_LoadImage();
+		}
+
+		for (i32 j = 0; j < this->field_454; j++)
+		{
+			_LoadImage();
+		}
+	}
+
+	DrawSync();
+
+	for (i32 k = 0; k < this->field_450; k++)
+	{
+		Mem_Delete(this->field_3C[k]);
+	}
+
+	for (i32 l = 0; l < this->field_454; l++)
+	{
+		Mem_Delete(this->field_33C[l]);
+	}
+
+	if (this->field_45C)
+	{
+		gPaletteFadeRGB[0] = this->field_45D;
+		gPaletteFadeRGB[1] = this->field_45E;
+		gPaletteFadeRGB[2] = this->field_45F;
+
+		gPaletteFadeRGB2[0] = this->field_45D;
+		gPaletteFadeRGB2[1] = this->field_45E;
+		gPaletteFadeRGB2[2] = this->field_45F;
+	}
+
+	gFadePalettesActive = 0;
 }
 
 
@@ -580,7 +628,21 @@ void validate_CFadePalettes(void)
 {
 	VALIDATE_SIZE(CFadePalettes, 0x460);
 
+	VALIDATE(CFadePalettes, field_3C, 0x3C);
+	VALIDATE(CFadePalettes, field_33C, 0x33C);
+	VALIDATE(CFadePalettes, field_450, 0x450);
+	VALIDATE(CFadePalettes, field_454, 0x454);
+
+	VALIDATE(CFadePalettes, field_458, 0x458);
+	VALIDATE(CFadePalettes, field_459, 0x459);
+	VALIDATE(CFadePalettes, field_45A, 0x45A);
+
 	VALIDATE(CFadePalettes, field_45B, 0x45B);
+
+	VALIDATE(CFadePalettes, field_45C, 0x45C);
+	VALIDATE(CFadePalettes, field_45D, 0x45D);
+	VALIDATE(CFadePalettes, field_45E, 0x45E);
+	VALIDATE(CFadePalettes, field_45F, 0x45F);
 }
 
 void validate_CAngrySpark(void)
