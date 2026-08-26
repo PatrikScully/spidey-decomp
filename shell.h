@@ -346,6 +346,9 @@ struct SpideyIconRelated
 
 struct STrainingMission
 {
+	// tentative: read as a char* by Shell_ShowRecord (Mess_DrawText title arg).
+	// No other field known yet.
+	char* field_0;
 };
 
 enum EShellResult
