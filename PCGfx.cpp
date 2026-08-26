@@ -507,22 +507,447 @@ void PCGfx_DoModelPreview(void)
 	}
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawLine(f32,f32,f32,u32,f32,f32,f32,u32,f32)
+// @SMALLTODO
+// Forward to the original. Builds one _DXVERT from a corner record shaped
+// like tagKMVERTEX3 (field_4..field_18 only, field_0 unused), confirmed from
+// the disasm at 0x509400 to run the exact same field_8/field_C formulas as
+// PCGfx_DrawTPoly3D plus the REAL (not stubbed) fog table math inline for
+// the color when gNonRendderSettingE is set. Needs the same fog tables
+// setupFog/PCGfx_BeginScene build, which are out of scope this session (see
+// pcgfx.attempts.md), so forwarding instead of reproducing the math.
+static void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 {
-    printf("PCGfx_DrawLine(f32,f32,f32,u32,f32,f32,f32,u32,f32)");
+	// @FIXME
+	typedef void (*func_ptr)(tagKMVERTEX3 const *, _DXVERT *);
+	func_ptr func = (func_ptr)0x00509400;
+	func(corner, out);
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawQPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)
+// @NotOk
+// Draws a thick line as a quad: dy=y2-y1, dx=x2-x1, length=sqrt(dx^2+dy^2)
+// (calls _sqrt at 0x529A44, confirmed). If length != 0.0f, the perpendicular
+// half width offset is (width*0.5f/length)*(dy,-dx); if length == 0.0f
+// (degenerate zero length line), the disasm falls back to offsetX=0,
+// offsetY=width*0.5f instead of dividing by zero. 4 corners are built,
+// (x1+off,y1+off), (x1-off,y1-off), (x2+off,y2+off), (x2-off,y2-off), each
+// with z/color taken from the matching endpoint, then converted to a
+// _DXVERT via gsub_509400 and passed to submitPoly(verts,4). This is a
+// genuine attempt at the confirmed math (dx/dy/length/offset, confirmed
+// against the disasm instruction by instruction), but the exact struct
+// pre-initialisation block at 0x509311-0x50938c (default field values before
+// the 4 gsub_509400 calls) and an unexplained per-endpoint bias using the
+// constant 7.071072578430176f at 0x53C844 (added to x1/x2 before storing,
+// looks like an antialiasing/endpoint cap nudge but not confirmed) are NOT
+// reproduced, only the standard perpendicular quad geometry. cmpsum: 204
+// mnemonic diffs at 0x509000, first divergence right at entry (our version
+// has no push ebx/ebp/esi/edi, the original keeps all 4 endpoint deltas
+// live across the whole function in callee saved registers). One honest
+// attempt, not iterated further this session given the fog table and
+// pre-init block gaps above.
+void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, u32 color2, f32 width)
 {
-    printf("PCGfx_DrawQPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)");
+	f32 dy = y2 - y1;
+	f32 dx = x2 - x1;
+	f32 length = sqrt(dx * dx + dy * dy);
+
+	f32 offX, offY;
+	if (length != 0.0f)
+	{
+		f32 s = (width * 0.5f) / length;
+		offX = s * dy;
+		offY = -(s * dx);
+	}
+	else
+	{
+		offX = 0.0f;
+		offY = width * 0.5f;
+	}
+
+	tagKMVERTEX3 corners[4];
+	memset(corners, 0, sizeof(corners));
+
+	corners[0].field_4 = x1 + offX;
+	corners[0].field_8 = y1 + offY;
+	corners[0].field_C = z1;
+	corners[0].field_18 = color1;
+
+	corners[1].field_4 = x1 - offX;
+	corners[1].field_8 = y1 - offY;
+	corners[1].field_C = z1;
+	corners[1].field_18 = color1;
+
+	corners[2].field_4 = x2 + offX;
+	corners[2].field_8 = y2 + offY;
+	corners[2].field_C = z2;
+	corners[2].field_18 = color2;
+
+	corners[3].field_4 = x2 - offX;
+	corners[3].field_8 = y2 - offY;
+	corners[3].field_C = z2;
+	corners[3].field_18 = color2;
+
+	_DXVERT vtx[4];
+	_DXVERT *verts[4] = { &vtx[0], &vtx[1], &vtx[2], &vtx[3] };
+
+	gsub_509400(&corners[0], &vtx[0]);
+	gsub_509400(&corners[1], &vtx[1]);
+	gsub_509400(&corners[2], &vtx[2]);
+	gsub_509400(&corners[3], &vtx[3]);
+
+	submitPoly(verts, 4);
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawQPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)
+// @NotOk
+// Same shape as PCGfx_DrawTPoly2D (screen space poly, own DXPOLY build,
+// direct DXPOLY_DrawPoly call, manual gDxPolys pointer walk), just 4
+// vertices instead of 3 (field_C=4, loop count 4). Reuses the zOffset
+// preamble fix found on DrawTPoly2D this session (if/else computing v13 in
+// each branch so the compiler CSEs the shared gRenderInitTwo[1]*zOffset
+// multiply after the compare, `if (zOffset >= 0.0f)` branch order). One
+// notable difference from DrawTPoly2D confirmed in the disasm: the
+// print_if_false("invalid zOffset!") call here has NO "push edi" register
+// save before it (DrawTPoly2D's does), consistent with different register
+// pressure between the two functions, not a copy paste error.
+// cmpsum: 207 mnemonic diffs at 0x507910. The zOffset preamble and the
+// print_if_false call both matched cleanly this time (confirms the
+// DrawTPoly2D fixes generalise and that function's residue really was
+// register pressure specific, not a fundamental block). The residue here
+// starts well into the per vertex field copy block: our field_0/field_4/
+// field_14/field_18/field_10/field_8/field_C assignment order per vertex
+// (declared in that order for all 4 vertices) does not match the original's
+// scattered store order (it interleaves stores across all 4 vertices'
+// structs rather than finishing one vertex before the next, visible in the
+// disasm as stores to +0x34,+0x38,...+0x88 in a non-monotonic sequence).
+// One attempt at the vertex struct fields (declaration order matching field
+// layout, not the original's interleaved store order); short of the 10+
+// hypotheses per cluster bar for a >1000 byte function, logged in
+// pcgfx.attempts.md.
+void PCGfx_DrawQPoly2D(
+		f32 x0, f32 y0, f32 u0, f32 v0, u32 color0,
+		f32 x1, f32 y1, f32 u1, f32 v1, u32 color1,
+		f32 x2, f32 y2, f32 u2, f32 v2, u32 color2,
+		f32 x3, f32 y3, f32 u3, f32 v3, u32 color3,
+		f32 zOffset)
 {
-    printf("PCGfx_DrawQPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)");
+	gPcGfxDrawRelated &= 0xFFFFFFFB;
+
+	if (zOffset <= 6.0f)
+		gPcGfxSlotNumber = (i32)zOffset;
+
+	f32 v13;
+	if (zOffset >= 0.0f)
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[0];
+	else
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[1];
+
+	f32 v24 = v13;
+	print_if_false(v24 > 0.0f, "invalid zOffset!");
+
+	f32 v27 = (v24 - gRenderInitOne[0]) / gRenderInitTwo[0];
+	f32 v32 = gRenderInitOne[2] / v24;
+
+	SDXPolyField dxPolyFields[4];
+
+	dxPolyFields[0].field_0 = x0;
+	dxPolyFields[0].field_4 = y0;
+	dxPolyFields[0].field_14 = u0;
+	dxPolyFields[0].field_18 = v0;
+	dxPolyFields[0].field_10 = color0;
+	dxPolyFields[0].field_8 = v27;
+	dxPolyFields[0].field_C = v32;
+
+	dxPolyFields[1].field_0 = x1;
+	dxPolyFields[1].field_4 = y1;
+	dxPolyFields[1].field_14 = u1;
+	dxPolyFields[1].field_18 = v1;
+	dxPolyFields[1].field_10 = color1;
+	dxPolyFields[1].field_8 = v27;
+	dxPolyFields[1].field_C = v32;
+
+	dxPolyFields[2].field_0 = x2;
+	dxPolyFields[2].field_4 = y2;
+	dxPolyFields[2].field_14 = u2;
+	dxPolyFields[2].field_18 = v2;
+	dxPolyFields[2].field_10 = color2;
+	dxPolyFields[2].field_8 = v27;
+	dxPolyFields[2].field_C = v32;
+
+	dxPolyFields[3].field_0 = x3;
+	dxPolyFields[3].field_4 = y3;
+	dxPolyFields[3].field_14 = u3;
+	dxPolyFields[3].field_18 = v3;
+	dxPolyFields[3].field_10 = color3;
+	dxPolyFields[3].field_8 = v27;
+	dxPolyFields[3].field_C = v32;
+
+	if (gEndSceneRelatedTwo >= 15360)
+	{
+		gEndSceneRelatedTwo++;
+		return;
+	}
+
+	DXPOLY *p = &gDxPolys[gEndSceneRelatedTwo++];
+	i32 blendMode = gPcGfxBlendModeRelated;
+	f32 fogMax = 0.0f;
+
+	if (gLowGraphics)
+	{
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		p->field_C = 4;
+
+		for (i32 i = 0; i < 4; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			if (!(p->mBlendMode & 4))
+				dst->field_4 = 1.0f;
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+	}
+	else
+	{
+		LPDIRECTDRAWSURFACE7 Direct3DTexture;
+		if (gUseTextureRelated < 0)
+			Direct3DTexture = 0;
+		else
+			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+		p->field_4 = Direct3DTexture;
+		p->mBlendMode = gChosenBlendingMode;
+		p->field_A = gProcessedTextureFlags;
+		p->field_C = 4;
+
+		for (i32 i = 0; i < 4; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+
+		if (gChosenBlendingMode)
+		{
+			blendMode = 0;
+		}
+	}
+
+	DXPOLY_DrawPoly(p, gPcGfxSlotNumber, blendMode, fogMax);
+	gPcGfxSlotNumber = -1;
+}
+
+// @NotOk
+// A world space quad (4x (x,y,z,w,uv,color)), split into 2 triangles
+// (v0,v1,v2) and (v0,v2,v3) and each clipped against the near plane before
+// submitting, confirmed from the disasm: PCGfx_ClipTriToNearPlane (0x506E40)
+// is called TWICE, and the per vertex post clip processing (fog blend via
+// gsub_506D70 gated on gNonRendderSettingE, field_C=gRenderInitOne[2]/
+// field_8, field_8 remapped to (field_8-gRenderInitOne[0])/gRenderInitTwo[0],
+// field_14/field_18 *= field_C gated on !gLowGraphics) is EXACTLY
+// PCGfx_ClipSendIndexedVertList's post clip loop, confirmed instruction for
+// instruction. The pre clip vertex build also matches ClipSendIndexedVertList
+// (not DrawTPoly3D): field_8 starts as 1.0f/z (raw invZ, BEFORE the clip),
+// not gRenderInitOne[2]*z, and the color brighten step runs before the clip
+// with no fog blend yet (fog blend only happens in the post clip loop).
+// Two helpers this session did NOT chase down and instead re-implemented
+// inline (matching ClipSendIndexedVertList's established shape rather than
+// forwarding): 0x508B40 (rebuilds v0 and v3's temp vertex fresh before the
+// second clip, since PCGfx_ClipTriToNearPlane can overwrite temp[0]'s slot)
+// and 0x508BA0/0x508CC0 (the second triangle's post clip loop and submit,
+// same shape as the first triangle's inline code and submitPoly call). The
+// print_if_false null checks ("verts[1] is null!"/"verts[2] is null!" at
+// 0x5682A0/0x56828C, confirmed matching ClipSendIndexedVertList's strings)
+// are confirmed only around the FIRST triangle's submit in the disasm; the
+// second triangle's checks (inside the unchased 0x508CC0) are assumed
+// symmetric here, not confirmed. cmpsum: 314 mnemonic diffs at 0x508550,
+// first divergence right at entry (the original stages ALL 4 vertices' raw
+// args into a big scratch block before building any temp vertex, our
+// straight per vertex build does not reproduce that staging order). One
+// honest structural attempt given the size and the 2 unresolved helper
+// bodies, consistent with PCGfx_ClipSendIndexedVertList's own residue this
+// session (same missing setupFog fog table dependency applies here too).
+void PCGfx_DrawQPoly3D(
+		f32 x0, f32 y0, f32 z0, f32 w0, f32 uv0, u32 color0,
+		f32 x1, f32 y1, f32 z1, f32 w1, f32 uv1, u32 color1,
+		f32 x2, f32 y2, f32 z2, f32 w2, f32 uv2, u32 color2,
+		f32 x3, f32 y3, f32 z3, f32 w3, f32 uv3, u32 color3)
+{
+	_DXVERT temp[4];
+	_DXVERT *verts[4];
+	_DXVERT out0, out1;
+	_DXVERT *out[2] = { &out0, &out1 };
+
+	gPcGfxDrawRelated |= 4;
+
+	temp[0].field_0 = x0;
+	temp[0].field_4 = y0;
+	temp[0].field_8 = 1.0f / z0;
+	temp[0].field_14 = w0;
+	temp[0].field_18 = uv0;
+	if ((color0 & 0xFFFFFF) == 0)
+		temp[0].field_10 = color0;
+	else
+		temp[0].field_10 = (color0 & 0xFF000000) | (((color0 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	temp[1].field_0 = x1;
+	temp[1].field_4 = y1;
+	temp[1].field_8 = 1.0f / z1;
+	temp[1].field_14 = w1;
+	temp[1].field_18 = uv1;
+	if ((color1 & 0xFFFFFF) == 0)
+		temp[1].field_10 = color1;
+	else
+		temp[1].field_10 = (color1 & 0xFF000000) | (((color1 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	temp[2].field_0 = x2;
+	temp[2].field_4 = y2;
+	temp[2].field_8 = 1.0f / z2;
+	temp[2].field_14 = w2;
+	temp[2].field_18 = uv2;
+	if ((color2 & 0xFFFFFF) == 0)
+		temp[2].field_10 = color2;
+	else
+		temp[2].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	verts[0] = &temp[0];
+	verts[1] = &temp[1];
+	verts[2] = &temp[2];
+
+	PCGfx_ClipTriToNearPlane(verts, out);
+
+	if (verts[0])
+	{
+		i32 count = verts[3] ? 4 : 3;
+
+		for (i32 k = 0; k < count; k++)
+		{
+			_DXVERT *v = verts[k];
+
+			if (gNonRendderSettingE)
+				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+
+			v->field_C = gRenderInitOne[2] / v->field_8;
+			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
+
+			if (!gLowGraphics)
+			{
+				v->field_14 *= v->field_C;
+				v->field_18 *= v->field_C;
+			}
+		}
+
+		print_if_false(verts[1] != 0, "verts[1] is null!");
+		print_if_false(verts[2] != 0, "verts[2] is null!");
+
+		gPcGfxDrawRelated |= 4;
+
+		submitPoly(verts, count);
+	}
+
+	// second triangle (v0, v2, v3): rebuild v0 and v3 fresh, v2 is reused
+	// unclipped from above (PCGfx_ClipTriToNearPlane never touches an input
+	// slot that stayed in front of the plane).
+	temp[0].field_0 = x0;
+	temp[0].field_4 = y0;
+	temp[0].field_8 = 1.0f / z0;
+	temp[0].field_14 = w0;
+	temp[0].field_18 = uv0;
+	if ((color0 & 0xFFFFFF) == 0)
+		temp[0].field_10 = color0;
+	else
+		temp[0].field_10 = (color0 & 0xFF000000) | (((color0 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	temp[3].field_0 = x3;
+	temp[3].field_4 = y3;
+	temp[3].field_8 = 1.0f / z3;
+	temp[3].field_14 = w3;
+	temp[3].field_18 = uv3;
+	if ((color3 & 0xFFFFFF) == 0)
+		temp[3].field_10 = color3;
+	else
+		temp[3].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	verts[0] = &temp[0];
+	verts[1] = &temp[2];
+	verts[2] = &temp[3];
+
+	PCGfx_ClipTriToNearPlane(verts, out);
+
+	if (verts[0])
+	{
+		i32 count = verts[3] ? 4 : 3;
+
+		for (i32 k = 0; k < count; k++)
+		{
+			_DXVERT *v = verts[k];
+
+			if (gNonRendderSettingE)
+				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+
+			v->field_C = gRenderInitOne[2] / v->field_8;
+			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
+
+			if (!gLowGraphics)
+			{
+				v->field_14 *= v->field_C;
+				v->field_18 *= v->field_C;
+			}
+		}
+
+		submitPoly(verts, count);
+	}
 }
 
 // @NotOk
@@ -719,19 +1144,328 @@ void PCGfx_DrawQuad2D(
 	gPcGfxSlotNumber = -1;
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawTPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)
+// @NotOk
+// A screen space triangle (3x (x,y,u,v,color) plus one shared zOffset),
+// builds its own DXPOLY inline and calls DXPOLY_DrawPoly (0x503100) directly
+// instead of going through submitPoly, confirmed from the disasm: manual
+// pointer walk into gDxPolys (ebp = &gDxPolys[gEndSceneRelatedTwo] via
+// idx*0xF0), not the array-of-pointers shape submitPoly/DrawQuad2D use. The
+// zOffset preamble (gPcGfxDrawRelated &=~4, conditional gPcGfxSlotNumber set,
+// v13=gRenderInitTwo[1]*zOffset + gRenderInitOne[0 or 1] depending on sign,
+// print_if_false "invalid zOffset!" at 0x568304) and the per vertex color
+// brighten/fog clamp loop are the exact same idioms as PCGfx_DrawQuad2D and
+// submitPoly (reused verbatim), field_8/field_C are shared across all 3
+// vertices (single v27/v32, matches DrawQuad2D, this is a 2D/flat triangle
+// not a perspective one). One real difference from DrawQuad2D confirmed by
+// the disasm: the low graphics branch has the "if (!(mBlendMode&4))
+// field_4=1.0f" step per vertex, the hardware branch here does NOT (DrawQuad2D
+// has it in both branches), kept as is since the bytes say so. 0x71C720/
+// 0x71C734 read as gChosenBlendingMode/gProcessedTextureFlags (u16 loads,
+// matches their repo types) rather than new globals. 0x50F3C0 is
+// PCTex_GetDirect3DTexture (same call shape as DrawQuad2D's texture lookup),
+// not a new unnamed helper as an earlier session guessed.
+// cmpsum: 208 mnemonic diffs at 0x507da0. 4 hypotheses tried, 2 confirmed
+// fixes kept: (1) writing the zOffset sign check as a genuine if/else
+// computing v13 in each branch let the compiler CSE the shared
+// gRenderInitTwo[1]*zOffset multiply out after the compare, matching the
+// original's compare-then-multiply order (a plain "cache the multiply in a
+// local, then branch on a separate bool" version materialized the bool into
+// al with extra movs and did not match); (2) flipping the branch to
+// `if (zOffset >= 0.0f)` (add gRenderInitOne[0] first) instead of
+// `if (zOffset < 0.0f)` matched the original's fall through/jump sense
+// exactly, fixing one instruction level diff. The remaining residue starts
+// at the print_if_false("invalid zOffset!") call: our build still calls it
+// out of line here (register allocation differs enough that edi is not live
+// the same way, so the call shape and everything downstream shifts), which
+// is the repo wide print_if_false inlining problem CLAUDE.md documents
+// under "Matching discipline" (static in export.h, gets inlined at some call
+// sites and not others depending on register pressure); fixing that needs a
+// real out of line print_if_false, not a change local to this function.
+// 4 hypotheses is short of the 10+ per cluster bar for a >1000 byte
+// function, logged in pcgfx.attempts.md.
+void PCGfx_DrawTPoly2D(
+		f32 x0, f32 y0, f32 u0, f32 v0, u32 color0,
+		f32 x1, f32 y1, f32 u1, f32 v1, u32 color1,
+		f32 x2, f32 y2, f32 u2, f32 v2, u32 color2,
+		f32 zOffset)
 {
-    printf("PCGfx_DrawTPoly2D(f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32,f32,f32,f32,u32,f32)");
+	gPcGfxDrawRelated &= 0xFFFFFFFB;
+
+	if (zOffset <= 6.0f)
+		gPcGfxSlotNumber = (i32)zOffset;
+
+	f32 v13;
+	if (zOffset >= 0.0f)
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[0];
+	else
+		v13 = gRenderInitTwo[1] * zOffset + gRenderInitOne[1];
+
+	f32 v24 = v13;
+	print_if_false(v24 > 0.0f, "invalid zOffset!");
+
+	f32 v27 = (v24 - gRenderInitOne[0]) / gRenderInitTwo[0];
+	f32 v32 = gRenderInitOne[2] / v24;
+
+	SDXPolyField dxPolyFields[3];
+
+	dxPolyFields[0].field_0 = x0;
+	dxPolyFields[0].field_4 = y0;
+	dxPolyFields[0].field_14 = u0;
+	dxPolyFields[0].field_18 = v0;
+	dxPolyFields[0].field_10 = color0;
+	dxPolyFields[0].field_8 = v27;
+	dxPolyFields[0].field_C = v32;
+
+	dxPolyFields[1].field_0 = x1;
+	dxPolyFields[1].field_4 = y1;
+	dxPolyFields[1].field_14 = u1;
+	dxPolyFields[1].field_18 = v1;
+	dxPolyFields[1].field_10 = color1;
+	dxPolyFields[1].field_8 = v27;
+	dxPolyFields[1].field_C = v32;
+
+	dxPolyFields[2].field_0 = x2;
+	dxPolyFields[2].field_4 = y2;
+	dxPolyFields[2].field_14 = u2;
+	dxPolyFields[2].field_18 = v2;
+	dxPolyFields[2].field_10 = color2;
+	dxPolyFields[2].field_8 = v27;
+	dxPolyFields[2].field_C = v32;
+
+	if (gEndSceneRelatedTwo >= 15360)
+	{
+		gEndSceneRelatedTwo++;
+		return;
+	}
+
+	DXPOLY *p = &gDxPolys[gEndSceneRelatedTwo++];
+	i32 blendMode = gPcGfxBlendModeRelated;
+	f32 fogMax = 0.0f;
+
+	if (gLowGraphics)
+	{
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		p->field_C = 3;
+
+		for (i32 i = 0; i < 3; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			if (!(p->mBlendMode & 4))
+				dst->field_4 = 1.0f;
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+	}
+	else
+	{
+		LPDIRECTDRAWSURFACE7 Direct3DTexture;
+		if (gUseTextureRelated < 0)
+			Direct3DTexture = 0;
+		else
+			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+		p->field_4 = Direct3DTexture;
+		p->mBlendMode = gChosenBlendingMode;
+		p->field_A = gProcessedTextureFlags;
+		p->field_C = 3;
+
+		for (i32 i = 0; i < 3; i++)
+		{
+			SDXPolyField *dst = &p->field_10[i];
+			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
+
+			i32 alpha;
+			if (gProcessTextureRelated)
+				alpha = 128;
+			else
+				alpha = (dst->field_10 >> 24) & 0xFF;
+
+			dst->field_10 =
+				gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+				alpha << 24;
+
+			if (dst->field_8 < 0.0f)
+			{
+				dst->field_8 = 0.0f;
+			}
+			else if (dst->field_8 > 0.99989998f)
+			{
+				dst->field_8 = 0.99989998f;
+				fogMax = dst->field_8;
+			}
+			else if (fogMax < dst->field_8)
+			{
+				fogMax = dst->field_8;
+			}
+		}
+
+		if (gChosenBlendingMode)
+		{
+			blendMode = 0;
+		}
+	}
+
+	DXPOLY_DrawPoly(p, gPcGfxSlotNumber, blendMode, fogMax);
+	gPcGfxSlotNumber = -1;
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawTPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)
+// @NotOk
+// A world space triangle (3x (x,y,z,w,uv,color)) fed through the same fog
+// pipeline as PCGfx_ClipSendIndexedVertList (no near plane clip here, just
+// straight per vertex processing), then submitPoly(verts,3). Confirmed field
+// mapping from the disasm: field_0=x, field_4=y, field_14=w, field_18=uv,
+// field_8=(1/z - gRenderInitOne[0])/gRenderInitTwo[0], field_C=gRenderInitOne[2]*z
+// (the ORIGINAL z, not 1/z, re-read from the arg after the fdiv already
+// consumed it, confirmed for all 3 vertices), field_10=color after the same
+// brighten step as ClipSendIndexedVertList ((c>>1&0x7F7F7F)+0x0F0F0F, skipped
+// when the low 3 bytes are already 0), then gsub_506D70(1/z,color) when
+// gNonRendderSettingE, then field_14/field_18 *= field_C when !gLowGraphics.
+// The original INLINES gsub_506D70's real body for vertex 1 (tips.txt's
+// inline-cutoff note: first call site inlined, later ones become real calls)
+// but calls it out of line for vertex 2 and vertex 3; our gsub_506D70 is a
+// forward-to-original stub, not the real fog table math (setupFog's tables
+// are out of scope, see pcgfx.attempts.md), so vertex 1's region can not
+// match regardless of inlining. cmpsum: 180 mnemonic diffs at 0x5081f0.
+// residue: our frame is 0x64 bytes vs the original's 0x60 (one extra local
+// slot even with per vertex block scoping to force reuse across the 3
+// vertices, attempt 2), and the gPcGfxDrawRelated |= 4 load/store is
+// scheduled earlier by our compiler than the original regardless of where
+// the statement sits between the verts[] pointer assignments (attempt 1:
+// statement placed before verts[]; attempt 2: placed between verts[1] and
+// verts[2] assignment, matching the original's apparent position; both
+// produced the identical instruction stream). 2 hypotheses tried, below the
+// 15+ bar for a medium (850 byte) function, logged in pcgfx.attempts.md.
+void PCGfx_DrawTPoly3D(
+		f32 x1, f32 y1, f32 z1, f32 w1, f32 uv1, u32 color1,
+		f32 x2, f32 y2, f32 z2, f32 w2, f32 uv2, u32 color2,
+		f32 x3, f32 y3, f32 z3, f32 w3, f32 uv3, u32 color3)
 {
-    printf("PCGfx_DrawTPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32)");
+	_DXVERT vtx[3];
+	_DXVERT *verts[3];
+
+	verts[0] = &vtx[0];
+	verts[1] = &vtx[1];
+	gPcGfxDrawRelated |= 4;
+	verts[2] = &vtx[2];
+
+	{
+		f32 invZ = 1.0f / z1;
+		vtx[0].field_0 = x1;
+		vtx[0].field_4 = y1;
+		vtx[0].field_14 = w1;
+		vtx[0].field_18 = uv1;
+		vtx[0].field_8 = (invZ - gRenderInitOne[0]) / gRenderInitTwo[0];
+		vtx[0].field_C = gRenderInitOne[2] * z1;
+		if ((color1 & 0xFFFFFF) == 0)
+			vtx[0].field_10 = color1;
+		else
+			vtx[0].field_10 = (color1 & 0xFF000000) | (((color1 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+		if (gNonRendderSettingE)
+			vtx[0].field_10 = gsub_506D70(invZ, vtx[0].field_10);
+		if (!gLowGraphics)
+		{
+			vtx[0].field_14 *= vtx[0].field_C;
+			vtx[0].field_18 *= vtx[0].field_C;
+		}
+	}
+
+	{
+		f32 invZ = 1.0f / z2;
+		vtx[1].field_0 = x2;
+		vtx[1].field_4 = y2;
+		vtx[1].field_14 = w2;
+		vtx[1].field_18 = uv2;
+		vtx[1].field_8 = (invZ - gRenderInitOne[0]) / gRenderInitTwo[0];
+		vtx[1].field_C = gRenderInitOne[2] * z2;
+		if ((color2 & 0xFFFFFF) == 0)
+			vtx[1].field_10 = color2;
+		else
+			vtx[1].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+		if (gNonRendderSettingE)
+			vtx[1].field_10 = gsub_506D70(invZ, vtx[1].field_10);
+		if (!gLowGraphics)
+		{
+			vtx[1].field_14 *= vtx[1].field_C;
+			vtx[1].field_18 *= vtx[1].field_C;
+		}
+	}
+
+	{
+		f32 invZ = 1.0f / z3;
+		vtx[2].field_0 = x3;
+		vtx[2].field_4 = y3;
+		vtx[2].field_14 = w3;
+		vtx[2].field_18 = uv3;
+		vtx[2].field_8 = (invZ - gRenderInitOne[0]) / gRenderInitTwo[0];
+		vtx[2].field_C = gRenderInitOne[2] * z3;
+		if ((color3 & 0xFFFFFF) == 0)
+			vtx[2].field_10 = color3;
+		else
+			vtx[2].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+		if (gNonRendderSettingE)
+			vtx[2].field_10 = gsub_506D70(invZ, vtx[2].field_10);
+		if (!gLowGraphics)
+		{
+			vtx[2].field_14 *= vtx[2].field_C;
+			vtx[2].field_18 *= vtx[2].field_C;
+		}
+	}
+
+	submitPoly(verts, 3);
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Session 2026-08-26: confirmed the two print_if_false calls both check
+// drawScale (same string "Improbable draw scale" at 0x54ADDC both times,
+// against 0.0 then 256.0, both doubles), and confirmed the split branch
+// (else, below) matches the disasm instruction for instruction, including
+// the recursive PCGfx_DrawTexture2D(TextureSplitID,...) call shape and the
+// x_off/y_off wraparound. What was NOT reproduced this session: the real
+// disasm for the single texture branch (0x506637-0x5068da) builds the
+// PCGfx_DrawQuad2D call from a viewport clamp (right/bottom edges clamped
+// against 0x73C794/0x73C790, read as some viewport max, not yet named) and
+// TWO different code paths selected by a bit of a6 (0x5067ad has a pure
+// fixed point path using magic constant division by 0x66666667/0x88888889,
+// i.e. integer divide by ~2.5 and ~1.8, vs 0x5067ab's float fild/fmul/fdiv
+// chain), producing 4 values (probably u0/v0/u1/v1 fractions for partial
+// visibility when the rect is clipped by the viewport) that feed the final
+// call alongside TextureWScale/TextureHScale. The call below is a
+// functional approximation only (untruncated rect, full 0..TextureWScale/
+// TextureHScale UV, no viewport clipping), not a translation of that
+// clamp/fraction math, so it will not match and may not even be fully
+// correct at the clipped edges. Left @NotOk, not iterated against
+// compare.py, the real fix needs the viewport clamp fully worked out first.
 void PCGfx_DrawTexture2D(
 		i32 a1,
 		i32 x,
@@ -797,20 +1531,18 @@ void PCGfx_DrawTexture2D(
 
 
 
-			/*
 			PCGfx_DrawQuad2D(
-					drawScale,
-					v31,
-					v32,
-					v33,
-					v46,
-					v45,
-					v34,
-					a8,
+					(f32)v36,
+					(f32)hateThiShit,
+					(f32)adjusted_width,
+					(f32)adjusted_height,
+					0.0f,
+					0.0f,
+					TextureWScale,
+					TextureHScale,
 					color,
-					v25,
+					(f32)v25,
 					0);
-			*/
 		}
 	}
 	else
