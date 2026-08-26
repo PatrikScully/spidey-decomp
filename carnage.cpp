@@ -1361,10 +1361,51 @@ void CCarnage::TakeHit(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: one dead-looking read/store in the field_218&1 branch not yet reproduced,
+// see ~/Documents/spidey-work/wt/carnage.attempts.md (8 hypotheses tried).
+// Structurally 199 vs 200 original instructions, off by exactly this one spot.
 void CCarnage::DoPhysics(void)
 {
-    printf("CCarnage::DoPhysics(void)");
+	if (this->field_218 & 1)
+	{
+		CSVector v1;
+		Utils_CalcAim(&v1, &this->mPos, &this->field_240);
+		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, CSVector(0, v1.vy, 0), 10);
+	}
+	else if (this->field_218 & 2)
+	{
+		CSVector v1;
+		Utils_CalcAim(&v1, &this->mPos, &this->field_240);
+		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, CSVector(0, v1.vy, 0), 8);
+	}
+	else if (this->field_218 & 4)
+	{
+		CSVector v1;
+		Utils_CalcAim(&v1, &this->mPos, &MechList->mPos);
+		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, CSVector(0, v1.vy, 0), 8);
+	}
+	else
+	{
+		this->mAngVel.vx = 0;
+		this->mAngVel.vy = 0;
+		this->mAngVel.vz = 0;
+		this->mAngAcc.vx = 0;
+		this->mAngAcc.vy = 0;
+		this->mAngAcc.vz = 0;
+	}
+
+	this->mAngVel.vx = (this->mAngVel.vx + this->mAngAcc.vx) - ((this->mAngVel.vx + this->mAngAcc.vx) >> 2);
+	this->mAngVel.vy = (this->mAngAcc.vy + this->mAngVel.vy) - ((this->mAngAcc.vy + this->mAngVel.vy) >> 2);
+	this->mAngVel.KillSmall();
+
+	for (i32 i = 0; i < this->field_80; i++)
+	{
+		this->mPos += this->mVel;
+		this->mAngles += this->mAngVel;
+	}
+
+	this->mAngles.Mask();
 }
 
 // @Ok
