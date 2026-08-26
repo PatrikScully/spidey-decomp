@@ -19,6 +19,8 @@
 #include "init.h"
 #include "ps2redbook.h"
 #include "m3dutils.h"
+#include "db.h"
+#include "ps2funcs.h"
 
 #include <cstring>
 
@@ -496,10 +498,182 @@ void Shell_SaveGame(const u32 *,u32 *)
     printf("Shell_SaveGame(u32 const *,u32 *)");
 }
 
-// @MEDIUMTODO
+// Shell_ScreenAdjust and Shell_ShowRecord call these as real out-of-line functions
+// in the original, keep the MSVC inliner away (same trick as PCShell.cpp's
+// gsub_430680/gsub_430880/gsub_515850, needed because these stubs live in the same
+// TU as their callers).
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
+// unnamed helper called once per screen adjust / show record frame, address 0x498240.
+// same file range as Shell_ScreenAdjust, not yet decompiled on its own.
+// @SMALLTODO
+EXPORT void gsub_498240(i32, i32)
+{
+	printf("gsub_498240(i32, i32)");
+}
+
+// unnamed helper, address 0x48EA90, name from names.json. Called once per frame by
+// several Shell_ menu loops (ScreenAdjust, ShowRecord, ChooseSurvivalArena, ...).
+// not yet decompiled on its own.
+// @SMALLTODO
+EXPORT void CheckForPadUnplugged(void)
+{
+	printf("CheckForPadUnplugged(void)");
+}
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
+
+// shared per-frame ease value for the title bar shake on some Shell_ menu screens
+// (ScreenAdjust, ShowRecord both use it). tentative name, no idb match (0x5512EC).
+// distinct from PCShell.cpp's PCSHELL_DoDisplayOptions/DoControllerConfig, which use
+// a stack local for the same easing idiom.
+EXPORT i32 gShellMenuEase;
+
+// tentative name, no idb match (0x54D38C, checked right after Pad_Update() in several
+// Shell_ menu loops; guessed to gate an early abort, e.g. game shutting down. nearest
+// idb_globals.txt neighbour is SymBurnRegion at 0x54D388).
+static u8 * const gShellMenuAbort = (u8*)0x54D38C;
+
+static char* STR_SCREEN_ADJUST_TITLE = "screen adjust";
+static char* STR_SCREEN_ADJUST_LINE1 = "Use the directional";
+static char* STR_SCREEN_ADJUST_LINE2 = "buttons to center";
+static char* STR_SCREEN_ADJUST_LINE3 = "the screen";
+
+// @Ok
+// @Matching
 void Shell_ScreenAdjust(void)
 {
-    printf("Shell_ScreenAdjust(void)");
+	// defined once in PCShell.cpp, called here through a local extern (same pattern as
+	// Shell_TitleScreen's gsub_430880 call below).
+	extern void gsub_430880(void);
+	extern void gsub_430680(void);
+
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+
+	i32 savedX = DoubleBuffer[0].Disp.screen.x;
+	i32 savedY = DoubleBuffer[0].Disp.screen.y;
+	i32 cancelled = 0;
+
+	i32 titleEase = 0;
+	gShellMenuEase = 0x2C8;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 vblanksSnapshot = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1u, -1);
+
+		gsub_498240(gShellMenuEase, 0xDE);
+
+		Shell_DrawBackground();
+
+		Shell_DrawTitleBar(titleEase, 0x26, STR_SCREEN_ADJUST_TITLE, 1, 0, 0x96, -21, 0x1D);
+
+		PShell_DefaultText();
+		Mess_SetRGB(0x6Bu, 0x5Du, 0xA7u, 0);
+		Mess_SetRGBBottom(0x3Eu, 0x36, 0x60);
+		Mess_DrawText(0x100, 0x64, STR_SCREEN_ADJUST_LINE1, 0, 0x1000u);
+		Mess_DrawText(0x100, 0x75, STR_SCREEN_ADJUST_LINE2, 0, 0x1000u);
+		Mess_DrawText(0x100, 0x86, STR_SCREEN_ADJUST_LINE3, 0, 0x1000u);
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		titleEase = PShell_MoveTowards(titleEase, 0x80);
+		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 0x180);
+
+		Pad_Update();
+
+		if (*gShellMenuAbort)
+			return;
+
+		CheckForPadUnplugged();
+
+		if (G_SCONTROL[0].Right.Pressed && DoubleBuffer[0].Disp.screen.x < 0x20)
+		{
+			DoubleBuffer[0].Disp.screen.x++;
+			DoubleBuffer[1].Disp.screen.x++;
+		}
+
+		if (G_SCONTROL[0].Left.Pressed && DoubleBuffer[0].Disp.screen.x > 0)
+		{
+			DoubleBuffer[0].Disp.screen.x--;
+			DoubleBuffer[1].Disp.screen.x--;
+		}
+
+		if (G_SCONTROL[0].Up.Pressed && DoubleBuffer[0].Disp.screen.y > 0)
+		{
+			DoubleBuffer[0].Disp.screen.y--;
+			DoubleBuffer[1].Disp.screen.y--;
+			G_SCONTROL[0].Up.Triggered = 0;
+		}
+
+		if (G_SCONTROL[0].Down.Pressed && DoubleBuffer[0].Disp.screen.y < 0x20)
+		{
+			DoubleBuffer[0].Disp.screen.y++;
+			DoubleBuffer[1].Disp.screen.y++;
+			G_SCONTROL[0].Down.Triggered = 0;
+		}
+
+		if (G_SCONTROL[0].Circle.Triggered)
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			cancelled = 1;
+			break;
+		}
+
+		if (G_SCONTROL[0].X.Triggered || G_SCONTROL[0].Start.Triggered)
+		{
+			SControl* pad = G_SCONTROL;
+			pad[0].Start.Triggered = 0;
+			pad[0].X.Triggered = 0;
+			SFX_Play(0x1F, 0x2000, 0);
+			break;
+		}
+
+		if (Vblanks == vblanksSnapshot)
+			Pause(1);
+
+		*(volatile i32*)&DoVblankProcessing = 0;
+		Pause(1);
+		DrawSync();
+		gsub_430680();
+
+		if (!*(volatile i32*)&DoVblankProcessing)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
+
+	Pause(1);
+	DrawSync();
+	gsub_430680();
+	DrawSync();
+	Pad_ClearTriggers(G_SCONTROL);
+
+	if (cancelled)
+	{
+		DoubleBuffer[0].Disp.screen.x = savedX;
+		DoubleBuffer[0].Disp.screen.y = savedY;
+		DoubleBuffer[1].Disp.screen.x = savedX;
+		DoubleBuffer[1].Disp.screen.y = savedY;
+	}
+
+	*reinterpret_cast<i32*>(&gSaveGame.field_A4) = DoubleBuffer[0].Disp.screen.x;
+	*reinterpret_cast<i32*>(&gSaveGame.field_A8) = DoubleBuffer[0].Disp.screen.y;
+
+	gShellMenuEase = 0x200;
 }
 
 // @MEDIUMTODO
