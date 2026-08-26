@@ -198,6 +198,15 @@ INLINE static void _LoadImage(void)
 }
 
 // @Ok
+INLINE static void StoreImage(void)
+{
+	if (!gPrintStubbed)
+	{
+		stubbed_printf("stubbed out: StoreImage");
+	}
+}
+
+// @Ok
 INLINE static void setDrawTPage(void)
 {
 	if (!gPrintStubbed)
