@@ -744,10 +744,13 @@ void SwapPSXTextureData(u32 *,Texture **,u32 *)
     printf("SwapPSXTextureData(u32 *,Texture **,u32 *)");
 }
 
-// @SMALLTODO
-void accessLog(char *,...)
+// @Ok
+// @Matching
+// release build strips the logger body; folds to the same address as every
+// other no-op debug call (nullsub_5, 0x502D50), confirmed by disassembling
+// Spool_TextureAccess's 3 accessLog call sites in the original binary.
+void accessLog(char *, ...)
 {
-    printf("accessLog(char *,...)");
 }
 
 // @Ok
