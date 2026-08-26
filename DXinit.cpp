@@ -2,6 +2,7 @@
 #include "SpideyDX.h"
 #include "dcmodel.h"
 #include "PCGfx.h"
+#include "PCTex.h"
 #include "DXsound.h"
 #include "spool.h"
 #include "dcfileio.h"
@@ -672,10 +673,197 @@ u8 DXINIT_GetPrevResolution(
 	return v13;
 }
 
-// @MEDIUMTODO
-void DXINIT_SetDisplayOptions(u32,u32,u32,i32,i32)
+// @NotOk
+// a4 is not used by the game
+// NOT actually matching: verified 2026-08-25 that our build is 2 bytes
+// SHORTER than the original in this function (917 vs 919 decoded
+// instructions over the same byte window), so the "6 mnemonic diffs" shown
+// by compare.py are not independent scheduling noise, the tail two entries
+// are the comparison window spilling into the next function because of the
+// size shortfall. The real, unresolved divergence is the 4-instruction
+// cluster right after the call to shutdownDirect3D7: original does
+//   mov eax,[esp+114h]   mov ecx,[esp+110h]
+//   mov [6B78E8h],eax    mov [568158h],eax
+//   mov eax,[esp+120h]   add esp,4
+//   mov [562D60h],eax    mov eax,[6B78F4h]
+// (globals: 6B78E4=gDxResolutionX 6B78E8=gDxResolutionY 6B78EC=gColorCount
+// 6B78F4=gDxOptionRelated 6B78F8=gLowGraphics 568154=gGameResolutionX
+// 568158=gGameResolutionY 562D60=gBrightnessRelated), which is one more
+// store than our version currently emits in this window. 9 attempts tried,
+// all byte-identical output (named locals, register hints, comma-operator
+// merges, scoping, declaration order, reading gGameResolutionX/Y back from
+// gDxResolutionX/Y): none of them changed the compiled shape at all, which
+// means the missing store itself was never added, not that the compiler is
+// insensitive to source form. Next step: check whether the original writes
+// gGameResolutionY (568158) as a SEPARATE store from gDxResolutionY
+// (6B78E8) even though both get the same value (our source likely
+// coalesces them into one write), since that is exactly a 1-store /
+// several-byte gap.
+void DXINIT_SetDisplayOptions(u32 width, u32 height, u32 bpp, i32, i32 brightness)
 {
-    printf("DXINIT_SetDisplayOptions(u32,u32,u32,i32,i32)");
+#ifdef _WIN32
+	HRESULT hr;
+	DDBLTFX fx;
+
+	while (1)
+	{
+		i32 wasLowGraphics = gLowGraphics != 0;
+		i32 modeChanged;
+
+		if (width == gDxResolutionX && height == gDxResolutionY && bpp == gColorCount)
+		{
+			modeChanged = 0;
+		}
+		else
+		{
+			modeChanged = 1;
+		}
+
+		i32 brightnessChanged = brightness != gBrightnessRelated;
+		u32 oldWidth = gDxResolutionX;
+		i32 oldBrightness = gBrightnessRelated;
+		i32 oldLowGraphics = gLowGraphics;
+		u32 oldHeight = gDxResolutionY;
+
+		if (!wasLowGraphics && !modeChanged)
+		{
+			if (brightnessChanged)
+			{
+				gBrightnessRelated = brightness;
+				PCGfx_SetBrightness(brightness);
+			}
+
+			return;
+		}
+
+		PCTex_UnloadTextures();
+		gsub_5027A0();
+		shutdownDirect3D7(modeChanged && gDxOptionRelated ? 1 : 0);
+
+		gDxResolutionY = height;
+		gGameResolutionY = height;
+		gBrightnessRelated = brightness;
+		gDxResolutionX = width;
+		gColorCount = bpp;
+		gGameResolutionX = width;
+		gLowGraphics = 0;
+
+		if (!gDxOptionRelated && modeChanged)
+		{
+			WinYield();
+
+			if (g_pDDS_SaveScreen)
+			{
+				if (pDDS)
+				{
+					hr = g_pDDS_Scene->DeleteAttachedSurface(0, pDDS);
+					D3D_ERROR_LOG_AND_QUIT(hr);
+				}
+
+				hr = g_pDDS_Scene->Release();
+				D3D_ERROR_LOG_AND_QUIT(hr);
+
+				hr = g_pDDS_SaveScreen->Release();
+				D3D_ERROR_LOG_AND_QUIT(hr);
+
+				g_pDDS_SaveScreen = 0;
+				g_pDDS_Scene = 0;
+			}
+
+			if (pDDS)
+			{
+				hr = pDDS->Release();
+				D3D_ERROR_LOG_AND_QUIT(hr);
+				pDDS = 0;
+			}
+
+			hr = lpDD->SetDisplayMode(gDxResolutionX, gDxResolutionY, gColorCount, 0, 0);
+			if (FAILED(hr) && gColorCount == 32)
+			{
+				hr = lpDD->SetDisplayMode(gDxResolutionX, gDxResolutionY, 24, 0, 0);
+			}
+			D3D_ERROR_LOG_AND_QUIT(hr);
+
+			DDSURFACEDESC2 desc;
+			memset(&desc, 0, sizeof(desc));
+			desc.dwSize = sizeof(desc);
+			desc.dwFlags = DDSD_CAPS | DDSD_BACKBUFFERCOUNT;
+			desc.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE | DDSCAPS_FLIP | DDSCAPS_COMPLEX | DDSCAPS_3DDEVICE;
+			desc.dwBackBufferCount = 1;
+
+			hr = lpDD->CreateSurface(&desc, &g_pDDS_SaveScreen, 0);
+			D3D_ERROR_LOG_AND_QUIT(hr);
+
+			memset(&desc.ddsCaps, 0, sizeof(desc.ddsCaps));
+			desc.ddsCaps.dwCaps = DDSCAPS_BACKBUFFER;
+
+			hr = g_pDDS_SaveScreen->GetAttachedSurface(&desc.ddsCaps, &g_pDDS_Scene);
+			D3D_ERROR_LOG_AND_QUIT(hr);
+
+			memset(&fx, 0, sizeof(fx));
+			fx.dwSize = sizeof(fx);
+
+			hr = g_pDDS_SaveScreen->Blt(0, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+			D3D_ERROR_LOG_AND_QUIT(hr);
+
+			hr = g_pDDS_Scene->Blt(0, 0, 0, DDBLT_WAIT | DDBLT_COLORFILL, &fx);
+			D3D_ERROR_LOG_AND_QUIT(hr);
+		}
+		else if (wasLowGraphics && pDDS)
+		{
+			hr = g_pDDS_Scene->DeleteAttachedSurface(0, pDDS);
+			D3D_ERROR_LOG_AND_QUIT(hr);
+
+			hr = pDDS->Release();
+			D3D_ERROR_LOG_AND_QUIT(hr);
+			pDDS = 0;
+		}
+
+		u32 flags = (gDxOptionRelated != 0) + 2;
+		if (gLowGraphics)
+		{
+			flags &= ~2;
+		}
+
+		if (gDxOptionRelated && modeChanged)
+		{
+			initDirectDraw7(gDxHwnd);
+		}
+
+		if (initDirect3D7(flags))
+		{
+			DXPOLY_Init(flags);
+			PCTex_UpdateForSoftwareRenderer();
+
+			if (wasLowGraphics)
+			{
+				Spool_ReloadAll();
+
+				if (gLowGraphics)
+				{
+					PSXRegion[Spool_PSX("sparmour", 0)].Protected = 1;
+				}
+				else
+				{
+					PSXRegion[Spool_FindRegion("sparmour")].Protected = 0;
+					Spool_ClearPSX("sparmour");
+				}
+			}
+			else if (brightnessChanged)
+			{
+				PCGfx_SetBrightness(gBrightnessRelated);
+			}
+
+			return;
+		}
+
+		gDxResolutionX = oldWidth;
+		gDxResolutionY = oldHeight;
+		gLowGraphics = oldLowGraphics;
+		gBrightnessRelated = oldBrightness;
+		bpp = 16;
+	}
+#endif
 }
 
 // @Ok
