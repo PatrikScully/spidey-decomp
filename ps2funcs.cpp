@@ -136,10 +136,13 @@ void setPolyGT4(void)
 		stubbed_printf("stubbed out: setPolyGT4");
 }
 
-// @MEDIUMTODO
-void TransMatrix(MATRIX*, VECTOR*)
+// @Ok
+// @Matching
+void TransMatrix(MATRIX* a1, VECTOR* a2)
 {
-	printf("void TransMatrix(MATRIX*, VECTOR*)");
+	a1->t[0] = a2->vx;
+	a1->t[1] = a2->vy;
+	a1->t[2] = a2->vz;
 }
 
 void validate_MATRIX(void){
