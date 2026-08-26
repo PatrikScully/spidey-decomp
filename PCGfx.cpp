@@ -1040,10 +1040,131 @@ void setupFog(void)
     printf("setupFog(void)");
 }
 
-// @MEDIUMTODO
-void submitPoly(_DXVERT **,i32)
+// @NotOk
+// gLowGraphics true/false take almost the same shape but are not shared code
+// (mBlendMode/field_A/field_C are sourced differently, field_C is a hardcoded
+// 4 on the low graphics side but the real vertex count otherwise); not
+// verified against compare.py yet beyond a first pass, residue logged in
+// pcgfx.attempts.md.
+void submitPoly(_DXVERT **verts, i32 count)
 {
-    printf("submitPoly(_DXVERT **,i32)");
+	i32 idx = gEndSceneRelatedTwo;
+	if (idx >= 15360)
+	{
+		gEndSceneRelatedTwo = idx + 1;
+		return;
+	}
+
+	DXPOLY *p = &gDxPolys[idx];
+	gEndSceneRelatedTwo = idx + 1;
+	i32 blendMode = gPcGfxBlendModeRelated;
+	f32 fogMax = 0.0f;
+
+	if (gLowGraphics)
+	{
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		p->field_C = 4;
+
+		if (count > 0)
+		{
+			for (i32 i = 0; i < count; i++)
+			{
+				SDXPolyField *dst = &p->field_10[i];
+				memcpy(dst, verts[i], sizeof(SDXPolyField));
+
+				if (!(p->mBlendMode & 4))
+					dst->field_4 = 1.0f;
+
+				i32 v23;
+				if (gProcessTextureRelated)
+					v23 = 128;
+				else
+					v23 = (dst->field_10 >> 24) & 0xFF;
+
+				dst->field_10 =
+					gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+					gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+					gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+					v23 << 24;
+
+				if (dst->field_8 < 0.0f)
+				{
+					dst->field_8 = 0.0f;
+				}
+				else if (dst->field_8 > 0.99989998f)
+				{
+					dst->field_8 = 0.99989998f;
+					fogMax = dst->field_8;
+				}
+				else if (fogMax < dst->field_8)
+				{
+					fogMax = dst->field_8;
+				}
+			}
+		}
+	}
+	else
+	{
+		LPDIRECTDRAWSURFACE7 Direct3DTexture;
+		if (gUseTextureRelated < 0)
+			Direct3DTexture = 0;
+		else
+			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+		p->field_4 = Direct3DTexture;
+		p->mBlendMode = gChosenBlendingMode;
+		p->field_A = gProcessedTextureFlags;
+		p->field_C = count;
+
+		if (count > 0)
+		{
+			for (i32 i = 0; i < count; i++)
+			{
+				SDXPolyField *dst = &p->field_10[i];
+				memcpy(dst, verts[i], sizeof(SDXPolyField));
+
+				if (!(p->mBlendMode & 4))
+					dst->field_4 = 1.0f;
+
+				i32 v23;
+				if (gProcessTextureRelated)
+					v23 = 128;
+				else
+					v23 = (dst->field_10 >> 24) & 0xFF;
+
+				dst->field_10 =
+					gPcGfxBrightnessValues[dst->field_10 & 0xFF] |
+					gPcGfxBrightnessValues[(dst->field_10 >> 8) & 0xFF] << 8 |
+					gPcGfxBrightnessValues[(dst->field_10 >> 16) & 0xFF] << 16 |
+					v23 << 24;
+
+				if (dst->field_8 < 0.0f)
+				{
+					dst->field_8 = 0.0f;
+				}
+				else if (dst->field_8 > 0.99989998f)
+				{
+					dst->field_8 = 0.99989998f;
+					fogMax = dst->field_8;
+				}
+				else if (fogMax < dst->field_8)
+				{
+					fogMax = dst->field_8;
+				}
+			}
+		}
+
+		if (gChosenBlendingMode)
+		{
+			blendMode = 0;
+		}
+	}
+
+	DXPOLY_DrawPoly(p, gPcGfxSlotNumber, blendMode, fogMax);
+	gPcGfxSlotNumber = -1;
 }
 
 // @Ok
