@@ -86,6 +86,8 @@ void validate_CMessage(void)
 
 	VALIDATE(CMessage, mParams, 0x20);
 	VALIDATE(CMessage, mVects, 0x28);
+
+	VALIDATE(CMessage, field_40, 0x40);
 }
 
 void validate_SMessageData(void)
