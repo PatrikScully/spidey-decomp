@@ -129,10 +129,50 @@ void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,i32,i32,i32,i32,
     printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,i32,i32,i32,i32,i32,u32)");
 }
 
-// @MEDIUMTODO
-void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)
+// @NotOk
+// real translation (0x4624a0, 506 bytes), cmpsum: 29 mnemonic diffs, first
+// divergence right after all 8 corner coordinates are computed and x0 is
+// stored, where the original interleaves one more float scale step before
+// starting the PCGfx_DrawQPoly2D push sequence and our build starts pushing
+// immediately. Same residue shape and same diff count as the sibling
+// DCPanel_DrawTexturedPoly(Texture const*) below, which hit this in an
+// earlier session and was also left @NotOk, so this looks like a shared,
+// not-yet-understood MSVC6 scheduling quirk in this coordinate/push
+// pattern, not something specific to this overload. 3 attempts this
+// session: original x3,y3,x2,y2,x1,y1,y0,x0 local declaration order (29
+// diffs), swapped to x0-before-y0 (29 diffs, no change), inlined x0/y0
+// directly into the call instead of naming them (43 diffs, worse). Kept
+// the first (best) version.
+void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, u32 flags)
 {
-    printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32)");
+	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");
+
+	Texture *tex = frame->pTexture;
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
+
+	u32 color = flags;
+	if (!flags)
+	{
+		color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
+	}
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 y3 = poly->y3 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 x3 = poly->x3 * scaleX;
+	f32 y2 = poly->y2 * scaleY;
+	f32 x2 = poly->x2 * scaleX;
+	f32 y1 = poly->y1 * scaleY;
+	f32 x1 = poly->x1 * scaleX;
+	f32 y0 = poly->y0 * scaleY;
+	f32 x0 = poly->x0 * scaleX;
+
+	PCGfx_DrawQPoly2D(
+			x0, y0, 0.01f, 0.01f, color,
+			x1, y1, 1.0f, 0.01f, color,
+			x2, y2, 0.01f, 1.0f, color,
+			x3, y3, 1.0f, 1.0f, color,
+			zOffset);
 }
 
 // @NotOk
