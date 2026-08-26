@@ -15,6 +15,8 @@
 #include "zrhinog.h"
 #include "web.h"
 #include "mem.h"
+#include "spool.h"
+#include "chunk.h"
 
 
 EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
@@ -634,10 +636,185 @@ common_inc:
 	this->dumbAssPad++;
 }
 
-// @MEDIUMTODO
-void CRhino::GonnaHitWall(i32)
+struct SGonnaHitWallVTableSlot5
 {
-    printf("CRhino::GonnaHitWall(i32)");
+	virtual ~SGonnaHitWallVTableSlot5() {}
+	virtual void Slot1() {}
+	virtual void Slot2() {}
+	virtual void Slot3() {}
+	virtual void Slot4() {}
+	virtual void Slot5() {}
+};
+
+static i32 gRhinoWallChunk0[8];
+static const i32 gRhinoWallChunk0Count = 8;
+static i32 gRhinoWallChunk1[8];
+static const i32 gRhinoWallChunk1Count = 8;
+static i32 gRhinoWallChunk2[8];
+static const i32 gRhinoWallChunk2Count = 8;
+static i32 gRhinoWallChunk3[8];
+static const i32 gRhinoWallChunk3Count = 8;
+
+// @NotOk
+// Best-effort translation, not verified against a build. Uncertain parts:
+// (1) the CVector-int operator at 0x4E7840 is not implemented anywhere in
+// the repo (only operator/, operator*, operator+, operator<< exist in
+// vector.cpp), so it is called through a raw forward pointer instead of
+// adding a new global operator to a shared header; (2) the vtable call on
+// the hit item (offset 0x14, slot 5) is unnamed, represented through a
+// throwaway class the same way spidey.cpp's SVTableSlot0Deletable avoids
+// __thiscall (rejected by this build, error C4234); (3) the four small
+// checksum allow-lists (gRhinoWallChunk0..3, counts at 0x55AD5C / 0x55AD58 /
+// 0x55AD54 / 0x55AD60) have unknown element counts, sized generously as a
+// guess; (4) VectorNormal is declared void in ps2funcs.h but the disasm
+// tests eax right after the call, which is not reproduced here since it
+// would need a shared header change.
+i32 CRhino::GonnaHitWall(i32 a2)
+{
+	this->field_2FC = this->mPos;
+	this->DoPhysics(0);
+
+	CVector delta = this->mPos - this->field_2FC;
+
+	typedef void (*VecModFn)(CVector*, const CVector*, const i32*);
+	VecModFn vecMod = reinterpret_cast<VecModFn>(0x004E7840);
+
+	CVector modded;
+	i32 twelve = 0xC;
+	vecMod(&modded, &delta, &twelve);
+
+	CVector dir;
+	VectorNormal(reinterpret_cast<VECTOR*>(&modded), reinterpret_cast<VECTOR*>(&dir));
+
+	CVector probe = this->mPos + (dir / 0x80);
+
+	SLineInfo lineInfo;
+
+	lineInfo.StartCoords = this->mPos;
+	lineInfo.EndCoords = probe;
+	lineInfo.MinCoords = this->field_2FC;
+	lineInfo.MaxCoords = this->field_2FC;
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (!lineInfo.pItem)
+	{
+		return 0;
+	}
+
+	if ((lineInfo.pItem->mFlags & 0x10) && lineInfo.pItem->mType == 0x191
+		&& lineInfo.pItem != *reinterpret_cast<CItem**>(reinterpret_cast<u8*>(MechList) + 0xE48))
+	{
+		reinterpret_cast<SGonnaHitWallVTableSlot5*>(lineInfo.pItem)->Slot5();
+
+		if (lineInfo.RecordTriggerZoneHits)
+		{
+			this->mHealth -= 100;
+
+			if (this->mHealth <= 0)
+			{
+				this->Neutralize();
+				this->mCBodyFlags |= 0x10;
+				this->field_31C.bothFlags = 9;
+				this->dumbAssPad = 0;
+			}
+		}
+
+		return 1;
+	}
+
+	u32 checksum = Spool_GetModelChecksum(lineInfo.pItem);
+	i32 i;
+
+	for (i = 0; i < gRhinoWallChunk0Count; i++)
+	{
+		if (checksum == static_cast<u32>(gRhinoWallChunk0[i]))
+		{
+			Chunk_ChunkItemByChecksum(checksum);
+			return 2;
+		}
+	}
+
+	for (i = 0; i < gRhinoWallChunk1Count; i++)
+	{
+		if (checksum == static_cast<u32>(gRhinoWallChunk1[i]))
+		{
+			Chunk_ChunkItemByChecksum(checksum);
+
+			if (lineInfo.DropDown)
+			{
+				this->mHealth -= 100;
+
+				if (this->mHealth <= 0)
+				{
+					this->field_31C.bothFlags = 0x15;
+					this->dumbAssPad = 0;
+				}
+			}
+
+			return 1;
+		}
+	}
+
+	for (i = 0; i < gRhinoWallChunk2Count; i++)
+	{
+		if (checksum == static_cast<u32>(gRhinoWallChunk2[i]))
+		{
+			this->SetUpStuckHorn(&lineInfo, 0);
+			this->field_31C.bothFlags = 0xC;
+			this->dumbAssPad = 0;
+			return 4;
+		}
+	}
+
+	for (i = 0; i < gRhinoWallChunk3Count; i++)
+	{
+		if (checksum == static_cast<u32>(gRhinoWallChunk3[i]))
+		{
+			if (lineInfo.RecordTriggerZoneHits)
+			{
+				this->mHealth -= 10;
+
+				if (this->mHealth <= 0)
+				{
+					this->field_31C.bothFlags = 0x15;
+					this->dumbAssPad = 0;
+				}
+			}
+
+			if (this->mHealth > 0)
+			{
+				this->PlayXAPlease(3, 3, 1);
+				this->SetUpStuckHorn(&lineInfo, 0);
+			}
+			return 8;
+		}
+	}
+
+	if (lineInfo.RecordTriggerZoneHits)
+	{
+		this->mHealth -= 10;
+
+		if (this->mHealth <= 0)
+		{
+			this->field_31C.bothFlags = 0x15;
+			this->dumbAssPad = 0;
+		}
+	}
+
+	if (this->mHealth > 0)
+	{
+		this->PlayXAPlease(3, 3, 1);
+		this->SetUpStuckHorn(&lineInfo, 1);
+	}
+	return 8;
 }
 
 // @NotOk
