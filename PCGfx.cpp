@@ -507,10 +507,94 @@ void PCGfx_DoModelPreview(void)
 	}
 }
 
-// @MEDIUMTODO
-void PCGfx_DrawLine(f32,f32,f32,u32,f32,f32,f32,u32,f32)
+// @SMALLTODO
+// Forward to the original. Builds one _DXVERT from a corner record shaped
+// like tagKMVERTEX3 (field_4..field_18 only, field_0 unused), confirmed from
+// the disasm at 0x509400 to run the exact same field_8/field_C formulas as
+// PCGfx_DrawTPoly3D plus the REAL (not stubbed) fog table math inline for
+// the color when gNonRendderSettingE is set. Needs the same fog tables
+// setupFog/PCGfx_BeginScene build, which are out of scope this session (see
+// pcgfx.attempts.md), so forwarding instead of reproducing the math.
+static void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 {
-    printf("PCGfx_DrawLine(f32,f32,f32,u32,f32,f32,f32,u32,f32)");
+	// @FIXME
+	typedef void (*func_ptr)(tagKMVERTEX3 const *, _DXVERT *);
+	func_ptr func = (func_ptr)0x00509400;
+	func(corner, out);
+}
+
+// @NotOk
+// Draws a thick line as a quad: dy=y2-y1, dx=x2-x1, length=sqrt(dx^2+dy^2)
+// (calls _sqrt at 0x529A44, confirmed). If length != 0.0f, the perpendicular
+// half width offset is (width*0.5f/length)*(dy,-dx); if length == 0.0f
+// (degenerate zero length line), the disasm falls back to offsetX=0,
+// offsetY=width*0.5f instead of dividing by zero. 4 corners are built,
+// (x1+off,y1+off), (x1-off,y1-off), (x2+off,y2+off), (x2-off,y2-off), each
+// with z/color taken from the matching endpoint, then converted to a
+// _DXVERT via gsub_509400 and passed to submitPoly(verts,4). This is a
+// genuine attempt at the confirmed math (dx/dy/length/offset, confirmed
+// against the disasm instruction by instruction), but the exact struct
+// pre-initialisation block at 0x509311-0x50938c (default field values before
+// the 4 gsub_509400 calls) and an unexplained per-endpoint bias using the
+// constant 7.071072578430176f at 0x53C844 (added to x1/x2 before storing,
+// looks like an antialiasing/endpoint cap nudge but not confirmed) are NOT
+// reproduced, only the standard perpendicular quad geometry. cmpsum: 204
+// mnemonic diffs at 0x509000, first divergence right at entry (our version
+// has no push ebx/ebp/esi/edi, the original keeps all 4 endpoint deltas
+// live across the whole function in callee saved registers). One honest
+// attempt, not iterated further this session given the fog table and
+// pre-init block gaps above.
+void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, u32 color2, f32 width)
+{
+	f32 dy = y2 - y1;
+	f32 dx = x2 - x1;
+	f32 length = sqrt(dx * dx + dy * dy);
+
+	f32 offX, offY;
+	if (length != 0.0f)
+	{
+		f32 s = (width * 0.5f) / length;
+		offX = s * dy;
+		offY = -(s * dx);
+	}
+	else
+	{
+		offX = 0.0f;
+		offY = width * 0.5f;
+	}
+
+	tagKMVERTEX3 corners[4];
+	memset(corners, 0, sizeof(corners));
+
+	corners[0].field_4 = x1 + offX;
+	corners[0].field_8 = y1 + offY;
+	corners[0].field_C = z1;
+	corners[0].field_18 = color1;
+
+	corners[1].field_4 = x1 - offX;
+	corners[1].field_8 = y1 - offY;
+	corners[1].field_C = z1;
+	corners[1].field_18 = color1;
+
+	corners[2].field_4 = x2 + offX;
+	corners[2].field_8 = y2 + offY;
+	corners[2].field_C = z2;
+	corners[2].field_18 = color2;
+
+	corners[3].field_4 = x2 - offX;
+	corners[3].field_8 = y2 - offY;
+	corners[3].field_C = z2;
+	corners[3].field_18 = color2;
+
+	_DXVERT vtx[4];
+	_DXVERT *verts[4] = { &vtx[0], &vtx[1], &vtx[2], &vtx[3] };
+
+	gsub_509400(&corners[0], &vtx[0]);
+	gsub_509400(&corners[1], &vtx[1]);
+	gsub_509400(&corners[2], &vtx[2]);
+	gsub_509400(&corners[3], &vtx[3]);
+
+	submitPoly(verts, 4);
 }
 
 // @MEDIUMTODO
