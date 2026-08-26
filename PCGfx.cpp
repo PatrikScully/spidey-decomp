@@ -407,8 +407,12 @@ void PCGfx_DrawQPoly3D(f32,f32,f32,f32,f32,u32,f32,f32,f32,f32,f32,u32,f32,f32,f
 }
 
 // @NotOk
-// missing low graphics
-// might be wrong too
+// low graphics branch added this session (was an empty @FIXME stub before),
+// mirrors submitPoly's low graphics branch. 235 mnemonic diffs at 0x507470
+// as of this attempt; the first diverging instruction is in the shared
+// (non-low-graphics) code above the branch, so there is a pre-existing
+// residue here independent of the low graphics addition. Not iterated on
+// further this session, see pcgfx.attempts.md.
 void PCGfx_DrawQuad2D(
 		f32 a1,
 		f32 a2,
@@ -497,7 +501,49 @@ void PCGfx_DrawQuad2D(
 
 	if (gLowGraphics)
 	{
-		// @FIXME: TODO
+		v16->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		*(i32*)&v16->mBlendMode = gPcGfxDrawRelated;
+		if (gUseTextureRelated < 0)
+			*(i32*)&v16->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
+
+		v16->field_C = 4;
+
+		SDXPolyField **v21 = pDxPolyFields;
+		SDXPolyField *v22 = v16->field_10;
+
+		for (i32 i = 0; i < 4; i++)
+		{
+			memcpy(&v22[i], v21[i], sizeof(SDXPolyField));
+
+			if (!(v16->mBlendMode & 4))
+				v22[i].field_4 = 1.0f;
+
+			i32 v23;
+			if (gProcessTextureRelated)
+				v23 = 128;
+			else
+				v23 = (v22[i].field_10 >> 24) & 0xFF;
+
+			v22[i].field_10 =
+				gPcGfxBrightnessValues[v22[i].field_10 & 0xFF] |
+				gPcGfxBrightnessValues[(v22[i].field_10 >> 8) & 0xFF] << 8 |
+				gPcGfxBrightnessValues[(v22[i].field_10 >> 16) & 0xFF] << 16 |
+				v23 << 24;
+
+			if (v22[i].field_8 < 0.0f)
+			{
+				v22[i].field_8 = 0.0f;
+			}
+			else if (v22[i].field_8 > 0.99989998f)
+			{
+				v22[i].field_8 = 0.99989998f;
+				v26 = v22[i].field_8;
+			}
+			else if (v26 < v22[i].field_8)
+			{
+				v26 = v22[i].field_8;
+			}
+		}
 	}
 	else
 	{
@@ -510,7 +556,7 @@ void PCGfx_DrawQuad2D(
 		v16->mBlendMode = gChosenBlendingMode;
 		v16->field_A = gProcessedTextureFlags;
 		v16->field_C = 4;
-		
+
 		SDXPolyField **v21 = pDxPolyFields;
 		SDXPolyField *v22 = v16->field_10;
 
