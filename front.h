@@ -94,7 +94,14 @@ public:
 	u8 mLine;
 	u8 mCursorLine;
 
-	PADDING(4);
+	// Found in CMenu::Display: field_16 gates a "just selected this entry"
+	// highlight-particle spawn (bool-like), field_17 is compared against the
+	// loop index to see which line it applies to (a "previously selected
+	// line" index, guess).
+	u8 field_16;
+	u8 field_17;
+
+	PADDING(2);
 
 	u8 mNumLines;
 	u8 field_1B;

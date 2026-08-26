@@ -19,6 +19,21 @@ SSaveGame gSaveGame;
 // @FIXME add content
 SLevel Levels[FRONT_NUM_LEVELS];
 
+// Tentative names, no idb_globals.txt entries. CMenu::Display spawns a
+// small effect record (looks like a highlight/arrow indicator, ~0x28 bytes,
+// many i16 position fields) out of a bump-allocated buffer when the
+// selection moves to a new entry, guarded by these two globals: current
+// write position and one-past-the-end of the buffer. Field layout of the
+// record itself is not understood (no consumer of this buffer has been
+// decompiled yet), so CMenu::Display below pokes it by raw byte offset
+// instead of a named struct.
+#define gMenuHighlightBufPos (*reinterpret_cast<u8**>(0x0056FB04))
+#define gMenuHighlightBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+
+// Tentative name, guards two stubbed_printf debug calls in CMenu::Display
+// (0x54ABF0 / 0x56EB54 format strings, contents unknown).
+#define gMenuDisplayDebugFlag (*reinterpret_cast<u8*>(0x0054D341))
+
 // @Ok
 // @Matching
 INLINE void CMenu::KillBox(void)
@@ -27,10 +42,166 @@ INLINE void CMenu::KillBox(void)
 	this->ptr_to = 0;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Faithful translation of the disassembly, one honest build attempt only
+// (not iterated further, see front.attempts.md). cmpsum: 288 mnemonic
+// diffs, but the built function is the SAME length as the original both in
+// bytes (1091) and decoded instruction count (358) - strong evidence the
+// logic is right and this is register allocation / statement ordering, not
+// a missing or extra chunk of code. Implemented mainly to unblock
+// Front_Display's leaf-first requirement: Front_Display calls this twice in
+// the same TU, and leaving it a two-line printf stub risks getting inlined
+// into Front_Display under this build's /Ob2, corrupting that function's
+// codegen too (same class of problem as CMenu::ProcessMouse, see the
+// comment near that one).
+// Two things make a real matching attempt on this function its own
+// project: (1) the fixed-point gouraud color blend (three near-identical
+// lerp+scale+clamp blocks, tween weight from the existing Sine() table) is
+// exactly the kind of dense fixed-point math DEFECTS.txt's
+// M3dMaths_SquareRoot0 note describes spending 12+ hours on without a full
+// explanation; (2) the "just selected this entry" effect spawned near the
+// end writes ~15 fields into a bump-allocated ~0x28-byte record
+// (gMenuHighlightBufPos/End) whose struct is completely undocumented - no
+// consumer of that buffer has been decompiled yet, so the fields below are
+// raw offset pokes with guessed meanings (position pairs for what is
+// probably a highlight arrow/box), not a named struct member list.
 void CMenu::Display(void)
 {
-	printf("void CMenu::Display(void)");
+	if (this->ptr_to && this->ptr_to->field_30 == 0)
+		return;
+
+	Mess_SetTextJustify(this->mJustification);
+
+	i32 y = this->mY;
+
+	for (i32 i = this->mCursorLine;
+			i < this->mNumLines && i < (this->mCursorLine + this->field_1B);
+			i++)
+	{
+		y += this->mEntry[i].unk_a;
+
+		if (!this->mEntry[i].unk_b)
+			continue;
+
+		if (this->mEntry[i].val_a <= 0)
+		{
+			y += this->mLineSep;
+			continue;
+		}
+
+		if (i == this->mLine)
+		{
+			if (this->field_1E & 0xFF)
+			{
+				i32 weight = Sine(this->field_20);
+				this->field_20 += 200;
+
+				i32 r = ((this->mEntry[i].unk_c + this->mEntry[i].field_11) >> 1)
+					+ (((this->mEntry[i].unk_c - this->mEntry[i].field_11) * weight) >> 13);
+				i32 g = ((this->mEntry[i].unk_d + this->mEntry[i].field_12) >> 1)
+					+ (((this->mEntry[i].unk_d - this->mEntry[i].field_12) * weight) >> 13);
+				i32 b = ((this->mEntry[i].unk_e + this->mEntry[i].field_13) >> 1)
+					+ (((this->mEntry[i].unk_e - this->mEntry[i].field_13) * weight) >> 13);
+
+				r = r * 350 / 256;
+				g = g * 350 / 256;
+				b = b * 350 / 256;
+				if (r > 255) r = 255;
+				if (g > 255) g = 255;
+				if (b > 255) b = 255;
+
+				Mess_SetRGB(static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b), 0);
+
+				i32 sr = ((this->mEntry[i].field_14 + this->mEntry[i].field_17) >> 1)
+					+ (((this->mEntry[i].field_14 - this->mEntry[i].field_17) * weight) >> 13);
+				i32 sg = ((this->mEntry[i].field_15 + this->mEntry[i].field_18) >> 1)
+					+ (((this->mEntry[i].field_15 - this->mEntry[i].field_18) * weight) >> 13);
+				i32 sb = ((this->mEntry[i].field_16 + this->mEntry[i].field_19) >> 1)
+					+ (((this->mEntry[i].field_16 - this->mEntry[i].field_19) * weight) >> 13);
+
+				sr = sr * 350 / 256;
+				sg = sg * 350 / 256;
+				sb = sb * 350 / 256;
+				if (sr > 255) sr = 255;
+				if (sg > 255) sg = 255;
+				if (sb > 255) sb = 255;
+
+				Mess_SetRGBBottom(static_cast<u8>(sr), static_cast<u8>(sg), static_cast<u8>(sb));
+			}
+			else
+			{
+				Mess_SetRGB(this->mEntry[i].unk_c, this->mEntry[i].unk_d, this->mEntry[i].unk_e, 0);
+				Mess_SetRGBBottom(this->mEntry[i].field_14, this->mEntry[i].field_15, this->mEntry[i].field_16);
+			}
+		}
+		else
+		{
+			Mess_SetRGB(this->mEntry[i].field_11, this->mEntry[i].field_12, this->mEntry[i].field_13, 0);
+			Mess_SetRGBBottom(this->mEntry[i].field_17, this->mEntry[i].field_18, this->mEntry[i].field_19);
+		}
+
+		Mess_TextWidth(this->mEntry[i].name);
+		i32 drawResult = Mess_DrawText(this->mX, y, this->mEntry[i].name, 0, 0x1000);
+
+		if (this->field_16 && i == this->field_17 && this->mJustification == 0)
+		{
+			i32 highlightOffset = (this->mEntry[i].val_a * drawResult) / 512
+				+ (this->mEntry[i].val_a * 14) / 256;
+
+			u8* rec = gMenuHighlightBufPos;
+			u8* next = rec + 0x28;
+
+			if (next <= gMenuHighlightBufEnd)
+			{
+				gMenuHighlightBufPos = next;
+
+				if (!gMenuDisplayDebugFlag)
+					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
+				if (!gMenuDisplayDebugFlag)
+					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
+
+				i16 yMinus5 = static_cast<i16>(y - 5);
+				i16 xBase = static_cast<i16>(this->mX - highlightOffset);
+				i16 xBaseMinus20 = static_cast<i16>(xBase - 20);
+				i16 yMinus11 = static_cast<i16>(yMinus5 - 6);
+				i16 yPlus1 = static_cast<i16>(yMinus5 + 6);
+				i16 highlightOffset2 = static_cast<i16>(highlightOffset + this->mX);
+				i16 highlightOffset2Plus20 = static_cast<i16>(highlightOffset2 + 20);
+
+				*reinterpret_cast<u8*>(rec + 4) = 0x96;
+				*reinterpret_cast<u8*>(rec + 5) = 0;
+				*reinterpret_cast<u8*>(rec + 6) = 0;
+				*reinterpret_cast<i16*>(rec + 0xA) = yMinus5;
+				*reinterpret_cast<i16*>(rec + 8) = xBase;
+				*reinterpret_cast<i16*>(rec + 0xC) = xBaseMinus20;
+				*reinterpret_cast<i16*>(rec + 0x10) = xBaseMinus20;
+				*reinterpret_cast<i16*>(rec + 0xE) = yMinus11;
+				*reinterpret_cast<i16*>(rec + 0x12) = yPlus1;
+				*reinterpret_cast<u8*>(rec + 0x18) = 0x96;
+				*reinterpret_cast<u8*>(rec + 0x19) = 0;
+				*reinterpret_cast<u8*>(rec + 0x1A) = 0;
+				*reinterpret_cast<i16*>(rec + 0x1E) = yMinus5;
+				*reinterpret_cast<i16*>(rec + 0x1C) = highlightOffset2;
+				*reinterpret_cast<i16*>(rec + 0x22) = yMinus11;
+				*reinterpret_cast<i16*>(rec + 0x20) = highlightOffset2Plus20;
+				*reinterpret_cast<i16*>(rec + 0x24) = highlightOffset2Plus20;
+				*reinterpret_cast<i16*>(rec + 0x26) = yPlus1;
+
+				stubbed_printf(reinterpret_cast<char*>(0x0056EB54));
+				stubbed_printf(reinterpret_cast<char*>(0x0056EB54));
+			}
+		}
+
+		y += this->mLineSep;
+	}
+
+	if (this->ptr_to)
+	{
+		this->ptr_to->Display();
+
+		if (this->mZoomBoxType == 2)
+			this->ptr_to->field_24 = 1;
+	}
 }
 
 // @Ok
@@ -796,6 +967,8 @@ void validate_CMenu(void)
 	VALIDATE(CMenu, mLine, 0x14);
 
 	VALIDATE(CMenu, mCursorLine, 0x15);
+	VALIDATE(CMenu, field_16, 0x16);
+	VALIDATE(CMenu, field_17, 0x17);
 	VALIDATE(CMenu, mNumLines,  0x1A);
 	VALIDATE(CMenu, field_1B,  0x1B);
 	VALIDATE(CMenu, mZoomBoxType,  0x1C);
