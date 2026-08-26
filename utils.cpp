@@ -1186,10 +1186,13 @@ int Utils_LinearFilter(
 	return a2;
 }
 
-// @MEDIUMTODO
-void Utils_GetVecFromMagDir(CVector*, int, CSVector*)
+// @Ok
+// @Matching
+void Utils_GetVecFromMagDir(CVector * a1, int a2, CSVector * a3)
 {
-	printf("void Utils_GetVecFromMagDir(CVector*, int, CSVector*)");
+	a1->vx = -(((rcossin_tbl[a3->vx & 0xFFF].cos * a2) >> 12) * rcossin_tbl[a3->vy & 0xFFF].sin);
+	a1->vy = rcossin_tbl[a3->vx & 0xFFF].sin * a2;
+	a1->vz = -(((rcossin_tbl[a3->vx & 0xFFF].cos * a2) >> 12) * rcossin_tbl[a3->vy & 0xFFF].cos);
 }
 
 // @Ok
