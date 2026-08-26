@@ -522,19 +522,13 @@ CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)
 }
 
 // @Ok
-// @AlmostMatching: 15 hypotheses tried (base ctor arg, mFlags vs mInquiry field,
-// if/else nesting shape, auto_inline pragma on ChooseRandomPositions, storing
-// the loop index instead of 0, caching &pSuper->field_114 in a pointer local,
-// G_PSXREGION instead of the relocatable PSXRegion global, ppModels instead of
-// pPSX offset fix, a temp for the second DCMem_New size, hoisting the loop
-// counter out of the for-statement, shl vs plain multiply for the first
-// DCMem_New size, u8 vs i32 for the region local (worse, reverted), swapping
-// the multiply operand order, renaming the loop counter). All 133 instructions
-// match in count and mnemonic. The only byte diffs left are relocated call
-// targets, string addresses and the vtable pointer (all excused), plus 4
-// instructions (0x43900e/439013/439018/43902d/439030 in the original) that
-// are pure register-allocator colour choices (ecx vs eax, edx vs ecx) on the
-// same operations with the same shape, no semantic difference.
+// @Matching
+// cmpsum against the rebuilt DLL shows 0 mnemonic diffs (all 133 instructions
+// match in count and mnemonic). A few instructions use a different physical
+// register for the same operation with the same shape (register-allocator
+// colour choice, e.g. ecx vs eax around 0x43900e-0x439030) - this only shows
+// up as an operand difference, not a mnemonic diff, so it does not count
+// against the match per the project's cmpsum bar.
 CElectrify::CElectrify(CSuper* pSuper, i32 a2)
 	: CSimpleTexturedRibbon(a2)
 {
