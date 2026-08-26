@@ -3,6 +3,8 @@
 #include "utils.h"
 #include "my_assert.h"
 #include "mem.h"
+#include "ps2funcs.h"
+#include "trig.h"
 
 #include "validate.h"
 
@@ -10,22 +12,180 @@ extern i32 CurrentSuit;
 
 EXPORT i32 gTextureRelated;
 
-// @SMALLTODO
-CElectroLine::CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u32*)
+// per-vertex wobble state for CVertexWobble, 22 bytes. tentative layout from
+// CVertexWobble::CVertexWobble and CVertexWobble::Move.
+struct SVertexWobbleEntry
 {
-	printf("CElectroLine::CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u32*)");
+	i16 vx, vy, vz;   // snapshot of the vertex position at construction time
+	i16 dx, dy, dz;   // delta from the average centre at construction time
+	u8 vertexIndex;   // index into the model's own vertex table
+	u8 field_0D;
+	i16 distance;     // sqrt(dx*dx+dy*dy+dz*dz) at construction time
+	u16 amplitude;
+	i16 phaseSpeed;
+	i16 phase;
+};
+
+// @NotOk
+// residue: 49 of 154 mnemonic diffs, all downstream of one call. Blocked by
+// a known repo-wide issue (CLAUDE.md): vector.h's operator-(CVector,CVector)
+// is INLINE but the original calls it out of line at this exact address
+// (0x4E7760, confirmed via names.json: ??G@YA?AVCVector@@ABV0@0@Z), so our
+// build can never emit that call; everything up to that point (base ctor,
+// field_58 zero-init, field_6A/mType writes, the whole 8-arg push sequence
+// into CElectro::Setup, both Trig_GetPosition calls and their results
+// stored into field_54[0]/field_44[0]) matches exactly. Semantics: a1 is
+// stored at offset 0x6A (right after CElectro's own validated size), a2/a3
+// are angle indices for Trig_GetPosition giving the line's start/end
+// points, a4-a6 are RGB, a7/a8 map to Setup's width/extra (u16), a9 is the
+// field_68 slot, a10/a11/a12 map to Setup's NumFaces/NumTextures/
+// pChecksums. The point arrays (field_54, a CVector per face+1, and
+// field_44, a SSimpleRibbonParams per face+1 whose first 12 bytes overlap a
+// CVector) get linearly interpolated from start to end, step = (end-start)
+// / NumFaces (0x4E7800 is operator/, not operator*: MSVC mangles operator/
+// as ??K, operator* as ??D, verified against the built DLL's own export
+// list). Not chased further since the blocker is pre-existing and
+// repo-wide, not fixable from this one function.
+CElectroLine::CElectroLine(u16 a1, u16 a2, u16 a3, u8 a4, u8 a5, u8 a6, i32 a7, i32 a8, i32 a9, i32 a10, i32 a11, u32* a12)
+{
+	this->field_6A = a1;
+	this->mType = 9;
+
+	this->Setup(a10, a11, a12, a4, a5, a6, static_cast<u16>(a7), static_cast<u16>(a8));
+
+	this->field_68 = static_cast<u16>(a9);
+
+	CVector start;
+	CVector end;
+	Trig_GetPosition(&start, a2);
+	Trig_GetPosition(&end, a3);
+
+	CVector *points = reinterpret_cast<CVector*>(this->field_54);
+	SSimpleRibbonParams *params = this->field_44;
+
+	points[0] = start;
+	*reinterpret_cast<CVector*>(&params[0]) = start;
+
+	CVector step = (end - start) / a10;
+	CVector pos = start;
+
+	for (i32 i = 0; i < a10 - 1; i++)
+	{
+		pos += step;
+		points[i + 1] = pos;
+		*reinterpret_cast<CVector*>(&params[i + 1]) = pos;
+	}
+
+	points[a10] = end;
+	*reinterpret_cast<CVector*>(&params[a10]) = end;
 }
 
-// @MEDIUMTODO
-CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)
+// @NotOk
+// residue: 85 of 193 mnemonic diffs. globals (G_PSXREGION) and field
+// semantics worked out from the disasm (see effects.attempts.md), first
+// ~55 instructions (all the print_if_false chain up to the a3/a4 null
+// checks) match with only register-swap noise (ebx/ebp swapped throughout
+// but same shape). The remaining loops diverge more: the original keeps a3
+// and a4 live in registers across the validation loop, the entry-fill
+// loop's field_54 walk uses a pointer-advance-early shape like
+// CVertexWobble::Move, and it reuses an already-zero register (ebp) for
+// some of the "!= 0" checks via cmp instead of test. Not chased to a full
+// match, values are correct per the field mapping in effects.attempts.md.
+CVertexWobble::CVertexWobble(u32 a1, u32 a2, u32 a3, u8* a4, i32 a5, i32 a6, i32 a7, i32 a8)
 {
-	printf("CVertexWobble::CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32)");
+	print_if_false(a1 < static_cast<u32>(MAXPSX), "Region out of range");
+	print_if_false(G_PSXREGION[a1].Usable != 0, "PSX not usable");
+
+	SHandle handle = Mem_MakeHandle(G_PSXREGION[a1].pPSX);
+	this->field_3C = handle.pWhatever;
+	this->field_40 = handle.Id;
+
+	print_if_false(a2 < reinterpret_cast<u32*>(G_PSXREGION[a1].ppModels)[-1], "Model index out of range");
+
+	this->field_4C = G_PSXREGION[a1].ppModels[a2];
+
+	print_if_false(a3 != 0, "Zero NumVerts");
+	print_if_false(a4 != 0, "NULL vertex list");
+
+	u32 i;
+	for (i = 0; i < a3; i++)
+		print_if_false(a4[i] < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_4C) + 2), "Vertex index out of range");
+
+	this->field_50 = a3;
+	this->field_54 = DCMem_New(a3 * sizeof(SVertexWobbleEntry), 0, 1, 0, 1);
+
+	this->field_58.vx = 0;
+	this->field_58.vy = 0;
+	this->field_58.vz = 0;
+
+	SVertexWobbleEntry *entries = reinterpret_cast<SVertexWobbleEntry*>(this->field_54);
+
+	for (i = 0; i < a3; i++)
+	{
+		SVertexWobbleEntry *entry = &entries[i];
+		entry->vertexIndex = a4[i];
+
+		i16 *vertex = reinterpret_cast<i16*>(reinterpret_cast<u8*>(this->field_4C) + 0x1C + entry->vertexIndex * 8);
+		entry->vx = vertex[0];
+		entry->vy = vertex[1];
+		entry->vz = vertex[2];
+
+		this->field_58.vx += entry->vx;
+		this->field_58.vy += entry->vy;
+		this->field_58.vz += entry->vz;
+
+		entry->amplitude = static_cast<u16>(Rnd(a7) + a7);
+		entry->phaseSpeed = static_cast<i16>(Rnd(a8) + a8);
+		entry->phase = static_cast<i16>(Rnd(a5 + a6));
+	}
+
+	this->field_58 /= static_cast<i32>(a3);
+
+	for (i = 0; i < a3; i++)
+	{
+		SVertexWobbleEntry *entry = &entries[i];
+
+		entry->dx = static_cast<i16>(entry->vx - this->field_58.vx);
+		entry->dy = static_cast<i16>(entry->vy - this->field_58.vy);
+		entry->dz = static_cast<i16>(entry->vz - this->field_58.vz);
+
+		i32 sq = entry->dx * entry->dx + entry->dy * entry->dy + entry->dz * entry->dz;
+		entry->distance = static_cast<i16>(M3dMaths_SquareRoot0(sq));
+	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: 47 of 83 mnemonic diffs. Semantics match (verified by reading
+// the disasm field by field): for each entry, phase += phaseSpeed, then
+// newRadius = distance + amplitude + sin(phase)*amplitude/4096, then each
+// axis of the target vertex is centre + delta*newRadius/distance. The
+// original compiler advances the field_54 walk pointer BEFORE it is done
+// reading the current entry's remaining fields (dx/dy/dz/vertexIndex are
+// all read through negative offsets off the already-bumped pointer, e.g.
+// [ecx-24h] right after `add ecx,16h`). A plain SVertexWobbleEntry* loop
+// produces the same values in the same order but not that exact
+// pointer-advance-early shape; two source variants tried (indexed array
+// access, then a walking pointer with post-increment) gave identical
+// output. See effects.attempts.md.
 void CVertexWobble::Move(void)
 {
-	printf("CVertexWobble::Move(void)");
+	print_if_false(Mem_RecoverPointer(reinterpret_cast<SHandle*>(&this->field_3C)) != 0, "NULL CVertexWobble handle");
+
+	SVertexWobbleEntry *entry = reinterpret_cast<SVertexWobbleEntry*>(this->field_54);
+
+	for (i32 i = 0; i < this->field_50; i++, entry++)
+	{
+		entry->phase += entry->phaseSpeed;
+
+		i32 sinVal = rcossin_tbl[entry->phase & 0xFFF].sin;
+		i32 newRadius = (sinVal * entry->amplitude) / 4096 + entry->distance + entry->amplitude;
+
+		i16 *vertex = reinterpret_cast<i16*>(reinterpret_cast<u8*>(this->field_4C) + 0x1C + entry->vertexIndex * 8);
+
+		vertex[0] = static_cast<i16>(entry->dx * newRadius / entry->distance + this->field_58.vx);
+		vertex[1] = static_cast<i16>(entry->dy * newRadius / entry->distance + this->field_58.vy);
+		vertex[2] = static_cast<i16>(entry->dz * newRadius / entry->distance + this->field_58.vz);
+	}
 }
 
 // @Ok
@@ -361,11 +521,77 @@ CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)
 	printf("CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)");
 }
 
-// @MEDIUMTODO
-CElectrify::CElectrify(CSuper*, i32)
+// @Ok
+// @Matching
+// cmpsum against the rebuilt DLL shows 0 mnemonic diffs (all 133 instructions
+// match in count and mnemonic). A few instructions use a different physical
+// register for the same operation with the same shape (register-allocator
+// colour choice, e.g. ecx vs eax around 0x43900e-0x439030) - this only shows
+// up as an operand difference, not a mnemonic diff, so it does not count
+// against the match per the project's cmpsum bar.
+CElectrify::CElectrify(CSuper* pSuper, i32 a2)
+	: CSimpleTexturedRibbon(a2)
 {
-	printf("CElectrify::CElectrify(CSuper*, int)");
+	print_if_false(pSuper != 0, "NULL pSuper");
+	print_if_false((pSuper->mFlags >> 1) & 1, "pSuper not ready for CElectrify");
+
+	SHandle superHandle = Mem_MakeHandle(pSuper);
+	this->field_5C = superHandle.pWhatever;
+	this->field_60 = superHandle.Id;
+
+	SHandle *pField114 = &pSuper->field_114;
+	print_if_false(Mem_RecoverPointer(pField114) == 0, "CElectrify already attached");
+
+	SHandle selfHandle = Mem_MakeHandle(this);
+	pField114->pWhatever = selfHandle.pWhatever;
+	i32 region = pSuper->mRegion;
+	pField114->Id = selfHandle.Id;
+
+	print_if_false(G_PSXREGION[region].ppModels != 0, "No models for CElectrify");
+
+	this->field_50 = reinterpret_cast<i32*>(G_PSXREGION[pSuper->mRegion].ppModels)[-1];
+	this->field_4C = DCMem_New(this->field_50 * 8, 0, 1, 0, 1);
+	this->field_54 = reinterpret_cast<CVector*>(DCMem_New(this->field_50 * 12, 0, 1, 0, 1));
+
+	for (i32 j = 0; j < this->field_50; j++)
+		reinterpret_cast<u16*>(this->field_4C)[j * 4 + 3] = static_cast<u16>(j);
+
+	this->SetTexture(Spool_FindTextureChecksum("Electro"));
+	this->SetWidth(0x19);
+	this->SetRGB(0, 0x20, 0x80);
+	this->SetSemiTransparent();
+
+	i32 subType = *reinterpret_cast<u16*>(reinterpret_cast<u8*>(pSuper) + 0x38);
+
+	if (subType != 50)
+	{
+		if (subType != 0x133)
+			this->field_58 = 0x64;
+		else
+			this->field_58 = 0xB4;
+	}
+	else
+	{
+		this->field_58 = 0x40;
+	}
+
+	this->ChooseRandomPositions(0, 1);
 }
+
+// keep the MSVC inliner away, same trick as shell.cpp/PCShell.cpp: this stub
+// lives in the same TU as its caller (CElectrify::CElectrify), and the
+// original calls it as a real out-of-line function.
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
+// @MEDIUMTODO
+void CElectrify::ChooseRandomPositions(i32, i32)
+{
+	printf("CElectrify::ChooseRandomPositions(i32, i32)");
+}
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @Ok
 void INLINE Effects_UnElectrify(CSuper* pSuper)
@@ -400,6 +626,13 @@ void Effects_Electrify(CSuper* pSuper)
 void validate_CElectrify(void)
 {
 	VALIDATE_SIZE(CElectrify, 0x64);
+
+	VALIDATE(CElectrify, field_4C, 0x4C);
+	VALIDATE(CElectrify, field_50, 0x50);
+	VALIDATE(CElectrify, field_54, 0x54);
+	VALIDATE(CElectrify, field_58, 0x58);
+	VALIDATE(CElectrify, field_5C, 0x5C);
+	VALIDATE(CElectrify, field_60, 0x60);
 }
 
 void validate_CSkinGoo(void)
@@ -468,9 +701,19 @@ void validate_CElectro(void)
 void validate_CElectroLine(void)
 {
 	VALIDATE_SIZE(CElectroLine, 0x6C);
+
+	VALIDATE(CElectroLine, field_68, 0x68);
+	VALIDATE(CElectroLine, field_6A, 0x6A);
 }
 
 void validate_CVertexWobble(void)
 {
 	VALIDATE_SIZE(CVertexWobble, 0x60);
+
+	VALIDATE(CVertexWobble, field_3C, 0x3C);
+	VALIDATE(CVertexWobble, field_40, 0x40);
+	VALIDATE(CVertexWobble, field_4C, 0x4C);
+	VALIDATE(CVertexWobble, field_50, 0x50);
+	VALIDATE(CVertexWobble, field_54, 0x54);
+	VALIDATE(CVertexWobble, field_58, 0x58);
 }

@@ -59,9 +59,24 @@ class CRhinoWallImpact : public CQuadBit
 class CElectrify : public CSimpleTexturedRibbon
 {
 	public:
-		PADDING(24);
+		EXPORT CElectrify(CSuper*, int a2);
 
-		EXPORT CElectrify(CSuper*, int);
+		EXPORT void ChooseRandomPositions(i32, i32);
+
+		// @FIXME guessed layout, entries are 8 bytes, only the field at +6
+		// (u16) is written by the constructor
+		void *field_4C;
+
+		i32 field_50;
+
+		// array of field_50 CVector entries
+		CVector *field_54;
+
+		i32 field_58;
+
+		// SHandle wrapping the owning CSuper
+		void *field_5C;
+		u32 field_60;
 };
 
 struct SSkinGooSource
@@ -112,7 +127,12 @@ class CElectroLine : public CElectro
 		EXPORT CElectroLine(u16, u16, u16, u8, u8 ,u8, i32, i32, i32, i32, i32, u32*);
 		EXPORT virtual ~CElectroLine(void);
 
-		PADDING(8);
+		// offset 0x64: CElectro::Setup's a8 (u16), written through a raw
+		// offset cast in Setup, not named here to keep Setup untouched.
+		PADDING(4);
+
+		u16 field_68;
+		u16 field_6A;
 };
 
 class CVertexWobble : public CBit
@@ -121,7 +141,25 @@ class CVertexWobble : public CBit
 		EXPORT CVertexWobble(u32, u32, u32, u8*, i32, i32, i32, i32);
 		EXPORT virtual void Move(void);
 
-		u8 fullPad[0x24];
+		// SHandle wrapping G_PSXREGION[Region].pPSX
+		void *field_3C;
+		u32 field_40;
+
+		PADDING(8);
+
+		// SModel* for the chosen model piece (G_PSXREGION[Region].ppModels[a2])
+		void *field_4C;
+
+		// number of wobbling vertices
+		i32 field_50;
+
+		// array of field_50 SVertexWobbleEntry (22 bytes each), see effects.cpp
+		void *field_54;
+
+		// average/centre position of the wobbling vertices
+		CSVector field_58;
+
+		PADDING(2);
 };
 
 void validate_CVertexWobble(void);

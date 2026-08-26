@@ -159,6 +159,7 @@ class CSVector{
 		}
 
 		EXPORT CSVector* operator+=(const CSVector& other);
+		EXPORT CSVector* operator/=(const int& other);
 		EXPORT void Mask(void);
 		EXPORT void KillSmall(void);
 };
