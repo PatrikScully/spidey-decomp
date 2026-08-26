@@ -31,6 +31,11 @@ EXPORT i16 gRotMatrix[3][3];
 
 EXPORT int vertexRegister[4];
 
+// guesses: not in idb_globals.txt. Positioned right after vertexRegister ("V0"),
+// same shape, used by MTC2 the same way for register indices 2/3 ("V1") and 4/5 ("V2").
+EXPORT int gVertexRegister1[4];
+EXPORT int gVertexRegister2[4];
+
 EXPORT VECTOR translationVector;
 EXPORT VECTOR gGeneralLongVector;
 
@@ -47,10 +52,81 @@ static unsigned char stubGte = 1;
 u8 gPrintStubbed = 1;
 u8 gClearImagePrint = 1;
 
-// @SMALLTODO
-void MTC2(i32*, GTREGType)
+// @Ok
+// @Matching
+void MTC2(i32 a1, GTREGType a2)
 {
-	printf("void MTC2(i32*, GTREGType)");
+	print_if_false(a2 >= 0 && a2 < 0x16, "Invalid GTE register specified to MTC2.");
+
+	switch (a2)
+	{
+	case GT_ZERO:
+		vertexRegister[0] = (i16)a1;
+		vertexRegister[1] = a1 >> 16;
+		break;
+	case GT_ONE:
+		vertexRegister[2] = (i16)a1;
+		break;
+	case GT_TWO:
+		gVertexRegister1[0] = (i16)a1;
+		gVertexRegister1[1] = a1 >> 16;
+		break;
+	case GT_THREE:
+		gVertexRegister1[2] = (i16)a1;
+		break;
+	case GT_FOUR:
+		gVertexRegister2[0] = a1 & 0xFFFF;
+		gVertexRegister2[1] = a1 >> 16;
+		break;
+	case GT_FIVE:
+		gVertexRegister2[2] = (i16)a1;
+		break;
+	case GT_SIX:
+		print_if_false(0, "MTC2 tried to write to IR0.");
+		break;
+	case GT_SEVEN:
+		gOp12Result.vx = a1;
+		break;
+	case GT_EIGHT:
+		gOp12Result.vy = a1;
+		break;
+	case GT_NINE:
+		gOp12Result.vz = a1;
+		break;
+	case GT_TEN:
+		print_if_false(0, "MTC2 tried to write to MAC0.");
+		break;
+	case GT_ELEVEN:
+		gGeneralLongVector.vx = a1;
+		break;
+	case GT_TWELVE:
+		gGeneralLongVector.vy = a1;
+		break;
+	case GT_THIRTEEN:
+		gGeneralLongVector.vz = a1;
+		break;
+	case GT_FOURTEEN:
+		print_if_false(0, "MTC2 tried to write to RotMat.");
+		break;
+	case GT_FIFTEEN:
+		gRotMatrix[2][2] = (i16)a1;
+		break;
+	case GT_SIXTEEN:
+		translationVector.vx = a1;
+		break;
+	case GT_SEVENTEEN:
+		translationVector.vy = a1;
+		break;
+	case GT_EIGHTEEN:
+		translationVector.vz = a1;
+		break;
+	case GT_NINETEEN:
+	case GT_TWENTY:
+	case GT_TWENTYONE:
+	default:
+		print_if_false(0, "Unhandled case.");
+		break;
+	}
 }
 
 // @Bogus
