@@ -5,6 +5,7 @@
 #include "screen.h"
 #include "ps2funcs.h"
 #include <cmath>
+#include <cstring>
 #include "ps2lowsfx.h"
 #include "ps2redbook.h"
 #include "utils.h"
@@ -16,6 +17,9 @@
 #include "ps2lowsfx.h"
 #include "spool.h"
 #include "DXinit.h"
+#include "dcfileio.h"
+#include "reloc.h"
+#include "baddy.h"
 #include "my_assert.h"
 #include "texture.h"
 
@@ -914,10 +918,146 @@ void CPlayer::LockTargetTorsoAngle(void)
     printf("CPlayer::LockTargetTorsoAngle(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::NotifyKill(u16)
+// globals for CPlayer::NotifyKill below (no idb_globals.txt entries nearby,
+// all tentative names, guessed from usage):
+// gKillTaunt* (0x55649C..0x5564E1): six 2-byte-stride {group,variant} pick
+// tables, one per (early/late damage window) x (a2 special id) combination.
+// gKillTauntHistory1..5 (0x6A7FE8..0x6A7FF8): last 5 played sound ids, used
+// to avoid repeats.
+// gKillTauntLastVariant (0x6A9070): last picked variant index (write-only
+// here).
+// gKillNotifyCallCount (0x60CFBC): call counter, incremented on every call
+// regardless of outcome.
+static u8 * const gKillTauntTableEarlySpecial = (u8*)0x005564D0;
+static u8 * const gKillTauntTableEarly144 = (u8*)0x005564D8;
+static u8 * const gKillTauntTableEarlyOther = (u8*)0x0055649C;
+static u8 * const gKillTauntTableLateSpecial = (u8*)0x005564D4;
+static u8 * const gKillTauntTableLate144 = (u8*)0x005564E0;
+static u8 * const gKillTauntTableLateOther = (u8*)0x005564BC;
+static i32 * const gKillTauntHistory1 = (i32*)0x006A7FE8;
+static i32 * const gKillTauntHistory2 = (i32*)0x006A7FEC;
+static i32 * const gKillTauntHistory3 = (i32*)0x006A7FF0;
+static i32 * const gKillTauntHistory4 = (i32*)0x006A7FF4;
+static i32 * const gKillTauntHistory5 = (i32*)0x006A7FF8;
+static i32 * const gKillTauntLastVariant = (i32*)0x006A9070;
+static i32 * const gKillNotifyCallCount = (i32*)0x0060CFBC;
+
+// @NotOk
+// residue: 122 mnemonic diffs. the baddy-list scan, the two damage-window
+// conditions, all six table picks, the repeat-check against the history and
+// the final shift+play all match structurally (same globals, same call
+// targets, same table addresses, same branch conditions), but the original
+// spills "elapsed" (gTimerRelated - field_35C) to a stack slot and reloads
+// it from there on every retry through the pick loop, while our build keeps
+// it live in a register across retries instead. See attempts log for what
+// was tried.
+void CPlayer::NotifyKill(u16 a2)
 {
-    printf("CPlayer::NotifyKill(u16)");
+	if (this->field_354 && Rnd(2))
+	{
+		CBaddy *b = BaddyList;
+
+		while (b)
+		{
+			if ((b->mCBodyFlags & 0x200) && b->mHealth > 0 && (b->field_2A8 & 0x20))
+				goto done;
+
+			b = (CBaddy*)b->mNextItem;
+		}
+
+		{
+			i32 elapsed = gTimerRelated - this->field_35C;
+			i32 groupIndex;
+			i32 variantIndex;
+			bool checkRepeat;
+			i32 soundId;
+
+retry:
+			checkRepeat = true;
+
+			if (elapsed < 0xF0 && (this->field_358 - this->mHealth) < 0xA)
+			{
+				if (a2 == 0x132 || a2 == 0x140)
+				{
+					i32 idx = Rnd(4) & 0xFE;
+					groupIndex = gKillTauntTableEarlySpecial[idx];
+					variantIndex = gKillTauntTableEarlySpecial[idx + 1];
+					checkRepeat = false;
+				}
+				else if (a2 == 0x144)
+				{
+					i32 idx = Rnd(8) & 0xFE;
+					groupIndex = gKillTauntTableEarly144[idx];
+					variantIndex = gKillTauntTableEarly144[idx + 1];
+					checkRepeat = false;
+				}
+				else
+				{
+					i32 idx = Rnd(0x20) & 0xFE;
+					groupIndex = gKillTauntTableEarlyOther[idx];
+					variantIndex = gKillTauntTableEarlyOther[idx + 1];
+				}
+			}
+			else if (elapsed > 0x4B0 && (this->field_358 - this->mHealth) > 0x32)
+			{
+				if (a2 == 0x132 || a2 == 0x140)
+				{
+					i32 idx = Rnd(4) & 0xFE;
+					groupIndex = gKillTauntTableLateSpecial[idx];
+					variantIndex = gKillTauntTableLateSpecial[idx + 1];
+					checkRepeat = false;
+				}
+				else if (a2 == 0x144)
+				{
+					i32 idx = Rnd(4) & 0xFE;
+					groupIndex = gKillTauntTableLate144[idx];
+					variantIndex = gKillTauntTableLate144[idx + 1];
+					checkRepeat = false;
+				}
+				else
+				{
+					i32 idx = Rnd(0x14) & 0xFE;
+					groupIndex = gKillTauntTableLateOther[idx];
+					variantIndex = gKillTauntTableLateOther[idx + 1];
+				}
+			}
+			else
+			{
+				goto done;
+			}
+
+			soundId = (groupIndex << 4) + variantIndex;
+			*gKillTauntLastVariant = variantIndex;
+
+			if (checkRepeat &&
+				(*gKillTauntHistory1 == soundId ||
+				 *gKillTauntHistory2 == soundId ||
+				 *gKillTauntHistory3 == soundId ||
+				 *gKillTauntHistory4 == soundId ||
+				 *gKillTauntHistory5 == soundId))
+			{
+				goto retry;
+			}
+
+			{
+				i32 h2 = *gKillTauntHistory2;
+				i32 h3 = *gKillTauntHistory3;
+				i32 h4 = *gKillTauntHistory4;
+				i32 h5 = *gKillTauntHistory5;
+
+				*gKillTauntHistory1 = h2;
+				*gKillTauntHistory2 = h3;
+				*gKillTauntHistory3 = h4;
+				*gKillTauntHistory4 = h5;
+				*gKillTauntHistory5 = soundId;
+
+				Redbook_XAPlay(groupIndex, variantIndex, 0x14);
+			}
+		}
+	}
+
+done:
+	(*gKillNotifyCallCount)++;
 }
 
 // @MEDIUMTODO
@@ -1138,22 +1278,235 @@ void CPlayer::SortFistsData(void)
     printf("CPlayer::SortFistsData(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::SwitchToDeathMode(bool)
-{
-    printf("CPlayer::SwitchToDeathMode(bool)");
-}
-
-// helper for CPlayer::SwitchToSynthesizedInput below: the original does
-// "read vtable[0], call with arg 1" (scalar deleting destructor) on two
-// untyped pointers. SVTableSlot0Deletable is a throwaway class with
-// nothing but a virtual destructor, so `delete` on a pointer cast to it
-// reproduces that exact call shape without needing the __thiscall keyword
-// (rejected by this build's compiler flags, error C4234).
+// helper for CPlayer::SwitchToDeathMode/SwitchToSynthesizedInput below: the
+// original does "read vtable[0], call with arg 1" (scalar deleting
+// destructor) on untyped pointers. SVTableSlot0Deletable is a throwaway
+// class with nothing but a virtual destructor, so `delete` on a pointer
+// cast to it reproduces that exact call shape without needing the
+// __thiscall keyword (rejected by this build's compiler flags, error
+// C4234).
 struct SVTableSlot0Deletable
 {
 	virtual ~SVTableSlot0Deletable() {}
 };
+
+// @NotOk
+// residue: 88 mnemonic diffs (down from 122 on the first honest pass). the
+// entire early-out path (a2==true), the field_54C reset path, the
+// KnockSpideyFromCrawlPosition path and the field_E1C in {2,4} case match
+// byte for byte. the remaining diffs are all one cascade from a single
+// instruction: the third equality check in the field_E1C>0x10 chain
+// (state==0x800000, written as two chained `state -= 0x40` then
+// `state -= 0x7FFF80`, matching the original's own subtract-chain shape)
+// compiles to `add eax,0FF800080h; test eax,eax; jne` instead of the
+// original's `sub eax,7FFF80h; je`, an extra `test` the original does not
+// have. tried: direct equality compare instead of the subtract (worse, 89),
+// compound assignment in the condition (no change), a fresh local instead
+// of reusing `state` (no change). left as residue, see attempts log.
+void CPlayer::SwitchToDeathMode(bool a2)
+{
+	if (a2)
+	{
+		u32 levelGroup = (u32)Trig_GetLevelID() >> 8;
+
+		if (levelGroup >= 9 && levelGroup <= 0x17)
+		{
+			Reloc_CallUserFunction((char*)0x556A90, 1, 0, 0);
+			return;
+		}
+
+		gLevelStatus = 2;
+		return;
+	}
+
+	bool wasDying = this->field_54C != 0;
+	this->mHealth = 0;
+
+	if (wasDying)
+	{
+		i32 *p = gSpideySFXEntry[0xB0];
+		this->field_54C = 0;
+		this->field_E1C = 0x800000;
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xB0, 0, -1);
+
+		delete reinterpret_cast<SVTableSlot0Deletable*>(this->field_E64);
+		this->field_E64 = 0;
+
+		*(i32*)((u8*)CameraList + 0x12C) = -1;
+		return;
+	}
+
+	if (this->KnockSpideyFromCrawlPosition())
+	{
+		i32 *p = gSpideySFXEntry[0xB0];
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xB0, 0, -1);
+		return;
+	}
+
+	u32 state = this->field_E1C;
+
+	if (state <= 0x10)
+	{
+		if (state == 0x10)
+		{
+			goto caseBig;
+		}
+
+		state--;
+
+		if ((u32)state > 7)
+		{
+			goto caseDefault;
+		}
+
+		switch (state)
+		{
+			case 0:
+			case 7:
+				goto caseBig;
+
+			case 1:
+			case 3:
+				goto caseSmall;
+
+			default:
+				goto caseDefault;
+		}
+	}
+	else
+	{
+		state -= 0x40;
+
+		if (state == 0)
+			goto caseBig;
+
+		state -= 0x40;
+
+		if (state == 0)
+			return;
+
+		state -= 0x7FFF80;
+
+		if (state == 0)
+			goto caseBig;
+
+		goto caseDefault;
+	}
+
+caseSmall:
+	{
+		if (this->mAnim == 0xB0)
+			return;
+
+		i32 *p = gSpideySFXEntry[0xB0];
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xB0, 0, -1);
+		this->field_E1C = 4;
+		return;
+	}
+
+caseBig:
+	{
+		if (this->mAnim != 0xB0 && this->mAnim != 0xB2)
+		{
+			i32 *p = gSpideySFXEntry[0xAB];
+			this->mVel.vx = 0;
+			this->mVel.vy = 0;
+			this->mVel.vz = 0;
+			this->field_E1C = 0x80;
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0xAB, 0, -1);
+			SFX_PlayPos(0x24, (CVector*)((u8*)this + 8), 0);
+			return;
+		}
+
+		i32 *p = gSpideySFXEntry[0xB6];
+		this->mVel.vx = 0;
+		this->mVel.vy = 0;
+		this->mVel.vz = 0;
+		this->field_E1C = 0x80;
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xB6, 0, -1);
+		SFX_PlayPos(9, (CVector*)((u8*)this + 8), 0);
+		SFX_PlayPos(0x24, (CVector*)((u8*)this + 8), 0);
+		return;
+	}
+
+caseDefault:
+	{
+		i32 *p = gSpideySFXEntry[0xAB];
+		this->mVel.vx = 0;
+		this->mVel.vy = 0;
+		this->mVel.vz = 0;
+		this->field_E1C = 0x80;
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xAB, 0, -1);
+		SFX_PlayPos(0x24, (CVector*)((u8*)this + 8), 0);
+		return;
+	}
+}
 
 // @NotOk
 // residue: 92 mnemonic diffs on one honest pass, not iterated further
@@ -1442,10 +1795,124 @@ void Spidey_LoadAlternativeHealthIcon(i32 a1)
 	}
 }
 
-// @MEDIUMTODO
-void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
+// globals for Spidey_LoadAlternativeTextureSet below:
+// gRegionReloadRelated (0x55627C): from idb_globals.txt, last spool region
+// index reloaded by this function, cleared with ClearRegion before a new
+// region loads.
+// gAltTexSetNames (0x5512C0): array of string pointers, no idb_globals.txt
+// entry nearby, tentative name, guessed from usage (indexed by a2, passed
+// to Spool_PSX to load a region for the low graphics path).
+// gAltTexSetFileSuffix (0x556694/0x556698): raw 5 bytes (4+1) appended to
+// the copied suit name to build a file path checked with FileIO_FileExists.
+// written as raw memory (not strcat) because a real strcat call needs an
+// extra register (ebx) to keep the buffer alive across the call, which the
+// original does not use here; the original builds the suffix inline
+// (strlen via scasb, then two raw stores), reproduced the same way below.
+// content is a guess since it does not affect code matching (only the data
+// address relocates).
+static i32 * const gRegionReloadRelated = (i32*)0x0055627C;
+#define gAltTexSetNames ((char**)0x005512C0)
+static i32 * const gAltTexSetFileSuffixLo = (i32*)0x00556694;
+static u8 * const gAltTexSetFileSuffixHi = (u8*)0x00556698;
+
+extern char SuitNames[11][32];
+
+// @NotOk
+// known blocker: calls print_if_false, which our compiler always inlines
+// (it is static in export.h) while the original calls it out of line (see
+// CLAUDE.md "print_if_false inlining" note, also hit by the neighbouring
+// Spidey_BagHead/Spidey_SwapSuitTextures in this file). that alone rules
+// out a full match on the hardware-renderer branch below.
+// residue on the low graphics branch (print_if_false not reached there):
+// 45 mnemonic diffs, all one cluster from the Spool_PSX(gAltTexSetNames[a2])
+// call onward. cmpsum against a fresh build with gAltTexSetNames written as
+// a #define (not a `char** const` global) matches the original's single
+// `mov ecx,[esi*4+5512Ch]` fold, but the following call-argument push for
+// Spidey_SwapSuitTextures still schedules one instruction earlier than the
+// original relative to the two field stores (gRegionReloadRelated,
+// PSXRegion[region].Protected); reordering the three statements in source
+// made it worse (120 diffs), not better, so left as scheduling residue.
+// attempts logged in ~/Documents/spidey-work/wt/spidey.attempts.md.
+void Spidey_LoadAlternativeTextureSet(u32 const *, i32 a2)
 {
-    printf("Spidey_LoadAlternativeTextureSet(u32 const *,i32)");
+	if (gLowGraphics)
+	{
+		if (CurrentSuit == a2)
+			return;
+
+		if (a2 == 6)
+		{
+			if (!*gBagHeadModeOne)
+				Spidey_BagHead(*gBagHeadScaleFactor, 1);
+
+			goto checkModeTwo;
+		}
+		else
+		{
+			if (*gBagHeadModeOne == 1)
+				Spidey_BagHead(*gBagHeadScaleFactor, 0);
+
+			if (a2 == 10)
+			{
+				if (!*gBagHeadModeTwo)
+					Spidey_BagHead(*gBagHeadScaleFactor, 2);
+
+				goto afterModeTwo;
+			}
+		}
+
+checkModeTwo:
+		if (*gBagHeadModeTwo == 1)
+			Spidey_BagHead(*gBagHeadScaleFactor, 0);
+
+afterModeTwo:
+		if (*gRegionReloadRelated >= 0)
+		{
+			ClearRegion(*gRegionReloadRelated, 1);
+		}
+
+		i32 oldSuit = CurrentSuit;
+		CurrentSuit = a2;
+
+		if (a2 == 1)
+		{
+			*gRegionReloadRelated = -1;
+			Spidey_SwapSuitTextures(oldSuit, a2);
+		}
+		else
+		{
+			i32 region = Spool_PSX(gAltTexSetNames[a2], 0);
+			*gRegionReloadRelated = region;
+			PSXRegion[region].Protected = 1;
+			Spidey_SwapSuitTextures(oldSuit, a2);
+		}
+	}
+	else
+	{
+		print_if_false(a2 >= 1 && a2 <= 10, "Spidey_LoadAlternativeTextureSet(): suit out of range\r\n");
+
+		char path[0x20];
+		Utils_CopyString(SuitNames[a2], path, sizeof(path));
+
+		i32 len = strlen(path);
+		*(i32*)(path + len) = *gAltTexSetFileSuffixLo;
+		path[len + 4] = *gAltTexSetFileSuffixHi;
+
+		if (!FileIO_FileExists(path))
+		{
+			a2 = 1;
+		}
+
+		if (CurrentSuit != a2)
+		{
+			ClearRegion(*gCurrentCostumeRegionIndex, 1);
+			CurrentSuit = a2;
+
+			i32 region = Spool_PSX(SuitNames[a2], 0);
+			*gCurrentCostumeRegionIndex = (u8)region;
+			PSXRegion[region].Protected = 1;
+		}
+	}
 }
 
 // globals for Spidey_StoreTextureEntry below (no idb_globals.txt entry,
@@ -2700,6 +3167,7 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_E8C, 0xE8C);
 
 	VALIDATE(CPlayer, mHeldObject, 0xE48);
+	VALIDATE(CPlayer, field_E64, 0xE64);
 
 	VALIDATE(CPlayer, field_EA4, 0xEA4);
 
