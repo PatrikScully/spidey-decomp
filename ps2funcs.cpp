@@ -472,7 +472,15 @@ void M3dMaths_SetIdentityRotation(MATRIX *a1)
 }
 
 // @NotOk
-// Revisit, with validator
+// Residue: the maths (row*col dot product of a1*a2 into a3, each >>12) was already right; walking
+// pointers over a1/a2/a3 (instead of a1->m[i][j] direct indexing) got 3 mnemonic diffs down to 87
+// (from 109), matching the original's incremental-pointer read/store shape. The remaining diffs
+// are in the register allocation of the 9 dot-product statements (which of eax/ebx/ecx/edx/edi/
+// ebp/esi holds which of v3..v20 at each point) and the exact read/store instruction-scheduling
+// interleave for the a1/a3 walks (the original peeks 2 elements ahead before advancing the
+// pointer at a few points, not a uniform 1-at-a-time walk). 4 attempts tried (direct indexing;
+// walking pointer for a1/a2 reads only; + walking pointer for a3 store; declaration-order swap of
+// p3), see attempts log. Below the 15-hypothesis medium-size bar, revisit.
 void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3)
 {
   int v3; // [sp+0h] [-78h]
@@ -494,33 +502,38 @@ void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3)
   int v19; // [sp+40h] [-38h]
   int v20; // [sp+44h] [-34h]
 
-  v12 = a1->m[0][0];
-  v13 = a1->m[0][1];
-  v14 = a1->m[0][2];
-  v15 = a1->m[1][0];
-  v16 = a1->m[1][1];
-  v17 = a1->m[1][2];
-  v18 = a1->m[2][0];
-  v19 = a1->m[2][1];
-  v20 = a1->m[2][2];
-  v3 = a2->m[0][0];
-  v4 = a2->m[0][1];
-  v5 = a2->m[0][2];
-  v6 = a2->m[1][0];
-  v7 = a2->m[1][1];
-  v8 = a2->m[1][2];
-  v9 = a2->m[2][0];
-  v10 = a2->m[2][1];
-  v11 = a2->m[2][2];
-  a3->m[0][0] = (v12 * v3 + v13 * v6 + v14 * v9) >> 12;
-  a3->m[0][1] = (v12 * v4 + v13 * v7 + v14 * v10) >> 12;
-  a3->m[0][2] = (v12 * v5 + v13 * v8 + v14 * v11) >> 12;
-  a3->m[1][0] = (v15 * v3 + v16 * v6 + v17 * v9) >> 12;
-  a3->m[1][1] = (v15 * v4 + v16 * v7 + v17 * v10) >> 12;
-  a3->m[1][2] = (v15 * v5 + v16 * v8 + v17 * v11) >> 12;
-  a3->m[2][0] = (v18 * v3 + v19 * v6 + v20 * v9) >> 12;
-  a3->m[2][1] = (v18 * v4 + v19 * v7 + v20 * v10) >> 12;
-  a3->m[2][2] = (v18 * v5 + v19 * v8 + v20 * v11) >> 12;
+  i16* p1 = &a1->m[0][0];
+  v12 = *p1; p1++;
+  v13 = *p1; p1++;
+  v14 = *p1; p1++;
+  v15 = *p1; p1++;
+  v16 = *p1; p1++;
+  v17 = *p1; p1++;
+  v18 = *p1; p1++;
+  v19 = *p1; p1++;
+  v20 = *p1;
+
+  i16* p2 = &a2->m[0][0];
+  v3 = *p2; p2++;
+  v4 = *p2; p2++;
+  v5 = *p2; p2++;
+  v6 = *p2; p2++;
+  v7 = *p2; p2++;
+  v8 = *p2; p2++;
+  v9 = *p2; p2++;
+  v10 = *p2; p2++;
+  v11 = *p2;
+
+  i16* p3 = &a3->m[0][0];
+  *p3 = (v12 * v3 + v13 * v6 + v14 * v9) >> 12; p3++;
+  *p3 = (v12 * v4 + v13 * v7 + v14 * v10) >> 12; p3++;
+  *p3 = (v12 * v5 + v13 * v8 + v14 * v11) >> 12; p3++;
+  *p3 = (v15 * v3 + v16 * v6 + v17 * v9) >> 12; p3++;
+  *p3 = (v15 * v4 + v16 * v7 + v17 * v10) >> 12; p3++;
+  *p3 = (v15 * v5 + v16 * v8 + v17 * v11) >> 12; p3++;
+  *p3 = (v18 * v3 + v19 * v6 + v20 * v9) >> 12; p3++;
+  *p3 = (v18 * v4 + v19 * v7 + v20 * v10) >> 12; p3++;
+  *p3 = (v18 * v5 + v19 * v8 + v20 * v11) >> 12;
 }
 
 
