@@ -131,7 +131,11 @@ class CPlayer : public CSuper
 
 		u8 gCamAngleLock; //8EC
 
-		PADDING(0xAC8-0x8EC-1);
+		PADDING(0xAB8-0x8EC-1);
+
+		SHandle field_AB8;
+
+		PADDING(0xAC8-0xAB8-sizeof(SHandle));
 
 		CVector field_AC8;
 
@@ -344,7 +348,7 @@ class CPlayer : public CSuper
 		EXPORT void CheckSwingWebAvailability(SLineInfo *);
 		EXPORT void CheckSwitchToGrabbedMode(CVector const *,CVector *);
 		EXPORT void CheckWebShot(void);
-		EXPORT void CheckZipWebAvailability(SLineInfo *,i32);
+		EXPORT u8 CheckZipWebAvailability(SLineInfo *,i32);
 		EXPORT void CollideWithObject(CBody *);
 		EXPORT void CreateCombatImpactEffect(CVector *,i32);
 		EXPORT void CreateWebDrips(bool,bool);

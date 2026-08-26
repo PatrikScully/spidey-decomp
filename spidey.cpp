@@ -17,6 +17,7 @@
 #include "spool.h"
 #include "DXinit.h"
 #include "my_assert.h"
+#include "texture.h"
 
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
@@ -544,10 +545,47 @@ void CPlayer::CheckWebShot(void)
     printf("CPlayer::CheckWebShot(void)");
 }
 
-// @SMALLTODO
-void CPlayer::CheckZipWebAvailability(SLineInfo *,i32)
+// @NotOk
+// residue: header declared this void, real return is u8 (0/1), fixed here.
+// prologue, stack layout (sub esp,8), and every field/call address match.
+// remaining 66 diffs are pure register-role swaps: the branchless ternary
+// for v3 (this->field_E1C != 4 ? 16 : 8) puts the ternary result in eax and
+// Distance in ecx in the original, our build swaps them (ecx/eax reversed)
+// even though load order (field_E1C then Distance) already matches; same
+// swap propagates through the coordinate math below it. tried: explicit
+// if/else instead of ternary for v3 (broke the branchless codegen entirely,
+// worse: 67 diffs, reverted), single scalar `output` instead of i32[3]
+// (fixed the stack size mismatch from 0x14 to the original's 0x8, kept).
+u8 CPlayer::CheckZipWebAvailability(SLineInfo *pLineInfo, i32 a2)
 {
-    printf("CPlayer::CheckZipWebAvailability(SLineInfo *,i32)");
+	i32 v3 = (this->field_E1C != 4) ? 16 : 8;
+
+	if (pLineInfo->Distance <= v3)
+		return 0;
+
+	if (pLineInfo->Distance >= a2)
+		return 0;
+
+	if (pLineInfo->pFace[3] & 0x40000)
+		return 0;
+
+	gte_ldsvrtrow0((const SVECTOR*)&this->field_A8);
+
+	SVECTOR local;
+	local.vx = (this->field_C84.vx * this->field_EA8 - this->mPos.vx + pLineInfo->Position.vx) >> 12;
+	local.vy = (this->field_C84.vy * this->field_EA8 - this->mPos.vy + pLineInfo->Position.vy) >> 12;
+	local.vz = (this->field_C84.vz * this->field_EA8 - this->mPos.vz + pLineInfo->Position.vz) >> 12;
+
+	gte_ldv0(&local);
+	gte_rtv0();
+
+	i32 output;
+	gte_stlvnl0(&output);
+
+	if (this->field_E1C == 4)
+		return 1;
+
+	return output > 0x40;
 }
 
 // @Ok
@@ -772,10 +810,37 @@ i32 CPlayer::IncHealth(i32 a2)
 	return 0;
 }
 
-// @SMALLTODO
+// @NotOk
+// residue: original keeps two independent per-iteration registers (an
+// ascending bound counter esi, tested against 0x60, and a value eax
+// freshly recomputed as 0x60-esi each pass); every source form tried here
+// (ascending for, do-while, independent counters, != and unsigned compares,
+// index*stride) gets fused by our compiler into one descending counter,
+// which changes both the loop compare and the stored value's derivation.
+// volatile on the counter stops the fusion but adds a stack spill (extra
+// sub esp,8 prologue and [esp] reloads) the original does not have.
+// 7 distinct hypotheses tried, none reproduce the original register split.
 void CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)
 {
-    printf("CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)");
+	SIndicator *pIndicator = this->field_5F0;
+
+	for (i32 i = 6; i != 0; i--)
+	{
+		i32 *pEntry = (i32*)((u8*)pIndicator + 0x18);
+
+		for (i32 j = 0; j < 0x60; j += 0x18)
+		{
+			pEntry[1] = 0;
+			pEntry[0] = 0x60 - j;
+
+			setPolyF3();
+			setSemiTrans();
+
+			pEntry = (i32*)((u8*)pEntry + 0x14);
+		}
+
+		pIndicator++;
+	}
 }
 
 // @SMALLTODO
@@ -973,7 +1038,8 @@ void CPlayer::SetFloorCamera(i32 a3)
 	}
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void CPlayer::SetFirstContactDetails(void)
 {
 	if (!this->field_354)
@@ -1078,10 +1144,130 @@ void CPlayer::SwitchToDeathMode(bool)
     printf("CPlayer::SwitchToDeathMode(bool)");
 }
 
-// @SMALLTODO
-void CPlayer::SwitchToSynthesizedInput(i16 *)
+// helper for CPlayer::SwitchToSynthesizedInput below: the original does
+// "read vtable[0], call with arg 1" (scalar deleting destructor) on two
+// untyped pointers. SVTableSlot0Deletable is a throwaway class with
+// nothing but a virtual destructor, so `delete` on a pointer cast to it
+// reproduces that exact call shape without needing the __thiscall keyword
+// (rejected by this build's compiler flags, error C4234).
+struct SVTableSlot0Deletable
 {
-    printf("CPlayer::SwitchToSynthesizedInput(i16 *)");
+	virtual ~SVTableSlot0Deletable() {}
+};
+
+// @NotOk
+// residue: 92 mnemonic diffs on one honest pass, not iterated further
+// given the function's size (319 bytes, medium tier) and the amount of
+// still-undocumented struct territory it touches. instruction counts match
+// (106 original, 106 built), so nothing is missing or extra, this is pure
+// scheduling/register-allocation residue: notably the compiler hoists the
+// pInput/field_1B8 store to the very top of the function (cheapest
+// dependency, no other value ready yet) ahead of the mVel zeroing, even
+// though both are written in the same order as the original disassembly.
+// new header field: field_AB8 (SHandle) carved out of the old
+// 0x8ED-0xAC8 padding block (matches the Mem_RecoverPointer/Mem_MakeHandle
+// call shapes exactly, see validate_CPlayer). field_1A4, field_1B4,
+// field_1B8 (i16*, this is where the pInput parameter gets stored) are
+// NOT carved out (still raw offsets into existing padding) since there
+// was not enough context from this one function alone to name them with
+// confidence; done via explicit pointer casts instead.
+// this->mVel is CBody's (ob.h) field at 0x60-0x6B, matches the three
+// field_60/64/68 zero stores exactly.
+// the two vtable[0] calls (on Mem_RecoverPointer's result and on
+// mHeldObject) use SVTableSlot0Deletable above; mHeldObject is declared
+// CManipOb* with its own virtual destructor but a plain `delete` on it is
+// not safe here, since CBody virtuals earlier in the hierarchy could put
+// the destructor at a different vtable slot than the one this disassembly
+// reads directly at offset 0.
+// gSpideySFXEntry[21] (0x6A830C) and gSpideySFXEntry[0] (0x6A82B8) are
+// both inside the already-declared gSpideySFXEntry[300] array (top of this
+// file) - both addresses land exactly on an element boundary, so no new
+// global was needed for either. RunAnim (CSuper, ob.h) argument order
+// confirmed from the push sequence (cdecl reverses declaration order).
+void CPlayer::SwitchToSynthesizedInput(i16 *pInput)
+{
+	this->mVel.vx = 0;
+	this->mVel.vy = 0;
+	this->mVel.vz = 0;
+
+	this->field_1AC = 1;
+	*((u8*)this + 0x1B4) = 1;
+	*(i16**)((u8*)this + 0x1B8) = pInput;
+
+	this->field_AE5 = 0;
+	*((u8*)this + 0x1A4) = 0;
+	this->field_1A8 = 0;
+
+	CSmokeTrail **ppTrail = &this->field_584;
+
+	for (i32 i = 2; i != 0; i--)
+	{
+		if (*ppTrail)
+		{
+			(*ppTrail)->mFadeAway = 1;
+			*ppTrail = 0;
+		}
+
+		ppTrail++;
+	}
+
+	void *pRecovered = Mem_RecoverPointer(&this->field_AB8);
+
+	if (pRecovered)
+	{
+		delete reinterpret_cast<SVTableSlot0Deletable*>(pRecovered);
+		this->field_AB8 = Mem_MakeHandle(0);
+	}
+
+	if (this->mHeldObject)
+	{
+		delete reinterpret_cast<SVTableSlot0Deletable*>(this->mHeldObject);
+		this->mHeldObject = 0;
+
+		if (this->field_E1C & 0x10)
+		{
+			i32 *p = gSpideySFXEntry[21];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0x15, 0, -1);
+		}
+		else
+		{
+			i32 *p = gSpideySFXEntry[0];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0, 0, -1);
+		}
+	}
+
+	u8 *pClear = (u8*)this + 0x1C0;
+
+	for (i32 j = 20; j != 0; j--)
+	{
+		pClear[0] = 0;
+		pClear[1] = 0;
+		pClear[2] = 0;
+
+		pClear += 0x10;
+	}
 }
 
 // @MEDIUMTODO
@@ -1114,10 +1300,83 @@ CPlayer::~CPlayer(void)
     printf("CPlayer::~CPlayer(void)");
 }
 
-// @SMALLTODO
-void Spidey_BagHead(i32,i32)
+// globals for Spidey_BagHead below (no idb_globals.txt entry, tentative
+// names from usage):
+// gBagHeadModeOne/Two: bool flags for a2==1 / a2==2, stored at 0x60CFF4/F8.
+// gCurrentCostumeRegionIndex (0x6B4679): u8 index into CItemRelatedList
+// (already named in ob.h, stride 0x44/68, same array Spidey_SwapSuitTextures
+// indexes the same way).
+// gBagHeadScaleFactor (0x556280): stores a1 verbatim, write-only here.
+// gBagHeadOffsetTable1/2 (0x556284 / 0x556368): i16[3]-per-entry lookup
+// tables selected by a2==1 / a2==2, walked in lockstep with the vertex loop.
+static i32 * const gBagHeadModeOne = (i32*)0x0060CFF4;
+static i32 * const gBagHeadModeTwo = (i32*)0x0060CFF8;
+static u8 * const gCurrentCostumeRegionIndex = (u8*)0x006B4679;
+static i32 * const gBagHeadScaleFactor = (i32*)0x00556280;
+static i16 * const gBagHeadOffsetTable1 = (i16*)0x00556284;
+static i16 * const gBagHeadOffsetTable2 = (i16*)0x00556368;
+
+// @NotOk
+// known blocker: this calls print_if_false, which our compiler always
+// inlines (it is static in export.h) while the original calls it out of
+// line (see CLAUDE.md "print_if_false inlining" note). that alone rules
+// out a full match here, independent of anything else in this function.
+// residue beyond print_if_false: the source pointer (into gSpideyHeadModel)
+// is computed in the original via a two-step subtract-then-add that
+// algebraically cancels down to (gSpideyHeadModel+2); written here as the
+// simplified direct form, which is very unlikely to reproduce the exact
+// original instruction sequence, but it is functionally identical to it.
+void Spidey_BagHead(i32 a1, i32 a2)
 {
-    printf("Spidey_BagHead(i32,i32)");
+	print_if_false(gSpideyHeadModel != 0, "Error");
+
+	*gBagHeadModeOne = (a2 == 1);
+	*gBagHeadModeTwo = (a2 == 2);
+
+	u8 regionIndex = *gCurrentCostumeRegionIndex;
+	*gBagHeadScaleFactor = a1;
+
+	u8 *pRegion = (u8*)CItemRelatedList + regionIndex * 0x44;
+	u8 *pSub = *(u8**)(pRegion + 0x1C);
+	i16 count = *(i16*)(pSub + 2);
+	i16 *pDest = (i16*)(pSub + 0x1C);
+
+	if (count > 0)
+	{
+		u8 *pSrc = (u8*)gSpideyHeadModel + 2;
+		i16 *pTable1 = gBagHeadOffsetTable1;
+		i16 *pTable2 = gBagHeadOffsetTable2;
+
+		for (i32 i = count; i != 0; i--)
+		{
+			if (!(*(pSrc + 4) & 0x12))
+			{
+				if (a2 == 1)
+				{
+					pDest[0] = pTable1[0];
+					pDest[1] = pTable1[1];
+					pDest[2] = pTable1[2];
+				}
+				else if (a2 == 2)
+				{
+					pDest[0] = pTable2[0];
+					pDest[1] = pTable2[1];
+					pDest[2] = pTable2[2];
+				}
+				else
+				{
+					pDest[0] = (i32)(*(i16*)(pSrc - 2)) * a1 >> 12;
+					pDest[1] = (i32)(*(i16*)(pSrc)) * a1 >> 12;
+					pDest[2] = (i32)(*(i16*)(pSrc + 2)) * a1 >> 12;
+				}
+			}
+
+			pDest = (i16*)((u8*)pDest + 8);
+			pSrc += 8;
+			pTable1 = (i16*)((u8*)pTable1 + 6);
+			pTable2 = (i16*)((u8*)pTable2 + 6);
+		}
+	}
 }
 
 // @Ok
@@ -1189,16 +1448,205 @@ void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
     printf("Spidey_LoadAlternativeTextureSet(u32 const *,i32)");
 }
 
-// @SMALLTODO
-void Spidey_StoreTextureEntry(Texture const *,i16,i16)
+// globals for Spidey_StoreTextureEntry below (no idb_globals.txt entry,
+// tentative names from usage):
+// gGlobalTextureEntryCount (0x6A9050): running count into gGlobalTextureEntries.
+// gGlobalTextureEntries (0x6A8000): array of {Texture* pTexture; i16 mA2; i16 mA3;
+// u32 mChecksum;} (stride 0xC), terminated by a pTexture==0 sentinel entry.
+// gSuitChecksumTable (0x53C1A4): i32[16] per suit (stride 0x40), checksum lookup.
+// gCostumeTextureIds (0x6A8D74): i32 (zero-extended u16 value) per
+// (suit*16+slot) slot, same table Spidey_SwapSuitTextures indexes.
+static i32 * const gGlobalTextureEntryCount = (i32*)0x006A9050;
+
+struct SGlobalTextureEntry
 {
-    printf("Spidey_StoreTextureEntry(Texture const *,i16,i16)");
+	const Texture *pTexture;
+	i16 mA2;
+	i16 mA3;
+	u32 mChecksum;
+};
+static SGlobalTextureEntry * const gGlobalTextureEntries = (SGlobalTextureEntry*)0x006A8000;
+
+static i32 * const gSuitChecksumTable = (i32*)0x0053C1A4;
+static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
+
+// @NotOk
+// known blocker: the fail path calls print_if_false, always inlined by our
+// build (static in export.h), while the original calls it out of line
+// (retail body is a single `ret`, confirmed against tools/functions -
+// it is a no-op in the shipped game). Exact argument order at that one
+// call site is ambiguous from the disassembly (only 2 stack slots pushed
+// for a message with one %X format spec), so this passes the checksum as
+// a printf-style value, which is functionally sensible either way since
+// the call does nothing in retail.
+// preserved bug: the gLowGraphics==0 search loop compares
+// gGlobalTextureEntries[count] (the NEXT free slot, loop-invariant) against
+// the checksum on every iteration instead of gGlobalTextureEntries[i] -
+// the compiled code hoists the loop-invariant load/compare exactly like
+// this, so the "search" only ever matches on i==0 or never matches. this
+// looks like a genuine off-by-index bug in the original; reproduced
+// verbatim per repo convention (tips.txt: preserve source-level bugs).
+// residue: 38 mnemonic diffs (down from 70 on the first honest pass, after
+// three fixes: keeping the search as a real for-loop with the invariant
+// index instead of collapsing it to one check, deferring the checksum
+// read into the count>0 branch instead of hoisting it unconditionally,
+// and declaring gCostumeTextureIds as i32 (matching the original's 4-byte
+// zero-extended store/compare, `mov [x*4+6A8D74h],eax` after `xor eax,eax`)
+// instead of i16 (all confirmed against the disassembly). remaining diffs
+// are mostly register pressure (original keeps 3 callee-saved regs live
+// across the loop: ebx=cached checksum, esi=loop counter, edi=search
+// pointer; ours only needs 2, folding the checksum into a different
+// register) and the suit*16+slot indexing using scaled-index addressing
+// instead of the original's flat ecx-offset form. tried a do-while instead
+// of for (to drop a redundant count>0 recheck at loop entry): made it
+// worse (52 diffs), reverted.
+void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
+{
+	if (!gLowGraphics)
+	{
+		i32 count = *gGlobalTextureEntryCount;
+
+		if (count > 0)
+		{
+			u32 checksum1 = pTexture->Checksum;
+
+			for (i32 j = 0; j < count; j++)
+			{
+				if (gGlobalTextureEntries[count].mChecksum == checksum1)
+				{
+					gGlobalTextureEntries[count].pTexture = pTexture;
+					return;
+				}
+			}
+		}
+
+		u32 checksum = pTexture->Checksum;
+		gGlobalTextureEntries[count].mChecksum = checksum;
+		gGlobalTextureEntries[count].pTexture = pTexture;
+		*gGlobalTextureEntryCount = count + 1;
+		gGlobalTextureEntries[count].mA2 = a2;
+		gGlobalTextureEntries[count].mA3 = a3;
+		gGlobalTextureEntries[count + 1].pTexture = 0;
+
+		return;
+	}
+
+	u32 checksum = pTexture->Checksum;
+	i32 *pEntry = gSuitChecksumTable + CurrentSuit * 16;
+	i32 i;
+
+	for (i = 0; i < 16; i++)
+	{
+		if ((u32)pEntry[i] == checksum)
+		{
+			gCostumeTextureIds[CurrentSuit * 16 + i] = pTexture->clut;
+			return;
+		}
+	}
+
+	for (i = 0; i < 16; i++)
+	{
+		if ((u32)gSuitChecksumTable[i] == checksum)
+		{
+			gCostumeTextureIds[i] = pTexture->clut;
+			return;
+		}
+	}
+
+	print_if_false(0, "Spidey_StoreTextureEntry(): Checksum not found: %8.8X\r\n", checksum);
 }
 
-// @SMALLTODO
-void Spidey_SwapSuitTextures(i32,i32)
+// globals for Spidey_SwapSuitTextures below (no idb_globals.txt entry):
+// gCostumeMeshPtrs (0x5F6764), pointer array indexed directly by region id
+// (not scaled), each entry points at a per-region mesh-piece list, walked
+// in lockstep with CItemRelatedList[region] (ob.h) for word_6B2478[region]
+// (export.h, already used the same way in m3dutils.cpp, stride 34 u16 =
+// 0x44 per region) iterations. field offsets are guesses from the
+// disassembly only (no struct declared): the CItemRelatedList entry's
+// first field (offset 0) is a pointer to a sub-struct with a count at +6;
+// the gCostumeMeshPtrs entry (offset +4 from the stored pointer) is a
+// pointer to a list of entries (texture id at +2), stride 0x38 per entry,
+// outer stride 0x24 for the mesh-piece list and 4 for the CItemRelatedList
+// sub-array. reuses gCostumeTextureIds (spidey.cpp,
+// Spidey_StoreTextureEntry) for the actual texture id remap table. also
+// declared gCostumeRegionEntries at the same address as CItemRelatedList
+// (0x6B2454) so this file can index it with a plain array subscript
+// (region*17) instead of casting CItemRelatedList's established i32***
+// type to a byte pointer.
+static void ** const gCostumeMeshPtrs = (void**)0x005F6764;
+static void ** const gCostumeRegionEntries = (void**)0x006B2454;
+
+// @NotOk
+// known blocker: calls print_if_false, always inlined by our build (static
+// in export.h), while the original calls it out of line (retail body is a
+// single `ret`, confirmed via tools/functions - a no-op in the shipped
+// game). string confirmed: "SwapSuitTextures() called in hardware mode!"
+// (0x556644, printed when gLowGraphics==0, i.e. hardware mode), region
+// name "spidey" (0x556670) passed to Spool_FindRegion.
+// residue: 50 mnemonic diffs (down from 57), after widening outerCount to
+// i32 (original tests the full edx register after the 16-bit load, because
+// an earlier xor edx,edx in the same block left the upper half zero; ours
+// needs the wider type to reproduce that). one residue not tracked down:
+// our build loads gCostumeMeshPtrs/gCostumeRegionEntries as if they were
+// real relocatable globals (`mov esi,[reloc]; mov ecx,[esi+eax]`) instead
+// of folding the fixed address into the addressing mode
+// (`mov ecx,[eax*4+5F6764h]` in the original) even though the same
+// `static X* const = (X*)0xADDR` idiom folds fine elsewhere in the repo
+// (word_6B2478, export.h) - tried a simpler single-pointer type instead of
+// a double pointer, no change, left as residue given the print_if_false
+// blocker already rules out a full match on this function regardless.
+
+void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 {
-    printf("Spidey_SwapSuitTextures(i32,i32)");
+	print_if_false(gLowGraphics != 0, "SwapSuitTextures() called in hardware mode!");
+
+	i32 region = Spool_FindRegion("spidey");
+	i32 byteOffset = region * 68;
+
+	i32 outerCount = *(i16*)((u8*)word_6B2478 + byteOffset);
+
+	if (outerCount > 0)
+	{
+		u8 *pRegionEntry = (u8*)gCostumeRegionEntries[region * 17];
+		u8 *pMeshList = (u8*)gCostumeMeshPtrs[region] + 4;
+
+		for (i32 i = outerCount; i != 0; i--)
+		{
+			u8 *pSub = *(u8**)pRegionEntry;
+			i16 innerCount = *(i16*)(pSub + 6);
+			u8 *pEntry = *(u8**)pMeshList;
+
+			if (innerCount > 0)
+			{
+				u16 *pTexId = (u16*)(pEntry + 2);
+
+				for (i32 j = innerCount; j != 0; j--)
+				{
+					i32 texId = *pTexId;
+					i32 *pSearch = gCostumeTextureIds + a1 * 16;
+					i32 k;
+
+					for (k = 0; k < 16; k++)
+					{
+						if (texId == pSearch[k])
+						{
+							i32 newId = gCostumeTextureIds[a2 * 16 + k];
+
+							if (newId != 0)
+								*pTexId = (u16)newId;
+
+							break;
+						}
+					}
+
+					pTexId = (u16*)((u8*)pTexId + 0x38);
+				}
+			}
+
+			pRegionEntry += 4;
+			pMeshList += 0x24;
+		}
+	}
 }
 
 // @SMALLTODO
@@ -1277,23 +1725,25 @@ u8 CPlayer::IncreaseWebbing(i32 amount)
 	return 1;
 }
 
-// @SMALLTODO
-// @Note - func done
+// @NotOk
+// residue: original computes &a1 and pushes both call args first, then
+// stores a1.vx/vy/vz through the post-push stack offsets. our build always
+// hoists the two zero stores (vx, vz) before the address-of/push, keeping
+// only the vy store (which depends on the pVector read) after the push.
+// tried: statement order (vy first/last), a2/a1 declaration order swap,
+// default-ctor-then-assign-vy (ctor's own zero stores get hoisted earlier
+// still), named pointer locals for the call args (optimized away, no
+// change), and a real 3-arg SVECTOR constructor (same early-hoist as the
+// default ctor). best result so far: 23 mnemonic diffs, all in this one
+// instruction-scheduling cluster; every later instruction matches once
+// this settles (call targets/relocations aside).
 void CPlayer::SetStartOrientation(CSVector* pVector)
 {
-
-	typedef void (FASTCALL *func_ptr)(CPlayer*, i32, CSVector*);
-	func_ptr func = (func_ptr)0x004B9E50;
-
-	func(this, 0, pVector);
-	return;
-
-
-	SVECTOR a1;
 	MATRIX a2;
+	SVECTOR a1;
 
-	a1.vx = 0;
 	a1.vy = pVector->vy;
+	a1.vx = 0;
 	a1.vz = 0;
 
 	M3dMaths_RotMatrixYXZ(&a1, &a2);
@@ -2171,6 +2621,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_8EA, 0x8EA);
 
 	VALIDATE(CPlayer, gCamAngleLock, 0x8EC);
+
+	VALIDATE(CPlayer, field_AB8, 0xAB8);
 
 	VALIDATE(CPlayer, field_AC8, 0xAC8);
 
