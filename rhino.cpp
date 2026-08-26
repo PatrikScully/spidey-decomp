@@ -745,10 +745,47 @@ void CRhino::PlayXAPlease(
 	}
 }
 
-// @MEDIUMTODO
-void CRhino::SetUpStuckHorn(SLineInfo *,i32)
+// @NotOk
+// Best-effort translation, not verified against a build. Builds an aim
+// point 14 units back from a2->Normal, computes CalcAim angles toward it,
+// turns to face it (CAIProc_LookAt), then spawns a CRhinoWallImpact at the
+// hit point. The exact CRhinoWallImpact(SLineInfo*) field usage and the a3
+// parameter's role are not confirmed; a3 is not observed used in the disasm
+// excerpt this was read from.
+void CRhino::SetUpStuckHorn(SLineInfo *a2, i32 a3)
 {
-    printf("CRhino::SetUpStuckHorn(SLineInfo *,i32)");
+	CVector normal(a2->Normal.vx, a2->Normal.vy, a2->Normal.vz);
+	CVector aimPoint = this->mPos - (normal * 14);
+
+	CSVector aimAngles;
+	Utils_CalcAim(&aimAngles, &this->mPos, &aimPoint);
+
+	CRhinoWallImpact *impact = new CRhinoWallImpact(a2);
+
+	if (impact)
+	{
+		new CAIProc_LookAt(this, aimAngles.vy, 0, 0x37, 0xC8);
+	}
+
+	this->RunAnim(0x18, 0, -1);
+	this->field_388 = 0;
+
+	if (gActuatorRelated)
+	{
+		if (Pad_GetActuatorTime(0, 0) <= 2)
+		{
+			Pad_ActuatorOn(0, 6, 0, 1);
+		}
+		if (Pad_GetActuatorTime(0, 1) <= 2)
+		{
+			Pad_ActuatorOn(0, 0xA, 1, 0xC8);
+		}
+	}
+
+	SFX_PlayPos(0x804B, &this->mPos, 0);
+
+	this->field_31C.bothFlags = 0xA;
+	this->dumbAssPad = 0;
 }
 
 // @NotOk
