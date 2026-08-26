@@ -439,16 +439,18 @@ void PShell_BigFont(void)
 // (picks the box z-offset sign, close to the water-effect/post-process flags).
 static u8 * const gDrawHighlightZFlag = (u8*)0x5FAE9D;
 
-// @Ok
-// @AlmostMatching: 5 mnemonic diffs out of 122 instructions, all in the
-// pPoly/p setup right after print_if_false. Original loads pPoly straight
-// into esi and pre-adds a4+4 into ebp as an eager separate instruction,
-// reused later via a plain add; our build always routes pPoly through eax
-// first and folds the +4 into the later y0 computation as a 3-operand lea.
+// @NotOk
+// 5 mnemonic diffs out of 122 instructions, all in the pPoly/p setup right
+// after print_if_false. Original loads pPoly straight into esi and pre-adds
+// a4+4 into ebp as an eager separate instruction, reused later via a plain
+// add; our build always routes pPoly through eax first and folds the +4
+// into the later y0 computation as a 3-operand lea.
 // 12 distinct hypotheses tried targeting this exact cluster (declaration
 // order forward/reverse, split vs combined statement, volatile, pointer-unit
 // vs byte-cast arithmetic, basing the increment on p vs pPoly), residue did
-// not move. See pshell.attempts.md.
+// not move. This is a 353-byte (medium-size) function, the discipline needs
+// at least 15 hypotheses before @AlmostMatching is allowed, so this stays
+// @NotOk until more are tried. See pshell.attempts.md.
 void PShell_DrawHighlight(i32 a1, i32 a2, i32 a3, i32 a4)
 {
 	Texture* pTex = Spool_FindTextureEntry(0xE90B5F6E);
