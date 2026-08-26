@@ -134,10 +134,57 @@ void Utils_CalcPerps(CVector * a1,CVector * a2,CVector * a3)
 	gte_stlvnl(reinterpret_cast<VECTOR*>(a3));
 }
 
-// @MEDIUMTODO
-void Utils_CalcUnitFacingCamera(CVector const *,CVector const *,CVector *)
+// @Ok
+// @Matching
+void Utils_CalcUnitFacingCamera(CVector const * a1, CVector const * a2, CVector * a3)
 {
-    printf("Utils_CalcUnitFacingCamera(CVector const *,CVector const *,CVector *)");
+	CVector delta1;
+	delta1.vx = (a2->vx - a1->vx) >> 12;
+	delta1.vy = (a2->vy - a1->vy) >> 12;
+	delta1.vz = (a2->vz - a1->vz) >> 12;
+
+	if (delta1.vx > 500 || delta1.vy > 500 || delta1.vz > 500)
+	{
+		delta1.vx >>= 4;
+		delta1.vy >>= 4;
+		delta1.vz >>= 4;
+	}
+
+	CVector delta2;
+	delta2.vx = gMikeCamera[0].Position.vx - (a1->vx >> 12);
+	delta2.vy = gMikeCamera[0].Position.vy - (a1->vy >> 12);
+	delta2.vz = gMikeCamera[0].Position.vz - (a1->vz >> 12);
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&delta1));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&delta2));
+	gte_op0();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(a3));
+
+	CVector shifted;
+	shifted.vx = a3->vx >> 8;
+	shifted.vy = a3->vy >> 8;
+	shifted.vz = a3->vz >> 8;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&shifted));
+	gte_sqr0();
+
+	VECTOR squared;
+	gte_stlvnl(&squared);
+
+	i32 mag = M3dMaths_SquareRoot0(squared.vx + squared.vy + squared.vz);
+
+	if (mag < 5)
+	{
+		a3->vx = 0;
+		a3->vy = 0;
+		a3->vz = 0;
+	}
+	else
+	{
+		a3->vx = (a3->vx / mag) << 4;
+		a3->vy = (a3->vy / mag) << 4;
+		a3->vz = (a3->vz / mag) << 4;
+	}
 }
 
 // @Ok
