@@ -1194,10 +1194,162 @@ void CSniperTarget::DrawTargetRecticle(void)
 	printf("CSniperTarget::DrawTargetRecticle(void)");
 }
 
-// @MEDIUMTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4331776.bin. Kill-flag check + Die(), then
+// a 3-state machine on field_100: state 0/1 are a line-of-sight/aim acquisition loop
+// (Utils_CalcAim + Utils_TurnTowards toward field_104, a mAngVel/mAngAcc/mAngFric
+// physics-style settle integrator reused for muzzle sway run field_80 times,
+// Utils_GetVecFromMagDir to get the muzzle direction, an M3dColij raycast from the
+// muzzle to the camera, a running best-distance field_12C, and periodic voice-line
+// SFX_Play calls gated by three independent timers field_130/134/138), transitioning
+// to state 2 once close enough. State 2 rate-limits firing (global timer 0x6B4CA8
+// minus field_124, a shot budget field_F8 < field_FC, and a 40% random roll) and
+// spawns a CMachineGunBullet owned by this (matching the existing
+// CMachineGunBullet(CVector*,CVector*,CSniperTarget*) constructor: field_A4 == 10).
+// This is a best-effort structural reconstruction of the control flow shape, not
+// instruction verified: several new fields (field_F8/100/124/12C/130/134/138/154/158)
+// were carved out of what the header had as PADDING, and the exact raycast/voice-line
+// argument wiring and the aim-settle math could not be traced byte for byte by hand.
+// cmpsum: 536 mnemonic diffs, first divergence right at the prologue (missing the SEH
+// frame setup entirely). 1 attempt (structural reconstruction only). Needs real work.
 void CSniperTarget::AI(void)
 {
-	printf("CSniperTarget::AI(void)");
+	if (this->mFlags & 1)
+	{
+		this->mFlags &= ~1;
+		this->Die();
+		return;
+	}
+
+	switch (this->field_100)
+	{
+		case 0:
+		case 1:
+		{
+			CSVector aimDir;
+			aimDir.vx = 0;
+			aimDir.vy = 0;
+			aimDir.vz = 0;
+			Utils_CalcAim(&aimDir, &this->field_104, reinterpret_cast<CVector*>(&this->field_13C));
+
+			i32 rate = (this->field_100 == 0) ? 8 : 0x10;
+			Utils_TurnTowards(aimDir, reinterpret_cast<CSVector*>(&this->mAngles), &this->mAngVel, this->mAngAcc, rate);
+
+			for (i32 i = 0; i < this->field_80; i++)
+			{
+				i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
+				this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
+
+				i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
+				this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
+			}
+
+			this->mAngVel.Mask();
+			this->mAngVel.KillSmall();
+
+			CVector muzzleDir;
+			Utils_GetVecFromMagDir(&muzzleDir, this->field_100 == 0 ? 0x12 : 0x10,
+					reinterpret_cast<CSVector*>(&this->mAngles));
+
+			CVector muzzleEnd = reinterpret_cast<CVector&>(this->field_13C) + muzzleDir;
+
+			SLineInfo lineinfo;
+			lineinfo.StartCoords = reinterpret_cast<CVector&>(this->field_13C);
+			lineinfo.EndCoords = CameraList->mPos;
+			lineinfo.MinCoords.vx = 0;
+			lineinfo.MinCoords.vy = 0;
+			lineinfo.MinCoords.vz = 0;
+			lineinfo.MaxCoords.vx = 0;
+			lineinfo.MaxCoords.vy = 0;
+			lineinfo.MaxCoords.vz = 0;
+			lineinfo.iLo = 0;
+			lineinfo.iHi = 0;
+			lineinfo.jLo = 0;
+			lineinfo.jHi = 0;
+			lineinfo.Distance = 0;
+			lineinfo.Length = 0;
+			lineinfo.pItem = 0;
+			lineinfo.Position.vx = 0;
+			lineinfo.Position.vy = 0;
+			lineinfo.Position.vz = 0;
+			lineinfo.Normal.vx = 0;
+			lineinfo.Normal.vy = 0;
+			lineinfo.Normal.vz = 0;
+
+			M3dColij_InitLineInfo(&lineinfo);
+			M3dZone_LineToItem(&lineinfo, 1);
+
+			if (lineinfo.pItem)
+			{
+				this->field_104 = lineinfo.Position;
+			}
+
+			i32 dist = Utils_Dist(reinterpret_cast<CVector&>(this->field_13C), MechList->mPos);
+
+			if (dist > this->field_12C)
+			{
+				this->field_12C = dist;
+				this->field_130 = Vblanks;
+			}
+			else if (dist < this->field_134)
+			{
+				this->field_134 = dist;
+
+				if (Vblanks - this->field_130 > 0x78)
+				{
+					SFX_Play((Rnd(6) & 0xFE) == 0 ? 0x8F00 : 0x8F04, 0x3C, 0);
+					this->field_130 = Vblanks;
+				}
+			}
+
+			if (Vblanks - this->field_138 > 0x78)
+			{
+				SFX_Play((Rnd(8) & 0xFE) == 0 ? 0x8F18 : 0x8F1C, 0x3C, 0);
+				this->field_138 = Vblanks;
+			}
+
+			if (dist < 200)
+			{
+				this->field_100 = 2;
+				this->field_128 = false;
+				this->field_F8 = 0;
+				this->field_FC = 0;
+			}
+
+			break;
+		}
+		case 2:
+		{
+			this->field_104 = this->field_104 + reinterpret_cast<CVector&>(this->field_148) * this->field_80;
+
+			if (Vblanks - this->field_124 <= 10)
+				break;
+
+			if (this->field_154 >= this->field_158)
+				break;
+
+			this->field_124 = Vblanks;
+
+			if (Rnd(100) >= 60)
+				break;
+
+			SFX_Play((Rnd(4) & 0xFE) == 0 ? 0x8F38 : 0x8F3C, 0x3C, 0);
+
+			new CMachineGunBullet(reinterpret_cast<CVector*>(&this->field_13C), &this->field_104, this);
+
+			this->field_F8++;
+
+			if (this->field_F8 == this->field_FC)
+			{
+				this->field_120 = 180;
+				this->field_100 = 0;
+			}
+
+			break;
+		}
+		default:
+			break;
+	}
 }
 
 // @NotOk
@@ -1947,7 +2099,9 @@ void validate_CSniperTarget(void)
 {
 	VALIDATE_SIZE(CSniperTarget, 0x15C);
 
+	VALIDATE(CSniperTarget, field_F8, 0xF8);
 	VALIDATE(CSniperTarget, field_FC, 0xFC);
+	VALIDATE(CSniperTarget, field_100, 0x100);
 
 	VALIDATE(CSniperTarget, field_104, 0x104);
 	VALIDATE(CSniperTarget, field_110, 0x110);
@@ -1955,8 +2109,14 @@ void validate_CSniperTarget(void)
 	VALIDATE(CSniperTarget, field_118, 0x118);
 	VALIDATE(CSniperTarget, field_11C, 0x11C);
 	VALIDATE(CSniperTarget, field_120, 0x120);
+	VALIDATE(CSniperTarget, field_124, 0x124);
 
 	VALIDATE(CSniperTarget, field_128, 0x128);
+
+	VALIDATE(CSniperTarget, field_12C, 0x12C);
+	VALIDATE(CSniperTarget, field_130, 0x130);
+	VALIDATE(CSniperTarget, field_134, 0x134);
+	VALIDATE(CSniperTarget, field_138, 0x138);
 
 	VALIDATE(CSniperTarget, field_13C, 0x13C);
 	VALIDATE(CSniperTarget, field_140, 0x140);
@@ -1964,6 +2124,9 @@ void validate_CSniperTarget(void)
 	VALIDATE(CSniperTarget, field_148, 0x148);
 	VALIDATE(CSniperTarget, field_14C, 0x14C);
 	VALIDATE(CSniperTarget, field_150, 0x150);
+
+	VALIDATE(CSniperTarget, field_154, 0x154);
+	VALIDATE(CSniperTarget, field_158, 0x158);
 
 	VALIDATE_VTABLE(CSniperTarget, DrawTargetRecticle, 5);
 }

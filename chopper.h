@@ -124,11 +124,13 @@ class CSniperTarget : public CBody
 		EXPORT virtual void AI(void);
 		EXPORT virtual void DrawTargetRecticle(void);
 
-		PADDING(0xFC-0xF4);
+		PADDING(0xF8-0xF4);
+
+		i32 field_F8;
 
 		i32 field_FC;
 
-		PADDING(0x104-0xFC-0x4);
+		i32 field_100;
 
 		CVector field_104;
 		i32 field_110;
@@ -137,11 +139,16 @@ class CSniperTarget : public CBody
 		Texture* field_11C;
 		i32 field_120;
 
-		PADDING(0x128-0x120-4);
+		i32 field_124;
 
 		bool field_128;
 
-		PADDING(0x13C-0x128-1);
+		PADDING(0x12C-0x128-1);
+
+		i32 field_12C;
+		i32 field_130;
+		i32 field_134;
+		i32 field_138;
 
 		i32 field_13C;
 		i32 field_140;
@@ -150,7 +157,8 @@ class CSniperTarget : public CBody
 		i32 field_14C;
 		i32 field_150;
 
-		PADDING(0x15C-0x150-4);
+		i32 field_154;
+		i32 field_158;
 };
 
 class CSearchlight : public CBody
