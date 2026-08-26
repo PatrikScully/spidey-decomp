@@ -59,8 +59,8 @@ public:
 	PADDING(0x3AC - 0x39C - 4);
 
 	i32 field_3AC;
-
-	PADDING(0x3B8-0x3AC-4);
+	i32 field_3B0;
+	CVector* field_3B4;
 };
 
 void validate_CLizMan(void);

@@ -51,9 +51,48 @@ void LizMan_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = LizMan_CreateLizMan;
 }
 
-// @MEDIUMTODO
-void CLizMan::CalculateJumpPositionArray(CVector*)
-{}
+// @Ok
+// @AlmostMatching: the two register-zeroing instructions right before the
+// loop (index register, angle register) come out in swapped order. Same
+// mnemonics, same length, only the register operand differs. Tried 15
+// source variants (for/while/do-while, declaration order and position,
+// split vs combined init, increment order, comparison direction, signed
+// vs unsigned index, mask operand order) with no change. Rest of the
+// function matches instruction for instruction.
+void CLizMan::CalculateJumpPositionArray(CVector* pTarget)
+{
+	i32 groundHeight = Utils_GetGroundHeight(pTarget, 0, 0x200, 0);
+
+	i32 xDelta = (pTarget->vx - this->mPos.vx) / 48;
+	i32 yDelta = (groundHeight - (this->field_21E << 12) - this->mPos.vy) / 48;
+	i32 zDelta = (pTarget->vz - this->mPos.vz) / 48;
+
+	if (this->field_3B4)
+		Mem_Delete(this->field_3B4);
+
+	this->field_3B4 = static_cast<CVector*>(DCMem_New(0x240, 0, 1, 0, 1));
+
+	i32 x = this->mPos.vx + xDelta;
+	i32 y = this->mPos.vy + yDelta;
+	i32 z = this->mPos.vz + zDelta;
+
+	i32 i = 0;
+	i32 t = 0;
+	do
+	{
+		this->field_3B4[i].vx = x;
+		this->field_3B4[i].vy = y - (rcossin_tbl[t & 0xFFF].sin << 8);
+		this->field_3B4[i].vz = z;
+
+		x += xDelta;
+		y += yDelta;
+		z += zDelta;
+		t += 0x2B;
+		i++;
+	} while (t < 0x810);
+
+	this->field_3B0 = 0;
+}
 
 // @BIGTODO
 i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
@@ -303,4 +342,6 @@ void validate_CLizMan(void){
 	VALIDATE(CLizMan, field_39D, 0x39D);
 
 	VALIDATE(CLizMan, field_3AC, 0x3AC);
+	VALIDATE(CLizMan, field_3B0, 0x3B0);
+	VALIDATE(CLizMan, field_3B4, 0x3B4);
 }
