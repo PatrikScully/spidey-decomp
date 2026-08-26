@@ -1034,9 +1034,6 @@ void DXPOLY_BeginScene(void)
 #endif
 }
 
-// byte flag: when set (and the poly has no blend mode), DXPOLY_DrawPoly draws
-// straight away instead of queueing into gSceneBuffer for the EndScene flush.
-static u8* const gDxPolyImmediateDraw = (u8*)0x6BBAA5;
 // base value for the depth bucket math below, tentative name/purpose guess.
 static i32* const gDxPolyDepthBucketBase = (i32*)0x6BBAA8;
 
@@ -1046,7 +1043,7 @@ static i32* const gDxPolyDepthBucketBase = (i32*)0x6BBAA8;
 // test on the poly's first/second/last (and, for 4+ verts, third/fourth)
 // vertex runs first and can discard the poly outright. Then: a forced slot
 // (a2 >= 0) always goes straight into that gSceneBuffer slot; otherwise, if
-// gDxPolyImmediateDraw is set and the poly has no blend mode, it draws right
+// gDxPolyRelated is set and the poly has no blend mode, it draws right
 // now instead of queueing; otherwise it goes into a depth-sorted bucket
 // derived from depth and depthBias.
 void DXPOLY_DrawPoly(
@@ -1098,7 +1095,7 @@ void DXPOLY_DrawPoly(
 		pPoly->pNext = gSceneBuffer[a2];
 		gSceneBuffer[a2] = pPoly;
 	}
-	else if (*gDxPolyImmediateDraw && pPoly->mBlendMode == 0)
+	else if (gDxPolyRelated && pPoly->mBlendMode == 0)
 	{
 #ifdef _WIN32
 		DXPOLY_SetTexture(pPoly->field_4);
@@ -1337,17 +1334,24 @@ EXPORT void gsub_515270(void)
 }
 
 // @NotOk
-// fix names for enums
+// 396 mnemonic diffs, mostly a divergent prologue register allocation for
+// the whole function (the very first instructions already differ), one
+// real fix this session: gDxPolyRelated is (a1>>1)&1 stored once and reused
+// (not (a1&2)!=0 recomputed per use), and it is the same global 0x6BBAA5
+// DXPOLY_DrawPoly's immediate-draw check reads (fixed there too, was a
+// separate invented gDxPolyImmediateDraw pointer). Fix names for enums:
+// most of the SetRenderState/SetTextureStageState arguments below are raw
+// D3DRENDERSTATETYPE/D3DTEXTURESTAGESTATETYPE numbers, not enum names.
 void DXPOLY_Init(u32 a1)
 {
 	if ( gLowGraphics )
 		gsub_515270();
 
-	gDxPolyRelated = (a1 & 2) != 0;
+	gDxPolyRelated = (a1 >> 1) & 1;
 	gDepthCompareIndex = 4;
 	byte_6B7A80 = 0;
-	gDepthBuffering = (a1 & 2) != 0;
-	gDepthWriting = (a1 & 2) != 0;
+	gDepthBuffering = gDxPolyRelated;
+	gDepthWriting = gDxPolyRelated;
 	gTexAlpha = false;
 	gCurrentFilterIndex = 1;
 	gFogStart = 0.1f;
