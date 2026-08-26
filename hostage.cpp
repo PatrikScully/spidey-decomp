@@ -6,9 +6,14 @@
 #include "ai.h"
 #include "message.h"
 #include "spidey.h"
+#include "trig.h"
 
-extern i32 DifficultyLevel; 
+extern i32 DifficultyLevel;
 extern CPlayer* MechList;
+
+// guess: random XA speech sub-id table, picked with Rnd(5) when the player
+// gets close to a waiting hostage in CHostage::FollowWaypoints.
+EXPORT i32 gHostageXaSubIds[5] = { 0, 1, 2, 4, 0xC };
 
 // @Ok
 // @Matching
@@ -81,10 +86,67 @@ void CHostage::DieHostage(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CHostage::FollowWaypoints(void)
 {
-    printf("CHostage::FollowWaypoints(void)");
+	SMoveToInfo moveInfo;
+	moveInfo.field_0.vx = 0;
+	moveInfo.field_0.vy = 0;
+	moveInfo.field_0.vz = 0;
+
+	if ((this->field_218 & 1) && !(this->field_218 & 2))
+	{
+		if (this->DistanceToPlayer(10) < 0x200)
+		{
+			this->field_218 |= 2;
+			Redbook_XAPlayPos(7, gHostageXaSubIds[Rnd(5)], &this->mPos, 100);
+		}
+	}
+
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			Trig_GetPosition(&moveInfo.field_0, this->field_1F4);
+			moveInfo.field_C = 0xF0;
+			moveInfo.field_10 = 0x50;
+			moveInfo.field_14 = 0x1C7;
+
+			new CAIProc_MoveTo(this, &moveInfo, 1);
+
+			this->SetHeight(1, 0x64, 0x258);
+			this->dumbAssPad++;
+
+			if (this->field_2F0 & 8)
+				goto done;
+		case 1:
+			this->SetHeight(0, 0x64, 0x258);
+
+			if (this->field_288 & 1)
+			{
+				this->field_288 &= ~1;
+
+				if (this->GetNextWaypoint())
+				{
+					this->dumbAssPad = 0;
+					return;
+				}
+
+				this->CycleAnim(this->field_298.Bytes[0], 1);
+
+done:
+				this->dumbAssPad = 0;
+				this->field_324 = 5;
+			}
+			else
+			{
+				this->RunAppropriateAnim();
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
 }
 
 EXPORT i32 gMaleHostageOne[2] = { 0x3030404, 4 };
