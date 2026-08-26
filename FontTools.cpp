@@ -735,30 +735,25 @@ i32 Font::height(char* txt)
 	//return this->heightAboveBaseline(txt) + this->heightBelowBaseline(txt);
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 i32 Font::width(const char* pStr)
 {
-	typedef i32 (FASTCALL *func_ptr)(Font*, void*, const char*);
-	func_ptr func = (func_ptr)0x0043EA60;
-
-	return func(this, 0, pStr);
-
-	/*
 	i32 width = 0;
 	while (*pStr)
 	{
-		char c = *pStr;
-		if (c != 255)
+		i32 c = *pStr;
+		if (c != 0xFF)
 		{
-			i32 v6 = (u8)this->field_5F[c];
-			if (v6 == 255)
+			u32 idx = this->field_5F[c];
+			if ((i32)idx == 0xFF)
 			{
-				if (!this->isEscapeChar(c))
-					width += 80 * (u8)this->pCharTab[0].W / 100;
+				if (!this->isEscapeChar(*pStr))
+					width += 80 * this->pCharTab[0].W / 100;
 			}
 			else
 			{
-				width += this->field_C + (u8)this->pCharTab[v6].W;
+				width += this->field_C + this->pCharTab[idx].W;
 			}
 		}
 
@@ -766,7 +761,6 @@ i32 Font::width(const char* pStr)
 	}
 
 	return (width * this->field_34) >> 12;
-	*/
 }
 
 // @Ok
