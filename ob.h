@@ -266,7 +266,10 @@ public:
 	void *field_184;
 	void* field_188;
 
-	PADDING(0x4);
+	// @Note: was PADDING(0x4) upstream, but M3dUtils_ReadLinksPacket (0x453C50)
+	// writes here (a2+4, pointer into the link packet data) and M3dUtils_BuildPose
+	// (0x454450) reads it back. Not padding.
+	void *mLinkData;
 
 	i16 *actualcsuperend;
 

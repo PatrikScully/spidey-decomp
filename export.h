@@ -6,7 +6,7 @@
 #include "my_types.h"
 #include <cstdarg>
 
-static i32 *Animations = (int*)0x006B245C;
+static i32 * const Animations = (i32*)0x006B245C;
 
 //static unsigned char * const submarinerDieRelated = (unsigned char*)0x0060CFC4;
 
