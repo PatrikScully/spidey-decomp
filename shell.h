@@ -70,7 +70,30 @@ struct SSaveGame
 	PADDING(0x88-0x7B-1);
 
 	i32 field_88;
-	PADDING(0xBC-0x88-4);
+	PADDING(0x94-0x88-4);
+
+	// PShell_ApplyGameState reads these and writes them into gGameState[11..13]
+	i32 field_94;
+	i32 field_98;
+	i32 field_9C;
+
+	// PShell_ApplyGameState writes gBootRomSoundMode here
+	u8 field_A0;
+	PADDING(0xA4-0xA0-1);
+
+	// PShell_ApplyGameState copies this into DoubleBuffer[0/1].Disp.screen.x
+	i16 field_A4;
+	PADDING(0xA8-0xA4-2);
+
+	// PShell_ApplyGameState copies this into DoubleBuffer[0/1].Disp.screen.y
+	i16 field_A8;
+	PADDING(0xAC-0xA8-2);
+
+	// applied via Pad_SetDigitalMapping through gGameState[0..3]
+	i16 mDigitalMapping[4];
+
+	// applied via Pad_SetAnalogueMapping through gGameState[4..7]
+	i16 mAnalogueMapping[4];
 };
 
 class CWobblyGlow : public CGlow
