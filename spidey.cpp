@@ -1341,7 +1341,8 @@ void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
 // gGlobalTextureEntries (0x6A8000): array of {Texture* pTexture; i16 mA2; i16 mA3;
 // u32 mChecksum;} (stride 0xC), terminated by a pTexture==0 sentinel entry.
 // gSuitChecksumTable (0x53C1A4): i32[16] per suit (stride 0x40), checksum lookup.
-// gCostumeTextureIds (0x6A8D74): i16 per (suit*16+slot) slot, same table
+// gCostumeTextureIds (0x6A8D74): i32 (zero-extended u16 value) per
+// (suit*16+slot) slot, same table
 // Spidey_SwapSuitTextures indexes (not yet decompiled in this session).
 // preserved bug: the gLowGraphics==0 search loop compares
 // gGlobalTextureEntries[count] (the NEXT free slot, loop-invariant) against
@@ -1350,18 +1351,20 @@ void Spidey_LoadAlternativeTextureSet(u32 const *,i32)
 // this, so the "search" only ever matches on i==0 or never matches. this
 // looks like a genuine off-by-index bug in the original; reproduced
 // verbatim per repo convention (tips.txt: preserve source-level bugs).
-// residue: 43 mnemonic diffs (down from 70 on the first honest pass, after
-// two fixes: keeping the search as a real for-loop with the invariant
-// index instead of collapsing it to one check, and deferring the checksum
+// residue: 38 mnemonic diffs (down from 70 on the first honest pass, after
+// three fixes: keeping the search as a real for-loop with the invariant
+// index instead of collapsing it to one check, deferring the checksum
 // read into the count>0 branch instead of hoisting it unconditionally,
-// both confirmed against the disassembly). remaining diffs are mostly
-// register pressure (original keeps 3 callee-saved regs live across the
-// loop: ebx=cached checksum, esi=loop counter, edi=search pointer; ours
-// only needs 2, folding the checksum into a different register) and the
-// suit*16+slot indexing using scaled-index addressing instead of the
-// original's flat ecx-offset form. tried a do-while instead of for (to
-// drop a redundant count>0 recheck at loop entry): made it worse (52
-// diffs), reverted.
+// and declaring gCostumeTextureIds as i32 (matching the original's 4-byte
+// zero-extended store/compare, `mov [x*4+6A8D74h],eax` after `xor eax,eax`)
+// instead of i16 (all confirmed against the disassembly). remaining diffs
+// are mostly register pressure (original keeps 3 callee-saved regs live
+// across the loop: ebx=cached checksum, esi=loop counter, edi=search
+// pointer; ours only needs 2, folding the checksum into a different
+// register) and the suit*16+slot indexing using scaled-index addressing
+// instead of the original's flat ecx-offset form. tried a do-while instead
+// of for (to drop a redundant count>0 recheck at loop entry): made it
+// worse (52 diffs), reverted.
 static i32 * const gGlobalTextureEntryCount = (i32*)0x006A9050;
 
 struct SGlobalTextureEntry
@@ -1374,7 +1377,7 @@ struct SGlobalTextureEntry
 static SGlobalTextureEntry * const gGlobalTextureEntries = (SGlobalTextureEntry*)0x006A8000;
 
 static i32 * const gSuitChecksumTable = (i32*)0x0053C1A4;
-static i16 * const gCostumeTextureIds = (i16*)0x006A8D74;
+static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
 
 void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 {
