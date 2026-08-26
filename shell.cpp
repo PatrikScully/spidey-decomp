@@ -18,6 +18,7 @@
 #include "ps2m3d.h"
 #include "init.h"
 #include "ps2redbook.h"
+#include "m3dutils.h"
 
 #include <cstring>
 
@@ -84,6 +85,9 @@ SAnimFrame* gBackgroundAnimFrame;
 
 const i32 NUM_SAVE_GAME_SLOTS = 8;
 EXPORT SSaveGame gSaveGameSlots[NUM_SAVE_GAME_SLOTS];
+
+// sin/cos pair table, i16[2*n] = sin(n), i16[2*n+1] = cos(n), n = angle & 0xFFF
+static i16 * const word_610C48 = (i16*)0x610C48;
 
 // @Ok
 // @Matching
@@ -747,9 +751,96 @@ CShellMysterioHeadCircle::CShellMysterioHeadCircle(CDummy *pDummy)
 	++gShellMysterioRelated;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Residue: register allocation only (63 mnemonic diffs, all downstream of one root
+// cause). All three sin/cos table lookups (heading, field_108-phase, field_104-phase)
+// read the SAME masked-index twice (offset +0 and +2 into word_610C48). The original
+// computes the byte offset ONCE via an explicit "shl reg,2" then does two plain
+// [reg+610C48h]/[reg+610C48h+2] reads; our build always folds the *4 into SIB-scaled
+// addressing per read ([reg*4+610C48h]) instead, twice. Tried: masked index as a plain
+// i32 local (word_610C48[2*idx], word_610C48[2*idx+1]) - SIB every time; an i16* local
+// pre-advanced by 2*idx with [0]/[1] indexing - reduced diffs (74->63, this is the kept
+// version) but still SIB-addresses instead of reusing the pointer; a manually pre-*2
+// index folded before the array subscript - regressed (66). The same "index used twice"
+// shape DOES compile to the shl+plain-offset form in CShellEmber::Move's idx7c case in
+// this same file, so this is source-shape-dependent, not a hard compiler limit; ran out
+// of iteration budget this session to find the exact trigger. Everything else (dead
+// hook.Offset=1 init before the real value, the two-step truncating +=0xF63C/+=0xDA1C
+// on the i16 struct fields, the branch polarity on the field_110 Rnd reset, the
+// reinterpret_cast<CSuper*>(pDummy) reuse for M3d_BuildTransform/GetDynamicHookPosition)
+// is verified correct against the disassembly. 6 attempts.
 void CShellGoldFish::AI(void)
 {
+	CDummy *pDummy = static_cast<CDummy*>(Mem_RecoverPointer(&this->field_F8));
+
+	if (!pDummy)
+	{
+		this->Die();
+		return;
+	}
+
+	M3d_BuildTransform(reinterpret_cast<CSuper*>(pDummy));
+
+	if (this->field_10C)
+		this->field_10C--;
+
+	if (!this->field_10C)
+	{
+		this->field_10C = Rnd(0x190) + 0x14;
+		this->mAngVel.vy = -this->mAngVel.vy;
+	}
+
+	if (this->field_110)
+		this->field_110--;
+
+	if (!this->field_110)
+	{
+		this->field_110 = 0x14;
+
+		if (this->mAngVel.vy < 0)
+			this->mAngVel.vy = -0x28 - Rnd(0x5A);
+		else
+			this->mAngVel.vy = Rnd(0x5A) + 0x28;
+	}
+
+	if (this->field_100)
+		this->mAngVel.vy <<= 1;
+
+	this->field_114 += this->mAngVel.vy;
+	i16 *tblHeading = word_610C48 + 2 * (this->field_114 & 0xFFF);
+	i32 sinH = tblHeading[0];
+	i32 cosH = tblHeading[1];
+
+	i32 phase108 = this->field_108;
+	i32 idx108 = phase108 & 0xFFF;
+	i32 magVal = word_610C48[2 * idx108];
+	this->field_108 = phase108 + 0xA;
+
+	i32 phase104 = this->field_104;
+	i32 idx104 = phase104 & 0xFFF;
+	i32 bobVal = word_610C48[2 * idx104];
+	this->field_104 = phase104 + 0x50;
+
+	SHook hook;
+	hook.Offset = 1;
+
+	i32 mag = (magVal * 500) / 4096 + 0x8FC;
+	hook.Part.vx = (mag * sinH) >> 12;
+	hook.Part.vz = (mag * cosH) >> 12;
+	hook.Part.vz += 0xF63C;
+
+	hook.Offset = bobVal * 600 / 4096 - 0x5DC;
+	hook.Offset += 0xDA1C;
+
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->mPos),
+			reinterpret_cast<CSuper*>(pDummy),
+			&hook);
+
+	if (this->mAngVel.vy > 0)
+		this->mAngles.vy = this->field_114;
+	else
+		this->mAngles.vy = this->field_114 + 0x800;
 }
 
 // @Ok
@@ -847,8 +938,6 @@ CShellSimbyMeltSplat::CShellSimbyMeltSplat(CVector* pVec)
 	this->Move();
 	this->mType = 21;
 }
-
-static i16 * const word_610C48 = (i16*)0x610C48;
 
 // @NotOk
 // Residue: register allocation only. Logic verified correct (spiral position update,
