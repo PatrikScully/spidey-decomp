@@ -10,9 +10,16 @@
 #include "spool.h"
 #include "ps2pad.h"
 #include "PCInput.h"
+#include "m3dinit.h"
 
 #include <cmath>
 #include <cstring>
+
+// my_malloc/my_free live in main.cpp (0x52A227/0x52A3C0, already
+// PATCH_PUSH_RET'd there), not declared in any header. Plain extern
+// declarations, not a redefinition.
+extern void *my_malloc(size_t s);
+extern void my_free(void *block);
 
 EXPORT i32 gAnotherGameResolutionX = gGameResolutionX;
 EXPORT i32 gAnotherGameResolutionY = gGameResolutionY;
@@ -108,10 +115,122 @@ void PCGfx_BeginScene(u32,i32)
 	}
 }
 
-// @MEDIUMTODO
-void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)
+// @SMALLTODO
+// Forward to the original. This blends a vertex color toward the fog color
+// using the 4 lighting tables PCGfx_BeginScene/setupFog build (still not
+// done, see pcgfx.attempts.md), so we can't reproduce the math yet.
+static u32 gsub_506D70(f32 a1, u32 a2)
 {
-    printf("PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32)");
+	// @FIXME
+	typedef u32 (*func_ptr)(f32, u32);
+	func_ptr func = (func_ptr)0x00506D70;
+	return func(a1, a2);
+}
+
+// @NotOk
+// Structural translation only, NOT verified against compare.py yet. Builds
+// 3 temporary _DXVERT vertices from raw tagKMVERTEX3 records addressed
+// through the u16 index array (3 indices per triangle), including a per
+// channel color brighten step (kept as is when the low 3 bytes of the color
+// are already 0, else (c>>1 & 0x7F7F7F) + 0x0F0F0F with the top byte kept),
+// calls PCGfx_ClipTriToNearPlane on them, then processes verts[0..2]
+// (verts[3] only if clipping produced a 4th vertex) with a per vertex fog
+// color blend and a fog depth remap identical in shape to PCGfx_DrawQuad2D's
+// existing (v24 - gRenderInitOne[0]) / gRenderInitTwo[0] idiom, before
+// calling submitPoly with count 3 or 4. Skips the whole triangle (no
+// submitPoly call) when verts[0] is null, which happens when
+// PCGfx_ClipTriToNearPlane's countBehind == 3 case zeroed all 3 verts.
+// The 2 print_if_false asserts and their strings ("verts[1] is null!",
+// "verts[2] is null!" at 0x5682A0/0x56828C) are confirmed from the binary.
+// gsub_506D70, gRenderInitOne/Two, gPcGfxBlendModeRelated, gNonRendderSettingE,
+// gPcGfxDrawRelated and gEndSceneRelatedTwo's game addresses (0x506d70,
+// 0x56817C/0x568184/0x568190/0x568194, 0xAC08E0, 0xAC08D0, 0x568178,
+// 0xAC08F4) all matched an existing repo global 1:1 against
+// idb_globals.txt, so those parts are higher confidence. tagKMVERTEX3's
+// field layout is a positional guess (see PCGfx.h) and the a2 parameter is
+// genuinely never read in the disassembly, kept unused to match. The exact
+// stack shuffling right before the submitPoly call (there is what looks
+// like a second, redundant verts[0] test) is simplified to a single guard.
+// cmpsum: 282 mnemonic diffs at 0x506980, first divergence right at entry
+// (frame size / register allocation). Not iterated further this session.
+void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 const *indices, i32 indexCount)
+{
+	_DXVERT temp[3];
+	_DXVERT *verts[4];
+	_DXVERT out0, out1;
+	_DXVERT *out[2] = { &out0, &out1 };
+
+	u16 const *idx = indices;
+	u16 const *end = indices + indexCount;
+
+	if (idx == end)
+		return;
+
+	do
+	{
+		for (i32 k = 0; k < 3; k++)
+		{
+			tagKMVERTEX3 const *src = &vertArray[*idx];
+			idx++;
+
+			temp[k].field_0 = src->field_4;
+			temp[k].field_4 = src->field_8;
+			temp[k].field_8 = 1.0f / src->field_C;
+			temp[k].field_14 = src->field_10;
+			temp[k].field_18 = src->field_14;
+
+			u32 c = src->field_18;
+			if ((c & 0xFFFFFF) == 0)
+			{
+				temp[k].field_10 = c;
+			}
+			else
+			{
+				temp[k].field_10 = (c & 0xFF000000) | (((c >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+			}
+		}
+
+		verts[0] = &temp[0];
+		verts[1] = &temp[1];
+		verts[2] = &temp[2];
+
+		gTriWasClipped = 0;
+		PCGfx_ClipTriToNearPlane(verts, out);
+
+		if (verts[0])
+		{
+			f32 bias = 0.0f;
+			if (gPcGfxBlendModeRelated && !gLowGraphics)
+				bias = (f32)gPcGfxBlendModeRelated * gRenderInitTwo[1];
+
+			i32 count = verts[3] ? 4 : 3;
+
+			for (i32 k = 0; k < count; k++)
+			{
+				_DXVERT *v = verts[k];
+
+				if (gNonRendderSettingE)
+					v->field_10 = gsub_506D70(v->field_8, v->field_10);
+
+				v->field_C = gRenderInitOne[2] / v->field_8;
+				v->field_8 = (bias + v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
+
+				if (!gLowGraphics)
+				{
+					v->field_14 *= v->field_C;
+					v->field_18 *= v->field_C;
+				}
+			}
+
+			print_if_false(verts[1] != 0, "verts[1] is null!");
+			print_if_false(verts[2] != 0, "verts[2] is null!");
+
+			gPcGfxDrawRelated |= 4;
+
+			submitPoly(verts, count);
+		}
+	}
+	while (idx != end);
 }
 
 // @NotOk
@@ -1065,10 +1184,96 @@ INLINE void PCGfx_UseTexture(i32 a1, DCGfx_BlendingMode a2)
 	}
 }
 
-// @MEDIUMTODO
-void PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)
+// @NotOk
+// Naming work done this session (nearest neighbor check against
+// idb_globals.txt, see pcgfx.attempts.md): every global this function
+// touches turned out to already be a named repo global at a different
+// address than we thought: 0xAC08E0-style constants were not involved here,
+// instead 0x568158/0x628614=gGameResolutionY/Yres, 0x568154/0x61B5FC=
+// gGameResolutionX/Xres (m3dinit.h), 0xAC08DC=gTextureBlendingMode,
+// 0xAC08C4=gSceneRelated, 0x56815C=gIsRenderSettingE, 0xADB3A8/0xADB3AC=
+// gMaxTextureWidth/gTextureHeight all matched 1:1. Call targets identified
+// the same way: 0x50F0E0=PCTex_GetTextureSize (real call, not inlined,
+// matches its 3 arg shape), 0x510170/0x510190=PCTex_GetTextureSplitCount/
+// PCTex_GetTextureSplitID (same pair PCGfx_DrawTexture2D already uses),
+// 0x52A227/0x52A3C0=my_malloc/my_free (main.cpp already PATCH_PUSH_RETs
+// these two exact addresses). The malloc size is splitCount * 44, and 44 is
+// exactly sizeof(Texture), so the split path allocates a Texture[splitCount]
+// and recurses into itself once per piece, the same shape as
+// PCGfx_DrawTexture2D's split loop (same assert string "Split texture drawn
+// with x != 0." at 0x568348, confirmed from the binary). The kind <= 2 /
+// gUseTextureRelated / gTextureBlendingMode block at the top of the single
+// texture path is PCGfx_UseTexture(kind, DCGfx_BlendingMode_0) inlined
+// (matches PCGfx_UseTexture's body instruction for instruction); called
+// here instead of reproducing the inline, since PCGfx_UseTexture is already
+// @Ok.
+// NOT resolved: the exact mapping of a3/a4/a5/a6 into the 4 float values
+// built for the PCGfx_DrawQuad2D call (position vs size roles are a guess),
+// and a10's value in that call (passed through some local we could not
+// pin down). This is a genuine attempt, not a stub, but the coordinate
+// math in both the single texture and split branches is unverified.
+// cmpsum: 186 mnemonic diffs at 0x509d20, first divergence right at entry.
+void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32 a5, i32 a6, u8 tint)
 {
-    printf("PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8)");
+	print_if_false(tex != 0, "no texture for draw texture poly.");
+
+	u16 kind = tex->clut;
+	i32 width, height;
+	PCTex_GetTextureSize(kind, &width, &height);
+
+	if (width <= gMaxTextureWidth && height <= gTextureHeight)
+	{
+		PCGfx_UseTexture(kind, DCGfx_BlendingMode_0);
+
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+
+		u32 t = tint;
+		u32 color = 0xFF000000u | (t << 16) | (t << 8) | t;
+
+		f32 y = (f32)a4 * scaleY;
+		f32 x = (f32)a3 * scaleX;
+		f32 w = (f32)a5 * scale;
+		f32 h = w * (f32)a6;
+
+		PCGfx_DrawQuad2D(h, w, x, y, 0.0f, 0.0f, 1.0f, 1.0f, color, 1.0f, 0);
+	}
+	else
+	{
+		i32 splitCount = PCTex_GetTextureSplitCount(kind);
+		Texture *pieces = (Texture *)my_malloc(splitCount * sizeof(Texture));
+
+		print_if_false(a3 == 0, "Split texture drawn with x != 0.");
+
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+
+		i32 xAccum = 0;
+		i32 yAccum = a4;
+
+		for (i32 i = 0; i < splitCount; i++)
+		{
+			i32 splitId = PCTex_GetTextureSplitID(kind, i);
+			pieces[i].clut = (u16)splitId;
+
+			i32 subWidth, subHeight;
+			PCTex_GetTextureSize(splitId, &subWidth, &subHeight);
+
+			i32 subScaleW = (i32)((f32)subWidth / (f32)width * scaleX);
+			i32 subScaleH = (i32)((f32)subHeight / (f32)height * scaleY);
+
+			PCPanel_DrawTexturedPoly(scale, &pieces[i], xAccum, yAccum, subScaleW, subScaleH, tint);
+
+			xAccum += subWidth;
+			if (xAccum >= width)
+			{
+				yAccum += subHeight;
+				xAccum = 0;
+			}
+		}
+
+		my_free(pieces);
+	}
 }
 
 // @NotOk
