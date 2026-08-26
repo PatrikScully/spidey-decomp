@@ -769,6 +769,17 @@ void CMenu::EntryEnable(u32 a2, u32 a3)
 	}
 }
 
+// @BIGTODO
+// Mac symbol ProcessMouse__5CMenuFv, address 0x50C8A0. Same-TU rule as
+// EntryEnable above: CMenu::Update (front.cpp) calls this with a direct
+// call, so it must live out of line here, not as a printf stub in front.cpp
+// (that would get auto-inlined under /Ob2 and corrupt CMenu::Update's match).
+i32 CMenu::ProcessMouse(void)
+{
+	printf("CMenu::ProcessMouse(void)");
+	return 0;
+}
+
 // @Ok
 // @Matching
 void initActionMaps(void)

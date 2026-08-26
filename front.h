@@ -77,6 +77,7 @@ public:
 	EXPORT void Display(void);
 	EXPORT void KillBox(void);
 	EXPORT void Update(void);
+	EXPORT i32 ProcessMouse(void);
 
 	CExpandingBox* ptr_to;
 	u16 menu_width;
