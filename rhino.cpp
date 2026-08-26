@@ -13,6 +13,8 @@
 #include "m3dzone.h"
 #include "effects.h"
 #include "zrhinog.h"
+#include "web.h"
+#include "mem.h"
 
 
 EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
@@ -408,10 +410,140 @@ void CRhino::GetShocked(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Logic and field stores verified against the disasm. Residue: case 1's
+// "field_1F8 <= 0" branch reads a value through a struct I could not
+// identify (Mem_RecoverPointer(&this->field_104), then a double pointer
+// indirection at +0x44 then +0x3C off that; modeled as raw char*/i32* casts
+// since the real struct/class is unknown). Attempts: (1) direct translation,
+// 129 diffs, first divergence was the shared "dumbAssPad++" tail (case 1's
+// early-outs and case 4's normal exit both jump to the SAME code in the
+// original, 0x480c89) compiling as separate inlined tails in my version;
+// (2) added a `goto common_inc;` label after the switch shared by both
+// call sites to match the original's actual jump target, which fixed that
+// specific cascade but a NEW one appeared at the multiply/shift computation
+// order (`this->field_1F8 = 5; this->field_34C = v;` store order vs the
+// `(v - field_34C) * 125 * 32 >> 12` computation, 130 diffs now, likely a
+// statement-order or intermediate-type issue in that expression I did not
+// resolve). Did not reach the 15-hypothesis bar for @AlmostMatching.
 void CRhino::GetTrapped(void)
 {
-    printf("CRhino::GetTrapped(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			new CAIProc_StateSwitchSendMessage(this, 0xE);
+			this->RunAnim(0x1A, 0, -1);
+			this->field_1F8 = 5;
+			this->field_34C = 0;
+			this->field_350 = 0;
+			this->dumbAssPad++;
+			break;
+		case 1:
+			if (this->mAnimFinished)
+			{
+				this->CycleAnim(0x1B, 1);
+			}
+
+			this->field_348 |= 1;
+
+			if (this->field_350 > 0)
+			{
+				this->field_350--;
+			}
+
+			this->field_1F8--;
+
+			if (this->field_1F8 <= 0)
+			{
+				void *p = Mem_RecoverPointer(&this->field_104);
+
+				if (!p)
+				{
+					goto common_inc;
+				}
+
+				{
+					char *inner = *reinterpret_cast<char**>(static_cast<char*>(p) + 0x44);
+					i32 v = *reinterpret_cast<i32*>(inner + 0x3C);
+
+					if (v == this->field_34C)
+					{
+						goto common_inc;
+					}
+
+					this->field_350 += ((v - this->field_34C) * 125 * 32) >> 0xC;
+					this->field_1F8 = 5;
+					this->field_34C = v;
+				}
+			}
+			break;
+		case 2:
+			this->RunTimer(&this->field_350);
+
+			if (this->field_350 <= 0)
+			{
+				this->RunAnim(0x1B, this->mAnim == 0x1B ? this->field_128 : 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 3:
+			this->field_348 |= 1;
+
+			if (this->mAnimFinished)
+			{
+				this->RunAnim(0x1C, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 4:
+			if (this->field_128 < 0xA)
+			{
+				this->field_348 |= 1;
+				break;
+			}
+
+			if (this->field_104.pWhatever)
+			{
+				void *p = Mem_RecoverPointer(&this->field_104);
+				if (p)
+				{
+					reinterpret_cast<CTrapWebEffect*>(p)->Burst();
+				}
+				this->field_104.pWhatever = 0;
+			}
+
+			this->field_31C.bothFlags = 0x11;
+			goto common_inc;
+		case 5:
+			if (this->mAnimFinished)
+			{
+				if (this->DetermineFightState(1))
+				{
+					if (this->field_31C.bothFlags == 5 || this->field_31C.bothFlags == 4)
+					{
+						if (this->DistanceToPlayer(0) > 500)
+						{
+							this->field_31C.bothFlags = 8;
+							this->dumbAssPad = 0;
+						}
+					}
+				}
+				else
+				{
+					this->PlaySingleAnim(0, 0, -1);
+					this->field_31C.bothFlags = 0x16;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+	return;
+
+common_inc:
+	this->dumbAssPad++;
 }
 
 // @MEDIUMTODO
@@ -1268,6 +1400,7 @@ void validate_CRhino(void){
 	VALIDATE(CRhino, field_344, 0x344);
 	VALIDATE(CRhino, field_348, 0x348);
 	VALIDATE(CRhino, field_34C, 0x34C);
+	VALIDATE(CRhino, field_350, 0x350);
 	VALIDATE(CRhino, field_354, 0x354);
 
 	VALIDATE(CRhino, field_358, 0x358);
