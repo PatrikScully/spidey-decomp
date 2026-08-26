@@ -16,6 +16,8 @@
 #include "m3dzone.h"
 #include <cmath>
 #include "ai.h"
+#include "panel.h"
+#include "PCGfx.h"
 
 extern CBody* ControlBaddyList;
 extern CBaddy* BaddyList;
@@ -26,6 +28,12 @@ extern const char *gObjFile;
 extern CPlayer* MechList;
 
 extern CCamera* CameraList;
+
+// scratch camera position/rotation matrix for GTE screen projection, same addresses
+// utils.cpp's gCameraViewMatrix and spidey.cpp's stru_56F1B4/stru_56F224 use
+// (CPlayer::RenderLookaroundReticle idiom).
+static CVector * const gCameraViewPos = (CVector*)0x0056F1B4;
+static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 
 // @Ok
 // @Matching
@@ -961,10 +969,91 @@ void CChopperMissile::Explode(void)
 	this->Die();
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4342784.bin. Guarded by
+// field_104 (a Trig node id, non-zero when a target link is set) and field_120 (a state
+// gate, must be 0), then Trig_GetPosition(&field_110, field_104) refreshes the target
+// position and the same gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/
+// gte_stlvnl2/gte_stsxy screen projection idiom as
+// CSniperTarget::DrawTargetRecticle is applied, clipped on depth < 200. The original
+// then draws two Panel_DrawTexturedPoly icons (field_124 plus what looks like a
+// distance/warning readout, calling an unnamed helper at 0x509000 six times, most
+// likely digit rendering for a distance readout) which this reconstruction does not
+// reproduce: could not determine that helper's signature from the disassembly alone
+// without pulling in another file's stub declarations, so only the icon draw and a
+// schematic bracket are implemented here, matching the CSniperTarget precedent. This
+// is a best-effort structural reconstruction, not instruction verified.
+// cmpsum: 975 mnemonic diffs, first divergence right at the field_104/field_120 guard
+// (our compare order differs). 1 attempt (structural reconstruction only). Needs real
+// work.
 void CChopperMissile::DrawTargetRecticle(void)
 {
-	printf("void CChopperMissile::DrawTargetRecticle(void)");
+	if (!this->field_104 || this->field_120)
+		return;
+
+	Trig_GetPosition(&this->field_110, this->field_104);
+
+	CVector camPos = *gCameraViewPos;
+	CVector relPos = (this->field_110 >> 12) - camPos;
+
+	gte_SetRotMatrix(gCameraViewMatrix);
+	m3d_ZeroTransVector();
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_rtps();
+
+	i32 depth;
+	gte_stlvnl2(&depth);
+
+	i16 screenXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+	if (depth < 200)
+		return;
+
+	i32 screenX = screenXY[0];
+	i32 screenY = screenXY[1];
+
+	POLY_FT4* poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(this->field_124, 0));
+	if (!poly)
+		return;
+
+	*reinterpret_cast<u32*>(&poly->r0) = 0x2E808080;
+	poly->tpage = (poly->tpage & 0xFFDF) | 0x40;
+
+	i32 halfW = 12;
+	i32 halfH = 12;
+
+	poly->x0 = static_cast<i16>(screenX - halfW);
+	poly->y0 = static_cast<i16>(screenY - halfH);
+	poly->x1 = static_cast<i16>(screenX + halfW);
+	poly->y1 = static_cast<i16>(screenY - halfH);
+	poly->x2 = static_cast<i16>(screenX - halfW);
+	poly->y2 = static_cast<i16>(screenY + halfH);
+	poly->x3 = static_cast<i16>(screenX + halfW);
+	poly->y3 = static_cast<i16>(screenY + halfH);
+
+	i32 bracket = 20;
+
+	for (i32 i = 0; i < 4; i++)
+	{
+		i32 signX = (i & 1) ? 1 : -1;
+		i32 signY = (i & 2) ? 1 : -1;
+
+		f32 x0 = static_cast<f32>(screenX + signX * bracket);
+		f32 y0 = static_cast<f32>(screenY + signY * bracket);
+		f32 x1 = static_cast<f32>(screenX + signX * (bracket - 6));
+		f32 y1 = y0;
+		f32 x2 = x0;
+		f32 y2 = static_cast<f32>(screenY + signY * (bracket - 6));
+
+		PCGfx_UseTexture(0, DCGfx_BlendingMode_0);
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x1, y1, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x2, y2, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				0.0f);
+	}
 }
 
 // @Ok
@@ -1044,10 +1133,98 @@ INLINE CChopperMissile::CChopperMissile(
 	this->CommonInitialisation();
 }
 
-// @MEDIUMTODO
-void CSearchlight::CalculateSearchlight(CSVector*)
+// @NotOk
+// @Note: reconstructed from tools/functions/4338352.bin. Casts a ray from mPos along
+// a2's direction (Utils_GetVecFromMagDir then M3dColij_InitLineInfo/M3dZone_LineToItem)
+// to find where the beam hits geometry, computes an apparent beam radius from the hit
+// distance (sqrt-smoothed when the hit is close, linear scale otherwise), then builds
+// two GTE cross-product basis vectors perpendicular to the beam (same
+// gte_ldopv1/ldopv2/op12/stlvnl/VectorNormal idiom as CChopper::StartStrafeOnslaught)
+// and sweeps a 32-segment fan of points using rcossin_tbl into field_138[] (CVector[66],
+// the light cone mesh). The exact fixed point scaling inside the fan loop and the
+// near/far radius blend are a best-effort reconstruction of the control flow shape from
+// the disassembly, not instruction verified: heavy PS1 GTE fixed point math with a
+// stack layout that could not be traced byte for byte by hand.
+// cmpsum: 307 mnemonic diffs, first divergence right at the prologue register
+// allocation. 1 attempt (structural reconstruction only). Needs real work.
+void CSearchlight::CalculateSearchlight(CSVector* a2)
 {
-	printf("CSearchlight::CalculateSearchlight(CSVector*)");
+	CVector beamDir;
+	Utils_GetVecFromMagDir(&beamDir, 0x1000, a2);
+
+	CVector endPos = this->mPos + beamDir;
+
+	SLineInfo lineinfo;
+	lineinfo.StartCoords = this->mPos;
+	lineinfo.EndCoords = endPos;
+	lineinfo.MinCoords.vx = 0;
+	lineinfo.MinCoords.vy = 0;
+	lineinfo.MinCoords.vz = 0;
+	lineinfo.MaxCoords.vx = 0;
+	lineinfo.MaxCoords.vy = 0;
+	lineinfo.MaxCoords.vz = 0;
+	lineinfo.iLo = 0;
+	lineinfo.iHi = 0;
+	lineinfo.jLo = 0;
+	lineinfo.jHi = 0;
+	lineinfo.Distance = 0;
+	lineinfo.Length = 0;
+	lineinfo.pItem = 0;
+	lineinfo.Position.vx = 0;
+	lineinfo.Position.vy = 0;
+	lineinfo.Position.vz = 0;
+	lineinfo.Normal.vx = 0;
+	lineinfo.Normal.vy = 0;
+	lineinfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineinfo);
+	M3dZone_LineToItem(&lineinfo, 1);
+
+	i32 radius = 0x400;
+
+	if (lineinfo.pItem)
+	{
+		i32 dist = lineinfo.Distance;
+
+		if (dist < 0xFE9)
+		{
+			double t = (double)(0x1000 - dist) / 0x1000;
+			radius = (i32)(sqrt(t) * 0x1000);
+		}
+		else
+		{
+			radius = (dist * (0x1000 - dist)) >> 12;
+		}
+	}
+
+	CVector up(0, 4096, 0);
+	CVector right;
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&beamDir));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&up));
+	gte_op12();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+	VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
+
+	CVector up2;
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&right));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&beamDir));
+	gte_op12();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
+	VectorNormal(reinterpret_cast<VECTOR*>(&up2), reinterpret_cast<VECTOR*>(&up2));
+
+	this->field_138[0] = this->mPos;
+	this->field_138[1] = endPos;
+
+	for (i32 i = 0; i < 32; i++)
+	{
+		i32 s = rcossin_tbl[(i << 7) & 0xFFF].sin;
+		i32 c = rcossin_tbl[(i << 7) & 0xFFF].cos;
+
+		CVector offset = ((right * s) + (up2 * c)) >> 12;
+
+		this->field_138[2 + i * 2] = this->mPos + (offset * (radius >> 12));
+		this->field_138[3 + i * 2] = endPos + (offset * (radius >> 12));
+	}
 }
 
 // @NotOk
@@ -1100,22 +1277,346 @@ void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 	this->field_12C = 1;
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4334144.bin. Same
+// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
+// projection idiom as CPlayer::RenderLookaroundReticle (spidey.cpp, same
+// stru_56F1B4/stru_56F224 scratch globals), clip tested against screen bounds, then a
+// Panel_DrawTexturedPoly icon draw for field_11C with a fixed tint/blend flag, an
+// aspect-ratio scale derived from the texture, and 4 bracket-corner quads via
+// PCGfx_UseTexture/PCGfx_DrawQPoly2D. The icon draw (color, tpage flag) is traced with
+// reasonable confidence; the bracket quad coordinates and PCGfx_DrawQPoly2D's many
+// float arguments are a best-effort schematic, not instruction verified: could not
+// trace that many packed float args by hand from raw disassembly.
+// cmpsum: 675 mnemonic diffs, first divergence right at the prologue register
+// allocation. 1 attempt (structural reconstruction only). Needs real work.
 void CSniperTarget::DrawTargetRecticle(void)
 {
-	printf("CSniperTarget::DrawTargetRecticle(void)");
+	CVector camPos = *gCameraViewPos;
+	CVector relPos = (this->field_104 >> 12) - camPos;
+
+	gte_SetRotMatrix(gCameraViewMatrix);
+	m3d_ZeroTransVector();
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_rtps();
+
+	i32 depth;
+	gte_stlvnl2(&depth);
+
+	i16 screenXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+	i32 screenX = screenXY[0];
+	i32 screenY = screenXY[1];
+
+	if (screenX < -200 || screenX > 712 || screenY < -200 || screenY > 440)
+		return;
+
+	POLY_FT4* poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(this->field_11C, 0));
+	if (!poly)
+		return;
+
+	*reinterpret_cast<u32*>(&poly->r0) = 0x2E808080;
+	poly->tpage = (poly->tpage & 0xFFDF) | 0x40;
+
+	i32 halfW = 12;
+	i32 halfH = 12;
+
+	poly->x0 = static_cast<i16>(screenX - halfW);
+	poly->y0 = static_cast<i16>(screenY - halfH);
+	poly->x1 = static_cast<i16>(screenX + halfW);
+	poly->y1 = static_cast<i16>(screenY - halfH);
+	poly->x2 = static_cast<i16>(screenX - halfW);
+	poly->y2 = static_cast<i16>(screenY + halfH);
+	poly->x3 = static_cast<i16>(screenX + halfW);
+	poly->y3 = static_cast<i16>(screenY + halfH);
+
+	i32 bracket = 20;
+
+	for (i32 i = 0; i < 4; i++)
+	{
+		i32 signX = (i & 1) ? 1 : -1;
+		i32 signY = (i & 2) ? 1 : -1;
+
+		f32 x0 = static_cast<f32>(screenX + signX * bracket);
+		f32 y0 = static_cast<f32>(screenY + signY * bracket);
+		f32 x1 = static_cast<f32>(screenX + signX * (bracket - 6));
+		f32 y1 = y0;
+		f32 x2 = x0;
+		f32 y2 = static_cast<f32>(screenY + signY * (bracket - 6));
+
+		PCGfx_UseTexture(0, DCGfx_BlendingMode_0);
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x1, y1, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x2, y2, 0.0f, 1.0f, 0xFFFFFFFFu,
+				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
+				0.0f);
+	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4331776.bin. Kill-flag check + Die(), then
+// a 3-state machine on field_100: state 0/1 are a line-of-sight/aim acquisition loop
+// (Utils_CalcAim + Utils_TurnTowards toward field_104, a mAngVel/mAngAcc/mAngFric
+// physics-style settle integrator reused for muzzle sway run field_80 times,
+// Utils_GetVecFromMagDir to get the muzzle direction, an M3dColij raycast from the
+// muzzle to the camera, a running best-distance field_12C, and periodic voice-line
+// SFX_Play calls gated by three independent timers field_130/134/138), transitioning
+// to state 2 once close enough. State 2 rate-limits firing (global timer 0x6B4CA8
+// minus field_124, a shot budget field_F8 < field_FC, and a 40% random roll) and
+// spawns a CMachineGunBullet owned by this (matching the existing
+// CMachineGunBullet(CVector*,CVector*,CSniperTarget*) constructor: field_A4 == 10).
+// This is a best-effort structural reconstruction of the control flow shape, not
+// instruction verified: several new fields (field_F8/100/124/12C/130/134/138/154/158)
+// were carved out of what the header had as PADDING, and the exact raycast/voice-line
+// argument wiring and the aim-settle math could not be traced byte for byte by hand.
+// cmpsum: 536 mnemonic diffs, first divergence right at the prologue (missing the SEH
+// frame setup entirely). 1 attempt (structural reconstruction only). Needs real work.
 void CSniperTarget::AI(void)
 {
-	printf("CSniperTarget::AI(void)");
+	if (this->mFlags & 1)
+	{
+		this->mFlags &= ~1;
+		this->Die();
+		return;
+	}
+
+	switch (this->field_100)
+	{
+		case 0:
+		case 1:
+		{
+			CSVector aimDir;
+			aimDir.vx = 0;
+			aimDir.vy = 0;
+			aimDir.vz = 0;
+			Utils_CalcAim(&aimDir, &this->field_104, reinterpret_cast<CVector*>(&this->field_13C));
+
+			i32 rate = (this->field_100 == 0) ? 8 : 0x10;
+			Utils_TurnTowards(aimDir, reinterpret_cast<CSVector*>(&this->mAngles), &this->mAngVel, this->mAngAcc, rate);
+
+			for (i32 i = 0; i < this->field_80; i++)
+			{
+				i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
+				this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
+
+				i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
+				this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
+			}
+
+			this->mAngVel.Mask();
+			this->mAngVel.KillSmall();
+
+			CVector muzzleDir;
+			Utils_GetVecFromMagDir(&muzzleDir, this->field_100 == 0 ? 0x12 : 0x10,
+					reinterpret_cast<CSVector*>(&this->mAngles));
+
+			CVector muzzleEnd = reinterpret_cast<CVector&>(this->field_13C) + muzzleDir;
+
+			SLineInfo lineinfo;
+			lineinfo.StartCoords = reinterpret_cast<CVector&>(this->field_13C);
+			lineinfo.EndCoords = CameraList->mPos;
+			lineinfo.MinCoords.vx = 0;
+			lineinfo.MinCoords.vy = 0;
+			lineinfo.MinCoords.vz = 0;
+			lineinfo.MaxCoords.vx = 0;
+			lineinfo.MaxCoords.vy = 0;
+			lineinfo.MaxCoords.vz = 0;
+			lineinfo.iLo = 0;
+			lineinfo.iHi = 0;
+			lineinfo.jLo = 0;
+			lineinfo.jHi = 0;
+			lineinfo.Distance = 0;
+			lineinfo.Length = 0;
+			lineinfo.pItem = 0;
+			lineinfo.Position.vx = 0;
+			lineinfo.Position.vy = 0;
+			lineinfo.Position.vz = 0;
+			lineinfo.Normal.vx = 0;
+			lineinfo.Normal.vy = 0;
+			lineinfo.Normal.vz = 0;
+
+			M3dColij_InitLineInfo(&lineinfo);
+			M3dZone_LineToItem(&lineinfo, 1);
+
+			if (lineinfo.pItem)
+			{
+				this->field_104 = lineinfo.Position;
+			}
+
+			i32 dist = Utils_Dist(reinterpret_cast<CVector&>(this->field_13C), MechList->mPos);
+
+			if (dist > this->field_12C)
+			{
+				this->field_12C = dist;
+				this->field_130 = Vblanks;
+			}
+			else if (dist < this->field_134)
+			{
+				this->field_134 = dist;
+
+				if (Vblanks - this->field_130 > 0x78)
+				{
+					SFX_Play((Rnd(6) & 0xFE) == 0 ? 0x8F00 : 0x8F04, 0x3C, 0);
+					this->field_130 = Vblanks;
+				}
+			}
+
+			if (Vblanks - this->field_138 > 0x78)
+			{
+				SFX_Play((Rnd(8) & 0xFE) == 0 ? 0x8F18 : 0x8F1C, 0x3C, 0);
+				this->field_138 = Vblanks;
+			}
+
+			if (dist < 200)
+			{
+				this->field_100 = 2;
+				this->field_128 = false;
+				this->field_F8 = 0;
+				this->field_FC = 0;
+			}
+
+			break;
+		}
+		case 2:
+		{
+			this->field_104 = this->field_104 + reinterpret_cast<CVector&>(this->field_148) * this->field_80;
+
+			if (Vblanks - this->field_124 <= 10)
+				break;
+
+			if (this->field_154 >= this->field_158)
+				break;
+
+			this->field_124 = Vblanks;
+
+			if (Rnd(100) >= 60)
+				break;
+
+			SFX_Play((Rnd(4) & 0xFE) == 0 ? 0x8F38 : 0x8F3C, 0x3C, 0);
+
+			new CMachineGunBullet(reinterpret_cast<CVector*>(&this->field_13C), &this->field_104, this);
+
+			this->field_F8++;
+
+			if (this->field_F8 == this->field_FC)
+			{
+				this->field_120 = 180;
+				this->field_100 = 0;
+			}
+
+			break;
+		}
+		default:
+			break;
+	}
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4329728.bin. Sweeps mStart/mEnd along the
+// bullet's direction (field_5C base, field_68/6C/70 = direction*length, field_74/field_78
+// the travelled distance for each end, field_7C the total length) 300 units per frame,
+// clamped once field_74 passes field_7C. Once the visible line reaches or passes its
+// target it tests a hit against MechList (M3dColij_LineToSphere), recovers the owning
+// CSniperTarget/CChopper handles, always spawns a CGlowFlash spark at mEnd, additionally
+// spawns a CSniperTarget::BulletResult-style hit report and, on an environment hit
+// (not the player), a CSniperSplat decal, then plays one of two SFX_PlayPos variant
+// pairs depending on hit type before calling Die(). The exact per-frame interpolation
+// arithmetic and the CGlowFlash/CSniperSplat argument values are a best-effort
+// reconstruction of the control flow shape from the disassembly, not instruction
+// verified: this function has an SEH prologue (local object needing unwind support) and
+// the stack layout for the innermost blend math could not be traced byte for byte by
+// hand. cmpsum: 434 mnemonic diffs, first divergence right at the prologue (missing the
+// SEH frame setup entirely). 1 attempt (structural reconstruction only). Needs real
+// work.
 void CMachineGunBullet::Move(void)
 {
-	printf("CMachineGunBullet::Move(void)");
+	this->field_74 += 300;
+	this->field_78 += 300;
+
+	CVector* dir = reinterpret_cast<CVector*>(&this->field_68);
+	CVector* base = reinterpret_cast<CVector*>(&this->field_5C);
+
+	if (this->field_74 < 0)
+	{
+		this->mStart = *base;
+	}
+	else if (this->field_74 <= this->field_7C)
+	{
+		this->mStart = *base + (*dir * this->field_74);
+	}
+	else
+	{
+		this->mStart = *base + (*dir * this->field_7C);
+	}
+
+	if (this->field_78 < 0)
+	{
+		this->mEnd = *base;
+	}
+	else if (this->field_78 <= this->field_7C)
+	{
+		this->mEnd = *base + (*dir * this->field_78);
+	}
+	else
+	{
+		this->mEnd = *base + (*dir * this->field_7C);
+	}
+
+	bool hitPlayer = false;
+	bool hitEnv = false;
+
+	if (this->field_74 > this->field_7C)
+	{
+		if (this->field_88)
+			hitEnv = true;
+	}
+	else
+	{
+		CVector zero(0, 0, 0);
+		if (!M3dColij_LineToSphere(&this->mStart, &this->mEnd, &zero, reinterpret_cast<CBody*>(MechList), 0, 0x1000))
+			return;
+
+		hitPlayer = true;
+	}
+
+	CSniperTarget* pSniper = static_cast<CSniperTarget*>(Mem_RecoverPointer(&this->field_8C));
+	CChopper* pChopper = static_cast<CChopper*>(Mem_RecoverPointer(&this->field_94));
+
+	print_if_false(!(pSniper && pChopper), "Both sniper and chopper owner");
+
+	if (!hitEnv && !hitPlayer)
+		return;
+
+	new CGlowFlash(&this->mEnd, 5, 0xFFu, 0xFFu, 0xFFu, 0, 0xFFu, 0x40u, 0u, 0, 9, 0, 1, 0xC, 0x28, 6, 0x14, 1, 1);
+
+	if (hitEnv)
+	{
+		SVECTOR normal;
+		new CSniperSplat(&this->mEnd, &normal);
+	}
+
+	if (pSniper)
+		pSniper->BulletResult(hitPlayer);
+
+	if (pChopper && hitPlayer && MechList->field_8E8)
+	{
+		CVector dirVec = this->mEnd - this->mStart;
+		i32 len = dirVec.Length();
+		if (len > 0xE74)
+			pChopper->field_37C = 0x12C;
+	}
+
+	u32 sfxId;
+	if (hitEnv)
+		sfxId = (Rnd(2) ? 0x76 : 0x75) | 0x8000;
+	else
+		sfxId = (Rnd(2) ? 0x28 : 0x27) | 0x8000;
+
+	SFX_PlayPos(sfxId, &this->mEnd, 0);
+
+	this->Die();
 }
 
 // @NotOk
@@ -1463,10 +1964,68 @@ void Chopper_CreateSearchlight(const u32* a1, u32* a2)
 	*a2 = reinterpret_cast<u32>(new CSearchlight(v3));
 }
 
-// @MEDIUMTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4340240.bin. Same
+// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
+// projection idiom as CSniperTarget::DrawTargetRecticle, applied per vertex of
+// field_138[] (the CVector[66] light-cone mesh CalculateSearchlight fills). If the beam
+// source (field_138[0]) is too close to the camera (depth < 200) the whole draw is
+// skipped. Otherwise it resets field_12C (the CheckPointInScreenTri hit flag, re-armed
+// every render) and draws the beam as a flat-shaded (PCGfx_UseTexture with no texture)
+// triangle strip walking the near/far vertex pairs. This is a best-effort schematic:
+// the per-vertex draw call parameters were not traced byte for byte, only the GTE
+// transform and the overall loop/early-out shape are grounded in the disassembly.
+// cmpsum: 498 mnemonic diffs, first divergence right at the prologue register
+// allocation. 1 attempt (structural reconstruction only). Needs real work.
 void CSearchlight::SpecialRenderer(void)
 {
-	printf("CSearchlight::SpecialRenderer(void)");
+	gte_SetRotMatrix(gCameraViewMatrix);
+	m3d_ZeroTransVector();
+
+	CVector camPos = *gCameraViewPos;
+	CVector relPos = (this->field_138[0] >> 12) - camPos;
+
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_rtps();
+
+	i32 depth;
+	gte_stlvnl2(&depth);
+
+	i16 screenXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+	if (depth < 200)
+		return;
+
+	this->field_12C = 0;
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+
+	f32 prevX = static_cast<f32>(screenXY[0]);
+	f32 prevY = static_cast<f32>(screenXY[1]);
+
+	for (i32 i = 1; i < 66; i++)
+	{
+		CVector rel = (this->field_138[i] >> 12) - camPos;
+
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&rel));
+		gte_rtps();
+		gte_stlvnl2(&depth);
+		gte_stsxy(reinterpret_cast<i32*>(screenXY));
+
+		f32 x = static_cast<f32>(screenXY[0]);
+		f32 y = static_cast<f32>(screenXY[1]);
+
+		PCGfx_DrawQPoly2D(
+				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
+				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
+				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
+				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
+				0.0f);
+
+		prevX = x;
+		prevY = y;
+	}
 }
 
 // @Ok
@@ -1475,9 +2034,94 @@ CSearchlight::~CSearchlight(void)
 	this->DeleteFrom(reinterpret_cast<CBody**>(&ControlBaddyList));
 }
 
-// @BIGTODO
+// @NotOk
+// @Note: reconstructed from tools/functions/4337392.bin. Kill-flag check (mFlags bit 0)
+// then a waypoint timer identical in shape to CChopper::FollowWaypoints (field_100 runs
+// to 240, then swaps field_104/field_110 to the next Trig link and recomputes the per
+// frame step field_11C), aims at the interpolated point via Utils_CalcAim, and calls
+// CalculateSearchlight with the result. When CheckPointInScreenTri last flagged a hit
+// (field_12C), a second timer (field_130/field_128) periodically spawns a
+// CMachineGunBullet-style spark line near MechList using two GTE-perpendicular jitter
+// vectors (Utils_CalcPerps around MechList->field_C84) and plays SFX 0x8074. The spark
+// jitter math is a best-effort reconstruction of the control flow shape, not
+// instruction verified: the exact fixed point scaling could not be traced byte for byte
+// by hand. cmpsum: 175 mnemonic diffs, first divergence right at the kill-flag check
+// (missing an inlined jump table entry). 1 attempt (structural reconstruction only).
+// Needs real work.
 void CSearchlight::AI(void)
 {
+	if (this->mFlags & 1)
+	{
+		this->mFlags &= ~1;
+		this->Die();
+		return;
+	}
+
+	this->field_100 += this->field_80;
+	if (this->field_100 >= 0xF0)
+	{
+		u16* LinksPointer = Trig_GetLinksPointer(this->field_FC);
+		this->field_100 -= 0xF0;
+
+		print_if_false(LinksPointer[0] != 0, "No path for searchlight");
+
+		this->field_F8 = this->field_FC;
+		this->field_104 = this->field_110;
+		this->field_FC = LinksPointer[1];
+		Trig_GetPosition(&this->field_110, this->field_FC);
+
+		this->field_11C = (this->field_110 - this->field_104) / 0xF0;
+	}
+
+	CVector target = this->field_104 + this->field_11C * this->field_100;
+
+	CSVector aimDir;
+	aimDir.vx = 0;
+	aimDir.vy = 0;
+	aimDir.vz = 0;
+	Utils_CalcAim(&aimDir, &this->mPos, &target);
+
+	this->CalculateSearchlight(&aimDir);
+
+	if (!this->field_12C)
+	{
+		this->field_130 = 0;
+		return;
+	}
+
+	this->field_130 += this->field_80;
+
+	if (this->field_130 <= 0xA)
+	{
+		return;
+	}
+	else if (this->field_130 <= 0x1E)
+	{
+		this->field_128 += this->field_80;
+		if (this->field_128 <= 8)
+			return;
+
+		this->field_128 -= 8;
+
+		CVector camPos = CameraList->mPos;
+		camPos.vy += 0x200000;
+
+		CVector perpA, perpB;
+		Utils_CalcPerps(&MechList->field_C84, &perpB, &perpA);
+
+		CVector jitterA = perpA * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].sin) >> 0xC);
+		CVector jitterB = perpB * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].cos) >> 0xC);
+
+		CVector sparkStart = camPos + jitterA + jitterB;
+		CVector sparkEnd = MechList->mPos;
+
+		SFX_Play(0x8074, 0x2000, 0);
+		new CMachineGunBullet(&sparkStart, &sparkEnd);
+	}
+	else if (this->field_130 > 0x41)
+	{
+		this->field_130 = 0xA;
+	}
 }
 
 // @Ok
@@ -1674,7 +2318,9 @@ void validate_CSniperTarget(void)
 {
 	VALIDATE_SIZE(CSniperTarget, 0x15C);
 
+	VALIDATE(CSniperTarget, field_F8, 0xF8);
 	VALIDATE(CSniperTarget, field_FC, 0xFC);
+	VALIDATE(CSniperTarget, field_100, 0x100);
 
 	VALIDATE(CSniperTarget, field_104, 0x104);
 	VALIDATE(CSniperTarget, field_110, 0x110);
@@ -1682,8 +2328,14 @@ void validate_CSniperTarget(void)
 	VALIDATE(CSniperTarget, field_118, 0x118);
 	VALIDATE(CSniperTarget, field_11C, 0x11C);
 	VALIDATE(CSniperTarget, field_120, 0x120);
+	VALIDATE(CSniperTarget, field_124, 0x124);
 
 	VALIDATE(CSniperTarget, field_128, 0x128);
+
+	VALIDATE(CSniperTarget, field_12C, 0x12C);
+	VALIDATE(CSniperTarget, field_130, 0x130);
+	VALIDATE(CSniperTarget, field_134, 0x134);
+	VALIDATE(CSniperTarget, field_138, 0x138);
 
 	VALIDATE(CSniperTarget, field_13C, 0x13C);
 	VALIDATE(CSniperTarget, field_140, 0x140);
@@ -1691,6 +2343,9 @@ void validate_CSniperTarget(void)
 	VALIDATE(CSniperTarget, field_148, 0x148);
 	VALIDATE(CSniperTarget, field_14C, 0x14C);
 	VALIDATE(CSniperTarget, field_150, 0x150);
+
+	VALIDATE(CSniperTarget, field_154, 0x154);
+	VALIDATE(CSniperTarget, field_158, 0x158);
 
 	VALIDATE_VTABLE(CSniperTarget, DrawTargetRecticle, 5);
 }
@@ -1705,7 +2360,10 @@ void validate_CSearchlight(void)
 	VALIDATE(CSearchlight, field_104, 0x104);
 	VALIDATE(CSearchlight, field_110, 0x110);
 	VALIDATE(CSearchlight, field_11C, 0x11C);
+	VALIDATE(CSearchlight, field_128, 0x128);
 	VALIDATE(CSearchlight, field_12C, 0x12C);
+	VALIDATE(CSearchlight, field_130, 0x130);
+	VALIDATE(CSearchlight, field_134, 0x134);
 	VALIDATE(CSearchlight, field_138, 0x138);
 
 	VALIDATE_VTABLE(CSearchlight, SpecialRenderer, 5);
