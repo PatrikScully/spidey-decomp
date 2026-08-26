@@ -1305,23 +1305,25 @@ u8 CPlayer::IncreaseWebbing(i32 amount)
 	return 1;
 }
 
-// @SMALLTODO
-// @Note - func done
+// @NotOk
+// residue: original computes &a1 and pushes both call args first, then
+// stores a1.vx/vy/vz through the post-push stack offsets. our build always
+// hoists the two zero stores (vx, vz) before the address-of/push, keeping
+// only the vy store (which depends on the pVector read) after the push.
+// tried: statement order (vy first/last), a2/a1 declaration order swap,
+// default-ctor-then-assign-vy (ctor's own zero stores get hoisted earlier
+// still), named pointer locals for the call args (optimized away, no
+// change), and a real 3-arg SVECTOR constructor (same early-hoist as the
+// default ctor). best result so far: 23 mnemonic diffs, all in this one
+// instruction-scheduling cluster; every later instruction matches once
+// this settles (call targets/relocations aside).
 void CPlayer::SetStartOrientation(CSVector* pVector)
 {
-
-	typedef void (FASTCALL *func_ptr)(CPlayer*, i32, CSVector*);
-	func_ptr func = (func_ptr)0x004B9E50;
-
-	func(this, 0, pVector);
-	return;
-
-
-	SVECTOR a1;
 	MATRIX a2;
+	SVECTOR a1;
 
-	a1.vx = 0;
 	a1.vy = pVector->vy;
+	a1.vx = 0;
 	a1.vz = 0;
 
 	M3dMaths_RotMatrixYXZ(&a1, &a2);
