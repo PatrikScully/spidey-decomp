@@ -234,7 +234,14 @@ void GotoStartOfTextureList(void)
 
 // @NotOk
 // @Validate
-// assignment to x should be 2 not 4
+// no standalone address: every call site in the shipped PC binary got this
+// inlined (confirmed nowhere in the whole .text section as its own
+// function). Cross-checked field by field against the inlined copy at
+// 0x4C9C6B..0x4C9CD7 inside ProcessNewPSX: every store here matches,
+// INCLUDING the 4-byte `x` write (it really does clear both x and y in one
+// mov, `mov [eax+1Ch],ebp` in the original, so the old "should be 2 not 4"
+// note here was wrong). Left @NotOk because there is no address to run
+// cmpsum against, not because of a known bug.
 void NewTextureEntry(u32 checksum)
 {
 	print_if_false(
@@ -260,7 +267,7 @@ void NewTextureEntry(u32 checksum)
 	pTex->u1 = 0;
 	pTex->v1 = 0;
 
-	// @FIXME
+	// original really does write 4 bytes here, clearing x and y together
 	*reinterpret_cast<u32*>(&pTex->x) = 0;
 }
 
@@ -433,10 +440,75 @@ INLINE void Spool_AddEnvModelsToHashTable(void)
 	}
 }
 
-// @MEDIUMTODO
-void Spool_AnimAccess(char *,SAnimFrame **)
+// @Ok
+// @Matching
+// SAnimFrame is still opaque here; field_4 is a Texture* found by disasm
+// (matches the "texture" print_if_false messages), accessed raw since the
+// struct has no layout yet.
+i32 Spool_AnimAccess(char *a1, SAnimFrame **a2)
 {
-    printf("Spool_AnimAccess(char *,SAnimFrame **)");
+	AnimPacket* pPacketInfo = AnimPackets;
+	if (pPacketInfo)
+	{
+	loop_top:
+		u32* pPacket = pPacketInfo->pPacket;
+		u32 numAnims = *pPacket;
+		char* pEntry = reinterpret_cast<char*>(pPacket + 1);
+
+		for (u32 i = 0; i < numAnims; i++)
+		{
+			char* pA = a1;
+			char* pB = pEntry;
+			char ca = *pA & 0xDF;
+			char cb = *pB & 0xDF;
+
+			i32 count;
+			for (count = 0; ca == cb && ca && cb && count < 8; count++)
+			{
+				pA++;
+				ca = *pA & 0xDF;
+				pB++;
+				cb = *pB & 0xDF;
+			}
+
+			if ((!ca && !cb) || count == 8)
+			{
+				*a2 = reinterpret_cast<SAnimFrame*>(pEntry + 0xC);
+
+				if (addAccess(
+							reinterpret_cast<void**>(a2),
+							2,
+							reinterpret_cast<u32>(a1),
+							pPacketInfo->mPsxOpenSpot))
+					accessLog(
+							"Created Anim Access: name=%s, rgn=%i, addr=0x%8.8X\r\n",
+							a1, pPacketInfo->mPsxOpenSpot, a2);
+
+				print_if_false(
+						*reinterpret_cast<Texture**>(reinterpret_cast<char*>(*a2) + 4) != 0,
+						"Animation does not have a texture, huh-ho...");
+
+				print_if_false(
+						(*reinterpret_cast<Texture**>(reinterpret_cast<char*>(*a2) + 4))->mRegion == pPacketInfo->mPsxOpenSpot,
+						"texture is in a different region than the animation, huh-ho...");
+
+				return pPacketInfo->mPsxOpenSpot;
+			}
+
+			u32 numFrames = *reinterpret_cast<u32*>(pEntry + 8);
+			pEntry += numFrames * 8 + 0xC;
+		}
+
+		pPacketInfo = pPacketInfo->pNext;
+		if (pPacketInfo)
+			goto loop_top;
+	}
+
+	accessLog(
+			"Created Anim Access Fails [NOT FOUND]: name=%s, addr=0x%8.8X\r\n",
+			a1, a2);
+	*a2 = 0;
+	return -1;
 }
 
 // @Ok
@@ -446,13 +518,56 @@ void Spool_ClearEnvironmentRegions(void)
 	ClearRegion(EnvRegions[0], 1);
 }
 
-// @SMALLTODO
-SAnimFrame* Spool_FindAnim(char *a1,i32 a2)
+// @NotOk
+// close but not matching: the goto-based outer loop (same shape that made
+// Spool_AnimAccess match) fixes the loop back-edge, but the whole body still
+// gets a different register allocation than the original (ecx vs eax for
+// the AnimPackets pointer, plus an extra `xor eax,eax` right after the
+// first 2 pushes that our build never emits). a2 is a genuinely dead
+// parameter in both source and original disasm (never touched), so it is
+// not the cause. 5 hypotheses tried total (pointer pair, pure indices,
+// hybrid, goto outer loop, dead local to nudge allocation), all logged in
+// spool.attempts.md. Best result: 59 mnemonic diffs, all downstream of that
+// one register choice.
+SAnimFrame* Spool_FindAnim(char *a1, i32 a2)
 {
-	typedef SAnimFrame* (*func_ptr)(char*, i32);
-	func_ptr func = (func_ptr)0x004CAB50;
+	AnimPacket* pPacketInfo = AnimPackets;
+	if (pPacketInfo)
+	{
+	loop_top:
+		u32* pPacket = pPacketInfo->pPacket;
+		u32 numAnims = *pPacket;
+		char* pEntry = reinterpret_cast<char*>(pPacket + 1);
 
-	return func(a1, a2);
+		for (u32 i = 0; i < numAnims; i++)
+		{
+			char* pA = a1;
+			char* pB = pEntry;
+			char ca = *pA & 0xDF;
+			char cb = *pB & 0xDF;
+
+			i32 count;
+			for (count = 0; ca == cb && ca && cb && count < 8; count++)
+			{
+				pA++;
+				ca = *pA & 0xDF;
+				pB++;
+				cb = *pB & 0xDF;
+			}
+
+			if ((!ca && !cb) || count == 8)
+				return reinterpret_cast<SAnimFrame*>(pEntry + 0xC);
+
+			u32 numFrames = *reinterpret_cast<u32*>(pEntry + 8);
+			pEntry += numFrames * 8 + 0xC;
+		}
+
+		pPacketInfo = pPacketInfo->pNext;
+		if (pPacketInfo)
+			goto loop_top;
+	}
+
+	return 0;
 }
 
 // @Ok
@@ -744,10 +859,13 @@ void SwapPSXTextureData(u32 *,Texture **,u32 *)
     printf("SwapPSXTextureData(u32 *,Texture **,u32 *)");
 }
 
-// @SMALLTODO
-void accessLog(char *,...)
+// @Ok
+// @Matching
+// release build strips the logger body; folds to the same address as every
+// other no-op debug call (nullsub_5, 0x502D50), confirmed by disassembling
+// Spool_TextureAccess's 3 accessLog call sites in the original binary.
+void accessLog(char *, ...)
 {
-    printf("accessLog(char *,...)");
 }
 
 // @Ok
@@ -981,10 +1099,26 @@ i32 Spool_FindRegion(const char *pName)
 	return -1;
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 u32 Spool_GetModel(u32 Checksum, i32 Region)
 {
-	return 0x26052024;
+	print_if_false(Region >= 0 && Region < MAXPSX, "Bad region number sent to Spool_GetModel");
+	print_if_false(PSXRegion[Region].Usable != 0, "PSX not usable in call to Spool_GetModel");
+
+	u32* pChecksum = PSXRegion[Region].pModelChecksums;
+	u32 numModels = reinterpret_cast<u32*>(PSXRegion[Region].ppModels)[-1];
+
+	for (u32 i = 0; i < numModels; i++)
+	{
+		if (*pChecksum == Checksum)
+			return i;
+
+		pChecksum++;
+	}
+
+	print_if_false(0, "Model checksum not found in call to Spool_GetModel");
+	return 0;
 }
 
 // @NotOk
