@@ -9,11 +9,79 @@
 #include "trig.h"
 #include "ps2funcs.h"
 #include "spidey.h"
+#include "m3dutils.h"
 
-// @MEDIUMTODO
-CLizMan::CLizMan(i16 *,i32)
+// data seen at 0x552048/0x55204C in the original, used to set up
+// field_294/field_298. Same pattern as gJonahSetup/gRhinoStrangeInitData.
+EXPORT i32 gLizManSetup[2] = { 0x2020201, 0 };
+
+// @Ok
+// @AlmostMatching: original shares one epilogue between the if/else branches
+// at the end (if-branch jumps to it, else-branch falls into it); my build
+// duplicates the epilogue in both branches instead (23 extra bytes, 464 vs
+// 441). Everything else matches instruction for instruction, including
+// exact stack offsets for both reloaded constructor args. Tried 9 source
+// variants targeting this specific issue (branch order, write order inside
+// the branch, temps, early return, goto, switch, removing an intermediate
+// local) with no change; details in CLizMan_CLizMan.attempts.md.
+CLizMan::CLizMan(i16* a1, i32 a2)
 {
-    printf("CLizMan::CLizMan(i16 *,i32)");
+	i32 levelId = Trig_GetLevelID();
+
+	if (levelId == 0x503 || levelId == 0x504 || levelId == 0x601 || levelId == 0x602)
+		this->InitItem("lizman2");
+	else
+		this->InitItem("lizman");
+
+	this->field_328 = levelId;
+	i16* q = this->SquirtAngles(this->SquirtPos(a1));
+
+	this->mType = 317;
+	this->field_21E = 100;
+
+	this->field_294.Int = gLizManSetup[0];
+	this->field_298.Int = gLizManSetup[1];
+
+	M3dUtils_ReadHooksPacket(this, const_cast<char*>(""));
+
+	this->field_338 = 0x1000;
+	this->field_32C = gAttackRelated;
+	this->ShadowOn();
+
+	this->mShadowScale = 0x30;
+	this->field_3AC = 0x21;
+
+	// @FIXME field_F4 is declared i32 (ob.h), but the original only stores
+	// the low 16 bits here. Force a word store to match without touching
+	// the shared header.
+	*reinterpret_cast<i16*>(&this->field_F4) = 0x40;
+
+	this->field_374 = gTimerRelated - 0x131;
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+
+	this->field_1F4 = a2;
+	this->mNode = static_cast<u16>(a2);
+
+	this->mRMinor = 0x80;
+	this->field_230 = 0;
+	this->field_216 = 0x20;
+	this->mPushVal = 0x40;
+	this->field_31C.bothFlags = 0;
+
+	this->ParseScript(reinterpret_cast<u16*>(q));
+
+	if (levelId == 0x505)
+	{
+		this->field_2A8 |= 0x2000000;
+		this->field_212 = 0xF;
+		this->field_398 = 0x32000;
+		this->field_218 |= 0x8000;
+	}
+	else
+	{
+		this->field_398 = 0x3C000;
+		this->field_212 = 0x1E;
+	}
 }
 
 // @Ok

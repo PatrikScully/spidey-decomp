@@ -12,7 +12,7 @@ class CMessage;
 
 class CLizMan : public CBaddy {
 public:
-	EXPORT CLizMan(i16 *,i32);
+	EXPORT CLizMan(i16*, i32);
 
 	EXPORT void PlaySingleAnim(i16, i32, i32);
 	EXPORT void StandStill(void);
