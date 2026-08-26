@@ -102,7 +102,8 @@ public:
 
 	i32 field_360;
 
-	PADDING(0x8);
+	i32 field_364;
+	CQuadBit* field_368;
 
 	u8 field_36C;
 

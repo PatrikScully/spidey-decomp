@@ -11,6 +11,7 @@
 #include "ps2redbook.h"
 #include "spidey.h"
 #include "m3dzone.h"
+#include "m3dutils.h"
 #include "web.h"
 #include "ai.h"
 #include "ps2lowsfx.h"
@@ -1033,10 +1034,128 @@ void CCarnage::DoSonicBubbleProcessing(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Same MGS-shadow idiom as CBlackCat::DoMGSShadow (blackcat.cpp): 4 hook positions rotated into
+// local space to get an X/Z footprint box, then a vertical offset rotated by the body matrix gives
+// the world space shadow center, applied to a lazily-created CQuadBit. CCarnage additionally guards
+// on mFlags bit 0 and field_364, tearing down field_368 (the shadow quad) and returning early when
+// either is set (jump table target 0x42036B in the original). Hook ids are 3, 6, 0x11, 0xD (different
+// from CBlackCat's 3, 6, 13, 9). Not yet matching, see attempts file.
 void CCarnage::DoMGSShadow(void)
 {
-	printf("void CCarnage::DoMGSShadow(void)");
+	if ((this->mFlags & 1) || this->field_364 == -1)
+	{
+		delete this->field_368;
+		this->field_368 = 0;
+		return;
+	}
+
+	SHook hook;
+	VECTOR pos[4];
+	pos[0].vx = pos[0].vy = pos[0].vz = 0;
+	pos[1].vx = pos[1].vy = pos[1].vz = 0;
+	pos[2].vx = pos[2].vy = pos[2].vz = 0;
+	pos[3].vx = pos[3].vy = pos[3].vz = 0;
+
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	hook.Offset = 3;
+	M3dUtils_GetDynamicHookPosition(&pos[0], this, &hook);
+
+	hook.Offset = 6;
+	M3dUtils_GetDynamicHookPosition(&pos[1], this, &hook);
+
+	hook.Offset = 0x11;
+	M3dUtils_GetDynamicHookPosition(&pos[2], this, &hook);
+
+	hook.Offset = 0xD;
+	M3dUtils_GetDynamicHookPosition(&pos[3], this, &hook);
+
+	i32 height = this->field_21E << 12;
+
+	CVector box[4];
+	box[0] = *reinterpret_cast<CVector*>(&pos[0]);
+	box[0] -= this->mPos;
+	box[1] = *reinterpret_cast<CVector*>(&pos[1]);
+	box[1] -= this->mPos;
+	box[2] = *reinterpret_cast<CVector*>(&pos[2]);
+	box[2] -= this->mPos;
+	box[3] = *reinterpret_cast<CVector*>(&pos[3]);
+	box[3] -= this->mPos;
+
+	MATRIX localMat;
+	M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+	gte_SetRotMatrix(&localMat);
+
+	i32 maxX = 0x20;
+	i32 minX = box[0].vx;
+	i32 maxZ = box[0].vz;
+	i32 minZ = box[0].vz;
+	i32 i;
+
+	for (i = 0; i < 4; i++)
+	{
+		box[i] >>= 12;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&box[i]));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&box[i]));
+
+		if (box[i].vx > maxX)
+		{
+			maxX = box[i].vx;
+		}
+		else if (box[i].vx < minX)
+		{
+			minX = box[i].vx;
+		}
+
+		if (box[i].vz > maxZ)
+		{
+			maxZ = box[i].vz;
+		}
+		else if (box[i].vz < minZ)
+		{
+			minZ = box[i].vz;
+		}
+	}
+
+	CVector heightOffset;
+	heightOffset.vx = 0;
+	heightOffset.vy = height;
+	heightOffset.vz = 0;
+
+	heightOffset >>= 12;
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&heightOffset));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&heightOffset));
+
+	gte_SetRotMatrix(&this->mTransform);
+
+	i32 ry = this->field_364;
+
+	CVector corners[4];
+	for (i = 0; i < 4; i++)
+	{
+		corners[i].vx = this->mPos.vx + heightOffset.vx;
+		corners[i].vy = ry;
+		corners[i].vz = this->mPos.vz + heightOffset.vz;
+	}
+
+	if (!this->field_368)
+	{
+		TotalBitUsage = 0;
+		this->field_368 = new CQuadBit();
+		TotalBitUsage = -1;
+
+		this->field_368->SetTexture(0u, 0u);
+	}
+
+	this->field_368->mFrigDeltaZ = 0x20;
+	this->field_368->SetTransparency(0x40);
+	this->field_368->SetSubtractiveTransparency();
+	this->field_368->SetCorners(corners[0], corners[1], corners[2], corners[3]);
 }
 
 // @Ok
@@ -2475,6 +2594,9 @@ void validate_CCarnage(void){
 	VALIDATE(CCarnage, field_35C, 0x35C);
 
 	VALIDATE(CCarnage, field_360, 0x360);
+
+	VALIDATE(CCarnage, field_364, 0x364);
+	VALIDATE(CCarnage, field_368, 0x368);
 
 	VALIDATE(CCarnage, field_36C, 0x36C);
 	VALIDATE(CCarnage, field_370, 0x370);
