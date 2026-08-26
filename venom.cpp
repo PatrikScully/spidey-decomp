@@ -8,6 +8,9 @@
 #include "spool.h"
 #include "panel.h"
 #include "trig.h"
+#include "camera.h"
+#include "ps2funcs.h"
+#include "my_assert.h"
 
 
 extern CBody* EnvironmentalObjectList;
@@ -67,10 +70,90 @@ void CVenom::EnterWaitState(void)
 	}
 }
 
-// @MEDIUMTODO
-CVenomHitSpark::CVenomHitSpark(CVector const *)
+// @NotOk
+// Same body shape as CCarnageHitSpark::CCarnageHitSpark (carnage.cpp), which is also @NotOk:
+// only 4 relocation-class diffs at the vtable ptr / SEH scope table / two branch targets when
+// diffed directly against CCarnageHitSpark's original bytes (structurally identical function,
+// same constants: SetTexture(0x877E63C8), SetTint(0xFF,0x80,0), mType=30). Built version is
+// 286 vs 288 original instructions; residue is in the v13/v14/v20 (Rnd(50)+50 based) scaled
+// vector math, same class of issue as the carnage sibling. Not independently re-debugged here,
+// see carnage.cpp's CCarnageHitSpark::CCarnageHitSpark for the shared open residue.
+CVenomHitSpark::CVenomHitSpark(const CVector *pVec)
 {
-    printf("CVenomHitSpark::CVenomHitSpark(CVector const *)");
+	this->mPosC = *pVec;
+
+	CVector v41;
+	v41.vx = 0;
+	v41.vy = -4096;
+	v41.vz = 0;
+
+	CVector v40;
+
+	v40.vx = gMikeCamera[0].Position.vx - (this->mPosC.vx >> 12);
+	v40.vy = gMikeCamera[0].Position.vy - (this->mPosC.vy >> 12);
+	v40.vz = gMikeCamera[0].Position.vz - (this->mPosC.vz >> 12);
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&v41));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&v40));
+	gte_op0();
+
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&v40));
+
+	CVector v39;
+	v39.vx = v40.vx >> 8;
+	v39.vy = v40.vy >> 8;
+	v39.vz = v40.vz >> 8;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&v39));
+	gte_sqr0();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&v39));
+
+	i32 v8 = M3dMaths_SquareRoot0(v39.vx + v39.vy + v39.vz);
+	v40.vx = 16 * (v40.vx / v8);
+	v40.vy = 16 * (v40.vy / v8);
+	v40.vz = 16 * (v40.vz / v8);
+
+
+	i32 v9 = Rnd(4096);
+	i32 v10 = Rnd(30);
+	i32 v11 = (4 * v9) & 0x3FFC;
+
+	i32 v12 = ((v10 + 5) * rcossin_tbl[v11].cos) >> 12;
+	i32 v22 = ((v10 + 5) * rcossin_tbl[v11].sin) >> 12;
+
+	this->mVel = (v12 * v41) + (v22 * v40);
+
+	i32 v13 = Rnd(50) + 50;
+	i32 v14 = (v13 * rcossin_tbl[v11].cos) >> 12;
+	i32 v20 = (v13 * rcossin_tbl[v11].sin) >> 12;
+
+	CVector v33 = (v14 * v41) + (v20 * v40);
+
+	i32 v15 = (4 * (v9 + 1024)) & 0x3FFC;
+
+	i32 v18 = (10 * rcossin_tbl[v15].sin) >> 12;
+	i32 v19 = (10 * rcossin_tbl[v15].cos) >> 12;
+
+	CVector v30 = (v19 * v41) + (v18 * v40);
+
+	this->mPos = this->mPosC + v33;
+
+	if (Rnd(2))
+	{
+		this->mPosD = this->mPosC + v30;
+	}
+	else
+	{
+		this->mPosD = this->mPosC - v30;
+	}
+
+	this->mPosB = this->mPosD + v33;
+
+
+	this->SetTexture(0x877E63C8);
+	this->SetSemiTransparent();
+	this->SetTint(0xFF, 0x80u, 0);
+	this->mType = 30;
 }
 
 // @Ok
@@ -393,9 +476,38 @@ void CVenom::AdjustWaterModel(void)
 
 }
 
-// @MEDIUMTODO
-void CVenom::PulseL6A4Node(bool)
+// @Ok
+// @Matching
+void CVenom::PulseL6A4Node(bool a2)
 {
+	CVector v3;
+
+	for (i32 i = 1; i < NumNodes; i++)
+	{
+		if (*G_OFFSETLIST[i] == 1)
+		{
+			Trig_GetPosition(&v3, i);
+
+			if (a2)
+			{
+				if (!(v3.vz | v3.vy | v3.vx))
+				{
+					Trig_SendPulseToNode(i);
+					return;
+				}
+			}
+			else
+			{
+				if (v3.vx == 0x3E8000 && !(v3.vz | v3.vy))
+				{
+					Trig_SendPulseToNode(i);
+					return;
+				}
+			}
+		}
+	}
+
+	DoAssert(0, "Node not found");
 }
 
 
