@@ -95,7 +95,9 @@ class CElectro : public CSimpleTexturedRibbon
 		EXPORT CElectro(void);
 		EXPORT virtual ~CElectro(void);
 
-		PADDING(4);
+		EXPORT void Setup(i32, i32, u32*, u8, u8, u8, u16, u16);
+
+		i32 field_4C;
 
 		// @FIXME
 		void *field_50;
