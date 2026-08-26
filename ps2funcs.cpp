@@ -352,7 +352,18 @@ void gte_stsv(SVECTOR *a1)
 
 
 // @NotOk
-// Revisit, maybe with validator???
+// Residue: fixed the matrix-multiply formula (the old code indexed gRotMatrix wrong, e.g. reused
+// [0][1]/[1][1] across rows); this version is the correct row*vector dot product and matches the
+// assert calls/strings/globals exactly, but the row computation (0x46E185-0x46E207) still
+// diverges (81 mnemonic diffs). The original reads v7->vx/vy/vz fresh from memory via a memory
+// operand on each `imul` (9 total memory reads, no register caching across the 3 row statements).
+// Every source shape tried here (single combined expression per row, split accumulation
+// statements, an i32* index instead of VECTOR* field access, a volatile VECTOR*) makes our
+// compiler either hoist v7->vx/vy/vz into 3 registers once and reuse them across all 3 rows
+// (undershoots: fewer loads than the original), or (with volatile) reload on every single use
+// including within one row (overshoots: more loads than the original). Could not find a source
+// shape that reproduces "exactly one memory read per field per row, no more, no less" (4
+// attempts, see attempts log; below the 15-hypothesis medium-size bar, revisit).
 void gte_mvmva(int _sf, int mx, int a3, int cv, int lm)
 {
   VECTOR *v7; // eax
@@ -367,9 +378,10 @@ void gte_mvmva(int _sf, int mx, int a3, int cv, int lm)
   if ( a3 )
     v7 = &gOp12Result;
 
-  gGeneralLongVector.vx = v7->vz * gRotMatrix[0][2] + v7->vy * gRotMatrix[0][1] + v7->vx * gRotMatrix[0][0];
-  gGeneralLongVector.vy = v7->vz * gRotMatrix[1][1] + v7->vy * gRotMatrix[0][1] + v7->vx * gRotMatrix[0][2];
-  gGeneralLongVector.vz = v7->vz * gRotMatrix[2][1] + v7->vy * gRotMatrix[2][0] + v7->vx * gRotMatrix[1][2];
+  gGeneralLongVector.vx = gRotMatrix[0][0] * v7->vx + gRotMatrix[0][1] * v7->vy + gRotMatrix[0][2] * v7->vz;
+  gGeneralLongVector.vy = gRotMatrix[1][0] * v7->vx + gRotMatrix[1][1] * v7->vy + gRotMatrix[1][2] * v7->vz;
+  gGeneralLongVector.vz = gRotMatrix[2][0] * v7->vx + gRotMatrix[2][1] * v7->vy + gRotMatrix[2][2] * v7->vz;
+
   if ( _sf == 1 )
   {
     gGeneralLongVector.vx = gGeneralLongVector.vx >> 12;
