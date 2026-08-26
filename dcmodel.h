@@ -123,6 +123,8 @@ struct SModel;
 EXPORT void DCModel_CreateFromSModel(DCModelData *,SModel *,i32,i32 *,bool,i32);
 EXPORT void PreComputeConvertedColors(f32);
 
+EXPORT extern u8 gConvertedColors[256];
+
 void validate_DCSkaterModel(void);
 void validate_DCMaterial(void);
 void validate_DCObject(void);

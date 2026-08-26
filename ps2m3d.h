@@ -49,6 +49,13 @@ EXPORT void RenderSuperItem(CItem *,bool);
 EXPORT extern i32 gWideScreen;
 EXPORT extern char gRenderBuf[4];
 
+// current colour table pointer, set by M3d_PreprocessPulsingColours from
+// PSXRegion[Region].pColourTable, read by the DC/PSX model renderers.
+// named pColourTable in the PS2 source (m3d.mik).
+EXPORT extern u32* pColourTable;
+//#define G_COLOUR_TABLE (pColourTable)
+#define G_COLOUR_TABLE (*reinterpret_cast<u32**>(0x0064F5D0))
+
 void validate_matrix4x4(void);
 
 #endif

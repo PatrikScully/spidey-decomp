@@ -4,10 +4,21 @@
 #include "PCGfx.h"
 #include "m3dinit.h"
 #include "SpideyDX.h"
+#include "spool.h"
 
 #include "validate.h"
 
 i32 gWideScreen;
+
+EXPORT u32* pColourTable;
+
+// XblanksNow / XblanksThen from the PS2 source (m3d.mik): vblank-based frame
+// timer, updated elsewhere (not in this file). Only referenced (read) here.
+// Not in idb_globals.txt, only ever read in ps2m3d.cpp functions.
+//#define G_XBLANKS_NOW (gXblanksNow)
+#define G_XBLANKS_NOW (*reinterpret_cast<u32*>(0x0065CFA4))
+//#define G_XBLANKS_THEN (gXblanksThen)
+#define G_XBLANKS_THEN (*reinterpret_cast<u32*>(0x00660F88))
 
 
 // @Ok
@@ -124,10 +135,120 @@ void DC_PSXModel_RenderModel(SModel const *,matrix4x4 const *,void const *,DCMod
     printf("DC_PSXModel_RenderModel(SModel const *,matrix4x4 const *,void const *,DCModelData *)");
 }
 
-// @MEDIUMTODO
-void M3d_PreprocessPulsingColours(i32)
+struct SRGBI
 {
-    printf("M3d_PreprocessPulsingColours(i32)");
+	u8 r;
+	u8 g;
+	u8 b;
+	u8 Interval;
+};
+
+struct SColourPulseInfo
+{
+	u8 VertexColourIndex;
+	u8 ListLen;
+	u8 ListPos;
+	u8 t;
+	SRGBI RGBs[1];
+};
+
+// @Ok
+// @AlmostMatching: 118 mnemonic diffs / 21 hypotheses tried (13 on the real build, 8 in an
+// isolated MSVC6 sandbox). Every instruction after the loop entry point is mnemonic-identical
+// to the original, just shifted by exactly one slot: the original pushes ebx/esi/edi in the
+// prologue and defers "push ebp" (and the matching pop) to the point where the per-record loop
+// is actually entered, so the two early-return paths (Region==-1, !pData) never touch ebp at
+// all. Our build always pushes all 4 callee-saved registers in the prologue, so it is 11 bytes
+// longer (469 vs 458) and every early return carries one extra unneeded pop ebp. Every attempt
+// to convince MSVC6 to defer the ebp save (do/while loop shape, array vs scalar rgb temps,
+// caching vs re-reading ListLen, if/else vs ternary for dt, explicit SPSXRegion* pointer caching)
+// left the diff count and shift unchanged.
+void M3d_PreprocessPulsingColours(i32 Region)
+{
+	if (Region == -1)
+	{
+		return;
+	}
+
+	u32 *pData = PSXRegion[Region].pColourPulseData;
+	if (!pData)
+	{
+		return;
+	}
+
+	print_if_false(pData[-2] == 7, "Pointer doesn't point to a colour pulsing packet");
+
+	u32 *pEnd = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pData) + pData[-1]);
+
+	G_COLOUR_TABLE = PSXRegion[Region].pColourTable;
+	print_if_false(G_COLOUR_TABLE != 0, "Pulsing a non-existent colour table");
+
+	i32 dt;
+	if (G_XBLANKS_NOW < G_XBLANKS_THEN)
+	{
+		dt = 1;
+	}
+	else
+	{
+		dt = G_XBLANKS_NOW - G_XBLANKS_THEN;
+	}
+
+	while (pData < pEnd)
+	{
+		SColourPulseInfo *pColourPulseInfo = reinterpret_cast<SColourPulseInfo*>(pData);
+
+		print_if_false(pColourPulseInfo->ListLen != 0, "Zero list length");
+
+		SRGBI *RGBs = pColourPulseInfo->RGBs;
+		i32 ListLen = pColourPulseInfo->ListLen;
+		i32 ListPos = pColourPulseInfo->ListPos;
+		i32 t = pColourPulseInfo->t;
+
+		t += dt;
+		while (t >= RGBs[ListPos].Interval)
+		{
+			t -= RGBs[ListPos].Interval;
+			ListPos++;
+			if (ListPos == ListLen)
+			{
+				ListPos = 0;
+			}
+		}
+
+		pColourPulseInfo->ListPos = ListPos;
+		pColourPulseInfo->t = t;
+
+		i32 rgb0[3];
+		rgb0[0] = RGBs[ListPos].r;
+		rgb0[1] = RGBs[ListPos].g;
+		rgb0[2] = RGBs[ListPos].b;
+
+		i32 OldListPos = ListPos;
+		ListPos++;
+		if (ListPos == ListLen)
+		{
+			ListPos = 0;
+		}
+
+		i32 drgb[3];
+		drgb[0] = RGBs[ListPos].r;
+		drgb[1] = RGBs[ListPos].g;
+		drgb[2] = RGBs[ListPos].b;
+
+		print_if_false(RGBs[ListPos].Interval != 0, "Zero interval");
+
+		i32 interval = RGBs[OldListPos].Interval;
+
+		i32 blue = rgb0[2] + t * (drgb[2] - rgb0[2]) / interval;
+		i32 green = rgb0[1] + t * (drgb[1] - rgb0[1]) / interval;
+		i32 red = rgb0[0] + t * (drgb[0] - rgb0[0]) / interval;
+
+		u32 colour = gConvertedColors[red & 0xFF] | (gConvertedColors[green & 0xFF] << 8) | (gConvertedColors[blue & 0xFF] << 16);
+
+		G_COLOUR_TABLE[pColourPulseInfo->VertexColourIndex] = colour;
+
+		pData = reinterpret_cast<u32*>(pColourPulseInfo + 1) + ListLen - 1;
+	}
 }
 
 // @MEDIUMTODO
