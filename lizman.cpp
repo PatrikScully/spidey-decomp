@@ -10,6 +10,7 @@
 #include "ps2funcs.h"
 #include "spidey.h"
 #include "m3dutils.h"
+#include <cmath>
 
 // data seen at 0x552048/0x55204C in the original, used to set up
 // field_294/field_298. Same pattern as gJonahSetup/gRhinoStrangeInitData.
@@ -344,24 +345,208 @@ void CLizMan::StopClimbing(void)
 	this->field_390 = 0;
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: case 0 matches instruction for instruction. The remaining gap is
+// that the original shares one small tail (field_31C.bothFlags=0x19;
+// dumbAssPad=0;) between case 1's mAnim==0x15 branch and case 5 via a plain
+// jump into the middle of case 5's block; this build always duplicates that
+// tail instead of sharing it (confirmed by export size: 1056 bytes built vs
+// 992 original), no matter how it is written (plain duplication, goto to a
+// label inside case 5). Same class of issue as the duplicated epilogue in
+// CLizMan::CLizMan. Full details and every attempt tried in
+// CLizMan_FlyAcrossRoom.attempts.md.
 void CLizMan::FlyAcrossRoom(void)
 {
 	switch(this->dumbAssPad)
 	{
-		case 3:
-			if (this->IsSafeToSwitchToFollowWaypoints())
+		case 0:
+		{
+			this->field_394 |= 2;
+			this->ClearAttackFlags();
+
+			this->field_310 = 0;
+			if (this->field_318 == 1 || this->field_318 == 2)
+				this->mRMinor = 0;
+
+			i32 maxVel = (this->mVel.vx > this->mVel.vz) ? this->mVel.vx : this->mVel.vz;
+			i32 velProduct = this->field_1F8 * maxVel;
+			i32 velProductSign = velProduct >> 31;
+			if ((velProduct ^ velProductSign) - velProductSign < 0x100000)
 			{
-				this->field_31C.bothFlags = 2;
+				i32 animId;
+				if (this->field_218 & 0x400)
+					animId = 0x22;
+				else
+					animId = (this->field_218 & 0x800) ? 0x21 : 0xC;
+				this->field_340 = 0;
+				this->RunAnim(animId, 0, -1);
 			}
 			else
 			{
-				this->field_31C.bothFlags = 1;
+				this->field_340 = 0;
+				this->RunAnim(0x15, 0, -1);
 			}
-			this->dumbAssPad = 0;
 
+			if (this->field_1F8 == 0x29A)
+				this->field_1F8 = 0x14;
+
+			if (this->mHealth <= 0)
+			{
+				this->dumbAssPad = 10;
+				this->field_394 |= 1;
+			}
+			else
+			{
+				this->dumbAssPad++;
+			}
+			break;
+		}
+		case 1:
+			this->field_394 |= 2;
+			this->DoLizmanPhysics();
+
+			if (this->field_1F8 > this->field_80)
+			{
+				this->field_1F8 -= this->field_80;
+			}
+			else
+			{
+				this->field_1F8 = 0;
+				this->mVel.vx = 0;
+				this->mVel.vy = 0;
+				this->mVel.vz = 0;
+				this->mFric.vx = 1;
+				this->mFric.vy = 1;
+				this->mFric.vz = 1;
+
+				if (this->ShouldFall(0xC8, this->field_398))
+				{
+					this->field_31C.bothFlags = 0x12;
+					this->field_218 &= ~2;
+					this->dumbAssPad = 0;
+				}
+				else
+				{
+					this->SetHeight(1, 0x64, 0x258);
+
+					if (this->field_318 == 1 || this->field_318 == 2)
+					{
+						this->CheckFallBack();
+						if (this->field_2A8 & 0x10)
+						{
+						}
+						this->PlaySingleAnim(0xE, 0, -1);
+						this->dumbAssPad++;
+					}
+					else if (this->mAnim == 0x15)
+					{
+						this->PlaySingleAnim(5, 0, -1);
+						this->field_31C.bothFlags = 25;
+						this->dumbAssPad = 0;
+					}
+					else
+					{
+						this->dumbAssPad = 5;
+					}
+				}
+			}
+			break;
+		case 2:
+			this->SetHeight(0, 0x64, 0x258);
+			if (word_5FBC0C != 0xFFFF)
+			{
+				this->mRMinor = 0x80;
+				this->dumbAssPad++;
+			}
+			break;
+		case 3:
+			if (this->SetHeight(0, 0x64, 0x258) == 2 && word_5FBC0C != 0xFFFF)
+			{
+				if (this->IsSafeToSwitchToFollowWaypoints())
+				{
+					this->field_31C.bothFlags = 2;
+				}
+				else
+				{
+					this->field_31C.bothFlags = 1;
+				}
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 5:
+			if (this->SetHeight(0, 0x64, 0x258) == 2 && word_5FBC0C != 0xFFFF)
+			{
+				this->field_31C.bothFlags = 25;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 10:
+			this->field_394 |= 3;
+			this->DoLizmanPhysics();
+
+			if (this->field_218 & 0x1000)
+			{
+				i16 speed = *reinterpret_cast<i16*>(&this->field_80);
+				this->mAngles.vx += this->field_330 * speed;
+				this->mAngles.vy += this->field_334 * speed;
+			}
+
+			if (this->field_1F8 > this->field_80)
+			{
+				this->field_1F8 -= this->field_80;
+			}
+			else
+			{
+				this->field_1F8 = 0;
+				this->mVel.vx = 0;
+				this->mVel.vy = 0;
+				this->mVel.vz = 0;
+				this->mFric.vx = 1;
+				this->mFric.vy = 1;
+				this->mFric.vz = 1;
+
+				if (this->ShouldFall(0xC8, this->field_398))
+				{
+					this->field_31C.bothFlags = 0x12;
+					this->field_218 &= ~2;
+					this->dumbAssPad = 0;
+				}
+				else
+				{
+					this->Neutralize();
+					this->SetHeight(1, 0x64, 0x258);
+					this->field_31C.bothFlags = 0x14;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
 	}
 }
+
+// FlyAcrossRoom above calls these; MSVC inlines a same-TU stub call even
+// when it is defined later in the file, which pollutes FlyAcrossRoom's
+// codegen (leaf-first rule). Keep the MSVC inliner away, same fix as
+// gsub_5027A0 in DXinit.cpp.
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
+// @MEDIUMTODO
+void CLizMan::DoLizmanPhysics(void)
+{
+	printf("CLizMan::DoLizmanPhysics(void)");
+}
+
+// @SMALLTODO
+void CLizMan::CheckFallBack(void)
+{
+	printf("CLizMan::CheckFallBack(void)");
+}
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @Ok
 i32 INLINE CLizMan::IsSafeToSwitchToFollowWaypoints(void)
@@ -397,6 +582,8 @@ void validate_CLizMan(void){
 
 	VALIDATE(CLizMan, field_328, 0x328);
 	VALIDATE(CLizMan, field_32C, 0x32C);
+	VALIDATE(CLizMan, field_330, 0x330);
+	VALIDATE(CLizMan, field_334, 0x334);
 	VALIDATE(CLizMan, field_338, 0x338);
 	VALIDATE(CLizMan, field_340, 0x340);
 
@@ -404,6 +591,7 @@ void validate_CLizMan(void){
 
 	VALIDATE(CLizMan, field_374, 0x374);
 	VALIDATE(CLizMan, field_390, 0x390);
+	VALIDATE(CLizMan, field_394, 0x394);
 	VALIDATE(CLizMan, field_398, 0x398);
 
 	VALIDATE(CLizMan, field_39C, 0x39C);
