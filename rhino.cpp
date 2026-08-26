@@ -163,10 +163,130 @@ void CRhino::ChargePlayer(void)
     printf("CRhino::ChargePlayer(void)");
 }
 
-// @MEDIUMTODO
-void CRhino::ChasePlayer(i32)
+// @Ok
+// @Matching
+void CRhino::ChasePlayer(i32 a2)
 {
-    printf("CRhino::ChasePlayer(i32)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_310 = 0x64;
+			this->Neutralize();
+
+			new CAIProc_LookAt(this, MechList, 0, 2, 0x50, 0);
+
+			this->field_330 = 0;
+			this->dumbAssPad++;
+			break;
+		case 1:
+			this->DoPhysics(0);
+
+			if (this->field_288 & 2)
+			{
+				this->field_288 &= ~2;
+
+				new CAIProc_AccZ(this, 0xF0, -0x28, 0);
+				this->PlaySingleAnim(1, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+			if (this->GonnaHitWall(0) & 0xD)
+			{
+				this->Neutralize();
+				this->field_31C.bothFlags = 0x16;
+				this->dumbAssPad = 0;
+			}
+			else
+			{
+				if (this->mAnim == 1 && this->mAnimFinished)
+				{
+					this->PlaySingleAnim(2, 0, -1);
+				}
+
+				if (!this->LineOfSightCheck(&MechList->mPos, 1))
+				{
+					this->field_31C.bothFlags = 0x16;
+					this->dumbAssPad = 0;
+				}
+
+				i32 dist2 = Utils_CrapXZDist(this->mPos, MechList->mPos);
+
+				if (dist2 < (a2 == 2 ? 5000 : 200))
+				{
+					new CAIProc_AccZ(this, 0xA0, 0, 8);
+					this->PlaySingleAnim(3, 0, -1);
+					this->dumbAssPad++;
+				}
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished && this->mAnim == 3)
+			{
+				this->PlaySingleAnim(0, 0, -1);
+			}
+
+			if (this->GonnaHitWall(0))
+			{
+				this->Neutralize();
+				goto setChaseFlag2;
+			}
+			else if (this->field_288 & 8)
+			{
+				this->field_288 &= ~8;
+				this->Neutralize();
+
+				i32 dist = Utils_CrapXZDist(this->mPos, MechList->mPos);
+
+				if (dist < 0xC8)
+				{
+					if (MechList->field_AD4)
+					{
+						this->field_31C.bothFlags = 0xD;
+						this->dumbAssPad = 0;
+					}
+					else if (MechList->field_E1C & 0x800000)
+					{
+						this->RunAnim(this->field_298.Bytes[0], 0, -1);
+						this->dumbAssPad++;
+					}
+					else
+					{
+						this->field_31C.bothFlags = 6;
+						this->dumbAssPad = 0;
+					}
+				}
+				else if (dist <= 0x1F4)
+				{
+					goto setChaseFlag2;
+				}
+				else
+				{
+					this->field_31C.bothFlags = 7;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		case 4:
+			if (this->mAnimFinished)
+			{
+setChaseFlag2:
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+
+	this->field_330 += this->field_80;
+
+	if (a2 == 1 && this->field_330 >= 0x3C)
+	{
+		this->field_31C.bothFlags = 7;
+		this->dumbAssPad = 0;
+	}
 }
 
 // @NotOk
