@@ -11,6 +11,7 @@
 
 extern CPlayer* MechList;
 extern CBaddy* BaddyList;
+extern CBody* EnvironmentalObjectList;
 
 // @MEDIUMTODO
 CScorpion::CScorpion(i16 *,i32)
@@ -348,10 +349,151 @@ INLINE void CScorpion::TargetPlayer(i32 a2)
 	this->hCurrentTarget = Mem_MakeHandle(MechList);
 }
 
-// @MEDIUMTODO
+// @NotOk
+// picks a nearby type 316 object (an unmodeled class, its position handle
+// is read raw at +0x364) as a one shot target, then on later calls looks at
+// EnvironmentalObjectList (type 401 entries) for up to 4 candidates in line
+// of sight and picks one at random. field_364/368 and the
+// EnvironmentalObjectList entry layout are guesses from the disasm, not
+// from any header. cmpsum: 216 mnemonic diffs on 763 bytes, shape matches
+// for the first ~7 instructions (field_BEC check, BaddyList load) then
+// diverges on how the null checks are coded.
+// both guesses from the disasm, not from any header.
 i32 CScorpion::GetEnvironmentalObjectTarget(void)
 {
-	return 0x13072024;
+	CBody *obj = reinterpret_cast<CBody*>(this->field_BEC);
+
+	if (!obj)
+	{
+		obj = reinterpret_cast<CBody*>(BaddyList);
+		if (!obj)
+		{
+			return 0;
+		}
+
+		while (obj->mType != 316)
+		{
+			obj = reinterpret_cast<CBody*>(obj->mNextItem);
+			if (!obj)
+			{
+				return 0;
+			}
+		}
+
+		this->field_BEC = reinterpret_cast<CSuper*>(obj);
+	}
+
+	SHandle h;
+	h.pWhatever = *reinterpret_cast<void**>(reinterpret_cast<char*>(obj) + 0x364);
+	h.Id = *reinterpret_cast<u32*>(reinterpret_cast<char*>(obj) + 0x368);
+
+	if (!h.pWhatever)
+	{
+		return 0;
+	}
+
+	if (!Mem_RecoverPointer(&h))
+	{
+		return 0;
+	}
+
+	this->field_BF8 = 3;
+	CBody *target = reinterpret_cast<CBody*>(Mem_RecoverPointer(&h));
+
+	if (!(this->field_218 & 0x10) && !Rnd(2))
+	{
+		goto pickFromList;
+	}
+
+	{
+		i32 dx = this->mPos.vx - target->mPos.vx;
+		i32 dz = this->mPos.vz - target->mPos.vz;
+
+		if (dx < 0) dx = -dx;
+		if (dz < 0) dz = -dz;
+
+		if (dx < 0xBE000 && dz < 0xBE000)
+		{
+			if (Utils_LineOfSight(&this->mPos, &target->mPos, 0, 1))
+			{
+				i32 res = this->ScorpPathCheck(&this->mPos, &target->mPos, &this->mPos, 0x14);
+				if (res == 2)
+				{
+					if (Utils_CrapXZDist(this->mPos, target->mPos) < 0x226)
+					{
+						goto pickFromList;
+					}
+				}
+				else if (res != 0)
+				{
+					goto pickFromList;
+				}
+			}
+			else
+			{
+				goto pickFromList;
+			}
+		}
+		else
+		{
+			goto pickFromList;
+		}
+	}
+
+	this->field_C00 = target->mPos;
+	this->hCurrentTarget = Mem_MakeHandle(target);
+	this->field_218 = (this->field_218 & ~0x20) | 0x10;
+	return 1;
+
+pickFromList:
+	{
+		CBody *candidates[4];
+		i32 count = 0;
+		CBody *cur = reinterpret_cast<CBody*>(EnvironmentalObjectList);
+
+		while (cur)
+		{
+			if (count < 4 && cur != target && cur->mType == 401)
+			{
+				i32 dx = this->mPos.vx - cur->mPos.vx;
+				i32 dz = this->mPos.vz - cur->mPos.vz;
+
+				if (dx < 0) dx = -dx;
+				if (dz < 0) dz = -dz;
+
+				if (dx < 0xBE000 && dz < 0xBE000)
+				{
+					if (Utils_LineOfSight(&this->mPos, &cur->mPos, 0, 1))
+					{
+						i32 res = this->ScorpPathCheck(&this->mPos, &cur->mPos, &this->mPos, 0x14);
+						if (res == 0 || (res == 2 && Utils_CrapXZDist(this->mPos, cur->mPos) < 0x226))
+						{
+							candidates[count] = cur;
+							count++;
+						}
+					}
+				}
+			}
+
+			cur = reinterpret_cast<CBody*>(cur->mNextItem);
+		}
+
+		if (!count)
+		{
+			this->field_C00 = target->mPos;
+			this->hCurrentTarget = Mem_MakeHandle(target);
+			this->field_218 |= 0x20;
+			return 1;
+		}
+
+		CBody *picked = candidates[Rnd(count)];
+		CVector aimPos = (picked->mPos + this->mPos) >> 1;
+
+		this->field_C00 = aimPos;
+		this->hCurrentTarget = Mem_MakeHandle(picked);
+		this->field_218 = (this->field_218 & ~0x20) | 0x10;
+		return 1;
+	}
 }
 
 // @Ok
