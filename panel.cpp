@@ -123,10 +123,72 @@ void DCPanel_DrawFlatShadedPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u8 r, u
 			false);
 }
 
-// @MEDIUMTODO
-void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,i32,i32,i32,i32,i32,u32)
+// @NotOk
+// real translation (0x4626a0, 640 bytes), reconstructed from the disasm:
+// two-branch geometry setup (raw x+w/y+h when both w and h are nonzero,
+// else fall back to frame->Width/frame->Height), then the same
+// flags-or-poly-color and scaled-QPoly2D-draw tail as the other
+// DCPanel_DrawTexturedPoly overloads in this file. cmpsum: 138 mnemonic
+// diffs, register allocation differs from the very prologue (original
+// pushes ebx,ebp,esi,edi; our build pushes fewer registers), so the source
+// shape is still off, not just scheduling. 1 attempt this session, not
+// iterated further given the size of the remaining queue. a6 (the 3rd of
+// the 5 trailing i32 params) is never read in the original disasm, kept as
+// an unnamed/unused parameter like DCPanel_DrawFlatShadedPoly's own
+// trailing unused i32.
+void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, i32 x, i32 y, i32 a6, i32 h, i32 w, u32 flags)
 {
-    printf("DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,i32,i32,i32,i32,i32,u32)");
+	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");
+
+	if (h && w)
+	{
+		poly->x0 = (i16)x;
+		poly->x2 = (i16)x;
+		poly->y0 = (i16)y;
+		poly->y1 = (i16)y;
+		poly->x1 = (i16)(w + x);
+		poly->x3 = (i16)(w + x);
+		poly->y2 = (i16)(h + y);
+		poly->y3 = (i16)(h + y);
+	}
+	else
+	{
+		poly->x0 = (i16)x;
+		poly->y0 = (i16)y;
+		poly->x1 = (i16)(x + frame->Width);
+		poly->y1 = (i16)y;
+		poly->x2 = (i16)x;
+		poly->y2 = (i16)(y + frame->Height);
+		poly->x3 = (i16)(x + frame->Width);
+		poly->y3 = (i16)(y + frame->Height);
+	}
+
+	u32 color = flags;
+	if (!flags)
+	{
+		color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
+	}
+
+	Texture *tex = frame->pTexture;
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 y3 = poly->y3 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 x3 = poly->x3 * scaleX;
+	f32 y2 = poly->y2 * scaleY;
+	f32 x2 = poly->x2 * scaleX;
+	f32 y1 = poly->y1 * scaleY;
+	f32 x1 = poly->x1 * scaleX;
+	f32 y0 = poly->y0 * scaleY;
+	f32 x0 = poly->x0 * scaleX;
+
+	PCGfx_DrawQPoly2D(
+			x0, y0, 0.01f, 0.01f, color,
+			x1, y1, 1.0f, 0.01f, color,
+			x2, y2, 0.01f, 1.0f, color,
+			x3, y3, 1.0f, 1.0f, color,
+			zOffset);
 }
 
 // @NotOk
