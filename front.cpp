@@ -4,6 +4,9 @@
 #include "mess.h"
 #include "ps2funcs.h"
 #include "trig.h"
+#include "ps2pad.h"
+#include "powerup.h"
+#include "dcmemcard.h"
 
 CMenu* pYesNoMenu;
 
@@ -153,10 +156,55 @@ i32 Front_GetLevelIndex(char* pTRGName)
 	return index;
 }
 
-// @MEDIUMTODO
+// Tentative names, no idb_globals.txt entries. gFrontCardExists holds the
+// DCCard_Exists(0) result. gDefaultSaveGame is a template SSaveGame the game
+// copies into gSaveGame at boot (size matches SSaveGame, 0xBC bytes).
+// gFrontYesText/gFrontNoText are the two CMenu entries added to pYesNoMenu,
+// guessed from the variable name (a yes/no confirmation menu).
+static u8* const gFrontCardExists = (u8*)0x005FAD98;
+#define G_DEFAULT_SAVE_GAME (*reinterpret_cast<SSaveGame*>(0x00550E10))
+#define gFrontYesText (*reinterpret_cast<char**>(0x0054B780))
+#define gFrontNoText (*reinterpret_cast<char**>(0x0054B77C))
+
+// @Bogus
+// Plain non-throwing placement new. The original builds pYesNoMenu with a
+// raw CClass::operator new call plus a manual constructor call (no SEH
+// frame in the original bytes), not a plain "new CMenu(...)" expression
+// (which pulls in exception unwind scaffolding for the allocation, seen
+// elsewhere in this file, e.g. CMenu::Zoom's "new CExpandingBox(...)").
+inline void* operator new(size_t, void* location)
+{
+	return location;
+}
+
+// @Ok
+// @Matching
 void Front_Init(void)
 {
-    printf("Front_Init(void)");
+	*gFrontCardExists = DCCard_Exists(0);
+	gSaveGame = G_DEFAULT_SAVE_GAME;
+
+	PShell_ApplyGameState();
+
+	print_if_false(pYesNoMenu == 0, "pYesNoMenu already created");
+
+	void* pMenuMem = CMenu::operator new(sizeof(CMenu));
+	if (pMenuMem)
+		pYesNoMenu = ::new (pMenuMem) CMenu(0x100, 0, 0, 0x100, 0x100, 0x10);
+	else
+		pYesNoMenu = 0;
+
+	pYesNoMenu->scrollbar_zero = 1;
+	// Original writes only the low byte of field_1E (mov [ecx+1Eh],bl in the
+	// original bytes), not a full i16 store. Reproduce with a byte poke
+	// instead of guessing field_1E is really two u8s, since nothing else in
+	// the repo touches this field yet.
+	*reinterpret_cast<u8*>(&pYesNoMenu->field_1E) = 1;
+
+	pYesNoMenu->AddEntry(gFrontYesText);
+	pYesNoMenu->AddEntry(gFrontNoText);
+
+	pYesNoMenu->mY = 0x74;
 }
 
 // @MEDIUMTODO
@@ -165,10 +213,38 @@ void Front_LoadGame(SSaveGame *,i32,bool)
     printf("Front_LoadGame(SSaveGame *,i32,bool)");
 }
 
-// @SMALLTODO
+// Tentative names, no name in idb_globals.txt for these three. Shared with
+// CheckForPadUnplugged and Front_Display, which both load pointers from the
+// same fixed addresses to draw the same blinking text. Not yet implemented
+// anywhere else in the repo, so kept file-local for now.
+#define gFrontPadTextOne (*reinterpret_cast<char**>(0x0054B764))
+#define gFrontPadTextTwo (*reinterpret_cast<char**>(0x0054B768))
+#define gFrontPadTextThree (*reinterpret_cast<char**>(0x0054BBC8))
+
+// @Ok
+// @Matching
 void Front_MiniUpdate(void)
 {
-    printf("Front_MiniUpdate(void)");
+	i32 type = G_SCONTROL[0].Type;
+
+	if (type != -1)
+	{
+		if (type != 0)
+			return;
+
+		Mess_SetRGB(0xFF, 0, 0, 0);
+
+		if ((TTime / 10) & 1)
+		{
+			Mess_DrawText(0x100, 0xB0, gFrontPadTextOne, 0, 0x1000);
+			Mess_DrawText(0x100, 0xC0, gFrontPadTextTwo, 0, 0x1000);
+		}
+
+		return;
+	}
+
+	if ((TTime / 10) & 1)
+		Mess_DrawText(0x100, 0xB8, gFrontPadTextThree, 0, 0x1000);
 }
 
 // @Ok
