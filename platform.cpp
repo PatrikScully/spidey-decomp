@@ -3,11 +3,13 @@
 #include "utils.h"
 #include "shatter.h"
 #include "spidey.h"
+#include "trig.h"
 
 #include "validate.h"
 
 extern CBody* EnvironmentalObjectList;
 extern const char* gObjFile;
+extern CSVector gTrajectoryVector;
 
 // @MEDIUMTODO
 void CPlatform::AI(void)
@@ -139,10 +141,47 @@ void CPlatform::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @BIGTODO
+// @Ok
+// @Matching
 void CPlatform::DoPhysics(void)
 {
-	printf("void CPlatform::DoPhysics(void)");
+	this->field_A8 = gTrajectoryVector;
+
+	if (this->field_2B0 | this->field_2B4)
+	{
+		CBaddy::DoPhysics(0);
+		return;
+	}
+
+	if (this->attributeArr[2] == 0)
+	{
+		i32 step;
+		if (Trig_GetLevelID() == 0x301 && this->field_80 >= 4)
+			step = 2;
+		else
+			step = 1;
+
+		for (i32 i = 0; i < this->field_80; i += step)
+		{
+			this->mVel += this->mAcc;
+			this->mVel.KillSmall();
+			this->mPos += this->mVel;
+			this->mAngles += this->mAngVel;
+			this->mAngles.Mask();
+			this->mAngVel += this->mAngAcc;
+			this->mAngVel.KillSmall();
+		}
+	}
+	else if (this->attributeArr[2] == 3)
+	{
+		this->mVel += this->mAcc;
+		this->mVel.KillSmall();
+		this->mPos += this->mVel;
+		this->mAngles += this->mAngVel;
+		this->mAngles.Mask();
+		this->mAngVel += this->mAngAcc;
+		this->mAngVel.KillSmall();
+	}
 }
 
 // @Ok
