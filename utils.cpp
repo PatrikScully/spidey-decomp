@@ -1222,10 +1222,19 @@ i32 Utils_XZDist(const CVector* a1, const CVector *a2)
 	return M3dMaths_SquareRoot0(v2 + v3);
 }
 
-// @MEDIUMTODO
-void Utils_RotateY(CVector*, CVector*, i32)
+// @NotOk residue: 9 mnemonic diffs (cmpsum.sh). The original computes the table index
+// (angle&0xFFF)<<2 as a standalone instruction before any table read, then reads
+// cos/sin/sin/cos through that same index 4 times. Every source shape tried here (plain
+// rcossin_tbl[angle] indexing, a cached SSinCos* / reference, an explicit byte-offset
+// pointer, volatile) makes MSVC6 fold the FIRST field read into a direct scaled-index
+// load and only start reusing a materialized address register from the SECOND read
+// onward, which does not match. 7 hypotheses tried, logged in wt/utils.attempts.md.
+void Utils_RotateY(CVector * a1, CVector * a2, i32 a3)
 {
-	printf("void Utils_RotateY(CVector*, CVector*, i32)");
+	SSinCos const * sc = &rcossin_tbl[a3 & 0xFFF];
+	a1->vx = ((a2->vx >> 3) * sc->cos + (a2->vz >> 3) * sc->sin) >> 9;
+	a1->vy = a2->vy;
+	a1->vz = ((a2->vz >> 3) * sc->cos - (a2->vx >> 3) * sc->sin) >> 9;
 }
 
 #include "my_patch.h"
