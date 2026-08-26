@@ -19,12 +19,24 @@ class CTurret : public CBaddy
 		EXPORT void ClearTargetLock(void);
 
 		CVector field_324;
+		CVector field_330;
 
-		PADDING(0x20 - sizeof(CVector));
+		PADDING(0x344 - 0x33C);
 
 		CVector field_344;
+		CVector field_350;
 
-		PADDING(0x378-0x344 - sizeof(CVector));
+		u16 field_35C;
+		u16 field_35E;
+		u16 field_360;
+		u16 field_362;
+		u16 field_364;
+		u16 field_366;
+		u16 field_368;
+		u16 field_36A;
+		u16 field_36C;
+
+		PADDING(0x378 - 0x36E);
 
 		CBody *field_378;
 };
