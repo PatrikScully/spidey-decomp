@@ -17,6 +17,7 @@
 #include "spidey.h"
 #include "ps2m3d.h"
 #include "init.h"
+#include "ps2redbook.h"
 
 #include <cstring>
 
@@ -515,10 +516,68 @@ void Shell_StoryBoards(void)
     printf("Shell_StoryBoards(void)");
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void Shell_TitleScreen(void)
 {
-    printf("Shell_TitleScreen(void)");
+	Front_ClearScreen();
+	DrawSync();
+	Pad_ClearTriggers(gSControl);
+	Pad_Update();
+	Pad_ClearTriggers(gSControl);
+
+	Sprite2* v0 = new Sprite2("title.bmp", 1, 0, 0, 3);
+
+	// same address as gsub_430880 (nullsub_3), declared and defined in
+	// PCShell.cpp; cast to accept the (unused) dummy arg this call site passes.
+	extern void gsub_430880(void);
+	((void(*)(i32))gsub_430880)(3);
+
+	Redbook_XAPlay(0x43, 0xD, 0);
+
+	while (1)
+	{
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1u, -1);
+
+		v0->screenHeight();
+
+		v0->draw(0, 0, 8, -1.0f);
+
+		Front_MiniUpdate();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		++TTime;
+		Pad_Update();
+
+		if (PCSHELL_CheckTriggers(0x40010, 1, 1))
+			break;
+
+		gsub_430880();
+		PCSHELL_Relax();
+	}
+
+	gSControl[0].Start.Triggered = 0;
+	delete v0;
+
+	Redbook_XAStop();
+	Mess_DeleteAll();
+
+	Utils_InitialRand(Vblanks);
+
+	for (i32 i = 10000; i > 0; i--)
+		Rnd(10);
+
+	// tentative: 9 i32 game-address array, no name in idb_globals.txt (nearest
+	// neighbours are gTrainingSeconds 0x551288 and gCheats 0x5513E0)
+	static i32 * const gTitleScreenShuffleTable = (i32*)0x5512A0;
+	Utils_Jumble(gTitleScreenShuffleTable, 9);
+
+	Front_ClearScreen();
+	DrawSync();
+	Pad_ClearTriggers(gSControl);
 }
 
 // @Ok
