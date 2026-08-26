@@ -560,24 +560,19 @@ void FontManager::UnloadFont(Font* pFont)
 	G_FONT_TAB[count] = 0;
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void FontManager::UnloadAllFonts(void)
 {
-	typedef void (*func_ptr)(void);
-	func_ptr func = (func_ptr)0x0043F6D0;
-	func();
-	return;
-	/*
-	for (i32 i = 0; i < 6; i++)
+	for (i32 i = 0; i < NUM_FONTS_TAB; i++)
 	{
-		if (FontManager::FontTab[i])
+		if (G_FONT_TAB[i])
 		{
-			FontManager::FontTab[i]->unload();
-			delete FontManager::FontTab[i];
-			FontManager::FontTab[i] = 0;
+			G_FONT_TAB[i]->unload();
+			delete G_FONT_TAB[i];
+			G_FONT_TAB[i] = 0;
 		}
 	}
-	*/
 }
 
 // @Ok
