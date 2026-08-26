@@ -766,10 +766,95 @@ void CRhino::DoDazedEffect(void)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Rough structural approximation only, not verified against a build. The
+// original samples 4 dynamic hooks (indices 3, 6, 0xB, 0xE, likely the feet
+// and horn), transposes this->mTransform into a rotation matrix, uses the
+// PS1 GTE (gte_SetRotMatrix/gte_ldlvl/gte_rtir/gte_stlvnl) to transform
+// those points and find a local-space bounding box, then rebuilds 4 world
+// corners from that box through a second rotation matrix and feeds them to
+// a lazily-created CQuadBit (field_3E0) shadow decal. The exact GTE
+// transform math and corner order are not reproduced with confidence here.
 void CRhino::DoMGSShadow(void)
 {
-    printf("CRhino::DoMGSShadow(void)");
+	VECTOR hook3, hook6, hookB, hookE;
+	SHook h;
+
+	h.Part.vx = 0; h.Part.vy = 0; h.Part.vz = 0;
+	h.Offset = 3;
+	M3dUtils_GetDynamicHookPosition(&hook3, this, &h);
+
+	h.Offset = 6;
+	M3dUtils_GetDynamicHookPosition(&hook6, this, &h);
+
+	h.Offset = 0xB;
+	M3dUtils_GetDynamicHookPosition(&hookB, this, &h);
+
+	h.Offset = 0xE;
+	M3dUtils_GetDynamicHookPosition(&hookE, this, &h);
+
+	VECTOR points[4];
+	points[0] = hook3;
+	points[1] = hook6;
+	points[2] = hookB;
+	points[3] = hookE;
+
+	MATRIX localMtx;
+	M3dMaths_TransposeMatrix1(&this->mTransform, &localMtx);
+	gte_SetRotMatrix(&localMtx);
+
+	i32 minX = 0x20, maxX = -0x20, minZ = 0x40, maxZ = -0x40;
+	i32 i;
+
+	for (i = 0; i < 4; i++)
+	{
+		gte_ldlvl(&points[i]);
+		gte_rtir();
+		gte_stlvnl(&points[i]);
+
+		if (points[i].vx > maxX) maxX = points[i].vx;
+		if (points[i].vx < minX) minX = points[i].vx;
+
+		if (points[i].vz > maxZ) maxZ = points[i].vz;
+		if (points[i].vz < minZ) minZ = points[i].vz;
+	}
+
+	gte_SetRotMatrix(&this->mTransform);
+
+	VECTOR rawCorners[4];
+	rawCorners[0].vx = minX; rawCorners[0].vy = 4; rawCorners[0].vz = minZ;
+	rawCorners[1].vx = maxX; rawCorners[1].vy = 4; rawCorners[1].vz = minZ;
+	rawCorners[2].vx = minX; rawCorners[2].vy = 4; rawCorners[2].vz = maxZ;
+	rawCorners[3].vx = maxX; rawCorners[3].vy = 4; rawCorners[3].vz = maxZ;
+
+	CVector corners[4];
+
+	for (i = 0; i < 4; i++)
+	{
+		gte_ldlvl(&rawCorners[i]);
+		gte_rtir();
+		gte_stlvnl(&rawCorners[i]);
+
+		corners[i].vx = rawCorners[i].vx + this->mPos.vx;
+		corners[i].vy = rawCorners[i].vy + this->mPos.vy;
+		corners[i].vz = rawCorners[i].vz + this->mPos.vz;
+	}
+
+	if (!this->field_3E0)
+	{
+		this->field_3E0 = reinterpret_cast<u32>(new CQuadBit());
+	}
+
+	CQuadBit *shadow = reinterpret_cast<CQuadBit*>(this->field_3E0);
+
+	if (shadow)
+	{
+		shadow->SetTexture(0, -1);
+		shadow->SetSemiTransparent();
+		shadow->SetSubtractiveTransparency();
+		shadow->SetTransparency(0x40);
+		shadow->SetCorners(corners[0], corners[1], corners[2], corners[3]);
+	}
 }
 
 // @Ok
