@@ -45,7 +45,12 @@ class CScorpion : public CBaddy {
 
 		i32 field_BF8;
 
-		PADDING(0xC10-0xBF8-4);
+		PADDING(0xC00-0xBF8-4);
+
+		// @FIXME guess type: candidate environmental object position
+		CVector field_C00;
+
+		PADDING(0xC10-0xC00-sizeof(CVector));
 
 		i32 field_C10;
 		i32 field_C14;
