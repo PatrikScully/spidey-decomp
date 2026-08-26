@@ -1489,10 +1489,159 @@ void DXPOLY_SaveScreen(void)
 #endif
 }
 
-// @MEDIUMTODO
-void DXPOLY_SaveSurfaceAsBMP(char *,void *,i32,i32,i32,_DDPIXELFORMAT *,bool)
+// @NotOk
+// Writes a bottom-up 24 bit BGR BMP of a surface to disk. Understands 4
+// source pixel formats (555, 555 with a top alpha bit, 565, 4444) plus a
+// 32 bit 0x00RRGGBB path; `flag` picks an alternate 32 bit source read (top
+// byte only, replicated to R/G/B) matching the disasm's al!=0 branch at the
+// per pixel loop, exact meaning not confirmed. Any other format prints an
+// error and returns without writing. 279 mnemonic diffs. Functionally
+// translated from the disasm, not run through matching discipline (huge
+// function, most of the residue would be in the per-format shift/mask
+// bookkeeping, which the compiler encodes as a small lookup table we do not
+// reproduce), not
+// verified against decomp.me. See dxsound.attempts.md.
+void DXPOLY_SaveSurfaceAsBMP(
+		char* filename,
+		void* pData,
+		i32 width,
+		i32 height,
+		i32 pitch,
+		_DDPIXELFORMAT* pf,
+		bool flag)
 {
-    printf("DXPOLY_SaveSurfaceAsBMP(char *,void *,i32,i32,i32,_DDPIXELFORMAT *,bool)");
+#ifdef _WIN32
+	u8 use32BitSrc = 0;
+	i32 rShift = 0, gShift = 0, bShift = 0, rBits = 0, gBits = 0, bBits = 0;
+	u32 rMask = 0, gMask = 0, bMask = 0;
+
+	if (pf->dwRGBBitCount == 16)
+	{
+		u32 r = pf->dwRBitMask;
+		u32 g = pf->dwGBitMask;
+		u32 b = pf->dwBBitMask;
+		u32 a = pf->dwRGBAlphaBitMask;
+
+		if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0x8000)
+		{
+			rMask = r; gMask = g; bMask = b;
+			rShift = 10; gShift = 5; bShift = 0;
+			rBits = 5; gBits = 5; bBits = 5;
+		}
+		else if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0)
+		{
+			if (flag)
+				return;
+
+			rMask = r; gMask = g; bMask = b;
+			rShift = 10; gShift = 5; bShift = 0;
+			rBits = 5; gBits = 5; bBits = 5;
+		}
+		else if (r == 0xF800 && g == 0x7E0 && b == 0x1F && a == 0)
+		{
+			rMask = r; gMask = g; bMask = b;
+			rShift = 11; gShift = 5; bShift = 0;
+			rBits = 5; gBits = 6; bBits = 5;
+		}
+		else if (r == 0xF00 && g == 0xF0 && b == 0xF && a == 0xF000)
+		{
+			rMask = r; gMask = g; bMask = b;
+			rShift = 8; gShift = 4; bShift = 0;
+			rBits = 4; gBits = 4; bBits = 4;
+		}
+		else
+		{
+			print_if_false(0, "SaveTex(): Unknown format = [%8.8X, %8.8X, %8.8X, %8.8X]\r\n", r, g, b, a);
+			return;
+		}
+	}
+	else if (pf->dwRGBBitCount == 0x20 &&
+			pf->dwRBitMask == 0xFF0000 && pf->dwGBitMask == 0xFF00 && pf->dwBBitMask == 0xFF)
+	{
+		use32BitSrc = 1;
+	}
+	else
+	{
+		print_if_false(0, "SaveTex(): Unknown format = [%8.8X, %8.8X, %8.8X, %8.8X]\r\n",
+				pf->dwRBitMask, pf->dwGBitMask, pf->dwBBitMask, pf->dwRGBAlphaBitMask);
+		return;
+	}
+
+	i32 rowBytes = ((width * 3 + 3) / 4) * 4;
+	i32 imageSize = rowBytes * height;
+
+	FILE* f = fopen(filename, "wb");
+	if (!f)
+	{
+		print_if_false(0, "SaveSurfaceAsBMP(): Problems creating: %s...\r\n", filename);
+		return;
+	}
+
+	BITMAPFILEHEADER bmfh;
+	memset(&bmfh, 0, sizeof(bmfh));
+	bmfh.bfType = 0x4D42;
+	bmfh.bfSize = imageSize + 0x36;
+	bmfh.bfOffBits = 0x36;
+	fwrite(&bmfh, 0xE, 1, f);
+
+	BITMAPINFOHEADER bmih;
+	memset(&bmih, 0, sizeof(bmih));
+	bmih.biSize = 0x28;
+	bmih.biWidth = width;
+	bmih.biHeight = height;
+	bmih.biPlanes = 1;
+	bmih.biBitCount = 0x18;
+	fwrite(&bmih, 0x28, 1, f);
+
+	u8* row = (u8*)malloc(rowBytes);
+	u8* srcRow = (u8*)pData + (height - 1) * pitch;
+
+	for (i32 y = height; y > 0; y--)
+	{
+		u8* dst = row;
+		u16* src16 = (u16*)srcRow;
+		u32* src32 = (u32*)srcRow;
+
+		for (i32 x = width; x > 0; x--)
+		{
+			u32 r, g, b;
+
+			if (use32BitSrc)
+			{
+				u32 px = *src32++;
+				if (flag)
+				{
+					b = (px >> 24) & 0xFF;
+					g = b;
+					r = b;
+				}
+				else
+				{
+					r = (px >> 16) & 0xFF;
+					g = (px >> 8) & 0xFF;
+					b = px & 0xFF;
+				}
+			}
+			else
+			{
+				u32 px = *src16++;
+				r = ((px & rMask) >> rShift) << (8 - rBits);
+				g = ((px & gMask) >> gShift) << (8 - gBits);
+				b = ((px & bMask) >> bShift) << (8 - bBits);
+			}
+
+			*dst++ = (u8)b;
+			*dst++ = (u8)g;
+			*dst++ = (u8)r;
+		}
+
+		fwrite(row, rowBytes, 1, f);
+		srcRow -= pitch;
+	}
+
+	fclose(f);
+	free(row);
+#endif
 }
 
 // @Ok
