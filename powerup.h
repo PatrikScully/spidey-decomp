@@ -32,7 +32,13 @@ class CPowerUp : public CBody
 		u8 mIs3d;
 		u8 mDropping;
 
-		PADDING(0x106-0x102-1);
+		// guess: DoPhysics falling/landing state. field_103 = currently
+		// falling (drives the whole physics branch); field_104 = ground
+		// check already done this fall; field_105 = landing threshold
+		// multiplier (shifted by 12 against field_10C).
+		u8 field_103;
+		u8 field_104;
+		u8 field_105;
 
 		u16 mNodeIndex;
 		u16 field_108;
@@ -41,13 +47,19 @@ class CPowerUp : public CBody
 
 		i32 field_10C;
 
-		PADDING(0xE);
+		// guess: DoPhysics working position, integrated from mVel each
+		// frame and copied back into mPos at the end of DoPhysics.
+		CVector field_110;
+
+		PADDING(2);
 
 
 		u16 field_11E;
 		u16 field_120;
 
-		PADDING(0x124-0x120-2);
+		// guess: random model variant offset, set in the constructor from
+		// Rnd(20) + 90. Only ever written there, no other reader found.
+		i16 field_122;
 
 		u8 field_124;
 
