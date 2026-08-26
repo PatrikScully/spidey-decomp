@@ -4,6 +4,9 @@
 #include "spidey.h"
 #include "db.h"
 #include "ps2funcs.h"
+#include "PCGfx.h"
+#include "m3dinit.h"
+#include "SpideyDX.h"
 
 #include "validate.h"
 
@@ -37,10 +40,53 @@ void DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)
     printf("DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32)");
 }
 
-// @MEDIUMTODO
-void DCPanel_DrawFlatShadedPoly(f32,i32,i32,i32,i32,u8,u8,u8,i32,i32)
+// @Ok
+// @Matching
+void DCPanel_DrawFlatShadedPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u8 r, u8 g, u8 b, i32, i32 blendMode)
 {
-    printf("DCPanel_DrawFlatShadedPoly(f32,i32,i32,i32,i32,u8,u8,u8,i32,i32)");
+	u8 alpha = 0xFF;
+
+	if (blendMode == 1)
+	{
+		PCGfx_UseTexture(blendMode, (DCGfx_BlendingMode)blendMode);
+		alpha = 0x7F;
+	}
+	else if (blendMode == 2)
+	{
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+		alpha = 0x7F;
+	}
+	else if (blendMode == 3)
+	{
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+		alpha = 0xDC;
+	}
+	else
+	{
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+	}
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 hScaled = h * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 wScaled = w * scaleX;
+	f32 yScaled = y * scaleY;
+	f32 xScaled = x * scaleX;
+
+	u32 color = (alpha << 24) | (r << 16) | (g << 8) | b;
+
+	PCGfx_DrawQuad2D(
+			xScaled,
+			yScaled,
+			wScaled,
+			hScaled,
+			0.0f,
+			0.0f,
+			1.0f,
+			1.0f,
+			color,
+			zOffset,
+			false);
 }
 
 // @MEDIUMTODO
