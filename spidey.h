@@ -12,7 +12,10 @@ EXPORT extern u8 gSpideyPsxIndex;
 
 struct SIndicator
 {
-	PADDING(0xC);
+	// direction (already local-space, normalized) from the player towards
+	// the offscreen threat this entry represents; written by
+	// CPlayer::BuildOffscreenSpideySenseIndicatorList.
+	CVector mDirection;
 
 	SHandle field_C;
 
@@ -108,7 +111,10 @@ class CPlayer : public CSuper
 
 		MATRIX field_89C;
 
-		PADDING(0x8C4-0x89C-sizeof(MATRIX));
+		// running max/min CBody::mPlayerDist across the qualifying baddies
+		// found this pass, set up in BuildOffscreenSpideySenseIndicatorList
+		u32 field_8BC;
+		u32 field_8C0;
 
 		i32 field_8C4;
 		i32 field_8C8;
@@ -287,7 +293,13 @@ class CPlayer : public CSuper
 
 		u16 field_EA8;
 
-		PADDING(0xEF0 - 0xEA8 - 2);
+		PADDING(0xEC0-0xEAA);
+
+		// set to 1 in BuildOffscreenSpideySenseIndicatorList when at least
+		// one qualifying baddy was found this pass
+		u8 field_EC0;
+
+		PADDING(0xEF0-0xEC0-1);
 
 		i32 mMaxHealth;
 
