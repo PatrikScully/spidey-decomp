@@ -27,8 +27,7 @@ class CSoftSpot : public CBaddy
 		i32 field_324;
 		i32 field_328;
 		i32 field_32c;
-		i32 field_330;
-		i32 field_334;
+		SHandle field_330;
 };
 
 class CMysterio;
