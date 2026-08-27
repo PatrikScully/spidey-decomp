@@ -1402,7 +1402,24 @@ void CQuadBit::SetTexture(u32 checksum)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: 21 mnemonic diffs (cmpsum against 0x40c350). Fields verified
+// against VALIDATE(CGlow,...) and cross-checked with the already-@Ok
+// CGlow::SetCentreRGB body (same 0x32000000|b<<16|g<<8|r formula). Root
+// cause: the original preloads eax=1 once, right after entry, and reuses
+// that one register both for the inlined CFriction::Set(1,1,1) byte
+// stores and for two of DCMem_New's five args; our build instead loads
+// BitCount through a register then pushes the DCMem_New args as plain
+// immediates, so the two never share a register. 3 source-shape
+// hypotheses tried: (1) constants assigned before the alloc call, matching
+// disassembly's read order -> 76 diffs; (2) alloc call moved first in
+// source (matches this->mpSections assignment coming from a call
+// expression, not a stored constant) -> 21 diffs, the rest of the
+// function (all 4 fill loops, AttachTo, mPos copy, mCentreCodeBGR) lines
+// up instruction-for-instruction; (3) mCentreCodeBGR written as the raw
+// formula instead of a SetCentreRGB() call -> no change (both compile
+// identically). Below the 15-hypothesis bar for @AlmostMatching on a
+// medium function, left @NotOk rather than forcing it.
 CGlow::CGlow(
 		CVector* pVector,
 		i32 a3,
@@ -1414,7 +1431,36 @@ CGlow::CGlow(
 		u8 a9,
 		u8 a10)
 {
-	printf("CGlow::CGlow");
+	SSection* pSections = static_cast<SSection*>(DCMem_New(0x80, 0, 1, 0, 1));
+
+	this->mNumSections = 8;
+	this->mStepAngle = 0x200;
+	this->mNumFringes = 1;
+
+	this->mpSections = pSections;
+	this->mpFringes = reinterpret_cast<SFringeQuad*>(this->mpSections + this->mNumSections);
+
+	this->AttachTo(reinterpret_cast<CBit**>(&GlowList));
+
+	this->mPos = *pVector;
+
+	u32 i;
+
+	for (i = 0; i < this->mNumSections; i++)
+		this->mpSections[i].Radius = a3;
+
+	this->mCentreCodeBGR = 0x32000000 | (((a7 << 8) | a6) << 8) | a5;
+
+	for (i = 0; i < this->mNumSections; i++)
+		this->mpSections[i].PadBGR = (a10 << 16) | (a9 << 8) | a8;
+
+	for (i = 0; i < this->mNumSections; i++)
+	{
+		this->mpFringes[i].Width = a4;
+		this->mpFringes[i].CodeBGR = 0x3A000000;
+	}
+
+	this->mMask = -1;
 }
 
 // @Ok
@@ -1643,9 +1689,38 @@ void CQuadBit::SetTransparency(unsigned char a2){
 	this->mTint = a2 | ((a2 | (a2 << 8)) << 8);
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: 92 of ~100 mnemonic diffs (cmpsum against 0x409400). Blocked by
+// a known repo-wide issue (CLAUDE.md): vector.h's operator-(CVector,CVector)
+// is INLINE but the original calls it out of line at this exact address
+// (0x4E7760, confirmed via names.json: ??G@YA?AVCVector@@ABV0@0@Z), so our
+// build can never emit that call, which shifts register allocation for the
+// whole function from the first instruction on (this ends up in edi
+// instead of esi). Semantics verified against the disassembly: a3 is an
+// SVECTOR direction (sign-extended to a local CVector), Utils_CalcPerps
+// (0x4E5E20, already @Ok in utils.cpp) gives two perpendiculars, each
+// scaled by a4 via CVector::operator*=(const int&) (0x4E75F0, called twice
+// with the same a4 in the original, matching this build), then combined
+// with *a2 into the quad's four corners (mPos/mPosB/mPosC/mPosD). a5 is
+// read from the stack frame but never referenced by the original disasm;
+// not used here either. Not worth chasing hypotheses since the wall is
+// structural (repo-wide vector.h fix required first), consistent with the
+// vector.h note already in CLAUDE.md.
 void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, int a4, int a5)
 {
+	CVector dir(a3->vx, a3->vy, a3->vz);
+	CVector perp1;
+	CVector perp2;
+
+	Utils_CalcPerps(&dir, &perp2, &perp1);
+
+	perp2 *= a4;
+	perp1 *= a4;
+
+	this->mPos = *a2 - perp1 - perp2;
+	this->mPosB = *a2 + perp1 - perp2;
+	this->mPosC = *a2 - perp1 + perp2;
+	this->mPosD = *a2 + perp1 + perp2;
 }
 
 // @Ok
@@ -2016,9 +2091,28 @@ void CRibbonBit::Move(void)
 	this->IncFrameWithWrap();
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: original address not found (checked tools/names.json,
+// idbs/spideypc_names.txt, idbs/spiderman_names.txt,
+// idbs/new_in_idb_code.txt, and a byte-signature scan of every small
+// tools/functions/*.bin file for the CFT4Bit field offsets this must
+// touch). The only call site (CRibbonBit::Move, already @Ok) is a real
+// out-of-line call, so IncFrameWithWrap has its own address in the
+// original binary, but nothing in the available data names or locates
+// it, so no diff can be run. This is a functional translation only:
+// call the already-@Ok inlined IncFrame() step, then wrap mFrame back
+// into range using mNumFrames, matching the field roles validated
+// elsewhere in this file (mFrame i8, mNumFrames u8, mpPSXFrame
+// recomputed after any change to mFrame).
 void CFT4Bit::IncFrameWithWrap(void)
 {
+	this->IncFrame();
+
+	if (this->mFrame >= this->mNumFrames)
+	{
+		this->mFrame -= this->mNumFrames;
+		this->mpPSXFrame = &this->mpPSXAnim[this->mFrame];
+	}
 }
 
 /*
