@@ -202,11 +202,11 @@ static MATRIX * const stru_56F224 = (MATRIX*)0x56F224;
 // above.
 static u32 * const gSpideySenseListLastUpdateTime = (u32*)0x006A9084;
 
-// @Ok
-// @AlmostMatching: 13 mnemonic diffs (down from an initial honest pass of
-// 85). Instruction count and total byte length are IDENTICAL to the
-// original (125 instructions, 473 bytes each), so nothing is missing or
-// extra: this is pure register-role/scheduling residue, not a logic gap.
+// @NotOk
+// residue: 13 mnemonic diffs (down from an initial honest pass of 85).
+// Instruction count and total byte length are IDENTICAL to the original
+// (125 instructions, 473 bytes each), so nothing is missing or extra:
+// this is pure register-role/scheduling residue, not a logic gap.
 // Two clusters remain: (1) the throttle-check's load of
 // gSpideySenseListLastUpdateTime gets hoisted by our compiler to before the
 // prologue pushes, while the original schedules it after; (2) the
@@ -214,7 +214,9 @@ static u32 * const gSpideySenseListLastUpdateTime = (u32*)0x006A9084;
 // direction computation come out in a different (but equal-length, equal
 // instruction-count) order, and our build swaps which of esi/edi holds the
 // baddy pointer vs the found-slot index throughout the loop.
-// 14 distinct hypotheses tried, each targeting a specific diff:
+// 14 distinct hypotheses tried, one short of the 15-hypothesis medium-size
+// bar, so left @NotOk rather than @AlmostMatching. Each targets a
+// specific diff:
 // 1) initial straight translation - 85 diffs.
 // 2) mPlayerDist declared u16 (original header) forced a 16-bit
 //    load/compare that does not exist in the disassembly (a plain 32-bit
