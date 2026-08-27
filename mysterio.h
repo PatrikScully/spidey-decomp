@@ -6,6 +6,7 @@
 #include "export.h"
 #include "baddy.h"
 #include "camera.h"
+#include "mem.h"
 
 #include "reloc.h"
 
@@ -200,7 +201,8 @@ class CDamagedSoftSpotEffect : public CNonRenderedBit
 		EXPORT CDamagedSoftSpotEffect(CBody*, i32);
 		EXPORT virtual ~CDamagedSoftSpotEffect(void) OVERRIDE;
 
-		PADDING(0xC);
+		SHandle field_3C;
+		i32 field_44;
 
 		// @FIXME  type
 		void *field_48;

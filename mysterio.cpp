@@ -14,6 +14,7 @@
 #include "pal.h"
 #include "mem.h"
 #include "spool.h"
+#include "bit2.h"
 
 extern struct tag_S_Pal *pPaletteList;
 
@@ -479,10 +480,31 @@ void Mysterio_RelocatableModuleInit(reloc_mod *pMod)
 	gFloatSuperRelated = 1.0f;
 }
 
-// @SMALLTODO
-CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody*, i32)
+// @Bogus
+// No out-of-line address in names.json: the only call site is fully
+// inlined into CSoftSpot::Hit (0x45F940, still unimplemented in this
+// file), matching the CMystFoot precedent above (checked via IDA: only 2
+// xrefs to this class's vtable in the whole binary, one is this
+// constructor's inlined body, the other is the destructor). Read straight
+// off the disasm of that inline block: pBody is stored as a handle,
+// field_44 gets the raw i32 arg, then a CSmokeGenerator is spawned at
+// pBody's position and marked mProtected (same idiom as
+// CMysterioHeadGlow below). The 84-byte Mem_New for the smoke generator
+// is checked for failure (field_48 = 0 in that case) but the following
+// mProtected store still dereferences it unconditionally, an original
+// bug reproduced here rather than fixed.
+CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody *pBody, i32 a2)
 {
-	printf("CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody*, i32)");
+	print_if_false(pBody != 0, "NULL pBody sent to CDamagedSoftSpotEffect");
+
+	this->field_3C = Mem_MakeHandle(pBody);
+	this->field_44 = a2;
+
+	CSmokeGenerator *pSmoke = new CSmokeGenerator(
+			&pBody->mPos, 0xFFFF, 2, 128, 128, 128, 20, 10, 1000, 700);
+
+	this->field_48 = pSmoke;
+	pSmoke->mProtected = 1;
 }
 
 // @NotOk
@@ -492,10 +514,130 @@ CDamagedSoftSpotEffect::~CDamagedSoftSpotEffect(void)
 	delete reinterpret_cast<CClass*>(this->field_48);
 }
 
-// @MEDIUMTODO
-CAngrySpark::CAngrySpark(CVector*)
+static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
+// same player-relative reference point used by spidey.cpp (stru_56F1B4)
+// and CPlayer::RenderLookaroundReticle; file-local copy, address only.
+
+static i16 * const word_610C48 = (i16*)0x610C48;
+static i16 * const word_610C4A = (i16*)0x610C4A;
+
+// @NotOk
+// Full disasm trace (0x45A010-0x45A4A0) done via IDA/Hex-Rays, algorithm
+// fully understood and reproduced below (down x toCam cross product,
+// normalize, random launch angle, two chained scaled offsets for mVel
+// and mPos, a second offset from a 90 degree rotated angle for
+// mPosB/mPosD). Uses the CVector free operator* and operator+ exactly as
+// they already exist in vector.cpp: both only read lhs.vx for every
+// output component (a genuine original bug, not something to fix here).
+// cmpsum still shows diffs (see attempts file); most likely cause is
+// register/stack slot allocation around the repeated d1/d2-style locals
+// (each only ever needs its .vx set, matching the "lhs.vx-only" bug), not
+// a wrong value. Attempts logged in
+// ~/Documents/spidey-work/wt/CAngrySpark_CAngrySpark.attempts.md.
+CAngrySpark::CAngrySpark(CVector *a2)
 {
-	printf("CAngrySpark::CAngrySpark(CVector*)");
+	this->mPosC = *a2;
+
+	CVector down;
+	down.vx = 0;
+	down.vy = -4096;
+	down.vz = 0;
+
+	CVector toCam;
+	toCam.vx = stru_56F1B4->vx - (this->mPosC.vx >> 12);
+	toCam.vy = stru_56F1B4->vy - (this->mPosC.vy >> 12);
+	toCam.vz = stru_56F1B4->vz - (this->mPosC.vz >> 12);
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&down));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&toCam));
+	gte_op0();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&toCam));
+
+	CVector shifted;
+	shifted.vx = toCam.vx >> 8;
+	shifted.vy = toCam.vy >> 8;
+	shifted.vz = toCam.vz >> 8;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&shifted));
+	gte_sqr0();
+
+	VECTOR squared;
+	gte_stlvnl(&squared);
+
+	i32 mag = M3dMaths_SquareRoot0(squared.vx + squared.vy + squared.vz);
+
+	toCam.vx = (toCam.vx / mag) << 4;
+	toCam.vy = (toCam.vy / mag) << 4;
+	toCam.vz = (toCam.vz / mag) << 4;
+
+	i32 angle;
+	switch (Rnd(4))
+	{
+		case 0: angle = Rnd(200) - 1024; break;
+		case 1: angle = -1024 - Rnd(300); break;
+		case 2: angle = 1024 - Rnd(200); break;
+		case 3: angle = Rnd(300) + 1024; break;
+		default: angle = reinterpret_cast<i32>(this); break;
+	}
+
+	i16 sinA = word_610C48[2 * (angle & 0xFFF)];
+	i16 cosA = word_610C4A[2 * (angle & 0xFFF)];
+
+	CVector d1;
+	d1.vx = (100 * sinA) >> 12;
+
+	CVector d2;
+	d2.vx = (100 * cosA) >> 12;
+
+	this->mPosC += down + d2 * (d1 * toCam);
+
+	i32 velScale = Rnd(0x46) + 100;
+
+	CVector e1;
+	e1.vx = (velScale * sinA) >> 12;
+
+	CVector e2;
+	e2.vx = (velScale * cosA) >> 12;
+
+	this->mVel = down + e2 * (e1 * toCam);
+
+	i32 posScale = Rnd(150) + 150;
+
+	CVector f1;
+	f1.vx = (posScale * sinA) >> 12;
+
+	CVector f2;
+	f2.vx = (posScale * cosA) >> 12;
+
+	CVector posOffset = down + f2 * (f1 * toCam);
+
+	this->mPos = this->mPosC + posOffset;
+
+	i32 rotAngle = (angle + 1024) & 0xFFF;
+
+	i16 sin2 = word_610C48[2 * rotAngle];
+	i16 cos2 = word_610C4A[2 * rotAngle];
+
+	CVector g1;
+	g1.vx = (50 * sin2) >> 12;
+
+	CVector g2;
+	g2.vx = (50 * cos2) >> 12;
+
+	CVector cornerOffset = down + g2 * (g1 * toCam);
+
+	if (Rnd(2))
+		this->mPosD = this->mPosC + cornerOffset;
+	else
+		this->mPosD = this->mPosC - cornerOffset;
+
+	this->mPosB = this->mPosD + posOffset;
+
+	this->SetTexture(0x877E63C8);
+	this->SetSemiTransparent();
+	this->SetTint(0xFF, 0x64, 0);
+
+	this->mType = 0x24;
 }
 
 // @Ok
@@ -1108,5 +1250,7 @@ void validate_CDamagedSoftSpotEffect(void)
 {
 	VALIDATE_SIZE(CDamagedSoftSpotEffect, 0x4C);
 
+	VALIDATE(CDamagedSoftSpotEffect, field_3C, 0x3C);
+	VALIDATE(CDamagedSoftSpotEffect, field_44, 0x44);
 	VALIDATE(CDamagedSoftSpotEffect, field_48, 0x48);
 }
