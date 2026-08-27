@@ -166,10 +166,84 @@ void CLizMan::CalculateJumpPositionArray(CVector* pTarget)
 	this->field_3B0 = 0;
 }
 
-// @BIGTODO
+// @NotOk
+// Logic verified against the original disassembly instruction by instruction
+// (globals: G_OFFSETLIST/NumNodes for the trig node array, MechList for the
+// player, BaddyList for the other-lizman check via mType==0x13D and
+// field_3B4+0x234). Structurally close (same call sequence and branch
+// targets per node/baddy check, confirmed by walking the full built
+// function with iced-x86, not just the fixed-length window) but the built
+// function is 341 bytes vs 329 original (extra ~12 bytes) and cmpsum shows
+// 88 mnemonic diffs, mostly register allocation (this->mPos ends up cached
+// in a register across the outer loop in this build; the original reloads
+// it from a stack slot at each use instead) rather than missing logic.
+// 5 source hypotheses tried (goto vs break+null-check for the nested-loop
+// early exit, which fixed the earlier gross size mismatch; split vs
+// combined range check; CVector 3-arg constructor vs field assignment for
+// nodePos) without closing the remaining gap. Below the 15-hypothesis bar
+// for a function this size, left @NotOk rather than claim @AlmostMatching.
 i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 {
-	return 0x17062024;
+	i32 result = 0;
+	i32 bestDist = Utils_CrapDist(this->mPos, MechList->mPos) - 0x100;
+
+	if (bestDist > 0)
+	{
+		for (i32 i = 1; i < NumNodes; i++)
+		{
+			i16* node = G_OFFSETLIST[i];
+			if (*reinterpret_cast<u16*>(node) != 0x3E8)
+				continue;
+
+			i16 len = node[1];
+			u8* unpacked = reinterpret_cast<u8*>(
+					(reinterpret_cast<u32>(node) + len * 2 + 7) & ~3);
+
+			if (*reinterpret_cast<u16*>(unpacked + 0x12) != 0x470A)
+				continue;
+
+			i32* pRaw = reinterpret_cast<i32*>(unpacked);
+			CVector nodePos;
+			nodePos.vx = pRaw[0] << 12;
+			nodePos.vy = pRaw[1] << 12;
+			nodePos.vz = pRaw[2] << 12;
+
+			i32 d = Utils_CrapDist(nodePos, this->mPos);
+			if (d < 0x100 || d > 0xC00)
+				continue;
+
+			i32 distToPlayer = Utils_CrapDist(nodePos, MechList->mPos);
+			if (distToPlayer >= bestDist)
+				continue;
+
+			CItem* pOther = BaddyList;
+			while (pOther)
+			{
+				if (pOther->mType == 0x13D)
+				{
+					if (Utils_CrapXZDist(nodePos, pOther->mPos) < 0x100)
+						goto nextNode;
+
+					CVector* pArr = reinterpret_cast<CLizMan*>(pOther)->field_3B4;
+					if (pArr)
+					{
+						CVector* pMid = reinterpret_cast<CVector*>(
+								reinterpret_cast<u8*>(pArr) + 0x234);
+						if (Utils_CrapXZDist(nodePos, *pMid) < 0x100)
+							goto nextNode;
+					}
+				}
+				pOther = pOther->mNextItem;
+			}
+
+			result = i;
+			bestDist = distToPlayer;
+
+			nextNode:;
+		}
+	}
+
+	return result;
 }
 
 extern CPlayer* MechList;
@@ -285,9 +359,76 @@ void CLizMan::SwitchFromEulerToMatrix(void)
 	}
 }
 
-// @BIGTODO
-void CLizMan::RunToWhereActionIs(CVector*)
-{}
+// @NotOk
+// residue: this uses CVector's free operator-, which vector.h declares
+// INLINE. Our build always inlines it (same repo-wide issue as
+// CQuadBit::OrientUsing in bit.cpp, documented in CLAUDE.md), but the
+// original calls it out of line at 0x4E7760, so the delta-vector
+// computation below can never byte-match until that header is fixed
+// project-wide (out of scope for a single function / single file).
+void CLizMan::RunToWhereActionIs(CVector* pTarget)
+{
+	if (Utils_CrapDist(this->mPos, *pTarget) > 0x5DC)
+		return;
+
+	if (!this->AddPointToPath(&this->mPos, 0x5DC))
+		return;
+
+	i32 dx = pTarget->vx - this->mPos.vx;
+	i32 biasX = (dx > 0) ? -0x64000 : 0x64000;
+	i32 dz = pTarget->vz - this->mPos.vz;
+	i32 biasZ = (dz > 0) ? -0x64000 : 0x64000;
+
+	CVector adjustedTarget;
+	adjustedTarget.vx = pTarget->vx + biasX;
+	adjustedTarget.vy = this->mPos.vy;
+	adjustedTarget.vz = pTarget->vz + biasZ;
+
+	if (!MechList->field_57C)
+	{
+		if (this->PathCheck(&this->mPos, &MechList->mPos, NULL, 0x37) == 0)
+		{
+			if (this->AddPointToPath(&MechList->mPos, 0x5DC))
+				goto cleanup;
+		}
+	}
+
+	{
+		i32 result = this->PathCheck(&this->mPos, &adjustedTarget, NULL, 0x37);
+
+		if (result == 0)
+		{
+			if (this->AddPointToPath(&adjustedTarget, 0x5DC))
+				goto cleanup;
+			return;
+		}
+
+		if (result != 2)
+			return;
+
+		if (Utils_CrapDist(this->mPos, adjustedTarget) < 0x64)
+			return;
+
+		CVector delta = adjustedTarget - this->mPos;
+		delta >>= 12;
+		delta *= 0xE74;
+		delta += this->mPos;
+
+		if (!this->AddPointToPath(&delta, 0))
+			return;
+	}
+
+cleanup:
+	this->Neutralize();
+
+	i32 flags = this->field_2F0;
+	this->field_374 = gTimerRelated - 0xF0;
+	this->field_31C.bothFlags = 2;
+	this->field_2A8 &= ~0x10000000;
+	*reinterpret_cast<u8*>(&flags) |= 1;
+	this->field_2F0 = flags;
+	this->dumbAssPad = 0;
+}
 
 // @Ok
 void INLINE CLizMan::HelpOutBuddy(CMessage* pMessage)
@@ -542,10 +683,45 @@ void CLizMan::DoLizmanPhysics(void)
 	printf("CLizMan::DoLizmanPhysics(void)");
 }
 
-// @SMALLTODO
+// @Ok
+// @AlmostMatching: stack frame size and instruction count now match (0x28
+// bytes, same 5 calls). Two residues left, both around register/address
+// scheduling, not missing logic: (1) the address of `offset` is computed
+// by a `lea` in a different spot (original hoists it right after the
+// prologue; ours computes it right before the RotateY call), which shifts
+// a couple of neighbouring instructions; (2) original clears eax
+// (`xor eax,eax`) between the two epilogue pops, ours does not, since eax
+// already holds 0 from CClass_new's null check by a different path. 16
+// distinct source hypotheses tried and logged in
+// CLizMan_CheckFallBack.attempts.md: compile-time-folded vs runtime shift
+// for the +-75<<12 constant, declaration order of rotated/offset/backDist/
+// angle (all permutations), extracting the angle read into a named local
+// (fixed most of the diffs), CVector 3-arg constructor vs field-by-field
+// init, nested/sibling block scoping to hint stack slot reuse, an
+// anonymous `&CVector(...)` temporary as the call argument, reusing
+// `offset`'s storage for the final sum instead of a separate `target`
+// local (this fixed the stack frame size), if/else vs ternary for
+// backDist, and matching CThug::CheckFallBack's known-good-looking
+// structure verbatim (this made things worse; on inspection
+// CThug::CheckFallBack's own @Ok tag is stale, cmpsum shows 44 mnemonic
+// diffs on it too, reported separately, not fixed here).
 void CLizMan::CheckFallBack(void)
 {
-	printf("CLizMan::CheckFallBack(void)");
+	CVector rotated;
+	CVector offset;
+	i32 backDist = (this->field_2A8 & 0x10) ? -75 : 75;
+	i32 angle = this->mAngles.vy;
+
+	offset.vz = backDist << 12;
+
+	Utils_RotateY(&rotated, &offset, angle);
+
+	offset = this->mPos + rotated;
+
+	if (this->PathCheck(&this->mPos, &offset, NULL, 0x37) == 2)
+	{
+		new CAIProc_RotY(this, 0x7FF, 4, 0);
+	}
 }
 #ifdef _MSC_VER
 #pragma auto_inline(on)
