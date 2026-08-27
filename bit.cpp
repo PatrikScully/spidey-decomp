@@ -1402,7 +1402,24 @@ void CQuadBit::SetTexture(u32 checksum)
 	}
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: 21 mnemonic diffs (cmpsum against 0x40c350). Fields verified
+// against VALIDATE(CGlow,...) and cross-checked with the already-@Ok
+// CGlow::SetCentreRGB body (same 0x32000000|b<<16|g<<8|r formula). Root
+// cause: the original preloads eax=1 once, right after entry, and reuses
+// that one register both for the inlined CFriction::Set(1,1,1) byte
+// stores and for two of DCMem_New's five args; our build instead loads
+// BitCount through a register then pushes the DCMem_New args as plain
+// immediates, so the two never share a register. 3 source-shape
+// hypotheses tried: (1) constants assigned before the alloc call, matching
+// disassembly's read order -> 76 diffs; (2) alloc call moved first in
+// source (matches this->mpSections assignment coming from a call
+// expression, not a stored constant) -> 21 diffs, the rest of the
+// function (all 4 fill loops, AttachTo, mPos copy, mCentreCodeBGR) lines
+// up instruction-for-instruction; (3) mCentreCodeBGR written as the raw
+// formula instead of a SetCentreRGB() call -> no change (both compile
+// identically). Below the 15-hypothesis bar for @AlmostMatching on a
+// medium function, left @NotOk rather than forcing it.
 CGlow::CGlow(
 		CVector* pVector,
 		i32 a3,
@@ -1414,7 +1431,36 @@ CGlow::CGlow(
 		u8 a9,
 		u8 a10)
 {
-	printf("CGlow::CGlow");
+	SSection* pSections = static_cast<SSection*>(DCMem_New(0x80, 0, 1, 0, 1));
+
+	this->mNumSections = 8;
+	this->mStepAngle = 0x200;
+	this->mNumFringes = 1;
+
+	this->mpSections = pSections;
+	this->mpFringes = reinterpret_cast<SFringeQuad*>(this->mpSections + this->mNumSections);
+
+	this->AttachTo(reinterpret_cast<CBit**>(&GlowList));
+
+	this->mPos = *pVector;
+
+	u32 i;
+
+	for (i = 0; i < this->mNumSections; i++)
+		this->mpSections[i].Radius = a3;
+
+	this->mCentreCodeBGR = 0x32000000 | (((a7 << 8) | a6) << 8) | a5;
+
+	for (i = 0; i < this->mNumSections; i++)
+		this->mpSections[i].PadBGR = (a10 << 16) | (a9 << 8) | a8;
+
+	for (i = 0; i < this->mNumSections; i++)
+	{
+		this->mpFringes[i].Width = a4;
+		this->mpFringes[i].CodeBGR = 0x3A000000;
+	}
+
+	this->mMask = -1;
 }
 
 // @Ok
