@@ -10,11 +10,20 @@
 #include "reloc.h"
 
 
-class CMystFoot : public CBaddy {};
-
-class CSoftSpot : public CBaddy 
+class CMystFoot : public CBaddy
 {
 	public:
+		// no out-of-line address in names.json: gets inlined at both call
+		// sites in CMysterio::CMysterio(i16*, i32), matches the CManipOb /
+		// CManipObChunk InitItem+AttachTo idiom (manipob.cpp).
+		INLINE CMystFoot(void);
+};
+
+class CSoftSpot : public CBaddy
+{
+	public:
+		EXPORT CSoftSpot(CBaddy*, i32, i32, i32);
+
 		i32 field_324;
 		i32 field_328;
 		i32 field_32c;
@@ -22,10 +31,24 @@ class CSoftSpot : public CBaddy
 		i32 field_334;
 };
 
+class CMysterio;
+
+// used only as a field_324-owned sub-object of CMysterio (the head glow
+// effect). Not decompiled; stubbed just enough (size 0xBC, ctor address
+// 0x45AAA0) so CMysterio::CMysterio(i16*, i32) can call it. mProtected is
+// inherited from CBit (bit.h/bit.cpp, offset 0x3A).
+class CMysterioHeadGlow : public CQuadBit
+{
+	public:
+		EXPORT CMysterioHeadGlow(CMysterio*);
+
+		PADDING(0xBC-0x84);
+};
+
 class CMysterio : public CBaddy {
 	public:
 
-	EXPORT CMysterio(i32*, i32);
+	EXPORT CMysterio(i16*, i32);
 	EXPORT CMysterio(void);
 	EXPORT ~CMysterio(void);
 	EXPORT u8 MystRedbook_XAPlayPos(i32, i32, CVector*, i32);
@@ -42,8 +65,11 @@ class CMysterio : public CBaddy {
 	CItem* field_324;
 	PADDING(4);
 
-	i32 field_32C;
-	PADDING(0x34C-0x32c-4);
+	// walked by loop index (not by the trigger-link field code) in the
+	// constructor's Trig_GetLinkInfoList loop; holds up to 8 CSoftSpot
+	// pointers. field_38C[8..10] (see field_38C below) alias the 0xC bytes
+	// right after field_3A8, still inside the class, just past this array.
+	CSoftSpot* field_32C[8];
 
 	i32 field_34C;
 	i32 field_350;

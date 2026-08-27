@@ -13,6 +13,7 @@
 #include "front.h"
 #include "pal.h"
 #include "mem.h"
+#include "spool.h"
 
 extern struct tag_S_Pal *pPaletteList;
 
@@ -591,9 +592,141 @@ CMysterio::~CMysterio(void)
 
 }
 
-// @MEDIUMTODO
-CMysterio::CMysterio(int*, int)
+// tentative, address not in the maintainer's IDB. Zeroed unconditionally at
+// the very top of CMysterio::CMysterio, before InitItem is even called.
+// Purpose unknown (no other reader/writer found in this file). Nearest
+// named neighbours: gSfxGlobal (0x60D86C, before) and gMystHandle (0x60D9A0,
+// after, idb_globals.txt); not proven related to either.
+EXPORT i32 gMysterioCtorFlag;
+
+// CMysterioHeadGlow::CMysterioHeadGlow and CSoftSpot::CSoftSpot (both
+// @SMALLTODO stubs) are defined in baddy.cpp, not here. mysterio.cpp
+// compiles with /Ob2 (auto-inline), so a same-TU printf placeholder for a
+// callee of CMysterio::CMysterio would get inlined into it and pollute its
+// codegen (CLAUDE.md leaf-first rule); an __asm forward-to-original also
+// does not work here, it forces an ebp-based frame for the whole
+// translation unit and changes CMysterio::CMysterio's own prologue. Keeping
+// the stub bodies in a different .cpp avoids both (cross-TU inlining does
+// not happen for functions defined outside headers).
+
+// @Bogus
+// Inlined at both "new CMystFoot()" call sites in CMysterio's ctor (no
+// out-of-line address in names.json for it). Same InitItem/Spool_GetModel/
+// AttachTo/mFlags idiom as CManipOb::CManipOb (manipob.cpp). mType 0x19D
+// (413) and the model hash 0x98A81283 are read straight off that disasm.
+INLINE CMystFoot::CMystFoot(void)
 {
+	this->InitItem(gObjFile);
+	this->mModel = static_cast<u16>(Spool_GetModel(0x98A81283, gObjFileRegion));
+	this->AttachTo(&EnvironmentalObjectList);
+	this->mType = 0x19D;
+	this->mFlags = (this->mFlags & 0xFFFD) | 0x10;
+}
+
+// @Ok
+// @AlmostMatching: 16 mnemonic diffs left (cmpsum against 0x45c910), all
+// inside the trigger-link (CSoftSpot) loop near the end: the
+// Trig_GetLinkInfoList call setup, the loop's entry guard (original has a
+// redundant je+jle pair we could not reproduce), and one field_32C walking
+// pointer that the original keeps live in a register (ebx) for the whole
+// loop but our build spills to the stack and reloads. Instruction count
+// checked per the "verify byte length" rule: built is 965 bytes / 243
+// instructions vs original 955 bytes / 241 (exactly those 2 extra
+// spill/reload instructions, not a missing/extra semantic operation).
+// 15 distinct hypotheses tried and logged in
+// ~/Documents/spidey-work/wt/CMysterio_CMysterio.attempts.md (medium
+// bracket, 955 bytes, needs >=15); 4 fixed real diffs (took this from
+// ~170 diffs down to 16), the rest made things worse and were reverted.
+// Globals: CItemRelatedList (ob.h) region-table poke at construction time
+// (bounding box constants 0x400000/0xFE000200/0xFC000400/0xFE000200, offsets
+// +8/+0xC/+0x10/+0x14 of CItemRelatedList[mRegion*17][0]); reused from the
+// gPSXRegionActiveFlags comment above (also cites this constructor).
+CMysterio::CMysterio(i16 *a1, i32 a2)
+{
+	gMysterioCtorFlag = 0;
+
+	this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a1)));
+	this->InitItem("mysterio");
+
+	i32 **pRegionSlot = ((i32***)0x6B2454)[this->mRegion * 17];
+	i32 *pRegionEntry = pRegionSlot[0];
+	pRegionEntry[2] = 0x400000;
+	pRegionEntry[3] = static_cast<i32>(0xFE000200);
+	pRegionEntry[4] = static_cast<i32>(0xFC000400);
+	pRegionEntry[5] = static_cast<i32>(0xFE000200);
+
+	i32 rnd = Rnd(0x294);
+	rnd = ((rnd - 0x528) >> 2) + 0x528;
+
+	this->mFlags |= 0x480;
+	this->field_2A8 |= 0x10200;
+
+	this->field_38C = rnd;
+	this->field_378 = 2;
+	this->field_374 = 0xA;
+	this->mpLight = &M3d_MysterioLight;
+
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+
+	this->field_1F4 = a2;
+	this->mNode = a2;
+	this->mType = 311;
+
+	this->RunAnim(0, 0, -1);
+
+	this->field_398 = 0x4B0;
+
+	this->field_324 = reinterpret_cast<CItem*>(new CMysterioHeadGlow(this));
+	reinterpret_cast<CMysterioHeadGlow*>(this->field_324)->mProtected = 1;
+
+	this->mHealth = 0x2710;
+
+	Panel_CreateHealthBar(this, 311);
+
+	this->field_360 = Mem_MakeHandle(new CMystFoot());
+	this->field_368 = Mem_MakeHandle(new CMystFoot());
+
+	SLinkInfo links[20];
+	i32 count = reinterpret_cast<i32>(
+			Trig_GetLinkInfoList(this->field_1F4, links, 20));
+
+	if (count > 0)
+	{
+		CSoftSpot **pSlot = this->field_32C;
+		SLinkInfo *pLink = links;
+
+		do
+		{
+			i32 code = pLink->field_8;
+
+			if (code == 0)
+			{
+			}
+			else if (code == 0xC)
+			{
+				this->field_3A8 = pLink->field_0;
+			}
+			else
+			{
+				print_if_false(code - 1 < 0xB, "Bad mysterio link code");
+
+				if (code - 1 >= 8)
+				{
+					*(reinterpret_cast<i32*>(&this->field_38C) + (code - 1)) = pLink->field_0;
+				}
+				else
+				{
+					print_if_false(*pSlot == 0, "Too many mysterio soft spots");
+					*pSlot = new CSoftSpot(this, 100, pLink->field_0, code - 1);
+					this->field_358 += 100;
+				}
+			}
+
+			pLink++;
+			pSlot++;
+			count--;
+		} while (count);
+	}
 }
 
 // @NotOk
@@ -613,7 +746,7 @@ CMysterio::CMysterio(void)
 // @Ok
 void Mysterio_CreateMysterio(const unsigned int *stack, unsigned int *result)
 {
-	int* v2 = reinterpret_cast<int*>(*stack);
+	i16* v2 = reinterpret_cast<i16*>(*stack);
 	int v3 = static_cast<int>(stack[1]);
 
 	if (v2)
