@@ -81,6 +81,62 @@ matrix4x4::matrix4x4(
 	
 }
 
+// @NotOk
+// Not one of the file's original 7 stubs. Added because M3d_RenderSetup,
+// M3d_Render and RenderSuperItem all call it (leaf-first dependency) to
+// concatenate transforms; found via the maintainer's IDB (spideypc_names.txt
+// calls it matrix4x4_ml), named gsub_476A00 here since tools/names.json only
+// has it as sub_476A00.
+// dest is written through a local first because dest may alias a or b (e.g.
+// gsub_476A00(&m, &m, &n) to do "m = m * n" in place); writing straight into
+// *dest while still reading it back for later cells would corrupt the
+// result.
+// Residue: every fld/fmul/faddp in the whole function matches the original
+// exactly in type, operand and order (all 16 dot products, including the
+// odd per-cell term ordering and the swapped-operand cases). The only
+// mismatch is register allocation at the very top: the original pushes 3
+// callee-saved regs (ebx,esi,edi) and uses a 0x80-byte frame; this build
+// pushes 4 (ebx,ebp,esi,edi) and uses a 0x40-byte frame. That one insertion
+// shifts every stack offset after it, which is why cmpsum reports 251
+// mnemonic diffs despite the logic being right. Hypotheses tried (3, well
+// under the 15-hypothesis medium-function bar, so this stays @NotOk, not
+// @AlmostMatching):
+// 1. matrix4x4 operator*(a,b) returning by value via "return matrix4x4(16
+//    args)", relying on the existing 16-arg ctor. Produces real out-of-line
+//    calls to the ctor (3x) instead of inlined stores; original has no
+//    calls at all. Rejected.
+// 2. Plain function, explicit dest pointer, named "matrix4x4 result;" local
+//    (needs the new empty default ctor) filled in field-by-field, then
+//    "*dest = result;". Matches the arithmetic core exactly; wrong register
+//    count/frame size (this version, currently in tree).
+// 3. Same as 2 but returning matrix4x4 by value (hidden return slot, a/b by
+//    pointer, no explicit dest param) instead of an explicit out-pointer.
+//    Went the other way on register count (2 instead of 3) and increased
+//    the diff count to 267. Rejected, reverted to hypothesis 2.
+EXPORT void gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 const* b)
+{
+	matrix4x4 result;
+
+	result.field_0[3].field_0[3] = a->field_0[3].field_0[2] * b->field_0[2].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[3] + a->field_0[3].field_0[0] * b->field_0[0].field_0[3] + b->field_0[3].field_0[3] * a->field_0[3].field_0[3];
+	result.field_0[3].field_0[2] = b->field_0[3].field_0[2] * a->field_0[3].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[2] + a->field_0[3].field_0[2] * b->field_0[2].field_0[2] + a->field_0[3].field_0[0] * b->field_0[0].field_0[2];
+	result.field_0[3].field_0[1] = a->field_0[3].field_0[2] * b->field_0[2].field_0[1] + a->field_0[3].field_0[0] * b->field_0[0].field_0[1] + b->field_0[3].field_0[1] * a->field_0[3].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[1];
+	result.field_0[3].field_0[0] = a->field_0[3].field_0[1] * b->field_0[1].field_0[0] + b->field_0[3].field_0[0] * a->field_0[3].field_0[3] + a->field_0[3].field_0[2] * b->field_0[2].field_0[0] + a->field_0[3].field_0[0] * b->field_0[0].field_0[0];
+	result.field_0[2].field_0[3] = a->field_0[2].field_0[2] * b->field_0[2].field_0[3] + a->field_0[2].field_0[3] * b->field_0[3].field_0[3] + a->field_0[2].field_0[0] * b->field_0[0].field_0[3] + a->field_0[2].field_0[1] * b->field_0[1].field_0[3];
+	result.field_0[2].field_0[2] = a->field_0[2].field_0[0] * b->field_0[0].field_0[2] + a->field_0[2].field_0[3] * b->field_0[3].field_0[2] + a->field_0[2].field_0[2] * b->field_0[2].field_0[2] + a->field_0[2].field_0[1] * b->field_0[1].field_0[2];
+	result.field_0[2].field_0[1] = a->field_0[2].field_0[3] * b->field_0[3].field_0[1] + a->field_0[2].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[2].field_0[1] + a->field_0[2].field_0[0] * b->field_0[0].field_0[1];
+	result.field_0[2].field_0[0] = b->field_0[1].field_0[0] * a->field_0[2].field_0[1] + a->field_0[2].field_0[0] * b->field_0[0].field_0[0] + a->field_0[2].field_0[3] * b->field_0[3].field_0[0] + a->field_0[2].field_0[2] * b->field_0[2].field_0[0];
+	result.field_0[1].field_0[3] = a->field_0[1].field_0[2] * b->field_0[2].field_0[3] + a->field_0[1].field_0[3] * b->field_0[3].field_0[3] + a->field_0[1].field_0[0] * b->field_0[0].field_0[3] + a->field_0[1].field_0[1] * b->field_0[1].field_0[3];
+	result.field_0[1].field_0[2] = a->field_0[1].field_0[0] * b->field_0[0].field_0[2] + b->field_0[3].field_0[2] * a->field_0[1].field_0[3] + a->field_0[1].field_0[2] * b->field_0[2].field_0[2] + a->field_0[1].field_0[1] * b->field_0[1].field_0[2];
+	result.field_0[1].field_0[1] = a->field_0[1].field_0[3] * b->field_0[3].field_0[1] + a->field_0[1].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[1].field_0[1] + a->field_0[1].field_0[0] * b->field_0[0].field_0[1];
+	result.field_0[1].field_0[0] = b->field_0[1].field_0[0] * a->field_0[1].field_0[1] + a->field_0[1].field_0[0] * b->field_0[0].field_0[0] + a->field_0[1].field_0[3] * b->field_0[3].field_0[0] + a->field_0[1].field_0[2] * b->field_0[2].field_0[0];
+	result.field_0[0].field_0[3] = a->field_0[0].field_0[2] * b->field_0[2].field_0[3] + a->field_0[0].field_0[3] * b->field_0[3].field_0[3] + a->field_0[0].field_0[0] * b->field_0[0].field_0[3] + b->field_0[1].field_0[3] * a->field_0[0].field_0[1];
+	result.field_0[0].field_0[2] = b->field_0[0].field_0[2] * a->field_0[0].field_0[0] + b->field_0[3].field_0[2] * a->field_0[0].field_0[3] + b->field_0[2].field_0[2] * a->field_0[0].field_0[2] + b->field_0[1].field_0[2] * a->field_0[0].field_0[1];
+	result.field_0[0].field_0[1] = a->field_0[0].field_0[3] * b->field_0[3].field_0[1] + a->field_0[0].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[0].field_0[1] + a->field_0[0].field_0[0] * b->field_0[0].field_0[1];
+	result.field_0[0].field_0[0] = b->field_0[1].field_0[0] * a->field_0[0].field_0[1] + a->field_0[0].field_0[0] * b->field_0[0].field_0[0] + a->field_0[0].field_0[3] * b->field_0[3].field_0[0] + a->field_0[0].field_0[2] * b->field_0[2].field_0[0];
+
+	*dest = result;
+}
+
 /*
 EXPORT void __ml(matrix4x4 const *,matrix4x4 const *);
 
