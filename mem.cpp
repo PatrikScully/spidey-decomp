@@ -304,11 +304,36 @@ void Mem_Shrink(void* p, size_t newsize)
 			newsize + MEMDIFF);
 }
 
-// Needed by DCClearRegion (m3dinit.cpp). Not decompiled here, plain stub.
-// @SMALLTODO
+// Needed by DCClearRegion (m3dinit.cpp).
+// @Ok
+// @Matching
 void Mem_Delete2(void* p)
 {
-	printf("Mem_Delete2(void*)");
+	i8 header = *((i8 *)p - 1);
+	char* pStart = (char *)p - header;
+
+	print_if_false(pStart != 0, "NULL pointer sent to Mem_Delete2");
+
+	SBlockHeader *pBlock = GETBLOCKHEADER(pStart);
+	i32 Heap = pBlock->ParentHeap;
+
+	if (!(Heap >= 0 && Heap < MAXHEAPS))
+	{
+		print_if_false(0, "Invalid pointer sent to Mem_Delete2");
+		return;
+	}
+
+	Used[Heap] -= sizeof(SBlockHeader) + pBlock->Size;
+
+	AddToFreeList(pBlock, Heap);
+
+	if (Heap == BIGHEAP)
+	{
+		if (Used[Heap] >= CriticalBigHeapUsage)
+			LowMemory = TRUE;
+		else
+			LowMemory = FALSE;
+	}
 }
 
 // @Ok
