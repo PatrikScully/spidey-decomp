@@ -518,6 +518,16 @@ INLINE void DeleteBitList(CBit *pBitList)
 	}
 }
 
+// Investigation notes (0x40D630, 32 bytes), not implemented yet. Called
+// from PShell_EndTrainingInit (pshell.cpp). Not disassembled this session;
+// likely a single DeleteBitList(TextBoxList) call given the name and size,
+// but left as a stub rather than guess without checking the bytes.
+// @SMALLTODO
+void Bit_ClearTextBoxes(void)
+{
+	printf("Bit_ClearTextBoxes(void)");
+}
+
 // @Ok
 // @AlmostMatching: my inlining stops at ChunkBitList while OG stops at GlowList
 void Bit_DeleteAll(void)

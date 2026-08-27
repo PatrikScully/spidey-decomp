@@ -12,6 +12,8 @@
 #include "panel.h"
 #include "spidey.h"
 #include "PCGfx.h"
+#include "trig.h"
+#include "ps2redbook.h"
 
 #include <cstring>
 
@@ -539,6 +541,43 @@ static STrainingMission* const gChallenges = reinterpret_cast<STrainingMission*>
 #define gTrainingMenu (*reinterpret_cast<CMenu**>(0x00682968))
 #define gTrainingScore (*reinterpret_cast<i32*>(0x0055129C))
 
+// Found 2026-08-27 in PShell_EndTrainingInit (0x47B720). All tentative,
+// no idb_globals.txt entries at these addresses.
+// Set to 1 as the very first store in the function; guess: marks the
+// end-of-training screen as active/entered.
+#define gTrainingActive (*reinterpret_cast<i32*>(0x00682950))
+// Set to 1 alongside gTrainingActive; purpose unclear, kept separate since
+// it lives far from the other gTraining* globals (near CInventory-ish
+// state going by neighbouring addresses we have no names for).
+#define gEndTrainingFlag (*reinterpret_cast<i32*>(0x0060CFB0))
+// Read once, then cleared to 0 alongside gWideScreen (0x00660F80,
+// idb_globals.txt); guess: a paired display-mode flag.
+#define gScreenModeFlag (*reinterpret_cast<i32*>(0x0054D47C))
+// Reused for two unrelated things in the same function: first holds the
+// pre-clear value of gScreenModeFlag (write-only, never read back), then
+// later becomes the sentinel/insertion-position scratch for the high-score
+// insert (-1 = "no room", else 0-4 = the row that was written).
+#define gTrainingScratch (*reinterpret_cast<i32*>(0x005513D4))
+// Set at the very end of PShell_EndTrainingInit to 0x4EE (1262); purpose
+// unclear (a timer/frame-count guess, going by the neighbouring
+// gTrainingDisplayTimer's role).
+#define gTrainingSomeTimer (*reinterpret_cast<i32*>(0x005512EC))
+// Read once at the top of PShell_EndTrainingInit as the "target area" a
+// gChallenges entry's mAreaId gets matched against. Named in a shell.cpp
+// comment as the address neighbouring gChallenges/gCheats but never wired
+// up as a usable global before this.
+#define gTrainingSeconds (*reinterpret_cast<i32*>(0x00551288))
+// gGlobalRecords (shell.cpp) is a plain repo global (DLL-relocatable
+// address); this file needs the fixed game address for PShell_EndTrainingInit
+// to byte-match, same class of problem as gSaveGame. Kept file-local per
+// the G_* macro placement rule (only pshell.cpp uses this). The first 3
+// bytes ahead of SRecords::mScores (currently just PADDING(3) in shell.h)
+// turn out to be real data here: PShell_EndTrainingInit reads them as the
+// 3-letter name to stamp into a new score row. Not renamed in shell.h
+// since that struct is shared and this is the only evidence we have for it
+// so far.
+static SRecords* const gGlobalRecordsFixed = reinterpret_cast<SRecords*>(0x00550ED0);
+
 // These three are elements of the same string-literal-pointer table
 // front.cpp already names two entries of (gFrontYesText/gFrontNoText,
 // 0x0054B780/0x0054B77C); string content confirmed against the original exe.
@@ -603,34 +642,237 @@ void PShell_EndTrainingDisplay(void)
 	Mess_SetTextJustify(0);
 }
 
-// Investigation notes (0x0047B720, 812 bytes), not implemented yet.
-// Housekeeping calls at the top, in order: print_if_false(1, <str at
-// 0x00551AF4>) (condition is always true, never prints, looks like a
-// reached-here marker), Mess_DeleteAll, Bit_ClearTextBoxes, sub_472340
-// (unnamed), Redbook_XAStop. Then it writes gTrainingResultState = 1,
-// [0x0060CFB0] = 1 (unnamed), gSaveGame-unrelated globals at 0x0054D47C and
-// 0x00660F80 (gWideScreen, per idb_globals.txt) get cleared, and if MechList
-// (0x006A9038, idb_globals.txt) is non-null it calls
-// CPlayer_ExitLookaroundMode and clears MechList->field_68/field_60. After
-// that: sub_479520(0,0), sub_479520(1,0), Trig_GetLevelID().
-// The rest builds a training record box: CItem_new(0x44) then field writes
-// in the order field_1C=0x78, field_20=0x29, field_C=0x116, field_10=0x60,
-// field_4=0xA, field_8=0xA, field_14=0x30, field_18=0xC, field_24=0,
-// field_2C=0x1C, vtable=0x0053BDA4, field_3C=&gChallenges[idx]. Those are
-// exactly the values CRecordBox::CRecordBox(0x78, 0x29, pMission) would
-// produce (shell.cpp, already @Ok/@Matching), just in a different store
-// order (could be scheduler reordering of a genuinely inlined call, or a
-// hand-duplicated init; not confirmed either way, and shell.cpp's
-// #pragma auto_inline(off) should block normal cross-TU inlining, so this
-// is not fully understood). Before the record box gets built, there is a
-// scan over gChallenges reading a byte at each entry's offset+7, which is
-// inside what STrainingMission (shell.h) currently only documents as
-// padding, so the struct is probably missing a field. Left at @MEDIUMTODO,
-// not attempted further this session.
-// @MEDIUMTODO
+// (0x0047B720, 812 bytes). Housekeeping calls at the top, in order:
+// print_if_false(1, <str at 0x00551AF4>) (condition is always true, never
+// prints, looks like a reached-here marker), Mess_DeleteAll,
+// Bit_ClearTextBoxes, gsub_472340, Redbook_XAStop.
+//
+// The record box build (CClass::operator new(0x44) then direct field
+// writes in the order field_1C=0x78, field_20=0x29, field_C=0x116,
+// field_10=0x60, field_4=0xA, field_8=0xA, field_14=0x30, field_18=0xC,
+// field_24=0, field_2C=0x1C, vtable=0x0053BDA4, field_3C=&gChallenges[idx])
+// is NOT a call to CRecordBox::CRecordBox(0x78, 0x29, pMission)
+// (shell.cpp, @Ok @Matching): that constructor is declared (not defined)
+// in shell.h, so a `new CRecordBox(...)` from this TU could never inline it
+// regardless of shell.cpp's `#pragma auto_inline(off)`, and it would store
+// fields in the CONSTRUCTOR's own order (field_1C,field_4,field_8,field_20,
+// field_C,field_10,field_14,field_18,field_24,field_2C,field_3C), not this
+// order. This function's own source really does write the fields directly,
+// including a manual vtable poke, bypassing the constructor. CItem_new in
+// the old comment was the exported name; it turned out to be
+// CClass::operator new and CItem::operator new COMDAT-folded to the same
+// address (ob.cpp/main.cpp have byte-identical bodies).
+//
+// Two more STrainingMission fields found and added to shell.h this
+// session, beyond the offset+7 one already known: a word at offset+4
+// (mLevelId, matched against Trig_GetLevelID()'s result) gates the
+// entry-search loop before it even looks at mAreaId (offset+7), and a byte
+// at offset+0xC (mLowerIsBetter) picks the comparison direction in the
+// score-insert search below (higher-is-better vs lower-is-better, e.g. for
+// Time challenges).
+//
+// The rest is a top-5 high score insert for gGlobalRecords (shell.cpp):
+// skip entirely if gTrainingScore is the -1000 "no score" sentinel; if the
+// challenge's row has never been filled (mScores[0].field_0 == 0), stamp
+// the new score straight into slot 0 (gTrainingResultState = 1); otherwise
+// scan up to 5 rows for the first one that is empty or worse than the new
+// score (per mLowerIsBetter), shift every row from there down by one if it
+// found a real (non-empty) row to beat (gTrainingResultState = 2) or write
+// straight in if it landed on an empty row (gTrainingResultState = 3); if
+// no row was found in 5, nothing is written. Landing at row 0 with
+// resultState 2 (beat the existing #1) sets gTrainingDisplayTimer = 0x50.
+// gTrainingSomeTimer always gets set to 0x4EE at the end regardless.
+//
+// Globals with no idb_globals.txt entry are all tentative (see their own
+// comments above): gTrainingActive, gEndTrainingFlag, gScreenModeFlag,
+// gTrainingScratch, gTrainingSomeTimer, gTrainingSeconds. String literals
+// passed to print_if_false are placeholders (relocated string addresses
+// are an accepted diff, only the presence/position of the argument
+// matters for matching).
+//
+// cmpsum against the rebuilt DLL: 146 mnemonic diffs (812-byte, medium
+// function). The first divergence is again a register-allocation
+// difference, not a missing/wrong operation: the original's prologue
+// pushes all 4 callee-saved registers up front (ebx,ebp,esi,esi is cached
+// with the constant 1 and reused for the print_if_false call and both the
+// gTrainingActive/gEndTrainingFlag stores) and edi before the first
+// housekeeping call; our build only pushes ebx/ebp up front and defers
+// esi/edi, so every later instruction that references one of those
+// registers is shifted out of position for the (positional, mnemonic-only)
+// diff tool even where the underlying operation is the same. 1 explicit
+// hypothesis tried (share a single `i32 one = 1` local across the three
+// places that use the literal 1, matching the original's esi reuse): no
+// change (146 diffs). This is a medium function (200-1000 bytes), so the
+// discipline wants 15+ hypotheses before @AlmostMatching; given the size of
+// the remaining task list this session (STrainingMission field work,
+// PShell_EndTrainingUpdate), left @NotOk after this first pass rather than
+// spend that budget here. The call targets, argument order, table/struct
+// field accesses, and control flow (including the CRecordBox field order
+// and the top-5 score insert/shift logic) are believed correct.
+// @NotOk
 void PShell_EndTrainingInit(void)
 {
-    printf("PShell_EndTrainingInit(void)");
+	print_if_false(1, "Bad pTrainingMission");
+
+	Mess_DeleteAll();
+	Bit_ClearTextBoxes();
+	gsub_472340();
+	Redbook_XAStop();
+
+	i32 oldScreenMode = gScreenModeFlag;
+
+	gTrainingActive = 1;
+	gEndTrainingFlag = 1;
+	gTrainingScratch = oldScreenMode;
+	gScreenModeFlag = 0;
+	*(i32*)0x00660F80 = 0;  // gWideScreen (ps2m3d.cpp), fixed game address; see gSaveGame note in CLAUDE.md
+
+	if (MechList)
+	{
+		MechList->ExitLookaroundMode();
+		*(i32*)((char*)MechList + 0x68) = 0;
+		*(i32*)((char*)MechList + 0x60) = 0;
+	}
+
+	gsub_479520(0, 0);
+	gsub_479520(1, 0);
+
+	i32 levelId = Trig_GetLevelID();
+
+	gTrainingChallengeIndex = 0;
+
+	i32 idx;
+	for (idx = 0; idx < NUM_CHALLS; idx++)
+	{
+		if (gChallenges[idx].mLevelId != (i16)levelId)
+			continue;
+
+		if (gChallenges[idx].mAreaId == gTrainingSeconds || gChallenges[idx].mAreaId == -1)
+			break;
+	}
+
+	gTrainingChallengeIndex = idx;
+
+	print_if_false(idx < NUM_CHALLS, "Training mission index out of range");
+	print_if_false(gTrainingRecordBox == 0, "pRecordBox not NULL in end training init");
+
+	CRecordBox* box = (CRecordBox*)CClass::operator new(0x44);
+	if (box)
+	{
+		box->field_1C = 0x78;
+		box->field_20 = 0x29;
+		box->field_C = 0x116;
+		box->field_10 = 0x60;
+		box->field_4 = 0xA;
+		box->field_8 = 0xA;
+		box->field_14 = 0x30;
+		box->field_18 = 0xC;
+		box->field_24 = 0;
+		box->field_2C = 0x1C;
+		*(u32*)box = 0x53BDA4;
+		box->field_3C = &gChallenges[gTrainingChallengeIndex];
+	}
+	gTrainingRecordBox = box;
+
+	i32 idx2 = gTrainingChallengeIndex;
+	i8 scoreUnits = gChallenges[idx2].mScoreUnits;
+
+	if (scoreUnits != 0 && scoreUnits != 3)
+	{
+		if (gTrainingScore == 0)
+			gTrainingScore = -1000;
+	}
+
+	if (scoreUnits == 3 && gTrainingScore <= 0)
+		gTrainingScore = -1000;
+
+	SScore* pRow = &gGlobalRecordsFixed->mScores[idx2 * NUM_RECORDS_PER_CHALL];
+
+	gTrainingResultState = 0;
+	gTrainingScratch = -1;
+
+	if (gTrainingScore != -1000)
+	{
+		if (pRow[0].field_0 == 0)
+		{
+			gTrainingResultState = 1;
+			gTrainingScratch = 0;
+
+			pRow[0].field_0 = ((u8*)gGlobalRecordsFixed)[0];
+			pRow[0].field_1 = ((u8*)gGlobalRecordsFixed)[1];
+			pRow[0].field_2 = ((u8*)gGlobalRecordsFixed)[2];
+			pRow[0].field_3 = (u8)gTrainingScore;
+			pRow[0].field_4 = (u8)(gTrainingScore >> 8);
+
+			gTrainingRecordBox->field_40 = 1;
+			gTrainingRecordBox->mLetterIndex = 0;
+			gTrainingRecordBox->field_39 = 0;
+
+			print_if_false(1, "Bad row sent to Name entry");
+		}
+		else
+		{
+			i8 lowerIsBetter = gChallenges[idx2].mLowerIsBetter;
+			i32 pos;
+
+			for (pos = 0; pos < NUM_RECORDS_PER_CHALL; pos++)
+			{
+				if (pRow[pos].field_0 == 0)
+					break;
+
+				i32 rowScore = (i16)((pRow[pos].field_4 << 8) | pRow[pos].field_3);
+
+				if (!lowerIsBetter)
+				{
+					if (gTrainingScore > rowScore)
+						break;
+				}
+				else
+				{
+					if (gTrainingScore < rowScore)
+						break;
+				}
+			}
+
+			if (pos < NUM_RECORDS_PER_CHALL)
+			{
+				if (pRow[pos].field_0 == 0)
+				{
+					gTrainingResultState = 3;
+					gTrainingScratch = pos;
+				}
+				else
+				{
+					gTrainingResultState = 2;
+					gTrainingScratch = pos;
+
+					i32 i;
+					for (i = NUM_RECORDS_PER_CHALL - 1; i > pos; i--)
+					{
+						*(u32*)&pRow[i] = *(u32*)&pRow[i - 1];
+						pRow[i].field_4 = pRow[i - 1].field_4;
+					}
+				}
+
+				pRow[pos].field_0 = ((u8*)gGlobalRecordsFixed)[0];
+				pRow[pos].field_1 = ((u8*)gGlobalRecordsFixed)[1];
+				pRow[pos].field_2 = ((u8*)gGlobalRecordsFixed)[2];
+				pRow[pos].field_3 = (u8)gTrainingScore;
+				pRow[pos].field_4 = (u8)(gTrainingScore >> 8);
+
+				gTrainingRecordBox->field_39 = (u8)pos;
+				gTrainingRecordBox->field_40 = 1;
+				gTrainingRecordBox->mLetterIndex = 0;
+
+				print_if_false(pos < NUM_RECORDS_PER_CHALL, "Bad row sent to Name entry");
+			}
+		}
+	}
+
+	if (gTrainingResultState == 2 && gTrainingScratch == 0)
+		gTrainingDisplayTimer = 0x50;
+
+	gTrainingSomeTimer = 0x4EE;
 }
 
 // Investigation notes (0x0047BC40, 656 bytes), not implemented yet.
