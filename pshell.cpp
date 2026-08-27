@@ -11,6 +11,7 @@
 #include "ps2pad.h"
 #include "panel.h"
 #include "spidey.h"
+#include "PCGfx.h"
 
 #include <cstring>
 
@@ -523,10 +524,83 @@ void PShell_DrawHighlight(i32 a1, i32 a2, i32 a3, i32 a4)
 	}
 }
 
-// @SMALLTODO
+// Training end-of-level "new record" flow (PShell_EndTraining*). Names
+// tentative, no idb_globals.txt entries in the 0x00682950-0x00682968 gap
+// (right after gBiographies, 0x0068294C) or for 0x0055129C. gChallenges is
+// named in idb_globals.txt (0x00551118), and its element type/size (0x10,
+// STrainingMission) is confirmed in shell.h. gTrainingScore's -1000 sentinel
+// and the CRecordBox/STrainingMission field_3C/field_B reads are read off
+// PShell_EndTrainingDisplay's own disassembly.
+static STrainingMission* const gChallenges = reinterpret_cast<STrainingMission*>(0x00551118);
+#define gTrainingChallengeIndex (*reinterpret_cast<i32*>(0x0068295C))
+#define gTrainingResultState (*reinterpret_cast<i32*>(0x00682958))
+#define gTrainingRecordBox (*reinterpret_cast<CRecordBox**>(0x00682960))
+#define gTrainingDisplayTimer (*reinterpret_cast<i32*>(0x00682964))
+#define gTrainingMenu (*reinterpret_cast<CMenu**>(0x00682968))
+#define gTrainingScore (*reinterpret_cast<i32*>(0x0055129C))
+
+// These three are elements of the same string-literal-pointer table
+// front.cpp already names two entries of (gFrontYesText/gFrontNoText,
+// 0x0054B780/0x0054B77C); string content confirmed against the original exe.
+#define gTextNewRecord (*reinterpret_cast<char**>(0x0054B8E4))
+#define gTextYourScore (*reinterpret_cast<char**>(0x0054B8F0))
+#define gTextNone (*reinterpret_cast<char**>(0x0054B8F4))
+
+// @Ok
+// @Matching
 void PShell_EndTrainingDisplay(void)
 {
-    printf("PShell_EndTrainingDisplay(void)");
+	Mess_SetRGB(0x60, 0x60, 0x60, 0);
+	Mess_SetTextJustify(0);
+
+	Mess_DrawText(0x100, 0x1D, gChallenges[gTrainingChallengeIndex].field_0, 0, 0x1000);
+
+	if (gTrainingDisplayTimer != 0)
+	{
+		gTrainingDisplayTimer--;
+
+		if ((gTrainingDisplayTimer % 10) > 5)
+		{
+			PShell_BigFont();
+			PShell_DefaultText();
+			Mess_DrawText(0x100, 0x78, gTextNewRecord, 0, 0x1000);
+			PShell_NormalFont();
+		}
+
+		return;
+	}
+
+	if (gTrainingRecordBox)
+		gTrainingRecordBox->Display();
+
+	if (gTrainingMenu)
+		gTrainingMenu->Display();
+
+	if (gTrainingMenu)
+		PCSHELL_DrawMouseCursor();
+
+	if (gTrainingResultState != 0)
+		return;
+
+	PShell_DefaultText();
+	Mess_SetTextJustify(2);
+	Mess_DrawText(0x127, 0x9B, gTextYourScore, 0, 0x1000);
+
+	if (gTrainingRecordBox)
+	{
+		Mess_SetTextJustify(1);
+
+		if (gTrainingScore == -1000)
+		{
+			Mess_DrawText(0x131, 0x9B, gTextNone, 0, 0x1000);
+		}
+		else
+		{
+			DisplayScore(0x131, 0x9B, gTrainingScore, gTrainingRecordBox->field_3C->field_B);
+		}
+	}
+
+	Mess_SetTextJustify(0);
 }
 
 // @MEDIUMTODO
@@ -541,10 +615,129 @@ void PShell_EndTrainingUpdate(void)
     printf("PShell_EndTrainingUpdate(void)");
 }
 
-// @MEDIUMTODO
+// Save-confirmation modal loop. Same idiom as Shell_ShowRecord's loop
+// (shell.cpp): a zoom-ease local eases pYesNoMenu's zoom animation via
+// PShell_MoveTowards (own local here, not shell.cpp's gShellMenuEase: the
+// disassembly never stores it to any fixed address, purely a register/stack
+// local, unlike Shell_ShowRecord's use of the real global), a "was the
+// opening button still held" flag suppresses PCSHELL_CheckTriggers until the
+// player releases it, and DoVblankProcessing/gPrintStubbed/gsub_430680 are
+// the standard per-frame housekeeping calls (see shell.cpp for the same 5
+// lines). gTextSaveGameProgress: string content confirmed against the
+// original exe, same string-pointer table as pshell.cpp's other gText*
+// globals near it.
+#define gTextSaveGameProgress (*reinterpret_cast<char**>(0x0054B8F8))
+
+// @Ok
+// @Matching
+// Note: the call at 0x0043FB00 (thiscall on pYesNoMenu, no args, return
+// value unused) is guessed as CMenu::Reset() (front.h/front.cpp): same call
+// shape (this in ecx, no pushed args, no value read back), and semantically
+// it fits (reset the menu highlight after the yes/no choice resolves). Not
+// confirmed against the Mac build or idb_globals.txt; call targets are
+// masked by cmpsum/compare.py so this guess does not affect the verified
+// mnemonic match. See pshell.attempts.md.
 void PShell_MaybeSaveGame(void)
 {
-    printf("PShell_MaybeSaveGame(void)");
+	// same pattern as front.cpp/shell.cpp/PCShell.cpp: defined once in
+	// PCShell.cpp, called here through a local extern.
+	extern void gsub_430880(void);
+
+	u32 saveBuf[3];
+
+	do
+	{
+		i32 ignoreTriggers = 1;
+		i32 zoomEase = 0x320;
+
+		print_if_false(pYesNoMenu != 0, "NULL pYesNoMenu");
+
+		pYesNoMenu->mLine = 1;
+		pYesNoMenu->Zoom(0);
+
+		for (;;)
+		{
+			gsub_430880();
+			Db_FlipClear();
+			CalcPolyBufferEnd();
+
+			i32 vblanksSnapshot = Vblanks;
+
+			if (!gSceneRelated)
+				PCGfx_BeginScene(1, -1);
+
+			Mess_SetScale(0x100);
+			pYesNoMenu->Display();
+
+			Mess_SetRGB(0x4D, 0x53, 0x69, 0);
+			Mess_DrawText(0x100, 0x3C, gTextSaveGameProgress, 0, 0x1000);
+
+			if (gSceneRelated)
+				PCGfx_EndScene(1);
+
+			zoomEase = PShell_MoveTowards(zoomEase, 0x1CC);
+
+			Pad_Update();
+
+			if (!G_SCONTROL[0].X.Pressed)
+			{
+				ignoreTriggers = 0;
+				G_SCONTROL[0].X.Triggered = 0;
+			}
+
+			pYesNoMenu->Update();
+
+			if (!ignoreTriggers)
+			{
+				if (PCSHELL_CheckTriggers(1, 1, 0x50010))
+					break;
+			}
+
+			if (Vblanks == vblanksSnapshot)
+				Pause(1);
+
+			*(volatile i32*)&DoVblankProcessing = 0;
+			Pause(1);
+
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			gsub_430680();
+
+			if (!*(volatile i32*)&DoVblankProcessing)
+			{
+				Utils_VblankProcessing();
+				DoVblankProcessing = 1;
+			}
+		}
+
+		SControl* pad = G_SCONTROL;
+		pad[0].X.Triggered = 0;
+		pad[0].Start.Triggered = 0;
+		SFX_Play(0x1F, 0x2000, 0);
+
+		Pause(1);
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+
+		Front_ClearScreen();
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+
+		Pad_ClearTriggers(G_SCONTROL);
+		pYesNoMenu->Reset();
+
+		if (pYesNoMenu->mLine != 1)
+			return;
+
+		saveBuf[2] = 1;
+		Shell_SaveGame(reinterpret_cast<const u32*>(&saveBuf[0]), &saveBuf[1]);
+	} while (saveBuf[1] == 0);
 }
 
 // @Ok
