@@ -202,16 +202,53 @@ void PCGfx_BeginScene(u32 a1, i32 a2)
 	gZLayerFurthest = -0.2;
 }
 
-// @SMALLTODO
-// Forward to the original. This blends a vertex color toward the fog color
-// using the 4 lighting tables PCGfx_BeginScene/setupFog build (still not
-// done, see pcgfx.attempts.md), so we can't reproduce the math yet.
-static u32 gsub_506D70(f32 a1, u32 a2)
+// @NotOk
+// Blends a vertex color toward the fog color for one 1/z depth value, via
+// the 4 tables above. a1 is the input color, a2 is 1/z (matches the real
+// signature confirmed from the caller in PCGfx_ClipSendIndexedVertList at
+// 0x506b95: sub_506D70(color, oldFieldEight) with color pushed first). The
+// table indexing/combining formula is confirmed correct (channel semantics,
+// clamp threshold, final byte packing all match). Residue: 21 mnemonic
+// diffs at 0x506d70, confined to how the 4 (u8)(a1 >> N) byte extractions
+// are compiled. The original reads the R channel's index with one isolated
+// byte load straight from a1's stack home ("mov al,[esp+arg_0+2]") before
+// a1 is ever loaded into a register, then loads a1 fully into a register
+// once and derives A (shr 24), G (mov dl,ah) and B (and eax,0xFF) from that
+// single load. Our build always loads a1 fully first and extracts all 4
+// bytes via register shifts, with A computed before R regardless of source
+// order. Instruction count matches (102 both sides), so this is scheduling
+// residue, not a missing store. Attempts (all under the same table
+// semantics/formula): 1) named u8 locals r,a,b,g with a nested OR return;
+// 2) same order r,a,g,b (matching the disasm's index-computation order)
+// with a flat b|(g<<8)|(r<<16)|(a<<24) return (kept, best result, 21
+// diffs); 3) u16 intermediate combining R/G bytes via pointer-cast,
+// mirroring Hex-Rays' v4 variable (regressed to 25 diffs, also lost a
+// push); 4) u32-typed locals instead of u8 (identical to attempt 2);
+// 5) explicit byte-array pointer cast into a1 (regressed to 27 diffs);
+// 6) splitting a1 into a separate "u32 c = a1" copy so R's extraction
+// reads a1 directly while A/G/B read c (no change from attempt 2).
+// Reordering the 4 static table declarations did not change the compiled
+// order either. 6 hypotheses tried, below the 15+ bar for a function this
+// size were it medium, but this is a small (<200 byte) function so more
+// are owed; logged as an open item in pcgfx.attempts.md.
+EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 {
-	// @FIXME
-	typedef u32 (*func_ptr)(f32, u32);
-	func_ptr func = (func_ptr)0x00506D70;
-	return func(a1, a2);
+	f32 depth = gPcGfxFogDepthScale * a2;
+	if (depth < gFlFoggingParamOne)
+		return a1;
+
+	f32 t = (depth - gFlFoggingParamOne) / (gFlFoggingParamTwo - gFlFoggingParamOne);
+	if (t > 1.0f)
+		t = 1.0f;
+
+	i32 col = (i32)(t * 511.0f);
+
+	u8 r = gFogTableR[(u8)(a1 >> 16)][col];
+	u8 a = gFogTableA[(u8)(a1 >> 24)][col];
+	u8 g = gFogTableG[(u8)(a1 >> 8)][col];
+	u8 b = gFogTableB[(u8)a1][col];
+
+	return b | (g << 8) | (r << 16) | (a << 24);
 }
 
 // @NotOk
@@ -297,7 +334,7 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 co
 				_DXVERT *v = verts[k];
 
 				if (gNonRendderSettingE)
-					v->field_10 = gsub_506D70(v->field_8, v->field_10);
+					v->field_10 = gsub_506D70(v->field_10, v->field_8);
 
 				v->field_C = gRenderInitOne[2] / v->field_8;
 				v->field_8 = (bias + v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
@@ -963,7 +1000,7 @@ void PCGfx_DrawQPoly3D(
 			_DXVERT *v = verts[k];
 
 			if (gNonRendderSettingE)
-				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+				v->field_10 = gsub_506D70(v->field_10, v->field_8);
 
 			v->field_C = gRenderInitOne[2] / v->field_8;
 			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
@@ -1021,7 +1058,7 @@ void PCGfx_DrawQPoly3D(
 			_DXVERT *v = verts[k];
 
 			if (gNonRendderSettingE)
-				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+				v->field_10 = gsub_506D70(v->field_10, v->field_8);
 
 			v->field_C = gRenderInitOne[2] / v->field_8;
 			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
@@ -1479,7 +1516,7 @@ void PCGfx_DrawTPoly3D(
 		else
 			vtx[0].field_10 = (color1 & 0xFF000000) | (((color1 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
-			vtx[0].field_10 = gsub_506D70(invZ, vtx[0].field_10);
+			vtx[0].field_10 = gsub_506D70(vtx[0].field_10, invZ);
 		if (!gLowGraphics)
 		{
 			vtx[0].field_14 *= vtx[0].field_C;
@@ -1500,7 +1537,7 @@ void PCGfx_DrawTPoly3D(
 		else
 			vtx[1].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
-			vtx[1].field_10 = gsub_506D70(invZ, vtx[1].field_10);
+			vtx[1].field_10 = gsub_506D70(vtx[1].field_10, invZ);
 		if (!gLowGraphics)
 		{
 			vtx[1].field_14 *= vtx[1].field_C;
@@ -1521,7 +1558,7 @@ void PCGfx_DrawTPoly3D(
 		else
 			vtx[2].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
-			vtx[2].field_10 = gsub_506D70(invZ, vtx[2].field_10);
+			vtx[2].field_10 = gsub_506D70(vtx[2].field_10, invZ);
 		if (!gLowGraphics)
 		{
 			vtx[2].field_14 *= vtx[2].field_C;
