@@ -33,13 +33,17 @@ EXPORT CBody* gHealthBarTwo;
 // POLY_GT4 corner feeds them (colors/coords keep their own alpha,
 // 0xDF for corners 0/1, 0x60 for corners 2/3, tied to the source corner
 // not the argument slot, confirmed from the color-pack read order in each
-// block). cmpsum: 296 mnemonic diffs, diverges right at the prologue
-// (register allocation and push order around the print_if_false call
-// differ from the first instruction), so the source shape for the top of
-// the function is still wrong, not just a scheduling residue further down.
-// 1 attempt this session, not iterated further given the size of the
-// remaining queue (large bracket needs 10+ hypotheses per cluster, not
-// spent here).
+// block). cmpsum: 296 mnemonic diffs, diverges right at the prologue, at
+// the print_if_false call. Likely the same known repo-wide defect noted in
+// CLAUDE.md ("print_if_false inlining makes old @Ok tags go stale"):
+// export.h's print_if_false is static so our build always inlines it,
+// while the original calls it out-of-line at 0x4015B0. This looks like the
+// shared root cause behind this function and both DCPanel_DrawTexturedPoly
+// overloads above (all three call print_if_false and are all stuck at a
+// small stable diff count); none of the three can byte-match until that
+// header issue is fixed. 1 attempt this session, not iterated further
+// given the size of the remaining queue and that the real blocker is
+// outside this function.
 // @NotOk
 void DCDrawGouraudPoly(f32 zOffset, POLY_GT4 *poly, Texture *tex, i32 a4)
 {
