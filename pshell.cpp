@@ -1780,10 +1780,42 @@ CRecordBox::CRecordBox(i32 width, i32 height, STrainingMission* pMission)
 	field_3C = pMission;
 }
 
-// @SMALLTODO
+// Decompiled via IDA on the real exe, 2026-08-27 (0x0047AF00, 7 bytes: a
+// single `mov dword ptr [ecx], offset off_53B234` then `ret`, called from
+// the vtable's deleting-destructor thunk at 0x47AEE0). Resets the vtable
+// pointer to CExpandingBox's own vtable (0x53B234) before returning, the
+// same raw-address vtable poke PShell_EndTrainingInit already uses for
+// CRecordBox's own vtable (0x53BDA4, see its comment above): CRecordBox is
+// laid out identically to CExpandingBox (same comment, and
+// CRecordBox::Display already reinterpret_casts `this` to CExpandingBox*
+// to reach its Display method) but is declared `public CClass` in this
+// header, not `public CExpandingBox`, so there is no portable C++
+// expression for "CExpandingBox's vtable" other than this fixed game
+// address.
+//
+// cmpsum residue: our build emits one extra instruction, a tail
+// `jmp CClass::~CClass` after the vtable store (original just has `ret`).
+// Root cause: CClass::~CClass() (main.h/main.cpp) is virtual and defined
+// in a different TU (main.cpp) from this destructor (pshell.cpp), so our
+// compiler cannot prove the implicit base-class destructor call does
+// nothing and must emit a real (tail-)call to it; the original apparently
+// could elide this, most likely because its true base class destructor
+// call resolved to CExpandingBox::~CExpandingBox() (defined in the SAME
+// TU as this function, pshell.cpp, and itself trivial), which lines up
+// with the vtable-reset target above. This is the same class of repo-wide
+// cross-TU-visibility problem already documented for print_if_false and
+// vector.h's operator- (see CLAUDE.md): not fixable from this one
+// function without either restructuring CRecordBox's base class (touches
+// shell.h and the already-`@Ok @Matching` CRecordBox::CRecordBox/Display/
+// Update, out of scope here) or making CClass::~CClass() provably trivial
+// repo-wide (affects every CClass-derived destructor). Left plain `@Ok`
+// (not `@Matching`), matching the precedent already set by
+// CExpandingBox::~CExpandingBox above (same base class, same unverified
+// residue, also plain `@Ok`).
+// @Ok
 CRecordBox::~CRecordBox(void)
 {
-	printf("CRecordBox::~CRecordBox(void)");
+	*(u32*)this = 0x53B234;
 }
 
 #include "my_patch.h"
