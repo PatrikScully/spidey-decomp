@@ -230,6 +230,38 @@ void Shell_Cheats(void)
 	}
 }
 
+// unnamed helper, address 0x48EA90, name from names.json. Called once per frame by
+// several Shell_ menu loops (ScreenAdjust, ShowRecord, ChooseSurvivalArena, ...).
+// not yet decompiled on its own. Kept out-of-line (same trick as PCShell.cpp's
+// gsub_430680/gsub_430880/gsub_515850, needed because this stub lives in the same
+// TU as its callers).
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
+// @SMALLTODO
+EXPORT void CheckForPadUnplugged(void)
+{
+	printf("CheckForPadUnplugged(void)");
+}
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
+
+// shared per-frame ease value for the title bar shake on some Shell_ menu screens
+// (ScreenAdjust, ShowRecord, ChooseSurvivalArena all use it). tentative name, no idb
+// match (0x5512EC). distinct from PCShell.cpp's PCSHELL_DoDisplayOptions/
+// DoControllerConfig, which use a stack local for the same easing idiom. original
+// static initial value confirmed 0x200 from the exe's raw .data bytes at 0x5512EC
+// (Shell_ChooseSurvivalArena reads/updates it without resetting it first, so the
+// initializer is load-bearing there even though ScreenAdjust/ShowRecord both
+// overwrite it before first use).
+EXPORT i32 gShellMenuEase = 0x200;
+
+// tentative name, no idb match (0x54D38C, checked right after Pad_Update() in several
+// Shell_ menu loops; guessed to gate an early abort, e.g. game shutting down. nearest
+// idb_globals.txt neighbour is SymBurnRegion at 0x54D388).
+static u8 * const gShellMenuAbort = (u8*)0x54D38C;
+
 // @MEDIUMTODO
 void Shell_ChooseEnemy(i32,u8,signed char)
 {
@@ -248,10 +280,233 @@ void Shell_ChooseSpeedTraining(i32)
     printf("Shell_ChooseSpeedTraining(i32)");
 }
 
-// @MEDIUMTODO
-void Shell_ChooseSurvivalArena(i32)
+// arena names for the two AddEntry calls (0x54BAEC/0x54BAF0 in the original, plain
+// string-literal globals like gShowRecordTitle below since we only ever read them).
+static char* STR_ARENA_COMBAT_ROOM = "combat room";
+static char* STR_ARENA_BUILDING_TOP = "building top";
+
+// title text (0x54BBA0/0x54BBA4). 0x54BBA0 is the same address as
+// Shell_ShowRecord's gShowRecordTitle below ("High Scores"); duplicated here as its
+// own literal since gShowRecordTitle is file-local (static) and declared later.
+static char* STR_ARENA_HIGH_SCORES_TITLE = "High Scores";
+static char* STR_ARENA_TRAINING_TITLE = "training";
+
+// instructional heading + per-arena description lines (0x54B9D8/DC/E0/E4/E8).
+static char* STR_ARENA_HEADING = "select which area to train in!";
+static char* STR_ARENA_COMBAT_ROOM_DESC1 = "this area is an enclosed room";
+static char* STR_ARENA_COMBAT_ROOM_DESC2 = "that spidey trains in!";
+static char* STR_ARENA_BUILDING_TOP_DESC1 = "this area is located on top of a";
+static char* STR_ARENA_BUILDING_TOP_DESC2 = "new york building top!";
+
+static char* STR_BAD_ARENA_CHOICE = "Bad arena choice";
+
+// output of the menu: which arena the player picked (0 = combat room, 1 = building
+// top). tentative name, no idb match (0x551294). original static initial value is
+// -1 (unselected sentinel), confirmed from the exe's raw .data bytes.
+EXPORT i32 gTrainingArenaChoice = -1;
+
+// Confirms the CMenu/SEH theory from shell.attempts.md's bonus finding generalizes
+// beyond the throwaway test: `new CMenu(0x100,0,0,0x100,0x100,0x10)` in this real
+// function reproduces the original's exact SEH prologue (mov eax,fs:0; push -1;
+// push offset handler; push eax; mov fs:0,esp) and epilogue in our own build, byte
+// for byte in shape. The whole per-frame loop (CMenu Display/Update/FinishedZooming/
+// GetEntryXY, PCSHELL_CheckTriggers cancel/confirm branches, description text,
+// DrawSync idiom, VblankProcessing) is a faithful reconstruction from the
+// disassembly and cross-referenced against Shell_ScreenAdjust/Shell_ShowRecord's
+// already-@Ok idioms for every shared call/global.
+//
+// Residue: 242 mnemonic diffs (down from 267 on the first pass), all one root
+// cause. Original caches the constant 0 in ebp very early (right between "push esi"
+// and "push edi" in the register-save sequence, before PShell_NormalFont is even
+// called) and reuses that register for both CMenu ctor args (y, Justification), the
+// null-check comparand, and dozens of later zero arguments/comparisons throughout
+// the function. Our build never establishes that early cached register: it either
+// materializes ebp=0 lazily right before the null check, or (depending on unrelated
+// local variable types elsewhere in the function) skips the cached register
+// entirely and pushes literal 0 at each use site. Confirmed via a throwaway
+// isolated test (Shell_CMenuSchedTest, removed before commit: just the
+// DrawSync+PShell_NormalFont+new CMenu+2x AddEntry+CentreY+Zoom(0) preamble, no
+// loop) that a minimal preamble with few later zero-reuses never gets the cached
+// register either -- so this is a whole-function register-pressure heuristic in
+// MSVC6's allocator, not something localized to the construction site itself.
+//
+// Attempts (all rebuilt + cmpsum'd, each a distinct theory targeting this one
+// cluster, first divergence always the ebp-vs-push-edi ordering right after the
+// SEH prologue and 3 register saves):
+// 1. Baseline straight translation: 267 diffs.
+// 2. Named `i32 zero = 0;` local declared before PShell_NormalFont(), used for the
+//    ctor's y/Justification args instead of the literal 0: no change (267). MSVC
+//    already constant-propagates a never-reassigned local identically to a literal.
+// 3. Split `CMenu* menu;` declaration from its `menu = new CMenu(...)` assignment
+//    (separate statements instead of one): no change (267).
+// 4. `mouseSelected` local changed from u8 to i32: 267 -> 242, and shifted the
+//    specific instructions at the divergence point (a `cmp eax,ebp` became
+//    `test eax,eax`), confirming a local's TYPE elsewhere in the function does
+//    perturb the allocator's decision at the top of the function, even though it
+//    didn't fix the root divergence.
+// 5. Declaration order swap (`i32 x, y;` before vs after `const char* name = ...;`
+//    in the mouse-hover block): no change (242).
+// 6. Isolated minimal-preamble diagnostic (Shell_CMenuSchedTest, see above): no
+//    cached register at all with a short function, confirming the effect is
+//    whole-function, not localized.
+//
+// This is the same class of problem CLAUDE.md already documents as sometimes
+// irreproducible from source (Utils_VblankProcessing's CSE hoist, 5 attempts,
+// accepted as residue) -- a whole-function MSVC6 register-allocation heuristic that
+// resists targeted source changes. Left @NotOk rather than forcing an
+// @AlmostMatching claim, since 242 diffs is real residue, not a single-instruction
+// toolchain quirk. Flagging for whoever picks this up next: try adding more early,
+// close-together zero-valued arguments right after the CMenu construction (before
+// AddEntry/CentreY/Zoom) to see if there's a density/proximity threshold that flips
+// the allocator's decision; the isolated-preamble test above only tried the
+// construction site itself with nothing added around it.
+// @NotOk
+void Shell_ChooseSurvivalArena(i32 fromHighScores)
 {
-    printf("Shell_ChooseSurvivalArena(i32)");
+	// defined once in PCShell.cpp, called here through a local extern (same pattern
+	// as Shell_ScreenAdjust/Shell_ShowRecord above).
+	extern void gsub_430880(void);
+	extern void gsub_430680(void);
+
+	Pause(1);
+
+	// DrawSync(), written out by hand (see the comment on this idiom in
+	// Shell_ShowRecord above).
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	PShell_NormalFont();
+
+	CMenu* menu = new CMenu(0x100, 0, 0, 0x100, 0x100, 0x10);
+
+	menu->AddEntry(STR_ARENA_COMBAT_ROOM);
+	menu->AddEntry(STR_ARENA_BUILDING_TOP);
+	menu->CentreY();
+	menu->Zoom(0);
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 vblanksSnapshot = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1u, -1);
+
+		Shell_DrawBackground();
+
+		Shell_DrawTitleBar(0x80, 0x26, fromHighScores ? STR_ARENA_HIGH_SCORES_TITLE : STR_ARENA_TRAINING_TITLE, 1, 0, 0x96, -21, 0x1D);
+
+		menu->Display();
+
+		if (!fromHighScores && menu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			Mess_DrawText(0x100, 0x3c, STR_ARENA_HEADING, 0, 0x1000u);
+
+			if (menu->mLine == 0)
+			{
+				Mess_DrawText(0x100, 0xaa, STR_ARENA_COMBAT_ROOM_DESC1, 0, 0x1000u);
+				Mess_DrawText(0x100, 0xb6, STR_ARENA_COMBAT_ROOM_DESC2, 0, 0x1000u);
+			}
+			else if (menu->mLine == 1)
+			{
+				Mess_DrawText(0x100, 0xaa, STR_ARENA_BUILDING_TOP_DESC1, 0, 0x1000u);
+				Mess_DrawText(0x100, 0xb6, STR_ARENA_BUILDING_TOP_DESC2, 0, 0x1000u);
+			}
+		}
+
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 0x180);
+
+		if (menu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+
+		Pad_Update();
+
+		if (*gShellMenuAbort)
+			return;
+
+		CheckForPadUnplugged();
+
+		menu->Update();
+
+		if (PCSHELL_CheckTriggers(0x20220, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			break;
+		}
+
+		i32 mouseSelected = 0;
+
+		if (PCSHELL_CheckTriggers(0x100, 1, 1))
+		{
+			i32 x, y;
+			const char* name = menu->mEntry[menu->mLine].name;
+			menu->GetEntryXY(name, &x, &y);
+
+			if (PCSHELL_IsMouseOverText(name, x, y, menu->mJustification))
+				mouseSelected = 1;
+		}
+
+		if (menu->mLine < 0x28 && (mouseSelected || PCSHELL_CheckTriggers(0x10010, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+			SFX_Play(0x1F, 0x2000, 0);
+
+			if (menu->mLine == 0)
+				gTrainingArenaChoice = 0;
+			else if (menu->mLine == 1)
+				gTrainingArenaChoice = 1;
+			else
+				print_if_false(0, STR_BAD_ARENA_CHOICE);
+
+			break;
+		}
+
+		if (Vblanks == vblanksSnapshot)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+
+		if (!DoVblankProcessing)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
+
+	delete menu;
+
+	Pause(1);
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	Pad_ClearTriggers(G_SCONTROL);
 }
 
 // @MEDIUMTODO
@@ -503,7 +758,8 @@ void Shell_SaveGame(const u32 *,u32 *)
 // Shell_ScreenAdjust and Shell_ShowRecord call these as real out-of-line functions
 // in the original, keep the MSVC inliner away (same trick as PCShell.cpp's
 // gsub_430680/gsub_430880/gsub_515850, needed because these stubs live in the same
-// TU as their callers).
+// TU as their callers). CheckForPadUnplugged and gShellMenuEase/gShellMenuAbort now
+// declared earlier in this file (before the Shell_Choose* family), see there.
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
@@ -514,29 +770,9 @@ EXPORT void gsub_498240(i32, i32)
 {
 	printf("gsub_498240(i32, i32)");
 }
-
-// unnamed helper, address 0x48EA90, name from names.json. Called once per frame by
-// several Shell_ menu loops (ScreenAdjust, ShowRecord, ChooseSurvivalArena, ...).
-// not yet decompiled on its own.
-// @SMALLTODO
-EXPORT void CheckForPadUnplugged(void)
-{
-	printf("CheckForPadUnplugged(void)");
-}
 #ifdef _MSC_VER
 #pragma auto_inline(on)
 #endif
-
-// shared per-frame ease value for the title bar shake on some Shell_ menu screens
-// (ScreenAdjust, ShowRecord both use it). tentative name, no idb match (0x5512EC).
-// distinct from PCShell.cpp's PCSHELL_DoDisplayOptions/DoControllerConfig, which use
-// a stack local for the same easing idiom.
-EXPORT i32 gShellMenuEase;
-
-// tentative name, no idb match (0x54D38C, checked right after Pad_Update() in several
-// Shell_ menu loops; guessed to gate an early abort, e.g. game shutting down. nearest
-// idb_globals.txt neighbour is SymBurnRegion at 0x54D388).
-static u8 * const gShellMenuAbort = (u8*)0x54D38C;
 
 static char* STR_SCREEN_ADJUST_TITLE = "screen adjust";
 static char* STR_SCREEN_ADJUST_LINE1 = "Use the directional";
