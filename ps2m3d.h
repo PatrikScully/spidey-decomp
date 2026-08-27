@@ -57,5 +57,6 @@ EXPORT extern u32* pColourTable;
 #define G_COLOUR_TABLE (*reinterpret_cast<u32**>(0x0064F5D0))
 
 void validate_matrix4x4(void);
+void patch_ps2m3d(void);
 
 #endif

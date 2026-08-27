@@ -184,6 +184,8 @@ public:
 	EXPORT ~CBody(void);
 };
 
+#define CSUPER_OUTLINE (1 << 2)
+
 class CSuper : public CBody {
 public:
 
@@ -221,19 +223,24 @@ public:
 	u8 outlineB;
 
 
-	i16 field_128;
+	i16 mFrame;
 	u16 mAnim;
 
-	i32 outlineRelated;
-	void* field_130;
-	void* field_134;
+	u32 mExtraFlags;
+	u16* mpCalculationOrder;
+	struct SMatrix* mpDecompressedFrame;
 
-	PADDING(0x6);
+	u16 mRoot;
+
+	// @Note: it was a u8
+	u16 mDecompressedAnim;
+	// @Note: it was a i8
+	i16 mDecompressedFrame;
 
 	u8 field_13E;
 	u8 field_13F;
 
-	u8 field_140;
+	u8 mAnimMode;
 
 	i8 mAnimDir;
 	u8 mAnimFinished;
@@ -241,7 +248,9 @@ public:
 	u8 field_143;
 
 
-	i16 field_144;
+	// @Note: it was i8
+	i16 mTargetFrame;
+
 	i16 mFrameFrac;
 	i16 mNumFrames;
 
@@ -263,13 +272,10 @@ public:
 
 	MATRIX mTransform;
 
-	void *field_184;
-	void* field_188;
+	SMatrix *mpPoseBuffer;
+	SJoint  *mpJoints;
 
-	// @Note: was PADDING(0x4) upstream, but M3dUtils_ReadLinksPacket (0x453C50)
-	// writes here (a2+4, pointer into the link packet data) and M3dUtils_BuildPose
-	// (0x454450) reads it back. Not padding.
-	void *mLinkData;
+	SLink *mpLinks;
 
 	i16 *actualcsuperend;
 
@@ -302,6 +308,7 @@ EXPORT extern CVector ZeroVector;
 
 void patch_CItem(void);
 void patch_CBody(void);
+void patch_CSuper(void);
 
 #define CBODY_SUSPENDED        (1<<0)
 #define CBODY_RADIALSUSPENSION (1<<1)

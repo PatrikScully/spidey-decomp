@@ -1739,7 +1739,7 @@ CRudeWordHitterSpidey::CRudeWordHitterSpidey(void)
 
 	this->RunAnim(0, 0, -1);
 
-	this->field_128 = 18;
+	this->mFrame = 18;
 	this->mPos.vx = 0xFFF92000;
 	this->mPos.vy = 0x104000;
 	this->mPos.vz = 0x1F4000;
@@ -1777,7 +1777,7 @@ void CRudeWordHitterSpidey::AI(void)
 
 	this->UpdateFrame();
 
-	if (this->field_128 == 7 && !this->field_1A4)
+	if (this->mFrame == 7 && !this->field_1A4)
 	{
 		switch (Rnd(4))
 		{

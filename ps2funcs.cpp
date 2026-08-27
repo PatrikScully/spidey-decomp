@@ -16,6 +16,8 @@
 
 #include <cstdlib>
 
+#include "my_assert.h"
+
 i32 gClutRelated;
 
 i32 DoVblankProcessing = 1;
@@ -143,12 +145,6 @@ void TransMatrix(MATRIX* a1, VECTOR* a2)
 	a1->t[0] = a2->vx;
 	a1->t[1] = a2->vy;
 	a1->t[2] = a2->vz;
-}
-
-void validate_MATRIX(void){
-	VALIDATE_SIZE(MATRIX, 0x20);
-	VALIDATE(MATRIX, m, 0x0);
-	VALIDATE(MATRIX, t, 0x14);
 }
 
 // @Ok
@@ -609,17 +605,21 @@ i32 M3dMaths_SquareRoot0(i32 i){
 
 
 // @Ok
-int M3dMaths_MulDiv64(int a1, int a2, int a3)
+// @Matching
+i32 M3dMaths_MulDiv64(i32 a1, i32 a2, i32 a3)
 {
 	if (!a3)
 	{
 		return -1;
 	}
 
-	f64 hope = (f64)a1 * (f64)a2 / (f64)a3;
-	print_if_false(hope <= 2147483647.0, "hope<=INT_MAX");
-	print_if_false(hope >= -2147483648.0, "hope>=INT_MIN");
-	return (int)hope;
+	f64 hope = (f64)a1 * (f64)a2;
+	hope /= (f64)a3;
+
+	ASSERT(hope <= 2147483647.0, "hope<=INT_MAX");
+	ASSERT(hope >= -2147483648.0, "hope>=INT_MIN");
+
+	return hope;
 }
 
 // @Ok
@@ -638,9 +638,15 @@ void M3dMaths_TransposeMatrix1(MATRIX *a1, MATRIX *a2)
 
 
 
-// @Ok
+// @SMALLTODO
 void M3dMaths_ScaleMatrix(CItem *a1, MATRIX *a2)
 {
+	typedef void (*func_ptr)(CItem*, MATRIX*);
+	func_ptr func = (func_ptr)0x0046D480;
+	func(a1, a2);
+
+	return;
+
 	MATRIX v7;
 	MATRIX v8;
 	memset((void*)&v8, 0, sizeof(v8));
@@ -651,9 +657,9 @@ void M3dMaths_ScaleMatrix(CItem *a1, MATRIX *a2)
 
 	MulMatrix0(a2, &v8, &v7);
 
-	for (int i = 0; i < 3; i++)
+	for (i32 i = 0; i < 3; i++)
 	{
-		for(int j = 0; j < 3; j++)
+		for(i32 j = 0; j < 3; j++)
 		{
 			a2->m[i][j] = v7.m[i][j];
 		}
@@ -690,7 +696,10 @@ void M3dAsm_SetTransVector(VECTOR* a1)
 // @BIGTODO
 MATRIX* RotMatrixYXZ(SVECTOR *a1, MATRIX *a2)
 {
-	return reinterpret_cast<MATRIX*>(0x69696969);
+	typedef MATRIX* (*func_ptr)(SVECTOR*, MATRIX*);
+
+	func_ptr func = (func_ptr)0x0046D1E0;
+	return func(a1, a2);
 }
 
 // @Ok
@@ -870,10 +879,44 @@ void Port_Exit(void)
 	sbExitSystem();
 }
 
+
+void validate_MATRIX(void){
+	VALIDATE_SIZE(MATRIX, 0x20);
+	VALIDATE(MATRIX, m, 0x0);
+	VALIDATE(MATRIX, t, 0x14);
+}
+
+void validate_SMatrix(void)
+{
+	VALIDATE_SIZE(SMatrix, 0x18);
+	VALIDATE(SMatrix, m, 0x0);
+	VALIDATE(SMatrix, t, 0x12);
+}
+
+void validate_SJoint(void)
+{
+	VALIDATE_SIZE(SJoint, 0xC);
+
+	VALIDATE(SJoint, Angles, 0x0);
+	VALIDATE(SJoint, Displacement, 0x6);
+}
+
+void validate_SLink(void)
+{
+	VALIDATE_SIZE(SLink, 0xC);
+
+	VALIDATE(SLink, Part, 0x0);
+	VALIDATE(SLink, ParentPart, 0x2);
+	VALIDATE(SLink, Pivot, 0x4);
+	VALIDATE(SLink, ParentLink, 0xA);
+}
+
 #include "my_patch.h"
 
 // @Bogus
 void patch_ps2funcs(void)
 {
 	PATCH_PUSH_RET(0x0046D430, M3dMaths_SquareRoot0);
+	PATCH_PUSH_RET(0x0046D500, M3dMaths_MulDiv64);
+	PATCH_PUSH_RET(0x0046E730, M3dMaths_RotMatrixYXZ);
 }

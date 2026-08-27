@@ -49,8 +49,8 @@ void BlackCat_RelocatableModuleClear(void)
 // state machine: field_31C.bothFlags picks the outer phase (1 = climb down
 // from a ledge, 2 = walk to the player using SynthesizeAnalogueInput, 4 =
 // idle anim), dumbAssPad is the sub state inside each phase. field_324 is a
-// trig link id to look at, field_188 is a guessed turret-style head object
-// with a pan/tilt pair at +0x24 (type unknown, offset used raw).
+// trig link id to look at, mpJoints is used as a guessed turret-style head
+// object with a pan/tilt pair at +0x24 (type unknown, offset used raw).
 // cmpsum: 289 mnemonic diffs on a 1146 byte function, first divergence near
 // entry (my code loads the al flag differently than the original's cmp
 // al,bl idiom). functional shape (calls, order, branches) verified against
@@ -68,7 +68,7 @@ void CBlackCat::AI(void)
 
 	if (this->mAnim == 8)
 	{
-		if (!(this->field_218 & 1) && this->field_128 >= 0x12)
+		if (!(this->field_218 & 1) && this->mFrame >= 0x12)
 		{
 			SFX_PlayPos(0x819B, &this->mPos, 0);
 			this->field_218 |= 1;
@@ -215,11 +215,11 @@ void CBlackCat::AI(void)
 		Utils_CalcAim(&lookAngle, &zero, &delta);
 	}
 
-	if (this->field_188)
+	if (this->mpJoints)
 	{
-		// @FIXME guess: field_188 points at a turret-style head/eye object
+		// @FIXME guess: mpJoints points at a turret-style head/eye object
 		// with a pan/tilt angle pair at offset 0x24
-		i16 *panTilt = reinterpret_cast<i16*>(this->field_188) + 0x12;
+		i16 *panTilt = reinterpret_cast<i16*>(this->mpJoints) + 0x12;
 
 		i32 dx = lookAngle.vx - panTilt[0];
 		if (dx > 0x800) dx -= 0x1000;

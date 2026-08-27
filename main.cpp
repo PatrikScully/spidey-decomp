@@ -279,6 +279,8 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CThug();
 	validate_CTurret();
 	validate_MATRIX();
+	validate_SMatrix();
+	validate_SJoint();
 	validate_CRudeWordHitterSpidey();
 	validate_CBulletFrag();
 	validate_CImpactWeb();
@@ -541,6 +543,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_POLY_F3();
 	validate_CVenomHitSpark();
 	validate_SPushOffset();
+	validate_SLink();
 
 	puts("[*] Validation done!");
 
@@ -672,6 +675,9 @@ void game_patches(void)
 	patch_FontTools();
 	patch_mess();
 	patch_m3dcolij();
+	patch_CSuper();
+	patch_ps2m3d();
+	patch_m3dutils();
 }
 
 // @Bogus

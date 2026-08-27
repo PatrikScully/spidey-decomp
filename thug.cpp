@@ -430,16 +430,16 @@ void CThug::PlaySounds(void)
 		switch ( this->mAnim )
 		{
 			case 1u:
-				if ( this->field_128 == 27 || this->field_128 == 13 )
+				if ( this->mFrame == 27 || this->mFrame == 13 )
 					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 300);
 					return;
 				break;
 			case 8u:
-				if ( this->field_128 == 5 )
+				if ( this->mFrame == 5 )
 					SFX_PlayPos(0x801D, &this->mPos, 500);
 				break;
 			case 0xEu:
-				if ( this->field_128 == 15 )
+				if ( this->mFrame == 15 )
 				{
 					v11.vz = 409600;
 					v11.vx = 0;
@@ -448,7 +448,7 @@ void CThug::PlaySounds(void)
 				}
 				break;
 			case 0x1Au:
-				if ( this->field_128 == 23 )
+				if ( this->mFrame == 23 )
 				{
 					v11.vx = 0;
 					v11.vy = 0;
@@ -457,7 +457,7 @@ void CThug::PlaySounds(void)
 				}
 				break;
 			case 0x1Cu:
-				if ( this->field_128 == 4 || this->field_128 == 14)
+				if ( this->mFrame == 4 || this->mFrame == 14)
 					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 50);
 				break;
 		}
@@ -467,17 +467,17 @@ void CThug::PlaySounds(void)
 		switch ( this->mAnim )
 		{
 			case 5u:
-				if ( this->field_128 == 1 || this->field_128 == 21 )
+				if ( this->mFrame == 1 || this->mFrame == 21 )
 				{
 					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 300);
 				}
 				break;
 			case 7u:
-				if ( this->field_128 == 3 )
+				if ( this->mFrame == 3 )
 					SFX_PlayPos(0x801D, &this->mPos, 500);
 				break;
 			case 0x13u:
-				if ( this->field_128 == 15 )
+				if ( this->mFrame == 15 )
 				{
 					v11.vx = 0;
 					v11.vy = 0;
@@ -486,11 +486,11 @@ void CThug::PlaySounds(void)
 				}
 				break;
 			case 0x18u:
-				if ( this->field_128 == 1 || this->field_128 == 12)
+				if ( this->mFrame == 1 || this->mFrame == 12)
 					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 50);
 				break;
 			case 0x1Au:
-				if ( this->field_128 == 28 )
+				if ( this->mFrame == 28 )
 				{
 					v11.vz = -204800;
 					v11.vx = 0;
@@ -507,11 +507,11 @@ void CThug::PlaySounds(void)
 // spit attack particles: 6 short-lived CGLineParticle spawned from a
 // mouth hook (SHook offset 13), heading roughly forward+90 degrees.
 // cmpsum: 119 mnemonic diffs on 468 bytes. first divergence is the
-// field_128 guard: the original does an early jl-to-return0 that my early
+// mFrame guard: the original does an early jl-to-return0 that my early
 // return compiles to a different branch shape.
 i32 CThug::MonitorSpitPlease(void)
 {
-	if (this->field_128 < 0x1E)
+	if (this->mFrame < 0x1E)
 	{
 		return 0;
 	}
@@ -603,7 +603,7 @@ void CThug::Guard(void)
 				break;
 			}
 
-			this->RunAnim(0xA, this->field_128, -1);
+			this->RunAnim(0xA, this->mFrame, -1);
 		case 1:
 			if ( this->mAnimFinished )
 			{

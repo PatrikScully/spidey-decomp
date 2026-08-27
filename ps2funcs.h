@@ -5,6 +5,7 @@
 
 #include "export.h"
 #include "quat.h"
+#include "vector.h"
 
 EXPORT extern i32 gClutRelated;
 EXPORT extern i32 gPortRelatedOne;
@@ -64,9 +65,36 @@ enum GTREGType
 
 struct SLineInfo;
 
+// size: 0xC
+struct SJoint {
+	// offset: 0000 (6 bytes)
+	struct SVector Angles;
+	// offset: 0006 (6 bytes)
+	struct SVector Displacement;
+};
+
+// size: 0xC
+struct SLink {
+	// offset: 0000
+	unsigned short Part;
+	// offset: 0002
+	unsigned short ParentPart;
+	// offset: 0004 (6 bytes)
+	struct SVector Pivot;
+	// offset: 000A
+	unsigned short ParentLink;
+};
+
 struct MATRIX{
 	i16 m[3][3];
 	i32 t[3];
+};
+
+struct SMatrix {
+	// offset: 0000 (18 bytes)
+	i16 m[3][3];
+	// offset: 0012 (6 bytes)
+	i16 t[3];
 };
 
 typedef struct {		/* long word type 3D vector */
@@ -97,6 +125,9 @@ typedef struct {		/* 2D short vector */
 
 
 void validate_MATRIX(void);
+void validate_SMatrix(void);
+void validate_SJoint(void);
+void validate_SLink(void);
 
 EXPORT void Port_InitAtStart(void);
 EXPORT void Port_Exit(void);

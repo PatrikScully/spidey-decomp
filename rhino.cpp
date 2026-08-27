@@ -389,9 +389,9 @@ void CRhino::AI(void)
 	this->DoMGSShadow();
 	this->DoDazedEffect();
 
-	if ((this->mAnim == 0 && this->field_128 >= 0x15 && this->field_128 <= 0x26)
-		|| (this->mAnim == 9 && this->field_128 >= 0 && this->field_128 <= 9)
-		|| (this->mAnim == 0xF && this->field_128 >= 1 && this->field_128 <= 0xC))
+	if ((this->mAnim == 0 && this->mFrame >= 0x15 && this->mFrame <= 0x26)
+		|| (this->mAnim == 9 && this->mFrame >= 0 && this->mFrame <= 9)
+		|| (this->mAnim == 0xF && this->mFrame >= 1 && this->mFrame <= 0xC))
 	{
 		if (!(this->field_218 & 4))
 		{
@@ -1432,7 +1432,7 @@ void CRhino::GetShocked(void)
 
 			if (!this->field_34C)
 			{
-				this->RunAnim(0x1E, this->field_128, -1);
+				this->RunAnim(0x1E, this->mFrame, -1);
 			}
 
 			if (this->mAnimFinished)
@@ -1534,7 +1534,7 @@ void CRhino::GetTrapped(void)
 
 			if (this->field_350 <= 0)
 			{
-				this->RunAnim(0x1B, this->mAnim == 0x1B ? this->field_128 : 0, -1);
+				this->RunAnim(0x1B, this->mAnim == 0x1B ? this->mFrame : 0, -1);
 				this->dumbAssPad++;
 			}
 			break;
@@ -1548,7 +1548,7 @@ void CRhino::GetTrapped(void)
 			}
 			break;
 		case 4:
-			if (this->field_128 < 0xA)
+			if (this->mFrame < 0xA)
 			{
 				this->field_348 |= 1;
 				break;
@@ -1832,53 +1832,53 @@ void CRhino::PlaySounds(void)
 	switch (this->mAnim)
 	{
 		case 12:
-			if (!(this->field_388 & 1) && this->field_128 >= 3)
+			if (!(this->field_388 & 1) && this->mFrame >= 3)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 1;
 			}
-			else if (!(this->field_388 & 2) && this->field_128 >= 0xD)
+			else if (!(this->field_388 & 2) && this->mFrame >= 0xD)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 2;
 			}
-			else if (!(this->field_388 & 4) && this->field_128 >= 0x15)
+			else if (!(this->field_388 & 4) && this->mFrame >= 0x15)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 4;
 			}
-			else if (!(this->field_388 & 8) && this->field_128 >= 0x1E)
+			else if (!(this->field_388 & 8) && this->mFrame >= 0x1E)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 8;
 			}
 			break;
 		case 5:
-			if (!(this->field_388 & 1) && this->field_128 >= 0)
+			if (!(this->field_388 & 1) && this->mFrame >= 0)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 1;
 			}
-			else if (!(this->field_388 & 2) && this->field_128 >= 8)
+			else if (!(this->field_388 & 2) && this->mFrame >= 8)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 2;
 			}
 			break;
 		case 2:
-			if (!(this->field_388 & 1) && this->field_128 >= 0)
+			if (!(this->field_388 & 1) && this->mFrame >= 0)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 1;
 			}
-			else if (!(this->field_388 & 2) && this->field_128 >= 0xF)
+			else if (!(this->field_388 & 2) && this->mFrame >= 0xF)
 			{
 				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 2;
 			}
 			break;
 		case 18:
-			if (!(this->field_388 & 1) && this->field_128 >= 0x15)
+			if (!(this->field_388 & 1) && this->mFrame >= 0x15)
 			{
 				this->field_388 |= 1;
 			}
@@ -2061,7 +2061,7 @@ void CRhino::StompGround(void)
 			this->dumbAssPad++;
 			break;
 		case 1:
-			if (this->field_128 < 0x11)
+			if (this->mFrame < 0x11)
 			{
 				return;
 			}

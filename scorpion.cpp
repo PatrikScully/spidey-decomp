@@ -174,7 +174,7 @@ void CScorpion::GetTrapped(void)
 			if (this->field_BD8 <= 0)
 			{
 				this->RunAnim(0xC,
-						this->mAnim == 12 ? this->field_128 : 0,
+						this->mAnim == 12 ? this->mFrame : 0,
 						-1);
 				this->dumbAssPad++;
 			}
@@ -188,7 +188,7 @@ void CScorpion::GetTrapped(void)
 			}
 			break;
 		case 4:
-			if (this->field_128 >= 10)
+			if (this->mFrame >= 10)
 			{
 				if (this->field_104.pWhatever)
 				{
@@ -574,7 +574,7 @@ void CScorpion::Gloat(void)
 			this->RunTimer(&this->field_1F8);
 			if ( !this->field_1F8 )
 			{
-				this->RunAnim(this->mAnim, this->field_128, -1);
+				this->RunAnim(this->mAnim, this->mFrame, -1);
 				++this->dumbAssPad;
 			}
 			break;

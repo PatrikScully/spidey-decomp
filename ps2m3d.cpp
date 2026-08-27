@@ -101,7 +101,7 @@ char gRenderBuf[4] = { 0, 0, 0, 0 };
 // @Matching
 void M3d_BuildTransform(CSuper* pSuper)
 {
-	if ((pSuper->outlineRelated & 1) == 0 )
+	if ((pSuper->mExtraFlags & 1) == 0 )
 	{
 		M3dMaths_RotMatrixYXZ(
 				reinterpret_cast<SVECTOR *>(&pSuper->mAngles),
@@ -347,4 +347,12 @@ void validate_matrix4x4(void)
 	VALIDATE_SIZE(matrix4x4, 64);
 
 	VALIDATE(matrix4x4, field_0, 0x0);
+}
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_ps2m3d(void)
+{
+	PATCH_PUSH_RET(0x00475F50, M3d_BuildTransform);
 }

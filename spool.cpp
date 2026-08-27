@@ -1434,6 +1434,9 @@ void validate_SPSXRegion(void)
 	VALIDATE(SPSXRegion, pColourTable, 0x28);
 	VALIDATE(SPSXRegion, pTexWibData, 0x2C);
 	VALIDATE(SPSXRegion, pColourPulseData, 0x30);
+
+	VALIDATE(SPSXRegion, NumParts, 0x38);
+
 	VALIDATE(SPSXRegion, LowRes, 0x3B);
 
 	VALIDATE(SPSXRegion, pAccess, 0x3C);
@@ -1470,8 +1473,19 @@ void validate_AnimPacket(void)
 
 void validate_SModel(void)
 {
-	VALIDATE_SIZE(SModel, 2);
+	VALIDATE_SIZE(SModel, 36);
+
 	VALIDATE(SModel, Flags, 0);
+	VALIDATE(SModel, NumNormals, 4);
+
+	VALIDATE(SModel, NumFaces, 6);
+	VALIDATE(SModel, Radius, 8);
+	VALIDATE(SModel, Box, 0xC);
+
+	VALIDATE(SModel, zMax, 0x18);
+	VALIDATE(SModel, NextLOD, 0x1A);
+
+	VALIDATE(SModel, Vertices, 0x1C);
 }
 
 void validate_POLY_F3(void)

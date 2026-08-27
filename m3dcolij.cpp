@@ -53,24 +53,20 @@ i32 M3dColij_GetLineInfo(SLineInfo *pInfo)
 
 // @Ok
 // @Matching
-// Computes the world-space collision point: Position = StartCoords +
-// (EndCoords - StartCoords) * (Distance / Length), done per axis in 0x4000-scaled fixed
-// point via M3dMaths_MulDiv64, with an abs()/resign dance around each division.
 void M3dColij_LineInfoFixup(SLineInfo *pInfo)
 {
-	i32 ratio = M3dMaths_MulDiv64(pInfo->Distance, 0x4000, pInfo->Length);
+	i32 v2 = M3dMaths_MulDiv64(pInfo->Distance, 0x4000, pInfo->Length);
+	i32 v3 = pInfo->EndCoords.vx - pInfo->StartCoords.vx;
+	i32 v5 = pInfo->EndCoords.vy - pInfo->StartCoords.vy;
+	i32 v4 = pInfo->EndCoords.vz - pInfo->StartCoords.vz;
 
-	i32 dx = pInfo->EndCoords.vx - pInfo->StartCoords.vx;
-	i32 dy = pInfo->EndCoords.vy - pInfo->StartCoords.vy;
-	i32 dz = pInfo->EndCoords.vz - pInfo->StartCoords.vz;
+	i32 v8 = (v3 < 0 ? -1 : 1) * M3dMaths_MulDiv64(my_abs(v3), v2, 0x4000);
+	i32 v6 = (v5 < 0 ? -1 : 1) * M3dMaths_MulDiv64(my_abs(v5), v2, 0x4000);
+	i32 v7 = (v4 < 0 ? -1 : 1) * M3dMaths_MulDiv64(my_abs(v4), v2, 0x4000);
 
-	i32 scaledDx = M3dMaths_MulDiv64(my_abs(dx), ratio, 0x4000) * ((dx < 0) ? -1 : 1);
-	i32 scaledDy = M3dMaths_MulDiv64(my_abs(dy), ratio, 0x4000) * ((dy < 0) ? -1 : 1);
-	i32 scaledDz = M3dMaths_MulDiv64(my_abs(dz), ratio, 0x4000) * ((dz < 0) ? -1 : 1);
-
-	pInfo->Position.vx = pInfo->StartCoords.vx + scaledDx;
-	pInfo->Position.vy = pInfo->StartCoords.vy + scaledDy;
-	pInfo->Position.vz = pInfo->StartCoords.vz + scaledDz;
+	pInfo->Position.vx = v8 + pInfo->StartCoords.vx;
+	pInfo->Position.vy = v6 + pInfo->StartCoords.vy;
+	pInfo->Position.vz = v7 + pInfo->StartCoords.vz;
 }
 
 // @Ok
@@ -223,4 +219,5 @@ void patch_m3dcolij(void)
 {
 	PATCH_PUSH_RET(0x004527C0, M3dColij_LineToItem);
 	PATCH_PUSH_RET(0x00452820, M3dColij_LineToItemZoned);
+	PATCH_PUSH_RET(0x004528E0, M3dColij_LineInfoFixup);
 }

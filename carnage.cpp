@@ -260,7 +260,7 @@ void CCarnage::GettingGrabbed(void)
 				MechList->Hit(&hitInfo);
 			}
 
-			if (this->field_128 >= 0xA)
+			if (this->mFrame >= 0xA)
 			{
 				if (!(this->field_324 & 1))
 				{
@@ -269,7 +269,7 @@ void CCarnage::GettingGrabbed(void)
 				}
 			}
 
-			if (this->field_128 < 0xA)
+			if (this->mFrame < 0xA)
 			{
 				CVector delta;
 				delta.vx = this->mPos.vx - MechList->mPos.vx;
@@ -285,7 +285,7 @@ void CCarnage::GettingGrabbed(void)
 				}
 			}
 
-			if (this->field_128 > 0xA)
+			if (this->mFrame > 0xA)
 			{
 				if (this->field_194 & 0x40000)
 				{
@@ -343,7 +343,7 @@ void CCarnage::ThrowBlades(void)
 				return;
 			}
 
-			if (this->field_128 < 0xA)
+			if (this->mFrame < 0xA)
 				return;
 
 			SHook hook;
@@ -375,7 +375,7 @@ void CCarnage::ThrowBlades(void)
 
 		case 2:
 		{
-			if (this->field_128 < 0xA)
+			if (this->mFrame < 0xA)
 				return;
 
 			SHook hook;
@@ -397,7 +397,7 @@ void CCarnage::ThrowBlades(void)
 
 		case 3:
 		{
-			if (this->field_128 < 0x1A)
+			if (this->mFrame < 0x1A)
 				return;
 
 			SHook hook;
@@ -793,23 +793,23 @@ i32 CCarnage::Hit(SHitInfo* pInfo)
 
 	if (this->mAnim == 20)
 		return 0;
-	if (this->mAnim == 12 && this->field_128 >= 10)
+	if (this->mAnim == 12 && this->mFrame >= 10)
 		return 0;
 
 	if (this->mAnim == 13)
 	{
-		if ((this->field_128 >= 8 && this->field_128 <= 18) ||
-				(this->field_128 >= 28 || this->field_128 <= 2))
+		if ((this->mFrame >= 8 && this->mFrame <= 18) ||
+				(this->mFrame >= 28 || this->mFrame <= 2))
 			return 0;
 	}
 	if ( this->mAnim == 34 )
 	{
-		if (this->field_128 >= 12 && this->field_128 <= 22)
+		if (this->mFrame >= 12 && this->mFrame <= 22)
 			return 0;
 	}
 	if ( this->mAnim == 35 )
 	{
-		if (this->field_128 >= 5 && this->field_128 <= 12)
+		if (this->mFrame >= 5 && this->mFrame <= 12)
 			return 0;
 	}
 
@@ -1661,7 +1661,7 @@ void CCarnage::DoubleAxeHandSlash(void)
 			}
 			else
 			{
-					if (this->field_128 >= 5)
+					if (this->mFrame >= 5)
 					{
 						if ((this->field_324 & 1) == 0)
 						{
@@ -1737,13 +1737,13 @@ void CCarnage::StretchJumpFlow(void)
 			break;
 		case 1:
 			this->field_328 = 16;
-			if (this->field_128 > 8)
+			if (this->mFrame > 8)
 			{
-				if (this->field_128 <= 38)
+				if (this->mFrame <= 38)
 				{
 					CVector a3 = ((this->field_240 - this->field_370) >> 12);
 
-					i32 sin = rcossin_tbl[(((this->field_128 - 8) << 10) / 30) & 0xFFF].sin;
+					i32 sin = rcossin_tbl[(((this->mFrame - 8) << 10) / 30) & 0xFFF].sin;
 					i32 v18 = (sin * sin) >> 12;
 
 					a3 *= v18;

@@ -23,6 +23,9 @@ CBody* EnvironmentalObjectList;
 CBody* SuspendedList;
 CItem* EnviroList;
 
+//#define G_SUSPENEDED_LIST (SuspendedList)
+#define G_SUSPENEDED_LIST (*reinterpret_cast<CBody**>(0x0060DAB4))
+
 CBody* RealMechList;
 
 i32 gSuperItemRelated = 1;
@@ -46,6 +49,7 @@ void CBody::DeleteStuff(void)
 }
 
 // @Ok
+// @Matching
 CBody* CBody::FindBodyByNode(
 		i32 type,
 		CBody* pBody)
@@ -106,47 +110,50 @@ int CBody::Hit(SHitInfo*)
 }
 
 // @Ok
+// @Matching
 void CItem::InitItem(const char * pName)
 {
-	int Region = Spool_FindRegion(pName);
-	this->mRegion = Region;
+	this->mRegion = Spool_FindRegion(pName);
 	this->mModel = 0;
 
 
-	if (PSXRegion[Region].Filename[9])
+	if (G_PSXREGION[this->mRegion].IsSuper)
 	{
-		u32 *tmp = *reinterpret_cast<u32**>(PSXRegion[Region].ppModels);
-		tmp[2] = 0x64000;
-		tmp[3] = 0xFF9C0064;
-		tmp[4] = 0xFF9C0064;
-		tmp[5] = 0xFF9C0064;
+		SModel *pModel = G_PSXREGION[this->mRegion].ppModels[0];
+		pModel->Radius = 0x64000;
+		pModel->Box.vx = 0xFF9C0064;
+		pModel->Box.vy = 0xFF9C0064;
+		pModel->Box.vz = 0xFF9C0064;
 	}
 }
 
 
 
 // @Ok
-// has weird xor eax, eax at the top
+// @Matching
 INLINE i32 CBody::IsDead(void) const
 {
-	return (this->mCBodyFlags >> 6) & 1;
+	if (this->mCBodyFlags & CBODY_ZOMBIE)
+		return 1;
+	return 0;
 }
 	
 
 
 // @Ok
+// @Matching
 void CBody::Die(void)
 {
-	i32 isDead = this->IsDead();
-	if(!isDead)
+	if(!this->IsDead())
 	{
-		this->mCBodyFlags |= 0x40;
+		this->mCBodyFlags |= CBODY_ZOMBIE;
 	}
 }
 
 // @Ok
+// @Matching
 void CBody::ShadowOn(void){
-	this->mCBodyFlags |= 8;
+	this->mCBodyFlags |= CBODY_HASSHADOW;
 }
 
 
@@ -166,6 +173,7 @@ void CBody::KillShadow(void)
 // @Matching
 void CBody::UpdateShadow(void)
 {
+	NOT_IMPLEMENTED;
 
 	if(this->mCBodyFlags & 8){
 
@@ -209,19 +217,16 @@ void CBody::UpdateShadow(void)
 
 
 // @Ok
-INLINE void CBody::AttachTo(CBody** a1)
+// @Matching
+INLINE void CBody::AttachTo(CBody** ppList)
 {
-
-	CBody *v2 = *a1;
+	this->mNextItem = *ppList;
 	this->mPreviousItem = 0;
-	this->mNextItem = v2;
 
-	*a1 = this;
+	*ppList = this;
 
-	CItem *v3 = this->mNextItem;
-	if (v3)
-		v3->mPreviousItem = this;
-
+	if (this->mNextItem)
+		this->mNextItem->mPreviousItem = this;
 }
 
 // @Ok
@@ -229,18 +234,16 @@ INLINE void CBody::AttachTo(CBody** a1)
 INLINE void CBody::DeleteFrom(CBody **a2)
 {
 
-	if(this->mCBodyFlags & 1 && a2 != &SuspendedList)
+	if(this->mCBodyFlags & CBODY_SUSPENDED && a2 != &G_SUSPENEDED_LIST)
 	{
 		this->UnSuspend();
 	}
 
-	CItem *v6 = this->mNextItem;
-	if (v6)
-		v6->mPreviousItem = this->mPreviousItem;
+	if (this->mNextItem)
+		this->mNextItem->mPreviousItem = this->mPreviousItem;
 
-	CItem *r = this->mPreviousItem;
-	if (r)
-		r->mNextItem = this->mNextItem;
+	if (this->mPreviousItem)
+		this->mPreviousItem->mNextItem = this->mNextItem;
 
 	if (*a2 == this)
 		*a2 = reinterpret_cast<CBody*>(this->mNextItem);
@@ -251,11 +254,11 @@ INLINE void CBody::DeleteFrom(CBody **a2)
 INLINE void CBody::UnSuspend(void)
 {
 
-	if (this->mCBodyFlags & 1)
+	if (this->mCBodyFlags & CBODY_SUSPENDED)
 	{
-		this->DeleteFrom(&SuspendedList);
+		this->DeleteFrom(&G_SUSPENEDED_LIST);
 		this->AttachTo(this->mppOriginalList);
-		this->mCBodyFlags &= 0xFFFE;
+		this->mCBodyFlags &= ~CBODY_SUSPENDED;
 	}
 }
 
@@ -263,55 +266,56 @@ INLINE void CBody::UnSuspend(void)
 // @Matching
 void CBody::Suspend(CBody **a2)
 {
-	DoAssert((this->mCBodyFlags & 1) == 0, "Suspended flag illegally set");
-	DoAssert(a2 != 0, "woops");
+	ASSERT((this->mCBodyFlags & CBODY_SUSPENDED) == 0, "Suspended flag illegally set");
+	ASSERT(a2 != 0, "woops");
 
 	this->DeleteStuff();
 
 	this->mppOriginalList = a2;
 	this->DeleteFrom(a2);
 
-	this->AttachTo(&SuspendedList);
-	this->mCBodyFlags |= 1;
+	this->AttachTo(&G_SUSPENEDED_LIST);
+	this->mCBodyFlags |= CBODY_SUSPENDED;
 }
 
 
 
 
 // @Ok
+// @Matching
 void CBody::InterleaveAI(void)
 {
-	if (this->mFlags & 2)
+	if (this->mFlags & CBODY_RADIALSUSPENSION)
 	{
 		this->EveryFrame();
 		CSuper *super = reinterpret_cast<CSuper*>(this);
 		super->UpdateFrame();
+
+		this->AI();
 	}
 	else
 	{
 		this->EveryFrame();
+		this->AI();
 	}
-
-	this->AI();
 }
 
 // @Ok
-// @Test
+// @Matching
 i16* CBody::SquirtPos(i16* p_info)
 {
 	i32 *walker = reinterpret_cast<i32*>(p_info);
-	DoAssert(((i32)walker & 3) == 0, "Bad alignment");
+	ASSERT(((i32)walker & 3) == 0, "Bad alignment");
 
 	this->mPos.vx = *walker++ << 12;
-
 	this->mPos.vy = *walker++ << 12;
-
 	this->mPos.vz = *walker++ << 12;
 
 	return reinterpret_cast<i16*>(walker);
 }
 
 // @Ok
+// @Matching
 i16* CBody::SquirtAngles(i16* p_info)
 {
 	this->mAngles.vx = *p_info++;
@@ -325,7 +329,7 @@ i16* CBody::SquirtAngles(i16* p_info)
 // @Matching
 void CBody::AttachXA(i32 a2, i32 a3)
 {
-	this->field_98 = Vblanks;
+	this->field_98 = G_VBLANKS;
 	this->field_9C = a2;
 	this->field_A0 = a3;
 }
@@ -376,15 +380,17 @@ CSuper::CSuper()
 }
 
 // @Ok
+// @Matching
 void CSuper::OutlineOff(void)
 {
-	this->outlineRelated &= 0xFFFFFFFB;
+	this->mExtraFlags &= ~CSUPER_OUTLINE;
 }
 
 // @NotOk
 // Missing most stuff, only used by CVenom and CDummy
 void CSuper::OutlineOn(void){
-	this->outlineRelated |= 4;
+	NOT_IMPLEMENTED;
+	this->mExtraFlags |= CSUPER_OUTLINE;
 	if (!this->field_11C){
 	}
 
@@ -396,12 +402,14 @@ void CSuper::OutlineOn(void){
 
 
 // @Ok
+// @Matching
 void CSuper::SetOutlineSemiTransparent(){
-	this->alsoOutlineRelated |= 0x20000000;
+	this->alsoOutlineRelated |= 0x02000000;
 }
 
 
 // @Ok
+// @Matching
 void CSuper::SetOutlineRGB(
 		u8 a2,
 		u8 a3,
@@ -412,9 +420,17 @@ void CSuper::SetOutlineRGB(
 	this->outlineB = a4;
 }
 
-// @Ok
+// @SMALLTODO
 // Slightly different register allocation, edx and eax are swapped
 void CSuper::UpdateFrame(void){
+
+	typedef void (FASTCALL *func_ptr)(CSuper*, void*);
+	
+	func_ptr func = (func_ptr)0x00460DA0;
+	func(this, 0);
+	
+	return;
+
 	char v1; // bl
 	i32 v2; // esi
 	i32 v3; // edx
@@ -428,16 +444,16 @@ void CSuper::UpdateFrame(void){
 	  this->field_80 = 2;
 	v1 = this->mAnimDir;
 	v2 = this->field_80 * this->mAnimSpeed / 2;
-	v3 = (u16)this->mFrameFrac | (this->field_128 << 16);
+	v3 = (u16)this->mFrameFrac | (this->mFrame << 16);
 	if ( this->mAnimDir == 1 )
 	  v3 += v2;
 	if ( v1 == -1 )
 	  v3 -= v2;
 	v4 = v3;
 	this->mFrameFrac = v3;
-	v5 = (u8)this->field_140;
+	v5 = (u8)this->mAnimMode;
 	v6 = v4 >> 16;
-	this->field_128 = v6;
+	this->mFrame = v6;
 
 	if (v5) {
 		if ( --v5 == 0)
@@ -445,23 +461,23 @@ void CSuper::UpdateFrame(void){
 		  v7 = this->mNumFrames;
 		  if ( (i16)v6 >= (int)v7 )
 		  {
-			  this->field_128 = v6 - v7;
+			  this->mFrame = v6 - v7;
         
 		  }
 		  else
 		  {
 
 			if ( (i16)(v6) < 0 )
-			  this->field_128 = v6 + v7;
+			  this->mFrame = v6 + v7;
 		  }
 		}
 	}
-	else if( (this->mAnimDir == 1 && (i16)v6 >= this->field_144)
+	else if( (this->mAnimDir == 1 && (i16)v6 >= this->mTargetFrame)
 		||
-		(v1 == -1 && (i16)v6 <= this->field_144)
+		(v1 == -1 && (i16)v6 <= this->mTargetFrame)
 		)
 	{
-		this->field_128 = this->field_144;
+		this->mFrame = this->mTargetFrame;
 		this->mAnimFinished = 1;
 	}
 }
@@ -473,30 +489,31 @@ void CSuper::CycleAnim(i32 anim, i8 animdir)
 {
 	if (this->mAnim != anim)
 	{
-		this->field_128 = 0;
+		this->mFrame = 0;
 		this->mFrameFrac = 0;
 		this->mAnim = anim;
 
 		DoAssert(
-			static_cast<u32>(anim & 0xFFFF) < PSXRegion[this->mRegion].pAnimFile[0],
+			static_cast<u32>(anim & 0xFFFF) < G_PSXREGION[this->mRegion].pAnimFile[0],
 			"Bad anim sent to CycleAnim");
 
 		this->mNumFrames =
-			reinterpret_cast<u16*>(PSXRegion[this->mRegion].pAnimFile)[4 + (4 * this->mAnim)];
+			reinterpret_cast<u16*>(G_PSXREGION[this->mRegion].pAnimFile)[4 + (4 * this->mAnim)];
 
 
 		this->mAnimDir = animdir;
 	}
 
-	this->field_140 = 1;
+	this->mAnimMode = 1;
 	this->mAnimFinished = 0;
 }
 
 
 // @Ok
+// @Matching
 void CSuper::ApplyPose(i16 *a2){
 
-	if (!this->field_188)
+	if (!this->mpJoints)
 	{
 		M3dUtils_ReadLinksPacket(this, reinterpret_cast<void*>(a2));
 		this->actualcsuperend = a2;
@@ -542,7 +559,7 @@ void CSuper::RunAnim(
 	if (to < 0 || to >= v6)
 		to = 0;
 
-	this->field_140 = 0;
+	this->mAnimMode = 0;
 
 	i32 res;
 	if (to > from)
@@ -554,17 +571,24 @@ void CSuper::RunAnim(
 		res = (to >= from) ? 0 : -1;
 	}
 
-	this->field_144 = to;
+	this->mTargetFrame = to;
 	this->mAnimDir = res;
-	this->field_128 = from;
+	this->mFrame = from;
 	this->mFrameFrac = 0;
 	this->mAnimFinished = static_cast<u16>(from) == static_cast<u16>(to);
 }
 
-// @Ok
+// @SMALLTODO
 // @AlmostMatching: add esp, 8 happens 2 instructions later after DoAssert dunno why
 void CBody::EveryFrame(void)
 {
+
+	typedef void (FASTCALL *func_ptr)(CBody*, void*);
+	func_ptr func = (func_ptr)0x00460ED0;
+
+	func(this, 0);
+
+	return;
 	if (this->mCBodyFlags & 4)
 	{
 		this->field_80 = 2;
@@ -591,8 +615,8 @@ void CBody::EveryFrame(void)
 	if (this->mFlags & 2)
 	{
 		CSuper *pSuper = reinterpret_cast<CSuper*>(this);
-		pSuper->field_152 = pSuper->field_128;
-		pSuper->field_150 = pSuper->field_128;
+		pSuper->field_152 = pSuper->mFrame;
+		pSuper->field_150 = pSuper->mFrame;
 		pSuper->field_154 = pSuper->mAnim;
 		pSuper->field_143 = pSuper->mAnimDir;
 	}
@@ -609,17 +633,17 @@ INLINE CBody::~CBody(void)
 // @Ok
 CSuper::~CSuper(void)
 {
-	if (this->field_184)
-		Mem_Delete(this->field_184);
+	if (this->mpPoseBuffer)
+		Mem_Delete(this->mpPoseBuffer);
 
-	if (this->field_188)
-		Mem_Delete(this->field_188);
+	if (this->mpJoints)
+		Mem_Delete(this->mpJoints);
 
-	if (this->field_134)
-		Mem_Delete(this->field_134);
+	if (this->mpDecompressedFrame)
+		Mem_Delete(this->mpDecompressedFrame);
 
-	if (this->field_130)
-		Mem_Delete(this->field_130);
+	if (this->mpCalculationOrder)
+		Mem_Delete(this->mpCalculationOrder);
 
 	CItem *first = reinterpret_cast<CItem*>(
 			Mem_RecoverPointer(&this->field_104));
@@ -751,24 +775,29 @@ void validate_CSuper(void)
 	VALIDATE(CSuper, outlineG, 0x125);
 	VALIDATE(CSuper, outlineB, 0x126);
 
-	VALIDATE(CSuper, field_128, 0x128);
+	VALIDATE(CSuper, mFrame, 0x128);
 	VALIDATE(CSuper, mAnim, 0x12A);
 
-	VALIDATE(CSuper, outlineRelated, 0x12C);
+	VALIDATE(CSuper, mExtraFlags, 0x12C);
 
-	VALIDATE(CSuper, field_130, 0x130);
-	VALIDATE(CSuper, field_134, 0x134);
+	VALIDATE(CSuper, mpCalculationOrder, 0x130);
+	VALIDATE(CSuper, mpDecompressedFrame, 0x134);
+
+	VALIDATE(CSuper, mRoot, 0x138);
+
+	VALIDATE(CSuper, mDecompressedAnim, 0x13A);
+	VALIDATE(CSuper, mDecompressedFrame, 0x13C);
 
 	VALIDATE(CSuper, field_13E, 0x13E);
 	VALIDATE(CSuper, field_13F, 0x13F);
 
-	VALIDATE(CSuper, field_140, 0x140);
+	VALIDATE(CSuper, mAnimMode, 0x140);
 	VALIDATE(CSuper, mAnimDir, 0x141);
 	VALIDATE(CSuper, mAnimFinished, 0x142);
 	VALIDATE(CSuper, field_143, 0x143);
 
 
-	VALIDATE(CSuper, field_144, 0x144);	
+	VALIDATE(CSuper, mTargetFrame, 0x144);	
 	VALIDATE(CSuper, mFrameFrac, 0x146);	
 
 	VALIDATE(CSuper, mNumFrames, 0x148);	
@@ -782,9 +811,9 @@ void validate_CSuper(void)
 
 	VALIDATE(CSuper, mTransform, 0x164);
 
-	VALIDATE(CSuper, field_184, 0x184);
-	VALIDATE(CSuper, field_188, 0x188);
-	VALIDATE(CSuper, mLinkData, 0x18C);
+	VALIDATE(CSuper, mpPoseBuffer, 0x184);
+	VALIDATE(CSuper, mpJoints, 0x188);
+	VALIDATE(CSuper, mpLinks, 0x18C);
 	VALIDATE(CSuper, actualcsuperend, 0x190);
 }
 
@@ -819,11 +848,38 @@ void validate_SLight(void)
 // @Bogus
 void patch_CItem(void)
 {
-	// @TODO - patch constructor
+	PATCH_PUSH_RET(0x00460020, CItem::InitItem);
 }
 
 // @Bogus
 void patch_CBody(void)
 {
 	PATCH_PUSH_RET(0x00460570, CBody::KillShadow);
+	PATCH_PUSH_RET(0x00460F90, CBody::InterleaveAI);
+	PATCH_PUSH_RET(0x004603A0, CBody::SquirtAngles);
+
+	PATCH_PUSH_RET(0x00460260, CBody::AttachTo);
+	PATCH_PUSH_RET(0x00460500, CBody::UnSuspend);
+
+	PATCH_PUSH_RET(0x00460280, CBody::DeleteFrom);
+
+	PATCH_PUSH_RET(0x004602F0, CBody::FindBodyByNode);
+
+	PATCH_PUSH_RET(0x00460330, CBody::SquirtPos);
+	PATCH_PUSH_RET(0x004603D0, CBody::AttachXA);
+	PATCH_PUSH_RET(0x00460440, CBody::Suspend);
+
+	PATCH_PUSH_RET(0x00460560, CBody::ShadowOn);
+	PATCH_PUSH_RET_POLY(0x004606F0, CBody::Die, "?Die@CBody@@UAEXXZ");
+	PATCH_PUSH_RET(0x00460700, CBody::IsDead);
+}
+
+// @Bogus
+void patch_CSuper(void)
+{
+	PATCH_PUSH_RET(0x00460BC0, CSuper::OutlineOff);
+	PATCH_PUSH_RET(0x00460BD0, CSuper::SetOutlineSemiTransparent);
+	PATCH_PUSH_RET(0x00460BE0, CSuper::SetOutlineRGB);
+	PATCH_PUSH_RET(0x00460D00, CSuper::CycleAnim);
+	PATCH_PUSH_RET(0x00460E80, CSuper::ApplyPose);
 }
