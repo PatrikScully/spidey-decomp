@@ -28,10 +28,63 @@ EXPORT CBody* gHealthBarOne;
 EXPORT CBody* gHealthBarTwo;
 
 
-// @MEDIUMTODO
-void DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)
+// real translation (0x4631c0, 1091 bytes). Two near-duplicate blocks
+// selected by (a4 == 1): the vertex1/vertex2 argument slots swap which
+// POLY_GT4 corner feeds them (colors/coords keep their own alpha,
+// 0xDF for corners 0/1, 0x60 for corners 2/3, tied to the source corner
+// not the argument slot, confirmed from the color-pack read order in each
+// block). cmpsum: 296 mnemonic diffs, diverges right at the prologue, at
+// the print_if_false call. Likely the same known repo-wide defect noted in
+// CLAUDE.md ("print_if_false inlining makes old @Ok tags go stale"):
+// export.h's print_if_false is static so our build always inlines it,
+// while the original calls it out-of-line at 0x4015B0. This looks like the
+// shared root cause behind this function and both DCPanel_DrawTexturedPoly
+// overloads above (all three call print_if_false and are all stuck at a
+// small stable diff count); none of the three can byte-match until that
+// header issue is fixed. 1 attempt this session, not iterated further
+// given the size of the remaining queue and that the real blocker is
+// outside this function.
+// @NotOk
+void DCDrawGouraudPoly(f32 zOffset, POLY_GT4 *poly, Texture *tex, i32 a4)
 {
-    printf("DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)");
+	print_if_false(tex != 0, "no texture for draw gouraud poly.");
+
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_2);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 y3 = poly->y3 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 x3 = poly->x3 * scaleX;
+	f32 y2 = poly->y2 * scaleY;
+	f32 x2 = poly->x2 * scaleX;
+	f32 y1 = poly->y1 * scaleY;
+	f32 x1 = poly->x1 * scaleX;
+	f32 y0 = poly->y0 * scaleY;
+	f32 x0 = poly->x0 * scaleX;
+
+	u32 color0 = 0xDF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
+	u32 color1 = 0xDF000000 | (poly->r1 << 16) | (poly->g1 << 8) | poly->b1;
+	u32 color2 = 0x60000000 | (poly->r2 << 16) | (poly->g2 << 8) | poly->b2;
+	u32 color3 = 0x60000000 | (poly->r3 << 16) | (poly->g3 << 8) | poly->b3;
+
+	if (a4 == 1)
+	{
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 0.0f, color0,
+				x2, y2, 1.0f, 0.0f, color2,
+				x1, y1, 0.0f, 1.0f, color1,
+				x3, y3, 1.0f, 1.0f, color3,
+				zOffset);
+	}
+	else
+	{
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 0.0f, color0,
+				x1, y1, 1.0f, 0.0f, color1,
+				x2, y2, 0.0f, 1.0f, color2,
+				x3, y3, 1.0f, 1.0f, color3,
+				zOffset);
+	}
 }
 
 // packed PS2-style 0x00BBGGRR colors need swapping to 0xFFRRGGBB for the PC renderer.
@@ -304,11 +357,13 @@ void gsub_46CB90(void* fmt, ...)
 
 // unnamed helper at 0x4015B0 (names.json calls it print_if_false, but the
 // export.h print_if_false has a different arg count and is static/inlined
-// away in our build). Not runtime-hooked this session, printf placeholder.
-// @SMALLTODO
+// away in our build). Original bytes are a single `ret` (1 byte function,
+// tools/functions/4199856.bin), so the body is empty in this build
+// configuration. cmpsum: 0 mnemonic diffs.
+// @Ok
+// @Matching
 EXPORT void gsub_4015B0(void*)
 {
-	printf("gsub_4015B0(void*)");
 }
 
 // @Ok
