@@ -14,6 +14,7 @@
 #include "pal.h"
 #include "mem.h"
 #include "spool.h"
+#include "bit2.h"
 
 extern struct tag_S_Pal *pPaletteList;
 
@@ -479,10 +480,31 @@ void Mysterio_RelocatableModuleInit(reloc_mod *pMod)
 	gFloatSuperRelated = 1.0f;
 }
 
-// @SMALLTODO
-CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody*, i32)
+// @Bogus
+// No out-of-line address in names.json: the only call site is fully
+// inlined into CSoftSpot::Hit (0x45F940, still unimplemented in this
+// file), matching the CMystFoot precedent above (checked via IDA: only 2
+// xrefs to this class's vtable in the whole binary, one is this
+// constructor's inlined body, the other is the destructor). Read straight
+// off the disasm of that inline block: pBody is stored as a handle,
+// field_44 gets the raw i32 arg, then a CSmokeGenerator is spawned at
+// pBody's position and marked mProtected (same idiom as
+// CMysterioHeadGlow below). The 84-byte Mem_New for the smoke generator
+// is checked for failure (field_48 = 0 in that case) but the following
+// mProtected store still dereferences it unconditionally, an original
+// bug reproduced here rather than fixed.
+CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody *pBody, i32 a2)
 {
-	printf("CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody*, i32)");
+	print_if_false(pBody != 0, "NULL pBody sent to CDamagedSoftSpotEffect");
+
+	this->field_3C = Mem_MakeHandle(pBody);
+	this->field_44 = a2;
+
+	CSmokeGenerator *pSmoke = new CSmokeGenerator(
+			&pBody->mPos, 0xFFFF, 2, 128, 128, 128, 20, 10, 1000, 700);
+
+	this->field_48 = pSmoke;
+	pSmoke->mProtected = 1;
 }
 
 // @NotOk
@@ -1108,5 +1130,7 @@ void validate_CDamagedSoftSpotEffect(void)
 {
 	VALIDATE_SIZE(CDamagedSoftSpotEffect, 0x4C);
 
+	VALIDATE(CDamagedSoftSpotEffect, field_3C, 0x3C);
+	VALIDATE(CDamagedSoftSpotEffect, field_44, 0x44);
 	VALIDATE(CDamagedSoftSpotEffect, field_48, 0x48);
 }
