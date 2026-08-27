@@ -648,6 +648,14 @@ void Panel_DestroyCompass(void)
 	gCompassStatus = 0;
 }
 
+// auto_inline off: both overloads below are real out-of-line functions in
+// the original binary (0x462B90 and 0x462BB0). The new 4-arg overload
+// further down calls the SAnimFrame one, which calls the Texture one; under
+// /Ob2 the compiler otherwise inlines both into that call site, turning the
+// original's two real "call" instructions into inlined bodies and desyncing
+// the whole function. Same fix as ps2funcs.cpp's gsub_46E990 callers.
+#pragma auto_inline(off)
+
 // @Ok
 int Panel_DrawTexturedPoly(SAnimFrame* pFrame, int a2)
 {
@@ -691,17 +699,42 @@ int Panel_DrawTexturedPoly(Texture* pTexture, int a2)
 	return (int)p;
 }
 
-// Investigation notes (0x00462B30, 94 bytes, called from PShell_DrawMenuBox,
-// pshell.cpp): takes (frame, x0, x1, sort), 4 args, cdecl. Not decompiled
-// this session (belongs to this file, out of scope for the pshell.cpp work
-// that needs it as a call target). Real callers only need the call site
-// itself, since a cross-TU call always stays out-of-line regardless of stub
-// state.
-// @SMALLTODO
-int Panel_DrawTexturedPoly(SAnimFrame* pFrame, i32 x0, i32 x1, i32 sort)
+#pragma auto_inline(on)
+
+// real translation, 0x00462B30, 94 bytes, called from PShell_DrawMenuBox
+// (pshell.cpp) with (frame, x - 14, someY, sort). Builds on the 2-arg
+// overload right above: gets the poly from Panel_DrawTexturedPoly(pFrame,
+// sort), then writes an (x,y) positioned quad sized by pFrame->Width/Height,
+// same shape as Panel_SetStretchedScreenCoords. No null check on the
+// returned poly pointer before the field stores, matching the original.
+// Needed #pragma auto_inline(off) around the two overloads above (they
+// were getting inlined into the call here under /Ob2, turning the
+// original's real "call" into inlined code). Also needed the x1/y2 sums as
+// named i16 locals, declared between the y0 and y1 stores: this makes the
+// compiler evaluate the Width+x sum before storing y1 (and the Height+y sum
+// before the "add esp,8" call cleanup), matching the original's
+// instruction scheduling. i32 locals in the same spot gave a completely
+// different (byte-loaded, 32-bit add) shape; only i16 reproduced the
+// movzx+16-bit-add pattern the original uses. cmpsum: 0 mnemonic diffs,
+// only remaining byte diff is the relocated call target.
+// @Ok
+// @Matching
+int Panel_DrawTexturedPoly(SAnimFrame* pFrame, i32 x, i32 y, i32 sort)
 {
-	printf("Panel_DrawTexturedPoly(SAnimFrame*, i32, i32, i32)");
-	return 0;
+	POLY_FT4* p = (POLY_FT4*)Panel_DrawTexturedPoly(pFrame->pTexture, sort);
+
+	p->x0 = (i16)x;
+	p->y0 = (i16)y;
+	i16 x1 = (i16)(pFrame->Width + x);
+	p->y1 = (i16)y;
+	p->x1 = x1;
+	p->x2 = (i16)x;
+	i16 y2 = (i16)(pFrame->Height + y);
+	p->y2 = y2;
+	p->x3 = (i16)(pFrame->Width + x);
+	p->y3 = (i16)(pFrame->Height + y);
+
+	return (int)p;
 }
 
 void validate_SAnimFrame(void)

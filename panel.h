@@ -181,8 +181,10 @@ EXPORT int Panel_DrawTexturedPoly(Texture*, int);
 // Panel_DrawTexturedPoly_1 in tools/names.json (0x00462B30). Same base name as
 // the two overloads above (tentative: names.json gives distinct addresses for
 // what look like overload siblings), 4-arg form seen from PShell_DrawMenuBox
-// (pshell.cpp): takes an explicit [x0,x1) span instead of relying on the
-// frame's own Width/Height, called cdecl with 4 pushed args in this order.
+// (pshell.cpp), called cdecl with 4 pushed args in this order. Decompiled:
+// the 3rd/4th args are an (x,y) position, not an [x0,x1) span; the poly
+// width/height still come from pFrame->Width/Height, same as the 2-arg
+// overload right above.
 EXPORT int Panel_DrawTexturedPoly(SAnimFrame*, i32, i32, i32);
 
 EXPORT void DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32);
