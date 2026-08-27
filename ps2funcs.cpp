@@ -167,6 +167,18 @@ void gte_SetRotMatrix(MATRIX* a1)
 	}
 }
 
+// unnamed helper, address 0x0046E990. Called once by M3dAsm_LineColijPreprocessItemsZoned
+// with the fixed-point start/end coordinate arrays and the address of a local that the
+// caller never reads back afterward. Not yet decompiled.
+// @SMALLTODO
+void gsub_46E990(i32 *a1, i32 *a2, i32 *a3)
+{
+	typedef void (*func_ptr)(i32 *, i32 *, i32 *);
+	func_ptr func = (func_ptr)0x0046E990;
+
+	func(a1, a2, a3);
+}
+
 // @MEDIUMTODO
 void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineInfo *pInfo, u16 Inquiry)
 {
