@@ -238,6 +238,36 @@ CVector operator+(const CVector& lhs, const CVector& other){
 	return res;
 }
 
+// @Ok
+// moved out of vector.h 2026-08-27: it was wrongly marked INLINE, so MSVC
+// always folded it into callers while the original binary calls it as a
+// real out-of-line function (confirmed via disassembly of multiple callers
+// across bit.cpp/baddy.cpp/shatter.cpp).
+CVector operator-(const CVector& lhs, const CVector& other)
+{
+	CVector res;
+
+	res.vx = lhs.vx - other.vx;
+	res.vy = lhs.vy - other.vy;
+	res.vz = lhs.vz - other.vz;
+
+	return res;
+}
+
+// @Ok
+// moved out of vector.h 2026-08-27: same wrongly-INLINE bug as operator-
+// above (confirmed via disassembly of shatter.cpp callers).
+CVector operator>>(const CVector& lhs, const int& other)
+{
+	CVector res;
+
+	res.vx = lhs.vx >> other;
+	res.vy = lhs.vy >> other;
+	res.vz = lhs.vz >> other;
+
+	return res;
+}
+
 
 // @Ok
 // @Test
