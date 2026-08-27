@@ -152,8 +152,155 @@ void L5A5LSC_RelocatableModuleInit(reloc_mod *pMod)
 	gL5A5RelatedTwo = 0;
 }
 
-// @MEDIUMTODO
+// tentative name/address: per-slot Z velocity for the EnviroList wiggle spring
+// below (8 slots, one per animated subway car segment). Mutable game data at
+// 0x5FB594, not in idb_globals.txt.
+#define GL5A5_VEL(i) (*reinterpret_cast<volatile i32*>(0x005FB594 + (i) * 4))
+
+// tentative name/address: per-slot clamp-direction flag for the wiggle spring
+// above (8 slots). Sits right before the bar-rect table read in
+// L5A5LSC_DisplayProgressBar (0x54B43C); not in idb_globals.txt. Written at
+// runtime even though the PE section table puts it in .rdata (SpideyPC.exe
+// .rdata VA 0x53B000..0x545FE8).
+#define GL5A5_FLAG(i) (*reinterpret_cast<volatile i32*>(0x0054B41C + (i) * 4))
+
+// @Ok
+// @AlmostMatching: one instruction, cmpsum 2 mnemonic diffs (the second is a
+// decode artifact of the first). MSVC6 folds the EnviroList wiggle loop
+// counter into a pointer relative to GL5A5_FLAG's base, so its zero-init
+// compiles as "mov edi,54B41Ch" (5 bytes) instead of the original's
+// "xor edi,edi" (2 bytes); everything else, including every other
+// instruction in this 513-byte function, matches. 15 hypotheses tried:
+// (1) initial straight translation, 114 diffs; (2) fixed MechList/EnviroList
+// field offset (mPos.vy, not vz, CItem has a vtable pointer so mPos starts
+// at offset 8 not 4); (3) hoisted the two node-search magic constants into
+// named locals, no change; (4) changed the node-search "found" flag from i32
+// to u8, matching its byte-sized stores, 114 -> 9 diffs; (5) rewrote the
+// wiggle loop over raw byte-offset pointers instead of array indices,
+// 9 -> 29 diffs, reverted; (6) made GL5A5_VEL/GL5A5_FLAG volatile,
+// 9 -> 8 diffs; (7) swapped the two globals from "i32 * const" locals to
+// function-like macros, no change; (8) split the loop counter into its own
+// local declared before a for(;;) with the store-then-bound-check order
+// matching the disassembly, 8 -> 5 diffs; (9) moved the counter increment
+// before the two array stores (matching the original's post-increment
+// addressing), 5 -> 2 diffs; (10) stored through an extra "i32 j = i;" copy
+// instead of "i - 1", 2 -> 38 diffs, reverted; (11) swapped GL5A5_FLAG/
+// GL5A5_VEL store order, no change; (12) moved the loop counter declaration
+// out to function scope, no change; (13) switched the macros to take a
+// pre-multiplied byte offset instead of an index, 2 -> 29 diffs, reverted;
+// (14) made the loop counter itself volatile, 2 -> 118 diffs, reverted;
+// (15) dropped volatile from the two macros, 2 -> 4 diffs, reverted. Settled
+// on the (6)+(8)+(9) combination (2 diffs) as the best found.
 void L5A5LSC_WiggleSubwayCars(u32 const *,u32 *)
 {
-    printf("L5A5LSC_WiggleSubwayCars(u32 const *,u32 *)");
+	if (MechList)
+	{
+		if (!Rnd(4))
+		{
+			MechList->field_570 = Rnd(0x80) + 0x20;
+		}
+
+		if (MechList->mPos.vy > 0xCB2000)
+		{
+			u8 found = 0;
+			i32 targetX = (i32)0xFEAB8000;
+			i32 targetZ = (i32)0xFE330000;
+
+			for (i32 i = 1; i < NumNodes; i++)
+			{
+				i16 *node = G_OFFSETLIST[i];
+
+				if (node[0] == 1)
+				{
+					CVector pos(0, 0, 0);
+					Trig_GetPosition(&pos, i);
+
+					if (pos.vx == targetX && pos.vy == 0x532000 && pos.vz == targetZ)
+					{
+						found = 1;
+						Trig_SendPulseToNode(i);
+						MechList->mPos = pos;
+						break;
+					}
+				}
+			}
+
+			print_if_false(found, "No TRG_Drowning node");
+		}
+	}
+
+	CItem *pEnv = EnviroList;
+	i32 i = 0;
+
+	if (pEnv)
+	{
+		for (;;)
+		{
+			i32 flag = 0;
+			i32 vel = GL5A5_VEL(i);
+
+			if (vel != flag)
+			{
+				pEnv->mPos.vy -= vel << 12;
+			}
+
+			flag = GL5A5_FLAG(i);
+
+			if (!flag)
+			{
+				vel -= 3 + Rnd(3);
+			}
+			else
+			{
+				vel += Rnd(3) + 3;
+			}
+
+			if (vel > 11)
+			{
+				vel = 11;
+				flag = 0;
+			}
+			else if (vel < -11)
+			{
+				vel = -11;
+				flag = 1;
+			}
+
+			pEnv->mPos.vy += vel << 12;
+
+			i++;
+			GL5A5_VEL(i - 1) = vel;
+			GL5A5_FLAG(i - 1) = flag;
+
+			if (i == 8)
+			{
+				break;
+			}
+
+			pEnv = pEnv->mNextItem;
+			if (!pEnv)
+			{
+				break;
+			}
+		}
+	}
+
+	CBaddy *pBaddy = BaddyList;
+	while (pBaddy)
+	{
+		if (pBaddy->mType == 0x13D && pBaddy->field_31C.bothFlags == 0x12)
+		{
+			pBaddy->field_31C.bothFlags = 0x18;
+			pBaddy->dumbAssPad = 0;
+		}
+
+		pBaddy = static_cast<CBaddy*>(pBaddy->mNextItem);
+	}
+
+	CBody *pPower = PowerUpList;
+	while (pPower)
+	{
+		static_cast<CPowerUp*>(pPower)->field_110.vz += -0x40000;
+		pPower = static_cast<CBody*>(pPower->mNextItem);
+	}
 }
