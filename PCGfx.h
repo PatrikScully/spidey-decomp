@@ -103,6 +103,7 @@ EXPORT void ZCLIP_VERT(_DXVERT *,_DXVERT *,_DXVERT *,f32);
 EXPORT CSuper* createSuperItem(CItem *);
 EXPORT void submitPoly(_DXVERT **,i32);
 EXPORT u32 gsub_506D70(u32,f32);
+EXPORT void gsub_509400(tagKMVERTEX3 const *,_DXVERT *);
 
 EXPORT i32 amHeapFree(i32);
 EXPORT i32 acDspSetMixerChannel(i32, i32, i32, i32);

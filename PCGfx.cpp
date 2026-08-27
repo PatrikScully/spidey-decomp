@@ -631,20 +631,64 @@ void PCGfx_DoModelPreview(void)
 	}
 }
 
-// @SMALLTODO
-// Forward to the original. Builds one _DXVERT from a corner record shaped
-// like tagKMVERTEX3 (field_4..field_18 only, field_0 unused), confirmed from
-// the disasm at 0x509400 to run the exact same field_8/field_C formulas as
-// PCGfx_DrawTPoly3D plus the REAL (not stubbed) fog table math inline for
-// the color when gNonRendderSettingE is set. Needs the same fog tables
-// setupFog/PCGfx_BeginScene build, which are out of scope this session (see
-// pcgfx.attempts.md), so forwarding instead of reproducing the math.
-static void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
+// @NotOk
+// Builds one _DXVERT from a corner record shaped like tagKMVERTEX3
+// (field_4..field_18 only, field_0 unused). Runs the same field_8/field_C
+// formulas as PCGfx_DrawTPoly3D, plus gsub_506D70's real fog blend math
+// inlined here directly (confirmed via IDA: no call instruction at 0x509400,
+// same table reads as gsub_506D70 with a2 = 1/field_C, not the transformed
+// field_8). Everything up through the color brighten step matches the
+// original exactly (instruction count 102 both sides, confirmed identical).
+// Residue: 58 mnemonic diffs at 0x509400, starting right where the fog
+// block spills the color to a stack slot before computing depth (the
+// original does the spill first, ours computes depth first), then carries
+// the same gsub_506D70 table-index-order residue described there (see its
+// comment) since this is the same formula inlined. Not iterated on
+// separately from gsub_506D70; fixing that residue should fix this one too.
+EXPORT void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 {
-	// @FIXME
-	typedef void (*func_ptr)(tagKMVERTEX3 const *, _DXVERT *);
-	func_ptr func = (func_ptr)0x00509400;
-	func(corner, out);
+	out->field_0 = corner->field_4;
+	out->field_4 = corner->field_8;
+	out->field_8 = (1.0f / corner->field_C - gRenderInitOne[0]) / gRenderInitTwo[0];
+	out->field_C = gRenderInitOne[2] * corner->field_C;
+	out->field_14 = corner->field_10;
+	out->field_18 = corner->field_14;
+
+	u32 c = corner->field_18;
+	if ((c & 0xFFFFFF) == 0)
+		out->field_10 = c;
+	else
+		out->field_10 = (c & 0xFF000000) | (((c >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	if (gNonRendderSettingE)
+	{
+		u32 a1 = corner->field_18;
+		f32 depth = gPcGfxFogDepthScale * (1.0f / corner->field_C);
+
+		if (depth >= gFlFoggingParamOne)
+		{
+			f32 t = (depth - gFlFoggingParamOne) / (gFlFoggingParamTwo - gFlFoggingParamOne);
+			if (t > 1.0f)
+				t = 1.0f;
+
+			i32 col = (i32)(t * 511.0f);
+
+			u8 r = gFogTableR[(u8)(a1 >> 16)][col];
+			u8 a = gFogTableA[(u8)(a1 >> 24)][col];
+			u8 g = gFogTableG[(u8)(a1 >> 8)][col];
+			u8 b = gFogTableB[(u8)a1][col];
+
+			a1 = b | (g << 8) | (r << 16) | (a << 24);
+		}
+
+		out->field_10 = a1;
+	}
+
+	if (gLowGraphics)
+	{
+		out->field_14 = out->field_C * out->field_14;
+		out->field_18 = out->field_18 * out->field_C;
+	}
 }
 
 // @NotOk
