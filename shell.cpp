@@ -2803,7 +2803,9 @@ void validate_STrainingMission(void)
 	VALIDATE_SIZE(STrainingMission, 0x10);
 
 	VALIDATE(STrainingMission, field_0, 0x0);
+	VALIDATE(STrainingMission, mAreaId, 0x7);
 	VALIDATE(STrainingMission, mScoreUnits, 0xB);
+	VALIDATE(STrainingMission, mLowerIsBetter, 0xC);
 }
 
 void validate_CRecordBox(void)

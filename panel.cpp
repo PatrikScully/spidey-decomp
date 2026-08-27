@@ -691,6 +691,19 @@ int Panel_DrawTexturedPoly(Texture* pTexture, int a2)
 	return (int)p;
 }
 
+// Investigation notes (0x00462B30, 94 bytes, called from PShell_DrawMenuBox,
+// pshell.cpp): takes (frame, x0, x1, sort), 4 args, cdecl. Not decompiled
+// this session (belongs to this file, out of scope for the pshell.cpp work
+// that needs it as a call target). Real callers only need the call site
+// itself, since a cross-TU call always stays out-of-line regardless of stub
+// state.
+// @SMALLTODO
+int Panel_DrawTexturedPoly(SAnimFrame* pFrame, i32 x0, i32 x1, i32 sort)
+{
+	printf("Panel_DrawTexturedPoly(SAnimFrame*, i32, i32, i32)");
+	return 0;
+}
+
 void validate_SAnimFrame(void)
 {
 	VALIDATE_SIZE(SAnimFrame, 0x8);

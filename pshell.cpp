@@ -12,6 +12,8 @@
 #include "panel.h"
 #include "spidey.h"
 #include "PCGfx.h"
+#include "trig.h"
+#include "ps2redbook.h"
 
 #include <cstring>
 
@@ -539,6 +541,43 @@ static STrainingMission* const gChallenges = reinterpret_cast<STrainingMission*>
 #define gTrainingMenu (*reinterpret_cast<CMenu**>(0x00682968))
 #define gTrainingScore (*reinterpret_cast<i32*>(0x0055129C))
 
+// Found 2026-08-27 in PShell_EndTrainingInit (0x47B720). All tentative,
+// no idb_globals.txt entries at these addresses.
+// Set to 1 as the very first store in the function; guess: marks the
+// end-of-training screen as active/entered.
+#define gTrainingActive (*reinterpret_cast<i32*>(0x00682950))
+// Set to 1 alongside gTrainingActive; purpose unclear, kept separate since
+// it lives far from the other gTraining* globals (near CInventory-ish
+// state going by neighbouring addresses we have no names for).
+#define gEndTrainingFlag (*reinterpret_cast<i32*>(0x0060CFB0))
+// Read once, then cleared to 0 alongside gWideScreen (0x00660F80,
+// idb_globals.txt); guess: a paired display-mode flag.
+#define gScreenModeFlag (*reinterpret_cast<i32*>(0x0054D47C))
+// Reused for two unrelated things in the same function: first holds the
+// pre-clear value of gScreenModeFlag (write-only, never read back), then
+// later becomes the sentinel/insertion-position scratch for the high-score
+// insert (-1 = "no room", else 0-4 = the row that was written).
+#define gTrainingScratch (*reinterpret_cast<i32*>(0x005513D4))
+// Set at the very end of PShell_EndTrainingInit to 0x4EE (1262); purpose
+// unclear (a timer/frame-count guess, going by the neighbouring
+// gTrainingDisplayTimer's role).
+#define gTrainingSomeTimer (*reinterpret_cast<i32*>(0x005512EC))
+// Read once at the top of PShell_EndTrainingInit as the "target area" a
+// gChallenges entry's mAreaId gets matched against. Named in a shell.cpp
+// comment as the address neighbouring gChallenges/gCheats but never wired
+// up as a usable global before this.
+#define gTrainingSeconds (*reinterpret_cast<i32*>(0x00551288))
+// gGlobalRecords (shell.cpp) is a plain repo global (DLL-relocatable
+// address); this file needs the fixed game address for PShell_EndTrainingInit
+// to byte-match, same class of problem as gSaveGame. Kept file-local per
+// the G_* macro placement rule (only pshell.cpp uses this). The first 3
+// bytes ahead of SRecords::mScores (currently just PADDING(3) in shell.h)
+// turn out to be real data here: PShell_EndTrainingInit reads them as the
+// 3-letter name to stamp into a new score row. Not renamed in shell.h
+// since that struct is shared and this is the only evidence we have for it
+// so far.
+static SRecords* const gGlobalRecordsFixed = reinterpret_cast<SRecords*>(0x00550ED0);
+
 // These three are elements of the same string-literal-pointer table
 // front.cpp already names two entries of (gFrontYesText/gFrontNoText,
 // 0x0054B780/0x0054B77C); string content confirmed against the original exe.
@@ -603,34 +642,237 @@ void PShell_EndTrainingDisplay(void)
 	Mess_SetTextJustify(0);
 }
 
-// Investigation notes (0x0047B720, 812 bytes), not implemented yet.
-// Housekeeping calls at the top, in order: print_if_false(1, <str at
-// 0x00551AF4>) (condition is always true, never prints, looks like a
-// reached-here marker), Mess_DeleteAll, Bit_ClearTextBoxes, sub_472340
-// (unnamed), Redbook_XAStop. Then it writes gTrainingResultState = 1,
-// [0x0060CFB0] = 1 (unnamed), gSaveGame-unrelated globals at 0x0054D47C and
-// 0x00660F80 (gWideScreen, per idb_globals.txt) get cleared, and if MechList
-// (0x006A9038, idb_globals.txt) is non-null it calls
-// CPlayer_ExitLookaroundMode and clears MechList->field_68/field_60. After
-// that: sub_479520(0,0), sub_479520(1,0), Trig_GetLevelID().
-// The rest builds a training record box: CItem_new(0x44) then field writes
-// in the order field_1C=0x78, field_20=0x29, field_C=0x116, field_10=0x60,
-// field_4=0xA, field_8=0xA, field_14=0x30, field_18=0xC, field_24=0,
-// field_2C=0x1C, vtable=0x0053BDA4, field_3C=&gChallenges[idx]. Those are
-// exactly the values CRecordBox::CRecordBox(0x78, 0x29, pMission) would
-// produce (shell.cpp, already @Ok/@Matching), just in a different store
-// order (could be scheduler reordering of a genuinely inlined call, or a
-// hand-duplicated init; not confirmed either way, and shell.cpp's
-// #pragma auto_inline(off) should block normal cross-TU inlining, so this
-// is not fully understood). Before the record box gets built, there is a
-// scan over gChallenges reading a byte at each entry's offset+7, which is
-// inside what STrainingMission (shell.h) currently only documents as
-// padding, so the struct is probably missing a field. Left at @MEDIUMTODO,
-// not attempted further this session.
-// @MEDIUMTODO
+// (0x0047B720, 812 bytes). Housekeeping calls at the top, in order:
+// print_if_false(1, <str at 0x00551AF4>) (condition is always true, never
+// prints, looks like a reached-here marker), Mess_DeleteAll,
+// Bit_ClearTextBoxes, gsub_472340, Redbook_XAStop.
+//
+// The record box build (CClass::operator new(0x44) then direct field
+// writes in the order field_1C=0x78, field_20=0x29, field_C=0x116,
+// field_10=0x60, field_4=0xA, field_8=0xA, field_14=0x30, field_18=0xC,
+// field_24=0, field_2C=0x1C, vtable=0x0053BDA4, field_3C=&gChallenges[idx])
+// is NOT a call to CRecordBox::CRecordBox(0x78, 0x29, pMission)
+// (shell.cpp, @Ok @Matching): that constructor is declared (not defined)
+// in shell.h, so a `new CRecordBox(...)` from this TU could never inline it
+// regardless of shell.cpp's `#pragma auto_inline(off)`, and it would store
+// fields in the CONSTRUCTOR's own order (field_1C,field_4,field_8,field_20,
+// field_C,field_10,field_14,field_18,field_24,field_2C,field_3C), not this
+// order. This function's own source really does write the fields directly,
+// including a manual vtable poke, bypassing the constructor. CItem_new in
+// the old comment was the exported name; it turned out to be
+// CClass::operator new and CItem::operator new COMDAT-folded to the same
+// address (ob.cpp/main.cpp have byte-identical bodies).
+//
+// Two more STrainingMission fields found and added to shell.h this
+// session, beyond the offset+7 one already known: a word at offset+4
+// (mLevelId, matched against Trig_GetLevelID()'s result) gates the
+// entry-search loop before it even looks at mAreaId (offset+7), and a byte
+// at offset+0xC (mLowerIsBetter) picks the comparison direction in the
+// score-insert search below (higher-is-better vs lower-is-better, e.g. for
+// Time challenges).
+//
+// The rest is a top-5 high score insert for gGlobalRecords (shell.cpp):
+// skip entirely if gTrainingScore is the -1000 "no score" sentinel; if the
+// challenge's row has never been filled (mScores[0].field_0 == 0), stamp
+// the new score straight into slot 0 (gTrainingResultState = 1); otherwise
+// scan up to 5 rows for the first one that is empty or worse than the new
+// score (per mLowerIsBetter), shift every row from there down by one if it
+// found a real (non-empty) row to beat (gTrainingResultState = 2) or write
+// straight in if it landed on an empty row (gTrainingResultState = 3); if
+// no row was found in 5, nothing is written. Landing at row 0 with
+// resultState 2 (beat the existing #1) sets gTrainingDisplayTimer = 0x50.
+// gTrainingSomeTimer always gets set to 0x4EE at the end regardless.
+//
+// Globals with no idb_globals.txt entry are all tentative (see their own
+// comments above): gTrainingActive, gEndTrainingFlag, gScreenModeFlag,
+// gTrainingScratch, gTrainingSomeTimer, gTrainingSeconds. String literals
+// passed to print_if_false are placeholders (relocated string addresses
+// are an accepted diff, only the presence/position of the argument
+// matters for matching).
+//
+// cmpsum against the rebuilt DLL: 146 mnemonic diffs (812-byte, medium
+// function). The first divergence is again a register-allocation
+// difference, not a missing/wrong operation: the original's prologue
+// pushes all 4 callee-saved registers up front (ebx,ebp,esi,esi is cached
+// with the constant 1 and reused for the print_if_false call and both the
+// gTrainingActive/gEndTrainingFlag stores) and edi before the first
+// housekeeping call; our build only pushes ebx/ebp up front and defers
+// esi/edi, so every later instruction that references one of those
+// registers is shifted out of position for the (positional, mnemonic-only)
+// diff tool even where the underlying operation is the same. 1 explicit
+// hypothesis tried (share a single `i32 one = 1` local across the three
+// places that use the literal 1, matching the original's esi reuse): no
+// change (146 diffs). This is a medium function (200-1000 bytes), so the
+// discipline wants 15+ hypotheses before @AlmostMatching; given the size of
+// the remaining task list this session (STrainingMission field work,
+// PShell_EndTrainingUpdate), left @NotOk after this first pass rather than
+// spend that budget here. The call targets, argument order, table/struct
+// field accesses, and control flow (including the CRecordBox field order
+// and the top-5 score insert/shift logic) are believed correct.
+// @NotOk
 void PShell_EndTrainingInit(void)
 {
-    printf("PShell_EndTrainingInit(void)");
+	print_if_false(1, "Bad pTrainingMission");
+
+	Mess_DeleteAll();
+	Bit_ClearTextBoxes();
+	gsub_472340();
+	Redbook_XAStop();
+
+	i32 oldScreenMode = gScreenModeFlag;
+
+	gTrainingActive = 1;
+	gEndTrainingFlag = 1;
+	gTrainingScratch = oldScreenMode;
+	gScreenModeFlag = 0;
+	*(i32*)0x00660F80 = 0;  // gWideScreen (ps2m3d.cpp), fixed game address; see gSaveGame note in CLAUDE.md
+
+	if (MechList)
+	{
+		MechList->ExitLookaroundMode();
+		*(i32*)((char*)MechList + 0x68) = 0;
+		*(i32*)((char*)MechList + 0x60) = 0;
+	}
+
+	gsub_479520(0, 0);
+	gsub_479520(1, 0);
+
+	i32 levelId = Trig_GetLevelID();
+
+	gTrainingChallengeIndex = 0;
+
+	i32 idx;
+	for (idx = 0; idx < NUM_CHALLS; idx++)
+	{
+		if (gChallenges[idx].mLevelId != (i16)levelId)
+			continue;
+
+		if (gChallenges[idx].mAreaId == gTrainingSeconds || gChallenges[idx].mAreaId == -1)
+			break;
+	}
+
+	gTrainingChallengeIndex = idx;
+
+	print_if_false(idx < NUM_CHALLS, "Training mission index out of range");
+	print_if_false(gTrainingRecordBox == 0, "pRecordBox not NULL in end training init");
+
+	CRecordBox* box = (CRecordBox*)CClass::operator new(0x44);
+	if (box)
+	{
+		box->field_1C = 0x78;
+		box->field_20 = 0x29;
+		box->field_C = 0x116;
+		box->field_10 = 0x60;
+		box->field_4 = 0xA;
+		box->field_8 = 0xA;
+		box->field_14 = 0x30;
+		box->field_18 = 0xC;
+		box->field_24 = 0;
+		box->field_2C = 0x1C;
+		*(u32*)box = 0x53BDA4;
+		box->field_3C = &gChallenges[gTrainingChallengeIndex];
+	}
+	gTrainingRecordBox = box;
+
+	i32 idx2 = gTrainingChallengeIndex;
+	i8 scoreUnits = gChallenges[idx2].mScoreUnits;
+
+	if (scoreUnits != 0 && scoreUnits != 3)
+	{
+		if (gTrainingScore == 0)
+			gTrainingScore = -1000;
+	}
+
+	if (scoreUnits == 3 && gTrainingScore <= 0)
+		gTrainingScore = -1000;
+
+	SScore* pRow = &gGlobalRecordsFixed->mScores[idx2 * NUM_RECORDS_PER_CHALL];
+
+	gTrainingResultState = 0;
+	gTrainingScratch = -1;
+
+	if (gTrainingScore != -1000)
+	{
+		if (pRow[0].field_0 == 0)
+		{
+			gTrainingResultState = 1;
+			gTrainingScratch = 0;
+
+			pRow[0].field_0 = ((u8*)gGlobalRecordsFixed)[0];
+			pRow[0].field_1 = ((u8*)gGlobalRecordsFixed)[1];
+			pRow[0].field_2 = ((u8*)gGlobalRecordsFixed)[2];
+			pRow[0].field_3 = (u8)gTrainingScore;
+			pRow[0].field_4 = (u8)(gTrainingScore >> 8);
+
+			gTrainingRecordBox->field_40 = 1;
+			gTrainingRecordBox->mLetterIndex = 0;
+			gTrainingRecordBox->field_39 = 0;
+
+			print_if_false(1, "Bad row sent to Name entry");
+		}
+		else
+		{
+			i8 lowerIsBetter = gChallenges[idx2].mLowerIsBetter;
+			i32 pos;
+
+			for (pos = 0; pos < NUM_RECORDS_PER_CHALL; pos++)
+			{
+				if (pRow[pos].field_0 == 0)
+					break;
+
+				i32 rowScore = (i16)((pRow[pos].field_4 << 8) | pRow[pos].field_3);
+
+				if (!lowerIsBetter)
+				{
+					if (gTrainingScore > rowScore)
+						break;
+				}
+				else
+				{
+					if (gTrainingScore < rowScore)
+						break;
+				}
+			}
+
+			if (pos < NUM_RECORDS_PER_CHALL)
+			{
+				if (pRow[pos].field_0 == 0)
+				{
+					gTrainingResultState = 3;
+					gTrainingScratch = pos;
+				}
+				else
+				{
+					gTrainingResultState = 2;
+					gTrainingScratch = pos;
+
+					i32 i;
+					for (i = NUM_RECORDS_PER_CHALL - 1; i > pos; i--)
+					{
+						*(u32*)&pRow[i] = *(u32*)&pRow[i - 1];
+						pRow[i].field_4 = pRow[i - 1].field_4;
+					}
+				}
+
+				pRow[pos].field_0 = ((u8*)gGlobalRecordsFixed)[0];
+				pRow[pos].field_1 = ((u8*)gGlobalRecordsFixed)[1];
+				pRow[pos].field_2 = ((u8*)gGlobalRecordsFixed)[2];
+				pRow[pos].field_3 = (u8)gTrainingScore;
+				pRow[pos].field_4 = (u8)(gTrainingScore >> 8);
+
+				gTrainingRecordBox->field_39 = (u8)pos;
+				gTrainingRecordBox->field_40 = 1;
+				gTrainingRecordBox->mLetterIndex = 0;
+
+				print_if_false(pos < NUM_RECORDS_PER_CHALL, "Bad row sent to Name entry");
+			}
+		}
+	}
+
+	if (gTrainingResultState == 2 && gTrainingScratch == 0)
+		gTrainingDisplayTimer = 0x50;
+
+	gTrainingSomeTimer = 0x4EE;
 }
 
 // Investigation notes (0x0047BC40, 656 bytes), not implemented yet.
@@ -641,8 +883,26 @@ void PShell_EndTrainingInit(void)
 // gTrainingRecordBox's own Update through its vtable (call dword ptr [eax],
 // with 1 pushed first), and does name-entry keyboard handling through
 // 0x0050C180/0x0050C6C0 (key checks) and 0x00440110/0x00440600/
-// 0x0043FFF0/0x0043F9B0/0x004178E0 (unnamed). Not investigated past that.
-// Left at @MEDIUMTODO, not attempted further this session.
+// 0x0043FFF0/0x0043F9B0/0x004178E0 (unnamed).
+//
+// 2026-08-27: confirmed the likely SEH source. The function allocates a
+// CClass::operator new(0x53C) block (0x53C == sizeof(CMenu), per
+// VALIDATE_SIZE(CMenu, 0x53C) in front.cpp) shortly after the two
+// housekeeping calls at the top, matching `gTrainingMenu = new CMenu(...)`.
+// A throwaway local test (`new CMenu(1,2,3,4,5,6)` in an EXPORT test
+// function, built and disassembled, then removed, not committed) confirmed
+// our compiler emits the exact same SEH setup shape (mov eax,fs:0; push -1;
+// push handler; push eax; mov fs:0,esp) for any function that does a bare
+// `new CMenu(...)`, matching this function's own prologue. This lines up
+// with the parallel shell.cpp session's finding on Shell_ShowRecord ("new
+// CMenu(...) reproduces the SEH frame while new CRecordBox(...) doesn't").
+// This confirms the ROOT CAUSE (a CMenu allocation triggers the frame) but
+// not a fix: whether our SEH setup/teardown bytes match the original
+// exactly is the same open, hard problem documented for Shell_ShowRecord,
+// not something resolved by this test. Left at @MEDIUMTODO; full
+// implementation (menu construction args, the keyboard/name-entry state
+// machine, the CRecordBox::Update vtable call) not attempted this session
+// given the size of the remaining task list.
 // @MEDIUMTODO
 void PShell_EndTrainingUpdate(void)
 {
@@ -881,34 +1141,276 @@ CExpandingBox::~CExpandingBox(void)
 }
 
 
-// Investigation notes (0x0047A700, 1919 bytes), not implemented yet. Only
-// caller found so far is CExpandingBox::Display (this file), which passes
-// (x, width, y, height, 1, field_24, field_28, field_2C). This is a
-// same-TU dependency: as long as this stays a trivial stub, MSVC6 inlines
-// it into CExpandingBox::Display and that function can never match either
-// (confirmed by building; see CExpandingBox::Display's own comment).
-// Confirmed idiom for one of the locals: this file already has the exact
-// "sort near the end of its range" check in PShell_DrawHighlight,
+// Unnamed float constant read at 0x53B27C and subtracted from the depth
+// bias before drawing the optional shadow rect below. No access to the
+// original .rdata this session, so the value itself is not known; only the
+// address matters for matching (same trick as the gsub_/fixed-pointer
+// globals elsewhere in this file).
+static f32 * const gMenuBoxZBiasEpsilon = (f32*)0x0053B27C;
+
+// 9-slice box border geometry table: 13 entries of 4 i32 each, addresses
+// 0x5512F0..0x5513C0 (13*0x10 = 0xD0 bytes). Previous session found "roughly
+// a dozen" entries in this range; this session pins it at exactly 13 by
+// walking every table read in the disassembly. Field roles are NOT
+// consistent across entries (sometimes an x/y screen offset, sometimes a
+// width/height fudge added after a computation), so the fields are kept
+// generically named.
+struct SMenuBoxSlice { i32 a, b, c, d; };
+static SMenuBoxSlice * const gMenuBoxSlices = (SMenuBoxSlice*)0x005512F0;
+
+// gAnimTable[15] (bit.cpp/bit.h): 0x56EAA0 - 0x56EA64 (gAnimTable's base,
+// idb_globals.txt) = 0x3C = 15 * sizeof(SAnimFrame*). Holds a pointer to a
+// 9-entry SAnimFrame array used for the menu box border art (the +0x8,
+// +0x10, ..., +0x40 offsets seen below are all multiples of sizeof(SAnimFrame),
+// 8 bytes). Kept as a fixed game address rather than &gAnimTable[15]
+// because gAnimTable is a plain repo global (DLL-relocatable address); this
+// needs the byte-exact game address, same class of problem as the
+// gSaveGame note already in CLAUDE.md for this file.
+static SAnimFrame * const * const gMenuBoxAnimSlot = (SAnimFrame* const*)0x0056EAA0;
+
+// 9-slice box border draw. Only caller is CExpandingBox::Display (this
+// file), which passes (x, width, y, height, 1, field_24, field_28,
+// field_2C). field_24 (a6 here) doubles as "has scrollbar": it picks which
+// optional shadow rect gets drawn AND which subset of the 9 border pieces
+// draws first, before falling into a shared tail that draws the rest
+// regardless of the flag.
+//
+// depthBias idiom confirmed against PShell_DrawHighlight (this file):
 //   i32 sort = G_SORT;
 //   if (sort >= 0xFFE && sort <= 0xFFF) depthBias = -2.0f; else depthBias = 5.0f;
-// which matches the ebp setup at the top of this function bit for bit
 // (0xC0000000 = -2.0f, 0x40A00000 = 5.0f).
-// Call targets seen (tools/names.json): DCPanel_DrawFlatShadedPoly
-// (0x00462D60, x2, start and end), print_if_false (0x004015B0, x1),
-// Panel_DrawTexturedPoly_1 (0x00462B30, x4), DCPanel_DrawTexturedPoly_0
-// (0x004626A0, x6), Panel_DrawTexturedPoly_0 (0x00462B90, x4). Shape looks
-// like a 9-slice box border (corners + edges + a flat-shaded shadow/
-// highlight pass), each piece indexed off roughly a dozen unnamed 4-dword
-// table entries between 0x005512F0 and 0x005513AC (no idb_globals.txt
-// names). Those tables would need the fixed-pointer trick (a static
-// i32* const into game memory), not real extracted values, since the code
-// only ever needs the addresses. Full byte-exact reconstruction of the
-// float/stack-heavy repeated draw blocks was not attempted this session,
-// it needs a lot more register-level iteration than this pass had time
-// for. Left at @BIGTODO.
-// @BIGTODO
-i32 PShell_DrawMenuBox(i32, i32, i32, i32, i32, i32, i32, i32){
-	return 69;
+//
+// Call targets: DCPanel_DrawFlatShadedPoly (0x462D60, panel.cpp, @Ok
+// @Matching), DCPanel_DrawTexturedPoly (0x4626A0, the 9-arg
+// f32,POLY_FT4*,SAnimFrame const*,... overload in panel.cpp, currently
+// @NotOk there but that is panel.cpp's own residue, not this function's),
+// print_if_false, Panel_DrawTexturedPoly(SAnimFrame*,i32) (0x462B90, the
+// existing @Ok @Matching 2-arg overload in panel.cpp), and
+// Panel_DrawTexturedPoly(SAnimFrame*,i32,i32,i32) (0x462B30, new 4-arg
+// overload stubbed in panel.cpp this session since decompiling its own
+// body is out of scope here).
+//
+// Five pieces (frames[0],[2],[4],[6],[7] or [8] depending on branch) go
+// through the 4-arg Panel_DrawTexturedPoly overload, which sizes the poly
+// itself via DCPanel_DrawTexturedPoly's own (x,y,w,h) branch. Five other
+// pieces (frames[1],[3],[5] x2) go through the 2-arg overload and get their
+// 8 corner coordinates written directly by this function before the same
+// DCPanel_DrawTexturedPoly call runs again over them; whether that second
+// pass's internal (x,y,w,h) branch actually overwrites the coordinates this
+// function just wrote is a question about the original game's own
+// behaviour, not something to "fix" here.
+//
+// cmpsum against the rebuilt DLL: 479 mnemonic diffs (started at 505 on the
+// first working draft), first divergence right in the prologue: the
+// original keeps depthBias resident in ebp for the whole function (frame
+// pointer omitted) and x/width in esi/edi in that order; our build spills
+// depthBias to a stack slot and swaps which of x/width lands in esi vs edi.
+// This is a whole-function register-pressure difference, not a local
+// source bug at the point where the diff first shows up. 3 source
+// hypotheses tried and kept (all real improvements, logged in git history):
+// (1) stop caching G_SORT into a local past the first use and read the
+// macro fresh at every call site instead (505->493 diffs; matches the
+// "volatile global, don't cache" idiom already documented for this file),
+// (2) reuse one mutable `hw` local for height+width across the if/else and
+// into the shared tail instead of three separate hw/hw2/hw3 locals, mirroring
+// how the disassembly keeps reusing/mutating the same ebx register instead
+// of recomputing height+width (493->479 diffs), (3) hoist the first flat-
+// shaded call's x/y argument expressions into named locals declared in
+// width-before-x order, matching the order the original computes them in
+// (no measurable change, kept for source clarity). Given the function is
+// 1919 bytes (well over the 1000-byte large-function threshold) and the
+// residue is a function-wide register allocation difference rather than one
+// or two localized diff clusters, closing this fully would need many more
+// hypotheses than the discipline's 10-per-cluster minimum, spread across
+// what is effectively a dozen near-duplicate draw-call clusters. Left
+// @NotOk rather than force an @AlmostMatching claim for a residue this
+// broad; the semantics (call targets, argument counts/order, table
+// indices, field writes, control flow) are believed correct throughout.
+// @NotOk
+i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrollbar, i32 a7, i32 a8)
+{
+	i32 sort = G_SORT;
+	f32 depthBias;
+
+	if (sort >= 0xFFE && sort <= 0xFFF)
+		depthBias = -2.0f;
+	else
+		depthBias = 5.0f;
+
+	if (hasScrollbar)
+	{
+		i32 shadowY = gMenuBoxSlices[0].b + (((height - a8 - 8) * a7) >> 8) + width + 4;
+		i32 shadowX = gMenuBoxSlices[0].a + x - 10;
+
+		DCPanel_DrawFlatShadedPoly(
+				depthBias - *gMenuBoxZBiasEpsilon,
+				shadowX,
+				shadowY,
+				gMenuBoxSlices[0].c + 7,
+				gMenuBoxSlices[0].d + a8,
+				0xFF, 0xFF, 0xFF,
+				sort,
+				1);
+	}
+
+	SAnimFrame* frames = *gMenuBoxAnimSlot;
+	print_if_false(frames != 0, "No menu box anim frames");
+
+	i32 v1 = width - 3;
+	i32 hw;
+
+	if (hasScrollbar)
+	{
+		POLY_FT4* p1 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[0], x - 14, v1, G_SORT);
+		if (p1)
+			p1->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p1, &frames[0],
+				gMenuBoxSlices[1].a + x - 14, gMenuBoxSlices[1].b + width - 3,
+				gMenuBoxSlices[1].c, gMenuBoxSlices[1].d, G_SORT, 0);
+
+		POLY_FT4* p2 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[1], G_SORT);
+		p2->y0 = (i16)(width + 7);
+		p2->y1 = (i16)(width + 7);
+		p2->code |= 2;
+		p2->x0 = (i16)(x - 14);
+		p2->x2 = (i16)(x - 14);
+		p2->x1 = (i16)x;
+		hw = height + width;
+		p2->x3 = (i16)x;
+		p2->y2 = (i16)(hw - 7);
+		p2->y3 = (i16)(hw - 7);
+		p2->v2--;
+		p2->v3--;
+		DCPanel_DrawTexturedPoly(depthBias, p2, &frames[1],
+				gMenuBoxSlices[2].a + (x - 14), gMenuBoxSlices[2].b + (width + 7),
+				gMenuBoxSlices[2].c + (x - (x - 14)), gMenuBoxSlices[2].d + ((hw - 7) - (width + 7)),
+				G_SORT, 0);
+
+		POLY_FT4* p3 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[2], x - 14, width + height - 7, G_SORT);
+		if (p3)
+			p3->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p3, &frames[2],
+				gMenuBoxSlices[3].a + x - 14, gMenuBoxSlices[3].b + width + height - 7,
+				gMenuBoxSlices[3].c, gMenuBoxSlices[3].d, G_SORT, 0);
+	}
+	else
+	{
+		POLY_FT4* p4 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[7], x - 6, v1, G_SORT);
+		if (p4)
+			p4->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p4, &frames[7],
+				gMenuBoxSlices[4].a + x - 6, gMenuBoxSlices[4].b + width - 3,
+				gMenuBoxSlices[4].c, gMenuBoxSlices[4].d, G_SORT, 0);
+
+		POLY_FT4* p5 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[8], x - 6, width + height - 3, G_SORT);
+		if (p5)
+			p5->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p5, &frames[8],
+				gMenuBoxSlices[5].a + x - 6, gMenuBoxSlices[5].b + width + height - 3,
+				gMenuBoxSlices[5].c, gMenuBoxSlices[5].d, G_SORT, 0);
+
+		POLY_FT4* p6 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[5], G_SORT);
+		p6->code |= 2;
+		p6->y0 = (i16)(width + 3);
+		p6->y1 = (i16)(width + 3);
+		p6->x0 = (i16)(x - 6);
+		p6->x2 = (i16)(x - 6);
+		p6->x1 = (i16)x;
+		hw = height + width;
+		p6->x3 = (i16)x;
+		p6->y2 = (i16)(hw - 3);
+		p6->y3 = (i16)(hw - 3);
+		p6->v2--;
+		p6->v3--;
+		DCPanel_DrawTexturedPoly(depthBias, p6, &frames[5],
+				gMenuBoxSlices[6].a + (x - 6), gMenuBoxSlices[6].b + (width + 3),
+				gMenuBoxSlices[6].c + (x - (x - 6)), gMenuBoxSlices[6].d + ((hw - 3) - (width + 3)),
+				G_SORT, 0);
+	}
+
+	POLY_FT4* p7 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[4], x + y - 2, width - 3, G_SORT);
+	if (p7)
+		p7->code |= 2;
+	DCPanel_DrawTexturedPoly(depthBias, p7, &frames[4],
+			gMenuBoxSlices[7].a + x + y - 2, gMenuBoxSlices[7].b + width - 3,
+			gMenuBoxSlices[7].c, gMenuBoxSlices[7].d, G_SORT, 0);
+
+	POLY_FT4* p8 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[3], G_SORT);
+	p8->code |= 2;
+	if (hasScrollbar)
+	{
+		p8->x0 = (i16)x;
+		p8->x2 = (i16)x;
+	}
+	else
+	{
+		p8->x0 = (i16)(x + 2);
+		p8->x2 = (i16)(x + 2);
+	}
+	p8->y0 = (i16)(width - 3);
+	p8->y1 = (i16)(width - 3);
+	p8->x1 = (i16)(y + x - 2);
+	p8->u1--;
+	p8->y2 = (i16)(width + 1);
+	p8->x3 = (i16)(y + x - 2);
+	p8->u3--;
+	DCPanel_DrawTexturedPoly(depthBias, p8, &frames[3],
+			gMenuBoxSlices[8].a + p8->x0, gMenuBoxSlices[8].b + (width - 3),
+			gMenuBoxSlices[8].c + ((y + x - 2) - p8->x0), gMenuBoxSlices[8].d + ((width + 1) - (width - 3)),
+			G_SORT, 0);
+
+	POLY_FT4* p9 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[6], x + y - 2, width + height - 3, G_SORT);
+	if (p9)
+		p9->code |= 2;
+	DCPanel_DrawTexturedPoly(depthBias, p9, &frames[6],
+			gMenuBoxSlices[9].a + x + y - 2, gMenuBoxSlices[9].b + width + height - 3,
+			gMenuBoxSlices[9].c, gMenuBoxSlices[9].d, G_SORT, 0);
+
+	POLY_FT4* p10 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[3], G_SORT);
+	p10->x1 = (i16)(y + x - 2);
+	p10->x3 = (i16)(y + x - 2);
+	p10->u1--;
+	p10->y2 = (i16)(hw + 4);
+	p10->y3 = (i16)(hw + 4);
+	p10->u3--;
+	p10->y0 = (i16)hw;
+	p10->y1 = (i16)hw;
+	DCPanel_DrawTexturedPoly(depthBias, p10, &frames[3],
+			gMenuBoxSlices[10].a + p10->x0, gMenuBoxSlices[10].b + hw,
+			gMenuBoxSlices[10].c + ((y + x - 2) - p10->x0), gMenuBoxSlices[10].d + ((hw + 4) - hw),
+			G_SORT, 0);
+
+	POLY_FT4* p11 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[5], G_SORT);
+	p11->code |= 2;
+	hw -= 3;
+	i32 xy = y + x;
+	p11->x0 = (i16)xy;
+	p11->y0 = (i16)(width + 3);
+	p11->x1 = (i16)(xy + 6);
+	p11->y1 = (i16)(width + 3);
+	p11->x3 = (i16)(xy + 6);
+	p11->x2 = (i16)xy;
+	p11->y2 = (i16)hw;
+	p11->v2--;
+	p11->y3 = (i16)hw;
+	p11->v3--;
+	DCPanel_DrawTexturedPoly(depthBias, p11, &frames[5],
+			gMenuBoxSlices[11].a + xy, gMenuBoxSlices[11].b + (width + 3),
+			gMenuBoxSlices[11].c + ((xy + 6) - xy), gMenuBoxSlices[11].d + (hw - (width + 3)),
+			G_SORT, 0);
+
+	if (a5)
+	{
+		DCPanel_DrawFlatShadedPoly(
+				depthBias,
+				gMenuBoxSlices[12].a + x, gMenuBoxSlices[12].b + width,
+				gMenuBoxSlices[12].c + y, gMenuBoxSlices[12].d + height,
+				0x19, 0x19, 0x50,
+				G_SORT,
+				1);
+	}
+
+	return a5;
 }
 
 
@@ -939,10 +1441,23 @@ CExpandingBox::CExpandingBox(
 
 
 // @NotOk
-// blocked on PShell_DrawMenuBox: while that is a trivial "return 69;" stub,
-// MSVC6 inlines it into this same-TU caller and the codegen diverges from
-// the very first instruction. Decompile PShell_DrawMenuBox first, then
-// retest this.
+// No longer blocked on PShell_DrawMenuBox: now that it is a real function
+// instead of a trivial "return 69;" stub, this compiles as a genuine
+// cross-TU call and cmpsum shows only 12 mnemonic diffs (147-byte
+// function). Residue is in the x/y argument expressions passed to
+// PShell_DrawMenuBox: the original interleaves a "push edi" callee-save
+// mid-computation (right after the x half-width/half-height subtraction,
+// before starting the y one) and keeps field_1C in edx across that push;
+// our build defers the push and picks a different register for field_1C.
+// 4 hypotheses tried this session, all logged: (1) baseline (12 diffs,
+// kept), (2) hoist the x expression into a named local declared before the
+// call (34 diffs, worse), (3) reorder the +/- operands in both x and y
+// expressions to field_C/2 - field_4/2 + field_1C style (no change, 12
+// diffs), (4) cache field_8 into a local reused by both the height arg and
+// the y expression's /2 term (14 diffs, worse). This is a small function
+// (< 200 bytes), so the discipline calls for unlimited attempts, not a
+// fixed minimum; left @NotOk rather than @AlmostMatching since the residue
+// has not been resolved yet, not because the bar was reached.
 int CExpandingBox::Display(){
 
 	this->field_4 += this->field_14;

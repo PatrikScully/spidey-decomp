@@ -357,7 +357,29 @@ struct STrainingMission
 	// challenge/mission name).
 	char* field_0;
 
-	PADDING(0xB - 0x4);
+	// Added 2026-08-27, found in PShell_EndTrainingInit (0x47B720, pshell.cpp):
+	// the entry-search loop there reads this word for every gChallenges
+	// entry (cmp word ptr [&gChallenges[i]+4], ax) and compares it against
+	// the low 16 bits of Trig_GetLevelID()'s return value, still resident in
+	// ax at that point. Only entries whose mLevelId matches get checked
+	// further (against mAreaId below). Our own guess at the field's
+	// purpose; not confirmed against the maintainer's IDB.
+	i16 mLevelId;
+
+	PADDING(0x7 - 0x6);
+
+	// Added 2026-08-27, found in PShell_EndTrainingInit (0x47B720, pshell.cpp):
+	// the entry-search loop there reads this byte for every gChallenges
+	// entry (mov dl,[ecx] with ecx = &gChallenges[i] + 7) and compares it
+	// against gTrainingSeconds (0x00551288, the value read once at the top
+	// of that function) or the sentinel 0xFF (matches any). This picks
+	// which gChallenges entry is "the one for the level that just ended".
+	// Our own guess at the field's purpose (which training area/level this
+	// challenge belongs to); not confirmed against the maintainer's IDB, no
+	// per-field struct names are available from the 9.2 IDB export.
+	i8 mAreaId;
+
+	PADDING(0xB - 0x7 - 1);
 
 	// renamed from field_B (2026-08-27): print_if_false in CRecordBox::Display
 	// (0x47B240) reads this same byte through CRecordBox::field_3C and asserts
@@ -368,7 +390,17 @@ struct STrainingMission
 	// column header, strings at 0x54B8D0/D4/D8/DC in the original .data).
 	i8 mScoreUnits;
 
-	PADDING(0x10 - 0xB - 1);
+	// Added 2026-08-27, found in PShell_EndTrainingInit (0x47B720, pshell.cpp):
+	// the score-insertion loop there reads this byte (gChallenges[i]+0xC) once
+	// per challenge and uses it to pick the comparison direction against the
+	// new score (flag==0: insert where the new score is greater, "jg";
+	// flag!=0: insert where the new score is less, "jl"). Our own guess:
+	// whether a lower value ranks better for this challenge (true for
+	// mScoreUnits==0, Time, false otherwise). Not confirmed against the
+	// maintainer's IDB.
+	i8 mLowerIsBetter;
+
+	PADDING(0x10 - 0xC - 1);
 };
 
 // Widget class from the "pshell" Mac module. Moved here from shell.cpp (was
