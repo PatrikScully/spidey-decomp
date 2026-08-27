@@ -1433,14 +1433,66 @@ CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)
 	printf("CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)");
 }
 
-// @SMALLTODO
-// Not decompiled. Only stubbed (Mac signature CSoftSpot(CBaddy*,int,int,int),
-// size 500 bytes) so CMysterio::CMysterio(i16*, i32), in mysterio.cpp, can
-// create these damage zones. Address not in names.json under this name;
-// seen as CSoftSpot_CSoftSpot at 0x45F700 in that constructor's disasm.
-// Kept in this file, see the comment above CMystFoot::CMystFoot in
-// mysterio.cpp for why.
-CSoftSpot::CSoftSpot(CBaddy*, i32, i32, i32)
+// @Ok
+// @Matching
+// Decompiled from CSoftSpot_CSoftSpot at 0x45F700 (369 bytes). Params
+// recovered from the disasm, not from a header: owner is the CBaddy that
+// this soft spot belongs to (only used to shuffle owner in and out of
+// BaddyList, and for Mem_MakeHandle), health becomes mHealth, node becomes
+// mNode, type becomes field_324 and picks the branch. The two InitItem
+// string literals and the print_if_false message are guesses (content
+// doesn't affect compare.py, which only diffs mnemonics); 0x56E990 is
+// BaddyList per idbs/idb_globals.txt, 0x54D474 is DifficultyLevel same
+// source (already used elsewhere in this file).
+CSoftSpot::CSoftSpot(CBaddy* owner, i32 health, i32 node, i32 type)
 {
-	printf("CSoftSpot::CSoftSpot(CBaddy*, i32, i32, i32)");
+	if (type >= 6)
+	{
+		this->InitItem("softspot");
+
+		if (type == 10)
+			this->mFlags |= 1;
+	}
+	else
+	{
+		this->InitItem("softspot_glow");
+		this->mFlags |= 0x400;
+
+		i32 grey = Rnd(110) + 20;
+		this->mRGB = (((grey << 8) | grey) << 8) | grey;
+
+		this->field_328 = Rnd(3) + 4;
+		this->field_32c = 100;
+		this->field_194 = 12;
+	}
+
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+
+	print_if_false(owner != 0, "no owner for soft spot");
+
+	owner->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	owner->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+
+	this->field_330 = Mem_MakeHandle(owner);
+
+	this->mHealth = static_cast<i16>(health);
+	this->mType = 0x149;
+	this->mNode = static_cast<u16>(node);
+	this->field_324 = type;
+	this->mRMinor = 0x96;
+
+	if (type == 10)
+	{
+		this->mCBodyFlags &= 0xFFEF;
+		this->mRMinor = 0;
+	}
+	else
+	{
+		this->mCBodyFlags |= 0x10;
+	}
+
+	if (DifficultyLevel)
+		this->field_2A8 |= 0x10000;
+
+	this->field_2A8 |= 0x200;
 }
