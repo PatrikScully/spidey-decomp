@@ -14,6 +14,7 @@
 #include "PCGfx.h"
 #include "trig.h"
 #include "ps2redbook.h"
+#include "camera.h"
 
 #include <cstring>
 
@@ -553,15 +554,30 @@ static STrainingMission* const gChallenges = reinterpret_cast<STrainingMission*>
 // Read once, then cleared to 0 alongside gWideScreen (0x00660F80,
 // idb_globals.txt); guess: a paired display-mode flag.
 #define gScreenModeFlag (*reinterpret_cast<i32*>(0x0054D47C))
-// Reused for two unrelated things in the same function: first holds the
-// pre-clear value of gScreenModeFlag (write-only, never read back), then
-// later becomes the sentinel/insertion-position scratch for the high-score
-// insert (-1 = "no room", else 0-4 = the row that was written).
+// Sentinel/insertion-position scratch for the high-score insert (-1 = "no
+// room", else 0-4 = the row that was written).
 #define gTrainingScratch (*reinterpret_cast<i32*>(0x005513D4))
-// Set at the very end of PShell_EndTrainingInit to 0x4EE (1262); purpose
-// unclear (a timer/frame-count guess, going by the neighbouring
-// gTrainingDisplayTimer's role).
-#define gTrainingSomeTimer (*reinterpret_cast<i32*>(0x005512EC))
+// Found 2026-08-27 via IDA on PShell_EndTrainingUpdate (0x47BC40): this is
+// the training screen's own zoom-ease value, same role as shell.cpp's
+// gShellMenuEase (eased toward 0x180/384 there too, same
+// PShell_MoveTowards idiom) but needs its own fixed game address since
+// gShellMenuEase is a plain repo global (DLL-relocatable), same class of
+// problem as gSaveGame. Set to 1262 (0x4EE) at the end of
+// PShell_EndTrainingInit (previously guessed as an unrelated "timer" under
+// the name gTrainingSomeTimer; renamed once EndTrainingUpdate's ease usage
+// showed what it actually is).
+#define gTrainingMenuEase (*reinterpret_cast<i32*>(0x005512EC))
+// Found 2026-08-27 via IDA on PShell_EndTrainingInit's own disassembly:
+// holds gScreenModeFlag's pre-clear value (set once in EndTrainingInit,
+// restored into gScreenModeFlag once in EndTrainingUpdate when the player
+// exits the training screen). A SEPARATE global from gTrainingScratch
+// (0x5513D4, 4 bytes earlier): EndTrainingInit's own source used to alias
+// gTrainingScratch for this store, which was a bug (wrote the saved value
+// to the wrong address, immediately clobbered anyway by gTrainingScratch's
+// real -1 sentinel a few lines later, so the CRecordBox logic was
+// unaffected, but EndTrainingUpdate could never read the real saved value
+// back). Fixed here.
+#define gTrainingSavedScreenMode (*reinterpret_cast<i32*>(0x005513D8))
 // Read once at the top of PShell_EndTrainingInit as the "target area" a
 // gChallenges entry's mAreaId gets matched against. Named in a shell.cpp
 // comment as the address neighbouring gChallenges/gCheats but never wired
@@ -681,11 +697,14 @@ void PShell_EndTrainingDisplay(void)
 // straight in if it landed on an empty row (gTrainingResultState = 3); if
 // no row was found in 5, nothing is written. Landing at row 0 with
 // resultState 2 (beat the existing #1) sets gTrainingDisplayTimer = 0x50.
-// gTrainingSomeTimer always gets set to 0x4EE at the end regardless.
+// gTrainingMenuEase always gets set to 0x4EE at the end regardless (its
+// initial zoomed-out value, eased back down toward 0x180 by
+// PShell_EndTrainingUpdate).
 //
 // Globals with no idb_globals.txt entry are all tentative (see their own
 // comments above): gTrainingActive, gEndTrainingFlag, gScreenModeFlag,
-// gTrainingScratch, gTrainingSomeTimer, gTrainingSeconds. String literals
+// gTrainingScratch, gTrainingMenuEase, gTrainingSavedScreenMode,
+// gTrainingSeconds. String literals
 // passed to print_if_false are placeholders (relocated string addresses
 // are an accepted diff, only the presence/position of the argument
 // matters for matching).
@@ -723,7 +742,7 @@ void PShell_EndTrainingInit(void)
 
 	gTrainingActive = 1;
 	gEndTrainingFlag = 1;
-	gTrainingScratch = oldScreenMode;
+	gTrainingSavedScreenMode = oldScreenMode;
 	gScreenModeFlag = 0;
 	*(i32*)0x00660F80 = 0;  // gWideScreen (ps2m3d.cpp), fixed game address; see gSaveGame note in CLAUDE.md
 
@@ -872,41 +891,155 @@ void PShell_EndTrainingInit(void)
 	if (gTrainingResultState == 2 && gTrainingScratch == 0)
 		gTrainingDisplayTimer = 0x50;
 
-	gTrainingSomeTimer = 0x4EE;
+	gTrainingMenuEase = 0x4EE;
 }
 
-// Investigation notes (0x0047BC40, 656 bytes), not implemented yet.
-// Has a full SEH frame (mov eax,fs:[0]; push -1; push handler; push eax;
-// mov fs:[0],esp), same class of residue already open on Shell_ShowRecord
-// (shell.cpp, @NotOk, see its comment for the hypotheses tried there).
-// Touches gTrainingDisplayTimer/gTrainingRecordBox/gTrainingMenu, calls
-// gTrainingRecordBox's own Update through its vtable (call dword ptr [eax],
-// with 1 pushed first), and does name-entry keyboard handling through
-// 0x0050C180/0x0050C6C0 (key checks) and 0x00440110/0x00440600/
-// 0x0043FFF0/0x0043F9B0/0x004178E0 (unnamed).
+// idb_globals.txt: 0x0056F3B8 CameraList. Confirmed as a CCamera* by this
+// function's own disassembly: it calls ->SetCamAngle() on it (0x4178E0,
+// already @Ok @AlmostMatching in camera.cpp), and CCamera has a real
+// field_236 (i16) at that exact offset (VALIDATE(CCamera, field_236, 0x236)
+// in camera.cpp, also read by SetCamAngle itself).
+#define CameraList (*reinterpret_cast<CCamera**>(0x0056F3B8))
+
+// Same string-pointer table class as gTextNewRecord/gTextYourScore/gTextNone
+// above and gTextSaveGameProgress further down, just a different cluster of
+// entries (0x54BA94-0x54BA9C vs 0x54B8E4-0x54B8F8); string content confirmed
+// against the original exe.
+#define gTextRetry (*reinterpret_cast<char**>(0x0054BA94))
+#define gTextQuitToTraining (*reinterpret_cast<char**>(0x0054BA98))
+#define gTextQuitToMainMenu (*reinterpret_cast<char**>(0x0054BA9C))
+
+// (0x0047BC40, 656 bytes). Full decompile via IDA/Hex-Rays on the real exe,
+// 2026-08-27, replacing the earlier investigation-only pass.
 //
-// 2026-08-27: confirmed the likely SEH source. The function allocates a
-// CClass::operator new(0x53C) block (0x53C == sizeof(CMenu), per
-// VALIDATE_SIZE(CMenu, 0x53C) in front.cpp) shortly after the two
-// housekeeping calls at the top, matching `gTrainingMenu = new CMenu(...)`.
-// A throwaway local test (`new CMenu(1,2,3,4,5,6)` in an EXPORT test
-// function, built and disassembled, then removed, not committed) confirmed
-// our compiler emits the exact same SEH setup shape (mov eax,fs:0; push -1;
-// push handler; push eax; mov fs:0,esp) for any function that does a bare
-// `new CMenu(...)`, matching this function's own prologue. This lines up
-// with the parallel shell.cpp session's finding on Shell_ShowRecord ("new
-// CMenu(...) reproduces the SEH frame while new CRecordBox(...) doesn't").
-// This confirms the ROOT CAUSE (a CMenu allocation triggers the frame) but
-// not a fix: whether our SEH setup/teardown bytes match the original
-// exactly is the same open, hard problem documented for Shell_ShowRecord,
-// not something resolved by this test. Left at @MEDIUMTODO; full
-// implementation (menu construction args, the keyboard/name-entry state
-// machine, the CRecordBox::Update vtable call) not attempted this session
-// given the size of the remaining task list.
-// @MEDIUMTODO
+// Structure: nudge the camera angle once (CameraList, see its own comment);
+// bail out early while gTrainingDisplayTimer is still counting down (see
+// PShell_EndTrainingDisplay, same global); otherwise update the
+// already-built CRecordBox and ease gTrainingMenuEase toward 0x180 while
+// its field_40 "still animating" flag is set (early return while it is,
+// same shape as the CMenu-vs-CRecordBox ease idiom in PShell_MaybeSaveGame/
+// Shell_ShowRecord); once field_40 clears, lazily build gTrainingMenu (a
+// plain `new CMenu(...)`, same cross-TU SEH-frame mechanism as
+// Shell_ChooseSurvivalArena, see the CLAUDE.md "SOLVED 2026-08-27" note:
+// CMenu::CMenu is defined in front.cpp, a different TU, so the frame
+// reproduces with no source workaround needed) with three menu entries
+// (Retry / quit to training / quit to main menu); update the menu every
+// frame, check whether the mouse sits over the highlighted entry's text
+// (PCSHELL_IsMouseOverText, only computed when PCSHELL_CheckTriggers(0x100,
+// ...) is true, mirroring the mouse-vs-pad idiom already used in
+// shell.cpp's own CMenu handling); once a valid line (0-39) is chosen by
+// mouse-over or by PCSHELL_CheckTriggers(0x50110, ...), clear the two pad
+// trigger flags used to open this screen (G_SCONTROL[0].X/.Start, matching
+// PShell_MaybeSaveGame's clear pair), turn off the training-active flags,
+// restore gScreenModeFlag from gTrainingSavedScreenMode, translate the
+// chosen line (0/1/2) into gLevelStatus (already a real repo global,
+// trig.cpp, idb_globals.txt names 0x60CFA4 the same way), and tear down
+// both widgets.
+//
+// All callees are already real elsewhere in the repo (front.cpp's CMenu
+// methods, camera.cpp's CCamera::SetCamAngle, PCShell.cpp's
+// PCSHELL_CheckTriggers/PCSHELL_IsMouseOverText, shell.cpp's
+// CRecordBox::Update), so nothing new needed a stub.
+//
+// cmpsum against the rebuilt DLL: 16 mnemonic diffs after 13 hypotheses
+// (below the 15-hypothesis bar for a medium function, so left @NotOk, not
+// @AlmostMatching; full log in pshell.attempts.md). Confirmed via
+// instruction-count check that nothing is missing: the epilogue matches
+// byte for byte and both remaining diff clusters are pure register/
+// scheduling reorderings of already-correct operations, not a dropped or
+// extra instruction. Cluster A: which register (and how early) holds the
+// gTrainingMenu pointer vs gTrainingSavedScreenMode around the final
+// flag-clear stores. Cluster B: the exact interleaving of the
+// delete-and-null-out teardown for gTrainingRecordBox/gTrainingMenu. Call
+// targets, struct field offsets, and control flow are all believed
+// correct.
+// @NotOk
 void PShell_EndTrainingUpdate(void)
 {
-    printf("PShell_EndTrainingUpdate(void)");
+	if (CameraList != 0)
+		CameraList->SetCamAngle(CameraList->field_236 + 24, 0);
+
+	if (gTrainingDisplayTimer != 0)
+		return;
+
+	print_if_false(gTrainingRecordBox != 0, "NULL pRecordBox");
+	gTrainingRecordBox->Update();
+
+	CRecordBox* recordBox = gTrainingRecordBox;
+
+	if (recordBox->field_40 != 0)
+	{
+		gTrainingMenuEase = PShell_MoveTowards(gTrainingMenuEase, 0x180);
+
+		if (recordBox->field_40 != 0)
+			return;
+	}
+
+	if (gTrainingMenu == 0)
+	{
+		Mess_SetScale(0x100);
+		Mess_SetCurrentFont("sp_fnt00.fnt");
+
+		gTrainingMenu = new CMenu(0x100, 0xB8, 0, 0x100, 0x100, 0x10);
+		gTrainingMenu->mLineSep = 0xE;
+
+		gTrainingMenu->AddEntry(gTextRetry);
+		gTrainingMenu->AddEntry(gTextQuitToTraining);
+		gTrainingMenu->AddEntry(gTextQuitToMainMenu);
+
+		gTrainingMenu->Zoom(0);
+	}
+
+	gTrainingMenu->Update();
+
+	u8 mouseOverText = 0;
+
+	if (PCSHELL_CheckTriggers(0x100, 1, 1))
+	{
+		u8 justification = gTrainingMenu->mJustification;
+		const char* entryName = gTrainingMenu->mEntry[gTrainingMenu->mLine].name;
+		i32 x, y;
+
+		gTrainingMenu->GetEntryXY(entryName, &x, &y);
+
+		if (PCSHELL_IsMouseOverText(entryName, x, y, justification))
+			mouseOverText = 1;
+	}
+
+	if (gTrainingMenu->mLine < 0x28)
+	{
+		if (!mouseOverText)
+		{
+			if (!PCSHELL_CheckTriggers(0x50110, 1, 1))
+				return;
+		}
+
+		i32 savedScreenMode = gTrainingSavedScreenMode;
+
+		G_SCONTROL[0].X.Triggered = 0;
+		G_SCONTROL[0].Start.Triggered = 0;
+		gTrainingActive = 0;
+		gEndTrainingFlag = 0;
+		gScreenModeFlag = savedScreenMode;
+
+		switch (gTrainingMenu->mLine)
+		{
+			case 0:
+				gLevelStatus = 8;
+				break;
+			case 1:
+				gLevelStatus = 10;
+				break;
+			case 2:
+				gLevelStatus = 7;
+				break;
+		}
+
+		delete gTrainingRecordBox;
+		gTrainingRecordBox = 0;
+		delete gTrainingMenu;
+		gTrainingMenu = 0;
+	}
 }
 
 // Save-confirmation modal loop. Same idiom as Shell_ShowRecord's loop
@@ -1647,10 +1780,42 @@ CRecordBox::CRecordBox(i32 width, i32 height, STrainingMission* pMission)
 	field_3C = pMission;
 }
 
-// @SMALLTODO
+// Decompiled via IDA on the real exe, 2026-08-27 (0x0047AF00, 7 bytes: a
+// single `mov dword ptr [ecx], offset off_53B234` then `ret`, called from
+// the vtable's deleting-destructor thunk at 0x47AEE0). Resets the vtable
+// pointer to CExpandingBox's own vtable (0x53B234) before returning, the
+// same raw-address vtable poke PShell_EndTrainingInit already uses for
+// CRecordBox's own vtable (0x53BDA4, see its comment above): CRecordBox is
+// laid out identically to CExpandingBox (same comment, and
+// CRecordBox::Display already reinterpret_casts `this` to CExpandingBox*
+// to reach its Display method) but is declared `public CClass` in this
+// header, not `public CExpandingBox`, so there is no portable C++
+// expression for "CExpandingBox's vtable" other than this fixed game
+// address.
+//
+// cmpsum residue: our build emits one extra instruction, a tail
+// `jmp CClass::~CClass` after the vtable store (original just has `ret`).
+// Root cause: CClass::~CClass() (main.h/main.cpp) is virtual and defined
+// in a different TU (main.cpp) from this destructor (pshell.cpp), so our
+// compiler cannot prove the implicit base-class destructor call does
+// nothing and must emit a real (tail-)call to it; the original apparently
+// could elide this, most likely because its true base class destructor
+// call resolved to CExpandingBox::~CExpandingBox() (defined in the SAME
+// TU as this function, pshell.cpp, and itself trivial), which lines up
+// with the vtable-reset target above. This is the same class of repo-wide
+// cross-TU-visibility problem already documented for print_if_false and
+// vector.h's operator- (see CLAUDE.md): not fixable from this one
+// function without either restructuring CRecordBox's base class (touches
+// shell.h and the already-`@Ok @Matching` CRecordBox::CRecordBox/Display/
+// Update, out of scope here) or making CClass::~CClass() provably trivial
+// repo-wide (affects every CClass-derived destructor). Left plain `@Ok`
+// (not `@Matching`), matching the precedent already set by
+// CExpandingBox::~CExpandingBox above (same base class, same unverified
+// residue, also plain `@Ok`).
+// @Ok
 CRecordBox::~CRecordBox(void)
 {
-	printf("CRecordBox::~CRecordBox(void)");
+	*(u32*)this = 0x53B234;
 }
 
 #include "my_patch.h"
