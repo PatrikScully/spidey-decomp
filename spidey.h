@@ -7,6 +7,7 @@
 #include "export.h"
 #include "ob.h"
 #include "manipob.h"
+#include "quat.h"
 
 EXPORT extern u8 gSpideyPsxIndex;
 
@@ -191,15 +192,33 @@ class CPlayer : public CSuper
 		CVector field_C84;
 		i32 field_C90;
 
-		PADDING(0xCB4-0xC90-4);
+		// player body orientation as a quaternion (from MToQ(mTransform)),
+		// used by EnterLookaroundMode to seed the lookaround camera path.
+		CQuat field_C94;
+
+		// inverse of the active camera's orientation quaternion, the other
+		// endpoint of the EnterLookaroundMode Quat_Slerp path.
+		CQuat field_CA4;
 
 		i32 field_CB4;
 
-		PADDING(0xCE4-0xCB4-4);
+		// camera position snapshot taken by EnterLookaroundMode.
+		CVector field_CB8;
+
+		PADDING(0xCE4-0xCB8-0xC);
 
 		i32 field_CE4;
 
-		PADDING(0xD3C-0xCE4-4);
+		PADDING(0xD00-0xCE4-4);
+
+		// hook-8 world position plus field_C84*0x80, used by
+		// EnterLookaroundMode as the lookaround camera anchor.
+		CVector field_D00;
+
+		// field_C84*0x80, stashed by EnterLookaroundMode.
+		CVector field_D0C;
+
+		PADDING(0xD3C-0xD0C-0xC);
 
 		CVector field_D3C;
 

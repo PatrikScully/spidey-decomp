@@ -802,10 +802,100 @@ void CPlayer::DrawReticle(u16,u16,u32)
     printf("CPlayer::DrawReticle(u16,u16,u32)");
 }
 
-// @MEDIUMTODO
+// same objects as gGlobalThisCamera / dword_6A81FC / dword_6A8208 /
+// dword_6A8260 declared further down in this file (this function sits
+// earlier in the file than those declarations, so it needs its own
+// file-local aliases to the same addresses).
+static CCamera * const gLookaroundCamera = (CCamera*)0x69696969;
+static i32 * const gLookaroundCamAngle1 = (i32*)0x6A81FC;
+static i32 * const gLookaroundCamAngle2 = (i32*)0x6A8208;
+static i32 * const gLookaroundCamAngle0 = (i32*)0x6A8260;
+
+// active lookaround cam angle, picked from gLookaroundCamAngle0/1/2 by
+// EnterLookaroundMode below (no idb_globals.txt entry, tentative name).
+static i32 * const gLookaroundActiveCamAngle = (i32*)0x6A818C;
+
+// player heading snapshot taken when entering lookaround mode (no
+// idb_globals.txt entry, tentative name).
+static i16 * const gLookaroundHeadingSnapshot = (i16*)0x6A8D44;
+
+// @NotOk
+// residue: 133 mnemonic diffs (cmpsum, 0x4C3580). known blocker: calls
+// print_if_false, which our compiler always inlines (it is static in
+// export.h) while the original calls it out of line (see CLAUDE.md
+// "print_if_false inlining" note). that alone rules out a full match
+// here, independent of anything else in this function; the rest of the
+// diffs are register/stack scheduling only (same instructions, some
+// callee-saved registers swapped, stack frame 8 bytes smaller than the
+// original's), not missing logic, as far as I can tell from the disasm.
+// everything else reconstructed from the disasm: field_C94/field_CA4 are
+// the two CQuat endpoints of the lookaround camera sweep (player body
+// orientation, and the active camera's orientation rotated 180 degrees
+// about Y by negating its X and Z matrix columns); field_C90 becomes a
+// freshly allocated 24-entry CQuat path built by slerping between them
+// (Quat_Slerp), with the first and last entries copied directly instead
+// of interpolated. field_CB8/field_D00/field_D0C are plain CVector temps.
+// gLookaroundActiveCamAngle's source (gLookaroundCamAngle0/1/2) is picked
+// by the field_8E8/field_8E9 surface-transition flags, same three globals
+// CPlayer::SetSpideyLookaroundCamValue (also @NotOk) writes.
 void CPlayer::EnterLookaroundMode(void)
 {
-    printf("CPlayer::EnterLookaroundMode(void)");
+	if (this->field_CE4)
+		return;
+
+	this->field_D0C = this->field_C84 * 0x80;
+
+	*gLookaroundHeadingSnapshot = this->GetEffectiveHeading();
+
+	MToQ(this->mTransform, this->field_C94);
+	this->field_8EA = 1;
+	this->field_DF8 = 0;
+
+	MATRIX localMat;
+	QToM(&gLookaroundCamera->field_214, &localMat);
+
+	localMat.m[2][0] = -localMat.m[2][0];
+	localMat.m[0][0] = -localMat.m[0][0];
+	localMat.m[1][0] = -localMat.m[1][0];
+	localMat.m[2][2] = -localMat.m[2][2];
+	localMat.m[0][2] = -localMat.m[0][2];
+	localMat.m[1][2] = -localMat.m[1][2];
+
+	MToQ(localMat, this->field_CA4);
+
+	gLookaroundCamera->GetPosition(this->field_CB8);
+
+	this->field_CB4 = 0x18;
+	this->field_CE4 = 0;
+
+	if (this->field_8E8)
+		*gLookaroundActiveCamAngle = *gLookaroundCamAngle1;
+	else if (this->field_8E9)
+		*gLookaroundActiveCamAngle = *gLookaroundCamAngle2;
+	else
+		*gLookaroundActiveCamAngle = *gLookaroundCamAngle0;
+
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&this->field_D00), this, 8);
+	this->field_D00 += this->field_C84 * 0x80;
+
+	gLookaroundCamera->PushMode();
+	gLookaroundCamera->SetMode(CAMERAMODE_FRONT);
+
+	i32 oldPath = this->field_C90;
+	print_if_false(oldPath == 0, "field_C90 already allocated");
+
+	this->field_C90 = reinterpret_cast<i32>(DCMem_New(0x180, 0, 1, 0, 1));
+
+	CQuat* path = reinterpret_cast<CQuat*>(this->field_C90);
+	for (i32 i = 0; i < 0x18; i++)
+	{
+		if (i == 0)
+			path[i] = this->field_C94;
+		else if (i == 0x17)
+			path[i] = this->field_CA4;
+		else
+			Quat_Slerp(path[i], this->field_C94, i * 4096 / 23, this->field_CA4);
+	}
 }
 
 // @MEDIUMTODO
@@ -3296,8 +3386,13 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_C84, 0xC84);
 
 	VALIDATE(CPlayer, field_C90, 0xC90);
+	VALIDATE(CPlayer, field_C94, 0xC94);
+	VALIDATE(CPlayer, field_CA4, 0xCA4);
 	VALIDATE(CPlayer, field_CB4, 0xCB4);
+	VALIDATE(CPlayer, field_CB8, 0xCB8);
 	VALIDATE(CPlayer, field_CE4, 0xCE4);
+	VALIDATE(CPlayer, field_D00, 0xD00);
+	VALIDATE(CPlayer, field_D0C, 0xD0C);
 
 	VALIDATE(CPlayer, field_D3C, 0xD3C);
 	VALIDATE(CPlayer, field_D4E, 0xD4E);
