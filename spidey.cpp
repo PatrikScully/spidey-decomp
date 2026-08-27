@@ -26,6 +26,7 @@
 #include "PCGfx.h"
 #include "m3dinit.h"
 #include "SpideyDX.h"
+#include "switch.h"
 
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
@@ -1425,10 +1426,90 @@ void CPlayer::SelectTargetBaddy(i32,i32,i32,i32)
     printf("CPlayer::SelectTargetBaddy(i32,i32,i32,i32)");
 }
 
-// @MEDIUMTODO
-void CPlayer::SelectTargetSwitch(i32,i32,SHandle *,i32,i32)
+// @NotOk
+// walks ControlBaddyList (CItem::mNextItem/mType, same walk idiom as
+// BuildOffscreenSpideySenseIndicatorList above), skipping mType 407 nodes,
+// looking for the CSwitch with the best score inside maxDist that also
+// passes a line-of-sight check to it. facingWeight doubles as a flag: 0
+// skips the facing/angle refinement entirely, nonzero also weights it.
+// residue: 111 mnemonic diffs, cascading from the prologue: original loads
+// ControlBaddyList once into esi and reuses ebx/edi/ebp across the loop
+// (the same register-generation-reuse pattern documented on DrawReticle
+// above and on BuildOffscreenSpideySenseIndicatorList), needing sub
+// esp,0xD4; ours needs a differently-shaped frame and keeps the list head
+// in a stack temp instead of esi. Logic, field offsets (CItem::mNextItem
+// 0x20, mType 0x38, SLineInfo layout, pFace[3]&0x2000000) and the
+// CVector-vs-plain-scalar split (parameterized ctor to avoid the default
+// ctor's zero-init, matching the BuildOffscreenSpideySenseIndicatorList
+// attempts.md finding) are all confirmed correct against the raw
+// disassembly. 3 attempts this session (see spidey.attempts.md), below
+// the 15-hypothesis bar for a 595-byte function, left @NotOk.
+void CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 weight, i32 facingWeight)
 {
-    printf("CPlayer::SelectTargetSwitch(i32,i32,SHandle *,i32,i32)");
+	CItem *best = 0;
+	i32 bestScore = 0;
+
+	for (CItem *node = ControlBaddyList; node; node = node->mNextItem)
+	{
+		if (node->mType == 407)
+			continue;
+
+		CVector *target = reinterpret_cast<CSwitch*>(node)->GetAutoAimTargetPointer();
+		if (!target)
+			continue;
+
+		CVector targetPos(target->vx, target->vy, target->vz);
+
+		u32 dist = Utils_CrapDist(this->mPos, targetPos);
+		if (dist >= (u32)maxDist)
+			continue;
+
+		i32 score = (weight * (((maxDist - dist) << 12) / maxDist)) >> 12;
+
+		if (facingWeight != 0)
+		{
+			CVector delta(
+					(targetPos.vx - this->mPos.vx) >> 12,
+					(targetPos.vy - this->mPos.vy) >> 12,
+					(targetPos.vz - this->mPos.vz) >> 12);
+
+			gte_SetRotMatrix(&this->field_89C);
+			gte_ldlvl(reinterpret_cast<VECTOR*>(&delta));
+			gte_rtir();
+			gte_stlvnl(reinterpret_cast<VECTOR*>(&delta));
+
+			delta.vy = 0;
+			VectorNormal(reinterpret_cast<VECTOR*>(&delta), reinterpret_cast<VECTOR*>(&delta));
+
+			if (-delta.vz < minFacing)
+				continue;
+
+			score += (facingWeight * ((4096 - delta.vz) / 2)) >> 12;
+		}
+
+		if (score > bestScore)
+		{
+			SLineInfo lineInfo;
+			lineInfo.StartCoords = this->mPos;
+			lineInfo.EndCoords = targetPos;
+			memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+			memset(&lineInfo.Position, 0, sizeof(CVector));
+			lineInfo.Normal.vx = 0;
+			lineInfo.Normal.vy = 0;
+			lineInfo.Normal.vz = 0;
+
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (!lineInfo.pItem || (lineInfo.pFace[3] & 0x2000000))
+			{
+				bestScore = score;
+				best = node;
+			}
+		}
+	}
+
+	*out = Mem_MakeHandle(best);
 }
 
 // @Ok
