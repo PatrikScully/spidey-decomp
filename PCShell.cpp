@@ -240,7 +240,6 @@ void shell_optimized_func(i32, i32, i32);
 // which has real "call" instructions at each site, not inlined bodies).
 EXPORT void gsub_430680(void);
 EXPORT void gsub_430880(void);
-EXPORT void gsub_515850(void);
 
 // @Ok
 // @Matching
@@ -314,7 +313,7 @@ void PCSHELL_DoControllerConfig(bool isKeyboard)
 	gControllerMenu = 0;
 	gControllerMenuTwo = 0;
 
-	gsub_515850();
+	SPIDEYDX_SaveSettings();
 }
 
 // PCSHELL_DoControllerConfig's original calls this as a real out-of-line function, keep the MSVC inliner away
@@ -351,12 +350,6 @@ EXPORT void gsub_430880(void)
 {
 }
 
-// unnamed helper called once after PCSHELL_DoControllerConfig's loop ends, address 0x515850
-// @SMALLTODO
-EXPORT void gsub_515850(void)
-{
-	printf("gsub_515850(void)");
-}
 #ifdef _MSC_VER
 #pragma auto_inline(on)
 #endif
