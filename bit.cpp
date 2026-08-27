@@ -518,14 +518,25 @@ INLINE void DeleteBitList(CBit *pBitList)
 	}
 }
 
-// Investigation notes (0x40D630, 32 bytes), not implemented yet. Called
-// from PShell_EndTrainingInit (pshell.cpp). Not disassembled this session;
-// likely a single DeleteBitList(TextBoxList) call given the name and size,
-// but left as a stub rather than guess without checking the bytes.
-// @SMALLTODO
+// @Ok
+// @Matching
+// Disassembled with IDA (0x40D630, 32 bytes). Not a call to DeleteBitList:
+// it walks TextBoxList and deletes every entry unconditionally, ignoring
+// mProtected, with the next pointer read before the delete. The asm has a
+// genuinely redundant "if (p)" check inside the loop body (test ecx,ecx
+// right after the mNext load), which this source shape reproduces exactly.
 void Bit_ClearTextBoxes(void)
 {
-	printf("Bit_ClearTextBoxes(void)");
+	CBit *p = TextBoxList;
+	while (p)
+	{
+		CBit *pNext = p->mNext;
+		if (p)
+		{
+			delete p;
+		}
+		p = pNext;
+	}
 }
 
 // @Ok
