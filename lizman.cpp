@@ -166,10 +166,84 @@ void CLizMan::CalculateJumpPositionArray(CVector* pTarget)
 	this->field_3B0 = 0;
 }
 
-// @BIGTODO
+// @NotOk
+// Logic verified against the original disassembly instruction by instruction
+// (globals: G_OFFSETLIST/NumNodes for the trig node array, MechList for the
+// player, BaddyList for the other-lizman check via mType==0x13D and
+// field_3B4+0x234). Structurally close (same call sequence and branch
+// targets per node/baddy check, confirmed by walking the full built
+// function with iced-x86, not just the fixed-length window) but the built
+// function is 341 bytes vs 329 original (extra ~12 bytes) and cmpsum shows
+// 88 mnemonic diffs, mostly register allocation (this->mPos ends up cached
+// in a register across the outer loop in this build; the original reloads
+// it from a stack slot at each use instead) rather than missing logic.
+// 5 source hypotheses tried (goto vs break+null-check for the nested-loop
+// early exit, which fixed the earlier gross size mismatch; split vs
+// combined range check; CVector 3-arg constructor vs field assignment for
+// nodePos) without closing the remaining gap. Below the 15-hypothesis bar
+// for a function this size, left @NotOk rather than claim @AlmostMatching.
 i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 {
-	return 0x17062024;
+	i32 result = 0;
+	i32 bestDist = Utils_CrapDist(this->mPos, MechList->mPos) - 0x100;
+
+	if (bestDist > 0)
+	{
+		for (i32 i = 1; i < NumNodes; i++)
+		{
+			i16* node = G_OFFSETLIST[i];
+			if (*reinterpret_cast<u16*>(node) != 0x3E8)
+				continue;
+
+			i16 len = node[1];
+			u8* unpacked = reinterpret_cast<u8*>(
+					(reinterpret_cast<u32>(node) + len * 2 + 7) & ~3);
+
+			if (*reinterpret_cast<u16*>(unpacked + 0x12) != 0x470A)
+				continue;
+
+			i32* pRaw = reinterpret_cast<i32*>(unpacked);
+			CVector nodePos;
+			nodePos.vx = pRaw[0] << 12;
+			nodePos.vy = pRaw[1] << 12;
+			nodePos.vz = pRaw[2] << 12;
+
+			i32 d = Utils_CrapDist(nodePos, this->mPos);
+			if (d < 0x100 || d > 0xC00)
+				continue;
+
+			i32 distToPlayer = Utils_CrapDist(nodePos, MechList->mPos);
+			if (distToPlayer >= bestDist)
+				continue;
+
+			CItem* pOther = BaddyList;
+			while (pOther)
+			{
+				if (pOther->mType == 0x13D)
+				{
+					if (Utils_CrapXZDist(nodePos, pOther->mPos) < 0x100)
+						goto nextNode;
+
+					CVector* pArr = reinterpret_cast<CLizMan*>(pOther)->field_3B4;
+					if (pArr)
+					{
+						CVector* pMid = reinterpret_cast<CVector*>(
+								reinterpret_cast<u8*>(pArr) + 0x234);
+						if (Utils_CrapXZDist(nodePos, *pMid) < 0x100)
+							goto nextNode;
+					}
+				}
+				pOther = pOther->mNextItem;
+			}
+
+			result = i;
+			bestDist = distToPlayer;
+
+			nextNode:;
+		}
+	}
+
+	return result;
 }
 
 extern CPlayer* MechList;
