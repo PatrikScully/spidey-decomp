@@ -1098,6 +1098,46 @@ void validate_SCheat(void)
 
 }
 
+// Moved here from shell.cpp on 2026-08-27 (IDA investigation, real exe):
+// Shell_ShowRecord's `new CRecordBox(...)` carries a function-level SEH
+// cleanup frame (mov eax,fs:0; push -1; push handler; push eax; mov
+// fs:0,esp) in the real exe, tracking a hidden EH state variable so the
+// runtime can free the just-allocated block if the constructor throws.
+// A same-TU `new CMenu(...)` in front.cpp never got this treatment on our
+// builds either, but PShell_EndTrainingUpdate's `new CMenu(...)` (CMenu's
+// constructor is defined in front.cpp, a different TU) DOES get the frame
+// on our builds (confirmed this session). CRecordBox::CRecordBox was
+// defined directly in shell.cpp (Shell_ShowRecord's own TU): the compiler
+// could see the whole constructor body (plain field stores, no calls) at
+// the call site and proved it can't throw, so it dropped the protection,
+// which our `#pragma auto_inline(off)` did not prevent (that only blocks
+// literal inlining, not this separate throw analysis). Moving the
+// definition to pshell.cpp, a different TU, hides the body from
+// shell.cpp's compile and should force the same protection the original
+// has.
+// @Ok
+// @Matching
+CRecordBox::CRecordBox(i32 width, i32 height, STrainingMission* pMission)
+{
+	field_1C = width;
+	field_4 = 0xA;
+	field_8 = 0xA;
+	field_20 = height;
+	field_C = 0x116;
+	field_10 = 0x60;
+	field_14 = 0x30;
+	field_18 = 0xC;
+	field_24 = 0;
+	field_2C = 0x1C;
+	field_3C = pMission;
+}
+
+// @SMALLTODO
+CRecordBox::~CRecordBox(void)
+{
+	printf("CRecordBox::~CRecordBox(void)");
+}
+
 #include "my_patch.h"
 
 // @Bogus
