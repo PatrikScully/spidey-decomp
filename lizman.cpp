@@ -359,9 +359,76 @@ void CLizMan::SwitchFromEulerToMatrix(void)
 	}
 }
 
-// @BIGTODO
-void CLizMan::RunToWhereActionIs(CVector*)
-{}
+// @NotOk
+// residue: this uses CVector's free operator-, which vector.h declares
+// INLINE. Our build always inlines it (same repo-wide issue as
+// CQuadBit::OrientUsing in bit.cpp, documented in CLAUDE.md), but the
+// original calls it out of line at 0x4E7760, so the delta-vector
+// computation below can never byte-match until that header is fixed
+// project-wide (out of scope for a single function / single file).
+void CLizMan::RunToWhereActionIs(CVector* pTarget)
+{
+	if (Utils_CrapDist(this->mPos, *pTarget) > 0x5DC)
+		return;
+
+	if (!this->AddPointToPath(&this->mPos, 0x5DC))
+		return;
+
+	i32 dx = pTarget->vx - this->mPos.vx;
+	i32 biasX = (dx > 0) ? -0x64000 : 0x64000;
+	i32 dz = pTarget->vz - this->mPos.vz;
+	i32 biasZ = (dz > 0) ? -0x64000 : 0x64000;
+
+	CVector adjustedTarget;
+	adjustedTarget.vx = pTarget->vx + biasX;
+	adjustedTarget.vy = this->mPos.vy;
+	adjustedTarget.vz = pTarget->vz + biasZ;
+
+	if (!MechList->field_57C)
+	{
+		if (this->PathCheck(&this->mPos, &MechList->mPos, NULL, 0x37) == 0)
+		{
+			if (this->AddPointToPath(&MechList->mPos, 0x5DC))
+				goto cleanup;
+		}
+	}
+
+	{
+		i32 result = this->PathCheck(&this->mPos, &adjustedTarget, NULL, 0x37);
+
+		if (result == 0)
+		{
+			if (this->AddPointToPath(&adjustedTarget, 0x5DC))
+				goto cleanup;
+			return;
+		}
+
+		if (result != 2)
+			return;
+
+		if (Utils_CrapDist(this->mPos, adjustedTarget) < 0x64)
+			return;
+
+		CVector delta = adjustedTarget - this->mPos;
+		delta >>= 12;
+		delta *= 0xE74;
+		delta += this->mPos;
+
+		if (!this->AddPointToPath(&delta, 0))
+			return;
+	}
+
+cleanup:
+	this->Neutralize();
+
+	i32 flags = this->field_2F0;
+	this->field_374 = gTimerRelated - 0xF0;
+	this->field_31C.bothFlags = 2;
+	this->field_2A8 &= ~0x10000000;
+	*reinterpret_cast<u8*>(&flags) |= 1;
+	this->field_2F0 = flags;
+	this->dumbAssPad = 0;
+}
 
 // @Ok
 void INLINE CLizMan::HelpOutBuddy(CMessage* pMessage)
