@@ -696,13 +696,39 @@ void M3dAsm_SetTransVector(VECTOR* a1)
 }
 
 
-// @BIGTODO
+// @Ok
+// @Matching
 MATRIX* RotMatrixYXZ(SVECTOR *a1, MATRIX *a2)
 {
-	typedef MATRIX* (*func_ptr)(SVECTOR*, MATRIX*);
+	float rx = (float)a1->vx * 0.0015360969118773937f;
+	float sx = (float)sin(rx);
+	float cx = (float)cos(rx);
 
-	func_ptr func = (func_ptr)0x0046D1E0;
-	return func(a1, a2);
+	float ry = (float)a1->vy * 0.0015360969118773937f;
+	float sy = (float)sin(ry);
+	float cy = (float)cos(ry);
+
+	float rz = (float)a1->vz * 0.0015360969118773937f;
+	float sz = (float)sin(rz);
+	float cz = (float)cos(rz);
+
+	float t1 = sz * sy;
+	float t2 = cz * cy;
+	a2->m[0][0] = (t1 * sx + t2) * 4096.0f;
+
+	float t3 = cz * sy;
+	float t4 = sz * cy;
+	a2->m[0][1] = (t3 * sx - t4) * 4096.0f;
+
+	a2->m[0][2] = (sy * cx) * 4096.0f;
+	a2->m[1][0] = (sz * cx) * 4096.0f;
+	a2->m[1][1] = (cz * cx) * 4096.0f;
+	a2->m[1][2] = (-sx) * 4096.0f;
+	a2->m[2][0] = (t4 * sx - t3) * 4096.0f;
+	a2->m[2][1] = (t2 * sx + t1) * 4096.0f;
+	a2->m[2][2] = (cy * cx) * 4096.0f;
+
+	return a2;
 }
 
 // @Ok
