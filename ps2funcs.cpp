@@ -179,6 +179,19 @@ void gsub_46E990(i32 *a1, i32 *a2, i32 *a3)
 	func(a1, a2, a3);
 }
 
+// unnamed helper, address 0x0046EA20. Called once per item by
+// M3dAsm_LineColijPreprocessItemsZoned with the per-model pointer looked up from
+// CItemRelatedList[region*17][model]; its return value is discarded by the caller.
+// Not yet decompiled.
+// @SMALLTODO
+i32 gsub_46EA20(void *a1)
+{
+	typedef i32 (*func_ptr)(void *);
+	func_ptr func = (func_ptr)0x0046EA20;
+
+	return func(a1);
+}
+
 // @MEDIUMTODO
 void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineInfo *pInfo, u16 Inquiry)
 {
