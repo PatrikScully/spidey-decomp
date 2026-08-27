@@ -11,6 +11,7 @@
 #include "ps2pad.h"
 #include "panel.h"
 #include "spidey.h"
+#include "PCGfx.h"
 
 #include <cstring>
 
@@ -614,10 +615,129 @@ void PShell_EndTrainingUpdate(void)
     printf("PShell_EndTrainingUpdate(void)");
 }
 
-// @MEDIUMTODO
+// Save-confirmation modal loop. Same idiom as Shell_ShowRecord's loop
+// (shell.cpp): a zoom-ease local eases pYesNoMenu's zoom animation via
+// PShell_MoveTowards (own local here, not shell.cpp's gShellMenuEase: the
+// disassembly never stores it to any fixed address, purely a register/stack
+// local, unlike Shell_ShowRecord's use of the real global), a "was the
+// opening button still held" flag suppresses PCSHELL_CheckTriggers until the
+// player releases it, and DoVblankProcessing/gPrintStubbed/gsub_430680 are
+// the standard per-frame housekeeping calls (see shell.cpp for the same 5
+// lines). gTextSaveGameProgress: string content confirmed against the
+// original exe, same string-pointer table as pshell.cpp's other gText*
+// globals near it.
+#define gTextSaveGameProgress (*reinterpret_cast<char**>(0x0054B8F8))
+
+// @Ok
+// @Matching
+// Note: the call at 0x0043FB00 (thiscall on pYesNoMenu, no args, return
+// value unused) is guessed as CMenu::Reset() (front.h/front.cpp): same call
+// shape (this in ecx, no pushed args, no value read back), and semantically
+// it fits (reset the menu highlight after the yes/no choice resolves). Not
+// confirmed against the Mac build or idb_globals.txt; call targets are
+// masked by cmpsum/compare.py so this guess does not affect the verified
+// mnemonic match. See pshell.attempts.md.
 void PShell_MaybeSaveGame(void)
 {
-    printf("PShell_MaybeSaveGame(void)");
+	// same pattern as front.cpp/shell.cpp/PCShell.cpp: defined once in
+	// PCShell.cpp, called here through a local extern.
+	extern void gsub_430880(void);
+
+	u32 saveBuf[3];
+
+	do
+	{
+		i32 ignoreTriggers = 1;
+		i32 zoomEase = 0x320;
+
+		print_if_false(pYesNoMenu != 0, "NULL pYesNoMenu");
+
+		pYesNoMenu->mLine = 1;
+		pYesNoMenu->Zoom(0);
+
+		for (;;)
+		{
+			gsub_430880();
+			Db_FlipClear();
+			CalcPolyBufferEnd();
+
+			i32 vblanksSnapshot = Vblanks;
+
+			if (!gSceneRelated)
+				PCGfx_BeginScene(1, -1);
+
+			Mess_SetScale(0x100);
+			pYesNoMenu->Display();
+
+			Mess_SetRGB(0x4D, 0x53, 0x69, 0);
+			Mess_DrawText(0x100, 0x3C, gTextSaveGameProgress, 0, 0x1000);
+
+			if (gSceneRelated)
+				PCGfx_EndScene(1);
+
+			zoomEase = PShell_MoveTowards(zoomEase, 0x1CC);
+
+			Pad_Update();
+
+			if (!G_SCONTROL[0].X.Pressed)
+			{
+				ignoreTriggers = 0;
+				G_SCONTROL[0].X.Triggered = 0;
+			}
+
+			pYesNoMenu->Update();
+
+			if (!ignoreTriggers)
+			{
+				if (PCSHELL_CheckTriggers(1, 1, 0x50010))
+					break;
+			}
+
+			if (Vblanks == vblanksSnapshot)
+				Pause(1);
+
+			*(volatile i32*)&DoVblankProcessing = 0;
+			Pause(1);
+
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			gsub_430680();
+
+			if (!*(volatile i32*)&DoVblankProcessing)
+			{
+				Utils_VblankProcessing();
+				DoVblankProcessing = 1;
+			}
+		}
+
+		SControl* pad = G_SCONTROL;
+		pad[0].X.Triggered = 0;
+		pad[0].Start.Triggered = 0;
+		SFX_Play(0x1F, 0x2000, 0);
+
+		Pause(1);
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+
+		Front_ClearScreen();
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+
+		Pad_ClearTriggers(G_SCONTROL);
+		pYesNoMenu->Reset();
+
+		if (pYesNoMenu->mLine != 1)
+			return;
+
+		saveBuf[2] = 1;
+		Shell_SaveGame(reinterpret_cast<const u32*>(&saveBuf[0]), &saveBuf[1]);
+	} while (saveBuf[1] == 0);
 }
 
 // @Ok
