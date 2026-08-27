@@ -883,8 +883,26 @@ void PShell_EndTrainingInit(void)
 // gTrainingRecordBox's own Update through its vtable (call dword ptr [eax],
 // with 1 pushed first), and does name-entry keyboard handling through
 // 0x0050C180/0x0050C6C0 (key checks) and 0x00440110/0x00440600/
-// 0x0043FFF0/0x0043F9B0/0x004178E0 (unnamed). Not investigated past that.
-// Left at @MEDIUMTODO, not attempted further this session.
+// 0x0043FFF0/0x0043F9B0/0x004178E0 (unnamed).
+//
+// 2026-08-27: confirmed the likely SEH source. The function allocates a
+// CClass::operator new(0x53C) block (0x53C == sizeof(CMenu), per
+// VALIDATE_SIZE(CMenu, 0x53C) in front.cpp) shortly after the two
+// housekeeping calls at the top, matching `gTrainingMenu = new CMenu(...)`.
+// A throwaway local test (`new CMenu(1,2,3,4,5,6)` in an EXPORT test
+// function, built and disassembled, then removed, not committed) confirmed
+// our compiler emits the exact same SEH setup shape (mov eax,fs:0; push -1;
+// push handler; push eax; mov fs:0,esp) for any function that does a bare
+// `new CMenu(...)`, matching this function's own prologue. This lines up
+// with the parallel shell.cpp session's finding on Shell_ShowRecord ("new
+// CMenu(...) reproduces the SEH frame while new CRecordBox(...) doesn't").
+// This confirms the ROOT CAUSE (a CMenu allocation triggers the frame) but
+// not a fix: whether our SEH setup/teardown bytes match the original
+// exactly is the same open, hard problem documented for Shell_ShowRecord,
+// not something resolved by this test. Left at @MEDIUMTODO; full
+// implementation (menu construction args, the keyboard/name-entry state
+// machine, the CRecordBox::Update vtable call) not attempted this session
+// given the size of the remaining task list.
 // @MEDIUMTODO
 void PShell_EndTrainingUpdate(void)
 {
