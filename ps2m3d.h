@@ -10,9 +10,16 @@
 
 class matrix4x4
 {
-	
+
 	public:
 		vector4d field_0[4];
+
+		// empty default ctor: needed so a plain "matrix4x4 result;" local can
+		// be declared without running the 16-float ctor below. Compiles to no
+		// code either way, so it can't be verified against the binary on its
+		// own; added because gsub_476A00 needs an uninitialized local it can
+		// fill in field-by-field.
+		matrix4x4() { }
 
 		EXPORT matrix4x4(
 				f32,
@@ -34,6 +41,15 @@ class matrix4x4
 
 		EXPORT vector4d& operator[](i32);
 };
+
+// address 0x476A00. Not present in tools/names.json (only as sub_476A00), so
+// named per the gsub_<addr> convention rather than guessing a name. Found by
+// disassembling the call sites in M3d_RenderSetup, M3d_Render and
+// RenderSuperItem, all of which push 3 pointers (dest, a, b) before the call.
+// Computes a standard 4x4 matrix product dest = a * b. Old commented-out
+// "__ml" declaration near the top of ps2m3d.cpp guessed at this but had the
+// wrong arg count (2 instead of 3) and no dest/return.
+EXPORT void gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 const* b);
 
 EXPORT void M3d_BuildTransform(CSuper*);
 EXPORT void M3d_Render(void*);
