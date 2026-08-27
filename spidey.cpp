@@ -189,10 +189,163 @@ void CPlayer::AdjustBrightness(u16 a2)
 	}
 }
 
-// @MEDIUMTODO
+// shared with CPlayer::RenderLookaroundReticle later in this file: the
+// player-relative reference point (CVector) and rotation matrix (MATRIX)
+// used to turn world positions into a local-space direction.
+static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
+static MATRIX * const stru_56F224 = (MATRIX*)0x56F224;
+
+// gSpideySenseListLastUpdateTime (0x6A9084): no idb_globals.txt entry,
+// tentative name from usage. gTimerRelated snapshot of the last time this
+// list was rebuilt; falls in the same unnamed CPlayer scratch area as
+// gGlobalTextureEntryCount (0x6A9050) and gKillTauntLastVariant (0x6A9070)
+// above.
+static u32 * const gSpideySenseListLastUpdateTime = (u32*)0x006A9084;
+
+// @Ok
+// @AlmostMatching: 13 mnemonic diffs (down from an initial honest pass of
+// 85). Instruction count and total byte length are IDENTICAL to the
+// original (125 instructions, 473 bytes each), so nothing is missing or
+// extra: this is pure register-role/scheduling residue, not a logic gap.
+// Two clusters remain: (1) the throttle-check's load of
+// gSpideySenseListLastUpdateTime gets hoisted by our compiler to before the
+// prologue pushes, while the original schedules it after; (2) the
+// interleaved loads of stru_56F1B4->vx/vy/vz vs b->mPos.vx/vy/vz in the
+// direction computation come out in a different (but equal-length, equal
+// instruction-count) order, and our build swaps which of esi/edi holds the
+// baddy pointer vs the found-slot index throughout the loop.
+// 14 distinct hypotheses tried, each targeting a specific diff:
+// 1) initial straight translation - 85 diffs.
+// 2) mPlayerDist declared u16 (original header) forced a 16-bit
+//    load/compare that does not exist in the disassembly (a plain 32-bit
+//    load); confirmed the same issue was already flagged as a residue in
+//    rhino.cpp. Changed CBody::mPlayerDist from u16 to i32 - fixed the
+//    field read shape but flipped two unsigned compares (jbe/ja) in
+//    powerup.cpp (CPowerUp::AI/CheckAge, both previously matching) to
+//    signed jle/jg.
+// 3) changed CBody::mPlayerDist to u32 instead of i32 - restored the
+//    unsigned compares in powerup.cpp (both back to 0 mnemonic diffs,
+//    reverified with cmpsum) while keeping the 32-bit read shape here -
+//    85 -> 38 diffs.
+// 4) the two CVector locals for the direction computation were getting an
+//    invisible zero-init from CVector's default constructor (confirmed by
+//    3 extra "mov [esp+x],ebx" stores before the gte calls, which the
+//    original does not have, since a plain VECTOR has no constructor).
+//    Switched both locals from CVector to VECTOR - 38 -> 28 diffs.
+// 5) gave the found free-slot index its own fresh local (idx) instead of
+//    reusing the duplicate-check loop's `i` - no change (28 diffs).
+// 6) moved the two field_C.pWhatever/Id stores to interleave with the
+//    vx/vy/vz computation (matching a guessed load order) - worse, 42.
+// 7) explicit `rotated.pad = 0;` after gte_stlvnl: the original has one
+//    extra `mov [espN],ebx` right before the VectorNormal call that does
+//    not correspond to either call argument (both were already pushed);
+//    matches a source that explicitly zeroes VECTOR's unused pad field -
+//    28 -> 13 diffs, the single biggest win.
+// 8) cached gTimerRelated in a named local read before lastUpdate - same
+//    13-diff total but a different diff shape (fixed the prologue-hoist
+//    cluster but reintroduced an eax/ecx swap in the throttle compare).
+// 9) same as 8 but with the first condition operand order reversed
+//    (threshold > lastUpdate instead of lastUpdate < threshold) - worse,
+//    14 diffs, and flipped jb to ja (wrong mnemonic).
+// 10) prefetched stru_56F1B4->vx/vy/vz into three locals ahead of the
+//    per-component subtraction - worse, 37 diffs.
+// 11) removed the lastUpdate local entirely, referencing
+//    *gSpideySenseListLastUpdateTime inline twice in the condition and
+//    relying on CSE - much worse, 89 diffs.
+// 12) reversed the vz/vy/vx computation order (declared vz first) - no
+//    change, still 13; confirms the interleaving is the compiler's own
+//    scheduling choice, not steerable by source statement order here.
+// 13) moved the field_C stores to after the vector computation instead of
+//    before - worse, 40 diffs.
+// 14) replaced the `bool dup` flag with a direct `goto nextBaddy;` on
+//    match (closer to what the disassembly's control flow actually does,
+//    jumping straight to the next baddy) - no diff-count change (still
+//    13) but a more faithful/cleaner translation, kept.
+// Left as residue: attempts 8-13 show the two remaining clusters actively
+// resist every source-level lever tried (declaration order, forward and
+// reverse; caching vs re-reading volatiles; operand order; statement
+// order); this reads as MSVC6's own scheduler heuristic for consecutive
+// short-latency loads feeding a single register bank (esi/edi), which
+// tips.txt/DEFECTS.txt do not cover and which the CLizMan/Utils_Vblank
+// register-role-swap precedent (CLAUDE.md "Matching tricks") also
+// documents as not reproducible from source in 5 attempts.
 void CPlayer::BuildOffscreenSpideySenseIndicatorList(void)
 {
-    printf("CPlayer::BuildOffscreenSpideySenseIndicatorList(void)");
+	u32 lastUpdate = *gSpideySenseListLastUpdateTime;
+
+	if (lastUpdate < (u32)gTimerRelated - 0x14 || lastUpdate > (u32)gTimerRelated)
+	{
+		*gSpideySenseListLastUpdateTime = gTimerRelated;
+		this->field_528 = 0;
+		this->field_8BC = 0;
+		this->field_8C0 = -1;
+		this->field_EC0 = 0;
+
+		gte_SetRotMatrix(stru_56F224);
+
+		for (CBaddy *b = BaddyList; b; b = (CBaddy*)b->mNextItem)
+		{
+			if (b->mRMinor > 0 && (b->mCBodyFlags & 0x200))
+			{
+				if (b->field_2A8 & 0x20)
+				{
+					u32 dist = b->mPlayerDist;
+
+					if (dist > this->field_8BC)
+						this->field_8BC = dist;
+
+					if (dist < this->field_8C0)
+						this->field_8C0 = dist;
+
+					this->field_EC0 = 1;
+					this->field_528++;
+				}
+
+				if ((b->mFlags & 0x8000) &&
+						b->field_310 &&
+						!(b->mCBodyFlags & 0x40) &&
+						(b->mCBodyFlags & 0x10))
+				{
+					SHandle h = Mem_MakeHandle(b);
+
+					for (i32 i = 0; i < 6; i++)
+					{
+						if (this->field_5F0[i].field_C.pWhatever && this->field_5F0[i].field_C.Id == h.Id)
+							goto nextBaddy;
+					}
+
+					{
+						i32 idx = this->GetFreeIndicatorListEntry();
+						if (idx < 0)
+							break;
+
+						this->field_5F0[idx].field_C.pWhatever = h.pWhatever;
+						this->field_5F0[idx].field_C.Id = h.Id;
+
+						VECTOR local;
+						local.vx = (b->mPos.vx >> 12) - stru_56F1B4->vx;
+						local.vy = (b->mPos.vy >> 12) - stru_56F1B4->vy;
+						local.vz = (b->mPos.vz >> 12) - stru_56F1B4->vz;
+
+						gte_ldlvl(&local);
+						gte_rtir();
+
+						VECTOR rotated;
+						gte_stlvnl(&rotated);
+						rotated.pad = 0;
+
+						VectorNormal(
+								&rotated,
+								reinterpret_cast<VECTOR*>(&this->field_5F0[idx].mDirection));
+					}
+				}
+nextBaddy:;
+			}
+		}
+	}
+
+	if (!this->field_528)
+		this->field_354 = 0;
 }
 
 // @MEDIUMTODO
@@ -2540,9 +2693,6 @@ char CPlayer::DecreaseWebbing(i32 a2)
 	return 1;
 }
 
-
-static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
-static MATRIX * const stru_56F224 = (MATRIX*)0x56F224;
 
 // @NotOk
 // Globals

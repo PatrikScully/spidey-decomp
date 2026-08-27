@@ -150,7 +150,12 @@ public:
 	u16 mCollision;
 	i16 mHealth;
 
-	u16 mPlayerDist;
+	// @FIXME was u16; the disassembly always reads/compares this with a
+	// full 32-bit register (no movzx, no 16-bit ops) and unsigned jcc's
+	// (jbe/ja against positive constants in powerup.cpp), so the real
+	// field is u32. offset unchanged (0xE4, still ends exactly at
+	// field_E8's 0xE8).
+	u32 mPlayerDist;
 
 	CVector field_E8;
 
