@@ -79,6 +79,10 @@ class CElectrify : public CSimpleTexturedRibbon
 		u32 field_60;
 };
 
+// field_0 is 4 packed bytes (model index, vertex A index, vertex B index,
+// a flip flag the constructor toggles on every use), field_4/field_8 are
+// texture checksums. Layout worked out from CSkinGoo::CSkinGoo(CSuper*,
+// SSkinGooSource*, i32, SSkinGooParams*), see effects.cpp.
 struct SSkinGooSource
 {
 	u32 field_0;
@@ -91,8 +95,18 @@ struct SSkinGooSource2
 {
 };
 
+// @FIXME guessed field names, layout worked out from
+// CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource*, i32, SSkinGooParams*): a
+// base/range pair used twice for two independent rolls (field_54.cpp calls
+// this an X/Z spread), a second base/range pair, and a range used
+// symmetrically (Rnd(2*x+1)-x) for all three axes of a launch velocity.
 struct SSkinGooParams
 {
+	u8 mOffsetXBase;
+	u8 mOffsetXRange;
+	u8 mOffsetZBase;
+	u8 mOffsetZRange;
+	u8 mVelRange;
 };
 
 class CSkinGoo : public CQuadBit
@@ -101,7 +115,45 @@ class CSkinGoo : public CQuadBit
 		EXPORT CSkinGoo(CSuper*, SSkinGooSource*, i32, SSkinGooParams*);
 		EXPORT CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*);
 
-		u8 fullPad[0x54];
+		// SHandle wrapping the owning CSuper
+		void *field_84;
+		u32 field_88;
+
+		// @FIXME unknown, zeroed by the constructor and never written again
+		// in either overload seen so far
+		i32 field_8C;
+		i32 field_90;
+		i32 field_94;
+		i32 field_98;
+		i32 field_9C;
+		i32 field_A0;
+
+		// snapshot of the model's vertex A position at construction time
+		i16 field_A4;
+		i16 field_A6;
+		i16 field_A8;
+
+		u16 field_AA;
+
+		// snapshot of the model's vertex B position at construction time
+		i16 field_AC;
+		i16 field_AE;
+		i16 field_B0;
+
+		u16 field_B2;
+
+		PADDING(8);
+
+		i32 field_BC;
+		i32 field_C0;
+		i32 field_C4;
+
+		PADDING(4);
+
+		// launch velocity, fixed point (<<12)
+		i32 field_CC;
+		i32 field_D0;
+		i32 field_D4;
 };
 
 class CElectro : public CSimpleTexturedRibbon
