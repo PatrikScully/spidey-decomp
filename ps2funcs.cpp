@@ -175,14 +175,41 @@ void gte_SetRotMatrix(MATRIX* a1)
 
 // unnamed helper, address 0x0046E990. Called once by M3dAsm_LineColijPreprocessItemsZoned
 // with the fixed-point start/end coordinate arrays and the address of a local that the
-// caller never reads back afterward. Not yet decompiled.
-// @SMALLTODO
-void gsub_46E990(i32 *a1, i32 *a2, i32 *a3)
+// caller never reads back afterward. Sorts a1[i]/a2[i] per axis (so a1 <= a2), toggling
+// bit i of *a3 whenever a swap happens, then stores the per-axis a2-a1 deltas into
+// gRotMatrix (idb_globals.txt: 0x00610B20 = gRotMatrix; here it is reused as scratch
+// storage for the sorted box's extents, read back by gsub_46EB30 below).
+// @Ok
+// @Matching
+EXPORT void gsub_46E990(i32 *a1, i32 *a2, i32 *a3)
 {
-	typedef void (*func_ptr)(i32 *, i32 *, i32 *);
-	func_ptr func = (func_ptr)0x0046E990;
+	if (a1[0] > a2[0])
+	{
+		*a3 ^= 1;
+		i32 tmp = a1[0];
+		a1[0] = a2[0];
+		a2[0] = tmp;
+	}
 
-	func(a1, a2, a3);
+	if (a1[1] > a2[1])
+	{
+		*a3 ^= 2;
+		i32 tmp = a1[1];
+		a1[1] = a2[1];
+		a2[1] = tmp;
+	}
+
+	if (a1[2] > a2[2])
+	{
+		*a3 ^= 4;
+		i32 tmp = a1[2];
+		a1[2] = a2[2];
+		a2[2] = tmp;
+	}
+
+	*reinterpret_cast<i32*>(&gRotMatrix[0][0]) = a2[0] - a1[0];
+	*reinterpret_cast<i32*>(&gRotMatrix[1][1]) = a2[1] - a1[1];
+	*reinterpret_cast<i32*>(&gRotMatrix[2][2]) = a2[2] - a1[2];
 }
 
 // unnamed helper, address 0x0046EA20. Called once per item by
@@ -751,15 +778,10 @@ void M3dMaths_TransposeMatrix1(MATRIX *a1, MATRIX *a2)
 
 
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void M3dMaths_ScaleMatrix(CItem *a1, MATRIX *a2)
 {
-	typedef void (*func_ptr)(CItem*, MATRIX*);
-	func_ptr func = (func_ptr)0x0046D480;
-	func(a1, a2);
-
-	return;
-
 	MATRIX v7;
 	MATRIX v8;
 	memset((void*)&v8, 0, sizeof(v8));
