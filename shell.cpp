@@ -12,6 +12,8 @@
 #include "dcshellutils.h"
 #include "utils.h"
 #include "PCShell.h"
+#include "PCInput.h"
+#include "DXsound.h"
 #include "powerup.h"
 #include "pshell.h"
 #include "spidey.h"
@@ -708,16 +710,207 @@ CRecordBox::~CRecordBox(void)
 	printf("CRecordBox::~CRecordBox(void)");
 }
 
-// @BIGTODO
+// column header / score-unit label strings, read directly out of the
+// original SpideyPC.exe .data section (they're stored as real char*
+// globals, not inline literals: the original loads them with
+// "mov eax,[54B8xxh]", a dereference, not "push offset"). Addresses:
+// Place 0x54B8C8, Name 0x54B8CC, Time 0x54B8D0, Kills 0x54B8D4,
+// Items 0x54B8D8, Points 0x54B8DC, "---" 0x54B8E0. We don't pin our own
+// globals to those addresses (relocated data addresses are an accepted
+// diff per the matching discipline), just keep the same string content.
+static char* gRecordPlaceLabel = "Place";
+static char* gRecordNameLabel = "Name";
+static char* gRecordTimeLabel = "Time";
+static char* gRecordKillsLabel = "Kills";
+static char* gRecordItemsLabel = "Items";
+static char* gRecordPointsLabel = "Points";
+static char* gRecordDashesLabel = "---";
+
+// @Ok
+// @Matching
 void CRecordBox::Display(void)
 {
-	printf("CRecordBox::Display(void)");
+	Mess_SetSort(0);
+
+	if (field_30)
+	{
+		Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+
+		Mess_DrawText(field_1C + 0x27, field_20 + 0xF, gRecordPlaceLabel, 0, 0x1000u);
+		Mess_DrawText(field_1C + 0x8B, field_20 + 0xF, gRecordNameLabel, 0, 0x1000u);
+
+		switch (field_3C->mScoreUnits)
+		{
+			case 0:
+				Mess_DrawText(field_1C + 0xEF, field_20 + 0xF, gRecordTimeLabel, 0, 0x1000u);
+				break;
+			case 1:
+				Mess_DrawText(field_1C + 0xEF, field_20 + 0xF, gRecordKillsLabel, 0, 0x1000u);
+				break;
+			case 2:
+				Mess_DrawText(field_1C + 0xEF, field_20 + 0xF, gRecordItemsLabel, 0, 0x1000u);
+				break;
+			case 3:
+				Mess_DrawText(field_1C + 0xEF, field_20 + 0xF, gRecordPointsLabel, 0, 0x1000u);
+				break;
+			default:
+				print_if_false(0, "Bad ScoreUnits");
+				break;
+		}
+
+		i32 y = field_20 + 0x21;
+
+		if (field_34)
+			field_34--;
+
+		if (field_35)
+			field_35--;
+
+		if (!field_35 && field_36 < 5)
+		{
+			field_35 = 3;
+			field_36++;
+			field_34 = 2;
+			SFX_Play(0x29, 0x3FFF, 0);
+		}
+
+		i32 missionIndex = (reinterpret_cast<u8*>(field_3C) - reinterpret_cast<u8*>(gChallenges)) >> 4;
+		SScore* pRow = &gGlobalRecords.mScores[missionIndex * NUM_RECORDS_PER_CHALL];
+
+		for (i32 row = 1; row <= field_36; row++)
+		{
+			if (row == field_36 && field_34)
+				Mess_SetRGB(0xFF, 0xFF, 0xFF, 0);
+			else
+				Mess_SetRGB(0x60, 0x60, 0x60, 0);
+
+			char rowStr[0xC];
+			rowStr[0] = static_cast<char>(row + 0x30);
+			rowStr[1] = 0;
+			Mess_DrawText(field_1C + 0x27, y, rowStr, 0, 0x1000u);
+
+			if (pRow->field_0)
+			{
+				char letterBuf[0xC];
+
+				letterBuf[0] = pRow->field_0;
+				letterBuf[1] = 0;
+				Mess_DrawText(field_1C + 0x76, y, letterBuf, 0, 0x1000u);
+
+				letterBuf[0] = pRow->field_1;
+				letterBuf[1] = 0;
+				Mess_DrawText(field_1C + 0x8A, y, letterBuf, 0, 0x1000u);
+
+				letterBuf[0] = pRow->field_2;
+				letterBuf[1] = 0;
+				Mess_DrawText(field_1C + 0x9E, y, letterBuf, 0, 0x1000u);
+
+				DisplayScore(field_1C + 0xEF, y, (pRow->field_4 << 8) + pRow->field_3, field_3C->mScoreUnits);
+			}
+			else
+			{
+				Mess_DrawText(field_1C + 0x8B, y, gRecordDashesLabel, 0, 0x1000u);
+				Mess_DrawText(field_1C + 0xEF, y, gRecordDashesLabel, 0, 0x1000u);
+			}
+
+			y += 0xE;
+			pRow++;
+		}
+	}
+
+	if (field_40 && (*reinterpret_cast<volatile u8*>(0x6B4CA0) & 0x10))
+	{
+		char cursorStr[0xC];
+		cursorStr[0] = '_';
+		cursorStr[1] = 0;
+
+		Mess_DrawText(field_1C + mLetterIndex * 20 + 0x76, field_20 + field_39 * 14 + 0x24, cursorStr, 0, 0x1000u);
+	}
+
+	// original calls the CExpandingBox widget-frame draw out of line
+	// (0x47AF10, CExpandingBox_Display in tools/names.json). CRecordBox's
+	// own fields (field_4..field_2C) are laid out exactly like
+	// CExpandingBox's (see the CRecordBox ctor comment), so a plain
+	// pointer cast reaches the same object; this is a real call, not
+	// inlined (CExpandingBox::Display lives in pshell.cpp, a different
+	// TU).
+	reinterpret_cast<CExpandingBox*>(this)->Display();
 }
 
-// @MEDIUMTODO
+// @Ok
+// @Matching
 void CRecordBox::Update(void)
 {
-	printf("CRecordBox::Update(void)");
+	print_if_false(mLetterIndex < 3, "Bad mLetterIndex");
+
+	if (!field_40)
+		return;
+
+	if (!field_30)
+		return;
+
+	i32 missionIndex = (reinterpret_cast<u8*>(field_3C) - reinterpret_cast<u8*>(gChallenges)) >> 4;
+	SScore* pScores = &gGlobalRecords.mScores[missionIndex * NUM_RECORDS_PER_CHALL];
+
+	for (i32 key = 0; key < 0x100; key++)
+	{
+		if (!PCINPUT_IsKeyPressed(static_cast<u8>(key), 1))
+			continue;
+
+		char keyName[0x20];
+		DXINPUT_GetKeyName(static_cast<u8>(key), keyName);
+
+		if (strlen(keyName) != 1)
+			continue;
+
+		if (keyName[0] < 'A' || keyName[0] > 'Z')
+			continue;
+
+		if (static_cast<u8>(mLetterIndex) > 2)
+			continue;
+
+		reinterpret_cast<u8*>(&pScores[field_39])[mLetterIndex] = keyName[0];
+
+		mLetterIndex++;
+
+		SFX_Play(0x29, 0x2000, 0);
+
+		if (static_cast<u8>(mLetterIndex) > 2)
+			mLetterIndex = 0;
+	}
+
+	if (PCSHELL_CheckTriggers(0x50010, 1, 1))
+	{
+		reinterpret_cast<u8*>(&gGlobalRecords)[0] = reinterpret_cast<u8*>(&pScores[field_39])[0];
+		reinterpret_cast<u8*>(&gGlobalRecords)[1] = reinterpret_cast<u8*>(&pScores[field_39])[1];
+		reinterpret_cast<u8*>(&gGlobalRecords)[2] = reinterpret_cast<u8*>(&pScores[field_39])[2];
+
+		field_40 = 0;
+
+		SFX_Play(0x1F, 0x2000, 0);
+	}
+
+	if (PCSHELL_CheckTriggers(0x4004, 1, 1))
+	{
+		G_SCONTROL[0].Left.Triggered = 0;
+
+		if (mLetterIndex != 0)
+		{
+			mLetterIndex--;
+			SFX_Play(0x29, 0x2000, 0);
+		}
+	}
+
+	if (PCSHELL_CheckTriggers(0x8008, 1, 1))
+	{
+		G_SCONTROL[0].Right.Triggered = 0;
+
+		if (static_cast<u8>(mLetterIndex) < 2)
+		{
+			mLetterIndex++;
+			SFX_Play(0x29, 0x2000, 0);
+		}
+	}
 }
 
 // @SMALLTODO
@@ -2374,7 +2567,32 @@ void validate_STrainingMission(void)
 	VALIDATE_SIZE(STrainingMission, 0x10);
 
 	VALIDATE(STrainingMission, field_0, 0x0);
-	VALIDATE(STrainingMission, field_B, 0xB);
+	VALIDATE(STrainingMission, mScoreUnits, 0xB);
+}
+
+void validate_CRecordBox(void)
+{
+	VALIDATE_SIZE(CRecordBox, 0x44);
+
+	VALIDATE(CRecordBox, field_4, 0x4);
+	VALIDATE(CRecordBox, field_8, 0x8);
+	VALIDATE(CRecordBox, field_C, 0xC);
+	VALIDATE(CRecordBox, field_10, 0x10);
+	VALIDATE(CRecordBox, field_14, 0x14);
+	VALIDATE(CRecordBox, field_18, 0x18);
+	VALIDATE(CRecordBox, field_1C, 0x1C);
+	VALIDATE(CRecordBox, field_20, 0x20);
+	VALIDATE(CRecordBox, field_24, 0x24);
+	VALIDATE(CRecordBox, field_28, 0x28);
+	VALIDATE(CRecordBox, field_2C, 0x2C);
+	VALIDATE(CRecordBox, field_30, 0x30);
+	VALIDATE(CRecordBox, field_34, 0x34);
+	VALIDATE(CRecordBox, field_35, 0x35);
+	VALIDATE(CRecordBox, field_36, 0x36);
+	VALIDATE(CRecordBox, mLetterIndex, 0x38);
+	VALIDATE(CRecordBox, field_39, 0x39);
+	VALIDATE(CRecordBox, field_3C, 0x3C);
+	VALIDATE(CRecordBox, field_40, 0x40);
 }
 
 void validate_SRecordRelated(void)

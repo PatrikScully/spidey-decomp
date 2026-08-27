@@ -359,19 +359,20 @@ struct STrainingMission
 
 	PADDING(0xB - 0x4);
 
-	// tentative: read as a signed byte by PShell_EndTrainingDisplay
-	// (sign-extended, passed as DisplayScore's last argument). Looks like a
-	// mode/type selector for how the score gets formatted. No other user yet.
-	i8 field_B;
+	// renamed from field_B (2026-08-27): print_if_false in CRecordBox::Display
+	// (0x47B240) reads this same byte through CRecordBox::field_3C and asserts
+	// it with the literal string "Bad ScoreUnits" (confirmed by reading the
+	// .data section of the original SpideyPC.exe at 0x551A80, the string the
+	// assert pushes). Sign-extended, passed as DisplayScore's last argument;
+	// used as a 4-way switch in Display (0=Time, 1=Kills, 2=Items, 3=Points
+	// column header, strings at 0x54B8D0/D4/D8/DC in the original .data).
+	i8 mScoreUnits;
 
 	PADDING(0x10 - 0xB - 1);
 };
 
-// Widget class from the "pshell" Mac module (spiderman_names.txt:
-// __ct__10CRecordBoxFiiP16STrainingMission at 0x47B1E0, Display__10CRecordBoxFv
-// at 0x47B240, Update__10CRecordBoxFv at 0x47B5A0, NameEntryOn__10CRecordBoxFUc
-// at 0x47B830, __dt__10CRecordBoxFv at 0x47AF00). Moved here from shell.cpp
-// (was file-local, comment said "only caller found this session") because
+// Widget class from the "pshell" Mac module. Moved here from shell.cpp (was
+// file-local, comment said "only caller found this session") because
 // pshell.cpp's PShell_EndTraining* functions use a second CRecordBox instance
 // (own global pointer, own STrainingMission source) for the end-of-training
 // score display, so the class is shared between the two TUs now. Derives from
@@ -379,9 +380,33 @@ struct STrainingMission
 // sets up more than one vtable slot, matching Shell_ShowRecord's cleanup call
 // (vtable[0](1), the scalar deleting destructor; CClass::operator new/delete
 // already cover the alloc/free side). Field layout is read off the
-// constructor's writes only (0x47B1E0, 85 bytes); the gaps it never touches
-// (field_28, field_30..3B, field_40) stay unlabelled padding until Display/
-// Update get decompiled.
+// constructor's writes (sub_47B1E0, the 96 bytes right before Display in the
+// original) plus Display (0x47B240) and Update (0x47B560), both confirmed by
+// address in tools/names.json.
+// 2026-08-27 correction: an earlier session's comment here attributed
+// __ct__10CRecordBoxFiiP16STrainingMission/__dt__10CRecordBoxFv/
+// NameEntryOn__10CRecordBoxFUc to specific addresses "from spiderman_names.txt"
+// (the Mac IDB). That IDB actually has these at 0xc7b60/0xc7c10/0xc8320 (checked
+// against idbs/spiderman_names.txt directly), nothing like the PC-looking hex
+// quoted before. The quoted addresses were real PC addresses (0x47B1E0 is the
+// ctor, confirmed working) but 0x47AF00 and 0x47B830 are NOT the destructor or
+// NameEntryOn: 0x47AF00 is a tiny unrelated sub inside the neighbouring
+// CExpandingBox functions, and 0x47B830 falls inside PShell_EndTrainingInit's
+// own byte range. Left ~CRecordBox and NameEntryOn as todo stubs rather than
+// decompiling against the wrong bytes; their real PC addresses are still
+// unconfirmed as of this note.
+// field_30..3B layout (2026-08-27, read off Update/Display): field_30 is read
+// as a plain 4-byte int (both functions test it non-zero before doing
+// anything, most likely a CExpandingBox-style "active/visible" flag rather
+// than something CRecordBox owns outright -- see the CExpandingBox comment on
+// the constructor). field_38 is the one CRecordBox::Update's print_if_false
+// names "Bad mLetterIndex" via the string at 0x551A90 in the original .data,
+// confirmed the same way as mScoreUnits above: the current typed letter
+// position (0..2) into the 3-letter high score name. field_39 is the currently
+// selected score row (0..NUM_RECORDS_PER_CHALL-1), no string evidence for a
+// name yet. field_34/35/36 drive Display's row-highlight blink and have no
+// string evidence either. field_37/3A/3B are never read or written by
+// Update/Display; kept as padding.
 class CRecordBox : public CClass
 {
 	public:
@@ -402,7 +427,14 @@ class CRecordBox : public CClass
 		i32 field_24;
 		i32 field_28;
 		i32 field_2C;
-		u8 field_30[0xC];
+		i32 field_30;
+		u8 field_34;
+		u8 field_35;
+		u8 field_36;
+		PADDING(1);
+		u8 mLetterIndex;
+		u8 field_39;
+		PADDING(2);
 		STrainingMission* field_3C;
 		i32 field_40;
 };
@@ -491,5 +523,6 @@ void validate_SScore(void);
 void validate_SRecords(void);
 void validate_STrainingMission(void);
 void validate_SRecordRelated(void);
+void validate_CRecordBox(void);
 
 #endif
