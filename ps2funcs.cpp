@@ -167,13 +167,123 @@ void gte_SetRotMatrix(MATRIX* a1)
 	}
 }
 
+// auto_inline off: these are real out-of-line functions in the original binary. With
+// /Ob2 the compiler otherwise inlines these trivial forward-to-original bodies into
+// their one caller, turning the caller's real "call ADDR" into "mov eax,ADDR; call eax"
+// and desyncing every instruction after it.
+#pragma auto_inline(off)
+
+// unnamed helper, address 0x0046E990. Called once by M3dAsm_LineColijPreprocessItemsZoned
+// with the fixed-point start/end coordinate arrays and the address of a local that the
+// caller never reads back afterward. Not yet decompiled.
+// @SMALLTODO
+void gsub_46E990(i32 *a1, i32 *a2, i32 *a3)
+{
+	typedef void (*func_ptr)(i32 *, i32 *, i32 *);
+	func_ptr func = (func_ptr)0x0046E990;
+
+	func(a1, a2, a3);
+}
+
+// unnamed helper, address 0x0046EA20. Called once per item by
+// M3dAsm_LineColijPreprocessItemsZoned with the per-model pointer looked up from
+// CItemRelatedList[region*17][model]; its return value is discarded by the caller.
+// Not yet decompiled.
+// @SMALLTODO
+i32 gsub_46EA20(void *a1)
+{
+	typedef i32 (*func_ptr)(void *);
+	func_ptr func = (func_ptr)0x0046EA20;
+
+	return func(a1);
+}
+
+// unnamed helper, address 0x0046EB30. Called once per item by
+// M3dAsm_LineColijPreprocessItemsZoned with the fixed-point start coords, the item's
+// fixed-point position, and the fixed-point end coords (all Vector-by-value); returns
+// a bool the caller tests. Not yet decompiled.
 // @MEDIUMTODO
+i32 gsub_46EB30(Vector a1, Vector a2, Vector a3)
+{
+	typedef i32 (*func_ptr)(Vector, Vector, Vector);
+	func_ptr func = (func_ptr)0x0046EB30;
+
+	return func(a1, a2, a3);
+}
+
+#pragma auto_inline(on)
+
+// @NotOk
+// Residue: 88 mnemonic diffs left (down from 127 on the first honest pass), instruction
+// count also differs (152 original vs 167 built in the same window), so part of this is
+// a real gap, not pure scheduling. The item loop itself (null check, start/end/itemPos
+// >>12 fixed-point extraction, the mFlags&0x21 / mInquiry shortcut, the do-while over the
+// CItem* array) matches exactly, including the gsub_46E990 call becoming a real
+// out-of-line call after adding #pragma auto_inline(off) around the three new helper
+// stubs (they were getting inlined into this function under /Ob2, desyncing everything
+// after the call). The remaining diffs start right after that call: the original caches
+// CItemRelatedList[pItem->mRegion*17] in a register (ebx) that survives across the
+// mFlags branch and folds the table's base address as an immediate
+// (mov ebx,[ecx*4+6B2454h]); our build instead loads the table's own address from a data
+// slot first (mov edx,[reloc]) then indexes off that, one extra instruction, and does not
+// keep the value live in a dedicated register across the branch. Tried: hoisting the
+// region lookup into its own u8 local before the multiply (no change), computing the
+// model pointer only inside the else-if branch instead of unconditionally before it
+// (worse, 99 diffs, confirms the original really does compute it unconditionally),
+// keeping start/end/itemPos as flat i32[3] with Vector temporaries built only at the
+// gsub_46EB30 call site (worse, 126 diffs). 4 source hypotheses tried total, see
+// attempts log. Below the 15-hypothesis medium-size bar, revisit; the constant-fold
+// behaviour of CItemRelatedList (declared `static i32*** const` in ob.h) under /Ob2
+// looks like the real lead to chase next.
 void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineInfo *pInfo, u16 Inquiry)
 {
-	typedef void (*func_ptr)(CItem **, i32 , SLineInfo *, u16);
-	func_ptr func = (func_ptr)0x0046E7B0;
+	Vector start = {0, 0, 0};
+	Vector end = {0, 0, 0};
+	Vector itemPos = {0, 0, 0};
 
-	func(ppItem, ModelTable, pInfo, Inquiry);
+	CItem *pItem = *ppItem;
+
+	if (pItem)
+	{
+		start.vx = pInfo->StartCoords.vx >> 12;
+		start.vy = pInfo->StartCoords.vy >> 12;
+		start.vz = pInfo->StartCoords.vz >> 12;
+
+		end.vx = pInfo->EndCoords.vx >> 12;
+		end.vy = pInfo->EndCoords.vy >> 12;
+		end.vz = pInfo->EndCoords.vz >> 12;
+
+		i32 unused = 0;
+		gsub_46E990(reinterpret_cast<i32*>(&start), reinterpret_cast<i32*>(&end), &unused);
+
+		do
+		{
+			i32 **pRegionEntry = CItemRelatedList[pItem->mRegion * 17];
+
+			if (pItem->mFlags & 0x21)
+			{
+				pItem->mInquiry = Inquiry;
+			}
+			else if (pItem->mInquiry != Inquiry)
+			{
+				void *pModel = pRegionEntry[pItem->mModel];
+
+				itemPos.vx = pItem->mPos.vx >> 12;
+				itemPos.vy = pItem->mPos.vy >> 12;
+				itemPos.vz = pItem->mPos.vz >> 12;
+
+				gsub_46EA20(pModel);
+
+				if (!gsub_46EB30(start, itemPos, end))
+				{
+					pItem->mInquiry = Inquiry;
+				}
+			}
+
+			ppItem++;
+			pItem = *ppItem;
+		} while (pItem);
+	}
 }
 
 // @Ok
@@ -451,10 +561,13 @@ void gte_rtir(void){
 	FixedXForm(gRotMatrix, &gOp12Result, &gGeneralLongVector);
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void gsub_46D9B0(VECTOR *a1)
 {
-    printf("gsub_46D9B0(VECTOR *a1)");
+	a1->vx = gOp12Result.vx;
+	a1->vy = gOp12Result.vy;
+	a1->vz = gOp12Result.vz;
 }
 
 // @Ok
@@ -693,13 +806,39 @@ void M3dAsm_SetTransVector(VECTOR* a1)
 }
 
 
-// @BIGTODO
+// @Ok
+// @Matching
 MATRIX* RotMatrixYXZ(SVECTOR *a1, MATRIX *a2)
 {
-	typedef MATRIX* (*func_ptr)(SVECTOR*, MATRIX*);
+	float rx = (float)a1->vx * 0.0015360969118773937f;
+	float sx = (float)sin(rx);
+	float cx = (float)cos(rx);
 
-	func_ptr func = (func_ptr)0x0046D1E0;
-	return func(a1, a2);
+	float ry = (float)a1->vy * 0.0015360969118773937f;
+	float sy = (float)sin(ry);
+	float cy = (float)cos(ry);
+
+	float rz = (float)a1->vz * 0.0015360969118773937f;
+	float sz = (float)sin(rz);
+	float cz = (float)cos(rz);
+
+	float t1 = sz * sy;
+	float t2 = cz * cy;
+	a2->m[0][0] = (t1 * sx + t2) * 4096.0f;
+
+	float t3 = cz * sy;
+	float t4 = sz * cy;
+	a2->m[0][1] = (t3 * sx - t4) * 4096.0f;
+
+	a2->m[0][2] = (sy * cx) * 4096.0f;
+	a2->m[1][0] = (sz * cx) * 4096.0f;
+	a2->m[1][1] = (cz * cx) * 4096.0f;
+	a2->m[1][2] = (-sx) * 4096.0f;
+	a2->m[2][0] = (t4 * sx - t3) * 4096.0f;
+	a2->m[2][1] = (t2 * sx + t1) * 4096.0f;
+	a2->m[2][2] = (cy * cx) * 4096.0f;
+
+	return a2;
 }
 
 // @Ok
