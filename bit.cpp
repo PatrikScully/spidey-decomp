@@ -1374,10 +1374,49 @@ CGlow::~CGlow(void)
 	this->DeleteFrom(reinterpret_cast<CBit**>(&GlowList));
 }
 
-// @MEDIUMTODO
-void CQuadBit::OrientUsing(CVector *, SVECTOR *, i32, i32, i32)
+// @NotOk
+// residue: 168 mnemonic diffs (cmpsum against 0x409560, 638 bytes original).
+// Blocked, not counted against the diff/hypothesis bar (see below). Address
+// 0x409560 (tools/functions/4232544.bin), found via names.json
+// ("?OrientUsing@CQuadBit@@QAEXPAVCVector@@PAUSVECTOR@@HHH@Z", the 5-arg
+// sibling of the already-@NotOk 4-arg OrientUsing at 0x409400). Semantics
+// fully traced by hand from the disassembly (stack-offset tracking script,
+// see bit.attempts.md): dir/perp1/perp2 built exactly like the 4-arg
+// version via Utils_CalcPerps, then a6&0xFFF indexes rcossin_tbl for a roll
+// angle, rollA = (perp1*sin + perp2*cos) >> 12, rollB = (perp1*cos +
+// perp2*-sin) >> 12, rollA *= a4, rollB *= a5, and the four corners are
+// *a2 -+ rollA -+ rollB (same +/- pattern as the 4-arg version, with
+// rollA/rollB standing in for perp1/perp2). This can never byte-match
+// because the original calls TWO operators out-of-line that our vector.h
+// marks INLINE: operator-(CVector,CVector) at 0x4E7760 (already flagged in
+// CLAUDE.md from this exact file) and operator>>(CVector,int) at 0x4E7840
+// (flagged in CLAUDE.md from shatter.cpp). Both are used here (operator-
+// four times for the corner math, operator>> twice for the two >>12
+// normalizes), so this hits the same repo-wide blocker as the 4-arg
+// sibling, doubled. Not spending hypotheses on it until that structural
+// fix lands, per the existing CQuadBit::OrientUsing precedent in this file.
+void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, i32 a4, i32 a5, i32 a6)
 {
-	printf("CQuadBit::OrientUsing(CVector *, SVECTOR *, i32, i32, i32)");
+	CVector dir(a3->vx, a3->vy, a3->vz);
+	CVector perp1;
+	CVector perp2;
+
+	Utils_CalcPerps(&dir, &perp2, &perp1);
+
+	i32 angle = a6 & 0xFFF;
+	i32 s = rcossin_tbl[angle].sin;
+	i32 c = rcossin_tbl[angle].cos;
+
+	CVector rollA = ((perp1 * s) + (perp2 * c)) >> 12;
+	CVector rollB = ((perp1 * c) + (perp2 * -s)) >> 12;
+
+	rollA *= a4;
+	rollB *= a5;
+
+	this->mPos = *a2 - rollA - rollB;
+	this->mPosB = *a2 + rollA - rollB;
+	this->mPosC = *a2 - rollA + rollB;
+	this->mPosD = *a2 + rollA + rollB;
 }
 
 // @Ok
