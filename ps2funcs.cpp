@@ -778,15 +778,10 @@ void M3dMaths_TransposeMatrix1(MATRIX *a1, MATRIX *a2)
 
 
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void M3dMaths_ScaleMatrix(CItem *a1, MATRIX *a2)
 {
-	typedef void (*func_ptr)(CItem*, MATRIX*);
-	func_ptr func = (func_ptr)0x0046D480;
-	func(a1, a2);
-
-	return;
-
 	MATRIX v7;
 	MATRIX v8;
 	memset((void*)&v8, 0, sizeof(v8));
