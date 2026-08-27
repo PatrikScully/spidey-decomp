@@ -74,7 +74,11 @@ struct LIBPKR_HANDLE
 	NODE_DIRINFO* pDirInfo;
 	NODE_FILEINFO* pFileInfo;
 
-	PADDING(0x12C-0x124-4);
+	// bit 0: set when the in-memory dir/file tree differs from what is on
+	// disk (flushPKR skips its whole body when this is clear, and clears it
+	// once it has written everything back out). found while decompiling
+	// flushPKR, 0x517b8b.
+	i32 field_128;
 };
 
 EXPORT u8 fileCRCCheck(u8*, i32, u32);
