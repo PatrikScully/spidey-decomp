@@ -20,7 +20,7 @@
 
 So, funny story. Somewhere out there is a compiled, twenty five year old copy of a PC game starring yours truly, and nobody has been able to read its source code for a very long time. That is basically me getting webbed up and stuck to a wall. Somebody had to cut me loose.
 
-That somebody is this project. We are decompiling **Spider-Man (2000)** for PC, the Neversoft classic ported by LTI Gray Matter, straight back into clean, buildable C++ source code. And we are not just going for "close enough, ship it." We want a true matching decompilation, source that compiles down to the exact same machine code as the original game, byte for byte. No half measures. My aunt raised me better than that.
+That somebody is this project. We are decompiling **Spider-Man (2000)** for PC, the Neversoft classic ported by LTI Gray Matter, straight back into clean, buildable C++ source code. And we are not just going for "close enough, ship it." We want the real logic back, every function decompiled so it does exactly what the original did, readable C++ you can actually understand and build. Some of it lines up with the original byte for byte, the rest matches in behaviour. Either way the goal is the same: the whole game, back into source. No half measures. My aunt raised me better than that.
 
 ## Whose web is this anyway
 
@@ -28,7 +28,7 @@ This repository swings in on the shoulders of **[krystalgamer/spidey-decomp](htt
 
 ## So what am I doing over here
 
-Around here, I get a little extra help. This fork pushes the decompilation forward with AI coding agents doing a lot of the late night function matching, picking a function apart, rebuilding it from scratch, and checking it byte by byte against the original game until it lines up exactly, all under close supervision, because even a genius intern needs a mentor. Whatever comes out solid gets sent back upstream as a pull request, because sharing is caring, and also because credit belongs where the work started.
+Around here, I get a little extra help. This fork pushes the decompilation forward with AI coding agents doing a lot of the late night decompiling, picking a function apart, rebuilding its logic from scratch, and checking it against the original game until it behaves the same, all under close supervision, because even a genius intern needs a mentor. Whatever comes out solid gets sent back upstream as a pull request, because sharing is caring, and also because credit belongs where the work started.
 
 ## Why bother
 
@@ -36,7 +36,7 @@ Because a twenty five year old web slinger deserves readable source code too. Ev
 
 ## How is it going
 
-In waves, mostly. Functions get picked up, decompiled, checked against the original binary, and merged in when they hold up. Some match on the first swing. Some take a dozen tries and a faceful of webbing before they finally click. Some are still stuck to a wall somewhere, waiting their turn. Slow, careful work, but it never really stops. Neither do I.
+In waves, mostly. Functions get picked up, decompiled, checked against the original binary, and merged in when they hold up. Some fall into place on the first swing. Some take a dozen tries and a faceful of webbing before the logic finally clicks. Some are still stuck to a wall somewhere, waiting their turn. Slow, careful work, but it never really stops. Neither do I.
 
 ## Hall of fame
 
