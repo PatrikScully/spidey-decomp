@@ -31,6 +31,13 @@ void Shatter_MaybeMakeGlassShatterSound(void)
 // shatter.attempts.md. Logic matches (verified by hand tracing the original disassembly:
 // count==0 stores color's low 3 bytes directly, otherwise averages table[] lookups of
 // color's bytes 0/1/2, plus byte 3 too when mode==4, dividing by 3 or 4).
+// Address confirmed 2026-08-27: 0x48CEB0 (tools/functions/4771504.bin, 314 bytes). It has no
+// entry in tools/names.json (sits unnamed between Split 0x48C730 and Shatter_Item 0x48CFF0);
+// found by hand-disassembling that gap and matching the writes to gShatterColor's fields
+// (0x6A7684/5/6) plus the count==0/mode==4/else branch shapes against this function.
+// cmpsum.sh 0x48CEB0 "?CalcRGB@@YAXHIHPAI@Z" . reports 85 mnemonic diffs from the top
+// (register/push-order allocation only, same class of residue as before; not re-attempted
+// this session since CalcRGB is not one of this session's assigned stubs).
 void CalcRGB(i32 count, u32 color, i32 mode, u32 *table)
 {
 	if (count != 0)
@@ -71,6 +78,19 @@ void CalcRGB(i32 count, u32 color, i32 mode, u32 *table)
 // return type fixed from void to i32: Shatter_Item (below) uses the return value
 // (tests it against 0 and 1), so Shatter_Face cannot be void. Found while decompiling
 // Shatter_Item, not yet decompiled itself.
+// Investigated 2026-08-27, not decompiled: address 0x48C0D0, 1632 bytes
+// (tools/functions/4767952.bin). Disassembled in full. Not attempted as real source
+// because of two separate, already-known, out-of-scope blockers that both hit this one
+// function: (1) it calls print_if_false (0x4015B0) twice at the very entry, which our
+// build inlines away (see CLAUDE.md's print_if_false note); (2) its per-vertex transform
+// blocks inline the CVector operator>> pattern from vector.h (also already documented as
+// wrongly INLINE, discovered in this same file). Either one alone makes a byte-exact match
+// unreachable until the header/print_if_false fix lands; both apply here at once. Logic-wise
+// it: asserts item/data pointers via print_if_false, looks up gShatterRegionModelTable the
+// same way Shatter_Item does, then either calls Split(...) (twice, for a two-way split) or
+// calls Shatter_Glass(...) with gShatterColor's r/g/b bytes and a count of 0xF or 0x1E
+// depending on a bit in a per-vertex flags word. Left as a stub rather than push a
+// guaranteed-mismatching several-hundred-line reconstruction.
 i32 Shatter_Face(CItem *,u32 *,i32,i32,i32,i32,i32)
 {
     printf("Shatter_Face(CItem *,u32 *,i32,i32,i32,i32,i32)");
@@ -78,6 +98,20 @@ i32 Shatter_Face(CItem *,u32 *,i32,i32,i32,i32,i32)
 }
 
 // @MEDIUMTODO
+// Investigated 2026-08-27, not decompiled: address 0x48D0F0, 1216 bytes
+// (tools/functions/4772080.bin). Disassembled in full. Builds a local SLineInfo via
+// M3dColij_InitLineInfo/M3dZone_LineToItem, computes a shard center via CVector operator+
+// (0x4E7720, fine) and operator/= (0x4E7680, fine) and normal via VectorNormal, then
+// allocates and constructs a CGlassBit (bit.cpp, already @Ok @AlmostMatching) inside an SEH
+// frame (mov [fs:0],esp prologue -> the local CGlassBit has a nontrivial destructor). Not
+// attempted as real source for two reasons: (1) it calls CVector operator>> (0x4E7840, at
+// least 4 times) and operator- (0x4E7760, at least 3 times), both confirmed wrongly INLINE
+// in vector.h (see CLAUDE.md, discovered in this file already) so our build can never emit
+// the matching out-of-line `call` instructions; (2) bit.cpp's Bit_MakeSpriteRing shows the
+// same "new CXxxBit()" SEH-construction shape is already a known-hard, still-open case (14
+// source-shape hypotheses tried, still @NotOk on a much smaller function) - a fresh attempt
+// here is very unlikely to land inside the effort available this session. Left as a stub
+// rather than push a guaranteed-mismatching implementation.
 void Shatter_Glass(i32,CVector const *,CVector const *,CVector const *,CVector const *,u8,u8,u8)
 {
     printf("Shatter_Glass(i32,CVector const *,CVector const *,CVector const *,CVector const *,u8,u8,u8)");
@@ -141,12 +175,43 @@ i32 Shatter_Item(CItem *item, i32 a2, i32 a3)
 }
 
 // @MEDIUMTODO
+// Investigated 2026-08-27, not decompiled: address 0x48C730, 1920 bytes
+// (tools/functions/4769584.bin). Disassembled in full. Same SEH-frame shape as
+// Shatter_Glass (a local object with a destructor). Recurses into itself up to 5 times
+// (call 0x48C730), and on the base case constructs a CShatterBit (0x48BDC0, called
+// CShatterBit_CShatterBit in tools/names.json, not yet decompiled itself) then calls
+// CChunkBit_SetRGB (0x40B830) and CChunkBit_SetUVs (0x40B910) on it, plus two more
+// CVector-family helpers (0x4E7A90, 0x4E7B30) that have no name in tools/names.json at all
+// (unnamed sub_4E7A90/sub_4E7B30). Blocked the same way as Shatter_Glass: heavy use of
+// CVector operator>> (0x4E7840) and operator- (0x4E7760), both confirmed wrongly INLINE in
+// vector.h (see the note on this file in CLAUDE.md). Given the size, the recursion, and two
+// unnamed/undecompiled callees on top of the operator blocker, this is not a good target to
+// force a source reconstruction against right now. Left as a stub.
 void Split(CVector const *,CVector const *,CVector const *,i32,i32,i32,i32,i32,i32,u32,i32)
 {
     printf("Split(CVector const *,CVector const *,CVector const *,i32,i32,i32,i32,i32,i32,u32,i32)");
 }
 
 // @SMALLTODO
+// Investigated 2026-08-27: no standalone address found for TransformVertex anywhere in
+// tools/names.json or in the address range around the other shatter.cpp functions (checked
+// every named AND unnamed function between CShatterBit_CShatterBit 0x48BDC0 and
+// Shatter_MaybeMakeGlassShatterSound 0x48D5B0; all of them are accounted for by the other
+// exports in this file). grep across the whole repo shows only shatter.cpp/shatter.h
+// reference TransformVertex, so nothing outside this TU forces it to stay out-of-line either.
+// Conclusion: it is fully inlined at every call site in the original binary (same-TU MSVC6
+// inlining, see CLAUDE.md), so there is no tools/functions/*.bin to diff against and no way
+// to run cmpsum.sh on it directly. The likely body (inferred from the per-vertex block
+// inlined 3 times inside Shatter_Face, at 0x48C227-0x48C280 and similar): index pVertexNums
+// with Vertex to get a vertex index, gte_ldv0 the matching SVECTOR from pVertices, gte_rtv0tr,
+// gte_stlvnl into a local VECTOR, then store into *a as a CVector. Not written here: without
+// an address to verify against, and given TransformVertex's own callers (Shatter_Face/Split)
+// are themselves blocked (see their notes above), a guess would be unverifiable and the
+// small-function discipline (<200 bytes: must fully match, no @AlmostMatching ever) leaves
+// no acceptable tag to give it. thps2-stuff/decls.h confirms the PSX-era parameter names
+// (CVector *a, SVECTOR *pVertices, u8 *pVertexNums, int Vertex) but its body is stripped
+// (declaration only, no statements), so it gives no extra logic beyond what's above. Left as
+// a stub.
 void TransformVertex(CVector *,SVECTOR *,u8 *,i32)
 {
     printf("TransformVertex(CVector *,SVECTOR *,u8 *,i32)");
