@@ -81,7 +81,27 @@ matrix4x4::matrix4x4(
 	
 }
 
-// @NotOk
+// @Ok
+// @AlmostMatching: 48 positional mnemonic diffs out of 254 instructions,
+// one instruction short of the original (253 vs 254). Frame size (0x80),
+// pushes (ebx,esi,edi), all 16 dot products, the 16 temp slots, the
+// inlined result stores and the whole row-copy loop body are mnemonic
+// identical. The residue sits in the copy-loop setup only: the original
+// walks the result rows in ecx and the dest rows in edx, and forms the
+// diff as dest minus result, which needs an extra "mov esi,eax" to keep
+// dest in eax for the return. Our build picks the mirrored roles (dest in
+// ecx, result in edx, diff formed as result minus dest), which needs one
+// instruction less, so the loop counter setup gets scheduled earlier into
+// the FPU stream and the lines in between shift by one slot. 19 hypotheses
+// tried in total (see the ps2m3d attempts log): 16-arg ctor with the
+// expressions as args, ctor with named locals (goes out of line), direct
+// field stores with void return, matrix4x4* return (fixed the prologue,
+// frame size and push set), every combination of operator[] and .field_0
+// indexing on both sides of the row copy, reference binding on either
+// side, explicit walker pointers for source and dest, *dest = result,
+// do/while loop shape, and declaration order swaps. The walker role choice
+// never flipped.
+//
 // Not one of the file's original 7 stubs. Added because M3d_RenderSetup,
 // M3d_Render and RenderSuperItem all call it (leaf-first dependency) to
 // concatenate transforms; found via the maintainer's IDB (spideypc_names.txt
@@ -90,51 +110,50 @@ matrix4x4::matrix4x4(
 // dest is written through a local first because dest may alias a or b (e.g.
 // gsub_476A00(&m, &m, &n) to do "m = m * n" in place); writing straight into
 // *dest while still reading it back for later cells would corrupt the
-// result.
-// Residue: every fld/fmul/faddp in the whole function matches the original
-// exactly in type, operand and order (all 16 dot products, including the
-// odd per-cell term ordering and the swapped-operand cases). The only
-// mismatch is register allocation at the very top: the original pushes 3
-// callee-saved regs (ebx,esi,edi) and uses a 0x80-byte frame; this build
-// pushes 4 (ebx,ebp,esi,edi) and uses a 0x40-byte frame. That one insertion
-// shifts every stack offset after it, which is why cmpsum reports 251
-// mnemonic diffs despite the logic being right. Hypotheses tried (3, well
-// under the 15-hypothesis medium-function bar, so this stays @NotOk, not
-// @AlmostMatching):
-// 1. matrix4x4 operator*(a,b) returning by value via "return matrix4x4(16
-//    args)", relying on the existing 16-arg ctor. Produces real out-of-line
-//    calls to the ctor (3x) instead of inlined stores; original has no
-//    calls at all. Rejected.
-// 2. Plain function, explicit dest pointer, named "matrix4x4 result;" local
-//    (needs the new empty default ctor) filled in field-by-field, then
-//    "*dest = result;". Matches the arithmetic core exactly; wrong register
-//    count/frame size (this version, currently in tree).
-// 3. Same as 2 but returning matrix4x4 by value (hidden return slot, a/b by
-//    pointer, no explicit dest param) instead of an explicit out-pointer.
-//    Went the other way on register count (2 instead of 3) and increased
-//    the diff count to 267. Rejected, reverted to hypothesis 2.
-EXPORT void gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 const* b)
+// result. Returns dest, like the original (eax holds dest at ret).
+EXPORT matrix4x4* gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 const* b)
 {
+	f32 m33 = a->field_0[3].field_0[2] * b->field_0[2].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[3] + a->field_0[3].field_0[0] * b->field_0[0].field_0[3] + b->field_0[3].field_0[3] * a->field_0[3].field_0[3];
+	f32 m32 = b->field_0[3].field_0[2] * a->field_0[3].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[2] + a->field_0[3].field_0[2] * b->field_0[2].field_0[2] + a->field_0[3].field_0[0] * b->field_0[0].field_0[2];
+	f32 m31 = a->field_0[3].field_0[2] * b->field_0[2].field_0[1] + a->field_0[3].field_0[0] * b->field_0[0].field_0[1] + b->field_0[3].field_0[1] * a->field_0[3].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[1];
+	f32 m30 = a->field_0[3].field_0[1] * b->field_0[1].field_0[0] + b->field_0[3].field_0[0] * a->field_0[3].field_0[3] + a->field_0[3].field_0[2] * b->field_0[2].field_0[0] + a->field_0[3].field_0[0] * b->field_0[0].field_0[0];
+	f32 m23 = a->field_0[2].field_0[2] * b->field_0[2].field_0[3] + a->field_0[2].field_0[3] * b->field_0[3].field_0[3] + a->field_0[2].field_0[0] * b->field_0[0].field_0[3] + a->field_0[2].field_0[1] * b->field_0[1].field_0[3];
+	f32 m22 = a->field_0[2].field_0[0] * b->field_0[0].field_0[2] + a->field_0[2].field_0[3] * b->field_0[3].field_0[2] + a->field_0[2].field_0[2] * b->field_0[2].field_0[2] + a->field_0[2].field_0[1] * b->field_0[1].field_0[2];
+	f32 m21 = a->field_0[2].field_0[3] * b->field_0[3].field_0[1] + a->field_0[2].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[2].field_0[1] + a->field_0[2].field_0[0] * b->field_0[0].field_0[1];
+	f32 m20 = b->field_0[1].field_0[0] * a->field_0[2].field_0[1] + a->field_0[2].field_0[0] * b->field_0[0].field_0[0] + a->field_0[2].field_0[3] * b->field_0[3].field_0[0] + a->field_0[2].field_0[2] * b->field_0[2].field_0[0];
+	f32 m13 = a->field_0[1].field_0[2] * b->field_0[2].field_0[3] + a->field_0[1].field_0[3] * b->field_0[3].field_0[3] + a->field_0[1].field_0[0] * b->field_0[0].field_0[3] + a->field_0[1].field_0[1] * b->field_0[1].field_0[3];
+	f32 m12 = a->field_0[1].field_0[0] * b->field_0[0].field_0[2] + b->field_0[3].field_0[2] * a->field_0[1].field_0[3] + a->field_0[1].field_0[2] * b->field_0[2].field_0[2] + a->field_0[1].field_0[1] * b->field_0[1].field_0[2];
+	f32 m11 = a->field_0[1].field_0[3] * b->field_0[3].field_0[1] + a->field_0[1].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[1].field_0[1] + a->field_0[1].field_0[0] * b->field_0[0].field_0[1];
+	f32 m10 = b->field_0[1].field_0[0] * a->field_0[1].field_0[1] + a->field_0[1].field_0[0] * b->field_0[0].field_0[0] + a->field_0[1].field_0[3] * b->field_0[3].field_0[0] + a->field_0[1].field_0[2] * b->field_0[2].field_0[0];
+	f32 m03 = a->field_0[0].field_0[2] * b->field_0[2].field_0[3] + a->field_0[0].field_0[3] * b->field_0[3].field_0[3] + a->field_0[0].field_0[0] * b->field_0[0].field_0[3] + b->field_0[1].field_0[3] * a->field_0[0].field_0[1];
+	f32 m02 = b->field_0[0].field_0[2] * a->field_0[0].field_0[0] + b->field_0[3].field_0[2] * a->field_0[0].field_0[3] + b->field_0[2].field_0[2] * a->field_0[0].field_0[2] + b->field_0[1].field_0[2] * a->field_0[0].field_0[1];
+	f32 m01 = a->field_0[0].field_0[3] * b->field_0[3].field_0[1] + a->field_0[0].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[0].field_0[1] + a->field_0[0].field_0[0] * b->field_0[0].field_0[1];
+	f32 m00 = b->field_0[1].field_0[0] * a->field_0[0].field_0[1] + a->field_0[0].field_0[0] * b->field_0[0].field_0[0] + a->field_0[0].field_0[3] * b->field_0[3].field_0[0] + a->field_0[0].field_0[2] * b->field_0[2].field_0[0];
+
 	matrix4x4 result;
+	result.field_0[0].field_0[0] = m00;
+	result.field_0[0].field_0[1] = m01;
+	result.field_0[0].field_0[2] = m02;
+	result.field_0[0].field_0[3] = m03;
+	result.field_0[1].field_0[0] = m10;
+	result.field_0[1].field_0[1] = m11;
+	result.field_0[1].field_0[2] = m12;
+	result.field_0[1].field_0[3] = m13;
+	result.field_0[2].field_0[0] = m20;
+	result.field_0[2].field_0[1] = m21;
+	result.field_0[2].field_0[2] = m22;
+	result.field_0[2].field_0[3] = m23;
+	result.field_0[3].field_0[0] = m30;
+	result.field_0[3].field_0[1] = m31;
+	result.field_0[3].field_0[2] = m32;
+	result.field_0[3].field_0[3] = m33;
 
-	result.field_0[3].field_0[3] = a->field_0[3].field_0[2] * b->field_0[2].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[3] + a->field_0[3].field_0[0] * b->field_0[0].field_0[3] + b->field_0[3].field_0[3] * a->field_0[3].field_0[3];
-	result.field_0[3].field_0[2] = b->field_0[3].field_0[2] * a->field_0[3].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[2] + a->field_0[3].field_0[2] * b->field_0[2].field_0[2] + a->field_0[3].field_0[0] * b->field_0[0].field_0[2];
-	result.field_0[3].field_0[1] = a->field_0[3].field_0[2] * b->field_0[2].field_0[1] + a->field_0[3].field_0[0] * b->field_0[0].field_0[1] + b->field_0[3].field_0[1] * a->field_0[3].field_0[3] + a->field_0[3].field_0[1] * b->field_0[1].field_0[1];
-	result.field_0[3].field_0[0] = a->field_0[3].field_0[1] * b->field_0[1].field_0[0] + b->field_0[3].field_0[0] * a->field_0[3].field_0[3] + a->field_0[3].field_0[2] * b->field_0[2].field_0[0] + a->field_0[3].field_0[0] * b->field_0[0].field_0[0];
-	result.field_0[2].field_0[3] = a->field_0[2].field_0[2] * b->field_0[2].field_0[3] + a->field_0[2].field_0[3] * b->field_0[3].field_0[3] + a->field_0[2].field_0[0] * b->field_0[0].field_0[3] + a->field_0[2].field_0[1] * b->field_0[1].field_0[3];
-	result.field_0[2].field_0[2] = a->field_0[2].field_0[0] * b->field_0[0].field_0[2] + a->field_0[2].field_0[3] * b->field_0[3].field_0[2] + a->field_0[2].field_0[2] * b->field_0[2].field_0[2] + a->field_0[2].field_0[1] * b->field_0[1].field_0[2];
-	result.field_0[2].field_0[1] = a->field_0[2].field_0[3] * b->field_0[3].field_0[1] + a->field_0[2].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[2].field_0[1] + a->field_0[2].field_0[0] * b->field_0[0].field_0[1];
-	result.field_0[2].field_0[0] = b->field_0[1].field_0[0] * a->field_0[2].field_0[1] + a->field_0[2].field_0[0] * b->field_0[0].field_0[0] + a->field_0[2].field_0[3] * b->field_0[3].field_0[0] + a->field_0[2].field_0[2] * b->field_0[2].field_0[0];
-	result.field_0[1].field_0[3] = a->field_0[1].field_0[2] * b->field_0[2].field_0[3] + a->field_0[1].field_0[3] * b->field_0[3].field_0[3] + a->field_0[1].field_0[0] * b->field_0[0].field_0[3] + a->field_0[1].field_0[1] * b->field_0[1].field_0[3];
-	result.field_0[1].field_0[2] = a->field_0[1].field_0[0] * b->field_0[0].field_0[2] + b->field_0[3].field_0[2] * a->field_0[1].field_0[3] + a->field_0[1].field_0[2] * b->field_0[2].field_0[2] + a->field_0[1].field_0[1] * b->field_0[1].field_0[2];
-	result.field_0[1].field_0[1] = a->field_0[1].field_0[3] * b->field_0[3].field_0[1] + a->field_0[1].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[1].field_0[1] + a->field_0[1].field_0[0] * b->field_0[0].field_0[1];
-	result.field_0[1].field_0[0] = b->field_0[1].field_0[0] * a->field_0[1].field_0[1] + a->field_0[1].field_0[0] * b->field_0[0].field_0[0] + a->field_0[1].field_0[3] * b->field_0[3].field_0[0] + a->field_0[1].field_0[2] * b->field_0[2].field_0[0];
-	result.field_0[0].field_0[3] = a->field_0[0].field_0[2] * b->field_0[2].field_0[3] + a->field_0[0].field_0[3] * b->field_0[3].field_0[3] + a->field_0[0].field_0[0] * b->field_0[0].field_0[3] + b->field_0[1].field_0[3] * a->field_0[0].field_0[1];
-	result.field_0[0].field_0[2] = b->field_0[0].field_0[2] * a->field_0[0].field_0[0] + b->field_0[3].field_0[2] * a->field_0[0].field_0[3] + b->field_0[2].field_0[2] * a->field_0[0].field_0[2] + b->field_0[1].field_0[2] * a->field_0[0].field_0[1];
-	result.field_0[0].field_0[1] = a->field_0[0].field_0[3] * b->field_0[3].field_0[1] + a->field_0[0].field_0[2] * b->field_0[2].field_0[1] + b->field_0[1].field_0[1] * a->field_0[0].field_0[1] + a->field_0[0].field_0[0] * b->field_0[0].field_0[1];
-	result.field_0[0].field_0[0] = b->field_0[1].field_0[0] * a->field_0[0].field_0[1] + a->field_0[0].field_0[0] * b->field_0[0].field_0[0] + a->field_0[0].field_0[3] * b->field_0[3].field_0[0] + a->field_0[0].field_0[2] * b->field_0[2].field_0[0];
+	for (i32 i = 0; i < 4; i++)
+	{
+		(*dest)[i] = result[i];
+	}
 
-	*dest = result;
+	return dest;
 }
 
 /*

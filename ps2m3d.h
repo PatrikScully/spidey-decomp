@@ -49,7 +49,7 @@ class matrix4x4
 // Computes a standard 4x4 matrix product dest = a * b. Old commented-out
 // "__ml" declaration near the top of ps2m3d.cpp guessed at this but had the
 // wrong arg count (2 instead of 3) and no dest/return.
-EXPORT void gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 const* b);
+EXPORT matrix4x4* gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 const* b);
 
 EXPORT void M3d_BuildTransform(CSuper*);
 EXPORT void M3d_Render(void*);
