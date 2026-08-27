@@ -101,8 +101,9 @@ EXPORT void PCGfx_UseTexture(i32,DCGfx_BlendingMode);
 EXPORT void PCPanel_DrawTexturedPoly(f32,Texture const *,i32,i32,i32,i32,u8);
 EXPORT void ZCLIP_VERT(_DXVERT *,_DXVERT *,_DXVERT *,f32);
 EXPORT CSuper* createSuperItem(CItem *);
-EXPORT void setupFog(void);
 EXPORT void submitPoly(_DXVERT **,i32);
+EXPORT u32 gsub_506D70(u32,f32);
+EXPORT void gsub_509400(tagKMVERTEX3 const *,_DXVERT *);
 
 EXPORT i32 amHeapFree(i32);
 EXPORT i32 acDspSetMixerChannel(i32, i32, i32, i32);

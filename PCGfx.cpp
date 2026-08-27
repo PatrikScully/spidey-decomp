@@ -96,35 +96,159 @@ i32 amHeapFree(i32)
 	return 0;
 }
 
+// The 4 per channel fog blend tables built by PCGfx_BeginScene's inlined
+// setupFog block (see the comment on PCGfx_BeginScene below). Each is
+// [row=0..255][col=0..511]: row is a raw brightness/distance level, col is
+// a fog blend factor (col/511.0). gFogTableA is read with row = the color's
+// top (alpha) byte and is just a clamped copy of the row index (alpha is
+// never faded toward the fog color); gFogTableR/G/B are read with row = the
+// matching color byte and hold lerp(row, fogColorChannel, col/511.0)
+// clamped to a byte. 0x6BC6C0/0x6FC6DC/0x71C75C/0x6DC6C0 in the binary.
+static u8 gFogTableR[256][512];
+static u8 gFogTableA[256][512];
+static u8 gFogTableG[256][512];
+static u8 gFogTableB[256][512];
+
+// 0x568160, f32, default 1.0 in the binary's data segment (no write site
+// found anywhere in SpideyPC.exe via IDA xrefs, only read by gsub_506D70 and
+// gsub_509400's inlined copy of it, and by the sky color gamma correction
+// below). Scales the 1/z depth value before it is compared against
+// gFlFoggingParamOne/Two. Sits in the same settings data block as
+// gGameResolutionX/Y and gIsRenderSettingE; tentative name.
+EXPORT f32 gPcGfxFogDepthScale = 1.0f;
+
+// Defined further down with PCGfx_SetBrightness, at its real address 0x5681A0.
+extern EXPORT f32 gPcGfxBrightnessPower[8];
+
 // @NotOk
-// missing fog stuff
-void PCGfx_BeginScene(u32,i32)
+// setupFog does not exist as a separate function in the binary. It has only
+// one call site anywhere (this one, guarded by gBFoggingRelated), in the
+// same TU, so MSVC6 inlines it completely: confirmed via IDA decompile of
+// 0x505E00, the whole 4 table fog blend build runs inline with no call to a
+// separate function. Mac prototypes.json sizes PCGfx_BeginScene(440 bytes)
+// + setupFog(408 bytes) sum to 848, close to the PC function's real span
+// (0x505E00 to 0x50615C = 860 bytes). Same class of issue as the documented
+// Screen_UpdateFades mislabeling (see CLAUDE.md). Fix applied: setupFog's
+// body is pasted in below in place of the old setupFog() call, and the
+// standalone setupFog function/declaration is removed (PCGfx.h/PCGfx.cpp).
+// Not fully matched yet. cmpsum: 174 mnemonic diffs at 0x505E00 (down from
+// 191 after precomputing the 3 fog color channels as floats once before the
+// loop instead of per column, matching the original's one-time conversion
+// before the row/col loop). Instruction count is 219 (original) vs 234
+// (ours), so real structural residue remains, not just scheduling: likely
+// includes the same per-channel clamp/order issue documented on
+// gsub_506D70 (this loop also writes 4 channels per iteration) plus an
+// unexplained 64-bit (fild qword, zero-extended into a padded 8 byte slot)
+// int-to-float conversion the original uses for the 3 fog color channels
+// where a plain 32-bit fild would be expected. Needs a proper matching pass
+// in a future session; see pcgfx.attempts.md.
+void PCGfx_BeginScene(u32 a1, i32 a2)
 {
-	if (!gSceneRelated)
+	if (gSceneRelated)
+		return;
+
+	if (gBFoggingRelated)
 	{
-		if (gBFoggingRelated)
+		f32 fogRf = (f32)((gU32FoggingParamThree >> 16) & 0xFF);
+		f32 fogGf = (f32)((gU32FoggingParamThree >> 8) & 0xFF);
+		f32 fogBf = (f32)(gU32FoggingParamThree & 0xFF);
+
+		for (i32 row = 0; row < 256; row++)
 		{
-			setupFog();
+			for (i32 col = 0; col < 512; col++)
+			{
+				f32 f = (f32)col / 511.0f;
+				f32 rowF = (f32)row;
+				f32 base = (1.0f - f) * rowF;
+
+				i32 r = (i32)(f * fogRf + base);
+				i32 g = (i32)(f * fogGf + base);
+				i32 b = (i32)(f * fogBf + base);
+				i32 a = row;
+
+				if (a > 255) a = -1; else if (a < 0) a = 0;
+				if (r > 255) r = -1; else if (r < 0) r = 0;
+				if (g > 255) g = -1; else if (g < 0) g = 0;
+				if (b > 255) b = -1; else if (b < 0) b = 0;
+
+				gFogTableA[row][col] = (u8)a;
+				gFogTableR[row][col] = (u8)r;
+				gFogTableG[row][col] = (u8)g;
+				gFogTableB[row][col] = (u8)b;
+			}
 		}
 
-		PCGfx_ProcessTexture(0, -1, DCGfx_BlendingMode_0);
-		DXPOLY_BeginScene();
-		gSceneRelated = 1;
-		gZLayerNearest = 0.0099999998;
-		gZLayerFurthest = -0.2;
+		f32 invPower = 1.0f / gPcGfxBrightnessPower[gBrightnessRelated];
+
+		u8 skyB = (u8)gPcGfxSkyColor;
+		u8 skyA = (u8)(gPcGfxSkyColor >> 24);
+		u8 skyG = (u8)(gPcGfxSkyColor >> 8);
+		u8 skyR = (u8)(gPcGfxSkyColor >> 16);
+
+		i32 newR = (i32)(pow((f64)((f32)skyR / 255.0f), (f64)invPower) * 255.0 + 0.5);
+		i32 newG = (i32)(pow((f64)((f32)skyG / 255.0f), (f64)invPower) * 255.0 + 0.5);
+		i32 newB = (i32)(pow((f64)((f32)skyB / 255.0f), (f64)invPower) * 255.0 + 0.5);
+
+		gPcGfxSkyColor = newB | ((newG | ((newR | (skyA << 8)) << 8)) << 8);
+
+		DXPOLY_SetBackgroundColor(gPcGfxSkyColor);
+		gBFoggingRelated = 0;
 	}
+
+	PCGfx_ProcessTexture(0, -1, DCGfx_BlendingMode_0);
+	DXPOLY_BeginScene();
+	gSceneRelated = 1;
+	gZLayerNearest = 0.0099999998;
+	gZLayerFurthest = -0.2;
 }
 
-// @SMALLTODO
-// Forward to the original. This blends a vertex color toward the fog color
-// using the 4 lighting tables PCGfx_BeginScene/setupFog build (still not
-// done, see pcgfx.attempts.md), so we can't reproduce the math yet.
-static u32 gsub_506D70(f32 a1, u32 a2)
+// @NotOk
+// Blends a vertex color toward the fog color for one 1/z depth value, via
+// the 4 tables above. a1 is the input color, a2 is 1/z (matches the real
+// signature confirmed from the caller in PCGfx_ClipSendIndexedVertList at
+// 0x506b95: sub_506D70(color, oldFieldEight) with color pushed first). The
+// table indexing/combining formula is confirmed correct (channel semantics,
+// clamp threshold, final byte packing all match). Residue: 21 mnemonic
+// diffs at 0x506d70, confined to how the 4 (u8)(a1 >> N) byte extractions
+// are compiled. The original reads the R channel's index with one isolated
+// byte load straight from a1's stack home ("mov al,[esp+arg_0+2]") before
+// a1 is ever loaded into a register, then loads a1 fully into a register
+// once and derives A (shr 24), G (mov dl,ah) and B (and eax,0xFF) from that
+// single load. Our build always loads a1 fully first and extracts all 4
+// bytes via register shifts, with A computed before R regardless of source
+// order. Instruction count matches (102 both sides), so this is scheduling
+// residue, not a missing store. Attempts (all under the same table
+// semantics/formula): 1) named u8 locals r,a,b,g with a nested OR return;
+// 2) same order r,a,g,b (matching the disasm's index-computation order)
+// with a flat b|(g<<8)|(r<<16)|(a<<24) return (kept, best result, 21
+// diffs); 3) u16 intermediate combining R/G bytes via pointer-cast,
+// mirroring Hex-Rays' v4 variable (regressed to 25 diffs, also lost a
+// push); 4) u32-typed locals instead of u8 (identical to attempt 2);
+// 5) explicit byte-array pointer cast into a1 (regressed to 27 diffs);
+// 6) splitting a1 into a separate "u32 c = a1" copy so R's extraction
+// reads a1 directly while A/G/B read c (no change from attempt 2).
+// Reordering the 4 static table declarations did not change the compiled
+// order either. 6 hypotheses tried, below the 15+ bar for a function this
+// size were it medium, but this is a small (<200 byte) function so more
+// are owed; logged as an open item in pcgfx.attempts.md.
+EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 {
-	// @FIXME
-	typedef u32 (*func_ptr)(f32, u32);
-	func_ptr func = (func_ptr)0x00506D70;
-	return func(a1, a2);
+	f32 depth = gPcGfxFogDepthScale * a2;
+	if (depth < gFlFoggingParamOne)
+		return a1;
+
+	f32 t = (depth - gFlFoggingParamOne) / (gFlFoggingParamTwo - gFlFoggingParamOne);
+	if (t > 1.0f)
+		t = 1.0f;
+
+	i32 col = (i32)(t * 511.0f);
+
+	u8 r = gFogTableR[(u8)(a1 >> 16)][col];
+	u8 a = gFogTableA[(u8)(a1 >> 24)][col];
+	u8 g = gFogTableG[(u8)(a1 >> 8)][col];
+	u8 b = gFogTableB[(u8)a1][col];
+
+	return b | (g << 8) | (r << 16) | (a << 24);
 }
 
 // @NotOk
@@ -210,7 +334,7 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 co
 				_DXVERT *v = verts[k];
 
 				if (gNonRendderSettingE)
-					v->field_10 = gsub_506D70(v->field_8, v->field_10);
+					v->field_10 = gsub_506D70(v->field_10, v->field_8);
 
 				v->field_C = gRenderInitOne[2] / v->field_8;
 				v->field_8 = (bias + v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
@@ -507,20 +631,64 @@ void PCGfx_DoModelPreview(void)
 	}
 }
 
-// @SMALLTODO
-// Forward to the original. Builds one _DXVERT from a corner record shaped
-// like tagKMVERTEX3 (field_4..field_18 only, field_0 unused), confirmed from
-// the disasm at 0x509400 to run the exact same field_8/field_C formulas as
-// PCGfx_DrawTPoly3D plus the REAL (not stubbed) fog table math inline for
-// the color when gNonRendderSettingE is set. Needs the same fog tables
-// setupFog/PCGfx_BeginScene build, which are out of scope this session (see
-// pcgfx.attempts.md), so forwarding instead of reproducing the math.
-static void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
+// @NotOk
+// Builds one _DXVERT from a corner record shaped like tagKMVERTEX3
+// (field_4..field_18 only, field_0 unused). Runs the same field_8/field_C
+// formulas as PCGfx_DrawTPoly3D, plus gsub_506D70's real fog blend math
+// inlined here directly (confirmed via IDA: no call instruction at 0x509400,
+// same table reads as gsub_506D70 with a2 = 1/field_C, not the transformed
+// field_8). Everything up through the color brighten step matches the
+// original exactly (instruction count 102 both sides, confirmed identical).
+// Residue: 58 mnemonic diffs at 0x509400, starting right where the fog
+// block spills the color to a stack slot before computing depth (the
+// original does the spill first, ours computes depth first), then carries
+// the same gsub_506D70 table-index-order residue described there (see its
+// comment) since this is the same formula inlined. Not iterated on
+// separately from gsub_506D70; fixing that residue should fix this one too.
+EXPORT void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 {
-	// @FIXME
-	typedef void (*func_ptr)(tagKMVERTEX3 const *, _DXVERT *);
-	func_ptr func = (func_ptr)0x00509400;
-	func(corner, out);
+	out->field_0 = corner->field_4;
+	out->field_4 = corner->field_8;
+	out->field_8 = (1.0f / corner->field_C - gRenderInitOne[0]) / gRenderInitTwo[0];
+	out->field_C = gRenderInitOne[2] * corner->field_C;
+	out->field_14 = corner->field_10;
+	out->field_18 = corner->field_14;
+
+	u32 c = corner->field_18;
+	if ((c & 0xFFFFFF) == 0)
+		out->field_10 = c;
+	else
+		out->field_10 = (c & 0xFF000000) | (((c >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	if (gNonRendderSettingE)
+	{
+		u32 a1 = corner->field_18;
+		f32 depth = gPcGfxFogDepthScale * (1.0f / corner->field_C);
+
+		if (depth >= gFlFoggingParamOne)
+		{
+			f32 t = (depth - gFlFoggingParamOne) / (gFlFoggingParamTwo - gFlFoggingParamOne);
+			if (t > 1.0f)
+				t = 1.0f;
+
+			i32 col = (i32)(t * 511.0f);
+
+			u8 r = gFogTableR[(u8)(a1 >> 16)][col];
+			u8 a = gFogTableA[(u8)(a1 >> 24)][col];
+			u8 g = gFogTableG[(u8)(a1 >> 8)][col];
+			u8 b = gFogTableB[(u8)a1][col];
+
+			a1 = b | (g << 8) | (r << 16) | (a << 24);
+		}
+
+		out->field_10 = a1;
+	}
+
+	if (gLowGraphics)
+	{
+		out->field_14 = out->field_C * out->field_14;
+		out->field_18 = out->field_18 * out->field_C;
+	}
 }
 
 // @NotOk
@@ -876,7 +1044,7 @@ void PCGfx_DrawQPoly3D(
 			_DXVERT *v = verts[k];
 
 			if (gNonRendderSettingE)
-				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+				v->field_10 = gsub_506D70(v->field_10, v->field_8);
 
 			v->field_C = gRenderInitOne[2] / v->field_8;
 			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
@@ -934,7 +1102,7 @@ void PCGfx_DrawQPoly3D(
 			_DXVERT *v = verts[k];
 
 			if (gNonRendderSettingE)
-				v->field_10 = gsub_506D70(v->field_8, v->field_10);
+				v->field_10 = gsub_506D70(v->field_10, v->field_8);
 
 			v->field_C = gRenderInitOne[2] / v->field_8;
 			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
@@ -1392,7 +1560,7 @@ void PCGfx_DrawTPoly3D(
 		else
 			vtx[0].field_10 = (color1 & 0xFF000000) | (((color1 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
-			vtx[0].field_10 = gsub_506D70(invZ, vtx[0].field_10);
+			vtx[0].field_10 = gsub_506D70(vtx[0].field_10, invZ);
 		if (!gLowGraphics)
 		{
 			vtx[0].field_14 *= vtx[0].field_C;
@@ -1413,7 +1581,7 @@ void PCGfx_DrawTPoly3D(
 		else
 			vtx[1].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
-			vtx[1].field_10 = gsub_506D70(invZ, vtx[1].field_10);
+			vtx[1].field_10 = gsub_506D70(vtx[1].field_10, invZ);
 		if (!gLowGraphics)
 		{
 			vtx[1].field_14 *= vtx[1].field_C;
@@ -1434,7 +1602,7 @@ void PCGfx_DrawTPoly3D(
 		else
 			vtx[2].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
-			vtx[2].field_10 = gsub_506D70(invZ, vtx[2].field_10);
+			vtx[2].field_10 = gsub_506D70(vtx[2].field_10, invZ);
 		if (!gLowGraphics)
 		{
 			vtx[2].field_14 *= vtx[2].field_C;
@@ -2092,12 +2260,6 @@ CSuper* createSuperItem(CItem *pItem)
 	pSuper->mAnim = 0;
 
 	return pSuper;
-}
-
-// @MEDIUMTODO
-void setupFog(void)
-{
-    printf("setupFog(void)");
 }
 
 // @NotOk
