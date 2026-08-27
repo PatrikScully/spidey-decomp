@@ -2091,9 +2091,28 @@ void CRibbonBit::Move(void)
 	this->IncFrameWithWrap();
 }
 
-// @MEDIUMTODO
+// @NotOk
+// residue: original address not found (checked tools/names.json,
+// idbs/spideypc_names.txt, idbs/spiderman_names.txt,
+// idbs/new_in_idb_code.txt, and a byte-signature scan of every small
+// tools/functions/*.bin file for the CFT4Bit field offsets this must
+// touch). The only call site (CRibbonBit::Move, already @Ok) is a real
+// out-of-line call, so IncFrameWithWrap has its own address in the
+// original binary, but nothing in the available data names or locates
+// it, so no diff can be run. This is a functional translation only:
+// call the already-@Ok inlined IncFrame() step, then wrap mFrame back
+// into range using mNumFrames, matching the field roles validated
+// elsewhere in this file (mFrame i8, mNumFrames u8, mpPSXFrame
+// recomputed after any change to mFrame).
 void CFT4Bit::IncFrameWithWrap(void)
 {
+	this->IncFrame();
+
+	if (this->mFrame >= this->mNumFrames)
+	{
+		this->mFrame -= this->mNumFrames;
+		this->mpPSXFrame = &this->mpPSXAnim[this->mFrame];
+	}
 }
 
 /*
