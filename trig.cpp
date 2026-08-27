@@ -7,8 +7,10 @@
 #include "spool.h"
 #include "exp.h"
 #include "my_assert.h"
+#include "dcfileio.h"
 
 #include <cstdarg>
+#include <cstdio>
 
 i32 gRunCinemaRelated;
 i32 gLevelStatus;
@@ -346,14 +348,167 @@ void Trig_ExecuteRestart(void)
 	ExecuteCommandList(v4, G_RESTARTNODE, 1);
 }
 
+// Adjacent to gKillNotifyCallCount (spidey.cpp, CPlayer::NotifyKill); both
+// get reset here when a new trigger file loads. No idb_globals.txt entry
+// for this one, tentative name only, not confirmed what it tracks.
+static i32 * const gKillNotifyRelated = (i32*)0x0060CFB8;
+static i32 * const gKillNotifyCallCount = (i32*)0x0060CFBC;
+
+// Set to 1 when the lowres/%s.trg variant of the trigger file was found
+// and used, instead of the plain %s.trg. No idb_globals.txt entry nearby.
+static u8 * const gTrigLoadedLowRes = (u8*)0x006B4680;
+
+// gSaveGame.field_7C (shell.h), read directly at the fixed game address
+// because gSaveGame itself is not G_* macroed yet (see CLAUDE.md,
+// "gSaveGame needs G_* macro treatment").
+static u8 * const gSaveGameField7C = (u8*)0x006828D4;
+
+// Restart point name table, indexed by G_NUMCHEATRESTARTS (checked
+// against 20 below). No idb_globals.txt entry nearby, tentative name.
+static char ** const gCheatRestartNames = reinterpret_cast<char**>(0x006B4614);
+
+//#define G_LOWGRAPHICS (gLowGraphics)
+#define G_LOWGRAPHICS (*reinterpret_cast<i32*>(0x006B78F8))
+
+// Mac symbol not confirmed, address 0x4E35C0. Called from Trig_LoadTRG
+// after the node offset table is relocated. Not decompiled here; forward
+// to the original so Trig_LoadTRG keeps working.
+// @MEDIUMTODO
+void Trig_ParseTRGFile(void)
+{
+	typedef void (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x004E35C0;
+	func();
+}
+
 // Mac symbol not confirmed, address 0x4DEB50. Called from Front_LoadGame
-// (front.cpp) with the restart-point TRG name; presumably loads the TRG
-// file for that name (matches the other Trig_/TRG loading calls in this
-// file), but the body has not been looked at yet.
-// @BIGTODO
+// (front.cpp) with the restart-point TRG name; loads the TRG file for
+// that name and parses it into TrigFile/NumNodes/OffsetList.
+// @NotOk
+// residue: 125 mnemonic diffs, all downstream of one root cause. Same
+// instruction count as the original (181) and the same operations in the
+// same order, so this is register scheduling, not a missing/extra store.
+// The original reloads the pName parameter from the stack fresh at each
+// of its 3 uses (sprintf call sites for "lowres\%s.trg" / "%s.trg"),
+// never keeping it live in a register across the G_LOWGRAPHICS branch.
+// Our build always hoists a single load of pName before the branch and
+// shares it (a shared push before the je, then reused by whichever side
+// runs), which is functionally fine but shifts the whole rest of the
+// function's register allocation. Confirmed the epilogue (last 6
+// instructions) matches exactly, so this really is one localized cause.
+// 8 source hypotheses tried, all rebuilt and diffed against the DLL: (1)
+// natural nested if/else, no goto: 119 diffs, 183 instr (2 extra). (2)
+// caching G_LOWGRAPHICS into a named local read before the resets: 126
+// diffs, register allocation shifted from the very first instruction. (3)
+// goto to merge the two FileIO_Open("%s.trg", pName) call sites into one
+// (matches the original's own tail-merge): fixed the instruction count to
+// exactly 181, diffs down to 125. (4) swapping declaration order of
+// buf/fileSize vs the resets: no change (125). (5) "if (!fileSize)" as an
+// independent check instead of goto/nesting: worse (139, 183 instr). (6)
+// flat "if (!G_LOWGRAPHICS) goto plainOpen" early-exit shape instead of
+// if/else: worse (139). (7) forcing a fresh volatile reload of pName at
+// each of the 3 use sites (defeats CSE): diffs dropped to 118, but
+// instruction count grew to 183, i.e it manufactures extra loads instead
+// of reproducing the original's shape, so rejected per the "verify byte
+// length" rule in CLAUDE.md. (8) duplicating the 3 global resets inside
+// each branch instead of once before the if (letting the optimizer choose
+// where to hoist them): no change (125), confirms the compiler already
+// hoists them to the same place either way. Best kept version is (3).
+// See trig.attempts.md for the same list with per-attempt cmpsum output.
 void Trig_LoadTRG(char *pName)
 {
-	printf("Trig_LoadTRG(char *)");
+	print_if_false(G_TRIGFILE == 0, "Old Trig file not deleted?");
+	print_if_false(G_PENDINGLISTARRAY[0].pCommands == 0, "Pending list not empty?");
+
+	char buf[32];
+	i32 fileSize;
+
+	*gKillNotifyRelated = 0;
+	*gKillNotifyCallCount = 0;
+	*gTrigLoadedLowRes = 0;
+
+	if (G_LOWGRAPHICS)
+	{
+		sprintf(buf, "lowres\\%s.trg", pName);
+		fileSize = FileIO_Open(buf);
+
+		if (fileSize)
+		{
+			print_if_false((i32)"Loaded lowres trigger file: %s\r\n", buf);
+			*gTrigLoadedLowRes = 1;
+			goto haveFile;
+		}
+
+		sprintf(buf, "%s.trg", pName);
+		goto openFile;
+	}
+
+	sprintf(buf, "%s.trg", pName);
+openFile:
+	fileSize = FileIO_Open(buf);
+haveFile:
+	;
+
+	G_TRIGFILE = static_cast<u16*>(DCMem_New(fileSize, 0, 1, 0, 1));
+	FileIO_Load(G_TRIGFILE);
+	FileIO_Sync();
+
+	u8 *pFile = reinterpret_cast<u8*>(G_TRIGFILE);
+
+	print_if_false(*reinterpret_cast<u32*>(pFile) == 0x4752545F, "Not a _TRG file");
+	print_if_false((*reinterpret_cast<u32*>(pFile + 4) & 0xFFFF) == 2, "Wrong trigger file version.");
+	print_if_false((*reinterpret_cast<u32*>(pFile + 4) & 0xFFFF0000) == 0x10000, "Not a Spidey trigger file");
+
+	G_NUMNODES = *reinterpret_cast<u16*>(pFile + 8);
+
+	print_if_false((i32)"Loading Trigger File: %s [%i Nodes]", pName, G_NUMNODES);
+
+	u32 *pOffsets = reinterpret_cast<u32*>(pFile + 0xC);
+	G_OFFSETLIST = reinterpret_cast<i16**>(pOffsets);
+
+	i32 i;
+
+	for (i = 0; i < G_NUMNODES; i++)
+	{
+		pOffsets[i] += reinterpret_cast<u32>(G_TRIGFILE);
+	}
+
+	u8 *pLast = reinterpret_cast<u8*>(G_OFFSETLIST[G_NUMNODES - 1]);
+
+	if (*reinterpret_cast<u16*>(pLast) == 0xFF)
+	{
+		Mem_Shrink(G_TRIGFILE, (pLast - reinterpret_cast<u8*>(G_TRIGFILE) + 5) & ~3);
+	}
+	else
+	{
+		print_if_false(0, "Trig file is missing a terminator node");
+	}
+
+	Spool_ClearAllPSXs();
+
+	Spidey_LoadAlternativeHealthIcon((*gSaveGameField7C & 0xFF) + 1);
+
+	G_NUMCHEATRESTARTS = 0;
+
+	for (i = 0; i < G_NUMNODES; i++)
+	{
+		if (*G_OFFSETLIST[i] == 8)
+		{
+			CVector v;
+			CSVector *pPos = reinterpret_cast<CSVector*>(Trig_GetPosition(&v, i));
+			char *pRestartName = reinterpret_cast<char*>(&pPos[1]);
+
+			print_if_false(G_NUMCHEATRESTARTS < 20, "Too many restart points for restarts menu");
+
+			gCheatRestartNames[G_NUMCHEATRESTARTS] = pRestartName;
+			G_NUMCHEATRESTARTS++;
+		}
+	}
+
+	G_RESTARTNODE = 0xFFFF;
+
+	Trig_ExecuteAutoexec();
+	Trig_ParseTRGFile();
 }
 
 // @Ok

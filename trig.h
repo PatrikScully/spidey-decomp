@@ -83,6 +83,7 @@ EXPORT void Trig_DeleteTrigFile(void);
 EXPORT u16 *SkipString(char *);
 EXPORT void Trig_SetRestart(char *);
 EXPORT void Trig_LoadTRG(char *);
+EXPORT void Trig_ParseTRGFile(void);
 EXPORT void Trig_ExecuteRestart(void);
 EXPORT void Trig_ExecuteAutoexec(void);
 EXPORT CBody* Trig_CreateObject(i32);
