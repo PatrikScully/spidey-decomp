@@ -27,7 +27,7 @@ class CSpClone : public CBaddy {
 		i32 field_328;
 		i32 field_32C;
 		i32 field_330;
-		i32 field_334;
+		u32 field_334;
 		CQuadBit *field_338;
 
 		PADDING(0x348-0x338-4);
