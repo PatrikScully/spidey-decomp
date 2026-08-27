@@ -916,35 +916,10 @@ void Shell_ScreenAdjust(void)
 
 // CRecordBox is now declared in shell.h (moved 2026-08-27, pshell.cpp needs
 // it too for the end-of-training record box; see the comment on the class).
-// CRecordBox's methods live in the same TU as their only caller
-// (Shell_ShowRecord), so keep the inliner off them (same trick as
-// gsub_498240/CheckForPadUnplugged above): the original calls all of these
-// out-of-line.
-#ifdef _MSC_VER
-#pragma auto_inline(off)
-#endif
-// @Ok
-// @Matching
-CRecordBox::CRecordBox(i32 width, i32 height, STrainingMission* pMission)
-{
-	field_1C = width;
-	field_4 = 0xA;
-	field_8 = 0xA;
-	field_20 = height;
-	field_C = 0x116;
-	field_10 = 0x60;
-	field_14 = 0x30;
-	field_18 = 0xC;
-	field_24 = 0;
-	field_2C = 0x1C;
-	field_3C = pMission;
-}
-
-// @SMALLTODO
-CRecordBox::~CRecordBox(void)
-{
-	printf("CRecordBox::~CRecordBox(void)");
-}
+// The constructor/destructor moved to pshell.cpp on 2026-08-27 (see the
+// comment there): IDA on the real exe showed Shell_ShowRecord's SEH cleanup
+// frame around `new CRecordBox(...)` needs the constructor's body to be
+// INVISIBLE to the compiler at the call site, not just un-inlined.
 
 // column header / score-unit label strings, read directly out of the
 // original SpideyPC.exe .data section (they're stored as real char*
@@ -1168,35 +1143,27 @@ static CRecordBox* gShowRecordBox;
 // tentative default title text, no idb_globals.txt match near 0x54BBA0.
 static char* gShowRecordTitle = "High Scores";
 
-// @NotOk
-// Residue: the whole SEH/exception-unwind prologue+epilogue in the original
-// (push -1; push offset handler; mov eax,fs:0; push eax; mov fs:0,esp ... down
-// to mov fs:0,ecx at the end) is missing from our build, which cascades into
-// ~167 mnemonic diffs (register allocation follows from the extra saved
-// registers/EH-state slot the frame provides). Everything else about the
-// function (all callees, globals, loop shape, CRecordBox construction/
-// destruction, string/global addresses) is verified correct against the
-// disassembly; see shell.attempts.md for 7 distinct hypotheses tried against
-// this ONE root cause (all builds, all rebuilt+cmpsum'd): plain heap
-// new+delete (own local pointer, immediate); heap new stored to a global with
-// no delete in the function; heap new+delete with an intervening loop and an
-// early return that skips the delete (matches the original's own control
-// flow exactly); explicit __try/__except (produces a bigger, ebp-based,
-// two-value frame, does not match); explicit __try/__finally (same, does not
-// match); constructor definition moved after the call site to test whether
-// visibility-order suppresses same-TU "can this throw" analysis (no
-// difference, trivial ctor still got inlined regardless); a genuine
-// stack-allocated (non-heap) local object of a class with a virtual
-// destructor (THIS reproduces the exact original frame shape byte-for-byte:
-// single push, esp-based, no ebp) but contradicts the original's confirmed
-// heap allocation of CRecordBox (push 0x44; call CClass::operator new,
-// present in the real disassembly, not something I can explain away). No
-// combination tried gets a real heap allocation to carry the frame. Full
-// instruction-byte accounting of the 686-byte original (iced_x86 decodes
-// exactly 686 bytes with no gaps) rules out a second, still-unidentified
-// stack object hiding in the body. Left for a future session with deeper
-// tooling (IDA) to confirm what MSVC6 construct produces an exception frame
-// around a plain heap allocation.
+// @Ok
+// @Matching
+// SEH mystery SOLVED 2026-08-27 with IDA (Hex-Rays on the real exe): the
+// missing frame was never about ctor complexity (see the 7 failed
+// hypotheses this comment used to list, kept in shell.attempts.md).
+// CRecordBox::CRecordBox is a trivial straight-line ctor (no calls at all,
+// confirmed by decompiling 0x47B1E0), yet the real exe still wraps this
+// `new CRecordBox(...)` in the unwind-state frame. The actual trigger:
+// whether the constructor's DEFINITION is visible to the compiler in the
+// same translation unit as the `new` call. Same-TU visibility (even with
+// `#pragma auto_inline(off)`, which only blocks literal inlining, not this
+// separate throw analysis) lets MSVC6 prove the ctor can't throw and drop
+// the protection; a declaration-only (different-TU) ctor is opaque, so
+// MSVC6 always protects it. Reordering the ctor's position WITHIN one TU
+// (one of the 7 failed attempts) does not hide it either, since the whole
+// TU is visible regardless of declaration order. Fix: moved
+// CRecordBox::CRecordBox/~CRecordBox out of shell.cpp into pshell.cpp (a
+// different TU), matching the class-precedent CMenu already had by
+// accident (CMenu::CMenu lives in front.cpp, never in the same TU as any
+// of its callers, which is why Shell_ChooseSurvivalArena's `new CMenu(...)`
+// already reproduced the frame). cmpsum: 0 mnemonic diffs.
 void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 {
 	// same pattern as Shell_ScreenAdjust/Shell_TitleScreen above: defined once
@@ -1266,14 +1233,14 @@ void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 		if (Vblanks == vblanksSnapshot)
 			Pause(1);
 
-		DoVblankProcessing = 0;
+		*(volatile i32*)&DoVblankProcessing = 0;
 		Pause(1);
 
 		if (!gPrintStubbed)
 			gsub_46CB90((void*)"stubbed out: DrawSync");
 		gsub_430680();
 
-		if (!DoVblankProcessing)
+		if (!*(volatile i32*)&DoVblankProcessing)
 		{
 			Utils_VblankProcessing();
 			DoVblankProcessing = 1;
