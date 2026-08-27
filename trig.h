@@ -14,6 +14,8 @@ EXPORT extern i32 IsRestartDeath;
 //#define G_ISRESTARTDEATH (IsRestartDeath)
 #define G_ISRESTARTDEATH (*reinterpret_cast<i32*>(0x006B470C))
 
+EXPORT extern i32 EndLevelNode;
+
 EXPORT extern i32 gLevelStatus;
 EXPORT extern i32 gRunCinemaRelated;
 
