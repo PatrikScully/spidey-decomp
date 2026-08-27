@@ -518,14 +518,25 @@ INLINE void DeleteBitList(CBit *pBitList)
 	}
 }
 
-// Investigation notes (0x40D630, 32 bytes), not implemented yet. Called
-// from PShell_EndTrainingInit (pshell.cpp). Not disassembled this session;
-// likely a single DeleteBitList(TextBoxList) call given the name and size,
-// but left as a stub rather than guess without checking the bytes.
-// @SMALLTODO
+// @Ok
+// @Matching
+// Disassembled with IDA (0x40D630, 32 bytes). Not a call to DeleteBitList:
+// it walks TextBoxList and deletes every entry unconditionally, ignoring
+// mProtected, with the next pointer read before the delete. The asm has a
+// genuinely redundant "if (p)" check inside the loop body (test ecx,ecx
+// right after the mNext load), which this source shape reproduces exactly.
 void Bit_ClearTextBoxes(void)
 {
-	printf("Bit_ClearTextBoxes(void)");
+	CBit *p = TextBoxList;
+	while (p)
+	{
+		CBit *pNext = p->mNext;
+		if (p)
+		{
+			delete p;
+		}
+		p = pNext;
+	}
 }
 
 // @Ok
@@ -1385,26 +1396,35 @@ CGlow::~CGlow(void)
 }
 
 // @NotOk
-// residue: 168 mnemonic diffs (cmpsum against 0x409560, 638 bytes original).
-// Blocked, not counted against the diff/hypothesis bar (see below). Address
-// 0x409560 (tools/functions/4232544.bin), found via names.json
-// ("?OrientUsing@CQuadBit@@QAEXPAVCVector@@PAUSVECTOR@@HHH@Z", the 5-arg
-// sibling of the already-@NotOk 4-arg OrientUsing at 0x409400). Semantics
-// fully traced by hand from the disassembly (stack-offset tracking script,
-// see bit.attempts.md): dir/perp1/perp2 built exactly like the 4-arg
-// version via Utils_CalcPerps, then a6&0xFFF indexes rcossin_tbl for a roll
-// angle, rollA = (perp1*sin + perp2*cos) >> 12, rollB = (perp1*cos +
+// residue: 13 mnemonic diffs (cmpsum against 0x409560, 638 bytes original),
+// down from 168 now that vector.h's operator-(CVector,CVector) and
+// operator>>(CVector,int) moved out-of-line (2026-08-27), which fixed the
+// corner-math and roll-normalize calls (both now match the real
+// out-of-line calls at 0x4E7760 and 0x4E7840). Remaining wall: reading the
+// two adjacent i16 fields of rcossin_tbl[a6 & 0xFFF] (sin then cos). The
+// original computes the scaled table index as a standalone `shl eax,2`
+// then reads BOTH fields off that one materialized address (`[eax+610C48h]`,
+// `[eax+610C4Ah]`). Every source shape tried here (plain double indexing,
+// cached SSinCos* / reference, explicit byte-offset pointer, i16* recast,
+// volatile pointer, reversed field read order) makes MSVC6 fold the FIRST
+// field read into a scaled-index addressing mode ([reg*4+const]) and only
+// materialize a shared address register from the SECOND read onward,
+// costing 13 positionally-shifted diffs that never converge. This is the
+// exact same MSVC6 heuristic already documented as unresolved in
+// utils.cpp's Utils_RotateY (9-diff residue, 7 hypotheses tried, same
+// rcossin_tbl double-field-read shape). 6 distinct hypotheses tried here
+// specifically (cached pointer, byte-offset pointer, volatile pointer,
+// struct-by-value copy, reference, i16* recast); below the 15-hypothesis
+// bar for @AlmostMatching on a medium function, left @NotOk rather than
+// force it, cross-referencing the independent Utils_RotateY finding as
+// strong evidence this is a genuine toolchain quirk, not a source-shape
+// gap. Semantics fully traced by hand from the disassembly (stack-offset
+// tracking, see bit.attempts.md): dir/perp1/perp2 built exactly like the
+// 4-arg version via Utils_CalcPerps, then a6&0xFFF indexes rcossin_tbl for
+// a roll angle, rollA = (perp1*sin + perp2*cos) >> 12, rollB = (perp1*cos +
 // perp2*-sin) >> 12, rollA *= a4, rollB *= a5, and the four corners are
 // *a2 -+ rollA -+ rollB (same +/- pattern as the 4-arg version, with
-// rollA/rollB standing in for perp1/perp2). This can never byte-match
-// because the original calls TWO operators out-of-line that our vector.h
-// marks INLINE: operator-(CVector,CVector) at 0x4E7760 (already flagged in
-// CLAUDE.md from this exact file) and operator>>(CVector,int) at 0x4E7840
-// (flagged in CLAUDE.md from shatter.cpp). Both are used here (operator-
-// four times for the corner math, operator>> twice for the two >>12
-// normalizes), so this hits the same repo-wide blocker as the 4-arg
-// sibling, doubled. Not spending hypotheses on it until that structural
-// fix lands, per the existing CQuadBit::OrientUsing precedent in this file.
+// rollA/rollB standing in for perp1/perp2).
 void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, i32 a4, i32 a5, i32 a6)
 {
 	CVector dir(a3->vx, a3->vy, a3->vz);
@@ -1413,9 +1433,9 @@ void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, i32 a4, i32 a5, i32 a6)
 
 	Utils_CalcPerps(&dir, &perp2, &perp1);
 
-	i32 angle = a6 & 0xFFF;
-	i32 s = rcossin_tbl[angle].sin;
-	i32 c = rcossin_tbl[angle].cos;
+	SSinCos const *sc = &rcossin_tbl[a6 & 0xFFF];
+	i32 s = sc->sin;
+	i32 c = sc->cos;
 
 	CVector rollA = ((perp1 * s) + (perp2 * c)) >> 12;
 	CVector rollB = ((perp1 * c) + (perp2 * -s)) >> 12;
@@ -1730,23 +1750,14 @@ void CQuadBit::SetTransparency(unsigned char a2){
 	this->mTint = a2 | ((a2 | (a2 << 8)) << 8);
 }
 
-// @NotOk
-// residue: 92 of ~100 mnemonic diffs (cmpsum against 0x409400). Blocked by
-// a known repo-wide issue (CLAUDE.md): vector.h's operator-(CVector,CVector)
-// is INLINE but the original calls it out of line at this exact address
-// (0x4E7760, confirmed via names.json: ??G@YA?AVCVector@@ABV0@0@Z), so our
-// build can never emit that call, which shifts register allocation for the
-// whole function from the first instruction on (this ends up in edi
-// instead of esi). Semantics verified against the disassembly: a3 is an
-// SVECTOR direction (sign-extended to a local CVector), Utils_CalcPerps
-// (0x4E5E20, already @Ok in utils.cpp) gives two perpendiculars, each
-// scaled by a4 via CVector::operator*=(const int&) (0x4E75F0, called twice
-// with the same a4 in the original, matching this build), then combined
-// with *a2 into the quad's four corners (mPos/mPosB/mPosC/mPosD). a5 is
-// read from the stack frame but never referenced by the original disasm;
-// not used here either. Not worth chasing hypotheses since the wall is
-// structural (repo-wide vector.h fix required first), consistent with the
-// vector.h note already in CLAUDE.md.
+// @Ok
+// @Matching
+// Was blocked on the repo-wide vector.h operator-(CVector,CVector) INLINE
+// bug (it compiled inline instead of the real out-of-line call the
+// original makes at 0x4E7760). Now that operator- moved out-of-line into
+// vector.cpp (2026-08-27), rebuilt clean with 0 mnemonic diffs against
+// 0x409400, no source change needed here. a5 is read from the stack frame
+// but never referenced in the original disasm; unused here too.
 void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, int a4, int a5)
 {
 	CVector dir(a3->vx, a3->vy, a3->vz);
