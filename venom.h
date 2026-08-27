@@ -39,6 +39,7 @@ class CVenom : public CBaddy
 		EXPORT void AdjustWaterModel(void);
 		EXPORT void PulseL6A4Node(bool);
 		EXPORT void VenomDie(void);
+		EXPORT void ResolveSwitchNodes(void);
 
 		EXPORT virtual void CreateCombatImpactEffect(CVector *,i32) OVERRIDE;
 
@@ -90,7 +91,10 @@ class CVenom : public CBaddy
 		i32 field_3B0;
 		i32 field_3B4;
 
-		PADDING(0x3E4-0x3B4-4);
+		i32 field_3B8;
+		i32 field_3BC[4];
+		u32 field_3CC;
+		CItem *field_3D0[5];
 
 		// @FIXME
 		CClass *field_3E4;

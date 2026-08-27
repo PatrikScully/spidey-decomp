@@ -265,6 +265,69 @@ INLINE i32* CVenom::GetNewCommandBlock(u32 a1)
 	return res;
 }
 
+// @Ok
+// @Matching
+// Node type 1002 (ID_SWITCH_TO) with subtype 4 marks a "go to switch" node. For each
+// one found, walk its link chain to the final target node, find the position, then
+// find the nearest CSwitch (mType 407) in ControlBaddyList to that position.
+void CVenom::ResolveSwitchNodes(void)
+{
+	this->field_3CC = 0;
+
+	for (i32 i = 1; i < NumNodes; i++)
+	{
+		i16 *node = G_OFFSETLIST[i];
+
+		if (node[0] == 1002 && node[1] == 4)
+		{
+			print_if_false(this->field_3CC < 4, "More than 4 ID_SWITCH_TO nodes found");
+
+			i32 linkIndex = i;
+			this->field_3BC[this->field_3CC] = linkIndex;
+
+			u16 *links = Trig_GetLinksPointer(linkIndex);
+
+			if (links[0] != 0)
+			{
+				do
+				{
+					print_if_false(links[0] == 1, "More than 1 linked node for GointToSwitches path");
+					linkIndex = links[1];
+					links = Trig_GetLinksPointer(linkIndex);
+				} while (links[0] != 0);
+			}
+
+			CVector v3;
+			v3.vx = 0;
+			v3.vy = 0;
+			v3.vz = 0;
+			Trig_GetPosition(&v3, linkIndex);
+
+			u32 bestDist = 0xFFFFFFFF;
+
+			for (CItem *cur = ControlBaddyList; cur; cur = reinterpret_cast<CItem*>(cur->mNextItem))
+			{
+				if (cur->mType == 407)
+				{
+					u32 dist = Utils_Dist(v3, cur->mPos);
+
+					if (dist < bestDist)
+					{
+						bestDist = dist;
+						this->field_3D0[this->field_3CC] = cur;
+					}
+				}
+			}
+
+			print_if_false(bestDist < 0xFFFFFFFF, "No switch found");
+
+			this->field_3CC++;
+		}
+	}
+
+	this->field_3B8 = (1 << this->field_3CC) - 1;
+}
+
 // @MEDIUMTODO
 CVenom::CVenom(int*, int)
 {
@@ -586,6 +649,11 @@ void validate_CVenom(void){
 
 	VALIDATE(CVenom, field_3B0, 0x3B0);
 	VALIDATE(CVenom, field_3B4, 0x3B4);
+
+	VALIDATE(CVenom, field_3B8, 0x3B8);
+	VALIDATE(CVenom, field_3BC, 0x3BC);
+	VALIDATE(CVenom, field_3CC, 0x3CC);
+	VALIDATE(CVenom, field_3D0, 0x3D0);
 
 	VALIDATE(CVenom, field_3E4, 0x3E4);
 
