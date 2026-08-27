@@ -1741,23 +1741,14 @@ void CQuadBit::SetTransparency(unsigned char a2){
 	this->mTint = a2 | ((a2 | (a2 << 8)) << 8);
 }
 
-// @NotOk
-// residue: 92 of ~100 mnemonic diffs (cmpsum against 0x409400). Blocked by
-// a known repo-wide issue (CLAUDE.md): vector.h's operator-(CVector,CVector)
-// is INLINE but the original calls it out of line at this exact address
-// (0x4E7760, confirmed via names.json: ??G@YA?AVCVector@@ABV0@0@Z), so our
-// build can never emit that call, which shifts register allocation for the
-// whole function from the first instruction on (this ends up in edi
-// instead of esi). Semantics verified against the disassembly: a3 is an
-// SVECTOR direction (sign-extended to a local CVector), Utils_CalcPerps
-// (0x4E5E20, already @Ok in utils.cpp) gives two perpendiculars, each
-// scaled by a4 via CVector::operator*=(const int&) (0x4E75F0, called twice
-// with the same a4 in the original, matching this build), then combined
-// with *a2 into the quad's four corners (mPos/mPosB/mPosC/mPosD). a5 is
-// read from the stack frame but never referenced by the original disasm;
-// not used here either. Not worth chasing hypotheses since the wall is
-// structural (repo-wide vector.h fix required first), consistent with the
-// vector.h note already in CLAUDE.md.
+// @Ok
+// @Matching
+// Was blocked on the repo-wide vector.h operator-(CVector,CVector) INLINE
+// bug (it compiled inline instead of the real out-of-line call the
+// original makes at 0x4E7760). Now that operator- moved out-of-line into
+// vector.cpp (2026-08-27), rebuilt clean with 0 mnemonic diffs against
+// 0x409400, no source change needed here. a5 is read from the stack frame
+// but never referenced in the original disasm; unused here too.
 void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, int a4, int a5)
 {
 	CVector dir(a3->vx, a3->vy, a3->vz);
