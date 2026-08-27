@@ -5,6 +5,8 @@
 #include "mem.h"
 #include "ps2funcs.h"
 #include "trig.h"
+#include "m3dutils.h"
+#include "camera.h"
 
 #include "validate.h"
 
@@ -584,10 +586,77 @@ CElectrify::CElectrify(CSuper* pSuper, i32 a2)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// @MEDIUMTODO
-void CElectrify::ChooseRandomPositions(i32, i32)
+// @Ok
+// @AlmostMatching: 14 source hypotheses tried (log below). cmpsum shows only
+// 1 mnemonic diff (the final "ret 8" falls outside the compare window). The
+// real residue is a stack frame that is 12 bytes bigger than the original
+// (sub esp,60h here vs sub esp,54h in the original). Every instruction
+// content and value already matches; the only byte-level effect of the extra
+// 12 bytes is that one address computation, "lea ecx,[esp+7Ch]" in the
+// original (address of the interp local, passed to the final operator+
+// call), becomes "lea ecx,[esp+88h]" here, which needs a 32-bit displacement
+// instead of an 8-bit one (3 extra bytes) once the offset crosses 127.
+// Hypotheses tried and rejected (all confirmed via cmpsum on the rebuilt
+// DLL): plain "<" vs "<=" loop bound; reversed comparison direction;
+// removing a cached CVector* alias for field_54; interleaving the toCamera /
+// interp / weight statements in several different orders (this got the diff
+// count from 150 down to 1); caching "field_3C + 1" in a named local before
+// the loop; while vs for loop; mutating the parameter directly vs a fresh
+// loop-index local (this alone dropped the diffs from 17 to 1); reusing one
+// local for both the >>12 shift amount and the CVector(30) scale, mirroring
+// the original's reused stack slot (regressed to 41 diffs); u16 vs i32 for
+// the "parent" local; declaration order of interp vs toCamera (both orders
+// tried, no change); a named local vs a bare literal for the CVector(30)
+// argument (no change). None of these closed the last 12 bytes. field_4C is
+// an array of SHook (see M3dUtils_GetDynamicHookPosition), field_54 is the
+// matching array of computed CVector positions (both field_50 entries
+// long). Each call picks a random hook, finds a random point between it and
+// its parent hook (via G_PSXREGION[region].pHierarchy), then pushes that
+// point out towards the camera by a fixed distance and stores it into
+// field_44[i] (the ribbon's own point array, CSimpleTexturedRibbon).
+void CElectrify::ChooseRandomPositions(i32 a1, i32 a2)
 {
-	printf("CElectrify::ChooseRandomPositions(i32, i32)");
+	CSuper *pSuper = reinterpret_cast<CSuper*>(Mem_RecoverPointer(reinterpret_cast<SHandle*>(&this->field_5C)));
+	print_if_false(pSuper != 0, "NULL pSuper?");
+
+	for (i32 i = 0; i < this->field_50; i++)
+	{
+		reinterpret_cast<SHook*>(this->field_4C)[i].Part.vx = static_cast<i16>(Rnd(201) - 100);
+		reinterpret_cast<SHook*>(this->field_4C)[i].Part.vy = static_cast<i16>(Rnd(201) - 100);
+		reinterpret_cast<SHook*>(this->field_4C)[i].Part.vz = static_cast<i16>(Rnd(201) - 100);
+
+		M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->field_54[i]), pSuper, reinterpret_cast<SHook*>(this->field_4C) + i);
+	}
+
+	u16 *pHierarchy = G_PSXREGION[pSuper->mRegion].pHierarchy;
+	print_if_false(pHierarchy != 0, "NULL pHierarchy?");
+
+	for (i32 idx = a1; idx < this->field_3C + 1; idx += a2)
+	{
+		u16 pos = static_cast<u16>(Rnd(this->field_50));
+		u16 parent = pHierarchy[pos];
+		print_if_false(parent < this->field_50, "Bad Parent index");
+
+		i16 randOffset = static_cast<i16>(Rnd(this->field_58 + 256));
+
+		CVector interp;
+
+		CVector toCamera;
+		toCamera.vx = gMikeCamera[0].Position.vx << 12;
+
+		i16 weight = static_cast<i16>(randOffset - this->field_58);
+		toCamera.vy = gMikeCamera[0].Position.vy << 12;
+		toCamera.vz = gMikeCamera[0].Position.vz << 12;
+
+		interp.vx = this->field_54[pos].vx + ((weight * (this->field_54[parent].vx - this->field_54[pos].vx)) >> 8);
+		interp.vy = this->field_54[pos].vy + ((weight * (this->field_54[parent].vy - this->field_54[pos].vy)) >> 8);
+		interp.vz = this->field_54[pos].vz + ((weight * (this->field_54[parent].vz - this->field_54[pos].vz)) >> 8);
+
+		toCamera = (toCamera - interp) >> 12;
+		VectorNormal(reinterpret_cast<VECTOR*>(&toCamera), reinterpret_cast<VECTOR*>(&toCamera));
+
+		*reinterpret_cast<CVector*>(&this->field_44[idx]) = interp + CVector(30) * toCamera;
+	}
 }
 #ifdef _MSC_VER
 #pragma auto_inline(on)
