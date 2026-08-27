@@ -553,15 +553,30 @@ static STrainingMission* const gChallenges = reinterpret_cast<STrainingMission*>
 // Read once, then cleared to 0 alongside gWideScreen (0x00660F80,
 // idb_globals.txt); guess: a paired display-mode flag.
 #define gScreenModeFlag (*reinterpret_cast<i32*>(0x0054D47C))
-// Reused for two unrelated things in the same function: first holds the
-// pre-clear value of gScreenModeFlag (write-only, never read back), then
-// later becomes the sentinel/insertion-position scratch for the high-score
-// insert (-1 = "no room", else 0-4 = the row that was written).
+// Sentinel/insertion-position scratch for the high-score insert (-1 = "no
+// room", else 0-4 = the row that was written).
 #define gTrainingScratch (*reinterpret_cast<i32*>(0x005513D4))
-// Set at the very end of PShell_EndTrainingInit to 0x4EE (1262); purpose
-// unclear (a timer/frame-count guess, going by the neighbouring
-// gTrainingDisplayTimer's role).
-#define gTrainingSomeTimer (*reinterpret_cast<i32*>(0x005512EC))
+// Found 2026-08-27 via IDA on PShell_EndTrainingUpdate (0x47BC40): this is
+// the training screen's own zoom-ease value, same role as shell.cpp's
+// gShellMenuEase (eased toward 0x180/384 there too, same
+// PShell_MoveTowards idiom) but needs its own fixed game address since
+// gShellMenuEase is a plain repo global (DLL-relocatable), same class of
+// problem as gSaveGame. Set to 1262 (0x4EE) at the end of
+// PShell_EndTrainingInit (previously guessed as an unrelated "timer" under
+// the name gTrainingSomeTimer; renamed once EndTrainingUpdate's ease usage
+// showed what it actually is).
+#define gTrainingMenuEase (*reinterpret_cast<i32*>(0x005512EC))
+// Found 2026-08-27 via IDA on PShell_EndTrainingInit's own disassembly:
+// holds gScreenModeFlag's pre-clear value (set once in EndTrainingInit,
+// restored into gScreenModeFlag once in EndTrainingUpdate when the player
+// exits the training screen). A SEPARATE global from gTrainingScratch
+// (0x5513D4, 4 bytes earlier): EndTrainingInit's own source used to alias
+// gTrainingScratch for this store, which was a bug (wrote the saved value
+// to the wrong address, immediately clobbered anyway by gTrainingScratch's
+// real -1 sentinel a few lines later, so the CRecordBox logic was
+// unaffected, but EndTrainingUpdate could never read the real saved value
+// back). Fixed here.
+#define gTrainingSavedScreenMode (*reinterpret_cast<i32*>(0x005513D8))
 // Read once at the top of PShell_EndTrainingInit as the "target area" a
 // gChallenges entry's mAreaId gets matched against. Named in a shell.cpp
 // comment as the address neighbouring gChallenges/gCheats but never wired
@@ -681,11 +696,14 @@ void PShell_EndTrainingDisplay(void)
 // straight in if it landed on an empty row (gTrainingResultState = 3); if
 // no row was found in 5, nothing is written. Landing at row 0 with
 // resultState 2 (beat the existing #1) sets gTrainingDisplayTimer = 0x50.
-// gTrainingSomeTimer always gets set to 0x4EE at the end regardless.
+// gTrainingMenuEase always gets set to 0x4EE at the end regardless (its
+// initial zoomed-out value, eased back down toward 0x180 by
+// PShell_EndTrainingUpdate).
 //
 // Globals with no idb_globals.txt entry are all tentative (see their own
 // comments above): gTrainingActive, gEndTrainingFlag, gScreenModeFlag,
-// gTrainingScratch, gTrainingSomeTimer, gTrainingSeconds. String literals
+// gTrainingScratch, gTrainingMenuEase, gTrainingSavedScreenMode,
+// gTrainingSeconds. String literals
 // passed to print_if_false are placeholders (relocated string addresses
 // are an accepted diff, only the presence/position of the argument
 // matters for matching).
@@ -723,7 +741,7 @@ void PShell_EndTrainingInit(void)
 
 	gTrainingActive = 1;
 	gEndTrainingFlag = 1;
-	gTrainingScratch = oldScreenMode;
+	gTrainingSavedScreenMode = oldScreenMode;
 	gScreenModeFlag = 0;
 	*(i32*)0x00660F80 = 0;  // gWideScreen (ps2m3d.cpp), fixed game address; see gSaveGame note in CLAUDE.md
 
@@ -872,7 +890,7 @@ void PShell_EndTrainingInit(void)
 	if (gTrainingResultState == 2 && gTrainingScratch == 0)
 		gTrainingDisplayTimer = 0x50;
 
-	gTrainingSomeTimer = 0x4EE;
+	gTrainingMenuEase = 0x4EE;
 }
 
 // Investigation notes (0x0047BC40, 656 bytes), not implemented yet.
