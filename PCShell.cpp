@@ -328,10 +328,11 @@ EXPORT void gsub_430680(void)
 }
 
 // unnamed helper called once at the top of every controller config screen frame, address 0x430880 (named "nullsub_3" in the IDA export)
-// @SMALLTODO
+// original bytes are a single ret, no body.
+// @Ok
+// @Matching
 EXPORT void gsub_430880(void)
 {
-	printf("gsub_430880(void)");
 }
 
 // unnamed helper called once after PCSHELL_DoControllerConfig's loop ends, address 0x515850
