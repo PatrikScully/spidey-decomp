@@ -1450,7 +1450,7 @@ void CCarnage::DoMGSShadow(void)
 		this->field_368 = new CQuadBit();
 		TotalBitUsage = -1;
 
-		this->field_368->SetTexture(0u, 0u);
+		this->field_368->SetTexture(0, 0);
 	}
 
 	this->field_368->mFrigDeltaZ = 0x20;
