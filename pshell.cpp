@@ -14,6 +14,7 @@
 #include "PCGfx.h"
 #include "trig.h"
 #include "ps2redbook.h"
+#include "camera.h"
 
 #include <cstring>
 
@@ -893,38 +894,152 @@ void PShell_EndTrainingInit(void)
 	gTrainingMenuEase = 0x4EE;
 }
 
-// Investigation notes (0x0047BC40, 656 bytes), not implemented yet.
-// Has a full SEH frame (mov eax,fs:[0]; push -1; push handler; push eax;
-// mov fs:[0],esp), same class of residue already open on Shell_ShowRecord
-// (shell.cpp, @NotOk, see its comment for the hypotheses tried there).
-// Touches gTrainingDisplayTimer/gTrainingRecordBox/gTrainingMenu, calls
-// gTrainingRecordBox's own Update through its vtable (call dword ptr [eax],
-// with 1 pushed first), and does name-entry keyboard handling through
-// 0x0050C180/0x0050C6C0 (key checks) and 0x00440110/0x00440600/
-// 0x0043FFF0/0x0043F9B0/0x004178E0 (unnamed).
+// idb_globals.txt: 0x0056F3B8 CameraList. Confirmed as a CCamera* by this
+// function's own disassembly: it calls ->SetCamAngle() on it (0x4178E0,
+// already @Ok @AlmostMatching in camera.cpp), and CCamera has a real
+// field_236 (i16) at that exact offset (VALIDATE(CCamera, field_236, 0x236)
+// in camera.cpp, also read by SetCamAngle itself).
+#define CameraList (*reinterpret_cast<CCamera**>(0x0056F3B8))
+
+// Same string-pointer table class as gTextNewRecord/gTextYourScore/gTextNone
+// above and gTextSaveGameProgress further down, just a different cluster of
+// entries (0x54BA94-0x54BA9C vs 0x54B8E4-0x54B8F8); string content confirmed
+// against the original exe.
+#define gTextRetry (*reinterpret_cast<char**>(0x0054BA94))
+#define gTextQuitToTraining (*reinterpret_cast<char**>(0x0054BA98))
+#define gTextQuitToMainMenu (*reinterpret_cast<char**>(0x0054BA9C))
+
+// (0x0047BC40, 656 bytes). Full decompile via IDA/Hex-Rays on the real exe,
+// 2026-08-27, replacing the earlier investigation-only pass.
 //
-// 2026-08-27: confirmed the likely SEH source. The function allocates a
-// CClass::operator new(0x53C) block (0x53C == sizeof(CMenu), per
-// VALIDATE_SIZE(CMenu, 0x53C) in front.cpp) shortly after the two
-// housekeeping calls at the top, matching `gTrainingMenu = new CMenu(...)`.
-// A throwaway local test (`new CMenu(1,2,3,4,5,6)` in an EXPORT test
-// function, built and disassembled, then removed, not committed) confirmed
-// our compiler emits the exact same SEH setup shape (mov eax,fs:0; push -1;
-// push handler; push eax; mov fs:0,esp) for any function that does a bare
-// `new CMenu(...)`, matching this function's own prologue. This lines up
-// with the parallel shell.cpp session's finding on Shell_ShowRecord ("new
-// CMenu(...) reproduces the SEH frame while new CRecordBox(...) doesn't").
-// This confirms the ROOT CAUSE (a CMenu allocation triggers the frame) but
-// not a fix: whether our SEH setup/teardown bytes match the original
-// exactly is the same open, hard problem documented for Shell_ShowRecord,
-// not something resolved by this test. Left at @MEDIUMTODO; full
-// implementation (menu construction args, the keyboard/name-entry state
-// machine, the CRecordBox::Update vtable call) not attempted this session
-// given the size of the remaining task list.
-// @MEDIUMTODO
+// Structure: nudge the camera angle once (CameraList, see its own comment);
+// bail out early while gTrainingDisplayTimer is still counting down (see
+// PShell_EndTrainingDisplay, same global); otherwise update the
+// already-built CRecordBox and ease gTrainingMenuEase toward 0x180 while
+// its field_40 "still animating" flag is set (early return while it is,
+// same shape as the CMenu-vs-CRecordBox ease idiom in PShell_MaybeSaveGame/
+// Shell_ShowRecord); once field_40 clears, lazily build gTrainingMenu (a
+// plain `new CMenu(...)`, same cross-TU SEH-frame mechanism as
+// Shell_ChooseSurvivalArena, see the CLAUDE.md "SOLVED 2026-08-27" note:
+// CMenu::CMenu is defined in front.cpp, a different TU, so the frame
+// reproduces with no source workaround needed) with three menu entries
+// (Retry / quit to training / quit to main menu); update the menu every
+// frame, check whether the mouse sits over the highlighted entry's text
+// (PCSHELL_IsMouseOverText, only computed when PCSHELL_CheckTriggers(0x100,
+// ...) is true, mirroring the mouse-vs-pad idiom already used in
+// shell.cpp's own CMenu handling); once a valid line (0-39) is chosen by
+// mouse-over or by PCSHELL_CheckTriggers(0x50110, ...), clear the two pad
+// trigger flags used to open this screen (G_SCONTROL[0].X/.Start, matching
+// PShell_MaybeSaveGame's clear pair), turn off the training-active flags,
+// restore gScreenModeFlag from gTrainingSavedScreenMode, translate the
+// chosen line (0/1/2) into gLevelStatus (already a real repo global,
+// trig.cpp, idb_globals.txt names 0x60CFA4 the same way), and tear down
+// both widgets.
+//
+// All callees are already real elsewhere in the repo (front.cpp's CMenu
+// methods, camera.cpp's CCamera::SetCamAngle, PCShell.cpp's
+// PCSHELL_CheckTriggers/PCSHELL_IsMouseOverText, shell.cpp's
+// CRecordBox::Update), so nothing new needed a stub.
+//
+// cmpsum against the rebuilt DLL: 16 mnemonic diffs after 13 hypotheses
+// (below the 15-hypothesis bar for a medium function, so left @NotOk, not
+// @AlmostMatching; full log in pshell.attempts.md). Confirmed via
+// instruction-count check that nothing is missing: the epilogue matches
+// byte for byte and both remaining diff clusters are pure register/
+// scheduling reorderings of already-correct operations, not a dropped or
+// extra instruction. Cluster A: which register (and how early) holds the
+// gTrainingMenu pointer vs gTrainingSavedScreenMode around the final
+// flag-clear stores. Cluster B: the exact interleaving of the
+// delete-and-null-out teardown for gTrainingRecordBox/gTrainingMenu. Call
+// targets, struct field offsets, and control flow are all believed
+// correct.
+// @NotOk
 void PShell_EndTrainingUpdate(void)
 {
-    printf("PShell_EndTrainingUpdate(void)");
+	if (CameraList != 0)
+		CameraList->SetCamAngle(CameraList->field_236 + 24, 0);
+
+	if (gTrainingDisplayTimer != 0)
+		return;
+
+	print_if_false(gTrainingRecordBox != 0, "NULL pRecordBox");
+	gTrainingRecordBox->Update();
+
+	CRecordBox* recordBox = gTrainingRecordBox;
+
+	if (recordBox->field_40 != 0)
+	{
+		gTrainingMenuEase = PShell_MoveTowards(gTrainingMenuEase, 0x180);
+
+		if (recordBox->field_40 != 0)
+			return;
+	}
+
+	if (gTrainingMenu == 0)
+	{
+		Mess_SetScale(0x100);
+		Mess_SetCurrentFont("sp_fnt00.fnt");
+
+		gTrainingMenu = new CMenu(0x100, 0xB8, 0, 0x100, 0x100, 0x10);
+		gTrainingMenu->mLineSep = 0xE;
+
+		gTrainingMenu->AddEntry(gTextRetry);
+		gTrainingMenu->AddEntry(gTextQuitToTraining);
+		gTrainingMenu->AddEntry(gTextQuitToMainMenu);
+
+		gTrainingMenu->Zoom(0);
+	}
+
+	gTrainingMenu->Update();
+
+	u8 mouseOverText = 0;
+
+	if (PCSHELL_CheckTriggers(0x100, 1, 1))
+	{
+		u8 justification = gTrainingMenu->mJustification;
+		const char* entryName = gTrainingMenu->mEntry[gTrainingMenu->mLine].name;
+		i32 x, y;
+
+		gTrainingMenu->GetEntryXY(entryName, &x, &y);
+
+		if (PCSHELL_IsMouseOverText(entryName, x, y, justification))
+			mouseOverText = 1;
+	}
+
+	if (gTrainingMenu->mLine < 0x28)
+	{
+		if (!mouseOverText)
+		{
+			if (!PCSHELL_CheckTriggers(0x50110, 1, 1))
+				return;
+		}
+
+		i32 savedScreenMode = gTrainingSavedScreenMode;
+
+		G_SCONTROL[0].X.Triggered = 0;
+		G_SCONTROL[0].Start.Triggered = 0;
+		gTrainingActive = 0;
+		gEndTrainingFlag = 0;
+		gScreenModeFlag = savedScreenMode;
+
+		switch (gTrainingMenu->mLine)
+		{
+			case 0:
+				gLevelStatus = 8;
+				break;
+			case 1:
+				gLevelStatus = 10;
+				break;
+			case 2:
+				gLevelStatus = 7;
+				break;
+		}
+
+		delete gTrainingRecordBox;
+		gTrainingRecordBox = 0;
+		delete gTrainingMenu;
+		gTrainingMenu = 0;
+	}
 }
 
 // Save-confirmation modal loop. Same idiom as Shell_ShowRecord's loop
