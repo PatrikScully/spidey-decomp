@@ -946,7 +946,10 @@ u8 CThug::TugImpulse(CVector* a2, CVector* a3, CVector* a4)
 	return 1;
 }
 
-// @Ok
+// @NotOk
+// residue: 44 mnemonic diffs against 0x4d8d70 (cmpsum verified). Stale @Ok
+// tag found 2026-08-27 while working CLizMan::CheckFallBack (near-identical
+// twin function in lizman.cpp), not fixed here, just corrected.
 void CThug::CheckFallBack(void)
 {
 	CVector v6;
