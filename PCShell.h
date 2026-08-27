@@ -30,6 +30,10 @@ EXPORT void PCSHELL_Relax(void);
 EXPORT void PCSHELL_Shutdown(void);
 EXPORT u8 PCSHELL_UpdateMouse(void);
 EXPORT void displayControllerScreen(void);
+// unnamed helper, address 0x430680, original bytes disassemble to an empty
+// function (no args used). Declared here so other TUs (e.g. screen.cpp) can
+// call it without duplicating the forward declaration.
+EXPORT void gsub_430680(void);
 EXPORT void initActionMaps(void);
 EXPORT u8 processControllerScreen(void);
 EXPORT void resetActionMaps(bool);

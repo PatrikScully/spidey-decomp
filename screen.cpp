@@ -4,6 +4,9 @@
 #include "camera.h"
 #include "ps2funcs.h"
 #include "psx_types.h"
+#include "mem.h"
+#include "utils.h"
+#include "PCShell.h"
 
 
 EXPORT bool gScreenTarget;
@@ -105,10 +108,92 @@ void Screen_DrawTarget(void)
     printf("Screen_DrawTarget(void)");
 }
 
-// @MEDIUMTODO
+// Same two addresses as gFrontCameraModeFlagOne/Two in front.cpp (0x56FB78 /
+// 0x56FBF4, "meaning unclear without a consumer" per that file's comment).
+// Not G_* macros (no shared/hooked state), so a second tentative name in
+// this file follows the older "duplicate static address, own name" rule.
+// Here they are cleared right before, and set right after, three
+// Db_FlipClear()/optimized_unused_garbage() calls bracketing the whole
+// palette rebuild, so a "double buffer busy" style flag pair is the best
+// guess from this call site.
+#define gDbBusyFlagOne (*reinterpret_cast<u8*>(0x0056FB78))
+#define gDbBusyFlagTwo (*reinterpret_cast<u8*>(0x0056FBF4))
+
+// @NotOk
+// residue: 84 mnemonic diffs (cmpsum), down from 110 on the first attempt.
+// 8 hypotheses logged in screen.attempts.md (below the medium-function 15
+// minimum, so not @AlmostMatching). Two real bugs found and fixed along the
+// way: a missing CSE on the channel-sum expression, and a signed/unsigned
+// shift (sar vs shr) from using i32 instead of u32 for the sum locals.
+// Main open residue: a dead counter (read from pDoubleBuffer vs &DoubleBuffer[0],
+// never used again) that the original keeps alive in a register for 240
+// loop iterations without ever touching memory, which a plain local, a
+// volatile local, and a real global each reproduce differently but not
+// exactly; and register-spill diffs inside the per-pixel loop suggesting
+// higher live-range pressure than the original.
 void Screen_SepiaFade(void)
 {
-    printf("Screen_SepiaFade(void)");
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: MoveImage");
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	Pause(1);
+	gDbBusyFlagTwo = 0;
+	gDbBusyFlagOne = 0;
+	Db_FlipClear();
+	gsub_430680();
+
+	void *p = DCMem_New(0x1000, 0, 1, 0, true);
+	i32 x = (i32)pDoubleBuffer - (i32)&DoubleBuffer[0];
+	void *chunk[4];
+	chunk[0] = p;
+	p = (u8*)p + 0x400;
+	chunk[1] = p;
+	p = (u8*)p + 0x400;
+	chunk[2] = p;
+	p = (u8*)p + 0x400;
+	chunk[3] = p;
+
+	i32 i = 0;
+	volatile u16 bx = (x != 0) ? 0x100 : 0;
+
+	for (; i < 0xF0; i++, bx++)
+	{
+		u32 *p = (u32*)chunk[i & 3];
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: StoreImage");
+
+		for (i32 j = 0; j < 0x100; j++)
+		{
+			u32 d = *p;
+
+			u32 s = ((d >> 10) & 0x1F) + ((d >> 5) & 0x1F) + (d & 0x1F);
+			u8 grey1 = (s * 1365) >> 12;
+			u8 grey2 = (s * 682) >> 12;
+			u32 lo = (d & 0x8000) | (grey1 << 10) | (grey2 << 5) | grey2;
+
+			u32 s2 = ((d >> 26) & 0x1F) + ((d >> 21) & 0x1F) + ((d >> 16) & 0x1F);
+			u8 grey1b = (s2 * 1365) >> 12;
+			u8 grey2b = (s2 * 682) >> 12;
+			u32 hi = (grey1b << 10) | (grey2b << 5) | grey2b;
+
+			*p = (d & 0x80000000) | lo | (hi << 16);
+			p++;
+		}
+	}
+
+	Mem_Delete(chunk[0]);
+	Db_FlipClear();
+	gsub_430680();
+	Db_FlipClear();
+	gDbBusyFlagTwo = 1;
+	gDbBusyFlagOne = 1;
+
+	G_GAME_FADE = 0x1E005A;
 }
 
 // @Ok
