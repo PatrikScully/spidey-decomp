@@ -60,7 +60,11 @@ class CVenom : public CBaddy
 		SHandle field_340;
 		i32 field_348;
 
-		PADDING(0x358 - 0x348 - 4);
+		PADDING(1);
+
+		u8 field_34D;
+
+		PADDING(0x358 - 0x34D - 1);
 
 		i32 field_358;
 		i32* field_35C;

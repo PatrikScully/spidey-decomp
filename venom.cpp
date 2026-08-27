@@ -491,9 +491,101 @@ void CVenom::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @BIGTODO
+// @Ok
+// @AlmostMatching: 18 mnemonic diffs in two small reordering clusters (G_MECHLIST address
+// computation order in the field_218&4 case; mAngAcc.vy read timing in the angular velocity
+// decay step). Everything else, including all three aim branches and the physics integration
+// loop, matches exactly. 15 hypotheses tried, see
+// ~/Documents/spidey-work/wt/CVenom_DoPhysics.attempts.md.
 void CVenom::DoPhysics(void)
-{}
+{
+	if (!this->field_34D)
+	{
+		i32 flags = this->field_218;
+
+		if (flags & 1)
+		{
+			if ((this->mAnim != 5 && this->mAnim != 4) || this->mAnimFinished)
+			{
+				this->RunAnim(5, 0, -1);
+			}
+
+			CSVector aimAngles;
+			aimAngles.vx = 0;
+			aimAngles.vy = 0;
+			aimAngles.vz = 0;
+			Utils_CalcAim(&aimAngles, &this->mPos, &this->field_240);
+
+			i32 savedVx = aimAngles.vx;
+			aimAngles.vx = 0;
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimAngles, 10);
+			aimAngles.vx = savedVx;
+
+			i32 velY = this->mAngVel.vy;
+			i32 signMask = velY >> 31;
+			i32 absVelY = (signMask ^ velY) - signMask;
+
+			i32 mag;
+			if (absVelY >= 0x40)
+			{
+				mag = 0;
+			}
+			else
+			{
+				mag = (0x40 - absVelY) << 6;
+			}
+			mag = (static_cast<u32>(mag) * 14) >> 12;
+
+			Utils_GetVecFromMagDir(&this->mVel, mag, &aimAngles);
+		}
+		else if (flags & 2)
+		{
+			CSVector aimAngles;
+			aimAngles.vx = 0;
+			aimAngles.vy = 0;
+			aimAngles.vz = 0;
+			Utils_CalcAim(&aimAngles, &this->mPos, reinterpret_cast<CVector*>(&this->field_3A0));
+
+			aimAngles.vx = 0;
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimAngles, 8);
+		}
+		else if (flags & 4)
+		{
+			CSVector aimAngles;
+			aimAngles.vx = 0;
+			aimAngles.vy = 0;
+			aimAngles.vz = 0;
+			Utils_CalcAim(&aimAngles, &this->mPos, &G_MECHLIST->mPos);
+
+			aimAngles.vx = 0;
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimAngles, 8);
+		}
+		else
+		{
+			this->mAngVel.vx = 0;
+			this->mAngVel.vy = 0;
+			this->mAngVel.vz = 0;
+			this->mAngAcc.vx = 0;
+			this->mAngAcc.vy = 0;
+			this->mAngAcc.vz = 0;
+		}
+	}
+
+	this->mAngVel.vx += this->mAngAcc.vx;
+	this->mAngVel.vx -= this->mAngVel.vx >> 2;
+	this->mAngVel.vy += this->mAngAcc.vy;
+	this->mAngVel.vy -= this->mAngVel.vy >> 2;
+
+	this->mAngVel.KillSmall();
+
+	for (i32 i = 0; i < this->field_80; i++)
+	{
+		this->mPos += this->mVel;
+		this->mAngles += this->mAngVel;
+	}
+
+	this->mAngles.Mask();
+}
 
 // @Ok
 void CVenomWrap::Die(void)
@@ -774,6 +866,7 @@ void validate_CVenom(void){
 
 	VALIDATE(CVenom, field_340, 0x340);
 	VALIDATE(CVenom, field_348, 0x348);
+	VALIDATE(CVenom, field_34D, 0x34D);
 
 	VALIDATE(CVenom, field_358, 0x358);
 	VALIDATE(CVenom, field_35C, 0x35C);
