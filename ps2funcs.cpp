@@ -451,10 +451,13 @@ void gte_rtir(void){
 	FixedXForm(gRotMatrix, &gOp12Result, &gGeneralLongVector);
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
 void gsub_46D9B0(VECTOR *a1)
 {
-    printf("gsub_46D9B0(VECTOR *a1)");
+	a1->vx = gOp12Result.vx;
+	a1->vy = gOp12Result.vy;
+	a1->vz = gOp12Result.vz;
 }
 
 // @Ok
