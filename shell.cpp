@@ -676,43 +676,8 @@ void Shell_ScreenAdjust(void)
 	gShellMenuEase = 0x200;
 }
 
-// Widget class from the "pshell" Mac module (spiderman_names.txt:
-// __ct__10CRecordBoxFiiP16STrainingMission at 0x47B1E0, Display__10CRecordBoxFv
-// at 0x47B240, Update__10CRecordBoxFv at 0x47B5A0, NameEntryOn__10CRecordBoxFUc
-// at 0x47B830, __dt__10CRecordBoxFv at 0x47AF00). Declared here, not in
-// pshell.h/.cpp, because Shell_ShowRecord (shell.cpp) is the only caller found
-// this session. Derives from CClass: the constructor never calls a base ctor
-// (CClass has none) and never sets up more than one vtable slot, matching
-// Shell_ShowRecord's cleanup call (vtable[0](1), the scalar deleting
-// destructor CClass::operator new/delete already cover the alloc/free side).
-// Field layout is read off the constructor's writes only (0x47B1E0, 85 bytes,
-// decoded whole below); the gaps it never touches (field_28, field_30..3B,
-// field_40) stay unlabelled padding until Display/Update get decompiled.
-class CRecordBox : public CClass
-{
-	public:
-		EXPORT CRecordBox(i32, i32, STrainingMission*);
-		EXPORT virtual ~CRecordBox(void);
-		EXPORT void Display(void);
-		EXPORT void Update(void);
-		EXPORT void NameEntryOn(u8);
-
-		i32 field_4;
-		i32 field_8;
-		i32 field_C;
-		i32 field_10;
-		i32 field_14;
-		i32 field_18;
-		i32 field_1C;
-		i32 field_20;
-		i32 field_24;
-		i32 field_28;
-		i32 field_2C;
-		u8 field_30[0xC];
-		STrainingMission* field_3C;
-		i32 field_40;
-};
-
+// CRecordBox is now declared in shell.h (moved 2026-08-27, pshell.cpp needs
+// it too for the end-of-training record box; see the comment on the class).
 // CRecordBox's methods live in the same TU as their only caller
 // (Shell_ShowRecord), so keep the inliner off them (same trick as
 // gsub_498240/CheckForPadUnplugged above): the original calls all of these
@@ -2402,6 +2367,14 @@ void validate_SRecords(void)
 	VALIDATE_SIZE(SRecords, 0x242);
 
 	VALIDATE(SRecords, mScores, 0x3);
+}
+
+void validate_STrainingMission(void)
+{
+	VALIDATE_SIZE(STrainingMission, 0x10);
+
+	VALIDATE(STrainingMission, field_0, 0x0);
+	VALIDATE(STrainingMission, field_B, 0xB);
 }
 
 void validate_SRecordRelated(void)
