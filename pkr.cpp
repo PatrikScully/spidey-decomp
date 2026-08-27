@@ -30,7 +30,13 @@ static char* const gPkrErrorMsg = reinterpret_cast<char*>(0x02E09BFC);
 // @NB: the original was built as library and built in debug mode, I won't do the same
 // too much hassle for little gain
 
-// @Ok
+// @NotOk
+// residue: 255 mnemonic diffs (cmpsum against 0x519194), stale @Ok tag found
+// 2026-08-27 while implementing PKR_ReportError/PKR_GetLastError/flushPKR.
+// The whole PKR library was compiled unoptimized (see the @NB note above),
+// same root cause as those three: needs the #pragma optimize("", off) plus
+// #pragma function/intrinsic retrofit those functions use, not attempted
+// here since this function is large and out of this session's scope.
 u8 PKR_ReadFile(
 		LIBPKR_HANDLE* pHandle,
 		const char* pDirName,
@@ -416,7 +422,10 @@ u8 PKR_Close(LIBPKR_HANDLE* pHandle)
 	return 1;
 }
 
-// @Ok
+// @NotOk
+// residue: 26 mnemonic diffs (cmpsum against 0x518883), stale @Ok tag found
+// 2026-08-27, same unoptimized-library root cause documented on
+// PKR_ReadFile above.
 u8 PKR_LockFile(LIBPKR_HANDLE* pHandle)
 {
 	if (pHandle->fp)
