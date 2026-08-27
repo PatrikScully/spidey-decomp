@@ -763,12 +763,63 @@ void Shell_SaveGame(const u32 *,u32 *)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
+// footer label text pointers, same string-pointer table idiom as pshell.cpp's
+// gText* macros. Contents confirmed against the exe's raw .data (0x54B89C ->
+// "select", 0x54B8A4 -> "back", 0x54B98C -> "Option 1").
+#define gTextSelect (*reinterpret_cast<char**>(0x0054B89C))
+#define gTextBack (*reinterpret_cast<char**>(0x0054B8A4))
+#define gTextOption1 (*reinterpret_cast<char**>(0x0054B98C))
+
 // unnamed helper called once per screen adjust / show record frame, address 0x498240.
-// same file range as Shell_ScreenAdjust, not yet decompiled on its own.
-// @SMALLTODO
-EXPORT void gsub_498240(i32, i32)
+// Draws the footer bar: select/back/Option 1 labels, the two xtri button icons
+// (gAnimTable[23], "xtri") plus one Buttons icon (gAnimTable[3], "Buttons "),
+// and the highlight strip behind them.
+// @Ok
+// @Matching
+EXPORT void gsub_498240(i32 x, i32 y)
 {
-	printf("gsub_498240(i32, i32)");
+	PShell_SmallFont();
+	Mess_SetShadowRGB(0xFF);
+	Mess_SetTextJustify(0);
+	Mess_SetRGB(0x80, 0x80, 0x80, 0);
+	Mess_SetRGBBottom(0x45, 0x3C, 0x6B);
+	Mess_DrawText(x - 25, y, gTextSelect, 0, 0x1000);
+	Mess_DrawText(x + 59, y, gTextBack, 0, 0x1000);
+	Mess_DrawText(x - 128, y, gTextOption1, 0, 0x1000);
+
+	POLY_FT4* pPoly = (POLY_FT4*)Panel_DrawTexturedPoly(gAnimTable[23], x - 80, y - 10, G_SORT);
+	print_if_false(pPoly != 0, "error");
+	if (pPoly)
+	{
+		pPoly->b0 = 0x80;
+		pPoly->g0 = 0x80;
+		pPoly->r0 = 0x80;
+		DCPanel_DrawTexturedPoly(1.0f, pPoly, gAnimTable[23], x - 85, y - 11, 20, 12, G_SORT, 0);
+	}
+
+	pPoly = (POLY_FT4*)Panel_DrawTexturedPoly(gAnimTable[23] + 1, x + 14, y - 10, G_SORT);
+	print_if_false(pPoly != 0, "error");
+	if (pPoly)
+	{
+		pPoly->b0 = 0x80;
+		pPoly->g0 = 0x80;
+		pPoly->r0 = 0x80;
+		DCPanel_DrawTexturedPoly(1.0f, pPoly, gAnimTable[23] + 1, x + 9, y - 11, 20, 12, G_SORT, 0);
+	}
+
+	pPoly = (POLY_FT4*)Panel_DrawTexturedPoly(gAnimTable[3] + 1, x - 189, y - 10, G_SORT);
+	print_if_false(pPoly != 0, "error");
+	if (pPoly)
+	{
+		pPoly->b0 = 0x80;
+		pPoly->g0 = 0x80;
+		pPoly->r0 = 0x80;
+		DCPanel_DrawTexturedPoly(1.0f, pPoly, gAnimTable[3] + 1, x - 194, y - 11, 20, 12, G_SORT, 0);
+	}
+
+	PShell_DrawHighlight(0x200, y - 17, x - 832, 24);
+	PShell_NormalFont();
+	Mess_SetShadowRGB(0x29);
 }
 #ifdef _MSC_VER
 #pragma auto_inline(on)

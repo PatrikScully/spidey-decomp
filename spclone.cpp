@@ -183,7 +183,7 @@ void CSpClone::DoMGSShadow(void)
 		this->field_338 = new CQuadBit();
 		TotalBitUsage = -1;
 
-		this->field_338->SetTexture(0u, 0u);
+		this->field_338->SetTexture(0, 0);
 	}
 
 	this->field_338->mFrigDeltaZ = 0x20;

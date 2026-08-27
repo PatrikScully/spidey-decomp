@@ -1802,6 +1802,31 @@ void CQuadBit::SetTexture(int a, int b){
 	this->field_80 = this->mpTexture->TexWin;
 }
 
+// by-anim-name overload, address 0x409190 (unnamed in names.json, sits between
+// the (i32,i32) and (Texture*) overloads; assert string names the class).
+// @Ok
+// @Matching
+void CQuadBit::SetTexture(char* pName, i32 frame)
+{
+	SAnimFrame* pAnim = Spool_FindAnim(pName, 1);
+
+	DoAssert(frame >= 0 && frame < *(reinterpret_cast<i32*>(pAnim) - 1), "Bad frame sent to CQuadBit::SetTexture");
+
+	this->mpTexture = pAnim[frame].pTexture;
+
+	if (this->mpTexture->field_12 & 0xF0)
+		this->mCodeBGR |= 0x20u;
+
+	// @FIXME
+	this->field_74 = *reinterpret_cast<u32*>(&this->mpTexture->u0);
+	// @FIXME
+	this->field_78 = *reinterpret_cast<u32*>(&this->mpTexture->u1);
+	// @FIXME
+	this->field_7C = *reinterpret_cast<u32*>(&this->mpTexture->u2);
+
+	this->field_80 = this->mpTexture->TexWin;
+}
+
 // @Ok
 // @Matching: the assingments are weird bro
 void CQuadBit::SetTexture(Texture *pTex)
