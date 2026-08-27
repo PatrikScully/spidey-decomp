@@ -265,9 +265,216 @@ INLINE i32* CVenom::GetNewCommandBlock(u32 a1)
 	return res;
 }
 
-// @MEDIUMTODO
-CVenom::CVenom(int*, int)
+// @Ok
+// @Matching
+// Node type 1002 (ID_SWITCH_TO) with subtype 4 marks a "go to switch" node. For each
+// one found, walk its link chain to the final target node, find the position, then
+// find the nearest CSwitch (mType 407) in ControlBaddyList to that position.
+void CVenom::ResolveSwitchNodes(void)
 {
+	this->field_3CC = 0;
+
+	for (i32 i = 1; i < NumNodes; i++)
+	{
+		i16 *node = G_OFFSETLIST[i];
+
+		if (node[0] == 1002 && node[1] == 4)
+		{
+			print_if_false(this->field_3CC < 4, "More than 4 ID_SWITCH_TO nodes found");
+
+			i32 linkIndex = i;
+			this->field_3BC[this->field_3CC] = linkIndex;
+
+			u16 *links = Trig_GetLinksPointer(linkIndex);
+
+			if (links[0] != 0)
+			{
+				do
+				{
+					print_if_false(links[0] == 1, "More than 1 linked node for GointToSwitches path");
+					linkIndex = links[1];
+					links = Trig_GetLinksPointer(linkIndex);
+				} while (links[0] != 0);
+			}
+
+			CVector v3;
+			v3.vx = 0;
+			v3.vy = 0;
+			v3.vz = 0;
+			Trig_GetPosition(&v3, linkIndex);
+
+			u32 bestDist = 0xFFFFFFFF;
+
+			for (CItem *cur = ControlBaddyList; cur; cur = reinterpret_cast<CItem*>(cur->mNextItem))
+			{
+				if (cur->mType == 407)
+				{
+					u32 dist = Utils_Dist(v3, cur->mPos);
+
+					if (dist < bestDist)
+					{
+						bestDist = dist;
+						this->field_3D0[this->field_3CC] = cur;
+					}
+				}
+			}
+
+			print_if_false(bestDist < 0xFFFFFFFF, "No switch found");
+
+			this->field_3CC++;
+		}
+	}
+
+	this->field_3B8 = (1 << this->field_3CC) - 1;
+}
+
+EXPORT SLight M3d_VenomLight =
+{
+	{ { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
+	0,
+	{ { 3200, 1040, 2048 }, { 2720, 1600, 1920 }, { 2400, 2560, 2048 } },
+	0,
+	{ 1200, 1200, 960 }
+};
+
+// duplicate of the byte right before gWhatIf (0x60CFC4, ob.cpp). Name from
+// baddy.cpp's gSubmarinerDieRelated. Tentative, static per file per repo convention.
+static u8 * const gSubmarinerDieRelated = (u8*)0x60CFC4;
+
+// @Ok
+// @AlmostMatching: 2 mnemonic diffs (one store/push swap around the SquirtPos call setup,
+// field_3EC store vs the SquirtPos arg push exchange position). Everything else, including
+// every level-ID branch and the difficulty-level ternaries, matches exactly. 15 hypotheses
+// tried, see ~/Documents/spidey-work/wt/CVenom_CVenom.attempts.md.
+CVenom::CVenom(i32 *a2, i32)
+{
+	this->field_37C = 0;
+	this->field_380 = 0;
+	this->field_384 = 0;
+	this->field_3A0 = 0;
+	this->field_3A4 = 0;
+	this->field_3A8 = 0;
+	this->field_3E8 = 0;
+	this->field_3EC = 0;
+	this->field_3F0 = 0;
+	this->field_400 = 0;
+	this->field_404 = 0;
+	this->field_408 = 0;
+	this->field_40C = 0;
+	this->field_410 = 0;
+	this->field_414 = 0;
+	this->field_418 = 0;
+	this->field_41C = 0;
+	this->field_420 = 0;
+
+	i16 *pos = this->SquirtPos(reinterpret_cast<i16*>(a2));
+	i16 *angles = this->SquirtAngles(pos);
+
+	this->field_454 = 0xFF;
+	this->mRGB = 0xFFFFFF;
+	this->field_33D = 1;
+
+	u32 levelId = Trig_GetLevelID();
+
+	switch (levelId)
+	{
+		case 0x9904:
+		case 0x601:
+		case 0x602:
+		case 0x501:
+		case 0x503:
+		case 0x504:
+		case 0x505:
+		case 0x506:
+			this->mCBodyFlags &= ~0x10;
+			this->mRMinor = 0;
+			this->InitItem("venom2");
+			break;
+
+		default:
+			this->mRMinor = 0xC0;
+			this->InitItem("venom");
+			break;
+	}
+
+	this->mType = 313;
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->mFlags |= 0x480;
+
+	this->mpLight = &M3d_VenomLight;
+	this->field_21E = 100;
+	this->field_31C.bothFlags = 1;
+	this->dumbAssPad = 0;
+
+	i32 groundY = Utils_GetGroundHeight(&this->mPos, 0, 0x1000, 0);
+	if (groundY != -1)
+	{
+		this->mPos.vy = groundY - (this->field_21E << 12);
+	}
+
+	this->OutlineOn();
+	this->OutlineOff();
+
+	switch (levelId)
+	{
+		case 0x603:
+		{
+			this->mHealth = 0x258;
+			this->field_460 = 0xF0;
+			this->field_464 = 0x2D0;
+
+			i32 v603 = (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0) ? 0x3C : 0x14;
+			this->mFlags |= 0x41;
+			this->field_39C = v603;
+			this->field_45C = 0;
+			this->dumbAssPad = 1;
+			break;
+		}
+
+		case 0x604:
+		case 0x601:
+		case 0x602:
+		case 0x501:
+		case 0x502:
+		case 0x503:
+		case 0x504:
+		case 0x505:
+		case 0x506:
+			this->field_31C.bothFlags = 0x4000;
+			this->dumbAssPad = 0;
+			this->field_358 = reinterpret_cast<i32>(angles);
+
+			if (levelId == 0x501)
+			{
+				this->field_218 |= 0x8000;
+			}
+			else if (levelId == 0x502)
+			{
+				this->mHealth = 0x258;
+				this->field_460 = 0x78;
+				this->field_464 = 0x168;
+
+				this->field_39C = (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0) ? 0x3C : 0x14;
+				Panel_CreateHealthBar(this, 313);
+			}
+			else if (levelId == 0x604)
+			{
+				this->mHealth = 0x258;
+				this->field_460 = 0xF0;
+				this->field_464 = 0x2D0;
+
+				this->field_39C = (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0) ? 0x46 : 0x32;
+				this->field_33C = 1;
+				Panel_CreateHealthBar(this, 313);
+				this->ResolveSwitchNodes();
+			}
+			break;
+	}
+
+	if (*gSubmarinerDieRelated)
+	{
+		print_if_false(0, "Error");
+	}
 }
 
 // @Ok
@@ -284,9 +491,101 @@ void CVenom::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @BIGTODO
+// @Ok
+// @AlmostMatching: 18 mnemonic diffs in two small reordering clusters (G_MECHLIST address
+// computation order in the field_218&4 case; mAngAcc.vy read timing in the angular velocity
+// decay step). Everything else, including all three aim branches and the physics integration
+// loop, matches exactly. 15 hypotheses tried, see
+// ~/Documents/spidey-work/wt/CVenom_DoPhysics.attempts.md.
 void CVenom::DoPhysics(void)
-{}
+{
+	if (!this->field_34D)
+	{
+		i32 flags = this->field_218;
+
+		if (flags & 1)
+		{
+			if ((this->mAnim != 5 && this->mAnim != 4) || this->mAnimFinished)
+			{
+				this->RunAnim(5, 0, -1);
+			}
+
+			CSVector aimAngles;
+			aimAngles.vx = 0;
+			aimAngles.vy = 0;
+			aimAngles.vz = 0;
+			Utils_CalcAim(&aimAngles, &this->mPos, &this->field_240);
+
+			i32 savedVx = aimAngles.vx;
+			aimAngles.vx = 0;
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimAngles, 10);
+			aimAngles.vx = savedVx;
+
+			i32 velY = this->mAngVel.vy;
+			i32 signMask = velY >> 31;
+			i32 absVelY = (signMask ^ velY) - signMask;
+
+			i32 mag;
+			if (absVelY >= 0x40)
+			{
+				mag = 0;
+			}
+			else
+			{
+				mag = (0x40 - absVelY) << 6;
+			}
+			mag = (static_cast<u32>(mag) * 14) >> 12;
+
+			Utils_GetVecFromMagDir(&this->mVel, mag, &aimAngles);
+		}
+		else if (flags & 2)
+		{
+			CSVector aimAngles;
+			aimAngles.vx = 0;
+			aimAngles.vy = 0;
+			aimAngles.vz = 0;
+			Utils_CalcAim(&aimAngles, &this->mPos, reinterpret_cast<CVector*>(&this->field_3A0));
+
+			aimAngles.vx = 0;
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimAngles, 8);
+		}
+		else if (flags & 4)
+		{
+			CSVector aimAngles;
+			aimAngles.vx = 0;
+			aimAngles.vy = 0;
+			aimAngles.vz = 0;
+			Utils_CalcAim(&aimAngles, &this->mPos, &G_MECHLIST->mPos);
+
+			aimAngles.vx = 0;
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimAngles, 8);
+		}
+		else
+		{
+			this->mAngVel.vx = 0;
+			this->mAngVel.vy = 0;
+			this->mAngVel.vz = 0;
+			this->mAngAcc.vx = 0;
+			this->mAngAcc.vy = 0;
+			this->mAngAcc.vz = 0;
+		}
+	}
+
+	this->mAngVel.vx += this->mAngAcc.vx;
+	this->mAngVel.vx -= this->mAngVel.vx >> 2;
+	this->mAngVel.vy += this->mAngAcc.vy;
+	this->mAngVel.vy -= this->mAngVel.vy >> 2;
+
+	this->mAngVel.KillSmall();
+
+	for (i32 i = 0; i < this->field_80; i++)
+	{
+		this->mPos += this->mVel;
+		this->mAngles += this->mAngVel;
+	}
+
+	this->mAngles.Mask();
+}
 
 // @Ok
 void CVenomWrap::Die(void)
@@ -567,6 +866,7 @@ void validate_CVenom(void){
 
 	VALIDATE(CVenom, field_340, 0x340);
 	VALIDATE(CVenom, field_348, 0x348);
+	VALIDATE(CVenom, field_34D, 0x34D);
 
 	VALIDATE(CVenom, field_358, 0x358);
 	VALIDATE(CVenom, field_35C, 0x35C);
@@ -586,6 +886,11 @@ void validate_CVenom(void){
 
 	VALIDATE(CVenom, field_3B0, 0x3B0);
 	VALIDATE(CVenom, field_3B4, 0x3B4);
+
+	VALIDATE(CVenom, field_3B8, 0x3B8);
+	VALIDATE(CVenom, field_3BC, 0x3BC);
+	VALIDATE(CVenom, field_3CC, 0x3CC);
+	VALIDATE(CVenom, field_3D0, 0x3D0);
 
 	VALIDATE(CVenom, field_3E4, 0x3E4);
 
