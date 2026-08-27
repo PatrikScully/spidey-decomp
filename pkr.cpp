@@ -13,6 +13,10 @@
 
 LIBPKR_HANDLE* gDataPkr;
 
+// guess: shared error-message buffer for PKR_ReportError/PKR_GetLastError, size 0x200.
+// idb_globals.txt nearest neighbours: gSbMallocRelated 0x02E09BDC, gSbInitRelated 0x02E09BE0 (0x1C before this address, no named object covers it).
+static char* const gPkrErrorMsg = reinterpret_cast<char*>(0x02E09BFC);
+
 #ifndef _WIN32
 #define strcmpi strcasecmp
 #endif
@@ -540,17 +544,18 @@ u8* decompressZLIB(u8* src, u32 srcLen, u32 dstLen)
 	return dst;
 }
 
-// @BIGTODO
+// unoptimized, like PKR_GetLastError above (see the note there).
+#pragma optimize("", off)
+// @Ok
 u8 PKR_ReportError(const char* a1, ...)
 {
-	// @FIXME: use the proper
-	
 	va_list va;
 	va_start(va, a1);
-	VSNPRINTF(reinterpret_cast<char*>(0x002E09BFC), 0x200, a1, va);
+	VSNPRINTF(gPkrErrorMsg, 0x200, a1, va);
 	va_end(va);
 	return 1;
 }
+#pragma optimize("", on)
 
 // @Ok
 u8 fileCRCCheck(u8* buf, i32 size, u32 expected)
