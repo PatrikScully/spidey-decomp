@@ -11,6 +11,7 @@
 #include "my_assert.h"
 #include "spool.h"
 #include "m3dcolij.h"
+#include "mysterio.h"
 
 
 CBody* ControlBaddyList;
@@ -1420,4 +1421,26 @@ void validate_CScriptOnlyBaddy(void){
 
 void validate_SStateFlags(void){
 	VALIDATE_SIZE(SStateFlags, 0x4);
+}
+
+// @SMALLTODO
+// Not decompiled. Only stubbed (correct size 0xBC, ctor address 0x45AAA0,
+// Mac size 328 bytes) so CMysterio::CMysterio(i16*, i32), in mysterio.cpp,
+// can create one. Kept in this file (not mysterio.cpp) on purpose: see the
+// comment above CMystFoot::CMystFoot in mysterio.cpp for why.
+CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)
+{
+	printf("CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)");
+}
+
+// @SMALLTODO
+// Not decompiled. Only stubbed (Mac signature CSoftSpot(CBaddy*,int,int,int),
+// size 500 bytes) so CMysterio::CMysterio(i16*, i32), in mysterio.cpp, can
+// create these damage zones. Address not in names.json under this name;
+// seen as CSoftSpot_CSoftSpot at 0x45F700 in that constructor's disasm.
+// Kept in this file, see the comment above CMystFoot::CMystFoot in
+// mysterio.cpp for why.
+CSoftSpot::CSoftSpot(CBaddy*, i32, i32, i32)
+{
+	printf("CSoftSpot::CSoftSpot(CBaddy*, i32, i32, i32)");
 }
