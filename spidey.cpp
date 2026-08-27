@@ -1460,10 +1460,277 @@ void CPlayer::SetFocusLockTarget(const CBody *a2)
 	this->hLockTarget = Mem_MakeHandle(const_cast<CBody*>(a2));
 }
 
-// @MEDIUMTODO
-void CPlayer::SetSpideyCamValue(u16,u16,i16,u16,u16)
+// @NotOk
+// residue (cmpsum 0x4B97D0): every (type, axis) case stores value into
+// its dedicated global unconditionally, then only forwards it to the
+// live camera when the relevant state flag says that surface mode is
+// active (field_8E8 for wall, field_8E9 for ceiling, field_54C for
+// swing, both field_8E8 and field_8E9 clear for floor, and
+// (a5 != 0 && field_E1C == 4) for falling). all 25 store addresses and
+// all 5 SetCamXOffset/YOffset/ZOffset/XZDistance/YDistance call targets
+// verified against the maintainer's idb_globals.txt (gSpideyFloorCam*,
+// gSpideyWallCam*, gSpideyCeilingCamera*, gSpideySwingCam*,
+// gSpideyFallingCam*), all already declared EXPORT globals in this file
+// and used by the already-@Ok SetSwingCamera/SetWallCamera. logic and
+// control flow confirmed correct by hand-decoding the jump tables from
+// the original exe (they are not included in tools/functions/*.bin).
+// blocker: in every one of the 25 near-identical case bodies, the
+// original loads the state-flag byte, then tests it, THEN stores value
+// to the global, then branches (test before store); every source shape
+// tried here compiles the store before the test instead (tried: bare
+// store-then-if; caching the flag in a local declared before the
+// store; duplicating the store into both sides of an if/else on the
+// flag, hoping for redundant-code-elimination to reorder it, which
+// instead produced a different split-block shape with extra registers
+// used, worse diff count). CLAUDE.md's own note under "Matching tricks
+// discovered in practice" documents this exact test/store scheduling
+// class as not reproducible from source in a similarly small attempt
+// count on Utils_VblankProcessing; recorded here rather than spending
+// the 10+-per-cluster budget this function's size would need across 5
+// distinct case shapes (floor/wall/ceiling/swing/falling) without a
+// working lead yet.
+void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 {
-    printf("CPlayer::SetSpideyCamValue(u16,u16,i16,u16,u16)");
+	CCamera *pCamera = CameraList;
+	if (!pCamera)
+		return;
+
+	switch (type)
+	{
+	case 0:
+		switch (axis)
+		{
+		case 0:
+			gSpideyFloorCamXOffset = value;
+			if (this->field_8E8 || this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXOffset(value, a4);
+			return;
+		case 1:
+			gSpideyFloorCamYOffset = value;
+			if (this->field_8E8 || this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYOffset(value, a4);
+			return;
+		case 2:
+			gSpideyFloorCamZOffset = value;
+			if (this->field_8E8 || this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamZOffset(value, a4);
+			return;
+		case 3:
+			gSpideyFloorCamXZDistance = value;
+			if (this->field_8E8 || this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXZDistance(value, a4);
+			return;
+		case 4:
+			gSpideyFloorCamYDistance = value;
+			if (this->field_8E8 || this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYDistance(value, a4);
+			return;
+		default:
+			print_if_false(0, "Bad spidey cam param type");
+			return;
+		}
+	case 1:
+		switch (axis)
+		{
+		case 0:
+			gSpideyWallCamXOffset = value;
+			if (!this->field_8E8)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXOffset(value, a4);
+			return;
+		case 1:
+			gSpideyWallCamYOffset = value;
+			if (!this->field_8E8)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYOffset(value, a4);
+			return;
+		case 2:
+			gSpideyWallCamZOffset = value;
+			if (!this->field_8E8)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamZOffset(value, a4);
+			return;
+		case 3:
+			gSpideyWallCamXZDistance = value;
+			if (!this->field_8E8)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXZDistance(value, a4);
+			return;
+		case 4:
+			gSpideyWallCamYDistance = value;
+			if (!this->field_8E8)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYDistance(value, a4);
+			return;
+		default:
+			print_if_false(0, "Bad spidey cam param type");
+			return;
+		}
+	case 2:
+		switch (axis)
+		{
+		case 0:
+			gSpideyCeilingCameraXOffset = value;
+			if (!this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXOffset(value, a4);
+			return;
+		case 1:
+			gSpideyCeilingCameraYOffset = value;
+			if (!this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYOffset(value, a4);
+			return;
+		case 2:
+			gSpideyCeilingCameraZOffset = value;
+			if (!this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamZOffset(value, a4);
+			return;
+		case 3:
+			gSpideyCeilingCameraXZDistance = value;
+			if (!this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXZDistance(value, a4);
+			return;
+		case 4:
+			gSpideyCeilingCameraYDistance = value;
+			if (!this->field_8E9)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYDistance(value, a4);
+			return;
+		default:
+			print_if_false(0, "Bad spidey cam param type");
+			return;
+		}
+	case 3:
+		return;
+	case 4:
+		switch (axis)
+		{
+		case 0:
+			gSpideySwingCamXOffset = value;
+			if (!this->field_54C)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXOffset(value, a4);
+			return;
+		case 1:
+			gSpideySwingCamYOffset = value;
+			if (!this->field_54C)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYOffset(value, a4);
+			return;
+		case 2:
+			gSpideySwingCamZOffset = value;
+			if (!this->field_54C)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamZOffset(value, a4);
+			return;
+		case 3:
+			gSpideySwingCamXZDistance = value;
+			if (!this->field_54C)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamXZDistance(value, a4);
+			return;
+		case 4:
+			gSpideySwingCamYDistance = value;
+			if (!this->field_54C)
+				return;
+			if (!a5)
+				return;
+			pCamera->SetCamYDistance(value, a4);
+			return;
+		default:
+			print_if_false(0, "Bad spidey cam param type");
+			return;
+		}
+	case 5:
+	{
+		u16 doCall = (a5 && this->field_E1C == 4) ? a5 : 0;
+		switch (axis)
+		{
+		case 0:
+			gSpideyFallingCamXOff = value;
+			if (!doCall)
+				return;
+			pCamera->SetCamXOffset(value, a4);
+			return;
+		case 1:
+			gSpideyFallingCamYOff = value;
+			if (!doCall)
+				return;
+			pCamera->SetCamYOffset(value, a4);
+			return;
+		case 2:
+			gSpideyFallingCamZOff = value;
+			if (!doCall)
+				return;
+			pCamera->SetCamZOffset(value, a4);
+			return;
+		case 3:
+			gSpideyFallingCamXZDist = value;
+			if (!doCall)
+				return;
+			pCamera->SetCamXZDistance(value, a4);
+			return;
+		case 4:
+			gSpideyFallingCamYDist = value;
+			if (!doCall)
+				return;
+			pCamera->SetCamYDistance(value, a4);
+			return;
+		default:
+			print_if_false(0, "Bad spidey cam param type");
+			return;
+		}
+	}
+	default:
+		print_if_false(0, "Bad spidey cam type");
+		return;
+	}
 }
 
 // @Ok
