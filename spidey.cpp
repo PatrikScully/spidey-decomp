@@ -687,6 +687,35 @@ void CPlayer::CheckStickToWall(void)
 }
 
 // @MEDIUMTODO
+// research notes (not yet implemented): confirmed real address 0x4C31D0,
+// 932 bytes, returns u8 (early-out paths return 0/false, main path
+// returns bl which is 0 or 1). early guard chain (all return false):
+// pLineInfo->Normal.vy (offset 0x7A) outside [-0xA28, 0xD48]; Distance
+// (0x40) outside (0x200, 0x1000) exclusive; pLineInfo->pFace[3] & 0x40000
+// set; this->field_8E9 != 0; (this->field_E1C & 0x4000F) == 0.
+// this->field_DC0 = pLineInfo->Position (offset 0x6C), also copied into
+// this->field_DC4/field_DC8 individually (those are just field_DC0.vy/
+// .vz, the CVector store order is reordered by the compiler per
+// CLAUDE.md's field-store-reordering note). after that it does real
+// CVector arithmetic (normalize the this->mPos-to-target direction,
+// cross it against something derived from this->field_A8/mPos, check
+// the cross product magnitude against 0xB50) and writes a result into
+// either this->field_D64 or this->field_D70 (two adjacent, not yet
+// declared, likely-CVector fields at those offsets, picked by whether
+// Distance > 0xC00; this->field_D60, also new, is a u8 flag recording
+// which one is active, 0 for field_D64/near, 1 for field_D70/far).
+// notably this function calls BOTH CVector::operator- (0x4E7760,
+// ??G@YA?AVCVector@@ABV0@0@Z) and CVector::operator>> (0x4E7840,
+// ??5@YA?AVCVector@@ABV0@0@Z) directly, the two operators that were
+// wrongly INLINE in vector.h until this session's fix (see CLAUDE.md).
+// did not finish the reconstruction: the middle section interleaves
+// register spills (an early call's return pointer gets pushed again
+// several instructions later, as an argument to a following call)
+// tightly enough that manual esp-relative-slot bookkeeping got
+// unreliable; a next attempt should probably build the source
+// incrementally against cmpsum diffs (fix first divergence, rebuild,
+// repeat) rather than trying to fully hand-derive the expression tree
+// up front.
 void CPlayer::CheckSwingWebAvailability(SLineInfo *)
 {
     printf("CPlayer::CheckSwingWebAvailability(SLineInfo *)");
