@@ -328,9 +328,153 @@ void CVenom::ResolveSwitchNodes(void)
 	this->field_3B8 = (1 << this->field_3CC) - 1;
 }
 
-// @MEDIUMTODO
-CVenom::CVenom(int*, int)
+EXPORT SLight M3d_VenomLight =
 {
+	{ { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
+	0,
+	{ { 3200, 1040, 2048 }, { 2720, 1600, 1920 }, { 2400, 2560, 2048 } },
+	0,
+	{ 1200, 1200, 960 }
+};
+
+// duplicate of the byte right before gWhatIf (0x60CFC4, ob.cpp). Name from
+// baddy.cpp's gSubmarinerDieRelated. Tentative, static per file per repo convention.
+static u8 * const gSubmarinerDieRelated = (u8*)0x60CFC4;
+
+// @Ok
+// @AlmostMatching: 2 mnemonic diffs (one store/push swap around the SquirtPos call setup,
+// field_3EC store vs the SquirtPos arg push exchange position). Everything else, including
+// every level-ID branch and the difficulty-level ternaries, matches exactly. 15 hypotheses
+// tried, see ~/Documents/spidey-work/wt/CVenom_CVenom.attempts.md.
+CVenom::CVenom(i32 *a2, i32)
+{
+	this->field_37C = 0;
+	this->field_380 = 0;
+	this->field_384 = 0;
+	this->field_3A0 = 0;
+	this->field_3A4 = 0;
+	this->field_3A8 = 0;
+	this->field_3E8 = 0;
+	this->field_3EC = 0;
+	this->field_3F0 = 0;
+	this->field_400 = 0;
+	this->field_404 = 0;
+	this->field_408 = 0;
+	this->field_40C = 0;
+	this->field_410 = 0;
+	this->field_414 = 0;
+	this->field_418 = 0;
+	this->field_41C = 0;
+	this->field_420 = 0;
+
+	i16 *pos = this->SquirtPos(reinterpret_cast<i16*>(a2));
+	i16 *angles = this->SquirtAngles(pos);
+
+	this->field_454 = 0xFF;
+	this->mRGB = 0xFFFFFF;
+	this->field_33D = 1;
+
+	u32 levelId = Trig_GetLevelID();
+
+	switch (levelId)
+	{
+		case 0x9904:
+		case 0x601:
+		case 0x602:
+		case 0x501:
+		case 0x503:
+		case 0x504:
+		case 0x505:
+		case 0x506:
+			this->mCBodyFlags &= ~0x10;
+			this->mRMinor = 0;
+			this->InitItem("venom2");
+			break;
+
+		default:
+			this->mRMinor = 0xC0;
+			this->InitItem("venom");
+			break;
+	}
+
+	this->mType = 313;
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->mFlags |= 0x480;
+
+	this->mpLight = &M3d_VenomLight;
+	this->field_21E = 100;
+	this->field_31C.bothFlags = 1;
+	this->dumbAssPad = 0;
+
+	i32 groundY = Utils_GetGroundHeight(&this->mPos, 0, 0x1000, 0);
+	if (groundY != -1)
+	{
+		this->mPos.vy = groundY - (this->field_21E << 12);
+	}
+
+	this->OutlineOn();
+	this->OutlineOff();
+
+	switch (levelId)
+	{
+		case 0x603:
+		{
+			this->mHealth = 0x258;
+			this->field_460 = 0xF0;
+			this->field_464 = 0x2D0;
+
+			i32 v603 = (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0) ? 0x3C : 0x14;
+			this->mFlags |= 0x41;
+			this->field_39C = v603;
+			this->field_45C = 0;
+			this->dumbAssPad = 1;
+			break;
+		}
+
+		case 0x604:
+		case 0x601:
+		case 0x602:
+		case 0x501:
+		case 0x502:
+		case 0x503:
+		case 0x504:
+		case 0x505:
+		case 0x506:
+			this->field_31C.bothFlags = 0x4000;
+			this->dumbAssPad = 0;
+			this->field_358 = reinterpret_cast<i32>(angles);
+
+			if (levelId == 0x501)
+			{
+				this->field_218 |= 0x8000;
+			}
+			else if (levelId == 0x502)
+			{
+				this->mHealth = 0x258;
+				this->field_460 = 0x78;
+				this->field_464 = 0x168;
+
+				this->field_39C = (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0) ? 0x3C : 0x14;
+				Panel_CreateHealthBar(this, 313);
+			}
+			else if (levelId == 0x604)
+			{
+				this->mHealth = 0x258;
+				this->field_460 = 0xF0;
+				this->field_464 = 0x2D0;
+
+				this->field_39C = (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0) ? 0x46 : 0x32;
+				this->field_33C = 1;
+				Panel_CreateHealthBar(this, 313);
+				this->ResolveSwitchNodes();
+			}
+			break;
+	}
+
+	if (*gSubmarinerDieRelated)
+	{
+		print_if_false(0, "Error");
+	}
 }
 
 // @Ok
