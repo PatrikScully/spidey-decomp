@@ -377,14 +377,24 @@ u8 dirAddToPKR(LIBPKR_HANDLE* pHandle, PKR_DIRINFO dirInfo)
 	return 1;
 }
 
-// @BIGTODO
+// this function was compiled with all optimizations off (matches the rest of
+// the PKR library note at the top of this file: it was built unoptimized).
+// without this the compiler folds strlen/strcpy into inline scans and omits
+// the stack frame, none of which the original does.
+#pragma function(strlen, strcpy)
+#pragma optimize("", off)
+// @Ok
+// @Matching
 u8 PKR_GetLastError(char* a1)
 {
-	typedef u8 (*func_ptr)(char*);
-	func_ptr func = (func_ptr)0x0051A2AD;
+	if (!strlen(gPkrErrorMsg))
+		return 0;
 
-	return func(a1);
+	strcpy(a1, gPkrErrorMsg);
+	return 1;
 }
+#pragma optimize("", on)
+#pragma intrinsic(strlen, strcpy)
 
 // @Ok
 u8 PKR_Open(
