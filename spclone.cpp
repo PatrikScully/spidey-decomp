@@ -1,5 +1,6 @@
 #include "spclone.h"
 #include "validate.h"
+#include "m3dutils.h"
 
 extern CBaddy* BaddyList;
 extern u8 submarinerDieRelated;
@@ -64,10 +65,131 @@ CSpClone::CSpClone(i16 * a2,i32 a3)
 		this->Die(0);
 }
 
-// @MEDIUMTODO
+// @NotOk
+// Same MGS-shadow idiom as CBlackCat::DoMGSShadow (blackcat.cpp) and CCarnage::DoMGSShadow
+// (carnage.cpp): 4 hook positions rotated into local (body) space give an X/Z footprint box,
+// then a vertical offset gives the world space shadow center, applied to a lazily-created
+// CQuadBit (field_338). Hook offsets here are 0xE, 0x11, 0xB, 6. Unlike the other two, the
+// height offset is rotated TWICE (once by the transposed body matrix, once by the body
+// matrix directly) then shifted left 12, and the Y of each corner comes from
+// realRegisterArr[0] << 12, not a plain field. Not matching yet: the original has an SEH
+// frame at entry (mov eax,fs:[0]; push -1; push handler; ...) that this source does not
+// produce, the same unresolved issue documented in CBlackCat::DoMGSShadow's comment. See
+// ~/Documents/spidey-work/wt/spclone.attempts.md.
 void CSpClone::DoMGSShadow(void)
 {
-    printf("CSpClone::DoMGSShadow(void)");
+	SHook hook;
+	VECTOR pos0, pos1, pos2, pos3;
+
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+	hook.Offset = 0xE;
+	M3dUtils_GetDynamicHookPosition(&pos0, this, &hook);
+
+	hook.Offset = 0x11;
+	M3dUtils_GetDynamicHookPosition(&pos1, this, &hook);
+
+	hook.Offset = 0xB;
+	M3dUtils_GetDynamicHookPosition(&pos2, this, &hook);
+
+	hook.Offset = 6;
+	M3dUtils_GetDynamicHookPosition(&pos3, this, &hook);
+
+	i32 height = this->field_21E << 12;
+
+	CVector v0 = *reinterpret_cast<CVector*>(&pos0);
+	v0 -= this->mPos;
+	CVector v1 = *reinterpret_cast<CVector*>(&pos1);
+	v1 -= this->mPos;
+	CVector v2 = *reinterpret_cast<CVector*>(&pos2);
+	v2 -= this->mPos;
+	CVector v3 = *reinterpret_cast<CVector*>(&pos3);
+	v3 -= this->mPos;
+
+	CVector heightOffset;
+	heightOffset.vx = 0;
+	heightOffset.vy = height;
+	heightOffset.vz = 0;
+
+	MATRIX localMat;
+	M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+	gte_SetRotMatrix(&localMat);
+
+	CVector box[4] = { v0, v1, v2, v3 };
+
+	i32 maxX = 0x20;
+	i32 minX = box[0].vx;
+	i32 maxZ = box[0].vz;
+	i32 minZ = box[0].vz;
+	i32 i;
+
+	for (i = 0; i < 4; i++)
+	{
+		box[i] >>= 12;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&box[i]));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&box[i]));
+
+		if (box[i].vx > maxX)
+		{
+			maxX = box[i].vx;
+		}
+		else if (box[i].vx < minX)
+		{
+			minX = box[i].vx;
+		}
+
+		if (box[i].vz > maxZ)
+		{
+			maxZ = box[i].vz;
+		}
+		else if (box[i].vz < minZ)
+		{
+			minZ = box[i].vz;
+		}
+	}
+
+	heightOffset >>= 12;
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&heightOffset));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&heightOffset));
+
+	print_if_false(
+		maxX - minX < 0x40 && maxZ - minZ < 0x40,
+		"MGS shadow box too big");
+
+	gte_SetRotMatrix(&this->mTransform);
+
+	i32 ry = this->realRegisterArr[0] << 12;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&heightOffset));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&heightOffset));
+
+	heightOffset <<= 12;
+
+	CVector corners[4];
+	for (i = 0; i < 4; i++)
+	{
+		corners[i].vx = this->mPos.vx + heightOffset.vx;
+		corners[i].vy = ry;
+		corners[i].vz = this->mPos.vz + heightOffset.vz;
+	}
+
+	if (!this->field_338)
+	{
+		TotalBitUsage = 0;
+		this->field_338 = new CQuadBit();
+		TotalBitUsage = -1;
+
+		this->field_338->SetTexture(0u, 0u);
+	}
+
+	this->field_338->mFrigDeltaZ = 0x20;
+	this->field_338->SetTransparency(0x40);
+	this->field_338->SetSubtractiveTransparency();
+	this->field_338->SetCorners(corners[0], corners[1], corners[2], corners[3]);
 }
 
 // @Ok
