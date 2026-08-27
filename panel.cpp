@@ -28,10 +28,59 @@ EXPORT CBody* gHealthBarOne;
 EXPORT CBody* gHealthBarTwo;
 
 
-// @MEDIUMTODO
-void DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)
+// real translation (0x4631c0, 1091 bytes). Two near-duplicate blocks
+// selected by (a4 == 1): the vertex1/vertex2 argument slots swap which
+// POLY_GT4 corner feeds them (colors/coords keep their own alpha,
+// 0xDF for corners 0/1, 0x60 for corners 2/3, tied to the source corner
+// not the argument slot, confirmed from the color-pack read order in each
+// block). cmpsum: 296 mnemonic diffs, diverges right at the prologue
+// (register allocation and push order around the print_if_false call
+// differ from the first instruction), so the source shape for the top of
+// the function is still wrong, not just a scheduling residue further down.
+// 1 attempt this session, not iterated further given the size of the
+// remaining queue (large bracket needs 10+ hypotheses per cluster, not
+// spent here).
+// @NotOk
+void DCDrawGouraudPoly(f32 zOffset, POLY_GT4 *poly, Texture *tex, i32 a4)
 {
-    printf("DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32)");
+	print_if_false(tex != 0, "no texture for draw gouraud poly.");
+
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_2);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 y3 = poly->y3 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 x3 = poly->x3 * scaleX;
+	f32 y2 = poly->y2 * scaleY;
+	f32 x2 = poly->x2 * scaleX;
+	f32 y1 = poly->y1 * scaleY;
+	f32 x1 = poly->x1 * scaleX;
+	f32 y0 = poly->y0 * scaleY;
+	f32 x0 = poly->x0 * scaleX;
+
+	u32 color0 = 0xDF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
+	u32 color1 = 0xDF000000 | (poly->r1 << 16) | (poly->g1 << 8) | poly->b1;
+	u32 color2 = 0x60000000 | (poly->r2 << 16) | (poly->g2 << 8) | poly->b2;
+	u32 color3 = 0x60000000 | (poly->r3 << 16) | (poly->g3 << 8) | poly->b3;
+
+	if (a4 == 1)
+	{
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 0.0f, color0,
+				x2, y2, 1.0f, 0.0f, color2,
+				x1, y1, 0.0f, 1.0f, color1,
+				x3, y3, 1.0f, 1.0f, color3,
+				zOffset);
+	}
+	else
+	{
+		PCGfx_DrawQPoly2D(
+				x0, y0, 0.0f, 0.0f, color0,
+				x1, y1, 1.0f, 0.0f, color1,
+				x2, y2, 0.0f, 1.0f, color2,
+				x3, y3, 1.0f, 1.0f, color3,
+				zOffset);
+	}
 }
 
 // packed PS2-style 0x00BBGGRR colors need swapping to 0xFFRRGGBB for the PC renderer.
