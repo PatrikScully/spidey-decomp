@@ -192,6 +192,19 @@ i32 gsub_46EA20(void *a1)
 	return func(a1);
 }
 
+// unnamed helper, address 0x0046EB30. Called once per item by
+// M3dAsm_LineColijPreprocessItemsZoned with the fixed-point start coords, the item's
+// fixed-point position, and the fixed-point end coords (all Vector-by-value); returns
+// a bool the caller tests. Not yet decompiled.
+// @MEDIUMTODO
+i32 gsub_46EB30(Vector a1, Vector a2, Vector a3)
+{
+	typedef i32 (*func_ptr)(Vector, Vector, Vector);
+	func_ptr func = (func_ptr)0x0046EB30;
+
+	return func(a1, a2, a3);
+}
+
 // @MEDIUMTODO
 void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineInfo *pInfo, u16 Inquiry)
 {
