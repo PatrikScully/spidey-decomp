@@ -542,10 +542,45 @@ void CLizMan::DoLizmanPhysics(void)
 	printf("CLizMan::DoLizmanPhysics(void)");
 }
 
-// @SMALLTODO
+// @Ok
+// @AlmostMatching: stack frame size and instruction count now match (0x28
+// bytes, same 5 calls). Two residues left, both around register/address
+// scheduling, not missing logic: (1) the address of `offset` is computed
+// by a `lea` in a different spot (original hoists it right after the
+// prologue; ours computes it right before the RotateY call), which shifts
+// a couple of neighbouring instructions; (2) original clears eax
+// (`xor eax,eax`) between the two epilogue pops, ours does not, since eax
+// already holds 0 from CClass_new's null check by a different path. 16
+// distinct source hypotheses tried and logged in
+// CLizMan_CheckFallBack.attempts.md: compile-time-folded vs runtime shift
+// for the +-75<<12 constant, declaration order of rotated/offset/backDist/
+// angle (all permutations), extracting the angle read into a named local
+// (fixed most of the diffs), CVector 3-arg constructor vs field-by-field
+// init, nested/sibling block scoping to hint stack slot reuse, an
+// anonymous `&CVector(...)` temporary as the call argument, reusing
+// `offset`'s storage for the final sum instead of a separate `target`
+// local (this fixed the stack frame size), if/else vs ternary for
+// backDist, and matching CThug::CheckFallBack's known-good-looking
+// structure verbatim (this made things worse; on inspection
+// CThug::CheckFallBack's own @Ok tag is stale, cmpsum shows 44 mnemonic
+// diffs on it too, reported separately, not fixed here).
 void CLizMan::CheckFallBack(void)
 {
-	printf("CLizMan::CheckFallBack(void)");
+	CVector rotated;
+	CVector offset;
+	i32 backDist = (this->field_2A8 & 0x10) ? -75 : 75;
+	i32 angle = this->mAngles.vy;
+
+	offset.vz = backDist << 12;
+
+	Utils_RotateY(&rotated, &offset, angle);
+
+	offset = this->mPos + rotated;
+
+	if (this->PathCheck(&this->mPos, &offset, NULL, 0x37) == 2)
+	{
+		new CAIProc_RotY(this, 0x7FF, 4, 0);
+	}
 }
 #ifdef _MSC_VER
 #pragma auto_inline(on)
