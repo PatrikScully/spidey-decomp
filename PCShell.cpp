@@ -14,6 +14,8 @@
 #include "utils.h"
 #include "ps2lowsfx.h"
 #include "DXinit.h"
+#include "ps2funcs.h"
+#include "panel.h"
 
 #include <cstring>
 
@@ -319,12 +321,26 @@ void PCSHELL_DoControllerConfig(bool isKeyboard)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// unnamed helper called once per controller config screen frame, address 0x430680.
-// original bytes disassemble to an empty function (no args used), name is a names.json guess ("optimized_unused_garbage")
-// @SMALLTODO
+// unnamed helper called once per controller config screen frame, address 0x430680,
+// names.json calls it "optimized_unused_garbage". Original bytes are three
+// "if (!gPrintStubbed) call stubbed-print(str)" blocks, same idiom as
+// gsub_46CB90's other callers (panel.cpp, shell.cpp Shell_ShowRecord): our
+// export.h stubbed_printf is static and gets inlined away, so we call
+// gsub_46CB90 (panel.cpp), the real out-of-line implementation at 0x46CB90,
+// instead. String addresses are unverified (no access to the original data
+// section).
+// @Ok
+// @Matching
 EXPORT void gsub_430680(void)
 {
-	printf("gsub_430680(void)");
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)0x549668);
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)0x549650);
+
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)0x549638);
 }
 
 // unnamed helper called once at the top of every controller config screen frame, address 0x430880 (named "nullsub_3" in the IDA export)
