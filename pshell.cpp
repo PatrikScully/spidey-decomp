@@ -881,34 +881,276 @@ CExpandingBox::~CExpandingBox(void)
 }
 
 
-// Investigation notes (0x0047A700, 1919 bytes), not implemented yet. Only
-// caller found so far is CExpandingBox::Display (this file), which passes
-// (x, width, y, height, 1, field_24, field_28, field_2C). This is a
-// same-TU dependency: as long as this stays a trivial stub, MSVC6 inlines
-// it into CExpandingBox::Display and that function can never match either
-// (confirmed by building; see CExpandingBox::Display's own comment).
-// Confirmed idiom for one of the locals: this file already has the exact
-// "sort near the end of its range" check in PShell_DrawHighlight,
+// Unnamed float constant read at 0x53B27C and subtracted from the depth
+// bias before drawing the optional shadow rect below. No access to the
+// original .rdata this session, so the value itself is not known; only the
+// address matters for matching (same trick as the gsub_/fixed-pointer
+// globals elsewhere in this file).
+static f32 * const gMenuBoxZBiasEpsilon = (f32*)0x0053B27C;
+
+// 9-slice box border geometry table: 13 entries of 4 i32 each, addresses
+// 0x5512F0..0x5513C0 (13*0x10 = 0xD0 bytes). Previous session found "roughly
+// a dozen" entries in this range; this session pins it at exactly 13 by
+// walking every table read in the disassembly. Field roles are NOT
+// consistent across entries (sometimes an x/y screen offset, sometimes a
+// width/height fudge added after a computation), so the fields are kept
+// generically named.
+struct SMenuBoxSlice { i32 a, b, c, d; };
+static SMenuBoxSlice * const gMenuBoxSlices = (SMenuBoxSlice*)0x005512F0;
+
+// gAnimTable[15] (bit.cpp/bit.h): 0x56EAA0 - 0x56EA64 (gAnimTable's base,
+// idb_globals.txt) = 0x3C = 15 * sizeof(SAnimFrame*). Holds a pointer to a
+// 9-entry SAnimFrame array used for the menu box border art (the +0x8,
+// +0x10, ..., +0x40 offsets seen below are all multiples of sizeof(SAnimFrame),
+// 8 bytes). Kept as a fixed game address rather than &gAnimTable[15]
+// because gAnimTable is a plain repo global (DLL-relocatable address); this
+// needs the byte-exact game address, same class of problem as the
+// gSaveGame note already in CLAUDE.md for this file.
+static SAnimFrame * const * const gMenuBoxAnimSlot = (SAnimFrame* const*)0x0056EAA0;
+
+// 9-slice box border draw. Only caller is CExpandingBox::Display (this
+// file), which passes (x, width, y, height, 1, field_24, field_28,
+// field_2C). field_24 (a6 here) doubles as "has scrollbar": it picks which
+// optional shadow rect gets drawn AND which subset of the 9 border pieces
+// draws first, before falling into a shared tail that draws the rest
+// regardless of the flag.
+//
+// depthBias idiom confirmed against PShell_DrawHighlight (this file):
 //   i32 sort = G_SORT;
 //   if (sort >= 0xFFE && sort <= 0xFFF) depthBias = -2.0f; else depthBias = 5.0f;
-// which matches the ebp setup at the top of this function bit for bit
 // (0xC0000000 = -2.0f, 0x40A00000 = 5.0f).
-// Call targets seen (tools/names.json): DCPanel_DrawFlatShadedPoly
-// (0x00462D60, x2, start and end), print_if_false (0x004015B0, x1),
-// Panel_DrawTexturedPoly_1 (0x00462B30, x4), DCPanel_DrawTexturedPoly_0
-// (0x004626A0, x6), Panel_DrawTexturedPoly_0 (0x00462B90, x4). Shape looks
-// like a 9-slice box border (corners + edges + a flat-shaded shadow/
-// highlight pass), each piece indexed off roughly a dozen unnamed 4-dword
-// table entries between 0x005512F0 and 0x005513AC (no idb_globals.txt
-// names). Those tables would need the fixed-pointer trick (a static
-// i32* const into game memory), not real extracted values, since the code
-// only ever needs the addresses. Full byte-exact reconstruction of the
-// float/stack-heavy repeated draw blocks was not attempted this session,
-// it needs a lot more register-level iteration than this pass had time
-// for. Left at @BIGTODO.
-// @BIGTODO
-i32 PShell_DrawMenuBox(i32, i32, i32, i32, i32, i32, i32, i32){
-	return 69;
+//
+// Call targets: DCPanel_DrawFlatShadedPoly (0x462D60, panel.cpp, @Ok
+// @Matching), DCPanel_DrawTexturedPoly (0x4626A0, the 9-arg
+// f32,POLY_FT4*,SAnimFrame const*,... overload in panel.cpp, currently
+// @NotOk there but that is panel.cpp's own residue, not this function's),
+// print_if_false, Panel_DrawTexturedPoly(SAnimFrame*,i32) (0x462B90, the
+// existing @Ok @Matching 2-arg overload in panel.cpp), and
+// Panel_DrawTexturedPoly(SAnimFrame*,i32,i32,i32) (0x462B30, new 4-arg
+// overload stubbed in panel.cpp this session since decompiling its own
+// body is out of scope here).
+//
+// Five pieces (frames[0],[2],[4],[6],[7] or [8] depending on branch) go
+// through the 4-arg Panel_DrawTexturedPoly overload, which sizes the poly
+// itself via DCPanel_DrawTexturedPoly's own (x,y,w,h) branch. Five other
+// pieces (frames[1],[3],[5] x2) go through the 2-arg overload and get their
+// 8 corner coordinates written directly by this function before the same
+// DCPanel_DrawTexturedPoly call runs again over them; whether that second
+// pass's internal (x,y,w,h) branch actually overwrites the coordinates this
+// function just wrote is a question about the original game's own
+// behaviour, not something to "fix" here.
+//
+// cmpsum against the rebuilt DLL: 479 mnemonic diffs (started at 505 on the
+// first working draft), first divergence right in the prologue: the
+// original keeps depthBias resident in ebp for the whole function (frame
+// pointer omitted) and x/width in esi/edi in that order; our build spills
+// depthBias to a stack slot and swaps which of x/width lands in esi vs edi.
+// This is a whole-function register-pressure difference, not a local
+// source bug at the point where the diff first shows up. 3 source
+// hypotheses tried and kept (all real improvements, logged in git history):
+// (1) stop caching G_SORT into a local past the first use and read the
+// macro fresh at every call site instead (505->493 diffs; matches the
+// "volatile global, don't cache" idiom already documented for this file),
+// (2) reuse one mutable `hw` local for height+width across the if/else and
+// into the shared tail instead of three separate hw/hw2/hw3 locals, mirroring
+// how the disassembly keeps reusing/mutating the same ebx register instead
+// of recomputing height+width (493->479 diffs), (3) hoist the first flat-
+// shaded call's x/y argument expressions into named locals declared in
+// width-before-x order, matching the order the original computes them in
+// (no measurable change, kept for source clarity). Given the function is
+// 1919 bytes (well over the 1000-byte large-function threshold) and the
+// residue is a function-wide register allocation difference rather than one
+// or two localized diff clusters, closing this fully would need many more
+// hypotheses than the discipline's 10-per-cluster minimum, spread across
+// what is effectively a dozen near-duplicate draw-call clusters. Left
+// @NotOk rather than force an @AlmostMatching claim for a residue this
+// broad; the semantics (call targets, argument counts/order, table
+// indices, field writes, control flow) are believed correct throughout.
+// @NotOk
+i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrollbar, i32 a7, i32 a8)
+{
+	i32 sort = G_SORT;
+	f32 depthBias;
+
+	if (sort >= 0xFFE && sort <= 0xFFF)
+		depthBias = -2.0f;
+	else
+		depthBias = 5.0f;
+
+	if (hasScrollbar)
+	{
+		i32 shadowY = gMenuBoxSlices[0].b + (((height - a8 - 8) * a7) >> 8) + width + 4;
+		i32 shadowX = gMenuBoxSlices[0].a + x - 10;
+
+		DCPanel_DrawFlatShadedPoly(
+				depthBias - *gMenuBoxZBiasEpsilon,
+				shadowX,
+				shadowY,
+				gMenuBoxSlices[0].c + 7,
+				gMenuBoxSlices[0].d + a8,
+				0xFF, 0xFF, 0xFF,
+				sort,
+				1);
+	}
+
+	SAnimFrame* frames = *gMenuBoxAnimSlot;
+	print_if_false(frames != 0, "No menu box anim frames");
+
+	i32 v1 = width - 3;
+	i32 hw;
+
+	if (hasScrollbar)
+	{
+		POLY_FT4* p1 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[0], x - 14, v1, G_SORT);
+		if (p1)
+			p1->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p1, &frames[0],
+				gMenuBoxSlices[1].a + x - 14, gMenuBoxSlices[1].b + width - 3,
+				gMenuBoxSlices[1].c, gMenuBoxSlices[1].d, G_SORT, 0);
+
+		POLY_FT4* p2 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[1], G_SORT);
+		p2->y0 = (i16)(width + 7);
+		p2->y1 = (i16)(width + 7);
+		p2->code |= 2;
+		p2->x0 = (i16)(x - 14);
+		p2->x2 = (i16)(x - 14);
+		p2->x1 = (i16)x;
+		hw = height + width;
+		p2->x3 = (i16)x;
+		p2->y2 = (i16)(hw - 7);
+		p2->y3 = (i16)(hw - 7);
+		p2->v2--;
+		p2->v3--;
+		DCPanel_DrawTexturedPoly(depthBias, p2, &frames[1],
+				gMenuBoxSlices[2].a + (x - 14), gMenuBoxSlices[2].b + (width + 7),
+				gMenuBoxSlices[2].c + (x - (x - 14)), gMenuBoxSlices[2].d + ((hw - 7) - (width + 7)),
+				G_SORT, 0);
+
+		POLY_FT4* p3 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[2], x - 14, width + height - 7, G_SORT);
+		if (p3)
+			p3->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p3, &frames[2],
+				gMenuBoxSlices[3].a + x - 14, gMenuBoxSlices[3].b + width + height - 7,
+				gMenuBoxSlices[3].c, gMenuBoxSlices[3].d, G_SORT, 0);
+	}
+	else
+	{
+		POLY_FT4* p4 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[7], x - 6, v1, G_SORT);
+		if (p4)
+			p4->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p4, &frames[7],
+				gMenuBoxSlices[4].a + x - 6, gMenuBoxSlices[4].b + width - 3,
+				gMenuBoxSlices[4].c, gMenuBoxSlices[4].d, G_SORT, 0);
+
+		POLY_FT4* p5 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[8], x - 6, width + height - 3, G_SORT);
+		if (p5)
+			p5->code |= 2;
+		DCPanel_DrawTexturedPoly(depthBias, p5, &frames[8],
+				gMenuBoxSlices[5].a + x - 6, gMenuBoxSlices[5].b + width + height - 3,
+				gMenuBoxSlices[5].c, gMenuBoxSlices[5].d, G_SORT, 0);
+
+		POLY_FT4* p6 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[5], G_SORT);
+		p6->code |= 2;
+		p6->y0 = (i16)(width + 3);
+		p6->y1 = (i16)(width + 3);
+		p6->x0 = (i16)(x - 6);
+		p6->x2 = (i16)(x - 6);
+		p6->x1 = (i16)x;
+		hw = height + width;
+		p6->x3 = (i16)x;
+		p6->y2 = (i16)(hw - 3);
+		p6->y3 = (i16)(hw - 3);
+		p6->v2--;
+		p6->v3--;
+		DCPanel_DrawTexturedPoly(depthBias, p6, &frames[5],
+				gMenuBoxSlices[6].a + (x - 6), gMenuBoxSlices[6].b + (width + 3),
+				gMenuBoxSlices[6].c + (x - (x - 6)), gMenuBoxSlices[6].d + ((hw - 3) - (width + 3)),
+				G_SORT, 0);
+	}
+
+	POLY_FT4* p7 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[4], x + y - 2, width - 3, G_SORT);
+	if (p7)
+		p7->code |= 2;
+	DCPanel_DrawTexturedPoly(depthBias, p7, &frames[4],
+			gMenuBoxSlices[7].a + x + y - 2, gMenuBoxSlices[7].b + width - 3,
+			gMenuBoxSlices[7].c, gMenuBoxSlices[7].d, G_SORT, 0);
+
+	POLY_FT4* p8 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[3], G_SORT);
+	p8->code |= 2;
+	if (hasScrollbar)
+	{
+		p8->x0 = (i16)x;
+		p8->x2 = (i16)x;
+	}
+	else
+	{
+		p8->x0 = (i16)(x + 2);
+		p8->x2 = (i16)(x + 2);
+	}
+	p8->y0 = (i16)(width - 3);
+	p8->y1 = (i16)(width - 3);
+	p8->x1 = (i16)(y + x - 2);
+	p8->u1--;
+	p8->y2 = (i16)(width + 1);
+	p8->x3 = (i16)(y + x - 2);
+	p8->u3--;
+	DCPanel_DrawTexturedPoly(depthBias, p8, &frames[3],
+			gMenuBoxSlices[8].a + p8->x0, gMenuBoxSlices[8].b + (width - 3),
+			gMenuBoxSlices[8].c + ((y + x - 2) - p8->x0), gMenuBoxSlices[8].d + ((width + 1) - (width - 3)),
+			G_SORT, 0);
+
+	POLY_FT4* p9 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[6], x + y - 2, width + height - 3, G_SORT);
+	if (p9)
+		p9->code |= 2;
+	DCPanel_DrawTexturedPoly(depthBias, p9, &frames[6],
+			gMenuBoxSlices[9].a + x + y - 2, gMenuBoxSlices[9].b + width + height - 3,
+			gMenuBoxSlices[9].c, gMenuBoxSlices[9].d, G_SORT, 0);
+
+	POLY_FT4* p10 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[3], G_SORT);
+	p10->x1 = (i16)(y + x - 2);
+	p10->x3 = (i16)(y + x - 2);
+	p10->u1--;
+	p10->y2 = (i16)(hw + 4);
+	p10->y3 = (i16)(hw + 4);
+	p10->u3--;
+	p10->y0 = (i16)hw;
+	p10->y1 = (i16)hw;
+	DCPanel_DrawTexturedPoly(depthBias, p10, &frames[3],
+			gMenuBoxSlices[10].a + p10->x0, gMenuBoxSlices[10].b + hw,
+			gMenuBoxSlices[10].c + ((y + x - 2) - p10->x0), gMenuBoxSlices[10].d + ((hw + 4) - hw),
+			G_SORT, 0);
+
+	POLY_FT4* p11 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[5], G_SORT);
+	p11->code |= 2;
+	hw -= 3;
+	i32 xy = y + x;
+	p11->x0 = (i16)xy;
+	p11->y0 = (i16)(width + 3);
+	p11->x1 = (i16)(xy + 6);
+	p11->y1 = (i16)(width + 3);
+	p11->x3 = (i16)(xy + 6);
+	p11->x2 = (i16)xy;
+	p11->y2 = (i16)hw;
+	p11->v2--;
+	p11->y3 = (i16)hw;
+	p11->v3--;
+	DCPanel_DrawTexturedPoly(depthBias, p11, &frames[5],
+			gMenuBoxSlices[11].a + xy, gMenuBoxSlices[11].b + (width + 3),
+			gMenuBoxSlices[11].c + ((xy + 6) - xy), gMenuBoxSlices[11].d + (hw - (width + 3)),
+			G_SORT, 0);
+
+	if (a5)
+	{
+		DCPanel_DrawFlatShadedPoly(
+				depthBias,
+				gMenuBoxSlices[12].a + x, gMenuBoxSlices[12].b + width,
+				gMenuBoxSlices[12].c + y, gMenuBoxSlices[12].d + height,
+				0x19, 0x19, 0x50,
+				G_SORT,
+				1);
+	}
+
+	return a5;
 }
 
 
@@ -939,10 +1181,23 @@ CExpandingBox::CExpandingBox(
 
 
 // @NotOk
-// blocked on PShell_DrawMenuBox: while that is a trivial "return 69;" stub,
-// MSVC6 inlines it into this same-TU caller and the codegen diverges from
-// the very first instruction. Decompile PShell_DrawMenuBox first, then
-// retest this.
+// No longer blocked on PShell_DrawMenuBox: now that it is a real function
+// instead of a trivial "return 69;" stub, this compiles as a genuine
+// cross-TU call and cmpsum shows only 12 mnemonic diffs (147-byte
+// function). Residue is in the x/y argument expressions passed to
+// PShell_DrawMenuBox: the original interleaves a "push edi" callee-save
+// mid-computation (right after the x half-width/half-height subtraction,
+// before starting the y one) and keeps field_1C in edx across that push;
+// our build defers the push and picks a different register for field_1C.
+// 4 hypotheses tried this session, all logged: (1) baseline (12 diffs,
+// kept), (2) hoist the x expression into a named local declared before the
+// call (34 diffs, worse), (3) reorder the +/- operands in both x and y
+// expressions to field_C/2 - field_4/2 + field_1C style (no change, 12
+// diffs), (4) cache field_8 into a local reused by both the height arg and
+// the y expression's /2 term (14 diffs, worse). This is a small function
+// (< 200 bytes), so the discipline calls for unlimited attempts, not a
+// fixed minimum; left @NotOk rather than @AlmostMatching since the residue
+// has not been resolved yet, not because the bar was reached.
 int CExpandingBox::Display(){
 
 	this->field_4 += this->field_14;
