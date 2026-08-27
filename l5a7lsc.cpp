@@ -120,6 +120,11 @@ void L5A7LSC_RelocatableModuleInit(reloc_mod *pMod)
 	Spidey_SetUserFunction("l5a7lsc", 1u);
 }
 
+// not a real PC function. There is no separate address for it in
+// names.json; the compiler fully inlined its body into
+// L5A7LSC_MonitorSpideyinWater (the Pool object search loop there). Mac has
+// it as its own function (obtainWaterLevelInPool, 176 bytes), PC does not.
+// Leaving this stub as is, same as downloadTexture in PCTex.cpp.
 // @SMALLTODO
 EXPORT void obtainWaterLevelInPoolA7(i32)
 {
