@@ -93,6 +93,15 @@ CSVector* CSVector::operator/=(const int& other){
 	return this;
 }
 
+// @Ok
+// @Matching
+CSVector* CSVector::operator%=(const CFriction& other){
+	this->vx -= this->vx >> other.vx;
+	this->vy -= this->vy >> other.vy;
+	this->vz -= this->vz >> other.vz;
+	return this;
+}
+
 
 // @Ok
 void CVector::KillSmall(){
