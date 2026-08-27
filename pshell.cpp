@@ -603,12 +603,46 @@ void PShell_EndTrainingDisplay(void)
 	Mess_SetTextJustify(0);
 }
 
+// Investigation notes (0x0047B720, 812 bytes), not implemented yet.
+// Housekeeping calls at the top, in order: print_if_false(1, <str at
+// 0x00551AF4>) (condition is always true, never prints, looks like a
+// reached-here marker), Mess_DeleteAll, Bit_ClearTextBoxes, sub_472340
+// (unnamed), Redbook_XAStop. Then it writes gTrainingResultState = 1,
+// [0x0060CFB0] = 1 (unnamed), gSaveGame-unrelated globals at 0x0054D47C and
+// 0x00660F80 (gWideScreen, per idb_globals.txt) get cleared, and if MechList
+// (0x006A9038, idb_globals.txt) is non-null it calls
+// CPlayer_ExitLookaroundMode and clears MechList->field_68/field_60. After
+// that: sub_479520(0,0), sub_479520(1,0), Trig_GetLevelID().
+// The rest builds a training record box: CItem_new(0x44) then field writes
+// in the order field_1C=0x78, field_20=0x29, field_C=0x116, field_10=0x60,
+// field_4=0xA, field_8=0xA, field_14=0x30, field_18=0xC, field_24=0,
+// field_2C=0x1C, vtable=0x0053BDA4, field_3C=&gChallenges[idx]. Those are
+// exactly the values CRecordBox::CRecordBox(0x78, 0x29, pMission) would
+// produce (shell.cpp, already @Ok/@Matching), just in a different store
+// order (could be scheduler reordering of a genuinely inlined call, or a
+// hand-duplicated init; not confirmed either way, and shell.cpp's
+// #pragma auto_inline(off) should block normal cross-TU inlining, so this
+// is not fully understood). Before the record box gets built, there is a
+// scan over gChallenges reading a byte at each entry's offset+7, which is
+// inside what STrainingMission (shell.h) currently only documents as
+// padding, so the struct is probably missing a field. Left at @MEDIUMTODO,
+// not attempted further this session.
 // @MEDIUMTODO
 void PShell_EndTrainingInit(void)
 {
     printf("PShell_EndTrainingInit(void)");
 }
 
+// Investigation notes (0x0047BC40, 656 bytes), not implemented yet.
+// Has a full SEH frame (mov eax,fs:[0]; push -1; push handler; push eax;
+// mov fs:[0],esp), same class of residue already open on Shell_ShowRecord
+// (shell.cpp, @NotOk, see its comment for the hypotheses tried there).
+// Touches gTrainingDisplayTimer/gTrainingRecordBox/gTrainingMenu, calls
+// gTrainingRecordBox's own Update through its vtable (call dword ptr [eax],
+// with 1 pushed first), and does name-entry keyboard handling through
+// 0x0050C180/0x0050C6C0 (key checks) and 0x00440110/0x00440600/
+// 0x0043FFF0/0x0043F9B0/0x004178E0 (unnamed). Not investigated past that.
+// Left at @MEDIUMTODO, not attempted further this session.
 // @MEDIUMTODO
 void PShell_EndTrainingUpdate(void)
 {
@@ -847,6 +881,31 @@ CExpandingBox::~CExpandingBox(void)
 }
 
 
+// Investigation notes (0x0047A700, 1919 bytes), not implemented yet. Only
+// caller found so far is CExpandingBox::Display (this file), which passes
+// (x, width, y, height, 1, field_24, field_28, field_2C). This is a
+// same-TU dependency: as long as this stays a trivial stub, MSVC6 inlines
+// it into CExpandingBox::Display and that function can never match either
+// (confirmed by building; see CExpandingBox::Display's own comment).
+// Confirmed idiom for one of the locals: this file already has the exact
+// "sort near the end of its range" check in PShell_DrawHighlight,
+//   i32 sort = G_SORT;
+//   if (sort >= 0xFFE && sort <= 0xFFF) depthBias = -2.0f; else depthBias = 5.0f;
+// which matches the ebp setup at the top of this function bit for bit
+// (0xC0000000 = -2.0f, 0x40A00000 = 5.0f).
+// Call targets seen (tools/names.json): DCPanel_DrawFlatShadedPoly
+// (0x00462D60, x2, start and end), print_if_false (0x004015B0, x1),
+// Panel_DrawTexturedPoly_1 (0x00462B30, x4), DCPanel_DrawTexturedPoly_0
+// (0x004626A0, x6), Panel_DrawTexturedPoly_0 (0x00462B90, x4). Shape looks
+// like a 9-slice box border (corners + edges + a flat-shaded shadow/
+// highlight pass), each piece indexed off roughly a dozen unnamed 4-dword
+// table entries between 0x005512F0 and 0x005513AC (no idb_globals.txt
+// names). Those tables would need the fixed-pointer trick (a static
+// i32* const into game memory), not real extracted values, since the code
+// only ever needs the addresses. Full byte-exact reconstruction of the
+// float/stack-heavy repeated draw blocks was not attempted this session,
+// it needs a lot more register-level iteration than this pass had time
+// for. Left at @BIGTODO.
 // @BIGTODO
 i32 PShell_DrawMenuBox(i32, i32, i32, i32, i32, i32, i32, i32){
 	return 69;
@@ -879,40 +938,33 @@ CExpandingBox::CExpandingBox(
 
 
 
-// @MEDIUMTODO
+// @NotOk
+// blocked on PShell_DrawMenuBox: while that is a trivial "return 69;" stub,
+// MSVC6 inlines it into this same-TU caller and the codegen diverges from
+// the very first instruction. Decompile PShell_DrawMenuBox first, then
+// retest this.
 int CExpandingBox::Display(){
 
-	/*
-	int unk_3; // ebx
-	int v2; // eax
-	int unk_4; // eax
-	int v4; // edx
-	int unk_1; // edi
-	unk_3 = this->unk_3;
-	v2 = this->unk_5 + this->unk_1;
-	this->unk_1 = v2;
-	if ( v2 > unk_3 )
-		this->unk_1 = unk_3;
-	unk_4 = this->unk_4;
-	v4 = this->unk_6 + this->unk_2;
-	this->unk_2 = v4;
-	if ( v4 > unk_4 )
-		this->unk_2 = unk_4;
-	unk_1 = this->unk_1;
-	if ( unk_1 == unk_3 && this->unk_2 == unk_4 )
-	this->unk_12 = 1;
+	this->field_4 += this->field_14;
+	if (this->field_4 > this->field_C)
+		this->field_4 = this->field_C;
+
+	this->field_8 += this->field_18;
+	if (this->field_8 > this->field_10)
+		this->field_8 = this->field_10;
+
+	if (this->field_4 == this->field_C && this->field_8 == this->field_10)
+		this->field_30 = 1;
 
 	return PShell_DrawMenuBox(
-		this->unk_7 + unk_3 / 2 - unk_1 / 2,
-		this->unk_8 + unk_4 / 2 - this->unk_2 / 2,
-		unk_1,
-		this->unk_2,
+		this->field_1C + this->field_C / 2 - this->field_4 / 2,
+		this->field_4,
+		this->field_20 + this->field_10 / 2 - this->field_8 / 2,
+		this->field_8,
 		1,
-		this->unk_9,
-		this->unk_10,
-		this->unk_11);
-		*/
-	return 0x14072024;
+		this->field_24,
+		this->field_28,
+		this->field_2C);
 }
 
 // @NotOk
