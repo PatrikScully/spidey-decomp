@@ -9,6 +9,8 @@
 #include "manipob.h"
 #include "quat.h"
 
+struct SAnimFrame;
+
 EXPORT extern u8 gSpideyPsxIndex;
 
 struct SIndicator
@@ -251,7 +253,15 @@ class CPlayer : public CSuper
 
 		char field_DE4;
 
-		PADDING(0xDF0-0xDE4-1);
+		PADDING(0xDE8-0xDE4-1);
+
+		// reticle color: low 3 bytes are packed r0/g0/b0, OR'd with 0x2C
+		// (poly tag/code byte) at use in DrawReticle.
+		i32 field_DE8;
+
+		// reticle sprite: OffX/OffY/Width/Height + Texture*, read by
+		// DrawReticle via Panel_DrawTexturedPoly(SAnimFrame*, i32).
+		SAnimFrame *field_DEC;
 
 		i32 field_DF0;
 		i32 field_DF4;

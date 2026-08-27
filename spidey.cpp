@@ -22,6 +22,10 @@
 #include "baddy.h"
 #include "my_assert.h"
 #include "texture.h"
+#include "panel.h"
+#include "PCGfx.h"
+#include "m3dinit.h"
+#include "SpideyDX.h"
 
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
@@ -825,10 +829,67 @@ void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
     printf("CPlayer::DrawOffscreenSpideySenseIndicatorList(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::DrawReticle(u16,u16,u32)
+// @NotOk
+// residue: 129 mnemonic diffs, starting at the prologue itself. Logic and
+// field reads are confirmed correct (POLY_FT4 quad, SAnimFrame source,
+// scaleX/scaleY idiom all match the DCDrawGouraudPoly precedent in
+// panel.cpp), but our build needs a bigger stack frame (sub esp,0x1Ch vs
+// the original's sub esp,0x0Ch) because it does not reuse ebx (this, then
+// y0) and edi (frame, then frame->pTexture) across their two live ranges
+// the way the original does; ours keeps this in edi, frame in ebp instead,
+// and spills the rest. This is the same register-generation-reuse residue
+// class documented elsewhere in this file (see spidey.attempts.md,
+// BuildOffscreenSpideySenseIndicatorList entry) and in CLAUDE.md's
+// "Matching tricks". 2 attempts this session (baseline: 129 diffs;
+// inlining this->field_DEC at each use instead of a cached `frame` local:
+// 141 diffs, worse), well below the 15-hypothesis bar for @AlmostMatching
+// on a function this size, so left @NotOk rather than forcing the tag.
+void CPlayer::DrawReticle(u16 x, u16 y, u32 scale)
 {
-    printf("CPlayer::DrawReticle(u16,u16,u32)");
+	SAnimFrame *frame = this->field_DEC;
+
+	POLY_FT4 *poly = (POLY_FT4*)Panel_DrawTexturedPoly(frame, 0);
+	if (!poly)
+	{
+		return;
+	}
+
+	*(u32*)&poly->r0 = this->field_DE8 | 0x2C000000;
+	setSemiTrans();
+
+	i32 x0 = ((scale * ((frame->OffX << 9) / 320)) >> 12) + x;
+	poly->x0 = x0;
+	poly->x2 = x0;
+
+	i32 y0 = ((scale * frame->OffY) >> 12) + y;
+	poly->y0 = y0;
+	poly->y1 = y0;
+
+	i32 x1 = ((scale * ((frame->Width << 9) / 320)) >> 12) + x0;
+	poly->x1 = x1;
+	poly->x3 = x1;
+
+	i32 y2 = ((scale * frame->Height) >> 12) + y0;
+	poly->y2 = y2;
+	poly->y3 = y2;
+
+	print_if_false(frame->pTexture != 0, "No Texture data for DrawReticle");
+	PCGfx_UseTexture(frame->pTexture->clut, DCGfx_BlendingMode_1);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 fy2 = y2 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 fx1 = x1 * scaleX;
+	f32 fx0 = x0 * scaleX;
+	u32 color = poly->b0 | ((poly->g0 | ((poly->r0 | 0xFFFFB000) << 8)) << 8);
+	f32 fy0 = y0 * scaleY;
+
+	PCGfx_DrawQPoly2D(
+			fx0, fy0, 0.0f, 0.0f, color,
+			fx1, fy0, 1.0f, 0.0f, color,
+			fx0, fy2, 0.0f, 1.0f, color,
+			fx1, fy2, 1.0f, 1.0f, color,
+			6.0f);
 }
 
 // same objects as gGlobalThisCamera / dword_6A81FC / dword_6A8208 /
