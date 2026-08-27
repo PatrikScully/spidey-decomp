@@ -511,10 +511,128 @@ CRhinoWallImpact::CRhinoWallImpact(SLineInfo* pLineInfo)
 	this->mType = 26;
 }
 
-// @MEDIUMTODO
-CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource*, i32, SSkinGooParams*)
+// @NotOk
+// residue: 67 of 230 mnemonic diffs left (802 bytes original), all
+// scheduling: independent field zero-stores get interleaved with the three
+// NULL checks and with the "Bad Model"/"Bad VertA"/"Bad VertB" checks in a
+// way source-level reordering did not reproduce (5+ hypotheses tried on the
+// header zero-init/check interleave and the mType placement inside the
+// third velocity roll, see effects.attempts.md). Two real bugs were found
+// and fixed on the way: the SetTint call reads a single BYTE at pSuper+0x24
+// (the low byte of CItem::mRGB) directly, not the full u32 field masked
+// down; and the VertA/VertB range checks compare as plain (signed) ints,
+// not unsigned, because the source u8 values promote to int and the model's
+// u16 vertex count also promotes to int, so both sides stay signed. Picks a
+// random SSkinGooSource entry (pSources[Rnd(numSources)]), textures itself
+// from one of that entry's two texture checksums (chosen 50/50), then reads
+// two vertex positions (A/B, source's byte 1 and byte 2) off the model
+// chosen by G_PSXREGION[region].ppModels[source's byte 0]. The "flip" byte
+// (source's byte 3) swaps which of the two becomes A/B and gets toggled
+// every call, so repeated calls with the same source entry alternate ends.
+// field_BC/field_C0/field_C4 and field_CC/field_D0/field_D4 are random
+// spawn offset / launch velocity, driven by pParams.
+CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource* pSources, i32 numSources, SSkinGooParams* pParams)
 {
-	printf("CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource*, i32, SSkinGooParams*)");
+	this->field_8C = 0;
+	this->field_90 = 0;
+	this->field_94 = 0;
+	this->field_98 = 0;
+	this->field_9C = 0;
+	this->field_A0 = 0;
+
+	this->field_A4 = 0;
+	this->field_A6 = 0;
+	this->field_A8 = 0;
+
+	this->field_AC = 0;
+	this->field_AE = 0;
+	this->field_B0 = 0;
+
+	this->field_CC = 0;
+	this->field_D0 = 0;
+	this->field_D4 = 0;
+
+	print_if_false(pSources != 0, "NULL pGooSources");
+	print_if_false(pParams != 0, "NULL pGooParams");
+	print_if_false(pSuper != 0, "NULL pSuper sent to CVenomWrap");
+
+	SHandle superHandle = Mem_MakeHandle(pSuper);
+	this->field_84 = superHandle.pWhatever;
+	this->field_88 = superHandle.Id;
+
+	i32 sourceIndex = Rnd(numSources);
+	i32 textureChoice = Rnd(2);
+
+	if (textureChoice != 0)
+	{
+		if (textureChoice == 1)
+			this->SetTexture(pSources[sourceIndex].field_8);
+	}
+	else
+	{
+		this->SetTexture(pSources[sourceIndex].field_4);
+	}
+
+	this->SetSemiTransparent();
+	this->mCodeBGR &= ~0x40;
+
+	if (pSuper->mFlags & 0x800)
+	{
+		this->SetSemiTransparent();
+		u8 lowByteOfRGB = *(reinterpret_cast<u8*>(pSuper) + 0x24);
+		this->SetTint(lowByteOfRGB, lowByteOfRGB, lowByteOfRGB);
+	}
+
+	u8 *source = reinterpret_cast<u8*>(&pSources[sourceIndex]);
+	u32 modelIndex = source[0];
+
+	print_if_false(modelIndex < reinterpret_cast<u32*>(G_PSXREGION[pSuper->mRegion].ppModels)[-1], "Bad Model");
+
+	void *model = G_PSXREGION[pSuper->mRegion].ppModels[modelIndex];
+
+	i32 vertA = source[1];
+	print_if_false(vertA < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(model) + 2), "Bad VertA");
+
+	i32 vertB = source[2];
+	print_if_false(vertB < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(model) + 2), "Bad VertB");
+
+	u8 flip = source[3];
+	i32 idxA = vertA;
+	i32 idxB = vertB;
+
+	if (flip != 0)
+	{
+		idxA = vertB;
+		idxB = vertA;
+	}
+
+	source[3] = flip ^ 1;
+
+	this->field_AA = static_cast<u16>(modelIndex);
+	this->field_B2 = static_cast<u16>(modelIndex);
+
+	i16 *vertexA = reinterpret_cast<i16*>(reinterpret_cast<u8*>(model) + 0x1C + idxA * 8);
+	this->field_A4 = vertexA[0];
+	this->field_A6 = vertexA[1];
+	this->field_A8 = vertexA[2];
+
+	i16 *vertexB = reinterpret_cast<i16*>(reinterpret_cast<u8*>(model) + 0x1C + idxB * 8);
+	this->field_AC = vertexB[0];
+	this->field_AE = vertexB[1];
+	this->field_B0 = vertexB[2];
+
+	this->field_BC = pParams->mOffsetXBase + Rnd(pParams->mOffsetXRange);
+	this->field_C0 = pParams->mOffsetXBase + Rnd(pParams->mOffsetXRange);
+	this->field_C4 = pParams->mOffsetZBase + Rnd(pParams->mOffsetZRange);
+
+	this->field_CC = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
+
+	i32 rollD0 = Rnd(2 * pParams->mVelRange + 1);
+	i32 velRangeD0 = pParams->mVelRange;
+	this->mType = 27;
+	this->field_D0 = (rollD0 - velRangeD0) << 12;
+
+	this->field_D4 = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
 }
 
 // @MEDIUMTODO
@@ -586,9 +704,12 @@ CElectrify::CElectrify(CSuper* pSuper, i32 a2)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// @Ok
-// @AlmostMatching: 14 source hypotheses tried (log below). cmpsum shows only
-// 1 mnemonic diff (the final "ret 8" falls outside the compare window). The
+// @NotOk
+// Residue: 11 source hypotheses tried (log below), below the 15-hypothesis
+// bar this 672-byte function needs for @AlmostMatching (audited against the
+// CLAUDE.md rule that checks the actual itemized count, not the claimed
+// one). cmpsum shows only 1 mnemonic diff (the final "ret 8" falls outside
+// the compare window). The
 // real residue is a stack frame that is 12 bytes bigger than the original
 // (sub esp,60h here vs sub esp,54h in the original). Every instruction
 // content and value already matches; the only byte-level effect of the extra
@@ -707,6 +828,33 @@ void validate_CElectrify(void)
 void validate_CSkinGoo(void)
 {
 	VALIDATE_SIZE(CSkinGoo, 0xD8);
+
+	VALIDATE(CSkinGoo, field_84, 0x84);
+	VALIDATE(CSkinGoo, field_88, 0x88);
+
+	VALIDATE(CSkinGoo, field_8C, 0x8C);
+	VALIDATE(CSkinGoo, field_90, 0x90);
+	VALIDATE(CSkinGoo, field_94, 0x94);
+	VALIDATE(CSkinGoo, field_98, 0x98);
+	VALIDATE(CSkinGoo, field_9C, 0x9C);
+	VALIDATE(CSkinGoo, field_A0, 0xA0);
+
+	VALIDATE(CSkinGoo, field_A4, 0xA4);
+	VALIDATE(CSkinGoo, field_A6, 0xA6);
+	VALIDATE(CSkinGoo, field_A8, 0xA8);
+	VALIDATE(CSkinGoo, field_AA, 0xAA);
+	VALIDATE(CSkinGoo, field_AC, 0xAC);
+	VALIDATE(CSkinGoo, field_AE, 0xAE);
+	VALIDATE(CSkinGoo, field_B0, 0xB0);
+	VALIDATE(CSkinGoo, field_B2, 0xB2);
+
+	VALIDATE(CSkinGoo, field_BC, 0xBC);
+	VALIDATE(CSkinGoo, field_C0, 0xC0);
+	VALIDATE(CSkinGoo, field_C4, 0xC4);
+
+	VALIDATE(CSkinGoo, field_CC, 0xCC);
+	VALIDATE(CSkinGoo, field_D0, 0xD0);
+	VALIDATE(CSkinGoo, field_D4, 0xD4);
 }
 
 void validate_SSkinGooSource(void)
