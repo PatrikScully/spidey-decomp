@@ -46,12 +46,11 @@
     <line x1="0" y1="0" x2="14" y2="14" stroke="#ff3b3b" stroke-width="2"/>
   </g>
 
-  <text x="240" y="118" font-family="Consolas, 'Courier New', monospace" font-size="54" font-weight="700" fill="url(#title)">SPIDEY-DECOMP</text>
-  <text x="242" y="150" font-family="Consolas, 'Courier New', monospace" font-size="14" fill="#a9a4c9">reverse engineering a 2000s Spider-Man PC game, one function at a time</text>
+  <text x="240" y="126" font-family="Consolas, 'Courier New', monospace" font-size="54" font-weight="700" fill="url(#title)">SPIDEY-DECOMP</text>
 
   <g font-family="Consolas, 'Courier New', monospace" font-size="12" fill="#4d7fff" fill-opacity="0.55">
-    <text x="242" y="180">CALL 0x4E7760</text>
-    <text x="420" y="180">MOV EAX, [ESP+8]</text>
-    <text x="620" y="180">RET</text>
+    <text x="242" y="168">CALL 0x4E7760</text>
+    <text x="420" y="168">MOV EAX, [ESP+8]</text>
+    <text x="620" y="168">RET</text>
   </g>
 </svg>
