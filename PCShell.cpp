@@ -50,6 +50,14 @@ EXPORT i32 gShellTitleBarRelated;
 // set while the controller screen waits for the player to press a new key or button
 EXPORT i32 gShellWaitingForInput;
 
+// the controller button being captured on the controller config screen;
+// 0x4000 = none, -1 = done. 0xAC1224 in the original.
+EXPORT i32 gShellControllerButton;
+
+// the keyboard key being captured on the controller config screen;
+// 0x4000 = none, -1 = done. 0xAC1248 in the original.
+EXPORT i32 gShellKeyboardKey;
+
 // @Ok
 // @Matching
 u8 PCSHELL_CheckTriggers(u32 mask, i32 a2, i32 a3)
@@ -850,11 +858,199 @@ void initActionMaps(void)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// @MEDIUMTODO
+// @Ok
 u8 processControllerScreen(void)
 {
-	printf("u8 processControllerScreen(void)");
-	return 0x26082026;
+	u32 mLine = gControllerMenu->mLine;
+
+	gShellTitleBarRelated = PShell_MoveTowards(gShellTitleBarRelated, 200);
+	Pad_Update();
+
+	if (gShellWaitingForInput != 0)
+	{
+		if (gActionMapRelated == 0)
+		{
+			// keyboard mode: wait for a key press. keys 1, 28, 156 are reserved
+			// (the original skips them via a 3-entry table at 0x5687C4).
+			static const i32 skipKeys[3] = { 1, 28, 156 };
+			for (i32 key = 0; key < 256; key++)
+			{
+				i32 skipped = 0;
+				for (i32 s = 0; s < 3; s++)
+				{
+					if (key == skipKeys[s])
+					{
+						skipped = 1;
+						break;
+					}
+				}
+				if (!skipped && PCINPUT_IsKeyPressed((u8)key, 1))
+				{
+					gShellKeyboardKey = key;
+					gShellWaitingForInput = 0;
+					DXINPUT_GetKeyName((u8)key, gKeyNames[mLine]);
+					break;
+				}
+			}
+
+			if (gShellWaitingForInput != 0)
+			{
+				if (PCSHELL_CheckTriggers(544, 1, 1))
+				{
+					SFX_Play(0x23, 0x2000, 0);
+					gShellWaitingForInput = 0;
+					gShellKeyboardKey = 0x4000;
+				}
+				else
+				{
+					return 0;
+				}
+			}
+
+			if (gShellKeyboardKey != 0x4000)
+			{
+				PCINPUT_SetKeyboardMappingForAction(gActionMaps[mLine].field_0, gShellKeyboardKey);
+				gActionMaps[mLine].field_14 = gShellKeyboardKey;
+
+				// if another line already uses this key, clear it
+				for (i32 i = 0; i < ACTION_MAP_COUNT; i++)
+				{
+					if (i != mLine && gActionMaps[i].field_14 == gShellKeyboardKey)
+					{
+						gActionMaps[i].field_14 = 0x4000;
+						PCINPUT_SetKeyboardMappingForAction(gActionMaps[i].field_0, 0x4000);
+						gControllerMenuTwo->SetNormalColor(i, 90, 20, 6);
+						strcpy(gKeyNames[i], "none");
+					}
+				}
+			}
+			else if (gActionMaps[mLine].field_14 != 0x4000)
+			{
+				DXINPUT_GetKeyName((u8)gActionMaps[mLine].field_14, gKeyNames[mLine]);
+			}
+			else
+			{
+				gControllerMenuTwo->SetNormalColor(mLine, 90, 20, 6);
+				strcpy(gKeyNames[mLine], "none");
+			}
+
+			*reinterpret_cast<u8*>(&gControllerMenu->field_1E) = 0;
+			*reinterpret_cast<u8*>(&gControllerMenuTwo->field_1E) = 0;
+			gShellControllerButton = -1;
+			gShellKeyboardKey = -1;
+			return 0;
+		}
+
+		// controller mode: wait for a button press
+		i32 numButtons = PCINPUT_GetNumControllerButtons();
+		for (i32 button = 0; button < numButtons; button++)
+		{
+			if (PCINPUT_IsControllerButtonPressed(button, 1))
+			{
+				gShellControllerButton = button;
+				gShellWaitingForInput = 0;
+				sprintf(gKeyNames[mLine], "button %i", button);
+				break;
+			}
+		}
+
+		if (gShellWaitingForInput != 0)
+		{
+			if (PCSHELL_CheckTriggers(544, 1, 1))
+			{
+				SFX_Play(0x23, 0x2000, 0);
+				gShellWaitingForInput = 0;
+				gShellControllerButton = 0x4000;
+			}
+			else
+			{
+				return 0;
+			}
+		}
+
+		if (gShellControllerButton != 0x4000)
+		{
+			PCINPUT_SetControllerMappingForAction(gActionMaps[mLine].field_0, gShellControllerButton);
+			gActionMaps[mLine].field_18 = gShellControllerButton;
+
+			// if another line already uses this button, clear it
+			for (i32 i = 0; i < ACTION_MAP_COUNT; i++)
+			{
+				if (i != mLine && gActionMaps[i].field_18 == gShellControllerButton)
+				{
+					gActionMaps[i].field_18 = 0x4000;
+					PCINPUT_SetControllerMappingForAction(gActionMaps[i].field_0, 0x4000);
+					gControllerMenuTwo->SetNormalColor(i, 90, 20, 6);
+					strcpy(gKeyNames[i], "none");
+				}
+			}
+		}
+		else if (gActionMaps[mLine].field_18 != 0x4000)
+		{
+			sprintf(gKeyNames[mLine], "button %i", gActionMaps[mLine].field_18);
+		}
+		else
+		{
+			gControllerMenuTwo->SetNormalColor(mLine, 90, 20, 6);
+			strcpy(gKeyNames[mLine], "none");
+		}
+
+		*reinterpret_cast<u8*>(&gControllerMenu->field_1E) = 0;
+		*reinterpret_cast<u8*>(&gControllerMenuTwo->field_1E) = 0;
+		gShellControllerButton = -1;
+		gShellKeyboardKey = -1;
+		return 0;
+	}
+
+	// not waiting: menu navigation
+	gControllerMenu->Update();
+	gControllerMenuTwo->mLine = gControllerMenu->mLine;
+
+	if (!gControllerMenu->FinishedZooming())
+	{
+		return 0;
+	}
+
+	if (gActionMapRelated == 1 && gControllerMenu->mLine < 4)
+	{
+		gControllerMenu->SetLine(4);
+		gControllerMenuTwo->SetLine(4);
+	}
+
+	if (PCSHELL_CheckTriggers(131616, 1, 1))
+	{
+		gSControl[0].Circle.Triggered = 0;
+		SFX_Play(0x23, 0x2000, 0);
+		return 1;
+	}
+
+	if (gControllerMenu->mLine >= 0x28 || !PCSHELL_CheckTriggers(65808, 1, 1))
+	{
+		return 0;
+	}
+
+	if (gControllerMenu->mLine >= 0xB)
+	{
+		if (gActionMapRelated != 0)
+			PCINPUT_RestoreDefaultControllerSettings();
+		else
+			PCINPUT_RestoreDefaultKeyboardSettings();
+		SFX_Play(0x1F, 0x2000, 0);
+		resetActionMaps(gActionMapRelated == 0);
+		return 0;
+	}
+
+	gSControl[0].Start.Triggered = 0;
+	gSControl[0].X.Triggered = 0;
+	SFX_Play(0x1F, 0x2000, 0);
+	gShellWaitingForInput = 1;
+	gShellControllerButton = 0x4000;
+	gShellKeyboardKey = 0x4000;
+	gControllerMenuTwo->SetNormalColor(gControllerMenu->mLine, 69, 60, 107);
+	strcpy(gKeyNames[gControllerMenu->mLine], "???");
+	*reinterpret_cast<u8*>(&gControllerMenu->field_1E) = 1;
+	*reinterpret_cast<u8*>(&gControllerMenuTwo->field_1E) = 1;
+	return 0;
 }
 #ifdef _MSC_VER
 #pragma auto_inline(on)
