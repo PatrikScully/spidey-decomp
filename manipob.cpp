@@ -25,10 +25,35 @@ void CManipObChunk::AI(void)
 	}
 }
 
-// @SMALLTODO
-CManipObChunk::CManipObChunk(u32,CVector *,CVector *)
+// @Ok
+// @Matching
+CManipObChunk::CManipObChunk(u32 a1, CVector *a2, CVector *a3)
 {
-    printf("CManipObChunk::CManipObChunk(u32,CVector *,CVector *)");
+	this->InitItem(gObjFile);
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+
+	this->mFlags &= 0xFFFD;
+	this->mRMinor = 0;
+	this->mType = 401;
+
+	this->mFric.vx = 12;
+	this->mFric.vy = 12;
+	this->mFric.vz = 12;
+
+	this->mPos = *a2;
+	this->mVel = *a3;
+
+	this->mAngles.vx = Rnd(4096);
+	this->mAngles.vy = Rnd(4096);
+
+	this->mAcc.vy = 4096;
+
+	this->mAngVel.vx = 64 - Rnd(32);
+	this->mAngVel.vy = 64 - Rnd(32);
+
+	this->mModel = Spool_GetModel(a1, gObjFileRegion);
+
+	this->field_FC = Rnd(30) + 60;
 }
 
 // @MEDIUMTODO
