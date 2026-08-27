@@ -8,7 +8,7 @@
 
 EXPORT void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *);
 EXPORT void L5A6LSC_RelocatableModuleInit(reloc_mod *);
-EXPORT void obtainWaterLevelInPool(i32);
+EXPORT i32 obtainWaterLevelInPool(i32);
 
 
 #endif
