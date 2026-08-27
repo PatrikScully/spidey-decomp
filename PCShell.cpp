@@ -391,7 +391,7 @@ static u32 gPendingColorDepth;
 static u32 gPendingResolutionX;
 static u32 gPendingResolutionY;
 
-// @NotOk
+// @Ok
 void PCSHELL_DoDisplayOptions(void)
 {
 	CMenu* menu = new CMenu(0x10E, 0x6E, 2u, 0x100, 0x100, 0x14);
