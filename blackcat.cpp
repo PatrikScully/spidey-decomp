@@ -486,9 +486,52 @@ void CBlackCat::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @BIGTODO
+// @Ok
+// @Matching
 void CBlackCat::DoPhysics(void)
-{}
+{
+	i32 i = 0;
+
+	if (this->field_80 > 0)
+	{
+		do
+		{
+			this->mAcc.vz = 0;
+			this->mAcc.vx = 0;
+			this->mAcc.vy = this->field_32C - (this->mVel.vy / 16);
+
+			{
+				i32 scaleBuf;
+				CVector& scale = *reinterpret_cast<CVector*>(&scaleBuf);
+				scale.vx = 2;
+				this->mVel += scale * this->mAcc;
+			}
+
+			{
+				i32 divisor = 2;
+
+				i32 velScaleBuf;
+				CVector& velScale = *reinterpret_cast<CVector*>(&velScaleBuf);
+				velScale.vx = 2;
+
+				i32 accScaleBuf;
+				CVector& accScale = *reinterpret_cast<CVector*>(&accScaleBuf);
+				accScale.vx = 4;
+
+				this->mPos += (velScale * this->mVel) + ((accScale * this->mAcc) / divisor);
+			}
+
+			this->mAngles.vy += this->mAngVel.vy << 1;
+			this->mAngles.Mask();
+
+			this->mAngVel.vy += this->mAngAcc.vy << 1;
+			this->mAngVel %= this->mAngFric;
+			this->mAngVel.KillSmall();
+
+			i += 2;
+		} while (i < this->field_80);
+	}
+}
 
 // @Ok
 // @Matching
