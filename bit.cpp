@@ -1396,26 +1396,35 @@ CGlow::~CGlow(void)
 }
 
 // @NotOk
-// residue: 168 mnemonic diffs (cmpsum against 0x409560, 638 bytes original).
-// Blocked, not counted against the diff/hypothesis bar (see below). Address
-// 0x409560 (tools/functions/4232544.bin), found via names.json
-// ("?OrientUsing@CQuadBit@@QAEXPAVCVector@@PAUSVECTOR@@HHH@Z", the 5-arg
-// sibling of the already-@NotOk 4-arg OrientUsing at 0x409400). Semantics
-// fully traced by hand from the disassembly (stack-offset tracking script,
-// see bit.attempts.md): dir/perp1/perp2 built exactly like the 4-arg
-// version via Utils_CalcPerps, then a6&0xFFF indexes rcossin_tbl for a roll
-// angle, rollA = (perp1*sin + perp2*cos) >> 12, rollB = (perp1*cos +
+// residue: 13 mnemonic diffs (cmpsum against 0x409560, 638 bytes original),
+// down from 168 now that vector.h's operator-(CVector,CVector) and
+// operator>>(CVector,int) moved out-of-line (2026-08-27), which fixed the
+// corner-math and roll-normalize calls (both now match the real
+// out-of-line calls at 0x4E7760 and 0x4E7840). Remaining wall: reading the
+// two adjacent i16 fields of rcossin_tbl[a6 & 0xFFF] (sin then cos). The
+// original computes the scaled table index as a standalone `shl eax,2`
+// then reads BOTH fields off that one materialized address (`[eax+610C48h]`,
+// `[eax+610C4Ah]`). Every source shape tried here (plain double indexing,
+// cached SSinCos* / reference, explicit byte-offset pointer, i16* recast,
+// volatile pointer, reversed field read order) makes MSVC6 fold the FIRST
+// field read into a scaled-index addressing mode ([reg*4+const]) and only
+// materialize a shared address register from the SECOND read onward,
+// costing 13 positionally-shifted diffs that never converge. This is the
+// exact same MSVC6 heuristic already documented as unresolved in
+// utils.cpp's Utils_RotateY (9-diff residue, 7 hypotheses tried, same
+// rcossin_tbl double-field-read shape). 6 distinct hypotheses tried here
+// specifically (cached pointer, byte-offset pointer, volatile pointer,
+// struct-by-value copy, reference, i16* recast); below the 15-hypothesis
+// bar for @AlmostMatching on a medium function, left @NotOk rather than
+// force it, cross-referencing the independent Utils_RotateY finding as
+// strong evidence this is a genuine toolchain quirk, not a source-shape
+// gap. Semantics fully traced by hand from the disassembly (stack-offset
+// tracking, see bit.attempts.md): dir/perp1/perp2 built exactly like the
+// 4-arg version via Utils_CalcPerps, then a6&0xFFF indexes rcossin_tbl for
+// a roll angle, rollA = (perp1*sin + perp2*cos) >> 12, rollB = (perp1*cos +
 // perp2*-sin) >> 12, rollA *= a4, rollB *= a5, and the four corners are
 // *a2 -+ rollA -+ rollB (same +/- pattern as the 4-arg version, with
-// rollA/rollB standing in for perp1/perp2). This can never byte-match
-// because the original calls TWO operators out-of-line that our vector.h
-// marks INLINE: operator-(CVector,CVector) at 0x4E7760 (already flagged in
-// CLAUDE.md from this exact file) and operator>>(CVector,int) at 0x4E7840
-// (flagged in CLAUDE.md from shatter.cpp). Both are used here (operator-
-// four times for the corner math, operator>> twice for the two >>12
-// normalizes), so this hits the same repo-wide blocker as the 4-arg
-// sibling, doubled. Not spending hypotheses on it until that structural
-// fix lands, per the existing CQuadBit::OrientUsing precedent in this file.
+// rollA/rollB standing in for perp1/perp2).
 void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, i32 a4, i32 a5, i32 a6)
 {
 	CVector dir(a3->vx, a3->vy, a3->vz);
@@ -1424,9 +1433,9 @@ void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, i32 a4, i32 a5, i32 a6)
 
 	Utils_CalcPerps(&dir, &perp2, &perp1);
 
-	i32 angle = a6 & 0xFFF;
-	i32 s = rcossin_tbl[angle].sin;
-	i32 c = rcossin_tbl[angle].cos;
+	SSinCos const *sc = &rcossin_tbl[a6 & 0xFFF];
+	i32 s = sc->sin;
+	i32 c = sc->cos;
 
 	CVector rollA = ((perp1 * s) + (perp2 * c)) >> 12;
 	CVector rollB = ((perp1 * c) + (perp2 * -s)) >> 12;
