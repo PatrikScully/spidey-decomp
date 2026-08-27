@@ -22,6 +22,14 @@ extern CBaddy *BaddyList;
 extern SLineInfo gLineInfo;
 extern i16 gRotMatrix[3][3];
 
+// moved out of export.h 2026-08-27, see the comment there.
+// @Ok
+void print_if_false(unsigned char cry, char * message, ...) {
+	if (!cry) {
+		puts(message);
+	}
+}
+
 volatile i32 gVlanksRelated;
 i32 DifficultyLevel;
 volatile u32 Vblanks;

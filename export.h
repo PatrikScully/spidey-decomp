@@ -13,11 +13,11 @@ static i32 * const Animations = (i32*)0x006B245C;
 static u16* const word_6B2478 = (u16*)0x6B2478;
 //static int * const gTimerRelated = (int*)0x006B4CA8;
 
-static void print_if_false(unsigned char cry, char * message, ...) {
-	if (!cry) {
-		puts(message);
-	}
-}
+// moved out of this header 2026-08-27: it was wrongly marked static, so
+// MSVC always folded it into callers (this header is included almost
+// everywhere) while the original binary calls it as a real out-of-line
+// function. Definition now lives in utils.cpp.
+EXPORT void print_if_false(unsigned char cry, char * message, ...);
 
 static void printf_fancy(const char *message, ...) {
 	static char error_buf[512];
