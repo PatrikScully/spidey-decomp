@@ -32,6 +32,14 @@ class CVector
 			this->vz = 0;
 		}
 
+		// @FIXME only sets vx, vy/vz are left uninitialized. Matches CSpClone::DoPhysics
+		// codegen (0x4B0D80), which builds a one-axis-meaningful CVector to feed into the
+		// (CVector, CVector) operator* overload (that overload only reads lhs.vx).
+		EXPORT INLINE explicit CVector(i32 x)
+		{
+			this->vx = x;
+		}
+
 		EXPORT INLINE void Set(i32 a1, i32 a2, i32 a3)
 		{
 			this->vx = a1;

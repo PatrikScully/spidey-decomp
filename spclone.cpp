@@ -159,9 +159,31 @@ void CSpClone::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @BIGTODO
+// @NotOk
+// residue: 93 mnemonic diffs, all caused by vector.h's operator>>(const CVector&, const int&)
+// being INLINE while the original calls it out of line (0x4E7840). Verified by temporarily
+// making it out-of-line in a local build: with that change alone, cmpsum shows 0 mnemonic
+// diffs, so the logic below is correct. Same class of bug as the documented operator-
+// issue (bit.cpp note in CLAUDE.md), repo-wide, not something this function alone can fix.
+// See ~/Documents/spidey-work/wt/spclone.attempts.md.
 void CSpClone::DoPhysics(void)
-{}
+{
+	this->mAcc.vx = 0;
+	this->mAcc.vy = this->field_328 - (this->mVel.vy / 16);
+	this->mAcc.vz = 0;
+
+	this->mVel += (CVector(this->field_334) * this->mAcc) >> 12;
+
+	this->mPos += ((CVector(this->field_334) * this->mVel) >> 12)
+	            + (((CVector((this->field_334 * this->field_334) >> 12) * this->mAcc) / 2) >> 12);
+
+	this->mAngles.vy += (this->mAngVel.vy * this->field_334) >> 12;
+	this->mAngles.Mask();
+
+	this->mAngVel.vy += (this->mAngAcc.vy * this->field_334) >> 12;
+	this->mAngVel %= this->mAngFric;
+	this->mAngVel.KillSmall();
+}
 
 // @Ok
 // @Matching
