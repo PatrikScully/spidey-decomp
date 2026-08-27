@@ -22,6 +22,11 @@
 #include "baddy.h"
 #include "my_assert.h"
 #include "texture.h"
+#include "panel.h"
+#include "PCGfx.h"
+#include "m3dinit.h"
+#include "SpideyDX.h"
+#include "switch.h"
 
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
@@ -825,10 +830,67 @@ void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
     printf("CPlayer::DrawOffscreenSpideySenseIndicatorList(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::DrawReticle(u16,u16,u32)
+// @NotOk
+// residue: 129 mnemonic diffs, starting at the prologue itself. Logic and
+// field reads are confirmed correct (POLY_FT4 quad, SAnimFrame source,
+// scaleX/scaleY idiom all match the DCDrawGouraudPoly precedent in
+// panel.cpp), but our build needs a bigger stack frame (sub esp,0x1Ch vs
+// the original's sub esp,0x0Ch) because it does not reuse ebx (this, then
+// y0) and edi (frame, then frame->pTexture) across their two live ranges
+// the way the original does; ours keeps this in edi, frame in ebp instead,
+// and spills the rest. This is the same register-generation-reuse residue
+// class documented elsewhere in this file (see spidey.attempts.md,
+// BuildOffscreenSpideySenseIndicatorList entry) and in CLAUDE.md's
+// "Matching tricks". 2 attempts this session (baseline: 129 diffs;
+// inlining this->field_DEC at each use instead of a cached `frame` local:
+// 141 diffs, worse), well below the 15-hypothesis bar for @AlmostMatching
+// on a function this size, so left @NotOk rather than forcing the tag.
+void CPlayer::DrawReticle(u16 x, u16 y, u32 scale)
 {
-    printf("CPlayer::DrawReticle(u16,u16,u32)");
+	SAnimFrame *frame = this->field_DEC;
+
+	POLY_FT4 *poly = (POLY_FT4*)Panel_DrawTexturedPoly(frame, 0);
+	if (!poly)
+	{
+		return;
+	}
+
+	*(u32*)&poly->r0 = this->field_DE8 | 0x2C000000;
+	setSemiTrans();
+
+	i32 x0 = ((scale * ((frame->OffX << 9) / 320)) >> 12) + x;
+	poly->x0 = x0;
+	poly->x2 = x0;
+
+	i32 y0 = ((scale * frame->OffY) >> 12) + y;
+	poly->y0 = y0;
+	poly->y1 = y0;
+
+	i32 x1 = ((scale * ((frame->Width << 9) / 320)) >> 12) + x0;
+	poly->x1 = x1;
+	poly->x3 = x1;
+
+	i32 y2 = ((scale * frame->Height) >> 12) + y0;
+	poly->y2 = y2;
+	poly->y3 = y2;
+
+	print_if_false(frame->pTexture != 0, "No Texture data for DrawReticle");
+	PCGfx_UseTexture(frame->pTexture->clut, DCGfx_BlendingMode_1);
+
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 fy2 = y2 * scaleY;
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 fx1 = x1 * scaleX;
+	f32 fx0 = x0 * scaleX;
+	u32 color = poly->b0 | ((poly->g0 | ((poly->r0 | 0xFFFFB000) << 8)) << 8);
+	f32 fy0 = y0 * scaleY;
+
+	PCGfx_DrawQPoly2D(
+			fx0, fy0, 0.0f, 0.0f, color,
+			fx1, fy0, 1.0f, 0.0f, color,
+			fx0, fy2, 0.0f, 1.0f, color,
+			fx1, fy2, 1.0f, 1.0f, color,
+			6.0f);
 }
 
 // same objects as gGlobalThisCamera / dword_6A81FC / dword_6A8208 /
@@ -1029,10 +1091,127 @@ void CPlayer::GetPerpendicularisationRadius(void)
     printf("CPlayer::GetPerpendicularisationRadius(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::GrabUpdate(CVector *,i16 *)
+// @NotOk
+// field_16 is CItem::mAngles.vy (mAngles is a CSVector at offset 0x14, vy
+// sits at 0x16). Each real switch case is written out in full rather than
+// sharing a case label with an identical sibling (304/306/320 all use the
+// same hookIndex/scaleA/scaleB), because the original binary has separate
+// jump-table entries and separate code for each, not a shared block.
+// residue: 195 mnemonic diffs, same register-generation-reuse class as
+// DrawReticle/SelectTargetSwitch above (this file's recurring residue,
+// see spidey.attempts.md): our build keeps the recovered target pointer
+// in a different register than the original and inverts one early branch
+// condition (jne vs je) without changing behaviour. Logic, field offsets
+// (field_DD8 as SHandle, mAngles.vy, field_C84/field_C6C scales) and the
+// per-case hookIndex/scaleA/scaleB triples are all confirmed against the
+// raw disassembly and the SHook (m3dutils.h) / VALIDATE'd CItem layout.
+// 1 attempt this session, well below the 10-hypothesis-per-cluster bar for
+// a function this size (920 bytes); left @NotOk rather than iterate
+// further given the size of the remaining queue in this file.
+u8 CPlayer::GrabUpdate(CVector *out, i16 *outAngle)
 {
-    printf("CPlayer::GrabUpdate(CVector *,i16 *)");
+	if (!(this->field_E1C & 0xE000000))
+	{
+		return 0;
+	}
+
+	CItem *target = reinterpret_cast<CItem*>(Mem_RecoverPointer(&this->field_DD8));
+
+	if (this->field_E1C & 0x8000000)
+	{
+		if (target)
+		{
+			switch (target->mType)
+			{
+				case 304:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 306:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 312:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 13;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 317:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 10;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 55;
+					this->mPos += this->field_C6C * 32;
+					break;
+				}
+				case 320:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 324:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 55;
+					this->mPos += this->field_C6C * 32;
+					break;
+				}
+				default:
+					print_if_false(0, "Unknown target");
+					break;
+			}
+		}
+	}
+	else if (target && target->mType == 314)
+	{
+		*out = this->mPos - this->field_C6C * 58;
+	}
+	else
+	{
+		*out = this->mPos - this->field_C6C * 32;
+	}
+
+	*outAngle = this->mAngles.vy;
+	return 1;
 }
 
 // @SMALLTODO
@@ -1364,10 +1543,90 @@ void CPlayer::SelectTargetBaddy(i32,i32,i32,i32)
     printf("CPlayer::SelectTargetBaddy(i32,i32,i32,i32)");
 }
 
-// @MEDIUMTODO
-void CPlayer::SelectTargetSwitch(i32,i32,SHandle *,i32,i32)
+// @NotOk
+// walks ControlBaddyList (CItem::mNextItem/mType, same walk idiom as
+// BuildOffscreenSpideySenseIndicatorList above), skipping mType 407 nodes,
+// looking for the CSwitch with the best score inside maxDist that also
+// passes a line-of-sight check to it. facingWeight doubles as a flag: 0
+// skips the facing/angle refinement entirely, nonzero also weights it.
+// residue: 111 mnemonic diffs, cascading from the prologue: original loads
+// ControlBaddyList once into esi and reuses ebx/edi/ebp across the loop
+// (the same register-generation-reuse pattern documented on DrawReticle
+// above and on BuildOffscreenSpideySenseIndicatorList), needing sub
+// esp,0xD4; ours needs a differently-shaped frame and keeps the list head
+// in a stack temp instead of esi. Logic, field offsets (CItem::mNextItem
+// 0x20, mType 0x38, SLineInfo layout, pFace[3]&0x2000000) and the
+// CVector-vs-plain-scalar split (parameterized ctor to avoid the default
+// ctor's zero-init, matching the BuildOffscreenSpideySenseIndicatorList
+// attempts.md finding) are all confirmed correct against the raw
+// disassembly. 3 attempts this session (see spidey.attempts.md), below
+// the 15-hypothesis bar for a 595-byte function, left @NotOk.
+void CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 weight, i32 facingWeight)
 {
-    printf("CPlayer::SelectTargetSwitch(i32,i32,SHandle *,i32,i32)");
+	CItem *best = 0;
+	i32 bestScore = 0;
+
+	for (CItem *node = ControlBaddyList; node; node = node->mNextItem)
+	{
+		if (node->mType == 407)
+			continue;
+
+		CVector *target = reinterpret_cast<CSwitch*>(node)->GetAutoAimTargetPointer();
+		if (!target)
+			continue;
+
+		CVector targetPos(target->vx, target->vy, target->vz);
+
+		u32 dist = Utils_CrapDist(this->mPos, targetPos);
+		if (dist >= (u32)maxDist)
+			continue;
+
+		i32 score = (weight * (((maxDist - dist) << 12) / maxDist)) >> 12;
+
+		if (facingWeight != 0)
+		{
+			CVector delta(
+					(targetPos.vx - this->mPos.vx) >> 12,
+					(targetPos.vy - this->mPos.vy) >> 12,
+					(targetPos.vz - this->mPos.vz) >> 12);
+
+			gte_SetRotMatrix(&this->field_89C);
+			gte_ldlvl(reinterpret_cast<VECTOR*>(&delta));
+			gte_rtir();
+			gte_stlvnl(reinterpret_cast<VECTOR*>(&delta));
+
+			delta.vy = 0;
+			VectorNormal(reinterpret_cast<VECTOR*>(&delta), reinterpret_cast<VECTOR*>(&delta));
+
+			if (-delta.vz < minFacing)
+				continue;
+
+			score += (facingWeight * ((4096 - delta.vz) / 2)) >> 12;
+		}
+
+		if (score > bestScore)
+		{
+			SLineInfo lineInfo;
+			lineInfo.StartCoords = this->mPos;
+			lineInfo.EndCoords = targetPos;
+			memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+			memset(&lineInfo.Position, 0, sizeof(CVector));
+			lineInfo.Normal.vx = 0;
+			lineInfo.Normal.vy = 0;
+			lineInfo.Normal.vz = 0;
+
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (!lineInfo.pItem || (lineInfo.pFace[3] & 0x2000000))
+			{
+				bestScore = score;
+				best = node;
+			}
+		}
+	}
+
+	*out = Mem_MakeHandle(best);
 }
 
 // @Ok

@@ -9,6 +9,8 @@
 #include "manipob.h"
 #include "quat.h"
 
+struct SAnimFrame;
+
 EXPORT extern u8 gSpideyPsxIndex;
 
 struct SIndicator
@@ -247,11 +249,24 @@ class CPlayer : public CSuper
 		// @FIXME - type
 		CBody *field_DCC;
 
-		PADDING(0xDE4-0xDCC-4);
+		PADDING(0xDD8-0xDCC-4);
+
+		// grab target handle, recovered via Mem_RecoverPointer in GrabUpdate
+		SHandle field_DD8;
+
+		PADDING(0xDE4-0xDE0);
 
 		char field_DE4;
 
-		PADDING(0xDF0-0xDE4-1);
+		PADDING(0xDE8-0xDE4-1);
+
+		// reticle color: low 3 bytes are packed r0/g0/b0, OR'd with 0x2C
+		// (poly tag/code byte) at use in DrawReticle.
+		i32 field_DE8;
+
+		// reticle sprite: OffX/OffY/Width/Height + Texture*, read by
+		// DrawReticle via Panel_DrawTexturedPoly(SAnimFrame*, i32).
+		SAnimFrame *field_DEC;
 
 		i32 field_DF0;
 		i32 field_DF4;
@@ -402,7 +417,7 @@ class CPlayer : public CSuper
 		EXPORT i32 GetFreeIndicatorListEntry(void);
 		EXPORT i32* GetNewCommandBlock(u32);
 		EXPORT void GetPerpendicularisationRadius(void);
-		EXPORT void GrabUpdate(CVector *,i16 *);
+		EXPORT u8 GrabUpdate(CVector *,i16 *);
 		EXPORT void HandleControlsForSurfaceTransition(bool);
 		EXPORT i32 Hit(SHitInfo *) OVERRIDE;
 		EXPORT u8 IfPlayerCeilingCheck(i32,i32);
