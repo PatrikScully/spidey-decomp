@@ -1091,10 +1091,127 @@ void CPlayer::GetPerpendicularisationRadius(void)
     printf("CPlayer::GetPerpendicularisationRadius(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::GrabUpdate(CVector *,i16 *)
+// @NotOk
+// field_16 is CItem::mAngles.vy (mAngles is a CSVector at offset 0x14, vy
+// sits at 0x16). Each real switch case is written out in full rather than
+// sharing a case label with an identical sibling (304/306/320 all use the
+// same hookIndex/scaleA/scaleB), because the original binary has separate
+// jump-table entries and separate code for each, not a shared block.
+// residue: 195 mnemonic diffs, same register-generation-reuse class as
+// DrawReticle/SelectTargetSwitch above (this file's recurring residue,
+// see spidey.attempts.md): our build keeps the recovered target pointer
+// in a different register than the original and inverts one early branch
+// condition (jne vs je) without changing behaviour. Logic, field offsets
+// (field_DD8 as SHandle, mAngles.vy, field_C84/field_C6C scales) and the
+// per-case hookIndex/scaleA/scaleB triples are all confirmed against the
+// raw disassembly and the SHook (m3dutils.h) / VALIDATE'd CItem layout.
+// 1 attempt this session, well below the 10-hypothesis-per-cluster bar for
+// a function this size (920 bytes); left @NotOk rather than iterate
+// further given the size of the remaining queue in this file.
+u8 CPlayer::GrabUpdate(CVector *out, i16 *outAngle)
 {
-    printf("CPlayer::GrabUpdate(CVector *,i16 *)");
+	if (!(this->field_E1C & 0xE000000))
+	{
+		return 0;
+	}
+
+	CItem *target = reinterpret_cast<CItem*>(Mem_RecoverPointer(&this->field_DD8));
+
+	if (this->field_E1C & 0x8000000)
+	{
+		if (target)
+		{
+			switch (target->mType)
+			{
+				case 304:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 306:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 312:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 13;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 317:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 10;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 55;
+					this->mPos += this->field_C6C * 32;
+					break;
+				}
+				case 320:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 67;
+					this->mPos += this->field_C6C * 22;
+					break;
+				}
+				case 324:
+				{
+					SHook hook;
+					hook.Part.vx = 0;
+					hook.Part.vy = 0;
+					hook.Part.vz = 0;
+					hook.Offset = 8;
+					M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(target), &hook);
+					this->mPos -= this->field_C84 * 55;
+					this->mPos += this->field_C6C * 32;
+					break;
+				}
+				default:
+					print_if_false(0, "Unknown target");
+					break;
+			}
+		}
+	}
+	else if (target && target->mType == 314)
+	{
+		*out = this->mPos - this->field_C6C * 58;
+	}
+	else
+	{
+		*out = this->mPos - this->field_C6C * 32;
+	}
+
+	*outAngle = this->mAngles.vy;
+	return 1;
 }
 
 // @SMALLTODO

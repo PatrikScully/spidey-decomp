@@ -249,7 +249,12 @@ class CPlayer : public CSuper
 		// @FIXME - type
 		CBody *field_DCC;
 
-		PADDING(0xDE4-0xDCC-4);
+		PADDING(0xDD8-0xDCC-4);
+
+		// grab target handle, recovered via Mem_RecoverPointer in GrabUpdate
+		SHandle field_DD8;
+
+		PADDING(0xDE4-0xDE0);
 
 		char field_DE4;
 
@@ -412,7 +417,7 @@ class CPlayer : public CSuper
 		EXPORT i32 GetFreeIndicatorListEntry(void);
 		EXPORT i32* GetNewCommandBlock(u32);
 		EXPORT void GetPerpendicularisationRadius(void);
-		EXPORT void GrabUpdate(CVector *,i16 *);
+		EXPORT u8 GrabUpdate(CVector *,i16 *);
 		EXPORT void HandleControlsForSurfaceTransition(bool);
 		EXPORT i32 Hit(SHitInfo *) OVERRIDE;
 		EXPORT u8 IfPlayerCeilingCheck(i32,i32);
