@@ -3,6 +3,11 @@
 
 i32 gGlassShatterSound;
 
+// gGlassShatterSound is fixed at 0x6A7690 in the original binary (confirmed name and
+// address from the maintainer's IDB, idb_globals.txt). Used only inside shatter.cpp.
+//#define G_GLASS_SHATTER_SOUND (gGlassShatterSound)
+#define G_GLASS_SHATTER_SOUND (*reinterpret_cast<i32*>(0x006A7690))
+
 // guess: cached RGB color for the current shattered glass piece, only read/written inside
 // shatter.cpp (CalcRGB writes it, Shatter_Face/Split presumably read it). Byte order (g,b,r
 // at +0,+1,+2) is our guess from the CalcRGB store order, not confirmed against the maintainer's IDB.
@@ -15,9 +20,10 @@ struct SShatterColor
 static SShatterColor * const gShatterColor = (SShatterColor*)0x006A7684;
 
 // @Ok
+// @Matching
 void Shatter_MaybeMakeGlassShatterSound(void)
 {
-	gGlassShatterSound = 0;
+	G_GLASS_SHATTER_SOUND = 0;
 }
 
 // @NotOk
