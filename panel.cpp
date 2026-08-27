@@ -304,11 +304,13 @@ void gsub_46CB90(void* fmt, ...)
 
 // unnamed helper at 0x4015B0 (names.json calls it print_if_false, but the
 // export.h print_if_false has a different arg count and is static/inlined
-// away in our build). Not runtime-hooked this session, printf placeholder.
-// @SMALLTODO
+// away in our build). Original bytes are a single `ret` (1 byte function,
+// tools/functions/4199856.bin), so the body is empty in this build
+// configuration. cmpsum: 0 mnemonic diffs.
+// @Ok
+// @Matching
 EXPORT void gsub_4015B0(void*)
 {
-	printf("gsub_4015B0(void*)");
 }
 
 // @Ok
