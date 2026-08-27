@@ -507,6 +507,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_SRecords();
 	validate_STrainingMission();
 	validate_SRecordRelated();
+	validate_CRecordBox();
 	validate_SDCCardTime();
 	validate_SCardHead();
 	validate_SBackupFile();

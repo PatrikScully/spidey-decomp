@@ -596,7 +596,7 @@ void PShell_EndTrainingDisplay(void)
 		}
 		else
 		{
-			DisplayScore(0x131, 0x9B, gTrainingScore, gTrainingRecordBox->field_3C->field_B);
+			DisplayScore(0x131, 0x9B, gTrainingScore, gTrainingRecordBox->field_3C->mScoreUnits);
 		}
 	}
 
