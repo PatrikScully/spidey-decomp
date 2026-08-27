@@ -66,6 +66,12 @@ EXPORT void Utils_VblankProcessing(void);
 //#define G_POST_WATER_EFFECT (gPostWaterEffect)
 #define G_POST_WATER_EFFECT (*reinterpret_cast<i32*>(0x005FAE98))
 
+// two packed 16 bit vblank countdown timers, THPS2 declares GameFade in utils.h
+// (moved here from utils.cpp so screen.cpp can use it too, per the G_* "one
+// definition in the owning header" rule).
+//#define G_GAME_FADE (GameFade)
+#define G_GAME_FADE (*reinterpret_cast<volatile i32*>(0x006B4C9C))
+
 void patch_utils(void);
 
 #endif
