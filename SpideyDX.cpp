@@ -427,13 +427,55 @@ u16* PVR_ConvertTwiddledToBMP(
 	return dest;
 }
 
-// @SMALLTODO
-u16* PVR_ConvertVQToBMP(u32 a1, u32 a2, const u16* a3, u32 a4)
+// @Ok
+u16* PVR_ConvertVQToBMP(
+		u32 width,
+		u32 height,
+		const u16* src,
+		u32 mipmapped)
 {
-	// @FIXME
-	typedef u16* (*func_ptr)(u32, u32, const u16*, u32);
-	func_ptr func = (func_ptr)0x005115D0;
-	return func(a1, a2, a3, a4);
+	if (!gTwiddleTableBuilt)
+	{
+		BuildTwiddleTable();
+		gTwiddleTableBuilt = 1;
+	}
+
+	// VQ layout: a 256-entry codebook (8 bytes per entry = 2048 bytes) at the
+	// start, followed by the twiddled index buffer.
+	const u8* pIdx = (const u8*)src + 2048;
+
+	u32 halfW = width >> 1;
+	u32 halfH = height >> 1;
+
+	if (mipmapped && !(halfW == 1 && halfH == 1))
+	{
+		pIdx += mipmapOffset(width >> 2, height >> 2, 0.25f)
+				+ (i32)((halfH * halfW) * 0.25f);
+	}
+
+	u32 mask;
+	u32 shift;
+	ComputeMaskShift(halfW, halfH, mask, shift);
+
+	u16* dest = (u16*)malloc(width * height * 2);
+
+	for (u32 y = 0; y < halfH; y++)
+	{
+		for (u32 x = 0; x < halfW; x++)
+		{
+			u32 twiddle = CalcUntwiddledPos(x, y, mask, shift);
+
+			// each code is a 2x2 block: top-left, bottom-left, top-right,
+			// bottom-right
+			const u16* pCode = (const u16*)((const u8*)src + 8 * pIdx[twiddle]);
+			dest[2 * y * width + 2 * x] = pCode[0];
+			dest[(2 * y + 1) * width + 2 * x] = pCode[1];
+			dest[2 * y * width + 2 * x + 1] = pCode[2];
+			dest[(2 * y + 1) * width + 2 * x + 1] = pCode[3];
+		}
+	}
+
+	return dest;
 }
 
 // @PowerPC
