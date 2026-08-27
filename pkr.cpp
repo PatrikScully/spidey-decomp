@@ -13,6 +13,10 @@
 
 LIBPKR_HANDLE* gDataPkr;
 
+// guess: shared error-message buffer for PKR_ReportError/PKR_GetLastError, size 0x200.
+// idb_globals.txt nearest neighbours: gSbMallocRelated 0x02E09BDC, gSbInitRelated 0x02E09BE0 (0x1C before this address, no named object covers it).
+static char* const gPkrErrorMsg = reinterpret_cast<char*>(0x02E09BFC);
+
 #ifndef _WIN32
 #define strcmpi strcasecmp
 #endif
@@ -224,14 +228,180 @@ void dirRemoveFromPKR(
 	delete pDirInfo;
 }
 
-// @BIGTODO
+// callees outside our assigned range, forwarded to the original rather than
+// guessed at (same idea as gsub_513FF0/gsub_511860 in DXsound.cpp, but a
+// naked jmp-trampoline instead of a function-pointer global: flushPKR is
+// compiled with optimizations off, and under that a function-pointer global
+// call is a real memory-indirect call, one byte longer than the original's
+// direct call; a naked function is called directly by its caller, so this
+// keeps the call site itself byte-identical).
+// gsub_517FB6 sits immediately after flushPKR in the binary; called with
+// (buf, len) and its result is stored into a PKR_FILEINFO.crc, so it is
+// probably a crc32-like checksum. gsub_51AC61 is called with
+// (pFileNode, buf, 1) and its result replaces buf for the following fwrite
+// and delete[], so it probably compresses (or passes through) the file
+// data before it is written to the archive.
+// naked (MSVC only, no C prologue) so the call site jumps straight into the
+// original code with the stack untouched; the Linux sanity build (which
+// does not need byte-matching, just to link and run) uses a plain
+// function-pointer call instead, since g++ has no naked/__asm equivalent.
+#ifdef _WIN32
+// @Bogus
+__declspec(naked) u32 gsub_517FB6(u8*, i32)
+{
+	__asm
+	{
+		mov eax, 00517FB6h
+		jmp eax
+	}
+}
+#else
+// @Bogus
+u32 gsub_517FB6(u8* buf, i32 len)
+{
+	typedef u32 (*func_t)(u8*, i32);
+	return ((func_t)0x00517FB6)(buf, len);
+}
+#endif
+
+#ifdef _WIN32
+// @Bogus
+__declspec(naked) u8* gsub_51AC61(NODE_FILEINFO*, u8*, i32)
+{
+	__asm
+	{
+		mov eax, 0051AC61h
+		jmp eax
+	}
+}
+#else
+// @Bogus
+u8* gsub_51AC61(NODE_FILEINFO* pFileNode, u8* buf, i32 flag)
+{
+	typedef u8* (*func_t)(NODE_FILEINFO*, u8*, i32);
+	return ((func_t)0x0051AC61)(pFileNode, buf, flag);
+}
+#endif
+
+// guess: an empty string, used to clear NODE_FILEINFO::name once a newly
+// added file has been written into the archive. sits right after the 0x200
+// byte gPkrErrorMsg buffer.
+static char* const gPkrEmptyStr = reinterpret_cast<char*>(0x02E09DFC);
+
+// unoptimized, like PKR_GetLastError/PKR_ReportError above (see the note on
+// PKR_GetLastError). also force the real memset/strcpy calls, same reason as
+// the strlen/strcpy note there.
+#pragma function(memset, strcpy)
+#pragma optimize("", off)
+// @Ok
+// @Matching
 u8 flushPKR(LIBPKR_HANDLE* a1)
 {
-	// @FIXME
-	typedef u8 (*func_ptr)(LIBPKR_HANDLE*);
-	func_ptr func = (func_ptr)0x00517B8B;
-	return func(a1);
+	LIBPKR_HANDLE* pHandle = a1;
+	u32 dirOffset = pHandle->mHeader.dirOffset;
+	u32 pad = 0;
+
+	if (pHandle->field_128 & 1)
+	{
+		i32 fseekResult = fseek(pHandle->fp, dirOffset, 0);
+		if (fseekResult)
+		{
+			PKR_ReportError("flushPKR: fseek error to %i", dirOffset);
+			return 0;
+		}
+
+		NODE_DIRINFO* pDirNode = pHandle->pDirInfo;
+		NODE_FILEINFO* pFileNode = pHandle->pFileInfo;
+		u32 i;
+
+		for (i = 0; i < pHandle->mFooter.numDirs; i++)
+		{
+			PKR_DIRINFO dirInfo = pDirNode->dirInfo;
+
+			if (dirInfo.numFiles > 0)
+			{
+				for (u32 j = 0; j < dirInfo.field_20; j++)
+					pFileNode = pFileNode->mNext;
+
+				for (u32 k = 0; k < dirInfo.numFiles; k++)
+				{
+					if (pFileNode->field_13C & 1)
+					{
+						pFileNode->fileInfo.fileOffset = dirOffset;
+
+						FILE* fp2 = fopen(pFileNode->name, "rb");
+						if (!fp2)
+						{
+							printf("flushPKR: cannot open %s: %s\n", pFileNode->name, strerror(0));
+							PKR_ReportError("flushPKR: cannot open %s", pFileNode->name);
+							pFileNode = pFileNode->mNext;
+							continue;
+						}
+
+						u8* buf = new u8[pFileNode->fileInfo.uncompressedSize];
+						memset(buf, 0, pFileNode->fileInfo.uncompressedSize);
+						fread(buf, pFileNode->fileInfo.uncompressedSize, 1, fp2);
+						fclose(fp2);
+
+						pFileNode->fileInfo.crc = gsub_517FB6(buf, pFileNode->fileInfo.uncompressedSize);
+						buf = gsub_51AC61(pFileNode, buf, 1);
+
+						fwrite(buf, pFileNode->fileInfo.compressedSize, 1, pHandle->fp);
+						delete[] buf;
+
+						dirOffset += pFileNode->fileInfo.compressedSize;
+
+						pad = (dirOffset + pHandle->mFooter.field_0 - 1) / pHandle->mFooter.field_0 * pHandle->mFooter.field_0 - dirOffset;
+						for (u32 m = 0; m < pad; m++)
+							fputc(0, pHandle->fp);
+						dirOffset += pad;
+
+						pFileNode->field_13C &= ~1;
+						strcpy(pFileNode->name, gPkrEmptyStr);
+					}
+
+					pFileNode = pFileNode->mNext;
+				}
+			}
+
+			pDirNode = pDirNode->mNext;
+			pFileNode = pHandle->pFileInfo;
+		}
+
+		pHandle->mHeader.dirOffset = dirOffset;
+
+		fseek(pHandle->fp, 0, 0);
+		fwrite(&pHandle->mHeader, sizeof(PKR_HEADER), 1, pHandle->fp);
+
+		fseek(pHandle->fp, dirOffset, 0);
+		fwrite(&pHandle->mFooter, sizeof(PKR_FOOTER), 1, pHandle->fp);
+
+		i32 fileOffsetAccum = 0;
+		pDirNode = pHandle->pDirInfo;
+		for (i = 0; i < pHandle->mFooter.numDirs; i++)
+		{
+			pDirNode->dirInfo.field_20 = fileOffsetAccum;
+			fileOffsetAccum += pDirNode->dirInfo.numFiles;
+
+			fwrite(&pDirNode->dirInfo, sizeof(PKR_DIRINFO), 1, pHandle->fp);
+
+			pDirNode = pDirNode->mNext;
+		}
+
+		pFileNode = pHandle->pFileInfo;
+		for (i = 0; i < pHandle->mFooter.numFiles; i++)
+		{
+			fwrite(&pFileNode->fileInfo, sizeof(PKR_FILEINFO), 1, pHandle->fp);
+			pFileNode = pFileNode->mNext;
+		}
+
+		pHandle->field_128 &= ~1;
+	}
+
+	return 1;
 }
+#pragma optimize("", on)
+#pragma intrinsic(memset, strcpy)
 
 // @Ok
 u8 PKR_Close(LIBPKR_HANDLE* pHandle)
@@ -373,14 +543,24 @@ u8 dirAddToPKR(LIBPKR_HANDLE* pHandle, PKR_DIRINFO dirInfo)
 	return 1;
 }
 
-// @BIGTODO
+// this function was compiled with all optimizations off (matches the rest of
+// the PKR library note at the top of this file: it was built unoptimized).
+// without this the compiler folds strlen/strcpy into inline scans and omits
+// the stack frame, none of which the original does.
+#pragma function(strlen, strcpy)
+#pragma optimize("", off)
+// @Ok
+// @Matching
 u8 PKR_GetLastError(char* a1)
 {
-	typedef u8 (*func_ptr)(char*);
-	func_ptr func = (func_ptr)0x0051A2AD;
+	if (!strlen(gPkrErrorMsg))
+		return 0;
 
-	return func(a1);
+	strcpy(a1, gPkrErrorMsg);
+	return 1;
 }
+#pragma optimize("", on)
+#pragma intrinsic(strlen, strcpy)
 
 // @Ok
 u8 PKR_Open(
@@ -540,17 +720,18 @@ u8* decompressZLIB(u8* src, u32 srcLen, u32 dstLen)
 	return dst;
 }
 
-// @BIGTODO
+// unoptimized, like PKR_GetLastError above (see the note there).
+#pragma optimize("", off)
+// @Ok
 u8 PKR_ReportError(const char* a1, ...)
 {
-	// @FIXME: use the proper
-	
 	va_list va;
 	va_start(va, a1);
-	VSNPRINTF(reinterpret_cast<char*>(0x002E09BFC), 0x200, a1, va);
+	VSNPRINTF(gPkrErrorMsg, 0x200, a1, va);
 	va_end(va);
 	return 1;
 }
+#pragma optimize("", on)
 
 // @Ok
 u8 fileCRCCheck(u8* buf, i32 size, u32 expected)
@@ -597,6 +778,11 @@ void validate_PKR_FOOTER(void)
 {
 	VALIDATE_SIZE(PKR_FOOTER, 0xC);
 
+	// field_0: used in flushPKR (0x517b8b) as a divisor to round a file
+	// offset up ("(offset + field_0 - 1) / field_0 * field_0"), then the gap
+	// is written out with fputc(0, fp) in a loop. guess: a sector/alignment
+	// size for the packed data (CD-ROM style padding). not renamed since
+	// this is a guess, not confirmed against his IDB.
 	VALIDATE(PKR_FOOTER, field_0, 0x0);
 	VALIDATE(PKR_FOOTER, numDirs, 0x4);
 	VALIDATE(PKR_FOOTER, numFiles, 0x8);
@@ -624,6 +810,7 @@ void validate_LIBPKR_HANDLE(void)
 	VALIDATE(LIBPKR_HANDLE, mFooter, 0x114);
 	VALIDATE(LIBPKR_HANDLE, pDirInfo, 0x120);
 	VALIDATE(LIBPKR_HANDLE, pFileInfo, 0x124);
+	VALIDATE(LIBPKR_HANDLE, field_128, 0x128);
 }
 
 void validate_NODE_DIRINFO(void)
