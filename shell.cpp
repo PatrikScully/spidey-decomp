@@ -26,6 +26,7 @@
 #include "tweak.h"
 #include "ps2gamefmv.h"
 #include "bmr.h"
+#include "ps2card.h"
 
 #include <cstring>
 
@@ -1692,10 +1693,295 @@ done:
 	return v18;
 }
 
-// @MEDIUMTODO
-void Shell_LoadGame(void)
+// @Ok
+// buffer the Merge loop writes merged records into, then copies back
+static char * const gMergeBuffer = (char*)0x00610790;
+// alt texture set table for Spidey_LoadAlternativeTextureSet
+static u32 * const gAltTextureSet = (u32*)0x00552830;
+// mouse-related flag used by the input helper below
+static u8 * const gMouseRelated = (u8*)0x005FAE9D;
+
+// inlines sub_440E40: splits pad/mouse triggers into per-button flags
+static void Shell_ReadTriggers(i32 *pSelect, i32 *pBack, i32 *pAny, i32 *pMouse)
 {
-    printf("Shell_LoadGame(void)");
+	i32 mask = 0x40000;
+	*pMouse = 0;
+	*pAny = 0;
+	*pBack = 0;
+	*pSelect = 0;
+	if (*gMouseRelated != 0)
+		mask = 262208;
+	*pMouse = PCSHELL_CheckTriggers(mask, 1, 1);
+	*pSelect = PCSHELL_CheckTriggers(65552, 1, 1) || *pMouse;
+	*pBack = PCSHELL_CheckTriggers(131616, 1, 1);
+	*pAny = *pBack || *pSelect;
+	if (*pSelect)
+		*pBack = 0;
+}
+
+i32 Shell_LoadGame(void)
+{
+	print_if_false(gShellInitialized != 0, "Called Shell_LoadGame() without shell initialised");
+	i32 v0 = 0;
+	i32 state = 0;
+	i32 exiting = 0;
+	CMenu* pMenu = 0;
+	i32 introCount = 0;
+	i32 delay = 0;
+	i32 result = 0;
+	*(i32*)0x005512EC = 384;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 vblanks = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v0, 38, "load game", 1, 0, 150, -21, 29);
+		Mess_SetRGB(0x6B, 0x5D, 0xA7, 0);
+		Mess_SetRGBBottom(0x3E, 54, 96);
+		Mess_SetSort(0);
+		switch (state)
+		{
+		case 2:
+			Mess_DrawText(256, 96, "save game file contains", 0, 0x1000);
+			Mess_DrawText(256, 113, "no spider-man game save.", 0, 0x1000);
+			Mess_DrawText(256, 130, "press esc key", 0, 0x1000);
+			Mess_DrawText(256, 147, "to cancel.", 0, 0x1000);
+			break;
+		case 3:
+			Mess_DrawText(256, 90, "error reading save game file", 0, 0x1000);
+			Mess_DrawText(256, 124, "press esc key", 0, 0x1000);
+			Mess_DrawText(256, 141, "to cancel.", 0, 0x1000);
+			break;
+		case 5:
+			if (pMenu->FinishedZooming())
+			{
+				Mess_SetTextJustify(0);
+				Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+				Mess_SetRGBBottom(0x28, 35, 62);
+				Shell_DisplayGameInfo(190, 70, &gSaveGameSlots[pMenu->mLine]);
+			}
+			print_if_false(pMenu != 0, "No games menu?");
+			pMenu->Display();
+			break;
+		case 6:
+			PShell_BigFont();
+			Mess_DrawText(256, 101, "load successful", 0, 0x1000);
+			PShell_NormalFont();
+			Mess_DrawText(256, 143, "press enter to continue.", 0, 0x1000);
+			break;
+		default:
+			break;
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		i32 v25 = PShell_MoveTowards(v0, 128);
+		if ((++TTime & 1) != 0)
+			Card_CheckStatus(0, 0);
+		if (pMenu != 0 && pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return 0;
+		CheckForPadUnplugged();
+		i32 v22, v30, v23, v26;
+		Shell_ReadTriggers(&v22, &v30, &v23, &v26);
+		if (pMenu != 0 && pMenu->mLine >= 0x28)
+		{
+			v22 = 0;
+			v26 = 0;
+		}
+		i32 IsMouseOverText = 0;
+		switch (state)
+		{
+		case 0:
+			if (introCount != 0)
+			{
+				if (--introCount == 0)
+				{
+					delay = 150;
+					state = 1;
+				}
+			}
+			else
+			{
+				introCount = 10;
+			}
+			goto vblank;
+		case 1:
+			switch (CardStatus)
+			{
+			case -2:
+				state = 4;
+				break;
+			case -1:
+				state = 7;
+				break;
+			case 1:
+			{
+				i32 v5 = Card_Load();
+				if (v5 != 0)
+				{
+					if (v5 != 1)
+					{
+						state = 3;
+						break;
+					}
+					state = 2;
+					break;
+				}
+				print_if_false(pMenu == 0, "Already got games menu?");
+				PShell_NormalFont();
+				pMenu = new CMenu(90, 70, 0, 256, 256, 15);
+				*(u8*)((char*)pMenu + 0x18) = 1;
+				Shell_AddGameSlots(pMenu);
+				pMenu->Zoom(0);
+				state = 5;
+				break;
+			}
+			default:
+				if (delay == 0)
+				{
+					state = 2;
+					break;
+				}
+				--delay;
+				break;
+			}
+			goto vblank;
+		case 2:
+		case 3:
+		case 4:
+			if (CardStatus == -1 || CardStatus == 2)
+			{
+				state = 0;
+				goto vblank;
+			}
+			if (v23 != 0 || PCSHELL_CheckTriggers(256, 1, 1))
+			{
+				SFX_Play(0x23, 0x2000, 0);
+				exiting = 1;
+			}
+			goto vblank;
+		case 5:
+			print_if_false(pMenu != 0, "No games menu?");
+			if (CardStatus == -1)
+			{
+				delete pMenu;
+				pMenu = 0;
+				state = 7;
+			}
+			else
+			{
+				pMenu->Update();
+				if (PCSHELL_CheckTriggers(256, 1, 1))
+				{
+					i32 mLine = pMenu->mLine;
+					u8 mJust = pMenu->mJustification;
+					const char* name = pMenu->mEntry[mLine].name;
+					i32 x, y;
+					pMenu->GetEntryXY(name, &x, &y);
+					IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJust);
+				}
+				if (v22 || IsMouseOverText)
+				{
+					char* slot = (char*)&gSaveGameSlots[pMenu->mLine];
+					if (*(u32*)slot == 0)
+					{
+						SFX_Play(0x1B, 0x2000, 0);
+					}
+					else
+					{
+						print_if_false(1, "Size of SSaveGame not a multiple of 4");
+						i32 checksum = 0;
+						u32* data = (u32*)(slot + 4);
+						for (i32 i = 0; i < 46; i++)
+						{
+							u32 c = (u32)checksum;
+							u32 doubled = (c << 1) | (c >> 31);
+							checksum = (i32)(data[i] + doubled);
+						}
+						checksum |= 1;
+						if (*(u32*)slot == (u32)checksum)
+						{
+							SFX_Play(0x1F, 0x2000, 0);
+							memcpy(&gSaveGame, slot, sizeof(gSaveGame));
+							for (i32 j = 0; j < NUM_CHALLS; j++)
+							{
+								Merge((SScore*)(gMergeBuffer + j * 25 + 3), &gGlobalRecords.mScores[j * 5], gChallenges[j].field_C);
+							}
+							gGlobalRecords = *(SRecords*)gMergeBuffer;
+							PShell_ApplyGameState();
+							Spidey_LoadAlternativeTextureSet(gAltTextureSet, gSaveGame.field_7C + 1);
+							state = 6;
+							Pad_ClearTriggers(G_SCONTROL);
+						}
+						else
+						{
+							SFX_Play(0x1B, 0x2000, 0);
+						}
+					}
+				}
+			}
+			goto vblank;
+		case 6:
+			if (v23 != 0 || PCSHELL_CheckTriggers(256, 1, 1))
+			{
+				SFX_Play(0x1F, 0x2000, 0);
+				result = 1;
+				exiting = 1;
+			}
+			goto vblank;
+		case 7:
+			if (CardStatus == -2 || (CardStatus > 0 && CardStatus <= 2))
+			{
+				state = 0;
+				goto vblank;
+			}
+			else if (G_SCONTROL[0].Circle.Triggered != 0)
+			{
+				G_SCONTROL[0].Circle.Triggered = 0;
+				SFX_Play(0x23, 0x2000, 0);
+				exiting = 1;
+			}
+			goto vblank;
+		}
+	vblank:
+		if (v30 != 0 && exiting == 0)
+		{
+			SFX_Play(0x23, 0x2000, 0);
+			exiting = 1;
+		}
+		if (Vblanks == vblanks)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+		if (exiting == 0)
+		{
+			v0 = v25;
+			continue;
+		}
+		delete pMenu;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		Pad_ClearTriggers(G_SCONTROL);
+		return result;
+	}
 }
 
 // @MEDIUMTODO
