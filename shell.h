@@ -514,6 +514,10 @@ EXPORT void Shell_MovieViewer(void);
 EXPORT void Shell_Options(EShellResult);
 EXPORT void Shell_RollCredits(void);
 EXPORT void Shell_SFXMusic(void);
+// helpers used by Shell_SFXMusic (forwarded to original)
+EXPORT void DrawSlider(i32, i32, i32, i32);
+EXPORT i32 SliderDrag(i32, i32, i32);
+EXPORT void sub_515850(void);
 EXPORT void Shell_SaveGame(const u32 *,u32 *);
 EXPORT void Shell_ScreenAdjust(void);
 EXPORT void Shell_ShowRecord(char const *,char const *,STrainingMission *);

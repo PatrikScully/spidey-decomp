@@ -23,6 +23,7 @@
 #include "m3dutils.h"
 #include "db.h"
 #include "ps2funcs.h"
+#include "tweak.h"
 
 #include <cstring>
 
@@ -1425,10 +1426,256 @@ void Shell_RollCredits(void)
     printf("Shell_RollCredits(void)");
 }
 
-// @MEDIUMTODO
+// @FIXME forward to original
+EXPORT void DrawSlider(i32 a1, i32 a2, i32 a3, i32 a4)
+{
+	typedef void (*func_ptr)(i32, i32, i32, i32);
+	func_ptr func = (func_ptr)0x00498060;
+	func(a1, a2, a3, a4);
+}
+// @FIXME forward to original
+EXPORT i32 SliderDrag(i32 a1, i32 a2, i32 a3)
+{
+	typedef i32 (*func_ptr)(i32, i32, i32);
+	func_ptr func = (func_ptr)0x00497F80;
+	return func(a1, a2, a3);
+}
+// @FIXME forward to original
+EXPORT void sub_515850(void)
+{
+	typedef void (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x00515850;
+	func();
+}
+
+// @Ok
 void Shell_SFXMusic(void)
 {
-    printf("Shell_SFXMusic(void)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(270, 90, 2, 256, 256, 20);
+	pMenu->AddEntry("music and sfx level");
+	pMenu->AddEntry("voice level");
+	pMenu->AddEntry("movie level");
+	pMenu->AddEntry("audio");
+	pMenu->AddEntry("initial settings");
+	pMenu->scrollbar_zero = 0;
+	pMenu->Zoom(0);
+
+	i32 v25 = 0;
+	i32 v24 = 0;
+	i32 v3 = 0;
+	*(i32*)0x005512EC = 512;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v29 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v3, 38, "music and sound", 1, 0, 150, -21, 29);
+		if (pMenu->FinishedZooming())
+		{
+			DrawSlider(270, 81, (gGameState[12] << 8) / 0x3FFF, pMenu->mLine != 0);
+			DrawSlider(270, 101, gGameState[13], pMenu->mLine != 1);
+			DrawSlider(270, 121, gGameState[11], pMenu->mLine != 2);
+			if (pMenu->mLine == 3)
+				PShell_DefaultText();
+			else
+			{
+				Mess_SetTextJustify(0);
+				Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+				Mess_SetRGBBottom(0x28, 35, 62);
+			}
+			PShell_SmallFont();
+			if (gBootRomSoundMode != 0)
+				Mess_DrawText(368, 149, "mono", 0, 0x1000);
+			else
+				Mess_DrawText(368, 149, "stereo", 0, 0x1000);
+			PShell_NormalFont();
+		}
+		pMenu->Display();
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		i32 v30 = PShell_MoveTowards(v3, 150);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Mess_Update();
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return;
+		CheckForPadUnplugged();
+		i32 v23 = 0;
+		i32 v5 = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 0))
+		{
+			const char* name = pMenu->mEntry[pMenu->mLine].name;
+			u8 mJustification = pMenu->mJustification;
+			i32 x, y;
+			pMenu->GetEntryXY(name, &x, &y);
+			if (PCSHELL_IsMouseOverText(name, x, y, mJustification))
+				v5 = 1;
+		}
+		if (pMenu->mLine < 0x28 && (v5 != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].X.Triggered = 0;
+			v23 = 1;
+		}
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			Mess_DeleteAll();
+			delete pMenu;
+			Pause(1);
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			Pad_ClearTriggers(G_SCONTROL);
+			*(i32*)0x005512EC = 512;
+			sub_515850();
+			return;
+		}
+		PShell_NormalFont();
+		pMenu->Update();
+		i32 v7 = 0;
+		if (*(u8*)0x006A7784 == 0)
+		{
+			i32 v8 = 0;
+			for (i32 i = 81; i < 141; i += 20)
+			{
+				if (PCSHELL_IsMouseOver(270, i, 480, i + 10))
+					pMenu->SetLine(v8);
+				v8++;
+			}
+		}
+		i32 mLine = pMenu->mLine;
+		if (mLine != 0)
+		{
+			if (mLine == 1)
+				v7 = SliderDrag(270, 101, gGameState[13]);
+			else if (mLine == 2)
+				v7 = SliderDrag(270, 121, gGameState[11]);
+		}
+		else
+			v7 = SliderDrag(270, 81, (gGameState[12] << 8) / 0x3FFF);
+
+		if (PCSHELL_CheckTriggers(49164, 0, 0))
+		{
+			if (v24 == 0 || (v24 > 20 && (v24 & 1) == 0))
+			{
+				if (PCSHELL_CheckTriggers(32776, 0, 0))
+					v7 = 1;
+				if (PCSHELL_CheckTriggers(16388, 0, 0))
+					v7 = -1;
+			}
+			v24++;
+		}
+		else
+			v24 = 0;
+
+		if (pMenu->mLine != 1 && v25 != 0)
+			Redbook_XAStop();
+
+		switch (pMenu->mLine)
+		{
+		case 0:
+			if (v7 != 0)
+			{
+				i32 v12 = (v7 << 14) / 16;
+				i32 v14 = v12 + gGameState[12];
+				gGameState[12] += v12;
+				if (v14 < 0)
+					v14 = 0;
+				else if (v14 > 0x3FFF)
+					v14 = 0x3FFF;
+				gGameState[12] = v14;
+				gSaveGame.field_94 = v14;
+			}
+			if (v23 != 0)
+				SFX_Play(0x1C, 0x2000, 0);
+			break;
+		case 1:
+			if (v7 != 0)
+			{
+				i32 v16 = (v7 << 8) / 16;
+				i32 v15 = v16 + gGameState[13];
+				gGameState[13] += v16;
+				if (v15 < 0)
+					v15 = 0;
+				else if (v15 > 255)
+					v15 = 255;
+				gGameState[13] = v15;
+				gSaveGame.field_9C = v15;
+				v25 = 1;
+			}
+			if (v23 != 0 || v25 == 0)
+			{
+				if (Rnd(2) != 0)
+					Redbook_XAPlay(58, 8, 0);
+				else
+					Redbook_XAPlay(64, 12, 0);
+			}
+			break;
+		case 2:
+			{
+				i32 v16 = (v7 << 8) / 16;
+				i32 v17 = v16 + gGameState[11];
+				gGameState[11] += v16;
+				if (v17 < 0)
+					v17 = 0;
+				else if (v17 > 255)
+					v17 = 255;
+				gGameState[11] = v17;
+				gSaveGame.field_98 = v17;
+			}
+			break;
+		case 3:
+			if (v23 != 0 || v7 != 0)
+			{
+				SFX_Play(0x1F, 0x2000, 0);
+				DCSetBootROMSoundMode(gBootRomSoundMode == 0);
+				gSaveGame.field_A0 = gBootRomSoundMode;
+			}
+			break;
+		case 4:
+			if (v23 != 0)
+			{
+				SFX_Play(0x1F, 0x2000, 0);
+				gGameState[12] = 11087;
+				gGameState[11] = 177;
+				gGameState[13] = 201;
+				gSaveGame.field_94 = 11087;
+				gSaveGame.field_98 = 177;
+				gSaveGame.field_9C = 201;
+			}
+			break;
+		default:
+			break;
+		}
+		if (pMenu->mLine != 1)
+			v25 = 0;
+		if (Vblanks == v29)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+		v3 = v30;
+	}
 }
 
 // @MEDIUMTODO
