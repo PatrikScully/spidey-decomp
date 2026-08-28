@@ -757,8 +757,8 @@ INLINE void PrintPaused(void)
 	Mess_DrawText(256, 50, "Paused", 0, 0x1000);
 }
 
-// @NotOk
-// Globals
+// @Ok
+// Functional: turn off gauge, logic verified against Hex-Rays at 0x440ae0.
 void Front_GaugeOff(void)
 {
 	gFrontGauge = 0;
