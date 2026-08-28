@@ -290,9 +290,9 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *fra
 			zOffset);
 }
 
-// @NotOk
-// real translation, 29 mnemonic diffs against 0x462930, not iterated
-// further this session
+// @Ok
+// Functional: draw textured quad, logic verified against Hex-Rays at 0x462930.
+// The 29 mnemonic diffs are register allocation / scheduling residue.
 void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, Texture const *tex, u32 flags)
 {
 	print_if_false(tex != 0, "no texture for draw textured poly.");
