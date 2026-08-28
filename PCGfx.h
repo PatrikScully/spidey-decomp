@@ -92,7 +92,7 @@ EXPORT void PCGfx_InitAtStart(void);
 EXPORT u8 PCGfx_IsInScene(void);
 EXPORT void PCGfx_ProcessTexture(_tagKMSTRIPHEAD *,i32,DCGfx_BlendingMode);
 EXPORT void PCGfx_RenderInit(f32,f32,f32);
-EXPORT void PCGfx_RenderModelPreview(void *,char const *,i32);
+EXPORT void PCGfx_RenderModelPreview(CSuper *,char const *,i32);
 EXPORT void PCGfx_SetBrightness(i32);
 EXPORT void PCGfx_SetFogParams(f32,f32,u32);
 EXPORT void PCGfx_SetRenderParameter(DCGfx_RenderParameter,DCGfx_RenderSetting);

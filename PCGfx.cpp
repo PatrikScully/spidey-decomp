@@ -11,6 +11,7 @@
 #include "ps2pad.h"
 #include "PCInput.h"
 #include "m3dinit.h"
+#include "db.h"
 
 #include <cmath>
 #include <cstring>
@@ -1877,10 +1878,9 @@ void PCGfx_RenderInit(f32 a1, f32 a2, f32 a3)
 	gRenderInitTwo[1] = gRenderInitTwo[0] / 4096.0f;
 }
 
-// @NotOk
-// third parameter of rendesetup seems to be useless but also DB related
+// @Ok
 void PCGfx_RenderModelPreview(
-		void* a1,
+		CSuper* a1,
 		char const* a2,
 		i32 a3)
 {
@@ -1890,8 +1890,7 @@ void PCGfx_RenderModelPreview(
 	TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
 	PCGfx_BeginScene(1u, -1);
 
-	// @FIXME: third param seems to be ignored
-	M3d_RenderSetup(&gMikeCamera[0], &gViewport, 0);
+	M3d_RenderSetup(&gMikeCamera[0], &gViewport, (u32*)&pDoubleBuffer[1].Draw.tpage);
 	M3d_Render(a1);
 	M3d_RenderCleanup();
 	Mess_SetSort(4095);
@@ -1907,23 +1906,17 @@ void PCGfx_RenderModelPreview(
 	Mess_DrawText(220, 20, v3, 0, 0x1000u);
 	sprintf(v3, "CAM: %i %i %i", gMikeCamera[0].Position.vx, gMikeCamera[0].Position.vy, gMikeCamera[0].Position.vz);
 	Mess_DrawText(20, 45, v3, 0, 0x1000u);
-
-	CItem* pItem = static_cast<CItem*>(a1);
-	// @FIXME
-	sprintf(
-		v3,
-		"ITM: shit");
-	/*
-	sprintf(
-		v3,
-		"ITM: %i %i %i",
-		pItem->mPos.vx >> 12,
-		pItem->mPos.vy >> 12,
-		pItem->mPos.vz >> 12);
-		*/
+	sprintf(v3, "ITM: %i %i %i", a1->mPos.vx >> 12, a1->mPos.vy >> 12, a1->mPos.vz >> 12);
 	Mess_DrawText(220, 45, v3, 0, 0x1000u);
 
-	PCGfx_EndScene(1);
+	if (gSceneRelated != 0)
+	{
+		DXPOLY_EndScene(1);
+		PCGfx_ProcessTexture(0, -1, DCGfx_BlendingMode_0);
+		gEndSceneRelated = -1;
+		gSceneRelated = 0;
+		gEndSceneRelatedTwo = 0;
+	}
 }
 
 EXPORT f32 gPcGfxBrightnessPower[8] =
