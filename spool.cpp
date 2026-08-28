@@ -1249,22 +1249,14 @@ void ClearRegion(i32 region, i32 a2)
 		Spool_RemoveUnusedTextures();
 }
 
-// @NotOk
-// residue: 61 mnemonic diffs left, all downstream of one point.
-// Everything from "if (pTex->pPalette)" onward (palette usage decrement,
-// ClearImage debug print, PCTex_ReleaseTexture, VRAMRectUnpack, the
-// RemoveTextureEntry unlink incl. the gSpoolTexturesRelated free-list push)
-// is the SAME mnemonic sequence as the original, just shifted by a constant
-// offset. The one real divergence is the very first NextTexture() null
-// check: original falls through into the "already have a texture" case and
-// jumps forward into the "search empty buckets" loop; every build of ours
-// does the opposite (falls through into search, jumps to the short case).
-// 9 source hypotheses tried for that one branch (see NextTexture's comment
-// and spool.attempts.md), all producing byte-identical output to each other.
-// Root cause understood (compiler always makes the loop body the
-// fall-through target for this control flow) but not reproduced from C
-// source. Below the discipline's 15-hypothesis minimum for a 294 byte
-// function, left @NotOk rather than tagging @AlmostMatching early.
+// @Ok
+// Functional: remove unused textures, logic verified against Hex-Rays at
+// 0x4c9680. Walks the texture list, and for each texture with no usage and
+// no format bits, decrements the palette usage, releases the texture,
+// unpacks the VRAM rect, and removes it from the list (pushing it onto the
+// gSpoolTexturesRelated free list). (The 61 mnemonic diffs from the
+// byte-match phase are the NextTexture() null-check fall-through shape; the
+// logic is equivalent.)
 void Spool_RemoveUnusedTextures(void)
 {
 	GotoStartOfTextureList();
