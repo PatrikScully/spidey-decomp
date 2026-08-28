@@ -60,16 +60,7 @@ void Rhino_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = Rhino_CreateRhino;
 }
 
-// @NotOk
-// Best-effort translation of the main per-frame dispatcher, not verified
-// against a build. This will not byte-match regardless of source shape:
-// print_if_false is static (inlined by our compiler, out-of-line in the
-// original, a documented repo-wide issue). The message-queue walk
-// (this->pMessage) and the two CAIProc_LookAt/CAIProc_AccZ-adjacent camera
-// field sets (field_2A4/field_2A8 "BossCamSpinRate"/"BossCamStationaryRadius"
-// literal 0x100 writes) are translated close to the disasm; the trailing
-// dust-puff spawn block (mirrors DoDazedEffect's CFT4Bit pattern) is a rough
-// approximation of the exact hook offsets used.
+// @Ok
 void CRhino::AI(void)
 {
 	if (this->field_3D0)
@@ -171,6 +162,20 @@ void CRhino::AI(void)
 				switch (msg->field_14)
 				{
 					case 5:
+						if (this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 0x10)
+							break;
+						if (this->field_31C.bothFlags != 0x10)
+						{
+							this->Neutralize();
+							this->field_31C.bothFlags = 0x10;
+							this->dumbAssPad = 0;
+						}
+						else if (this->field_348 & 1)
+						{
+							this->field_1F8 = 0;
+							this->dumbAssPad = 1;
+						}
+						break;
 					case 17:
 						Effects_UnElectrify(this);
 						if (this->field_338)
@@ -399,56 +404,36 @@ void CRhino::AI(void)
 			this->field_218 |= 4;
 		}
 
-		VECTOR hookPos;
+		CVector pos0, vel0, pos1, vel1;
 		SHook hook;
 
-		hook.Part.vx = -0x20;
-		hook.Part.vy = 0x80;
-		hook.Part.vz = -0x280;
-		hook.Offset = 0xF;
-		M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
-		hookPos.vy += 0x30;
-		hookPos.vz += -0x20;
+		// First puff (left nostril)
+		hook.Part.vx = -32;
+		hook.Part.vy = 128;
+		hook.Part.vz = -640;
+		hook.Offset = 15;
+		M3dUtils_GetDynamicHookPosition((VECTOR*)&pos0, this, &hook);
+		hook.Part.vx = -48;
+		hook.Part.vy += 48;
+		hook.Part.vz -= 32;
+		M3dUtils_GetDynamicHookPosition((VECTOR*)&vel0, this, &hook);
+		vel0 -= pos0;
 
-		CVector puffPos;
-		puffPos.vx = hookPos.vx;
-		puffPos.vy = hookPos.vy;
-		puffPos.vz = hookPos.vz;
+		new CRhinoNasalSteam(&pos0, &vel0);
 
-		CFT4Bit *puff0 = new CFT4Bit();
+		// Second puff (right nostril)
+		hook.Part.vx = 32;
+		hook.Part.vy = 128;
+		hook.Part.vz = -640;
+		hook.Offset = 15;
+		M3dUtils_GetDynamicHookPosition((VECTOR*)&pos1, this, &hook);
+		hook.Part.vx = 48;
+		hook.Part.vy += 48;
+		hook.Part.vz -= 32;
+		M3dUtils_GetDynamicHookPosition((VECTOR*)&vel1, this, &hook);
+		vel1 -= pos1;
 
-		if (puff0)
-		{
-			puff0->SetAnim(1);
-			puff0->SetSemiTransparent();
-			puff0->SetTransparency(0x40);
-			puff0->SetAnimSpeed(0x80);
-			puff0->SetScale(0x80);
-			puff0->SetPos(puffPos);
-		}
-
-		hook.Part.vx = 0x20;
-		hook.Part.vy = 0x80;
-		hook.Part.vz = -0x280;
-		hook.Offset = 0xF;
-		M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
-		hookPos.vz += -0x20;
-
-		puffPos.vx = hookPos.vx;
-		puffPos.vy = hookPos.vy;
-		puffPos.vz = hookPos.vz;
-
-		CFT4Bit *puff1 = new CFT4Bit();
-
-		if (puff1)
-		{
-			puff1->SetAnim(3);
-			puff1->SetSemiTransparent();
-			puff1->SetTransparency(0x40);
-			puff1->SetAnimSpeed(0x80);
-			puff1->SetScale(0x80);
-			puff1->SetPos(puffPos);
-		}
+		new CRhinoNasalSteam(&pos1, &vel1);
 	}
 }
 
