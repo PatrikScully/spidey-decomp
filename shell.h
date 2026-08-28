@@ -493,7 +493,7 @@ EXPORT void Shell_ChooseItemCollection(i32);
 EXPORT void Shell_ChooseSpeedTraining(i32);
 EXPORT void Shell_ChooseSurvivalArena(i32);
 EXPORT void Shell_ChooseTime(i32,i32);
-EXPORT void Shell_ChooseTrainingControlType(void);
+EXPORT i32 Shell_ChooseTrainingControlType(void);
 EXPORT void Shell_ChooseTrainingMission(i32);
 EXPORT void Shell_ComicCollection(void);
 EXPORT void Shell_CostumeViewer(void);

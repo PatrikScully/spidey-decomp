@@ -640,10 +640,152 @@ void Shell_ChooseTime(i32 a1, i32 a2)
 	Pad_ClearTriggers(G_SCONTROL);
 }
 
-// @MEDIUMTODO
-void Shell_ChooseTrainingControlType(void)
+// @Ok
+i32 Shell_ChooseTrainingControlType(void)
 {
-    printf("Shell_ChooseTrainingControlType(void)");
+	print_if_false(gShellInitialized != 0, "Called Shell_ChooseTrainingControlType() without shell initialised");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	pMenu->AddEntry("kid mode");
+	pMenu->AddEntry("standard");
+	pMenu->CentreY();
+	pMenu->SetLine(1);
+	pMenu->Zoom(0);
+
+	i32 v0 = 0;
+	SAnimFrame* pAnim = Spool_FindAnim("kiddy", 1);
+	i32 v3 = 0;
+	i32 v9 = 0;
+	i32 v10 = 256;
+	i32 v11 = 0;
+	i32 v12 = 0;
+	i32 v17 = 0;
+	i32 v18 = 0;
+	i32 IsMouseOverText = 0;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		v17 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		i32 v5 = pMenu->ChoiceIs("kid mode") && v11 == 0;
+		// sub_497690(pAnim, 330, v9, v5, v10); // kiddy animation
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v0, 38, "control type", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			Mess_DrawText(256, 168, "select type of control", 0, 0x1000);
+			PShell_DefaultText();
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		v18 = PShell_MoveTowards(v0, 128);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (v11 != 0)
+		{
+			v3 += 400;
+			if (v3 <= 2048)
+				v10 = 256 - (rcossin_tbl[v3 & 0xFFF].sin << 7 >> 12);
+			else
+			{
+				v3 = 2048;
+				v10 = 256;
+				v9 -= 15;
+				if (v9 < -15)
+				{
+					v12 = 1;
+					goto label52;
+				}
+			}
+			goto label41;
+		}
+		v9 += 15;
+		if (v9 > 144)
+		{
+			v3 += 400;
+			v9 = 144;
+			if (v3 <= 2048)
+				v10 = 256 - (rcossin_tbl[v3 & 0xFFF].sin << 7 >> 12);
+			else
+			{
+				v3 = 2048;
+				v10 = 256;
+			}
+		}
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*(i32*)0x0054D38C != 0)
+			return 0;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			i32 x, y;
+			pMenu->GetEntryXY(pMenu->mEntry[pMenu->mLine].name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(pMenu->mEntry[pMenu->mLine].name, x, y, pMenu->mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+			if (pMenu->mLine != 0)
+			{
+				if (pMenu->mLine == 1)
+					*(u8*)0x0060CFC7 = 0;
+			}
+			else
+				*(u8*)0x0060CFC7 = 1;
+			if (pMenu->mLine != 0)
+			{
+				SFX_Play(0x1F, 0x2000, 0);
+				label50:
+				v12 = 1;
+				goto label52;
+			}
+			SFX_Play(0x1F, 0x2000, 0);
+			v11 = 1;
+			v3 = 0;
+			v9 = 144;
+		}
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+			break;
+		label41:
+		Mess_Update();
+		if (Vblanks == v17)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+		v0 = v18;
+	}
+	G_SCONTROL[0].Circle.Triggered = 0;
+	SFX_Play(0x23, 0x2000, 0);
+	label52:
+	delete pMenu;
+	Init_KillAll();
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	Redbook_XAStop();
+	return v12;
 }
 
 // @MEDIUMTODO
