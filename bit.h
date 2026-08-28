@@ -154,7 +154,7 @@ class CBit
 		EXPORT void Die();
 		EXPORT void AttachTo(void*);
 		EXPORT void SetPos(const CVector &pos);
-		EXPORT void DeleteFrom(CBit **lst);
+		EXPORT void DeleteFrom(void*);
 };
 
 class CQuadBit : public CBit {
@@ -603,6 +603,9 @@ EXPORT extern CTextBox* TextBoxList;
 #define NUM_ANIM_ENTRIES 0x1D
 EXPORT extern SAnimFrame* gAnimTable[NUM_ANIM_ENTRIES];
 
+//#define G_ANIM_TABLE (gAnimTable)
+#define G_ANIM_TABLE (reinterpret_cast<SAnimFrame**>(0x0056EA64))
+
 EXPORT extern i32 TotalBitUsage;
 
 void validate_CFlatBit(void);
@@ -643,5 +646,8 @@ void validate_CSpark(void);
 
 EXPORT extern CBit* GLineList;
 EXPORT extern CBit* PolyLineList;
+
+void patch_CBit(void);
+void patch_CFT4Bit(void);
 
 #endif

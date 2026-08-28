@@ -69,16 +69,27 @@ EXPORT char *gAnimNames[29] =
 
 
 
+// @NotOk
+// @FIXME: must be zero initialized
 SAnimFrame* gAnimTable[0x1D];
+
 EXPORT CChunkBit* ChunkBitList;
 EXPORT CGlow* GlowList;
 CTextBox* TextBoxList = 0;
 
 EXPORT volatile i32 BitCount = 0;
+
+//#define G_BITCOUNT (BitCount)
+#define G_BITCOUNT (*reinterpret_cast<volatile i32*>(0x0056EB48))
+
 i32 TotalBitUsage = 0;
 
 EXPORT CFlatBit *FlatBitList;
-EXPORT CSpecialDisplay *SpecialDisplayList;
+
+// @Ok
+EXPORT CSpecialDisplay *SpecialDisplayList = 0;
+//#define G_SPECIALDISPLAY_LIST (SpecialDisplayList)
+#define G_SPECIALDISPLAY_LIST (*reinterpret_cast<CSpecialDisplay**>(0x0056EB34))
 
 
 EXPORT CPixel* PixelList;
@@ -88,7 +99,12 @@ u32 SparkSize = 1;
 // @FIXME - is it really?
 volatile i32 gTimerRelated;
 
-EXPORT CBit* NonRenderedBitList;
+// @Ok
+EXPORT CNonRenderedBit* NonRenderedBitList = 0;
+//#define G_NONRENDEREDBIT_LIST (NonRenderedBitList)
+#define G_NONRENDEREDBIT_LIST (*reinterpret_cast<CNonRenderedBit**>(0x0056EAD8))
+
+
 EXPORT CBit* Linked2EndedBitListLeftover;
 CBit* PolyLineList;
 CBit* GPolyLineList;
@@ -204,7 +220,7 @@ CSpark::~CSpark(void)
 // @Ok
 INLINE CSpecialDisplay::~CSpecialDisplay(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBit**>(&SpecialDisplayList));
+	this->DeleteFrom(&G_SPECIALDISPLAY_LIST);
 }
 
 // @Ok
@@ -579,7 +595,7 @@ void Bit_DeleteAll(void)
 	DoAssert(GLineList == 0, "GLineList  Leftover protected bits!");
 	DoAssert(SpecialDisplayList == 0, "SpecialDisplayList  Leftover protected bits!");
 
-	DoAssert(BitCount == 0, "Still some bits left");
+	DoAssert(G_BITCOUNT == 0, "Still some bits left");
 }
 
 // @MEDIUMTODO
@@ -652,8 +668,8 @@ void DisplayGPolyLineList(void**)
 // @Ok
 void Bit_Init(void)
 {
-	BitCount = 0;
-	NonRenderedBitList = 0;
+	G_BITCOUNT = 0;
+	G_NONRENDEREDBIT_LIST = 0;
 	TextBoxList = 0;
 	FlatBitList = 0;
 	Linked2EndedBitListLeftover = 0;
@@ -666,7 +682,7 @@ void Bit_Init(void)
 	GlowList = 0;
 	GlassList = 0;
 	GLineList = 0;
-	SpecialDisplayList = 0;
+	G_SPECIALDISPLAY_LIST = 0;
 
 	if (gBitServer)
 	{
@@ -685,7 +701,7 @@ void Bit_Init(void)
 
 		gBitServer->RegisterSlot(reinterpret_cast<void**>(&GlassList), DisplayGlassList);
 		gBitServer->RegisterSlot(reinterpret_cast<void**>(&GLineList), DisplayGLineList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&SpecialDisplayList), DisplaySpecialDisplayList);
+		gBitServer->RegisterSlot(reinterpret_cast<void**>(&G_SPECIALDISPLAY_LIST), DisplaySpecialDisplayList);
 	}
 
 	setDrawTPage();
@@ -1606,11 +1622,14 @@ CMotionBlur::CMotionBlur(
 
 // @Ok
 // @Matching
-INLINE CBit::CBit() 
+INLINE CBit::CBit()
 {
-	this->mFric.Set(1,1,1);
+	this->mFric.vx = 1;
+	this->mFric.vy = 1;
+	this->mFric.vz = 1;
+	//this->mFric.Set(1,1,1);
 
-	BitCount++;
+	G_BITCOUNT++;
 }
 
 // @Ok
@@ -1644,10 +1663,11 @@ void CBit::operator delete(void* ptr)
 // @Matching
 INLINE CBit::~CBit()
 {
-	--BitCount;
+	--G_BITCOUNT;
 }
 
 // @Ok
+// @Matching
 INLINE void CBit::Die(void)
 {
 	DoAssert(this->mProtected == 0, "A protected bit die");
@@ -1656,44 +1676,38 @@ INLINE void CBit::Die(void)
 
 // @Ok
 // @Matching
-INLINE void CBit::AttachTo(void* to){
+INLINE void CBit::AttachTo(void* p)
+{
+	this->mNext = *reinterpret_cast<CBit**>(p);
+	this->mPrevious = 0;
+	*reinterpret_cast<CBit**>(p) = this;
 
-	CBit* tmp;
-	CBit* result;
-	tmp = *reinterpret_cast<CBit**>(to);
-
-	this->mPrevious = NULL;
-	this->mNext = tmp;
-	*reinterpret_cast<CBit**>(to) = this;
-
-	result = this->mNext;
-	if (result)
-		result->mPrevious = this;
+	if (this->mNext)
+		this->mNext->mPrevious = this;
 }
 
 // @Ok
-void CBit::SetPos(const CVector &pos){
-
+// @Matching
+void CBit::SetPos(const CVector &pos)
+{
 	this->mPos = pos;
 }
 
 
 // @Ok
-INLINE void CBit::DeleteFrom(CBit **lst){
-	
-	CBit* next = this->mNext;
-	if(next != NULL){
-		next->mPrevious = this->mPrevious;
-	}
+// @Matching
+INLINE void CBit::DeleteFrom(void *p)
+{
+	if (this->mNext)
+		this->mNext->mPrevious = this->mPrevious;
 
-	CBit* prev = this->mPrevious;
-	if(prev != NULL){
-		prev->mNext = this->mNext;
-	}
+	if (this->mPrevious)
+		this->mPrevious->mNext = this->mNext;
 
-	if(*lst == this){
-		*lst = this->mNext;
-	}
+	CBit **ppList = reinterpret_cast<CBit**>(p);
+
+	if (*ppList == this)
+		*ppList = this->mNext;
 }
 
 // @Ok
@@ -1833,18 +1847,20 @@ void CQuadBit::SetTexture(Texture *pTex)
 // @Matching
 INLINE CNonRenderedBit::CNonRenderedBit(void)
 {
-	this->AttachTo(&NonRenderedBitList);
+	this->AttachTo(&G_NONRENDEREDBIT_LIST);
 }
 
 // @Ok
 // @Matching
 INLINE CNonRenderedBit::~CNonRenderedBit(void)
 {
-	this->DeleteFrom(&NonRenderedBitList);
+	this->DeleteFrom(&G_NONRENDEREDBIT_LIST);
 }
 
 // @Ok
-// @Matching
+// @Note: not matererialized. it's very weird on PSX and on PowerPC
+// according to the symbols there's no local variable and i can't seem to
+// be able to write it without it.
 INLINE void CFT4Bit::IncFrame(void)
 {
 	i16 val = ((this->mFrame << 8) | this->mFrameFrac) + this->mAnimSpeed;
@@ -1878,6 +1894,7 @@ INLINE void CFT4Bit::SetScale(u16 s)
 
 
 // @Ok
+// @Matching
 INLINE void CFT4Bit::SetSemiTransparent()
 {
 	this->mCodeBGR |= 0x2000000;
@@ -1889,17 +1906,14 @@ void CFT4Bit::SetTransparency(unsigned char t){
 }
 
 
-static const unsigned int maxANimTableEntry = 0x1D;
-
 // @Ok
 // @Matching
 INLINE void CFT4Bit::SetAnim(i32 a2)
 {
+	ASSERT(a2 >= 0 && !(static_cast<u32>(a2) >= NUM_ANIM_ENTRIES), "Bad lookup value sent to SetAnim");
+	ASSERT(this->mDeleteAnimOnDestruction == 0, "mDeleteAnimOnDestruction set?");
 
-	DoAssert(a2 >= 0 && !(static_cast<u32>(a2) >= maxANimTableEntry), "Bad lookup value sent to SetAnim");
-	DoAssert(this->mDeleteAnimOnDestruction == 0, "mDeleteAnimOnDestruction set?");
-
-	this->mpPSXAnim = gAnimTable[a2];
+	this->mpPSXAnim = G_ANIM_TABLE[a2];
 	this->mNumFrames = *reinterpret_cast<u8*>(&this->mpPSXAnim[-1].pTexture);
 	this->mFrameFrac = 0;
 	this->mFrame = 0;
@@ -1907,36 +1921,31 @@ INLINE void CFT4Bit::SetAnim(i32 a2)
 }
 
 // @Ok
+// @Matching
 INLINE void CFT4Bit::SetTint(u8 r, u8 g, u8 b)
 {
 	this->mCodeBGR = (this->mCodeBGR & 0xFF000000) | (b << 0x10) | (g << 8) | r;
 }
 
 // @Ok
+// @Matching
 void CFT4Bit::SetTexture(Texture* pTexture)
 {
-	int v4; // ecx
-	int v5; // eax
-	int v6; // edx
-	int v7; // ecx
+	ASSERT(this->mpPSXAnim == 0, "mpPSXAnim already set?");
+	ASSERT(pTexture != 0, "No Texture for SetTexture");
 
-	DoAssert(this->mpPSXAnim == 0, "mpPSXAnim already set?");
-	DoAssert(pTexture != 0, "No Texture for SetTexture");
-
-	this->mpPSXAnim = static_cast<SAnimFrame*>(DCMem_New(sizeof(SAnimFrame), 0, 1, 0, 1));
-
+	this->mpPSXAnim = static_cast<SAnimFrame*>(Mem_New(sizeof(SAnimFrame)));
 	this->mDeleteAnimOnDestruction = 1;
 
-	v4 = (u8)pTexture->v2;
-	v5 = (u8)pTexture->u1 - (u8)pTexture->u0;
-	v6 = (u8)pTexture->v0;
+	i32 w = pTexture->u1 - pTexture->u0;
+	i32 h = pTexture->v2 - pTexture->v0;
 
-	this->mpPSXAnim->Width = v5;
+	this->mpPSXAnim->Width = w;
+	this->mpPSXAnim->Height = h;
 
-	v7 = v4 - v6;
-	this->mpPSXAnim->Height = v7;
-	this->mpPSXAnim->OffX = v5 / -2;
-	this->mpPSXAnim->OffY = v7 / -2;
+	this->mpPSXAnim->OffX = w / -2;
+	this->mpPSXAnim->OffY = h / -2;
+
 	this->mpPSXAnim->pTexture = pTexture;
 	this->mpPSXFrame = this->mpPSXAnim;
 
@@ -2088,7 +2097,7 @@ void Bit_SetSparkFadeRGB(u8 r, u8 g, u8 b)
 // @Ok
 INLINE CSpecialDisplay::CSpecialDisplay(void)
 {
-	this->AttachTo(reinterpret_cast<CBit**>(&SpecialDisplayList));
+	this->AttachTo(&G_SPECIALDISPLAY_LIST);
 }
 
 // @Ok
@@ -2153,28 +2162,19 @@ void CRibbonBit::Move(void)
 	this->IncFrameWithWrap();
 }
 
-// @NotOk
-// residue: original address not found (checked tools/names.json,
-// idbs/spideypc_names.txt, idbs/spiderman_names.txt,
-// idbs/new_in_idb_code.txt, and a byte-signature scan of every small
-// tools/functions/*.bin file for the CFT4Bit field offsets this must
-// touch). The only call site (CRibbonBit::Move, already @Ok) is a real
-// out-of-line call, so IncFrameWithWrap has its own address in the
-// original binary, but nothing in the available data names or locates
-// it, so no diff can be run. This is a functional translation only:
-// call the already-@Ok inlined IncFrame() step, then wrap mFrame back
-// into range using mNumFrames, matching the field roles validated
-// elsewhere in this file (mFrame i8, mNumFrames u8, mpPSXFrame
-// recomputed after any change to mFrame).
+// @Ok
+// @Note: not materialized, got it from CRibbonBit::Move
 void CFT4Bit::IncFrameWithWrap(void)
 {
-	this->IncFrame();
+	i16 val = ((this->mFrame << 8) | this->mFrameFrac) + this->mAnimSpeed;
+
+	this->mFrame = val >> 8;
+	this->mFrameFrac = val;
 
 	if (this->mFrame >= this->mNumFrames)
-	{
-		this->mFrame -= this->mNumFrames;
-		this->mpPSXFrame = &this->mpPSXAnim[this->mFrame];
-	}
+		this->mFrame = 0;
+
+	this->mpPSXFrame = &this->mpPSXAnim[this->mFrame];
 }
 
 /*
@@ -2236,18 +2236,20 @@ void Bit_ReduceRGB(u32* p, i32 amount)
 }
 
 // @Ok
-INLINE void CFT4Bit::SetFrame(i32 a2)
+// @Matching
+INLINE void CFT4Bit::SetFrame(i32 frame)
 {
-	DoAssert(a2 >= 0 && a2 < this->mNumFrames, "Bad frame sent to SetFrame");
-	DoAssert(this->mpPSXAnim != 0, "SetFrame called before SetAnim");
+	ASSERT(frame >= 0 && frame < this->mNumFrames, "Bad frame sent to SetFrame");
+	ASSERT(this->mpPSXAnim != 0, "SetFrame called before SetAnim");
 
-	this->mFrame = a2;
+	this->mFrame = frame;
 	this->mFrameFrac = 0;
 
 	this->mpPSXFrame = &this->mpPSXAnim[this->mFrame];
 }
 
 // @Ok
+// @Note: no materialization exists
 INLINE void CFT4Bit::SetTransDecay(i32 decay)
 {
 	this->mTransDecay = decay;
@@ -2811,4 +2813,29 @@ void validate_CSpark(void)
 	VALIDATE(CSpark, mFadeR, 0x48);
 	VALIDATE(CSpark, mFadeG, 0x49);
 	VALIDATE(CSpark, mFadeB, 0x4A);
+}
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_CBit(void)
+{
+	PATCH_PUSH_RET(0x004088E0, CBit::AttachTo);
+	PATCH_PUSH_RET(0x00408900, CBit::DeleteFrom);
+	PATCH_PUSH_RET(0x00408930, CBit::Die);
+	PATCH_PUSH_RET(0x00408950, CBit::SetPos);
+}
+
+// @Bogus
+void patch_CFT4Bit(void)
+{
+	PATCH_PUSH_RET(0x00408C70, CFT4Bit::SetScale);
+	PATCH_PUSH_RET(0x00408C80, CFT4Bit::SetSemiTransparent);
+	PATCH_PUSH_RET(0x00408CC0, CFT4Bit::SetTint);
+
+	PATCH_PUSH_RET(0x00408CF0, CFT4Bit::SetAnim);
+	PATCH_PUSH_RET(0x00408E90, CFT4Bit::SetFrame);
+	PATCH_PUSH_RET_POLY(0x00408DF0, CFT4Bit::SetTexture, "?SetTexture@CFT4Bit@@QAEXPAUTexture@@@Z");
+
+	PATCH_PUSH_RET_POLY(0x0040F980, CSimpleAnim::Move, "?Move@CSimpleAnim@@UAEXXZ");
 }
