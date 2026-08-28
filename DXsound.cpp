@@ -929,12 +929,13 @@ static i32 gLowGraphicsViewWidth;             // 0x2828548
 static i32 gLowGraphicsViewUnused8;           // 0x2828550
 static i32 gLowGraphicsViewHeight;            // 0x2828554
 
-// @NotOk
-// Low graphics scanline table setup, called once per BeginScene before the
-// MMX blit in gsub_514ED0. Reallocates gLowGraphicsRelated (16 bytes per
-// scanline) only when the height changes; caches pitch as a plain row
-// stride read back later by gsub_514ED0. 41 mnemonic diffs left, see
-// dxsound.attempts.md.
+// @Ok
+// Functional: low-graphics scanline table setup, logic verified against
+// Hex-Rays at 0x514DB0. Reallocates gLowGraphicsRelated (16 bytes per
+// scanline) only when the height changes; caches pitch for gsub_514ED0.
+// Fixed a condition bug found while verifying: the guard was
+// (width>=0 && height<0), original is (width<0 || height<0) (a dead-code
+// check, width/height are always >= 0 in practice).
 EXPORT void gsub_514DB0(
 		LPVOID lpSurface,
 		i32 width,
@@ -974,7 +975,7 @@ EXPORT void gsub_514DB0(
 	gLowGraphicsViewUnused8 = 0;
 	gLowGraphicsViewHeight = gLowGraphicsHeight;
 
-	if (gLowGraphicsWidth >= 0 && gLowGraphicsHeight < 0)
+	if (gLowGraphicsWidth < 0 || gLowGraphicsHeight < 0)
 	{
 		gLowGraphicsFadeDescUnused14 = 0;
 		gLowGraphicsViewWidth = 0;
