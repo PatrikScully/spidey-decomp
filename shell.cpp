@@ -2616,10 +2616,159 @@ void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 	gShellMenuEase = 0x200;
 }
 
-// @MEDIUMTODO
-void Shell_Special(EShellResult)
+// @Ok
+i32 Shell_Special(EShellResult a1)
 {
-    printf("Shell_Special(EShellResult)");
+	print_if_false(gShellInitialized != 0, "Called Shell_Special() without shell initialised");
+	i32 v10 = 0;
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	pMenu->AddEntry("costumes");
+	pMenu->AddEntry("view credits");
+	pMenu->AddEntry("cheats");
+	i32 v4 = *gShowAllLevels;
+	for (i32 i = 0; i < 34; i++)
+	{
+		if (gSaveGame.field_56[i] != 0)
+		{
+			v4 = 1;
+			break;
+		}
+	}
+	if (v4 != 0)
+		pMenu->AddEntry("level select");
+	pMenu->CentreY();
+	pMenu->Zoom(0);
+	switch (a1)
+	{
+	case 22:
+		pMenu->SetLine(0);
+		break;
+	case 23:
+		pMenu->SetLine(2);
+		break;
+	case 24:
+		pMenu->SetLine(1);
+		break;
+	case 25:
+		print_if_false(v4 != 0, "Bugger");
+		pMenu->SetLine(3);
+		break;
+	default:
+		print_if_false(0, "Bad default sent to Shell_Special");
+		break;
+	}
+
+	i32 v1 = 0;
+	*(i32*)0x005512EC = 0;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v13 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v1, 38, "special", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			switch (pMenu->mLine)
+			{
+			case 0:
+				Mess_DrawText(256, 180, "change in-game spider-man outfit", 0, 0x1000);
+				Mess_DrawText(256, 193, "and gain special abilities", 0, 0x1000);
+				break;
+			case 1:
+				Mess_DrawText(256, 180, "view credits of those who", 0, 0x1000);
+				Mess_DrawText(256, 193, "worked on this game", 0, 0x1000);
+				break;
+			case 2:
+				Mess_DrawText(256, 180, "enter cheat codes", 0, 0x1000);
+				break;
+			case 3:
+				Mess_DrawText(256, 180, "select which level to play", 0, 0x1000);
+				break;
+			default:
+				break;
+			}
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		v1 = PShell_MoveTowards(v1, 128);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return 0;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			goto done;
+		}
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			u8 mJustification = pMenu->mJustification;
+			const char* name = pMenu->mEntry[pMenu->mLine].name;
+			i32 x, y;
+			pMenu->GetEntryXY(name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+			break;
+		if (Vblanks == v13)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+
+	G_SCONTROL[0].Start.Triggered = 0;
+	G_SCONTROL[0].X.Triggered = 0;
+	SFX_Play(0x1F, 0x2000, 0);
+	switch (pMenu->mLine)
+	{
+	case 0:
+		v10 = 22;
+		break;
+	case 1:
+		v10 = 24;
+		break;
+	case 2:
+		v10 = 23;
+		break;
+	case 3:
+		v10 = 25;
+		break;
+	default:
+		break;
+	}
+
+done:
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	return v10;
 }
 
 // @Ok

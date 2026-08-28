@@ -521,7 +521,7 @@ EXPORT void sub_515850(void);
 EXPORT void Shell_SaveGame(const u32 *,u32 *);
 EXPORT void Shell_ScreenAdjust(void);
 EXPORT void Shell_ShowRecord(char const *,char const *,STrainingMission *);
-EXPORT void Shell_Special(EShellResult);
+EXPORT i32 Shell_Special(EShellResult);
 EXPORT void Shell_StoryBoards(void);
 EXPORT void Shell_TitleScreen(void);
 EXPORT void Shell_VerySmallFont(void);
