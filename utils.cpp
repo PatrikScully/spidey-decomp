@@ -2,6 +2,7 @@
 #include "m3dcolij.h"
 #include <cstdlib>
 #include <cmath>
+#include <string.h>
 #include "ps2funcs.h"
 #include "baddy.h"
 #include "spool.h"
@@ -593,7 +594,7 @@ void Utils_RotateWorldToObject(CBody * a1, CVector * a2, CVector * a3)
 	sVec.vx = a2->vx >> 12;
 	sVec.vy = a2->vy >> 12;
 
-	qmemcpy(gRotMatrix, &mOne, sizeof(gRotMatrix));
+	memcpy(gRotMatrix, &mOne, sizeof(gRotMatrix));
 
 	MTC2(*reinterpret_cast<i32*>(&sVec.vx), GT_ZERO);
 	MTC2(*reinterpret_cast<i32*>(&sVec.vz), GT_ONE);
