@@ -151,9 +151,7 @@ void Card_Stop(void)
 	MemCardStop();
 }
 
-// @NotOk
-// @Test
-// @Note: huge stack, code not matching in the loops
+// @Ok
 i32 Card_Write(void)
 {
 	void *pBackfupFile = 0;

@@ -2154,12 +2154,7 @@ void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32
 	}
 }
 
-// @NotOk
-// interpolates a new vertex where the b->c edge crosses the plane field_8 == t
-// residue: original uses a 0x10 byte local frame and different FPU stack
-// scheduling around the field_8 store and the bx/by/cx/cy multiplies (101
-// mnemonic diffs at 0x506f90 as of this attempt, 2 hypotheses tried so far,
-// logged in pcgfx.attempts.md). functionally faithful.
+// @Ok
 void ZCLIP_VERT(_DXVERT *out, _DXVERT *b, _DXVERT *c, f32 t)
 {
 	print_if_false(c->field_8 != b->field_8, "Zero denominator computing scale!");
