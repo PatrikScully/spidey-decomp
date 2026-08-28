@@ -1538,10 +1538,112 @@ void Shell_MainMenu(EShellResult)
     printf("Shell_MainMenu(EShellResult)");
 }
 
-// @MEDIUMTODO
-void Shell_MemoryCard(EShellResult)
+// @Ok
+i32 Shell_MemoryCard(EShellResult a1)
 {
-    printf("Shell_MemoryCard(EShellResult)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MemoryCard() without shell initialised");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	pMenu->AddEntry("load game data");
+	pMenu->AddEntry("Save game data");
+	pMenu->CentreY();
+	pMenu->Zoom(0);
+	if (a1 == 20)
+		pMenu->SetLine(0);
+	else if (a1 == 21)
+		pMenu->SetLine(1);
+	else
+		print_if_false(0, "Bad default sent to Shell_MemoryCard()");
+
+	i32 v4 = 0;
+	i32 v13 = 0;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v11 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v4, 38, "FILE SYSTEM", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			Mess_DrawText(256, 168, "please select to load", 0, 0x1000);
+			Mess_DrawText(256, 184, "or save game data", 0, 0x1000);
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		v4 = PShell_MoveTowards(v4, 128);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return 0;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			u8 mJustification = pMenu->mJustification;
+			const char* name = pMenu->mEntry[pMenu->mLine].name;
+			i32 x, y;
+			pMenu->GetEntryXY(name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+			SFX_Play(0x1F, 0x2000, 0);
+			if (pMenu->ChoiceIs("load game data"))
+			{
+				v13 = 20;
+				goto done;
+			}
+			if (pMenu->ChoiceIs("Save game data"))
+			{
+				v13 = 21;
+				goto done;
+			}
+		}
+		if (PCSHELL_CheckTriggers(49164, 1, 1))
+		{
+			G_SCONTROL[0].Right.Triggered = 0;
+			G_SCONTROL[0].Left.Triggered = 0;
+		}
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+			break;
+		if ((G_SCONTROL[0].X.Triggered != 0 || G_SCONTROL[0].Start.Triggered != 0) && Vblanks == v11)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+	G_SCONTROL[0].Circle.Triggered = 0;
+	SFX_Play(0x23, 0x2000, 0);
+
+done:
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	return v13;
 }
 
 struct SMovieEntry

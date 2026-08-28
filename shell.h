@@ -509,7 +509,7 @@ EXPORT void Shell_LegalScreen(void);
 EXPORT i32 Shell_LevelSelect(void);
 EXPORT void Shell_LoadGame(void);
 EXPORT void Shell_MainMenu(EShellResult);
-EXPORT void Shell_MemoryCard(EShellResult);
+EXPORT i32 Shell_MemoryCard(EShellResult);
 EXPORT void Shell_MovieViewer(void);
 EXPORT void Shell_Options(EShellResult);
 EXPORT void Shell_RollCredits(void);
