@@ -25,6 +25,7 @@
 #include "ps2funcs.h"
 #include "tweak.h"
 #include "ps2gamefmv.h"
+#include "bmr.h"
 
 #include <cstring>
 
@@ -2621,10 +2622,141 @@ void Shell_Special(EShellResult)
     printf("Shell_Special(EShellResult)");
 }
 
-// @MEDIUMTODO
+// @Ok
 void Shell_StoryBoards(void)
 {
-    printf("Shell_StoryBoards(void)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(188, 73, 1, 256, 256, 13);
+	pMenu->AdjustWidth(10);
+	for (i32 i = 0; i < 21; i++)
+	{
+		if (gMovieTable[i].mUnlockId != -1)
+			pMenu->AddEntry(gMovieTable[i].pDisplayName);
+	}
+	pMenu->scrollbar_one = 1;
+	pMenu->field_1B = 9;
+	pMenu->scrollbar_zero = 0;
+	pMenu->CentreX();
+	pMenu->CentreY();
+	if (pMenu->mNumLines > 9)
+		pMenu->Zoom(2);
+	else
+		pMenu->Zoom(1);
+
+	i32 v5 = 0;
+	*(i32*)0x005512EC = 384;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v16 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v5, 38, "storyboards", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		i32 v17 = PShell_MoveTowards(v5, 128);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			delete pMenu;
+			Pause(1);
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			Pad_ClearTriggers(G_SCONTROL);
+			return;
+		}
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			u8 mJustification = pMenu->mJustification;
+			const char* name = pMenu->mEntry[pMenu->mLine].name;
+			i32 x, y;
+			pMenu->GetEntryXY(name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+			SFX_Play(0x1F, 0x2000, 0);
+			const SMovieEntry* pSel = 0;
+			const char* selName = pMenu->mEntry[pMenu->mLine].name;
+			for (i32 i = 0; i < 21; i++)
+			{
+				if (Utils_CompareStrings(selName, gMovieTable[i].pDisplayName) == 0)
+					pSel = &gMovieTable[i];
+			}
+			print_if_false(pSel != 0, "Storyboard not found");
+			if (pSel != 0 && pSel->field_C != 0)
+			{
+				char bmpName[13];
+				strcpy(bmpName, "l*s*_*.bmp");
+				bmpName[1] = pSel->pFileName[1];
+				bmpName[3] = pSel->pFileName[3];
+				i32 page = 1;
+				bmpName[5] = page + 48;
+				BMP_Draw(bmpName);
+				while (1)
+				{
+					Pad_Update();
+					if (PCSHELL_CheckTriggers(16388, 1, 1))
+					{
+						--page;
+						G_SCONTROL[0].Left.Triggered = 0;
+						if (page < 1)
+							page = pSel->field_C;
+						bmpName[5] = page + 48;
+						BMP_Draw(bmpName);
+					}
+					else if (PCSHELL_CheckTriggers(32776, 1, 1))
+					{
+						++page;
+						G_SCONTROL[0].Right.Triggered = 0;
+						if (page > pSel->field_C)
+							page = 1;
+						bmpName[5] = page + 48;
+						BMP_Draw(bmpName);
+					}
+					else if (PCSHELL_CheckTriggers(131104, 1, 1))
+						break;
+				}
+				SFX_Play(0x23, 0x2000, 0);
+				G_SCONTROL[0].Circle.Triggered = 0;
+				G_SCONTROL[0].X.Triggered = 0;
+				G_SCONTROL[0].Start.Triggered = 0;
+			}
+		}
+		if (Vblanks == v16)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+		v5 = v17;
+	}
 }
 
 // @Ok
