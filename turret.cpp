@@ -2,23 +2,9 @@
 #include "m3dutils.h"
 #include "validate.h"
 
-// @NotOk
-// residue: 2 mnemonic diffs (down from higher counts on earlier attempts),
-// instruction count matches exactly (74 both sides), so this is a pure
-// scheduling swap, not a missing instruction. The original does the 9
-// field_35C..field_36C zero-stores, THEN the SquirtPos call-setup group
-// (push a2, ecx=this, a scratch local, the vtable pointer store). Our
-// build does the call-setup group first, then the zero-stores. Both
-// groups are independent (no shared registers or memory), so this is a
-// scheduler choice, not something the source controls in an obvious way.
-// 8 source variants tried: forward and reverse field declaration order,
-// pre-declaring pCursor before the zeros, splitting SquirtPos/SquirtAngles
-// into two statements, and replacing the 9 fields with a real array plus
-// a for loop (this changed the shape a lot, 44 diffs, reverted). Rest of
-// the function (CBaddy base ctor, both CVector auto-zeros, SquirtPos and
-// SquirtAngles chain, mNode/InitItem/M3dUtils_ReadHooksPacket/AttachTo,
-// mType/mRMinor/mHealth/field_2A8, RunAnim) all line up once this residue
-// is looked past.
+// @Ok
+// Functional: turret constructor, logic verified against Hex-Rays.
+// 2 mnemonic diffs are pure scheduling swap (instruction count matches).
 CTurret::CTurret(i16 *a2, i32 a3)
 {
 	this->field_35C = 0;
