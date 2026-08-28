@@ -3,6 +3,7 @@
 #include "mem.h"
 #include "utils.h"
 #include "spidey.h"
+#include "front.h"
 #include "baddy.h"
 #include "spool.h"
 #include "exp.h"
@@ -15,6 +16,29 @@
 
 i32 gRunCinemaRelated;
 i32 gLevelStatus;
+
+// @Ok
+// Parses the level code ("lXaX_t") stored in the save: level char at
+// field_4[1] (offset 0x5), area char at field_4[3] (offset 0x7).
+// Returns (level << 8) | area. Demo levels (field_4[0]=='d'/'D') use 0x99.
+i32 Trig_GetLevelId(void)
+{
+	i32 level = gSaveGame.field_4[1];
+	if (gSaveGame.field_4[0] == 'd' || gSaveGame.field_4[0] == 'D')
+	{
+		level = 0x99;
+	}
+	else
+	{
+		if ((u32)level >= 0x30 && (u32)level <= 57)
+			return ((level - 48) << 8) | ((char)gSaveGame.field_4[3] - 48);
+		if ((u32)level >= 0x41 && (u32)level <= 90)
+			return ((level - 49) << 8) | ((char)gSaveGame.field_4[3] - 48);
+		if ((u32)level >= 97 && (u32)level <= 122)
+			return ((level - 81) << 8) | ((char)gSaveGame.field_4[3] - 48);
+	}
+	return (level << 8) | ((char)gSaveGame.field_4[3] - 48);
+}
 
 EXPORT u16* TrigFile;
 //#define G_TRIGFILE (TrigFile)

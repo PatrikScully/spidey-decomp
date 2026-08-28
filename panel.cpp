@@ -7,6 +7,12 @@
 #include "PCGfx.h"
 #include "m3dinit.h"
 #include "SpideyDX.h"
+#include "trig.h"
+#include "reloc.h"
+#include "bit.h"
+#include "utils.h"
+#include "ps2lowsfx.h"
+#include "mess.h"
 
 #include "validate.h"
 
@@ -390,10 +396,145 @@ void Panel_DisplayHealthBar(void)
     printf("Panel_DisplayHealthBar(void)");
 }
 
-// @MEDIUMTODO
+// @Ok
+// screen Y offset for the HUD (runtime value, 0 at boot)
+static i32 * const gPanelScreenY = (i32*)0x0060F76C;
+// bomb-timer animation state (l1a3bomb level)
+static u8 * const gBombTimerAnimOne = (u8*)0x0060F784;
+static u8 * const gBombTimerAnimTwo = (u8*)0x0060F785;
+static i32 * const gBombTimerAnimOnePos = (i32*)0x0060F66C;
+static i32 * const gBombTimerAnimTwoPos = (i32*)0x0060F74C;
+static i32 * const gBombTimerLastMinute = (i32*)0x0060F780;
+
 void Panel_DisplayTimer(void)
 {
-    printf("Panel_DisplayTimer(void)");
+	i32 LevelId = Trig_GetLevelId();
+	switch (LevelId)
+	{
+	case 513:
+		if (MechList == 0 || (MechList->field_E18 == 0 && MechList->field_1AC == 0))
+			Reloc_CallUserFunction("l2a1lsc", 1, 0, 0);
+		break;
+	case 1281:
+		if (MechList == 0 || (MechList->field_E18 == 0 && MechList->field_1AC == 0))
+			Reloc_CallUserFunction("venom", 1, 0, 0);
+		break;
+	case 1285:
+		Reloc_CallUserFunction("l5a5lsc", 1, 0, 0);
+		break;
+	case 2054:
+		Reloc_CallUserFunction("superock", 1, 0, 0);
+		break;
+	default:
+		if (gBombDieRelatedOne != 0)
+		{
+			if (*gBombTimerAnimOne == 0 && Rnd(20) == 0)
+			{
+				*gBombTimerAnimOne = 1;
+				*gBombTimerAnimOnePos = 69632;
+			}
+			if (*gBombTimerAnimTwo == 0 && Rnd(30) == 0)
+			{
+				*gBombTimerAnimTwo = 1;
+				*gBombTimerAnimTwoPos = 94208;
+			}
+			char v57[8];
+			strcpy(v57, "00:00");
+			i32 mins = gBombAIRelated / 0xE10;
+			i32 secs = gBombAIRelated / 0x3C - 60 * (gBombAIRelated / 0xE10);
+			if (mins < 0xA)
+			{
+				v57[0] = 48;
+			}
+			else
+			{
+				v57[0] = mins / 10 + 48;
+				mins = mins + 2 * (4 * (mins / -10) - mins / 10);
+			}
+			v57[1] = mins + 48;
+			if (secs != *gBombTimerLastMinute)
+			{
+				SFX_Play(0x20, 0x2000, 0);
+				*gBombTimerLastMinute = secs;
+			}
+			if (secs < 10)
+			{
+				v57[3] = 48;
+			}
+			else
+			{
+				v57[3] = secs / 10 + 48;
+				secs = secs + 2 * (4 * (secs / -10) - secs / 10);
+			}
+			v57[4] = secs + 48;
+
+			Texture* pTexture = gAnimTable[14][19].pTexture;
+			if (pTexture != 0)
+			{
+				POLY_FT4* v5 = (POLY_FT4*)Panel_DrawTexturedPoly(pTexture, 0);
+				Panel_SetStretchedScreenCoords(0 + 219, 0 + *gPanelScreenY + 19, v5, pTexture, 27, 24);
+				PCGfx_UseTexture(pTexture->clut, DCGfx_BlendingMode_1);
+				float yScale = (float)gGameResolutionY / (float)Yres;
+				float xScale = (float)gGameResolutionX / (float)Xres;
+				u32 col = v5->b0 | ((v5->g0 | ((v5->r0 | 0xFFFFFF00) << 8)) << 8);
+				PCGfx_DrawQPoly2D(
+					(float)v5->x0 * xScale, (float)v5->y0 * yScale, 0, 0, col,
+					(float)v5->x1 * xScale, (float)v5->y1 * yScale, 1065353216, 0, col,
+					(float)v5->x2 * xScale, (float)v5->y2 * yScale, 0, 1065353216, col,
+					(float)v5->x3 * xScale, (float)v5->y3 * yScale, 1065353216, 1065353216, col, 0.6f);
+
+				POLY_FT4* v7 = (POLY_FT4*)Panel_DrawTexturedPoly(pTexture, 0);
+				Panel_SetStretchedScreenCoords(20 + 241, 0 + *gPanelScreenY + 19, v7, pTexture, 27, 24);
+				v7->u2 = v5->u1;
+				v7->u0 = v5->u1;
+				v7->u3 = v5->u0;
+				v7->u1 = v5->u0;
+				PCGfx_UseTexture(pTexture->clut, DCGfx_BlendingMode_1);
+				u32 col2 = v7->b0 | ((v7->g0 | ((v7->r0 | 0xFFFFFF00) << 8)) << 8);
+				PCGfx_DrawQPoly2D(
+					(float)v7->x0 * xScale, (float)v7->y0 * yScale, 1065353216, 0, col2,
+					(float)v7->x1 * xScale, (float)v7->y1 * yScale, 0, 0, col2,
+					(float)v7->x2 * xScale, (float)v7->y2 * yScale, 1065353216, 1065353216, col2,
+					(float)v7->x3 * xScale, (float)v7->y3 * yScale, 0, 1065353216, col2, 0.6f);
+			}
+
+			Mess_SetScale(256);
+			Mess_SetTextJustify(1);
+			Mess_SetRGB(0x60, 0x60, 0x80, 0);
+			char* CurrentFont = Mess_GetCurrentFont();
+			char v58[32];
+			sprintf(v58, CurrentFont);
+			Mess_SetCurrentFont("sp_fnt01.fnt");
+			Mess_DrawText(234, *gPanelScreenY + 38, v57, 0, 0x1000);
+			Mess_SetCurrentFont(v58);
+			DCPanel_DrawFlatShadedPoly(0.5f, 222, *gPanelScreenY + 23, 78, 20, 0, 0, 0, 0, 1);
+
+			if (*gBombTimerAnimOne != 0)
+			{
+				i32 pos = *gBombTimerAnimOnePos >> 12;
+				if (pos >= 23)
+				{
+					i32 h = pos <= 36 ? 7 : 43 - pos;
+					DCPanel_DrawFlatShadedPoly(0.5f, 222, pos + *gPanelScreenY, 78, h, 24, 0x18, 0x18, 0, 2);
+				}
+				else
+				{
+					DCPanel_DrawFlatShadedPoly(0.5f, 222, *gPanelScreenY + 23, 78, pos - 16, 24, 0x18, 0x18, 0, 2);
+				}
+				*gBombTimerAnimOnePos += 3798;
+				if (*gBombTimerAnimOnePos > 176128)
+					*gBombTimerAnimOne = 0;
+			}
+			if (*gBombTimerAnimTwo != 0)
+			{
+				DCPanel_DrawFlatShadedPoly(0.5f, 222, *gPanelScreenY + (*gBombTimerAnimTwoPos >> 12), 78, 1, 32, 0x20, 0x20, 0, 2);
+				*gBombTimerAnimTwoPos += 2334;
+				if (*gBombTimerAnimTwoPos > 176128)
+					*gBombTimerAnimTwo = 0;
+			}
+		}
+		break;
+	}
 }
 
 // @Ok

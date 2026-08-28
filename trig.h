@@ -25,6 +25,8 @@ extern i16 **OffsetList;
 
 EXPORT extern i32 NumNodes;
 
+EXPORT i32 Trig_GetLevelId(void);
+
 class CBody;
 
 struct SLinkInfo
