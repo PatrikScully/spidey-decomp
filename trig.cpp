@@ -11,6 +11,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <string.h>
 
 i32 gRunCinemaRelated;
 i32 gLevelStatus;
@@ -372,13 +373,113 @@ static char ** const gCheatRestartNames = reinterpret_cast<char**>(0x006B4614);
 
 // Mac symbol not confirmed, address 0x4E35C0. Called from Trig_LoadTRG
 // after the node offset table is relocated. Not decompiled here; forward
-// to the original so Trig_LoadTRG keeps working.
-// @MEDIUMTODO
+// @Ok
 void Trig_ParseTRGFile(void)
 {
-	typedef void (*func_ptr)(void);
-	func_ptr func = (func_ptr)0x004E35C0;
-	func();
+	static u16 * const * const gTrigNodes = (u16**)0x006B466C;
+
+	print_if_false(G_TRIGFILE != 0, "No trigger file to parse");
+
+	for (i32 i = 0; i < G_NUMNODES; i++)
+	{
+		u16 *v2 = gTrigNodes[i];
+		i32 v3 = *v2;
+		if (v3 > 20)
+		{
+			if (v3 == 500)
+				print_if_false(0, "No more lights");
+		}
+		else if (v3 == 20 || v3 == 5)
+		{
+			CVector pos;
+			memset(&pos, 0, sizeof(pos));
+			Trig_GetPosition(&pos, i);
+		}
+		else
+		{
+			switch (v3)
+			{
+			case 1:
+			{
+				u8 *v4 = (u8*)&v2[v2[3] + 4];
+				u8 v5 = *v4;
+				while (v5 != 1 && v5 != 0xFF)
+				{
+					v4++;
+					v5 = *v4;
+				}
+				if (v5 == 1)
+					Trig_CreateObject(i);
+				break;
+			}
+			case 2:
+			case 9:
+			{
+				i32 v9 = (i32)&v2[v2[1] + 2];
+				if (v9 & 2)
+					v9 += 2;
+				u32 v10 = *(u32*)v9;
+				SCommandPoint *v11 = (SCommandPoint*)DCMem_New(0x18, 0, 1, 0, 1);
+				v11->pNext = G_COMMANDPOINTS;
+				G_COMMANDPOINTS = v11;
+				v11->pNextSimilar = G_HASHTABLE[v10 & 0xFF];
+				G_HASHTABLE[v10 & 0xFF] = v11;
+				v11->Collision = 0;
+				v11->Executed = 0;
+				v11->NodeIndex = (u16)i;
+				v11->pCommands = (u16*)0x005580C0;
+				v11->Checksum = v10;
+				v11->PulsesReceived = 0;
+				v11->NumPulsesSet = 0;
+				v11->NumPulses = 0;
+				break;
+			}
+			case 6:
+			{
+				u32 *v6 = (u32*)&v2[v2[1] + 2];
+				u32 *v16 = v6;
+				if ((u8)(u32)v6 & 2)
+				{
+					v6 = (u32*)((char*)v6 + 2);
+					v16 = v6;
+				}
+				u32 v7 = *v6;
+				SCommandPoint *v8 = (SCommandPoint*)DCMem_New(0x18, 0, 1, 0, 1);
+				v8->pNext = G_COMMANDPOINTS;
+				G_COMMANDPOINTS = v8;
+				v8->pNextSimilar = G_HASHTABLE[v7 & 0xFF];
+				G_HASHTABLE[v7 & 0xFF] = v8;
+				v8->Collision = 0;
+				v8->Executed = 0;
+				v8->NodeIndex = (u16)i;
+				v8->pCommands = (u16*)(v16 + 1);
+				v8->Checksum = v7;
+				v8->PulsesReceived = 0;
+				v8->NumPulsesSet = 0;
+				v8->NumPulses = 0;
+				break;
+			}
+			default:
+				break;
+			}
+		}
+	}
+
+	G_NUMTRIGMENUENTRIES = 0;
+	memset(G_MENUFILENAMEPOINTERS, 0, sizeof(char*) * 40);
+
+	for (i32 j = 0; j < G_NUMNODES; j++)
+	{
+		if (*gTrigNodes[j] == 8)
+		{
+			CVector pos;
+			memset(&pos, 0, sizeof(pos));
+			char *v14 = (char*)Trig_GetPosition(&pos, j) + 6;
+			print_if_false(G_NUMTRIGMENUENTRIES < 40, "Too many restart points");
+			G_MENUFILENAMEPOINTERS[G_NUMTRIGMENUENTRIES] = v14;
+			G_NUMTRIGMENUENTRIES++;
+		}
+	}
 }
 
 // Mac symbol not confirmed, address 0x4DEB50. Called from Front_LoadGame
