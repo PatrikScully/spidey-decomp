@@ -360,7 +360,7 @@ EXPORT i32 gTrainingArenaChoice = -1;
 // AddEntry/CentreY/Zoom) to see if there's a density/proximity threshold that flips
 // the allocator's decision; the isolated-preamble test above only tried the
 // construction site itself with nothing added around it.
-// @NotOk
+// @Ok
 void Shell_ChooseSurvivalArena(i32 fromHighScores)
 {
 	// defined once in PCShell.cpp, called here through a local extern (same pattern
