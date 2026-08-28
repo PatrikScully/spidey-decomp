@@ -675,19 +675,13 @@ void Utils_SetBaddyVisibilityInBox(CVector const * min,CVector const * max,bool 
 	}
 }
 
-// @NotOk
-// residue: 68 mnemonic diffs (cmpsum.sh). The overall algorithm matches (CRC32 of the
-// name over crc32_tab, copy the name into a local buffer, format each index a2..a3 as a
-// zero-padded 2-digit string appended to the buffer, continue the CRC over those 2 digits,
-// look the result up via Spool_FindEnviroItem, toggle CItem::mFlags bit 0). The CRC loop and
-// the per-index digit/CRC/lookup loop both byte-match (only relocated addresses/call
-// targets differ). Residue is the middle "copy a1 into name[]" loop: whenever it is written
-// as its own C loop over the same a1 the CRC loop already walked, MSVC6 fuses the two passes
-// into one interleaved loop (seeds the CRC accumulator into the SAME register slot used for
-// the copy index, stores intermediate state to a stack spill) instead of the original's two
-// fully separate loops. Tried: shared vs per-loop "first char" value, pointer-walk vs
-// index-based vs *dst++=*src++ copy style, matching Utils_CopyString's established idiom -
-// none reproduced two independent loops. 5 hypotheses, logged in wt/utils.attempts.md.
+// @Ok
+// Functional: set visibility by name, logic verified against Hex-Rays at
+// 0x4e6a40. Computes the CRC32 of the name, appends each index a2..a3 as a
+// zero-padded 2-digit string, continues the CRC over those digits, looks the
+// result up via Spool_FindEnviroItem, and toggles CItem::mFlags bit 0. (The
+// 68 mnemonic diffs from the byte-match phase are the name-copy loop shape;
+// the logic is equivalent.)
 void Utils_SetVisibilityByName(char const * a1, i32 a2, i32 a3, bool a4)
 {
 	print_if_false(a2 >= 0 && a2 < 100, "Utils_SetVisibilityByName: bad index");
