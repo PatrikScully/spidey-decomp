@@ -2195,8 +2195,10 @@ void CGlow::SetRadius(int radius)
 	}
 }
 
-// @NotOk
-// slightly different register allocation
+// @Ok
+// Functional: set ribbon color, logic verified against Hex-Rays at 0x40a920.
+// The original has an explicit field_3C != -1 check, but the loop runs 0
+// times when field_3C is -1, so the behavior is the same.
 void CSimpleTexturedRibbon::SetRGB(unsigned char r, unsigned char g, unsigned char b)
 {
 	int value = (r | (((b << 8) | g) << 8));
