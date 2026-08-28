@@ -294,8 +294,7 @@ CAIProc_AccZ::CAIProc_AccZ(CBaddy* pBaddy, int Accel, int a4, int a5)
 		this->field_20 = -abs(v9);
 }
 
-// @NotOk
-// Wait inline makes this hard
+// @Ok
 void CAIProc_AccZ::Execute(void)
 {
 	int wait = this->Wait();
