@@ -3,16 +3,35 @@
 #include "ps2lowsfx.h"
 #include "front.h"
 #include "ps2gamefmv.h"
+#include "bmr.h"
+#include "PCShell.h"
+#include "ps2pad.h"
+#include "utils.h"
 
 extern CPlayer *MechList;
 
 EXPORT i32 gComicBookRun = 1;
 
-// @MEDIUMTODO
-u8 Cinema_ComicBookStill(const char *)
+// @Ok
+u8 Cinema_ComicBookStill(const char *pBMP)
 {
-	printf("u8 Cinema_ComicBookStill(const char *)");
-	return 0x24072024;
+	gSControl[0].Start.Triggered = 0;
+	gSControl[0].X.Triggered = 0;
+	BMP_Draw(pBMP);
+	i32 v1 = Vblanks;
+	Pad_Update();
+	if (PCSHELL_CheckTriggers(0x60220, 1, 1))
+		return 1;
+	while (!PCSHELL_CheckTriggers(0x10110, 1, 1))
+	{
+		if (Vblanks - v1 >= 0x12C)
+			return 0;
+		Pad_Update();
+		if (PCSHELL_CheckTriggers(0x60220, 1, 1))
+			return 1;
+	}
+	gSControl[0].X.Triggered = 0;
+	return 0;
 }
 
 // @Ok
