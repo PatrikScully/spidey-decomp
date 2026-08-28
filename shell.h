@@ -506,7 +506,7 @@ EXPORT void Shell_Gallery(EShellResult);
 EXPORT void Shell_GameCovers(void);
 EXPORT i32 Shell_InputName(char *,i32,i32, const char *);
 EXPORT void Shell_LegalScreen(void);
-EXPORT void Shell_LevelSelect(void);
+EXPORT i32 Shell_LevelSelect(void);
 EXPORT void Shell_LoadGame(void);
 EXPORT void Shell_MainMenu(EShellResult);
 EXPORT void Shell_MemoryCard(EShellResult);

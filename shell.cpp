@@ -1384,10 +1384,145 @@ void Shell_LegalScreen(void)
 	}
 }
 
-// @MEDIUMTODO
-void Shell_LevelSelect(void)
+static i32 * const gShowAllLevels = (i32*)0x0060CFD8;
+
+// @Ok
+i32 Shell_LevelSelect(void)
 {
-    printf("Shell_LevelSelect(void)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+	i32 v18 = 0;
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(0, 0, 1, 256, 256, 13);
+	pMenu->AdjustWidth(10);
+
+	// find the lowest completion byte among the 34 levels
+	i32 v2 = 1000000;
+	for (i32 i = 0; i < 34; i++)
+	{
+		if ((u8)gSaveGame.field_56[i] < v2)
+			v2 = (u8)gSaveGame.field_56[i];
+	}
+	// find the first level with that (lowest) completion byte
+	i32 v4 = 0;
+	i32 v5 = 0;
+	while ((u8)gSaveGame.field_56[v5] != v2)
+	{
+		if (++v5 >= 34)
+			break;
+	}
+	v4 = v5;
+
+	for (i32 v6 = 0; v6 < 34; v6++)
+	{
+		print_if_false(*Levels[v6].mDisplayName != 0, "Bad level name");
+		if (*gShowAllLevels != 0 || gSaveGame.field_56[v6] != 0 || v6 == v4)
+			pMenu->AddEntry(Levels[v6].mDisplayName);
+	}
+	pMenu->scrollbar_one = 1;
+	pMenu->field_1B = 9;
+	pMenu->scrollbar_zero = 0;
+	pMenu->CentreX();
+	pMenu->CentreY();
+	if (pMenu->mNumLines > 9)
+		pMenu->Zoom(2);
+	else
+		pMenu->Zoom(1);
+
+	i32 v9 = 0;
+	const char* v14 = 0;
+	*(i32*)0x005512EC = 384;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v22 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v9, 38, "level select", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		v9 = PShell_MoveTowards(v9, 128);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return 0;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			goto done;
+		}
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			u8 mJustification = pMenu->mJustification;
+			const char* name = pMenu->mEntry[pMenu->mLine].name;
+			i32 x, y;
+			pMenu->GetEntryXY(name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+			break;
+		if (Vblanks == v22)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+
+	// a level was selected
+	G_SCONTROL[0].Start.Triggered = 0;
+	G_SCONTROL[0].X.Triggered = 0;
+	v14 = pMenu->mEntry[pMenu->mLine].name;
+	gSaveGame.field_4[0] = 0;
+	if (*Levels[0].mDisplayName != 0)
+	{
+		i32 idx = -1;
+		for (i32 li = 0; li < 34; li++)
+		{
+			if (Utils_CompareStrings(v14, Levels[li].mDisplayName) == 0)
+			{
+				idx = li;
+				break;
+			}
+			if (*Levels[li + 1].mDisplayName == 0)
+				break;
+		}
+		if (idx != -1)
+			Utils_CopyString(Levels[idx].mName, gSaveGame.field_4, 9);
+	}
+	gSaveGame.mRestartPointName[0] = 0;
+	*(i32*)((char*)&gSaveGame + 0x50) = 0;
+	*(u8*)((char*)&gSaveGame + 0x79) = 0;
+	*(i32*)((char*)&gSaveGame + 0x48) = 0;
+	*(i32*)((char*)&gSaveGame + 0x4C) = 0;
+	v18 = 1;
+	SFX_Play(0x1F, 0x2000, 0);
+
+done:
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	return v18;
 }
 
 // @MEDIUMTODO
