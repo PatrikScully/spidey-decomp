@@ -1320,10 +1320,175 @@ void Shell_DrawTitleBar(
 		PShell_NormalFont();
 }
 
-// @MEDIUMTODO
-void Shell_Gallery(EShellResult)
+// @Ok
+i32 Shell_Gallery(EShellResult a1)
 {
-    printf("Shell_Gallery(EShellResult)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+	i32 v9 = 0;
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	pMenu->AddEntry("Character viewer");
+	pMenu->AddEntry("movie viewer");
+	pMenu->AddEntry("comic collection");
+	pMenu->AddEntry("game covers");
+	pMenu->AddEntry("storyboards");
+	pMenu->CentreY();
+	pMenu->Zoom(0);
+	switch (a1)
+	{
+	case 8:
+		pMenu->SetLine(0);
+		break;
+	case 9:
+		pMenu->SetLine(1);
+		break;
+	case 10:
+		pMenu->SetLine(2);
+		break;
+	case 11:
+		pMenu->SetLine(3);
+		break;
+	case 12:
+		pMenu->SetLine(4);
+		break;
+	default:
+		print_if_false(0, "Bad default");
+		break;
+	}
+	if (gSaveGame.mCheatStoryboardFlag == 0)
+	{
+		pMenu->SetRedText(4);
+		pMenu->mEntry[4].unk_c = 100;
+		pMenu->mEntry[4].field_11 = 64;
+		pMenu->mEntry[4].field_14 = 100;
+		pMenu->mEntry[4].field_17 = 64;
+	}
+
+	i32 v4 = 0;
+	i32 circleExit = 0;
+	*(i32*)0x005512EC = 0;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v12 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v4, 38, "gallery", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			switch (pMenu->mLine)
+			{
+			case 0:
+				Mess_DrawText(256, 187, "view character models from the game", 0, 0x1000);
+				break;
+			case 1:
+				Mess_DrawText(256, 187, "view movies from the game", 0, 0x1000);
+				break;
+			case 2:
+				Mess_DrawText(256, 187, "view comics collected from the game", 0, 0x1000);
+				break;
+			case 3:
+				Mess_DrawText(256, 187, "view the game covers", 0, 0x1000);
+				break;
+			case 4:
+				Mess_DrawText(256, 187, "view the original storyboards for", 0, 0x1000);
+				Mess_DrawText(256, 200, "creating the game movies", 0, 0x1000);
+				break;
+			default:
+				break;
+			}
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		v4 = PShell_MoveTowards(v4, 128);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return 0;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			circleExit = 1;
+			break;
+		}
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			u8 mJustification = pMenu->mJustification;
+			const char* name = pMenu->mEntry[pMenu->mLine].name;
+			i32 x, y;
+			pMenu->GetEntryXY(name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+			switch (pMenu->mLine)
+			{
+			case 0:
+				v9 = 8;
+				break;
+			case 1:
+				v9 = 9;
+				break;
+			case 2:
+				v9 = 10;
+				break;
+			case 3:
+				v9 = 11;
+				break;
+			case 4:
+				if (gSaveGame.mCheatStoryboardFlag != 0)
+					v9 = 12;
+				break;
+			default:
+				break;
+			}
+			if (v9 != 0)
+			{
+				SFX_Play(0x1F, 0x2000, 0);
+				break;
+			}
+			SFX_Play(0x1B, 0x2000, 0);
+		}
+		if (Vblanks == v12)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+
+	if (circleExit)
+	{
+		G_SCONTROL[0].Circle.Triggered = 0;
+		SFX_Play(0x23, 0x2000, 0);
+	}
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	return v9;
 }
 
 // @MEDIUMTODO
