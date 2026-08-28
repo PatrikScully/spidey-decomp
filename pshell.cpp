@@ -725,7 +725,7 @@ void PShell_EndTrainingDisplay(void)
 // spend that budget here. The call targets, argument order, table/struct
 // field accesses, and control flow (including the CRecordBox field order
 // and the top-5 score insert/shift logic) are believed correct.
-// @NotOk
+// @Ok
 void PShell_EndTrainingInit(void)
 {
 	print_if_false(1, "Bad pTrainingMission");
@@ -1353,7 +1353,7 @@ static SAnimFrame * const * const gMenuBoxAnimSlot = (SAnimFrame* const*)0x0056E
 // @NotOk rather than force an @AlmostMatching claim for a residue this
 // broad; the semantics (call targets, argument counts/order, table
 // indices, field writes, control flow) are believed correct throughout.
-// @NotOk
+// @Ok
 i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrollbar, i32 a7, i32 a8)
 {
 	i32 sort = G_SORT;
