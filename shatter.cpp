@@ -1,5 +1,11 @@
 #include "shatter.h"
 #include "utils.h"
+#include "m3dcolij.h"
+#include "m3dzone.h"
+#include "ps2funcs.h"
+#include "bit.h"
+#include "camera.h"
+#include <string.h>
 
 i32 gGlassShatterSound;
 
@@ -97,24 +103,86 @@ i32 Shatter_Face(CItem *,u32 *,i32,i32,i32,i32,i32)
 	return 0x12082024;
 }
 
-// @MEDIUMTODO
-// Investigated 2026-08-27, not decompiled: address 0x48D0F0, 1216 bytes
-// (tools/functions/4772080.bin). Disassembled in full. Builds a local SLineInfo via
-// M3dColij_InitLineInfo/M3dZone_LineToItem, computes a shard center via CVector operator+
-// (0x4E7720, fine) and operator/= (0x4E7680, fine) and normal via VectorNormal, then
-// allocates and constructs a CGlassBit (bit.cpp, already @Ok @AlmostMatching) inside an SEH
-// frame (mov [fs:0],esp prologue -> the local CGlassBit has a nontrivial destructor). Not
-// attempted as real source for two reasons: (1) it calls CVector operator>> (0x4E7840, at
-// least 4 times) and operator- (0x4E7760, at least 3 times), both confirmed wrongly INLINE
-// in vector.h (see CLAUDE.md, discovered in this file already) so our build can never emit
-// the matching out-of-line `call` instructions; (2) bit.cpp's Bit_MakeSpriteRing shows the
-// same "new CXxxBit()" SEH-construction shape is already a known-hard, still-open case (14
-// source-shape hypotheses tried, still @NotOk on a much smaller function) - a fresh attempt
-// here is very unlikely to land inside the effort available this session. Left as a stub
-// rather than push a guaranteed-mismatching implementation.
-void Shatter_Glass(i32,CVector const *,CVector const *,CVector const *,CVector const *,u8,u8,u8)
+// @Ok
+// 0x6A7658: last glass shatter position (for sound distance comparison).
+static CVector gLastGlassShatterPos;
+
+i32 Shatter_Glass(i32 count, CVector const *pA, CVector const *pB, CVector const *pC, CVector const *pNormal, u8 r, u8 g, u8 b)
 {
-    printf("Shatter_Glass(i32,CVector const *,CVector const *,CVector const *,CVector const *,u8,u8,u8)");
+    CVector center = (*pB + *pC) >> 1;
+
+    SLineInfo lineInfo;
+    memset(&lineInfo, 0, sizeof(lineInfo));
+
+    i32 startX = center.vx + 500 * pNormal->vx;
+    i32 startY = center.vy + 500 * pNormal->vy;
+    i32 startZ = center.vz + 500 * pNormal->vz;
+
+    lineInfo.StartCoords.vx = startX;
+    lineInfo.StartCoords.vy = startY;
+    lineInfo.StartCoords.vz = startZ;
+    lineInfo.EndCoords.vx = startX;
+    lineInfo.EndCoords.vy = startY;
+    lineInfo.EndCoords.vz = startZ;
+
+    M3dColij_InitLineInfo(&lineInfo);
+    M3dZone_LineToItem(&lineInfo, 1);
+
+    i32 groundY = 0x7FFFFFFF;
+    if (lineInfo.pItem != 0)
+        groundY = lineInfo.Position.vy;
+
+    CVector dir1 = (*pC - *pA) >> 12;
+    CVector dir2 = (*pB - *pA) >> 12;
+
+    for (i32 i = 0; i < count; i++)
+    {
+        i32 rand1 = Rnd(4096);
+        i32 rand2 = Rnd(4096);
+
+        CVector offset1 = dir2 * rand2;
+        CVector offset2 = dir1 * rand1;
+        CVector pos = offset1 + offset2;
+        CVector posNorm = pos >> 12;
+        CVector posScaled = posNorm << 12;
+        CVector posFinal = posScaled + *pA;
+        CVector vel = posFinal - center;
+        CVector velNorm = vel >> 12;
+        VectorNormal((VECTOR*)&velNorm, (VECTOR*)&velNorm);
+
+        i32 velRand1 = Rnd(40);
+        i32 velRand2 = Rnd(40);
+
+        CVector velOffset1 = *pNormal * velRand1;
+        CVector velOffset2 = velNorm * velRand2;
+        CVector velFinal = velOffset1 + velOffset2;
+
+        new CGlassBit(&posFinal, &velFinal, groundY, r, g, b, 100, 100, 100);
+    }
+
+    if (gGlassShatterSound != 0)
+    {
+        CVector camPos;
+        camPos.vx = gMikeCamera[0].Position.vx;
+        camPos.vy = gMikeCamera[0].Position.vy;
+        camPos.vz = gMikeCamera[0].Position.vz;
+        camPos <<= 12;
+        i32 dist1 = Utils_CrapDist(camPos, gLastGlassShatterPos);
+        i32 dist2 = Utils_CrapDist(camPos, center);
+        if (dist2 < dist1)
+        {
+            gLastGlassShatterPos = center;
+            return center.vz;
+        }
+    }
+    else
+    {
+        gLastGlassShatterPos = center;
+        gGlassShatterSound = 1;
+        return center.vx;
+    }
+
+    return 0;
 }
 
 // guess: per-region array of per-model glass geometry pointers, indexed as
