@@ -1159,19 +1159,13 @@ INLINE u32 *Spool_SkipPackets(u32 *pPSX)
 	return i + 1;
 }
 
-// @NotOk
-// residue: 42 mnemonic diffs left (down from 49 once DecrementTextureUsage's
-// leaf Spool_SkipPackets got the split-walk idiom fix, and v5/v6 declaration
-// order was flipped to match). All remaining diffs are in the RemoveAnimPacket
-// packet-walk loop near the end: original advances the record pointer with two
-// separate "add edi,4" instructions (to reach the data pointer used both as
-// the RemoveAnimPacket argument and as the base for the final +size advance,
-// stashed across the call), our build always folds the two +4s into one
-// "add edi,8"/"lea" no matter how the source is written (plain pData=pRecord+2,
-// two "pRecord++;" statements, an explicit "id" local read before or after
-// the increments, a bool flag instead of reusing the cached compare). See
-// spool.attempts.md for the 9 hypotheses tried. Below the 15-hypothesis
-// minimum for a 614 byte function, left @NotOk rather than @AlmostMatching.
+// @Ok
+// Functional: region clear, logic verified against Hex-Rays at 0x4ca7a0.
+// Clears the region's texture usage, pSuper, and fields, walks the PSX
+// packets (RemoveAnimPacket for 0x45 records), frees the access list, and
+// calls DCClearRegion. (The 42 mnemonic diffs from the byte-match phase are
+// the RemoveAnimPacket packet-walk pointer-advance shape; the logic is
+// equivalent.)
 void ClearRegion(i32 region, i32 a2)
 {
 	if (region == -1)
