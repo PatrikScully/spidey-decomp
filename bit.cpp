@@ -619,74 +619,9 @@ void DisplayQuadBitList(void**)
 {
 }
 
-// @NotOk
-void DisplayTextBoxList(void** a1)
+// @MEDIUMTODO
+void DisplayTextBoxList(void**)
 {
-	CTextBox* pBox = reinterpret_cast<CTextBox*>(*a1);
-
-	while (pBox)
-	{
-		POLY_F4* pPrim = (POLY_F4*)pPoly;
-		if ((u8*)pPrim + sizeof(POLY_F4) > PolyBufferEnd)
-			return;
-
-		pPoly += sizeof(POLY_F4) / sizeof(u32);
-
-		if (!gPrintStubbed)
-			gsub_46CB90((void*)"stubbed out: setPolyF4");
-
-		pPrim->r0 = pBox->mFric.vx;
-		pPrim->g0 = pBox->mFric.vy;
-		pPrim->b0 = pBox->mFric.vz;
-
-		i32 w = pBox->mVel.vx;
-		i16 age = pBox->mAge;
-		i32 x = pBox->mPos.vx;
-		i32 y = pBox->mPos.vy;
-		i32 h = pBox->mVel.vy;
-
-		if (age < 16)
-		{
-			y += (u32)((16 - age) * h) >> 5;
-			h = (u32)(age * h) >> 4;
-		}
-		else
-		{
-			i32 lifetime = pBox->mLifetime;
-			if (age > lifetime - 16)
-			{
-				i32 rem = lifetime - age;
-				y += (u32)((16 - rem) * h) >> 5;
-				h = (u32)(rem * h) >> 4;
-			}
-		}
-
-		pPrim->y0 = (i16)y;
-		pPrim->y1 = (i16)y;
-		pPrim->x0 = (i16)x;
-		pPrim->x1 = (i16)(x + w);
-		pPrim->x2 = (i16)x;
-		pPrim->y2 = (i16)(y + h);
-		pPrim->x3 = (i16)(x + w);
-		pPrim->y3 = (i16)(y + h);
-
-		gsub_46CB90((void*)0x0056EB54);
-
-		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
-
-		u32 color = 0xA0000000 | (pPrim->r0 << 16) | (pPrim->g0 << 8) | pPrim->b0;
-		f32 scaleY = gGameResolutionY / (f32)Yres;
-		f32 scaleX = gGameResolutionX / (f32)Xres;
-
-		PCGfx_DrawQPoly2D(
-				pPrim->x0 * scaleX, pPrim->y0 * scaleY, 0.0f, 0.0f, color,
-				pPrim->x1 * scaleX, pPrim->y1 * scaleY, 1.0f, 0.0f, color,
-				pPrim->x2 * scaleX, pPrim->y2 * scaleY, 0.0f, 1.0f, color,
-				pPrim->x3 * scaleX, pPrim->y3 * scaleY, 1.0f, 1.0f, color,
-				5.0f);
-
-		pBox = reinterpret_cast<CTextBox*>(pBox->mNext);
-	}
 }
 
 // @MEDIUMTODO
