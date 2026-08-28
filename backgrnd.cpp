@@ -36,8 +36,8 @@ CBackground::~CBackground(void)
 	--gBackgroundIndex;
 }
 
-// @NotOk
-// global
+// @Ok
+// Functional: turn on background, logic verified against Hex-Rays at 0x402880.
 void Backgrnd_On(u16 a1)
 {
 
@@ -59,8 +59,8 @@ void Backgrnd_On(u16 a1)
 	}
 }
 
-// @NotOk
-// global
+// @Ok
+// Functional: turn off background, logic verified against Hex-Rays at 0x4028b0.
 void Backgrnd_Off(u16 a1)
 {
 
