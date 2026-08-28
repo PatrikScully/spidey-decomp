@@ -488,7 +488,7 @@ EXPORT void Shell_AddGameSlots(CMenu *);
 EXPORT u32 Shell_CalculateGameChecksum(SSaveGame *);
 EXPORT void Shell_CharacterViewer(void);
 EXPORT void Shell_Cheats(void);
-EXPORT void Shell_ChooseEnemy(i32,u8,signed char);
+EXPORT i32 Shell_ChooseEnemy(i32,u8,signed char);
 EXPORT void Shell_ChooseItemCollection(i32);
 EXPORT void Shell_ChooseSpeedTraining(i32);
 EXPORT void Shell_ChooseSurvivalArena(i32);

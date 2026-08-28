@@ -262,10 +262,209 @@ EXPORT i32 gShellMenuEase = 0x200;
 // idb_globals.txt neighbour is SymBurnRegion at 0x54D388).
 static u8 * const gShellMenuAbort = (u8*)0x54D38C;
 
-// @MEDIUMTODO
-void Shell_ChooseEnemy(i32,u8,signed char)
+// @Ok
+i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 {
-    printf("Shell_ChooseEnemy(i32,u8,signed char)");
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	pMenu->AddEntry("henchman");
+	pMenu->AddEntry("thug");
+	i32 v18 = 1;
+	i32 v19 = 1;
+	i32 v17 = 0;
+	if ((u8)(gSaveGame.field_84 >> 8) >= 0x80)
+	{
+		pMenu->AddEntry("lizardman");
+		goto skip1;
+	}
+	{
+		i32 v5 = -1;
+		for (i32 idx = 0; idx < NUM_CHALLS; idx++)
+		{
+			if (gChallenges[idx].field_6 == a2 && gChallenges[idx].field_8 == a3 && gChallenges[idx].field_9 == 2)
+				v5 = idx;
+		}
+		print_if_false(v5 != -1, "Mission not found");
+		if (gGlobalRecords.mScores[5 * v5].field_0 != 0)
+		{
+			pMenu->AddEntry("lizardman");
+			if (a1 != 0)
+				goto skip1;
+		}
+		else
+			pMenu->AddEntry("? ? ? ?");
+		pMenu->SetRedText(2);
+		v18 = 0;
+	}
+	skip1:
+	if ((gSaveGame.field_84 & 0x40000) == 0)
+	{
+		i32 v9 = -1;
+		for (i32 idx = 0; idx < NUM_CHALLS; idx++)
+		{
+			if (gChallenges[idx].field_6 == a2 && gChallenges[idx].field_8 == a3 && gChallenges[idx].field_9 == 3)
+				v9 = idx;
+		}
+		print_if_false(v9 != -1, "Mission not found");
+		if (gGlobalRecords.mScores[5 * v9].field_0 != 0)
+		{
+			pMenu->AddEntry("symbiote");
+			if (a1 != 0)
+				goto skip2;
+		}
+		else
+			pMenu->AddEntry("? ? ? ?");
+		pMenu->SetRedText(3);
+		v19 = 0;
+		goto skip2;
+	}
+	pMenu->AddEntry("symbiote");
+	skip2:
+	pMenu->CentreY();
+	pMenu->Zoom(0);
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v21 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		if (a1 != 0)
+			Shell_DrawTitleBar(128, 38, "High Scores", 1, 0, 150, -21, 29);
+		else
+			Shell_DrawTitleBar(128, 38, "training", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (a1 == 0 && pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			Mess_DrawText(256, 57, "select the type of opponent", 0, 0x1000);
+			Mess_DrawText(256, 69, "you wish to train against!", 0, 0x1000);
+			const char* v13 = 0;
+			switch (pMenu->mLine)
+			{
+			case 0:
+				Mess_DrawText(256, 185, "the henchmen are on the lookout for", 0, 0x1000);
+				Mess_DrawText(256, 200, "spidey and armed with two hand guns!", 0, 0x1000);
+				break;
+			case 1:
+				Mess_DrawText(256, 185, "the thugs are high-tech bank robbers", 0, 0x1000);
+				v13 = "armed with laser guns!";
+				break;
+			case 2:
+				if (pMenu->ChoiceIs("? ? ? ?"))
+					break;
+				Mess_DrawText(256, 185, "the lizardmen are a fierce result", 0, 0x1000);
+				v13 = "of a twisted experiment!";
+				break;
+			case 3:
+				if (pMenu->ChoiceIs("? ? ? ?"))
+					break;
+				Mess_DrawText(256, 185, "the symbiotes are created from", 0, 0x1000);
+				v13 = "carnage's alien symbiote!";
+				break;
+			default:
+				break;
+			}
+			if (v13)
+				Mess_DrawText(256, 200, v13, 0, 0x1000);
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return 0;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+			break;
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			i32 x, y;
+			pMenu->GetEntryXY(pMenu->mEntry[pMenu->mLine].name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(pMenu->mEntry[pMenu->mLine].name, x, y, pMenu->mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+			i32 chosen = 0;
+			i32 denied = 0;
+			switch (pMenu->mLine)
+			{
+			case 0:
+				*(i32*)0x0055128C = 0;
+				chosen = 1;
+				break;
+			case 1:
+				*(i32*)0x0055128C = 1;
+				chosen = 1;
+				break;
+			case 2:
+				if (v18 == 0)
+					denied = 1;
+				else
+				{
+					*(i32*)0x0055128C = 2;
+					chosen = 1;
+				}
+				break;
+			case 3:
+				if (v19 != 0)
+				{
+					*(i32*)0x0055128C = 3;
+					chosen = 1;
+				}
+				else
+					denied = 1;
+				break;
+			default:
+				print_if_false(0, "Bad enemy choice");
+				break;
+			}
+			if (chosen)
+			{
+				v17 = 1;
+				SFX_Play(0x1F, 0x2000, 0);
+				goto done;
+			}
+			if (denied)
+				SFX_Play(0x1B, 0x2000, 0);
+		}
+		if (Vblanks == v21)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+	G_SCONTROL[0].Circle.Triggered = 0;
+	SFX_Play(0x23, 0x2000, 0);
+	done:
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	return v17;
 }
 
 // @MEDIUMTODO
