@@ -509,10 +509,135 @@ void Shell_ChooseSurvivalArena(i32 fromHighScores)
 	Pad_ClearTriggers(G_SCONTROL);
 }
 
-// @MEDIUMTODO
-void Shell_ChooseTime(i32,i32)
+// @Ok
+void Shell_ChooseTime(i32 a1, i32 a2)
 {
-    printf("Shell_ChooseTime(i32,i32)");
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	if (a2 != 0)
+	{
+		pMenu->AddEntry("30 seconds");
+		pMenu->AddEntry("90 seconds");
+	}
+	else
+	{
+		pMenu->AddEntry("60 seconds");
+		pMenu->AddEntry("120 seconds");
+	}
+	pMenu->CentreY();
+	pMenu->Zoom(0);
+	*(i32*)0x005512EC = 384;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v15 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		if (a1 != 0)
+			Shell_DrawTitleBar(128, 38, "High Scores", 1, 0, 150, -21, 29);
+		else
+			Shell_DrawTitleBar(128, 38, "training", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (a1 == 0 && pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			Mess_DrawText(256, 60, "select the amount of time in", 0, 0x1000);
+			Mess_DrawText(256, 72, "which you wish to train!", 0, 0x1000);
+			if (pMenu->mLine == 1)
+			{
+				if (a2 == 0)
+				{
+					Mess_DrawText(256, 170, "eliminate as many opponents as", 0, 0x1000);
+					Mess_DrawText(256, 182, "possible in 120 seconds!", 0, 0x1000);
+				}
+				else
+				{
+					Mess_DrawText(256, 170, "collect as many coins as", 0, 0x1000);
+					Mess_DrawText(256, 182, "possible in 90 seconds!", 0, 0x1000);
+				}
+			}
+			else if (pMenu->mLine == 0)
+			{
+				if (a2 != 0)
+				{
+					Mess_DrawText(256, 170, "collect as many coins as", 0, 0x1000);
+					Mess_DrawText(256, 182, "possible in 30 seconds!", 0, 0x1000);
+				}
+				else
+				{
+					Mess_DrawText(256, 170, "eliminate as many opponents as", 0, 0x1000);
+					Mess_DrawText(256, 182, "possible in 60 seconds!", 0, 0x1000);
+				}
+			}
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*(i32*)0x0054D38C != 0)
+			return;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			delete pMenu;
+			Pause(1);
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			Pad_ClearTriggers(G_SCONTROL);
+			return;
+		}
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			i32 x, y;
+			pMenu->GetEntryXY(pMenu->mEntry[pMenu->mLine].name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(pMenu->mEntry[pMenu->mLine].name, x, y, pMenu->mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText || PCSHELL_CheckTriggers(65552, 1, 1)))
+			break;
+		if (Vblanks == v15)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+	G_SCONTROL[0].Start.Triggered = 0;
+	G_SCONTROL[0].X.Triggered = 0;
+	SFX_Play(0x1F, 0x2000, 0);
+	i32 v10;
+	if (pMenu->mLine == 0)
+		v10 = (a2 != 0) ? 30 : 60;
+	else if (pMenu->mLine == 1)
+		v10 = (a2 != 0) ? 90 : 120;
+	else
+		print_if_false(0, "Bad time attack time");
+	*(i32*)0x00551288 = v10;
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
 }
 
 // @MEDIUMTODO
