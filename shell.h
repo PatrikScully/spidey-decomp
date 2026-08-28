@@ -511,7 +511,7 @@ EXPORT void Shell_LoadGame(void);
 EXPORT void Shell_MainMenu(EShellResult);
 EXPORT i32 Shell_MemoryCard(EShellResult);
 EXPORT void Shell_MovieViewer(void);
-EXPORT void Shell_Options(EShellResult);
+EXPORT i32 Shell_Options(EShellResult);
 EXPORT void Shell_RollCredits(void);
 EXPORT void Shell_SFXMusic(void);
 // helpers used by Shell_SFXMusic (forwarded to original)

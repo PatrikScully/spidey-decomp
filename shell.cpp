@@ -1947,10 +1947,158 @@ void Shell_MovieViewer(void)
 	Pad_ClearTriggers(G_SCONTROL);
 }
 
-// @MEDIUMTODO
-void Shell_Options(EShellResult)
+// @Ok
+i32 Shell_Options(EShellResult a1)
 {
-    printf("Shell_Options(EShellResult)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+	i32 v9 = 0;
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(254, 97, 0, 256, 256, 16);
+	pMenu->AddEntry("keyboard configuration");
+	pMenu->AddEntry("joystick configuration");
+	pMenu->AddEntry("music and sound");
+	pMenu->AddEntry("display options");
+	pMenu->AddEntry("file system");
+	i32 v4 = 18;
+	if (PCINPUT_GetNumControllerButtons() == 0)
+	{
+		pMenu->EntryOff("joystick configuration");
+		v4 = 0;
+	}
+	switch (a1)
+	{
+	case 3:
+		pMenu->SetLine(4);
+		break;
+	case 14:
+		pMenu->SetLine(0);
+		break;
+	case 15:
+		if (pMenu->mEntry[1].unk_b != 0)
+			pMenu->SetLine(1);
+		else
+			pMenu->SetLine(0);
+		break;
+	case 16:
+		pMenu->SetLine(2);
+		break;
+	case 17:
+		pMenu->SetLine(3);
+		break;
+	default:
+		print_if_false(0, "Bad default sent to Shell_Config");
+		break;
+	}
+	pMenu->Zoom(0);
+
+	i32 v1 = 0;
+	*(i32*)0x005512EC = 0;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v12 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v1, 38, "options", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			switch (pMenu->mLine)
+			{
+			case 0:
+				Mess_DrawText(256, v4 + 180, "change keyboard configuration", 0, 0x1000);
+				break;
+			case 1:
+				Mess_DrawText(256, v4 + 180, "change button configuration", 0, 0x1000);
+				Mess_DrawText(256, v4 + 193, "and controller settings", 0, 0x1000);
+				break;
+			case 2:
+				Mess_DrawText(256, v4 + 180, "adjust volume settings", 0, 0x1000);
+				Mess_DrawText(256, v4 + 193, "for music and sound", 0, 0x1000);
+				break;
+			case 3:
+				Mess_DrawText(256, v4 + 180, "change display settings", 0, 0x1000);
+				break;
+			case 4:
+				Mess_DrawText(256, v4 + 180, "load or save a game", 0, 0x1000);
+				break;
+			default:
+				break;
+			}
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		i32 v13 = PShell_MoveTowards(v1, 128);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return 0;
+		CheckForPadUnplugged();
+		PShell_NormalFont();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			goto done;
+		}
+		i32 IsMouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			const char* name = pMenu->mEntry[pMenu->mLine].name;
+			u8 mJustification = pMenu->mJustification;
+			i32 x, y;
+			pMenu->GetEntryXY(name, &x, &y);
+			IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJustification);
+		}
+		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+			break;
+		if (Vblanks == v12)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+		v1 = v13;
+	}
+
+	G_SCONTROL[0].Start.Triggered = 0;
+	G_SCONTROL[0].X.Triggered = 0;
+	SFX_Play(0x1F, 0x2000, 0);
+	if (pMenu->ChoiceIs("keyboard configuration"))
+		v9 = 14;
+	if (pMenu->ChoiceIs("display options"))
+		v9 = 17;
+	if (pMenu->ChoiceIs("file system"))
+		v9 = 3;
+	if (pMenu->ChoiceIs("joystick configuration"))
+		v9 = 15;
+	if (pMenu->ChoiceIs("music and sound"))
+		v9 = 16;
+
+done:
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	return v9;
 }
 
 // @MEDIUMTODO
