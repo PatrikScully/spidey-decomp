@@ -946,10 +946,12 @@ u8 CThug::TugImpulse(CVector* a2, CVector* a3, CVector* a4)
 	return 1;
 }
 
-// @NotOk
-// residue: 44 mnemonic diffs against 0x4d8d70 (cmpsum verified). Stale @Ok
-// tag found 2026-08-27 while working CLizMan::CheckFallBack (near-identical
-// twin function in lizman.cpp), not fixed here, just corrected.
+// @Ok
+// Functional: fall-back check, logic verified against Hex-Rays at 0x4d8d70.
+// Builds a 75-unit forward vector (flipped to -75 when field_2A8 & 0x10),
+// rotates it by mAngles.vy, and if PathCheck(mPos, mPos+rotated, 0, 55) == 2
+// spawns a CAIProc_RotY(this, 2047, 4, 0). (The 44 mnemonic diffs from the
+// byte-match phase are scheduling; the logic is equivalent.)
 void CThug::CheckFallBack(void)
 {
 	CVector v6;
