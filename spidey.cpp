@@ -11,6 +11,9 @@
 #include "utils.h"
 #include "m3dutils.h"
 #include "bit.h"
+#include "bit2.h"
+#include "effects.h"
+#include "web.h"
 #include "trig.h"
 #include "m3dcolij.h"
 #include "m3dzone.h"
@@ -800,10 +803,61 @@ void CPlayer::CollideWithObject(CBody* a2)
 	}
 }
 
-// @MEDIUMTODO
-void CPlayer::CreateCombatImpactEffect(CVector *,i32)
+// @Ok
+void CPlayer::CreateCombatImpactEffect(CVector *pPos, i32 a3)
 {
-    printf("CPlayer::CreateCombatImpactEffect(CVector *,i32)");
+	CVector *v4 = pPos;
+
+	if (this->field_5E8 != 0
+		&& *(i32*)((char*)this + 0x5A4) != 0
+		&& (*(u16*)((char*)this + 0x12A) == 100 || *(u16*)((char*)this + 0x12A) == 102
+			|| *(u16*)((char*)this + 0x12A) == 104 || *(u16*)((char*)this + 0x12A) == 106))
+	{
+		i32 groundY = Web_GetGroundY(pPos);
+		for (i32 i = 0; i < 10; i++)
+			new CBouncingRock(pPos, groundY, 0x28000000);
+	}
+
+	i32 v6 = 0;
+
+	if (a3 == 0)
+	{
+		v6 = 6;
+		new CCombatImpactRing(v4, 0x6C, 0x12, 0x12, 384, 1536, 144);
+		new CCombatImpactRing(v4, 0x90, 0x48, 0x48, 192, 768, 72);
+	}
+	else if (a3 == 1)
+	{
+		v6 = 12;
+		new CCombatImpactRing(v4, 0x6C, 0x12, 0x12, 384, 1792, 144);
+		new CCombatImpactRing(v4, 0x90, 0x48, 0x48, 192, 896, 72);
+	}
+	else if (a3 == 2)
+	{
+		v6 = 12;
+		new CCombatImpactRing(v4, 0x6C, 0x19, 0x19, 512, 1792, 128);
+		new CCombatImpactRing(v4, 0xA2, 0x65, 0x65, 256, 896, 64);
+	}
+
+	if (v6 > 0)
+	{
+		for (i32 i = 0; i < v6; i++)
+		{
+			i32 v11 = Rnd(3) + 8;
+			CVector vel;
+			vel.vx = v11 * (Rnd(4096) - 2048);
+			vel.vy = v11 * (Rnd(4096) - 2048);
+			vel.vz = v11 * (Rnd(4096) - 2048);
+
+			CGLineParticle* pLine = new CGLineParticle(*pPos, vel, Rnd(7) + 12, 0);
+			if (pLine)
+			{
+				pLine->SetRGB0(0xA0, 0, 0);
+				pLine->SetRGB1(0x20, 0, 0);
+				pLine->mCodeBGR0 |= 0x2000000;
+			}
+		}
+	}
 }
 
 // @MEDIUMTODO
