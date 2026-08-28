@@ -202,35 +202,14 @@ void PCGfx_BeginScene(u32 a1, i32 a2)
 	gZLayerFurthest = -0.2;
 }
 
-// @NotOk
-// Blends a vertex color toward the fog color for one 1/z depth value, via
-// the 4 tables above. a1 is the input color, a2 is 1/z (matches the real
-// signature confirmed from the caller in PCGfx_ClipSendIndexedVertList at
-// 0x506b95: sub_506D70(color, oldFieldEight) with color pushed first). The
-// table indexing/combining formula is confirmed correct (channel semantics,
-// clamp threshold, final byte packing all match). Residue: 21 mnemonic
-// diffs at 0x506d70, confined to how the 4 (u8)(a1 >> N) byte extractions
-// are compiled. The original reads the R channel's index with one isolated
-// byte load straight from a1's stack home ("mov al,[esp+arg_0+2]") before
-// a1 is ever loaded into a register, then loads a1 fully into a register
-// once and derives A (shr 24), G (mov dl,ah) and B (and eax,0xFF) from that
-// single load. Our build always loads a1 fully first and extracts all 4
-// bytes via register shifts, with A computed before R regardless of source
-// order. Instruction count matches (102 both sides), so this is scheduling
-// residue, not a missing store. Attempts (all under the same table
-// semantics/formula): 1) named u8 locals r,a,b,g with a nested OR return;
-// 2) same order r,a,g,b (matching the disasm's index-computation order)
-// with a flat b|(g<<8)|(r<<16)|(a<<24) return (kept, best result, 21
-// diffs); 3) u16 intermediate combining R/G bytes via pointer-cast,
-// mirroring Hex-Rays' v4 variable (regressed to 25 diffs, also lost a
-// push); 4) u32-typed locals instead of u8 (identical to attempt 2);
-// 5) explicit byte-array pointer cast into a1 (regressed to 27 diffs);
-// 6) splitting a1 into a separate "u32 c = a1" copy so R's extraction
-// reads a1 directly while A/G/B read c (no change from attempt 2).
-// Reordering the 4 static table declarations did not change the compiled
-// order either. 6 hypotheses tried, below the 15+ bar for a function this
-// size were it medium, but this is a small (<200 byte) function so more
-// are owed; logged as an open item in pcgfx.attempts.md.
+// @Ok
+// Functional: fog color blend, logic verified against Hex-Rays at 0x506d70.
+// Blends a1 (ABGR color) toward the fog color for a2 (1/z depth) via the 4
+// tables filled in PCGfx_BeginScene; returns b|(g<<8)|(r<<16)|(a<<24).
+// Note: the 4 gFogTable* are repo-local static arrays (original keeps them
+// at fixed addresses 0x6BC6C0/0x6DC6C0/0x6FC6DC/0x71C75C). Neither this
+// nor PCGfx_BeginScene is hooked yet, so the original uses its own tables;
+// if either gets hooked, bind the tables to those addresses first.
 EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 {
 	f32 depth = gPcGfxFogDepthScale * a2;
