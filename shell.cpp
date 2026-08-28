@@ -24,6 +24,7 @@
 #include "db.h"
 #include "ps2funcs.h"
 #include "tweak.h"
+#include "ps2gamefmv.h"
 
 #include <cstring>
 
@@ -1543,10 +1544,139 @@ void Shell_MemoryCard(EShellResult)
     printf("Shell_MemoryCard(EShellResult)");
 }
 
-// @MEDIUMTODO
+struct SMovieEntry
+{
+	char* pDisplayName;
+	char* pFileName;
+	i32 mUnlockId;
+	i32 field_C;
+};
+static SMovieEntry* const gMovieTable = (SMovieEntry*)0x00554448;
+
+// @Ok
 void Shell_MovieViewer(void)
 {
-    printf("Shell_MovieViewer(void)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(188, 73, 1, 256, 256, 13);
+	pMenu->AdjustWidth(10);
+	print_if_false(gMovieTable[0].mUnlockId != -1, "First movie not found!");
+	pMenu->AddEntry(gMovieTable[0].pDisplayName);
+	for (i32 i = 1; i < 21; i++)
+	{
+		if (gMovieTable[i].mUnlockId != -1 && ((1 << gMovieTable[i].mUnlockId) & gSaveGame.field_88) != 0)
+			pMenu->AddEntry(gMovieTable[i].pDisplayName);
+	}
+	pMenu->scrollbar_one = 1;
+	pMenu->field_1B = 9;
+	pMenu->scrollbar_zero = 0;
+	pMenu->CentreX();
+	pMenu->CentreY();
+	if (pMenu->mNumLines > 9)
+		pMenu->Zoom(2);
+	else
+		pMenu->Zoom(1);
+
+	i32 v0 = 0;
+	i32 cdNotFound = 0;
+	i32 exitMenu = 0;
+	i32 playId = -1;
+	*(i32*)0x005512EC = 384;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 v15 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(v0, 38, "movie viewer", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (cdNotFound)
+		{
+			Mess_SetRGB(0x80, 0x80, 0x80, 0);
+			Mess_SetTextJustify(0);
+			Mess_DrawText(256, 210, "cd not found - insert the cd", 0, 0x1000);
+			Mess_DrawText(256, 225, "then select a movie to view", 0, 0x1000);
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		v0 = PShell_MoveTowards(v0, 128);
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return;
+		CheckForPadUnplugged();
+		pMenu->Update();
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(0x23, 0x2000, 0);
+			exitMenu = 1;
+		}
+		else
+		{
+			i32 IsMouseOverText = 0;
+			if (PCSHELL_CheckTriggers(256, 1, 1))
+			{
+				u8 mJustification = pMenu->mJustification;
+				const char* name = pMenu->mEntry[pMenu->mLine].name;
+				i32 x, y;
+				pMenu->GetEntryXY(name, &x, &y);
+				IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJustification);
+			}
+			if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+			{
+				G_SCONTROL[0].Start.Triggered = 0;
+				G_SCONTROL[0].X.Triggered = 0;
+				playId = -1;
+				const char* selName = pMenu->mEntry[pMenu->mLine].name;
+				for (i32 i = 0; i < 21; i++)
+				{
+					if (Utils_CompareStrings(selName, gMovieTable[i].pDisplayName) == 0)
+						playId = gMovieTable[i].mUnlockId;
+				}
+				if (playId != -1)
+					SFX_Play(0x1F, 0x2000, 0);
+				else
+					SFX_Play(0x1B, 0x2000, 0);
+			}
+		}
+		if (exitMenu)
+			break;
+		if (playId != -1)
+		{
+			u8 r = GameFMV_PlayMovie((u8)playId, 1, 1, 1.0f);
+			Pad_IdleTime = 0;
+			cdNotFound = (r == 0);
+			playId = -1;
+			continue;
+		}
+		if (Vblanks == v15)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+
+	delete pMenu;
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
 }
 
 // @MEDIUMTODO
