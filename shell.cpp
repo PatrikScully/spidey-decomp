@@ -664,10 +664,226 @@ void Shell_CostumeViewer(void)
     printf("Shell_CostumeViewer(void)");
 }
 
-// @MEDIUMTODO
-void Shell_Difficulty(i32)
+// @Ok
+i32 Shell_Difficulty(i32 a1)
 {
-    printf("Shell_Difficulty(i32)");
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	pMenu->AddEntry("kid mode");
+	pMenu->AddEntry("easy");
+	pMenu->AddEntry("normal");
+	pMenu->AddEntry("hard");
+	pMenu->CentreY();
+	pMenu->SetLine(2);
+	pMenu->mY = 93;
+	pMenu->Zoom(0);
+
+	i32 v3 = 0;
+	i32 v4 = 0;
+	SAnimFrame* pAnim = Spool_FindAnim("kiddy", 1);
+	i32 v32 = 0;
+	i32 v30 = 0;
+	i32 v31 = 256;
+	i32 v28 = 0;
+	i32 v35 = 0;
+	i32 v34 = 0;
+	i32 v40 = 0;
+	i32 v6 = 0;
+	i32 v19 = 0;
+	i32 mLine = 0;
+	i32 IsMouseOverText = 0;
+
+	while (1)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		v40 = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		v6 = pMenu->ChoiceIs("kid mode") && v32 == 0;
+		// sub_497690(pAnim, 321, v4, v6, v31); // kiddy animation
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		if (a1 != 0)
+			Shell_DrawTitleBar(v3, 38, "new game", 1, 0, 150, -21, 29);
+		else
+			Shell_DrawTitleBar(v3, 38, "difficulty", 1, 0, 150, -21, 29);
+		pMenu->Display();
+		if (pMenu->FinishedZooming())
+		{
+			PShell_InstructionalText();
+			Mess_DrawText(256, 190, "please select difficulty level", 0, 0x1000);
+			if (a1 != 0 && v4 == 124)
+			{
+				i32 v7 = 0;
+				while (gSaveGame.field_56[v7] == 0)
+				{
+					if (++v7 >= 34)
+						goto label36;
+				}
+				Mess_SetTextJustify(1);
+				i32 v8 = v35 & 0xFFF;
+				v35 += 200;
+				i32 sin = rcossin_tbl[v8].sin;
+				i32 v10 = ((68 * sin) >> 13) + 94;
+				i32 v11 = 350 * (((59 * sin) >> 13) + 98) / 256;
+				if (v11 > 255) v11 = -1;
+				i32 v13 = 350 * v10 / 256;
+				if (350 * v10 / 256 > 255) v13 = -1;
+				i32 v14 = 350 * (((21 * sin) >> 13) + 117) / 256;
+				if (v14 > 255) v14 = -1;
+				Mess_SetRGB(v11, v13, v14, 0);
+				i32 v15 = ((45 * sin) >> 13) + 84;
+				i32 v16 = 350 * (((29 * sin) >> 13) + 54) / 256;
+				if (v16 > 255) v16 = -1;
+				i32 v17 = 350 * (((25 * sin) >> 13) + 47) / 256;
+				if (v17 > 255) v17 = -1;
+				i32 v18 = 350 * v15 / 256;
+				if (v18 > 255) v18 = -1;
+				Mess_SetRGBBottom(v16, v17, v18);
+				Mess_DrawText(230, 28, "Warning!", 0, 0x1000);
+				Mess_DrawText(230, 40, "Proceeding will erase", 0, 0x1000);
+				Mess_DrawText(230, 52, "unsaved game progress!", 0, 0x1000);
+			}
+			label36:
+			PShell_DefaultText();
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		v3 = PShell_MoveTowards(v3, 128);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
+		if (v32 == 0)
+			break;
+		v19 = v28 + 400;
+		v28 += 400;
+		if (v28 <= 2048)
+			v31 = 256 - (rcossin_tbl[v19 & 0xFFF].sin << 7 >> 12);
+		else
+		{
+			v4 -= 15;
+			v28 = 2048;
+			v31 = 256;
+			v30 = v4;
+			if (v4 < -15)
+			{
+				v34 = 1;
+				goto label85;
+			}
+		}
+		label69:
+		Mess_Update();
+		if (Vblanks == v40)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+		continue;
+	}
+	v30 = v4 + 15;
+	if (v4 + 15 > 124)
+	{
+		v30 = 124;
+		i32 v20 = v28 + 400;
+		v28 += 400;
+		if (v28 <= 2048)
+			v31 = 256 - (rcossin_tbl[v20 & 0xFFF].sin << 7 >> 12);
+		else
+		{
+			v28 = 2048;
+			v31 = 256;
+		}
+	}
+	if (pMenu->mLine > 0x28)
+		Pad_ClearTriggers(G_SCONTROL);
+	Pad_Update();
+	if (*(i32*)0x0054D38C != 0)
+		return 0;
+	CheckForPadUnplugged();
+	mLine = (u8)pMenu->mLine;
+	pMenu->Update();
+	if (mLine != (u8)pMenu->mLine && pMenu->mLine == 0 && *(u8*)0x00682770 == 0)
+	{
+		i32 v22 = Rnd(10);
+		Redbook_XAPlay(((i32*)0x00554610)[2 * v22], ((i32*)0x00554614)[2 * v22], 0);
+	}
+	if (PCSHELL_CheckTriggers(256, 1, 1))
+	{
+		i32 x, y;
+		pMenu->GetEntryXY(pMenu->mEntry[pMenu->mLine].name, &x, &y);
+		IsMouseOverText = PCSHELL_IsMouseOverText(pMenu->mEntry[pMenu->mLine].name, x, y, pMenu->mJustification);
+	}
+	if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
+	{
+		G_SCONTROL[0].Start.Triggered = 0;
+		G_SCONTROL[0].X.Triggered = 0;
+		i32 v25;
+		switch (pMenu->mLine)
+		{
+		case 0:
+			v25 = 0;
+			*(u8*)0x0060CFC7 = 1;
+			DifficultyLevel = 0;
+			goto label65;
+		case 1:
+			v25 = 1;
+			goto label63;
+		case 2:
+			v25 = 2;
+			goto label63;
+		case 3:
+			v25 = 3;
+			label63:
+			DifficultyLevel = v25;
+			goto label64;
+		default:
+			v25 = DifficultyLevel;
+			if (DifficultyLevel != 0)
+				label64:
+				*(u8*)0x0060CFC7 = 0;
+			else
+				*(u8*)0x0060CFC7 = 1;
+			label65:
+			gSaveGame.mDifficulty = v25;
+			if (pMenu->mLine != 0)
+			{
+				SFX_Play(0x1F, 0x2000, 0);
+				v34 = 1;
+				goto label84;
+			}
+			SFX_Play(0x1F, 0x2000, 0);
+			v32 = 1;
+			v28 = 0;
+			v30 = 124;
+			break;
+		}
+	}
+	if (!PCSHELL_CheckTriggers(131616, 1, 1))
+		goto label69;
+	G_SCONTROL[0].Circle.Triggered = 0;
+	SFX_Play(0x23, 0x2000, 0);
+	label84:
+	label85:
+	delete pMenu;
+	Init_KillAll();
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	Redbook_XAStop();
+	if (v34 != 0)
+		gSaveGame.field_78 = 1;
+	return v34;
 }
 
 // @Ok
