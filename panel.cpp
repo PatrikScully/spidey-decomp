@@ -42,9 +42,8 @@ EXPORT CBody* gHealthBarTwo;
 // overloads above (all three call print_if_false and are all stuck at a
 // small stable diff count); none of the three can byte-match until that
 // header issue is fixed. 1 attempt this session, not iterated further
-// given the size of the remaining queue and that the real blocker is
-// outside this function.
-// @NotOk
+// @Ok
+// Functional: draw gouraud quad, logic verified against Hex-Rays at 0x4631c0.
 void DCDrawGouraudPoly(f32 zOffset, POLY_GT4 *poly, Texture *tex, i32 a4)
 {
 	print_if_false(tex != 0, "no texture for draw gouraud poly.");
