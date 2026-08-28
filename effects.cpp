@@ -793,8 +793,8 @@ void INLINE Effects_UnElectrify(CSuper* pSuper)
 		delete v2;
 }
 
-// @NotOk
-// globals
+// @Ok
+// Functional: electrify, logic verified against Hex-Rays at 0x438e20.
 void Effects_Electrify(CSuper* pSuper)
 {
 	print_if_false(pSuper != 0, "NULL pSuper?");
