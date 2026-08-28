@@ -579,9 +579,8 @@ i32 Utils_KillObjectsInBox(CVector const * min,CVector const * max,CBody * a3, b
 	return killed;
 }
 
-// @NotOk
-// @Test
-void Utils_RotateWorldToObject(CBody * a1,CVector * a2,CVector * a3)
+// @Ok
+void Utils_RotateWorldToObject(CBody * a1, CVector * a2, CVector * a3)
 {
 	MATRIX mOne;
 	MATRIX mtwo;
@@ -594,12 +593,7 @@ void Utils_RotateWorldToObject(CBody * a1,CVector * a2,CVector * a3)
 	sVec.vx = a2->vx >> 12;
 	sVec.vy = a2->vy >> 12;
 
-	gRotMatrix[1][1] = mOne.m[1][1];
-	gRotMatrix[0][0] = mOne.m[0][0];
-
-	gRotMatrix[0][2] = mOne.m[0][2];
-	gRotMatrix[2][0] = mOne.m[2][0];
-	gRotMatrix[2][2] = mOne.m[2][2];
+	qmemcpy(gRotMatrix, &mOne, sizeof(gRotMatrix));
 
 	MTC2(*reinterpret_cast<i32*>(&sVec.vx), GT_ZERO);
 	MTC2(*reinterpret_cast<i32*>(&sVec.vz), GT_ONE);

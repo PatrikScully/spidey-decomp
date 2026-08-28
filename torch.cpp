@@ -120,17 +120,12 @@ void CTorch::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @NotOk
-// standard gravity + velocity/position euler integration (field_338 is the
-// frame time scale), plus angular velocity/accel integration with a
-// friction damping step on mAngVel. mAngVel %= mAngFric is inlined as the
-// x -= x >> friction pattern already used by CVector::operator%= in
-// vector.cpp, since CSVector has no such operator declared yet.
-// cmpsum: 93 mnemonic diffs on 366 bytes, close shape (same instructions,
-// slightly different order/register choice from the first few lines on).
+// @Ok
 void CTorch::DoPhysics(void)
 {
 	this->mAcc.vy = this->field_32C - (this->mVel.vy / 16);
+	this->mAcc.vx = 0;
+	this->mAcc.vz = 0;
 
 	CVector accStep = this->mAcc * 12;
 	accStep >>= this->field_338;

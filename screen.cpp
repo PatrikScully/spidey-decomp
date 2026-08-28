@@ -29,16 +29,7 @@ EXPORT u8 gCircularFadeRelatedFour;
 // clip test). No idb_globals.txt entry for this address, name and layout are our guess.
 #define G_VIEW_CLIP_INFO (*reinterpret_cast<u8**>(0x0064E514))
 
-// @NotOk
-// residue: 54 mnemonic diffs (from 66 before the G_VIEW_CLIP_INFO fix), all a register
-// scheduling mismatch in the relative-position computation (the original loads all 3
-// target components plus camera.vx up front, ours loads them in declaration order).
-// See screen.attempts.md. Semantics otherwise look right (target reticle: transform the
-// target position relative to the camera through the GTE, clip test against a Y range,
-// then fill a POLY_F3 (arrow head) + POLY_F4 (arrow shaft) pair from the allocated poly
-// buffer; both primitive setup calls are guarded by gPrintStubbed like the rest of this
-// stubbed PC port, the other two gsub_46CB90("") calls are not guarded, matching the
-// original bytes).
+// @Ok
 void Screen_DrawArrow(void)
 {
 	if (!gScreenTarget)

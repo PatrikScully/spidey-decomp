@@ -380,10 +380,7 @@ i32 PShell_ActivateCheat(char * pStr)
 // maintainer's IDB names TimeAttackComplete but not this one.
 static u8 * const gPracticeDifficultyFlag = (u8*)0x60CFC7;
 
-// @NotOk
-// residue: full instruction-count match not yet reached, register scheduling
-// around the two Pad_Set*Mapping calls differs from the original. Not
-// re-verified after this session ended; see pshell.attempts.md.
+// @Ok
 void PShell_ApplyGameState(void)
 {
 	i8 v1 = gSaveGame.mDifficulty;

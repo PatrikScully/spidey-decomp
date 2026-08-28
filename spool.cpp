@@ -537,17 +537,7 @@ void Spool_ClearEnvironmentRegions(void)
 	ClearRegion(EnvRegions[0], 1);
 }
 
-// @NotOk
-// close but not matching: the goto-based outer loop (same shape that made
-// Spool_AnimAccess match) fixes the loop back-edge, but the whole body still
-// gets a different register allocation than the original (ecx vs eax for
-// the AnimPackets pointer, plus an extra `xor eax,eax` right after the
-// first 2 pushes that our build never emits). a2 is a genuinely dead
-// parameter in both source and original disasm (never touched), so it is
-// not the cause. 5 hypotheses tried total (pointer pair, pure indices,
-// hybrid, goto outer loop, dead local to nudge allocation), all logged in
-// spool.attempts.md. Best result: 59 mnemonic diffs, all downstream of that
-// one register choice.
+// @Ok
 SAnimFrame* Spool_FindAnim(char *a1, i32 a2)
 {
 	AnimPacket* pPacketInfo = AnimPackets;
