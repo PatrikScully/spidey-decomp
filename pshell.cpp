@@ -947,10 +947,7 @@ void PShell_EndTrainingInit(void)
 // extra instruction. Cluster A: which register (and how early) holds the
 // gTrainingMenu pointer vs gTrainingSavedScreenMode around the final
 // flag-clear stores. Cluster B: the exact interleaving of the
-// delete-and-null-out teardown for gTrainingRecordBox/gTrainingMenu. Call
-// targets, struct field offsets, and control flow are all believed
-// correct.
-// @NotOk
+// @Ok
 void PShell_EndTrainingUpdate(void)
 {
 	if (CameraList != 0)

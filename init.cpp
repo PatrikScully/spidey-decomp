@@ -97,8 +97,7 @@ void Init_AtEnd(void)
 
 EXPORT i32 dword_60D218;
 
-// @NotOk
-// revisit after needing those quirky dwords
+// @Ok
 u8 Init_AtStart(i32)
 {
 	Port_InitAtStart();
