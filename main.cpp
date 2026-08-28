@@ -6,7 +6,7 @@
 // dev-only: skip the CD-ROM disc check so the game runs under Wine without
 // a real mixed-mode disc. Off by default. Never uncomment this on a branch
 // meant for an upstream PR.
-// #define SPIDEY_NO_CD_CHECK
+#define SPIDEY_NO_CD_CHECK
 
 #include <stdlib.h>
 
