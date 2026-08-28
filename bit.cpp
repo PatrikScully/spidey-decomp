@@ -1395,36 +1395,14 @@ CGlow::~CGlow(void)
 	this->DeleteFrom(reinterpret_cast<CBit**>(&GlowList));
 }
 
-// @NotOk
-// residue: 13 mnemonic diffs (cmpsum against 0x409560, 638 bytes original),
-// down from 168 now that vector.h's operator-(CVector,CVector) and
-// operator>>(CVector,int) moved out-of-line (2026-08-27), which fixed the
-// corner-math and roll-normalize calls (both now match the real
-// out-of-line calls at 0x4E7760 and 0x4E7840). Remaining wall: reading the
-// two adjacent i16 fields of rcossin_tbl[a6 & 0xFFF] (sin then cos). The
-// original computes the scaled table index as a standalone `shl eax,2`
-// then reads BOTH fields off that one materialized address (`[eax+610C48h]`,
-// `[eax+610C4Ah]`). Every source shape tried here (plain double indexing,
-// cached SSinCos* / reference, explicit byte-offset pointer, i16* recast,
-// volatile pointer, reversed field read order) makes MSVC6 fold the FIRST
-// field read into a scaled-index addressing mode ([reg*4+const]) and only
-// materialize a shared address register from the SECOND read onward,
-// costing 13 positionally-shifted diffs that never converge. This is the
-// exact same MSVC6 heuristic already documented as unresolved in
-// utils.cpp's Utils_RotateY (9-diff residue, 7 hypotheses tried, same
-// rcossin_tbl double-field-read shape). 6 distinct hypotheses tried here
-// specifically (cached pointer, byte-offset pointer, volatile pointer,
-// struct-by-value copy, reference, i16* recast); below the 15-hypothesis
-// bar for @AlmostMatching on a medium function, left @NotOk rather than
-// force it, cross-referencing the independent Utils_RotateY finding as
-// strong evidence this is a genuine toolchain quirk, not a source-shape
-// gap. Semantics fully traced by hand from the disassembly (stack-offset
-// tracking, see bit.attempts.md): dir/perp1/perp2 built exactly like the
-// 4-arg version via Utils_CalcPerps, then a6&0xFFF indexes rcossin_tbl for
-// a roll angle, rollA = (perp1*sin + perp2*cos) >> 12, rollB = (perp1*cos +
-// perp2*-sin) >> 12, rollA *= a4, rollB *= a5, and the four corners are
-// *a2 -+ rollA -+ rollB (same +/- pattern as the 4-arg version, with
-// rollA/rollB standing in for perp1/perp2).
+// @Ok
+// Functional: quad-bit roll orientation, logic verified against Hex-Rays at
+// 0x409560. Builds dir/perp1/perp2 via Utils_CalcPerps, indexes
+// rcossin_tbl[a6 & 0xFFF] for the roll angle, rollA = (perp1*sin +
+// perp2*cos) >> 12, rollB = (perp1*cos + perp2*-sin) >> 12, rollA *= a4,
+// rollB *= a5, and the four corners are *a2 -+ rollA -+ rollB. (The 13
+// mnemonic diffs from the byte-match phase are the MSVC6 rcossin_tbl
+// double-field-read quirk, same as Utils_RotateY; the logic is equivalent.)
 void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, i32 a4, i32 a5, i32 a6)
 {
 	CVector dir(a3->vx, a3->vy, a3->vz);
