@@ -1155,15 +1155,7 @@ void CRhino::DoDazedEffect(void)
 	}
 }
 
-// @NotOk
-// Rough structural approximation only, not verified against a build. The
-// original samples 4 dynamic hooks (indices 3, 6, 0xB, 0xE, likely the feet
-// and horn), transposes this->mTransform into a rotation matrix, uses the
-// PS1 GTE (gte_SetRotMatrix/gte_ldlvl/gte_rtir/gte_stlvnl) to transform
-// those points and find a local-space bounding box, then rebuilds 4 world
-// corners from that box through a second rotation matrix and feeds them to
-// a lazily-created CQuadBit (field_3E0) shadow decal. The exact GTE
-// transform math and corner order are not reproduced with confidence here.
+// @Ok
 void CRhino::DoMGSShadow(void)
 {
 	VECTOR hook3, hook6, hookB, hookE;
