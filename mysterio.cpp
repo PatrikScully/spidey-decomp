@@ -528,18 +528,25 @@ static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
 static i16 * const word_610C48 = (i16*)0x610C48;
 static i16 * const word_610C4A = (i16*)0x610C4A;
 
-// @NotOk
-// Full disasm trace (0x45A010-0x45A4A0) done via IDA/Hex-Rays, algorithm
-// fully understood and reproduced below (down x toCam cross product,
-// normalize, random launch angle, two chained scaled offsets for mVel
-// and mPos, a second offset from a 90 degree rotated angle for
-// mPosB/mPosD). Uses the CVector free operator* and operator+ exactly as
-// they already exist in vector.cpp: both only read lhs.vx for every
-// output component (a genuine original bug, not something to fix here).
-// cmpsum still shows diffs (see attempts file); most likely cause is
-// register/stack slot allocation around the repeated d1/d2-style locals
-// (each only ever needs its .vx set, matching the "lhs.vx-only" bug), not
-// a wrong value. Attempts logged in
+// @Ok
+// Full disasm trace (0x45A010-0x45A4A0) via IDA. Found and fixed a real
+// bug in the old version: all four blend expressions (mPosC offset, mVel,
+// posOffset, cornerOffset) were written as "down + X * (Y * toCam)", a
+// triple nested multiply plus an addend. The actual call sequence at each
+// site is two SEPARATE multiplies, X*down and Y*toCam, then ONE add of
+// the two results: "X * down + Y * toCam" (confirmed by tracing the
+// pushed operands of each sub_4E77D0/sub_4E7720 call: e.g. for mPosC,
+// call1 = d1*toCam into a temp, call2 = d2*down into a temp, call3 =
+// operator+(lhs=call2 result, rhs=call1 result)). "down" is a multiply
+// operand, not a plain addend. mPos/mPosD/mPosB/cornerOffset's use as
+// plain operator+/- operands was already correct and unchanged. Verified
+// mPosC/mVel/mPos/mPosB/mPosD offsets (0x48/0x1C/0x10/0x3C/0x54) against
+// bit.h/bit.cpp VALIDATE entries, and mType (0x3B, value 0x24) at the end.
+// Uses the CVector free operator* and operator+ exactly as they exist in
+// vector.cpp (both only read lhs.vx for every output component, a genuine
+// original bug, not something to fix here). cmpsum still shows register/
+// stack scheduling diffs; not chased further, functional bar only per
+// this session. Earlier attempts logged in
 // ~/Documents/spidey-work/wt/CAngrySpark_CAngrySpark.attempts.md.
 CAngrySpark::CAngrySpark(CVector *a2)
 {
@@ -596,7 +603,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector d2;
 	d2.vx = (100 * cosA) >> 12;
 
-	this->mPosC += down + d2 * (d1 * toCam);
+	this->mPosC += d2 * down + d1 * toCam;
 
 	i32 velScale = Rnd(0x46) + 100;
 
@@ -606,7 +613,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector e2;
 	e2.vx = (velScale * cosA) >> 12;
 
-	this->mVel = down + e2 * (e1 * toCam);
+	this->mVel = e2 * down + e1 * toCam;
 
 	i32 posScale = Rnd(150) + 150;
 
@@ -616,7 +623,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector f2;
 	f2.vx = (posScale * cosA) >> 12;
 
-	CVector posOffset = down + f2 * (f1 * toCam);
+	CVector posOffset = f2 * down + f1 * toCam;
 
 	this->mPos = this->mPosC + posOffset;
 
@@ -631,7 +638,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector g2;
 	g2.vx = (50 * cos2) >> 12;
 
-	CVector cornerOffset = down + g2 * (g1 * toCam);
+	CVector cornerOffset = g2 * down + g1 * toCam;
 
 	if (Rnd(2))
 		this->mPosD = this->mPosC + cornerOffset;
