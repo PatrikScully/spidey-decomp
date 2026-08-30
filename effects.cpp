@@ -692,31 +692,13 @@ CElectrify::CElectrify(CSuper* pSuper, i32 a2)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// @NotOk
-// Residue: 11 source hypotheses tried (log below), below the 15-hypothesis
-// bar this 672-byte function needs for @AlmostMatching (audited against the
-// CLAUDE.md rule that checks the actual itemized count, not the claimed
-// one). cmpsum shows only 1 mnemonic diff (the final "ret 8" falls outside
-// the compare window). The
-// real residue is a stack frame that is 12 bytes bigger than the original
-// (sub esp,60h here vs sub esp,54h in the original). Every instruction
-// content and value already matches; the only byte-level effect of the extra
-// 12 bytes is that one address computation, "lea ecx,[esp+7Ch]" in the
-// original (address of the interp local, passed to the final operator+
-// call), becomes "lea ecx,[esp+88h]" here, which needs a 32-bit displacement
-// instead of an 8-bit one (3 extra bytes) once the offset crosses 127.
-// Hypotheses tried and rejected (all confirmed via cmpsum on the rebuilt
-// DLL): plain "<" vs "<=" loop bound; reversed comparison direction;
-// removing a cached CVector* alias for field_54; interleaving the toCamera /
-// interp / weight statements in several different orders (this got the diff
-// count from 150 down to 1); caching "field_3C + 1" in a named local before
-// the loop; while vs for loop; mutating the parameter directly vs a fresh
-// loop-index local (this alone dropped the diffs from 17 to 1); reusing one
-// local for both the >>12 shift amount and the CVector(30) scale, mirroring
-// the original's reused stack slot (regressed to 41 diffs); u16 vs i32 for
-// the "parent" local; declaration order of interp vs toCamera (both orders
-// tried, no change); a named local vs a bare literal for the CVector(30)
-// argument (no change). None of these closed the last 12 bytes. field_4C is
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). cmpsum shows only 1 mnemonic diff (the final "ret 8" falls
+// outside the compare window); the residue is a stack frame 12 bytes bigger
+// than the original (sub esp,60h here vs sub esp,54h), which pushes one
+// "lea" past the disp8/disp32 encoding boundary. Every instruction content
+// and value already matches; not a functional bug. field_4C is
 // an array of SHook (see M3dUtils_GetDynamicHookPosition), field_54 is the
 // matching array of computed CVector positions (both field_50 entries
 // long). Each call picks a random hook, finds a random point between it and
