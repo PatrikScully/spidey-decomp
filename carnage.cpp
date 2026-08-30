@@ -645,10 +645,175 @@ void CCarnage::AI(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// Verified against IDA decompile of 0x41E0C0 (unnamed in names.json, between SelectAttack 0x41DB20
+// and DoubleAxeHandSlash 0x41E6A0, called from AI's dispatch switch as the field_31C.bothFlags==4
+// handler). realRegisterArr[0]/[1]/[2] (u16/u16/i16) are reused here as scratch state: [1] as a
+// "already hit this swing" latch, [2] as a repeat-swing counter capped at 2.
 void CCarnage::AxeHandSlash(void)
 {
-    printf("CCarnage::AxeHandSlash(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			this->RunAnim(0xCu, 0, -1);
+			this->field_324 = 0;
+			new CAIProc_MonitorAttack(this, 8, 0x58000, 8, 0x10);
+
+			this->realRegisterArr[0] = 0;
+			this->realRegisterArr[1] = 0;
+			this->realRegisterArr[2] = 0;
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 1:
+		{
+			this->field_194 = (this->field_194 & ~0x66000) | 0x22000;
+
+			if (Utils_XZDist(&MechList->mPos, &ZeroVector) < 700 && this->field_35C != 1)
+				this->realRegisterArr[1] = 1;
+
+			if (Utils_XZDist(&this->mPos, &MechList->mPos) <= 150 || this->realRegisterArr[1])
+			{
+				this->field_218 &= ~1;
+			}
+			else
+			{
+				this->field_218 |= 1;
+
+				CSVector dir;
+				dir.vx = MechList->mPos.vx - this->mPos.vx;
+				dir.vy = 0;
+				dir.vz = MechList->mPos.vz - this->mPos.vz;
+				VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+				this->field_240.vx = MechList->mPos.vx - 150 * dir.vx;
+				this->field_240.vy = this->mPos.vy;
+				this->field_240.vz = MechList->mPos.vz - 150 * dir.vz;
+
+				this->SnapArenaPosition(&this->field_240);
+			}
+
+			if (this->field_288 & 0x10)
+			{
+				this->field_288 &= ~0x10;
+				this->realRegisterArr[1] = 1;
+
+				SHitInfo hitInfo;
+				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				hitInfo.field_C.vy = 0;
+				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
+				hitInfo.field_0 = 0xE;
+				hitInfo.field_4 = 0xB;
+				hitInfo.field_8 = 0x1E;
+
+				MechList->Hit(&hitInfo);
+
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+			}
+
+			i32 diff;
+			if (MechList->field_8E8 || MechList->field_8E9)
+			{
+				diff = 0x600;
+			}
+			else
+			{
+				CSVector aim1;
+				Utils_CalcAim(&aim1, &gCarnageVector, &this->mPos);
+				CSVector aim2;
+				Utils_CalcAim(&aim2, &gCarnageVector, &MechList->mPos);
+
+				diff = aim2.vy - aim1.vy;
+				if (diff > 0x800)
+					diff -= 0x1000;
+				else if (diff < -0x800)
+					diff += 0x1000;
+			}
+
+			if (my_abs(diff) > 512 && this->mAnimFinished)
+			{
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+				this->RunAnim(0xEu, 0, -1);
+				this->field_194 = (this->field_194 & ~0x66000) | 0x44000;
+				this->dumbAssPad++;
+				break;
+			}
+
+			if (this->mFrame >= 9 && !(this->field_324 & 1))
+			{
+				this->field_324 |= 1;
+				SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+			}
+			else if (this->mFrame >= 25 && !(this->field_324 & 2))
+			{
+				this->field_324 |= 2;
+				SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+			}
+
+			if (!this->mAnimFinished)
+				break;
+
+			if (this->realRegisterArr[1])
+			{
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+				this->RunAnim(0xEu, 0, -1);
+				this->field_194 = (this->field_194 & ~0x66000) | 0x44000;
+				this->dumbAssPad++;
+				break;
+			}
+
+			if (this->realRegisterArr[2] >= 2)
+			{
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+				this->RunAnim(0xEu, 0, -1);
+				this->field_194 = (this->field_194 & ~0x66000) | 0x44000;
+				this->dumbAssPad++;
+				break;
+			}
+
+			this->realRegisterArr[2]++;
+			this->RunAnim(0xDu, 0, -1);
+			this->field_324 = 0;
+			this->field_194 = (this->field_194 & ~0x66000) | 0x22000;
+
+			if (!this->realRegisterArr[0])
+			{
+				this->realRegisterArr[0] = 1;
+				new CAIProc_MonitorAttack(this, 11, 0x5D800, 22, 0x10);
+			}
+
+			break;
+		}
+
+		case 2:
+		{
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		}
+
+		default:
+			DoAssert(0, "Unknown state");
+			break;
+	}
 }
 
 // @Ok
