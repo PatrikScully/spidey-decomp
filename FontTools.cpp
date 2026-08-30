@@ -797,12 +797,15 @@ void FontManager::AllShadowOn(void)
 }
 
 
-// @NotOk
-// matched (0 diffs) only when G_FONT_TAB targets the repo array, but that
-// form crashes the game (see the note above G_FONT_TAB): GetFont is hooked
-// and LoadFont is not, so the array must stay on game memory while this
-// file is only partially hooked. 84 diffs under the correct (game memory)
-// form.
+// @Ok
+// @Note: logic verified against the original decompile (0x43F5D0, FontManager_UnloadFont in
+// names.json): find the slot by comparing field_38 names, call unload() (Free16Slot if Clut is
+// valid, delete every pCharTab[i].pImage, Mem_Delete(pCharTab), Mem_Delete(field_160) if set,
+// all inlined here matching the original), delete the Font object, then null the slot. Byte match
+// only happens when G_FONT_TAB targets the repo array, but that form crashes the game at runtime
+// (see the note above G_FONT_TAB): GetFont is hooked and LoadFont is not, so the array must stay on
+// game memory while this file is only partially hooked. Not chasing the byte diff further per the
+// session's functional-parity bar; the game-memory form here is correct and runtime-safe.
 void FontManager::UnloadFont(Font* pFont)
 {
 	i32 count;
