@@ -221,11 +221,311 @@ CPlatform::CPlatform(i16 * a2,i32 a3)
 	this->field_20C = 1;
 }
 
-// @MEDIUMTODO
-i32 CPlatform::ExecuteCommand(u16)
+// @Bogus
+// @FIXME forward-to-original: 0x43B740 spawns 10 CBouncingRock particles
+// (Web_GetGroundY + CBit::operator new(0x70) + CBouncingRock ctor in a loop).
+// Not decompiled; forwarded so CPlatform::ExecuteCommand case 0x430A works.
+static i32 gsub_43B740(CVector *a1, i32 a2)
 {
-    printf("CPlatform::ExecuteCommand(u16)");
-    return 0x04082024;
+	typedef i32 (*func_ptr)(CVector*, i32);
+	func_ptr func = (func_ptr)0x0043B740;
+	return func(a1, a2);
+}
+
+// @Ok
+// (0x00469690, 2239 bytes). Command dispatcher for platform scripts. The IDB
+// decompiler misread the single u16 command arg as two args (a2/a3); the
+// prologue reads exactly one stack arg (retn 4) and the default case pushes
+// one arg to CBaddy::ExecuteCommand, so the repo's 1-arg signature is right.
+i32 CPlatform::ExecuteCommand(u16 a2)
+{
+	if (a2 > 0x4305)
+	{
+		if (a2 <= 0x4507)
+		{
+			if (a2 == 0x4507)
+			{
+				if (this->field_33C != 0)
+					SFX_Stop(this->field_33C);
+				i16 sound = *this->field_24C;
+				this->field_24C++;
+				this->field_33C = SFX_Play(sound, 0x2000, 0);
+				this->field_340 = -1;
+				return 1;
+			}
+			switch (a2)
+			{
+			case 0x4306:
+			{
+				if ((this->mFlags & 0x200) == 0)
+				{
+					this->mFlags |= 0x200;
+					this->mScale.vz = 4096;
+					this->mScale.vy = 4096;
+					this->mScale.vx = 4096;
+				}
+				i16 a = *this->field_24C;
+				this->field_24C++;
+				i16 b = *this->field_24C;
+				this->field_24C++;
+				this->field_324 = b;
+				i16 scale;
+				if (b != 0)
+					scale = (a << 12) / (100 * b);
+				else
+					scale = (a << 12) / 100;
+				this->field_32A = scale;
+				this->mScale.vx += scale;
+				return 1;
+			}
+			case 0x4307:
+			{
+				if ((this->mFlags & 0x200) == 0)
+				{
+					this->mFlags |= 0x200;
+					this->mScale.vz = 4096;
+					this->mScale.vy = 4096;
+					this->mScale.vx = 4096;
+				}
+				i16 a = *this->field_24C;
+				this->field_24C++;
+				i16 b = *this->field_24C;
+				this->field_24C++;
+				this->field_326 = b;
+				i16 scale;
+				if (b != 0)
+					scale = (a << 12) / (100 * b);
+				else
+					scale = (a << 12) / 100;
+				this->field_32C = scale;
+				this->mScale.vy += scale;
+				return 1;
+			}
+			case 0x4308:
+			{
+				if ((this->mFlags & 0x200) == 0)
+				{
+					this->mFlags |= 0x200;
+					this->mScale.vz = 4096;
+					this->mScale.vy = 4096;
+					this->mScale.vx = 4096;
+				}
+				i16 a = *this->field_24C;
+				this->field_24C++;
+				i16 b = *this->field_24C;
+				this->field_24C++;
+				this->field_328 = b;
+				i16 scale;
+				if (b != 0)
+					scale = (a << 12) / (100 * b);
+				else
+					scale = (a << 12) / 100;
+				this->field_32E = scale;
+				this->mScale.vz += scale;
+				return 1;
+			}
+			case 0x430A:
+			{
+				i16 off = *this->field_24C;
+				this->field_24C++;
+				CVector pos;
+				pos.vx = this->mPos.vx;
+				pos.vy = (off << 12) + this->mPos.vy;
+				pos.vz = this->mPos.vz;
+				i32 *p = (i32*)((((i32)this->field_24C) + 3) & 0xFFFFFFFC);
+				gsub_43B740(&pos, *p);
+				this->field_24C = (i16*)((i32)p + 8);
+				return 1;
+			}
+			default:
+				return CBaddy::ExecuteCommand(a2);
+			}
+		}
+		switch (a2)
+		{
+		case 0x4508:
+		{
+			if (this->field_33C != 0)
+				SFX_Stop(this->field_33C);
+			i16 sound = *this->field_24C;
+			this->field_24C++;
+			i16 vol = *this->field_24C;
+			this->field_24C++;
+			this->field_340 = vol;
+			this->field_33C = SFX_PlayPos(sound, &this->mPos, 0);
+			return 1;
+		}
+		case 0x4509:
+		{
+			if (this->field_33C != 0)
+				SFX_Stop(this->field_33C);
+			this->field_33C = 0;
+			return 1;
+		}
+		case 0x450B:
+		{
+			if (this->field_33C != 0)
+				SFX_Stop(this->field_33C);
+			i16 sound = *this->field_24C;
+			this->field_24C++;
+			i16 vol = *this->field_24C;
+			this->field_24C++;
+			this->field_340 = vol;
+			this->field_33C = SFX_PlayPos(sound | 0x8000, &this->mPos, 0);
+			return 1;
+		}
+		default:
+			return CBaddy::ExecuteCommand(a2);
+		}
+	}
+	if (a2 == 0x4305)
+	{
+		i16 flag = *this->field_24C;
+		this->field_24C++;
+		if (flag != 0)
+			this->mFlags |= 8;
+		else
+			this->mFlags &= ~8;
+		return 1;
+	}
+	if (a2 <= 0x4300)
+	{
+		if (a2 != 0x4300)
+		{
+			switch (a2)
+			{
+			case 0x423D:
+				this->Die(0);
+				return 0;
+			case 0x4250:
+			{
+				CVector pos;
+				i32 *p = (i32*)((((i32)this->field_24C) + 3) & 0xFFFFFFFC);
+				pos.vx = *p;
+				p++;
+				pos.vy = *p;
+				p++;
+				pos.vz = *p;
+				pos <<= 12;
+				this->field_24C = (i16*)(p + 1);
+				if (!(this->field_240 != pos))
+					return 1;
+				this->field_240 = pos;
+				this->field_344 = (this->mPos - pos) >> 12;
+				this->field_218 |= 1;
+				return 1;
+			}
+			case 0x4251:
+			{
+				u16 trigId = *this->field_24C;
+				this->field_24C++;
+				if (trigId & 0x2000)
+				{
+					// vtable+64 is GetVariable (virtual); the original calls it with the
+					// 0x2000 bit still set to resolve the real trig id.
+					trigId = (u16)this->GetVariable(trigId);
+				}
+				CVector pos;
+				Trig_GetPosition(&pos, trigId);
+				if (!(this->field_240 != pos))
+					return 1;
+				this->field_240 = pos;
+				this->field_344 = (this->mPos - pos) >> 12;
+				this->field_218 |= 1;
+				return 1;
+			}
+			case 0x4252:
+			{
+				CVector pos;
+				i32 *p = (i32*)((((i32)this->field_24C) + 3) & 0xFFFFFFFC);
+				pos.vx = *p;
+				p++;
+				pos.vy = *p;
+				p++;
+				pos.vz = *p;
+				pos <<= 12;
+				pos += this->mPos;
+				this->field_24C = (i16*)(p + 1);
+				if (!(this->field_240 != pos))
+					return 1;
+				this->field_240 = pos;
+				this->field_344 = (this->mPos - pos) >> 12;
+				this->field_218 |= 1;
+				return 1;
+			}
+			default:
+				return CBaddy::ExecuteCommand(a2);
+			}
+		}
+		if (this->field_334 == 0)
+		{
+			--this->field_24C;
+			return 0;
+		}
+		return 1;
+	}
+	switch (a2)
+	{
+	case 0x4301:
+		{
+			CPlatform **pMech = (CPlatform**)((char*)MechList + 0xDBC);
+			if (*pMech == this)
+				*pMech = 0;
+		}
+		this->mFlags |= 1;
+		this->Die(0);
+		Shatter_Item((CItem*)this, 0, 0);
+		return 0;
+	case 0x4302:
+	{
+		i16 x = *this->field_24C;
+		this->field_24C++;
+		i16 y = *this->field_24C;
+		this->field_24C++;
+		i16 z = *this->field_24C;
+		this->field_24C++;
+		this->field_350.vx = (x << 12) >> 1;
+		this->field_350.vy = (y << 12) >> 1;
+		this->field_350.vz = (z << 12) >> 1;
+		this->field_218 |= 4;
+		return 1;
+	}
+	case 0x4303:
+		this->field_330 = *this->field_24C;
+		this->field_24C++;
+		return 1;
+	case 0x4304:
+	{
+		if ((this->mFlags & 0x200) == 0)
+		{
+			this->mFlags |= 0x200;
+			this->mScale.vz = 4096;
+			this->mScale.vy = 4096;
+			this->mScale.vx = 4096;
+		}
+		i16 a = *this->field_24C;
+		this->field_24C++;
+		i16 b = *this->field_24C;
+		this->field_24C++;
+		this->field_324 = b;
+		this->field_326 = b;
+		this->field_328 = b;
+		i16 scale;
+		if (b != 0)
+			scale = (a << 12) / (100 * b);
+		else
+			scale = (a << 12) / 100;
+		this->field_32A = scale;
+		this->field_32C = scale;
+		this->field_32E = scale;
+		this->mScale.vx += scale;
+		this->mScale.vy += scale;
+		this->mScale.vz += scale;
+		return 1;
+	}
+	default:
+		return CBaddy::ExecuteCommand(a2);
+	}
 }
 
 // @Ok
