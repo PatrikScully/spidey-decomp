@@ -3529,8 +3529,14 @@ static i16 * const word_6A8C66 = (i16*)0x6A8C66;
 static i16 * const word_610C4A = (i16*)0x610C4A;
 static i16 * const word_610C48 = (i16*)0x610C48;
 
-// @NotOk
-// globals
+// @Ok
+// verified against IDA sub_4C64A0 (0x4C64A0, 0x11A bytes). Found and
+// fixed two bugs from an earlier revision: the index into
+// word_610C4A/word_610C48 was read from field_E2D instead of field_E32
+// (a real i16 field carved out of what used to be unmapped padding, see
+// spidey.h), and the SetCamYDistance call indexed word_6A8C66 itself
+// (word_6A8C66[v6]) instead of word_610C4A[v6]; word_6A8C66 is only ever
+// used as the scalar base to add to, never as the indexed array.
 void CPlayer::PutCameraBehind(i32 a2)
 {
 	if (!this->gCamAngleLock)
@@ -3548,8 +3554,8 @@ void CPlayer::PutCameraBehind(i32 a2)
 			{
 				if ((this->field_E2E | this->field_E2D) && this->field_E1C == 16)
 				{
-					i32 v6 = 2 * (this->field_E2D & 0xFFF);
-					CameraList->SetCamYDistance(*word_6A8C66 + ((500 * word_6A8C66[v6]) >> 12), a2);
+					i32 v6 = 2 * (this->field_E32 & 0xFFF);
+					CameraList->SetCamYDistance(*word_6A8C66 + ((500 * word_610C4A[v6]) >> 12), a2);
 					CameraList->SetCamAngle(v5 + ((700 * word_610C48[v6]) >> 12), a2);
 				}
 				else
@@ -4067,6 +4073,8 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_E2D, 0xE2D);
 	VALIDATE(CPlayer, field_E2E, 0xE2E);
+
+	VALIDATE(CPlayer, field_E32, 0xE32);
 
 	VALIDATE(CPlayer, field_E38, 0xE38);
 
