@@ -449,8 +449,21 @@ void CChopper::SetDesiredPosForTrackMode(void)
 		this->field_34C = this->field_350;
 }
 
-// @NotOk
-// @FIXME: ApplyPose fix
+// @Ok
+// @Note: checked against the Hex-Rays decompile of tools/functions/4350624.bin
+// (0x4262a0). Two real bugs fixed: (1) the field_328 SFX block had the
+// condition inverted and was missing the field_384 gate entirely, the
+// original is "if (field_328) { if (field_384) ModifyPos; else { Stop;
+// field_328=0; } }", not "if (!field_328) Stop; else ModifyPos;";
+// (2) the RotateBlades/AimGunPod pose data address was wrong (0x1A2BD8),
+// the original uses the SAME table (0x548F48) for the blade-rotation
+// ApplyPose call inside RotateBlades and for this trailing unconditional
+// ApplyPose call (which does the per-frame InBetween/BuildPose refresh,
+// separate from RotateBlades'/AimGunPod's own "if (!mpJoints)"-guarded
+// lazy-init calls to the same function). The switch below matches: case 3
+// is CChopper::WaitForTrigger() inlined (same TU, INLINE keyword), the
+// shared dumbAssPad=0/bothFlags=2 tail case 0 jumps into is exactly this
+// source's case 0 body, just reordered.
 void CChopper::AI(void)
 {
 	if (this->pMessage)
@@ -458,14 +471,17 @@ void CChopper::AI(void)
 
 	if ((gAttackRelated & 3) == 0)
 	{
-		if (!this->field_328)
+		if (this->field_328)
 		{
-			SFX_Stop(this->field_328);
-			this->field_328 = 0;
-		}
-		else
-		{
-			SFX_ModifyPos(this->field_328, &this->mPos, 0);
+			if (this->field_384)
+			{
+				SFX_ModifyPos(this->field_328, &this->mPos, 0);
+			}
+			else
+			{
+				SFX_Stop(this->field_328);
+				this->field_328 = 0;
+			}
 		}
 
 		if (this->field_324)
@@ -477,7 +493,7 @@ void CChopper::AI(void)
 	this->DoChopperPhysics();
 	this->RotateBlades();
 	this->AimGunPod();
-	this->ApplyPose(reinterpret_cast<i16*>(0x1A2BD8));
+	this->ApplyPose(reinterpret_cast<i16*>(0x548F48));
 
 	if (this->field_384)
 	{
