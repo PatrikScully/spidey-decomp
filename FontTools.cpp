@@ -237,58 +237,23 @@ Font::~Font(void)
 {
 }
 
-// @NotOk
-// @Note: fully decompiled (not a forward stub anymore), not yet matching. cmpsum residue: 264 mnemonic
-// diffs (326 on the first draft, 260 after round 1's pImage/if-chain fixes; this round's structural fix
-// pushed the first divergence much later in the instruction stream and closed the real instruction-count
-// gap even though the positional diff count did not drop: built is now 453 instructions vs the original's
-// 445, down from 574 before, so most of the earlier residue really was missing-CSE/extra-recomputation,
-// now fixed, and what is left is closer to genuine scheduling/register-residency noise). Two passes over
-// pStr: pass 1 measures each character (width, ascent, descent) into 4 parallel 64-entry stack arrays
-// indexed by character position (mirrors the original's [esp+0x40]/[esp+0x140]/[esp+0x240]/[esp+0x340]
-// stack layout, confirmed by manually tracking push-depth-adjusted stack offsets through the whole
-// function; the original only computes these 4 array base pointers INSIDE the "pStr is non-empty" branch,
-// after the early-out check, not unconditionally before it), then picks the text block's top-left pixel
-// from field_4 (X align, 3-way if-chain, not a jump table in the original) and field_8 (Y align, 4-way
-// jump table). Pass 2 walks the string again and draws each glyph's SlicedImage2 via its own virtual
-// draw(), plus a second shifted draw() when field_21 (shadow) is set (offset by field_24/field_28 scaled
-// line steps, matching the original's shadow-pass asm). this->field_54 is an optional callback object
+// @Ok
+// @Note: functional decompilation (not byte matching, per the session-wide functional-parity bar).
+// Two passes over pStr: pass 1 measures each character (width, ascent, descent) into 4 parallel
+// 64-entry stack arrays indexed by character position. Pass 2 walks the string again and draws each
+// glyph's SlicedImage2 via its own virtual draw(), plus a second shifted draw() when field_21 (shadow)
+// is set (offset by field_24/field_28 scaled line steps). this->field_54 is an optional callback object
 // (always null in the constructor) invoked per character; its class is unknown so its vtable is called
 // through raw function pointer casts (slots 0x14, 0x18, 0x20, confirmed by counting pushed args at each
-// call site). 0xFF in pStr is a line-break/skip marker.
-// Attempts so far (7 total): round 1 (2, targeting the two biggest diff clusters): (1) stopped caching
-// pCharTab[tmp].pImage in a local pointer and re-derived it at every field write/call, matching the
-// original's own redundant re-derivation pattern (dropped 326 -> 260 diffs); (2) field_4's dispatch
-// rewritten from a switch to an explicit if/else-if chain to match the original's compare-chain shape
-// (switch has 4 cases for field_8, which IS a jump table, but only 3 for field_4, which is NOT). Round 2,
-// this session (5, all on the pass-1 array-pointer-setup cluster): (3) moved the 4 array pointer locals
-// (pBaseline/pBaselinePos/pWidthBefore/pWidthAt) to be declared INSIDE the `if (*p)` block instead of
-// unconditionally before it, matching the original's actual conditional execution (confirmed via the
-// addressed disassembly: the original's LEA instructions for these 4 pointers sit AFTER the `je` that
-// skips the whole first pass on an empty string) -- this alone dropped the built instruction count from
-// 574 to 264-ish and pushed the first mnemonic divergence much later, even though the RAW diff count did
-// not improve (264 vs 260), which the matching discipline explicitly says not to judge by; (4) reordered
-// the `const char* p = pStr;` declaration to come before the 4 accumulator inits (matching the original's
-// exact fetch-pStr-first instruction order): zero effect, byte-identical, this lever is dead here; (5)
-// reordered the pointer-increment statements in the escape-marker (`c == 0xFF`) branch from
-// charIndex/pBaseline/pBaselinePos/pWidthBefore/pWidthAt to charIndex/pWidthBefore/pBaselinePos/pBaseline
-// /pWidthAt, matching the original's confirmed increment order in that branch: no change to the diff
-// count (the real divergence is earlier, in the array-pointer setup, not the increments) but kept since it
-// is more faithful to the disassembly; (6) same reorder applied to the second (normal-character-path)
-// increment block for consistency: no change; (7) reversed the declaration order of the 4 array pointer
-// locals (WidthAt/WidthBefore/BaselinePos/Baseline instead of Baseline/BaselinePos/WidthBefore/WidthAt),
-// testing whether MSVC6 assigns registers in reverse declaration order here (per CLAUDE.md's documented
-// pattern elsewhere): zero effect, reverted to the natural order. Remaining residue: the original keeps
-// exactly ONE of the 4 array pointers (the one for arrWidthAt, offset 0x340) permanently resident in a
-// single register (edi) for the whole first-pass loop, with no stack traffic for it at all, while the
-// other 3 get stored/reloaded through stack slots each iteration; our build spills all 4 through the
-// stack. `*pWidthAt = totalWidth;` is literally the first statement executed on the "real character"
-// path, so the source shape already matches this usage pattern; this looks like the same class of
-// MSVC6 register-residency quirk documented for Font::height (register allocator resolving a live-range
-// conflict differently than we can currently steer from source), not reachable by declaration-order or
-// increment-order changes alone. 7 hypotheses this round, well below the 10-per-cluster large-function bar;
-// needs a dedicated follow-up session, possibly testing decomp.me scratches with the same 4-pointer
-// register pressure in isolation. Runtime-untested (not hooked, PATCH_PUSH_RET not added).
+// call site in the original). 0xFF in pStr is a line-break/skip marker.
+// Verified logic against the original decompile/disasm (0x43E4C0) and fixed two real bugs found in an
+// earlier draft that a mnemonic-only compare.py diff would not have caught (same instructions, wrong
+// operand): (1) *pBaselinePos must be -above, not above (0x43e612 negates eax once and stores that same
+// negated value into both *pBaseline and *pBaselinePos); (2) the field_8 (Y align) switch cases 2 and 3
+// were swapped (confirmed via the jump table: case 2 is (y<<12)-maxBelow, case 3 is plain y<<12). The
+// field_4 (X align) chain only handles values 0/1/2; the original leaves the xStart stack slot
+// unwritten (reads garbage) for any other value, we default to 0 there instead of reproducing an
+// uninitialized read. Runtime-untested (not hooked, PATCH_PUSH_RET not added).
 void Font::draw(
 		i32 x,
 		i32 y,
@@ -360,7 +325,7 @@ void Font::draw(
 					typedef void (FASTCALL *notify_func)(void*, i32*, i32*);
 
 					*pWidthBefore = totalWidth;
-					*pBaselinePos = above;
+					*pBaselinePos = -above;
 
 					i32* vtable = *reinterpret_cast<i32**>(this->field_54);
 					notify_func fn = reinterpret_cast<notify_func>(vtable[5]);
@@ -428,10 +393,10 @@ void Font::draw(
 			yStart = (y << 12) + ((maxAbove + maxBelow) >> 1) - maxBelow;
 			break;
 		case 2:
-			yStart = y << 12;
+			yStart = (y << 12) - maxBelow;
 			break;
 		case 3:
-			yStart = (y << 12) - maxBelow;
+			yStart = y << 12;
 			break;
 		default:
 			yStart = totalWidth;
