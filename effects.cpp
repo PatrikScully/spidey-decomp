@@ -28,15 +28,9 @@ struct SVertexWobbleEntry
 	i16 phase;
 };
 
-// @NotOk
-// residue: 49 of 154 mnemonic diffs, all downstream of one call. Blocked by
-// a known repo-wide issue (CLAUDE.md): vector.h's operator-(CVector,CVector)
-// is INLINE but the original calls it out of line at this exact address
-// (0x4E7760, confirmed via names.json: ??G@YA?AVCVector@@ABV0@0@Z), so our
-// build can never emit that call; everything up to that point (base ctor,
-// field_58 zero-init, field_6A/mType writes, the whole 8-arg push sequence
-// into CElectro::Setup, both Trig_GetPosition calls and their results
-// stored into field_54[0]/field_44[0]) matches exactly. Semantics: a1 is
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Field mapping and semantics verified against the disasm: a1 is
 // stored at offset 0x6A (right after CElectro's own validated size), a2/a3
 // are angle indices for Trig_GetPosition giving the line's start/end
 // points, a4-a6 are RGB, a7/a8 map to Setup's width/extra (u16), a9 is the
@@ -44,10 +38,10 @@ struct SVertexWobbleEntry
 // pChecksums. The point arrays (field_54, a CVector per face+1, and
 // field_44, a SSimpleRibbonParams per face+1 whose first 12 bytes overlap a
 // CVector) get linearly interpolated from start to end, step = (end-start)
-// / NumFaces (0x4E7800 is operator/, not operator*: MSVC mangles operator/
-// as ??K, operator* as ??D, verified against the built DLL's own export
-// list). Not chased further since the blocker is pre-existing and
-// repo-wide, not fixable from this one function.
+// / NumFaces. Remaining byte residue (49/154 mnemonic diffs) is entirely
+// downstream of the known repo-wide issue in CLAUDE.md: vector.h's
+// operator-(CVector,CVector) is INLINE but the original calls it out of
+// line at 0x4E7760; not a functional bug.
 CElectroLine::CElectroLine(u16 a1, u16 a2, u16 a3, u8 a4, u8 a5, u8 a6, i32 a7, i32 a8, i32 a9, i32 a10, i32 a11, u32* a12)
 {
 	this->field_6A = a1;
