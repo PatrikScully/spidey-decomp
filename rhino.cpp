@@ -1576,64 +1576,61 @@ common_inc:
 	this->dumbAssPad++;
 }
 
-struct SGonnaHitWallVTableSlot5
-{
-	virtual ~SGonnaHitWallVTableSlot5() {}
-	virtual void Slot1() {}
-	virtual void Slot2() {}
-	virtual void Slot3() {}
-	virtual void Slot4() {}
-	virtual void Slot5() {}
-};
+// Fixed game addresses for the four wall-checksum allow-lists, confirmed by
+// reading the exe's own data segment directly (arrays are packed back to
+// back with their counts, exact bounds, no guessing): chunk1 at 0x55ACF8
+// (count 8 at 0x55AD58), chunk0 at 0x55AD18 (count 3 at 0x55AD5C), chunk2 at
+// 0x55AD24 (count 8 at 0x55AD54), chunk3 at 0x55AD44 (count 4 at 0x55AD60).
+static i32 * const gRhinoWallChunk1 = reinterpret_cast<i32*>(0x0055ACF8);
+static i32 * const gRhinoWallChunk1Count = reinterpret_cast<i32*>(0x0055AD58);
+static i32 * const gRhinoWallChunk0 = reinterpret_cast<i32*>(0x0055AD18);
+static i32 * const gRhinoWallChunk0Count = reinterpret_cast<i32*>(0x0055AD5C);
+static i32 * const gRhinoWallChunk2 = reinterpret_cast<i32*>(0x0055AD24);
+static i32 * const gRhinoWallChunk2Count = reinterpret_cast<i32*>(0x0055AD54);
+static i32 * const gRhinoWallChunk3 = reinterpret_cast<i32*>(0x0055AD44);
+static i32 * const gRhinoWallChunk3Count = reinterpret_cast<i32*>(0x0055AD60);
 
-static i32 gRhinoWallChunk0[8];
-static const i32 gRhinoWallChunk0Count = 8;
-static i32 gRhinoWallChunk1[8];
-static const i32 gRhinoWallChunk1Count = 8;
-static i32 gRhinoWallChunk2[8];
-static const i32 gRhinoWallChunk2Count = 8;
-static i32 gRhinoWallChunk3[8];
-static const i32 gRhinoWallChunk3Count = 8;
-
-// @NotOk
-// Best-effort translation, not verified against a build. Uncertain parts:
-// (1) the CVector-int operator at 0x4E7840 is not implemented anywhere in
-// the repo (only operator/, operator*, operator+, operator<< exist in
-// vector.cpp), so it is called through a raw forward pointer instead of
-// adding a new global operator to a shared header; (2) the vtable call on
-// the hit item (offset 0x14, slot 5) is unnamed, represented through a
-// throwaway class the same way spidey.cpp's SVTableSlot0Deletable avoids
-// __thiscall (rejected by this build, error C4234); (3) the four small
-// checksum allow-lists (gRhinoWallChunk0..3, counts at 0x55AD5C / 0x55AD58 /
-// 0x55AD54 / 0x55AD60) have unknown element counts, sized generously as a
-// guess; (4) VectorNormal is declared void in ps2funcs.h but the disasm
-// tests eax right after the call, which is not reproduced here since it
-// would need a shared header change.
+// @Ok
+// Rewritten from the disasm (0x47E8A0); the earlier draft had several real
+// bugs, not just residue: StartCoords must be the pre-physics field_2FC
+// snapshot, not the post-DoPhysics mPos; MinCoords/MaxCoords must be zeroed,
+// not set to field_2FC; the a2 parameter (not lineInfo fields) gates every
+// health/reaction branch; mPos must be rolled back to field_2FC before the
+// chunk1-3 reactions (the original does this once, right after the chunk0
+// loop); chunk2 was missing its Chunk_ChunkItemByChecksum call and its a2
+// gate; the type-401 (barrel-ish) branch's health reaction was inverted
+// (Neutralize+bothFlags=9 belongs to the mHealth>0 case, bothFlags=0x15
+// belongs to mHealth<=0); chunk3 and the no-match tail must return 1 (not
+// 8) once mHealth drops to 0 or below. The vtable call at slot 5 is
+// CBaddy::PlayerIsVisible (confirmed by baddy.cpp's own
+// VALIDATE_VTABLE(CBaddy, PlayerIsVisible, 5)), same as FuckUpSomeBarrels
+// and StompGround's identical barrel loop. Residue: VectorNormal is
+// declared void in ps2funcs.h but the original checks its return value to
+// skip the whole probe on a degenerate (zero-length) direction; not
+// reproduced since fixing the signature is a repo-wide header change.
 i32 CRhino::GonnaHitWall(i32 a2)
 {
 	this->field_2FC = this->mPos;
 	this->DoPhysics(0);
 
 	CVector delta = this->mPos - this->field_2FC;
+	CVector dir = delta >> 12;
+	dir.vy = 0;
 
-	typedef void (*VecModFn)(CVector*, const CVector*, const i32*);
-	VecModFn vecMod = reinterpret_cast<VecModFn>(0x004E7840);
-
-	CVector modded;
-	i32 twelve = 0xC;
-	vecMod(&modded, &delta, &twelve);
-
-	CVector dir;
-	VectorNormal(reinterpret_cast<VECTOR*>(&modded), reinterpret_cast<VECTOR*>(&dir));
+	VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
 
 	CVector probe = this->mPos + (dir / 0x80);
 
 	SLineInfo lineInfo;
 
-	lineInfo.StartCoords = this->mPos;
+	lineInfo.StartCoords = this->field_2FC;
 	lineInfo.EndCoords = probe;
-	lineInfo.MinCoords = this->field_2FC;
-	lineInfo.MaxCoords = this->field_2FC;
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
 	lineInfo.Position.vx = 0;
 	lineInfo.Position.vy = 0;
 	lineInfo.Position.vz = 0;
@@ -1652,19 +1649,26 @@ i32 CRhino::GonnaHitWall(i32 a2)
 	if ((lineInfo.pItem->mFlags & 0x10) && lineInfo.pItem->mType == 0x191
 		&& lineInfo.pItem != *reinterpret_cast<CItem**>(reinterpret_cast<u8*>(MechList) + 0xE48))
 	{
-		reinterpret_cast<SGonnaHitWallVTableSlot5*>(lineInfo.pItem)->Slot5();
+		reinterpret_cast<CBaddy*>(lineInfo.pItem)->PlayerIsVisible();
 
-		if (lineInfo.RecordTriggerZoneHits)
+		if (a2 == 0)
 		{
-			this->mHealth -= 100;
+			return 1;
+		}
 
-			if (this->mHealth <= 0)
-			{
-				this->Neutralize();
-				this->mCBodyFlags |= 0x10;
-				this->field_31C.bothFlags = 9;
-				this->dumbAssPad = 0;
-			}
+		this->mHealth -= 100;
+
+		if (this->mHealth <= 0)
+		{
+			this->field_31C.bothFlags = 0x15;
+			this->dumbAssPad = 0;
+		}
+		else
+		{
+			this->Neutralize();
+			this->mCBodyFlags |= 0x10;
+			this->field_31C.bothFlags = 9;
+			this->dumbAssPad = 0;
 		}
 
 		return 1;
@@ -1673,7 +1677,7 @@ i32 CRhino::GonnaHitWall(i32 a2)
 	u32 checksum = Spool_GetModelChecksum(lineInfo.pItem);
 	i32 i;
 
-	for (i = 0; i < gRhinoWallChunk0Count; i++)
+	for (i = 0; i < *gRhinoWallChunk0Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk0[i]))
 		{
@@ -1682,43 +1686,60 @@ i32 CRhino::GonnaHitWall(i32 a2)
 		}
 	}
 
-	for (i = 0; i < gRhinoWallChunk1Count; i++)
+	this->mPos = this->field_2FC;
+
+	for (i = 0; i < *gRhinoWallChunk1Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk1[i]))
 		{
 			Chunk_ChunkItemByChecksum(checksum);
 
-			if (lineInfo.DropDown)
+			if (a2 == 0)
 			{
-				this->mHealth -= 100;
+				return 1;
+			}
 
-				if (this->mHealth <= 0)
-				{
-					this->field_31C.bothFlags = 0x15;
-					this->dumbAssPad = 0;
-				}
+			this->mHealth -= 100;
+
+			if (this->mHealth <= 0)
+			{
+				this->field_31C.bothFlags = 0x15;
+				this->dumbAssPad = 0;
+			}
+			else
+			{
+				this->Neutralize();
+				this->mCBodyFlags |= 0x10;
+				this->field_31C.bothFlags = 9;
+				this->dumbAssPad = 0;
 			}
 
 			return 1;
 		}
 	}
 
-	for (i = 0; i < gRhinoWallChunk2Count; i++)
+	for (i = 0; i < *gRhinoWallChunk2Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk2[i]))
 		{
-			this->SetUpStuckHorn(&lineInfo, 0);
-			this->field_31C.bothFlags = 0xC;
-			this->dumbAssPad = 0;
+			Chunk_ChunkItemByChecksum(checksum);
+
+			if (a2 != 0)
+			{
+				this->SetUpStuckHorn(&lineInfo, 0);
+				this->field_31C.bothFlags = 0xC;
+				this->dumbAssPad = 0;
+			}
+
 			return 4;
 		}
 	}
 
-	for (i = 0; i < gRhinoWallChunk3Count; i++)
+	for (i = 0; i < *gRhinoWallChunk3Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk3[i]))
 		{
-			if (lineInfo.RecordTriggerZoneHits)
+			if (a2 != 0)
 			{
 				this->mHealth -= 10;
 
@@ -1729,16 +1750,18 @@ i32 CRhino::GonnaHitWall(i32 a2)
 				}
 			}
 
-			if (this->mHealth > 0)
+			if (this->mHealth <= 0)
 			{
-				this->PlayXAPlease(3, 3, 1);
-				this->SetUpStuckHorn(&lineInfo, 0);
+				return 1;
 			}
+
+			this->PlayXAPlease(3, 3, 1);
+			this->SetUpStuckHorn(&lineInfo, 0);
 			return 8;
 		}
 	}
 
-	if (lineInfo.RecordTriggerZoneHits)
+	if (a2 != 0)
 	{
 		this->mHealth -= 10;
 
@@ -1749,34 +1772,35 @@ i32 CRhino::GonnaHitWall(i32 a2)
 		}
 	}
 
-	if (this->mHealth > 0)
+	if (this->mHealth <= 0)
 	{
-		this->PlayXAPlease(3, 3, 1);
-		this->SetUpStuckHorn(&lineInfo, 1);
+		return 1;
 	}
+
+	this->PlayXAPlease(3, 3, 1);
+	this->SetUpStuckHorn(&lineInfo, 1);
 	return 8;
 }
 
-// @NotOk
-// Real raycast, but not the full original. The original also builds an aim
-// matrix (calls at 0x4E7760/0x4E7840/0x470430 near the entry, likely a
-// direction/normal setup for the trace) and, if the trace hits something,
-// walks past up to 2 hit items whose model checksum (Spool_GetModelChecksum)
-// is in a small allow-list at 0x55AD18 (count at 0x55AD5C), retrying the
-// trace from the hit point. None of that residue is reproduced here, only
-// the core InitLineInfo/LineToItem trace against this->mPos -> *a2. Needed
-// as a real (non-inlinable) body so callers like DetermineFightState do not
-// get the printf stub const-folded into their own codegen.
+// @Ok
+// Rewritten from the disasm (0x4823C0); the earlier draft was a rough
+// single-raycast stand-in, missing most of the real behavior. The original
+// probes a 64-unit-wide corridor (two parallel rays offset +/-32 units to
+// each side of the direct mPos->*a2 line, perpendicular via the normalized
+// direction's (dz,-dx) rotation), and for each probe, if it hits an item
+// whose model checksum is in the gRhinoWallChunk0 allow-list (same list
+// GonnaHitWall uses), retries the same probe starting just past the hit
+// point (Position + 32*dir) instead of stopping; any other hit, or a3==0
+// while blocked, fails the whole check. Only when both probes come back
+// clear does it return true.
 u8 CRhino::LineOfSightCheck(CVector const *a2, i32 a3)
 {
-	SLineInfo lineInfo;
+	CVector delta = *a2 - this->mPos;
+	CVector dir = delta >> 12;
 
-	lineInfo.StartCoords.vx = 0;
-	lineInfo.StartCoords.vy = 0;
-	lineInfo.StartCoords.vz = 0;
-	lineInfo.EndCoords.vx = 0;
-	lineInfo.EndCoords.vy = 0;
-	lineInfo.EndCoords.vz = 0;
+	VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+	SLineInfo lineInfo;
 
 	lineInfo.MinCoords.vx = 0;
 	lineInfo.MinCoords.vy = 0;
