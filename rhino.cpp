@@ -1818,11 +1818,67 @@ u8 CRhino::LineOfSightCheck(CVector const *a2, i32 a3)
 	lineInfo.Normal.vy = 0;
 	lineInfo.Normal.vz = 0;
 
-	lineInfo.StartCoords = this->mPos;
-	lineInfo.EndCoords = *a2;
+	i32 pass;
 
-	M3dColij_InitLineInfo(&lineInfo);
-	M3dZone_LineToItem(&lineInfo, a3);
+	for (pass = 0; pass < 2; pass++)
+	{
+		CVector offset;
+
+		if (pass == 0)
+		{
+			offset.vx = 32 * dir.vz;
+			offset.vy = 0;
+			offset.vz = -32 * dir.vx;
+		}
+		else
+		{
+			offset.vx = -32 * dir.vz;
+			offset.vy = 0;
+			offset.vz = 32 * dir.vx;
+		}
+
+		lineInfo.StartCoords = this->mPos + offset;
+		lineInfo.EndCoords = *a2 + offset;
+
+		for (;;)
+		{
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (!lineInfo.pItem)
+			{
+				break;
+			}
+
+			u32 checksum = Spool_GetModelChecksum(lineInfo.pItem);
+
+			if (!a3)
+			{
+				return 0;
+			}
+
+			i32 i;
+			i32 passthrough = 0;
+
+			for (i = 0; i < *gRhinoWallChunk0Count; i++)
+			{
+				if (checksum == static_cast<u32>(gRhinoWallChunk0[i]))
+				{
+					passthrough = 1;
+					break;
+				}
+			}
+
+			if (!passthrough)
+			{
+				return 0;
+			}
+
+			lineInfo.StartCoords.vx = lineInfo.Position.vx + 32 * dir.vx;
+			lineInfo.StartCoords.vy = lineInfo.Position.vy + 32 * dir.vy;
+			lineInfo.StartCoords.vz = lineInfo.Position.vz + 32 * dir.vz;
+		}
+	}
 
 	return lineInfo.pItem == 0;
 }
