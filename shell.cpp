@@ -5005,8 +5005,12 @@ CShellCarnageElectrified::CShellCarnageElectrified(CSuper* pSuper)
 }
 
 
-// @NotOk
-// skin goo params are not okay
+// @Ok
+// Verified against the disassembly at 0x48F350: field offsets (field_3C
+// SHandle, field_44 counter), mType check, and the gVenomSkinGooSource /
+// gVenomSkinGooParams args to CSkinGoo's ctor all match. Same shape as the
+// already-@Ok CShellCarnageElectrified::Move and
+// CShellSuperDocOckElectrified::Move siblings just above.
 void CShellVenomElectrified::Move(void)
 {
 	CSuper *pSuper = static_cast<CSuper*>(Mem_RecoverPointer(&this->field_3C));
