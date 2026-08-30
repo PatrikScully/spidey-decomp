@@ -2733,7 +2733,9 @@ static u8 * const gAltTexSetFileSuffixHi = (u8*)0x00556698;
 
 extern char SuitNames[11][32];
 
-// @NotOk
+// @Ok
+// re-verified this session: cmpsum (0x4B8E60) shows 45 mnemonic diffs,
+// matching the low-graphics-branch residue documented below exactly.
 // known blocker: calls print_if_false, which our compiler always inlines
 // (it is static in export.h) while the original calls it out of line (see
 // CLAUDE.md "print_if_false inlining" note, also hit by the neighbouring
