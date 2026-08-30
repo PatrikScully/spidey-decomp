@@ -1087,13 +1087,18 @@ void CSimbySlimeBase::ScaleDownAndDie(void)
 	this->mProtected = 0;
 }
 
-static int gSimbyAttackData;
+// gSimbyAttackData, confirmed in idb_globals.txt at 0x682C60.
+static i32 * const gSimbyAttackData = reinterpret_cast<i32*>(0x682C60);
 
-// @NotOk
-// global
+// @Ok
+// No standalone address in the original: inlined into CSimby::AI
+// (sub_4AE3D0, not yet in this repo, "dword_682C60 &= ~this->field_3F0"
+// at 0x4ae6d7). Verified this function's body against that inlined code.
+// Was a plain repo-local static before; switched to the confirmed fixed
+// game address since it is shared with CSimby::AI.
 void INLINE CSimby::ClearAttackData(void)
 {
-	gSimbyAttackData &= ~this->field_3F0;
+	*gSimbyAttackData &= ~this->field_3F0;
 	this->field_3F0 = 0;
 }
 
