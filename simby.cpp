@@ -324,8 +324,11 @@ CSymBurn::~CSymBurn(void)
 }
 
 
-// @NotOk
-// globals
+// @Ok
+// No standalone address in the original: fully inlined into
+// CSimbyFireDeath::CSimbyFireDeath (sub_4A3640, not yet in this repo).
+// Verified this body's statement order and field offsets against that
+// inlined code.
 CSymBurn::CSymBurn(CVector *a2)
 {
 	this->mPos = *a2;
@@ -335,7 +338,7 @@ CSymBurn::CSymBurn(CVector *a2)
 	this->mRGB = 0xFFFFFF;
 
 	this->AttachTo(&MiscList);
-	(*reinterpret_cast<i32*>(0x60CF94)) += 1;
+	(*gSymBurnCount) += 1;
 }
 
 // @Ok
