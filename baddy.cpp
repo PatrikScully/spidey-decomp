@@ -65,8 +65,16 @@ void CBaddy::GetWaypointNearTarget(
 		a5->vz += a3 * v7 * ((v5 & 0x83) != 0 ? 1 : -1);
 }
 
-// @NotOk
-// check when pathcheck is done <3
+// @Ok
+// Fixed bug: PathCheck returns 0 when the path is clear (same polarity as
+// PlayerIsVisible's "!this->PathCheck(...)" a few functions down). Both
+// calls here used the return value the wrong way round (nonzero treated as
+// "clear"), confirmed against the original disasm at 0x4048f0. Note:
+// PathCheckGuts is still a @BIGTODO stub that always returns a nonzero
+// constant with no side effects, so MSVC6 currently proves both success
+// branches here dead and removes them (same situation as ParseScript's
+// existing @Ok tag with the ExecuteCommand stub). This source is correct;
+// it will start compiling to real code once PathCheckGuts is implemented.
 i32 CBaddy::AddPointToPath(
 		CVector* pVec,
 		i32 a3)
@@ -85,7 +93,7 @@ i32 CBaddy::AddPointToPath(
 		Trig_GetPosition(&v21, this->field_1F4);
 		v21.vy = this->field_29C;
 
-		if ((!a3 || Utils_CrapDist(v21, v20) < a3) && this->PathCheck(&v21, &v20, 0, 55))
+		if ((!a3 || Utils_CrapDist(v21, v20) < a3) && !this->PathCheck(&v21, &v20, 0, 55))
 		{
 			this->field_1F0 = 1;
 			this->field_1A8[1] = v20;
@@ -103,7 +111,7 @@ i32 CBaddy::AddPointToPath(
 	for (i32 i = 0; i<4 && i < this->field_1F0; i++)
 	{
 		if ( (!a3 || Utils_CrapDist(this->field_1A8[1+i], v20) < a3)
-				&& this->PathCheck(&this->field_1A8[1+i], &v20, 0, 55))
+				&& !this->PathCheck(&this->field_1A8[1+i], &v20, 0, 55))
 		{
 			this->field_1F0 = i + 2;
 			this->field_1A8[i+2] = v20;
