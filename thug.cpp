@@ -436,8 +436,9 @@ INLINE i32 CThug::SpideyAnimUppercut(void)
 		|| MechList->mAnim == 284;
 }
 
-// @NotOk
-// validate
+// @Ok
+// Verified against IDA decompile of 0x4da300: every case (frame guard,
+// sound id, MakeSpriteRing vector and its component order) matches.
 void CThug::PlaySounds(void)
 {
 	CVector v11;
@@ -447,9 +448,10 @@ void CThug::PlaySounds(void)
 		{
 			case 1u:
 				if ( this->mFrame == 27 || this->mFrame == 13 )
+				{
 					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 300);
-					return;
-				break;
+				}
+				return;
 			case 8u:
 				if ( this->mFrame == 5 )
 					SFX_PlayPos(0x801D, &this->mPos, 500);
