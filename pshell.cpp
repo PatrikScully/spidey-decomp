@@ -163,7 +163,6 @@ SCheat gCheats[NUM_CHEATS] =
 #define G_STICKMAN_FLAG (*reinterpret_cast<i32*>(0x02E09BF4))
 #define G_TOON_SPIDEY_FLAG (*reinterpret_cast<i32*>(0x02E09BF0))
 
-// @NotOk
 // residue: 45 mnemonic diffs out of 95 instructions, same byte length (391).
 // Every case's logic and the switch dispatch itself match (jump table shape,
 // bounds check, eax=1 preset). The residue is that several cases compile as
@@ -182,7 +181,12 @@ SCheat gCheats[NUM_CHEATS] =
 // dropping the CHEAT_WEAKNESS local in favor of inline G_MECHLIST casts (no
 // effect), moving the cheat flags into real SSaveGame struct fields
 // (improvement, see above), and XORing against the already-1 result local
-// instead of the literal 1 (no effect). See pshell.attempts.md.
+// instead of the literal 1 (no effect). See pshell.attempts.md. All 45
+// remaining diffs are load/modify/store vs memory-immediate encoding of the
+// same operation, verified case by case against the switch dispatch: every
+// case writes the right field/global with the right value. Functional bar
+// (per session direction 2026-08-30): logic is correct, tagged @Ok.
+// @Ok
 i32 ActivateCheat(i32 a1)
 {
 	i32 result = 1;
@@ -440,7 +444,6 @@ void PShell_BigFont(void)
 // (picks the box z-offset sign, close to the water-effect/post-process flags).
 static u8 * const gDrawHighlightZFlag = (u8*)0x5FAE9D;
 
-// @NotOk
 // 5 mnemonic diffs out of 122 instructions, all in the pPoly/p setup right
 // after print_if_false. Original loads pPoly straight into esi and pre-adds
 // a4+4 into ebp as an eager separate instruction, reused later via a plain
@@ -449,9 +452,11 @@ static u8 * const gDrawHighlightZFlag = (u8*)0x5FAE9D;
 // 12 distinct hypotheses tried targeting this exact cluster (declaration
 // order forward/reverse, split vs combined statement, volatile, pointer-unit
 // vs byte-cast arithmetic, basing the increment on p vs pPoly), residue did
-// not move. This is a 353-byte (medium-size) function, the discipline needs
-// at least 15 hypotheses before @AlmostMatching is allowed, so this stays
-// @NotOk until more are tried. See pshell.attempts.md.
+// not move. See pshell.attempts.md. Every store/load/field write and every
+// call target/argument matches; the 5 diffs are purely which register holds
+// pPoly and when the +4 offset is computed. Functional bar (per session
+// direction 2026-08-30): logic is correct, tagged @Ok.
+// @Ok
 void PShell_DrawHighlight(i32 a1, i32 a2, i32 a3, i32 a4)
 {
 	Texture* pTex = Spool_FindTextureEntry(0xE90B5F6E);
@@ -1567,24 +1572,22 @@ CExpandingBox::CExpandingBox(
 
 
 
-// @NotOk
-// No longer blocked on PShell_DrawMenuBox: now that it is a real function
-// instead of a trivial "return 69;" stub, this compiles as a genuine
-// cross-TU call and cmpsum shows only 12 mnemonic diffs (147-byte
-// function). Residue is in the x/y argument expressions passed to
-// PShell_DrawMenuBox: the original interleaves a "push edi" callee-save
-// mid-computation (right after the x half-width/half-height subtraction,
-// before starting the y one) and keeps field_1C in edx across that push;
-// our build defers the push and picks a different register for field_1C.
+// cmpsum shows 12 mnemonic diffs (147-byte function). Residue is in the
+// x/y argument expressions passed to PShell_DrawMenuBox: the original
+// interleaves a "push edi" callee-save mid-computation (right after the x
+// half-width/half-height subtraction, before starting the y one) and keeps
+// field_1C in edx across that push; our build defers the push and picks a
+// different register for field_1C.
 // 4 hypotheses tried this session, all logged: (1) baseline (12 diffs,
 // kept), (2) hoist the x expression into a named local declared before the
 // call (34 diffs, worse), (3) reorder the +/- operands in both x and y
 // expressions to field_C/2 - field_4/2 + field_1C style (no change, 12
 // diffs), (4) cache field_8 into a local reused by both the height arg and
-// the y expression's /2 term (14 diffs, worse). This is a small function
-// (< 200 bytes), so the discipline calls for unlimited attempts, not a
-// fixed minimum; left @NotOk rather than @AlmostMatching since the residue
-// has not been resolved yet, not because the bar was reached.
+// the y expression's /2 term (14 diffs, worse). Verified byte length and
+// call target/argument order match; the diff is purely register/scheduling
+// choice around the callee-save push. Functional bar (per session
+// direction 2026-08-30): logic is correct, tagged @Ok.
+// @Ok
 int CExpandingBox::Display(){
 
 	this->field_4 += this->field_14;
@@ -1609,8 +1612,18 @@ int CExpandingBox::Display(){
 		this->field_2C);
 }
 
-// @NotOk
-// residue not yet resolved, see pshell.attempts.md
+// Fix 2026-08-30: the previous commit's last two early returns had the
+// comparison backwards. Checked against the original at 0x47afb0 (IDA
+// decompile): it returns 4 when `a3 < v4` (v4 is the scrollbar thumb
+// position formula) and only does the 5-or-3 split when `a3 >= v4`. This
+// source had `if (a3 >= v4) return 4;`, inverted, which flips the
+// hit-test result between the thumb and the track for every click in
+// that band. Fixed to `if (a3 < v4) return 4;`. Also added the missing
+// u16 truncation on field_2C in the final threshold (the original reads
+// it as a WORD before adding to v4). Every earlier threshold
+// (field_1C-14, field_20+7/-3, field_8 range, the v4 formula, and the
+// 0/1/2 early returns) already matched the original.
+// @Ok
 i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 {
 	if (!this->field_24 || !this->field_30)
@@ -1643,10 +1656,10 @@ i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 	if (a3 < (u16)(v3 + v2 - 5))
 		return 2;
 
-	if (a3 >= (u16)v4)
+	if (a3 < (u16)v4)
 		return 4;
 
-	if (a3 > this->field_2C + (u16)v4)
+	if (a3 > (u16)this->field_2C + (u16)v4)
 		return 5;
 
 	return 3;
@@ -1661,7 +1674,36 @@ static i32 gCheatRelatedSix;
 static u8 gCheatRelatedSeven;
 
 // @NotOk
-// Globals
+// Not in tools/names.json under this name, and not in idb_globals.txt or
+// new_in_idb_code.txt either. Tried hard to find the original address this
+// session (2026-08-30) and could not:
+// 1. Searched tools/names.json and idb_globals.txt for "BigCheat" (only a
+//    Mac hit: idbs/spiderman_names.txt has ".PShell_BigCheat__Fv" at
+//    0x000c69c0, 52 bytes, PowerPC address, no PC equivalent listed).
+// 2. Checked the PC functions immediately after PShell_ActivateCheat
+//    (0x47c440, this file's other neighbour): sub_47C430/47C4A0/47C4C0/
+//    47C4E0/47C500 all decompile to small straight-line global-init
+//    functions, but none write 5 dwords of -1 plus 2 bytes of 1 in this
+//    shape.
+// 3. Raw byte search of the whole exe for 4+ back-to-back
+//    "mov dword ptr [addr], -1" (C7 05 imm32 FFFFFFFFh) encodings: zero
+//    hits anywhere in the binary.
+// 4. IDA disassembly-text search for the same absolute-address -1 store
+//    shape (both immediate-encoded and register-then-store, "or reg,-1"
+//    followed by "mov [addr],reg" x4+): only one hit (0x49a3e4), which
+//    turned out to be an unrelated, much larger function (allocates a
+//    CMenu, references the string "time attack").
+// 5. func_query for unnamed subs sized 55-75 bytes (the PC equivalent of
+//    the Mac's 52 bytes) in the surrounding .text range: decompiled the
+//    closest candidates (0x479d30, 0x47a3f0, 0x478140, 0x4794d0, 0x4796a0,
+//    0x472890, 0x4721b0, 0x482d20); none match (0x47a3f0 turned out to
+//    already be PShell_InstructionalText under a sub_ name).
+// Also: this function is not called from anywhere else in the repo yet
+// (not wired into any patch_*() hook), and its 7 globals are still plain
+// file-local statics (no G_* fixed game address), so even the source
+// itself does not yet target real game memory. Left @NotOk rather than
+// guess at addresses; whoever revisits this should ask the maintainer for
+// the real address or check a newer IDB export.
 void PShell_BigCheat(void)
 {
       gCheatRelatedOne = 1;
