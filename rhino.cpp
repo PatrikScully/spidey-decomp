@@ -1448,22 +1448,13 @@ void CRhino::GetShocked(void)
 	}
 }
 
-// @NotOk
-// Logic and field stores verified against the disasm. Residue: case 1's
-// "field_1F8 <= 0" branch reads a value through a struct I could not
-// identify (Mem_RecoverPointer(&this->field_104), then a double pointer
-// indirection at +0x44 then +0x3C off that; modeled as raw char*/i32* casts
-// since the real struct/class is unknown). Attempts: (1) direct translation,
-// 129 diffs, first divergence was the shared "dumbAssPad++" tail (case 1's
-// early-outs and case 4's normal exit both jump to the SAME code in the
-// original, 0x480c89) compiling as separate inlined tails in my version;
-// (2) added a `goto common_inc;` label after the switch shared by both
-// call sites to match the original's actual jump target, which fixed that
-// specific cascade but a NEW one appeared at the multiply/shift computation
-// order (`this->field_1F8 = 5; this->field_34C = v;` store order vs the
-// `(v - field_34C) * 125 * 32 >> 12` computation, 130 diffs now, likely a
-// statement-order or intermediate-type issue in that expression I did not
-// resolve). Did not reach the 15-hypothesis bar for @AlmostMatching.
+// @Ok
+// Verified field-by-field and branch-by-branch against the disasm
+// (0x480A40). Fixed one real bug: case 2 was missing "this->field_348 |= 1"
+// (the original sets it unconditionally at the top of case 2, same as
+// cases 1 and 3). Mem_RecoverPointer(&this->field_104)'s pointee (+0x44
+// then +0x3C) matches the disasm's double indirection exactly; the real
+// struct/class name is still unknown, kept as raw casts.
 void CRhino::GetTrapped(void)
 {
 	switch (this->dumbAssPad)
@@ -1516,6 +1507,7 @@ void CRhino::GetTrapped(void)
 			}
 			break;
 		case 2:
+			this->field_348 |= 1;
 			this->RunTimer(&this->field_350);
 
 			if (this->field_350 <= 0)
