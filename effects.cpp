@@ -665,7 +665,12 @@ CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource* pSources, i32 numSources, SSk
 // difference is the texture pick, which reads one of two 32-byte name
 // strings from the source entry (field_4 / field_24) through the new
 // CQuadBit::SetTexture(char*) overload instead of a checksum through
-// SetTexture(u32).
+// SetTexture(u32). Fixed a real gap on review: the SetSemiTransparent /
+// mCodeBGR &= ~0x40 / conditional SetTint block (same as the sibling
+// overload, gated on pSuper->mFlags & 0x800) was missing entirely from the
+// first commit of this function; re-added after re-checking against the
+// IDA decompile, which has it between the texture pick and the model/vert
+// lookup.
 CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource2* pSources, i32 numSources, SSkinGooParams* pParams)
 {
 	this->field_8C = 0;
@@ -706,6 +711,16 @@ CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource2* pSources, i32 numSources, SS
 	else
 	{
 		this->SetTexture(pSources[sourceIndex].field_4);
+	}
+
+	this->SetSemiTransparent();
+	this->mCodeBGR &= ~0x40;
+
+	if (pSuper->mFlags & 0x800)
+	{
+		this->SetSemiTransparent();
+		u8 lowByteOfRGB = *(reinterpret_cast<u8*>(pSuper) + 0x24);
+		this->SetTint(lowByteOfRGB, lowByteOfRGB, lowByteOfRGB);
 	}
 
 	u8 *source = reinterpret_cast<u8*>(&pSources[sourceIndex]);
