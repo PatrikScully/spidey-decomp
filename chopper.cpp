@@ -156,15 +156,32 @@ void CChopper::TrackSpidey(void)
 
 // @NotOk
 // @FIXME name does not have a V
-// @Note: reconstructed from tools/functions/4352816.bin. States 0/1 mirror the
-// GetToPos fallthrough idiom used in FollowWaypoints. State 2 walks the
-// waypoint's links (G_OFFSETLIST), pulsing every linked trigger except a
-// special type-1002 link, which is remembered as the gun target. State 3's
-// interpolation block (Trig_GetPosition + CVector lerp into field_3A8) is a
-// best-effort reconstruction of the control flow shape, not fully instruction
-// verified. cmpsum: 223 mnemonic diffs; MSVC6 did not emit the original's
-// jump-table dispatch for this switch (built an if-chain instead), first
-// divergence right at the dispatch. 1 attempt, not iterated. Needs real work.
+// @Note: checked against the Hex-Rays decompile of tools/functions/4352816.bin
+// (0x426b30). Real findings, not yet fixed:
+// - The switch has a STATE 3 this source is missing entirely
+// ("case 3: goto LABEL_19;", the same tail as state 2's found-target path).
+// - Case 1 is NOT this->GetToPos(&field_33C): it is a distinct
+// Utils_CrapDist(this+816, this+828) < 2*field_840 check, and on the "not
+// close enough yet" branch it computes a turn-rate-scaled velocity via
+// Utils_CalcAim + Utils_GetVecFromMagDir into mVel (this+96), which this
+// source does not do at all.
+// - In case 2's found-target branch, realRegisterArr[1] should be set to the
+// FOUND target link (not zeroed), only realRegisterArr[2] is zeroed. This
+// source currently zeroes both, which breaks the later Trig_GetPosition(
+// &target, realRegisterArr[1]) call downstream.
+// - The field_3C4-gated lerp block (LABEL_19, shared by state 3) is NOT a
+// single 4-iteration loop run to completion in one call: it advances
+// realRegisterArr[2] (the lerp step counter) by exactly ONE step per call
+// (field_3B8 += (target - field_3B8) * counter / 4), and only finalises
+// (realRegisterArr[0] = realRegisterArr[1], dumbAssPad--) once the counter
+// reaches 4. This source's for-loop does all 4 steps instantly instead of
+// spreading them across frames like the original, and state 3's re-entry is
+// gated by field_3C4/field_964 in a way not fully traced (it looks like it
+// only fires once per state-2-found-target transition; how the counter
+// actually advances across the state-3 frames was not resolved).
+// cmpsum: 223 mnemonic diffs. Needs real work: the per-frame lerp state
+// machine and case 1's real condition need to be rebuilt from scratch, not
+// patched incrementally.
 void CChopper::FireMachineGunAtWaypointV(void)
 {
 	switch (this->dumbAssPad)
