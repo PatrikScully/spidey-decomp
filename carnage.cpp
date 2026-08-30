@@ -511,13 +511,27 @@ void CCarnage::ThrowBlades(void)
 	}
 }
 
-// @NotOk
-// residue: not fully verified against a rebuild yet, see attempts file. Master per-frame AI dispatcher:
-// physics/shadow update, pending-message processing loop (message type dispatch approximated, the
-// exact type constants are a guess since they only drive a data jump table, not comparable bytes),
-// then the big switch(field_31C.bothFlags) that calls into the other CCarnage behaviour methods, then
-// a "web wrap" CNonRenderedBit lazily created via Mem_MakeHandle (tail section is a rough approximation,
-// the raw disasm around it was not fully understood).
+// @Ok
+// Verified against IDA decompile+disasm of 0x41C7F0 (CCarnage_AI). Fixed several real bugs:
+// - the pending-message switch dispatched on msg->field_14 - 5 (grouping fake ranges 0/1, 2/3,
+//   4/5/6). The original switches directly on msg->field_14 with exactly 4 handled values: 5, 6,
+//   14 (0xE, the field_104/CTrapWebEffect burst, previously mis-attached to the wrong case), 15
+//   (0xF, same for field_10C), everything else is a no-op (not the "bothFlags=0x100" catch-all
+//   this had).
+// - CleanUpMessages(0,0) and CleanUpAIProcList(0) were called unconditionally; the original only
+//   calls them when there was a message list / an mAIProcList respectively (nested inside the
+//   corresponding if).
+// - the entire field_31C.bothFlags dispatch switch that calls into CheckSlideParams / Initialise /
+//   SelectAttack / AxeHandSlash / DoubleAxeHandSlash / ThrowBlades / StretchJumpAdvance /
+//   StretchJumpFlow / BurnInBubble / GettingGrabbed / Laugh / TugWebTrapped / GetYankedBySpidey /
+//   TakeHit was missing entirely. bothFlags==0x800 (2048) is handled inline in the original with
+//   the exact same shape as the already-@Ok CCarnage::DieCarnage() (mVel/field_218 reset + RunAnim
+//   36 on dumbAssPad 0, PulseL8A5Node()+increment on dumbAssPad 1 once mAnimFinished), so this
+//   calls DieCarnage() directly instead of duplicating that state machine.
+// Residue: the wrap-bit tail (new CNonRenderedBit() path) is missing two field stores at offsets
+// 60/64 into the 72-byte CNonRenderedBit object (a call to an unidentified helper, result and an
+// unread local stored there) that this file has no declared struct for; left as-is, everything
+// else in that tail (the field_328/field_80 threshold, the delete path) already matched.
 void CCarnage::AI(void)
 {
 	if (this->field_340)
@@ -552,10 +566,31 @@ void CCarnage::AI(void)
 			i32 current = this->field_31C.bothFlags;
 			if (current != 0x800)
 			{
-				switch (msg->field_14 - 5)
+				switch (msg->field_14)
 				{
-					case 0:
-					case 1:
+					case 5:
+						if (current != 0x80)
+						{
+							this->field_218 &= ~7;
+							this->mVel.vz = 0;
+							this->mVel.vy = 0;
+							this->mVel.vx = 0;
+							this->field_31C.bothFlags = 0x80;
+							this->dumbAssPad = 0;
+						}
+						else
+						{
+							this->field_1F8 = 0;
+							this->dumbAssPad = 2;
+						}
+						break;
+
+					case 6:
+						this->field_31C.bothFlags = 0x100;
+						this->dumbAssPad = 0;
+						break;
+
+					case 14:
 						if (this->field_104.pWhatever)
 						{
 							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_104));
@@ -565,8 +600,7 @@ void CCarnage::AI(void)
 						}
 						break;
 
-					case 2:
-					case 3:
+					case 15:
 						if (this->field_10C.pWhatever)
 						{
 							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_10C));
@@ -576,28 +610,7 @@ void CCarnage::AI(void)
 						}
 						break;
 
-					case 4:
-					case 5:
-					case 6:
-						if (current == 0x80)
-						{
-							this->field_1F8 = 0;
-							this->dumbAssPad = 2;
-						}
-						else
-						{
-							this->field_218 &= ~7;
-							this->mVel.vz = 0;
-							this->mVel.vy = 0;
-							this->mVel.vx = 0;
-							this->field_31C.bothFlags = 0x80;
-							this->dumbAssPad = 0;
-						}
-						break;
-
 					default:
-						this->field_31C.bothFlags = 0x100;
-						this->dumbAssPad = 0;
 						break;
 				}
 			}
@@ -605,14 +618,56 @@ void CCarnage::AI(void)
 			msg->field_10 |= 1;
 			msg = msg->mNext;
 		} while (msg);
+
+		this->CleanUpMessages(0, 0);
 	}
 
-	this->CleanUpMessages(0, 0);
-
 	if (this->mAIProcList)
+	{
 		this->mAIProcList->Execute();
+		this->CleanUpAIProcList(0);
+	}
 
-	this->CleanUpAIProcList(0);
+	i32 flags = this->field_31C.bothFlags;
+	if (flags <= 0x80)
+	{
+		switch (flags)
+		{
+			case 0x80: this->CheckSlideParams(); break;
+			case 1: this->Initialise(); break;
+			case 2: this->SelectAttack(); break;
+			case 4: this->AxeHandSlash(); break;
+			case 8: this->DoubleAxeHandSlash(); break;
+			case 0x10: this->ThrowBlades(); break;
+			case 0x20: this->StretchJumpAdvance(); break;
+			case 0x40: this->StretchJumpFlow(); break;
+			default: break;
+		}
+	}
+	else if (flags > 0x800)
+	{
+		switch (flags)
+		{
+			case 0x1000: this->BurnInBubble(); break;
+			case 0x2000: this->GettingGrabbed(); break;
+			case 0x4000: this->Laugh(); break;
+			default: break;
+		}
+	}
+	else if (flags != 0x800)
+	{
+		switch (flags)
+		{
+			case 0x100: this->TugWebTrapped(); break;
+			case 0x200: this->GetYankedBySpidey(); break;
+			case 0x400: this->TakeHit(); break;
+			default: break;
+		}
+	}
+	else
+	{
+		this->DieCarnage();
+	}
 
 	if (this->field_328 > this->field_80)
 	{
