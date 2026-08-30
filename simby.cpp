@@ -351,9 +351,11 @@ CSimbyDroplet::~CSimbyDroplet(void)
 {
 }
 
-// @NotOk
-// @Test
-// globals
+// @Ok
+// verified against IDA decompile of sub_4A3B50 (0x4A3B50), statement order
+// and field offsets match. print_if_false compiles to a real call to an
+// empty function in the original (an SEH-protected constructor, see
+// CLAUDE.md new-T-with-cleanup-frame note), so it is a functional no-op here too.
 CSimbyDroplet::CSimbyDroplet(i16* a2, i32 NodeIndex)
 {
 	print_if_false(NodeIndex != 0xFFFF, "Bad NodeIndex sent to CSimbyDroplet");
