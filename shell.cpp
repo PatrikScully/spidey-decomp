@@ -5409,8 +5409,12 @@ i32 Shell_DeRudify(char inp[INPUT_MAX_SIZE])
 
 }
 
-// @NotOk
-// good candidate for tests
+// @Ok
+// Fixed real bug found this session: the inner-loop haystack read indexed
+// from the START of hay (hay[needlePtr-needle]) instead of from the current
+// sliding window (hayPtr[needlePtr-needle]), so it only ever compared needle
+// against hay[0..len(needle)) no matter where hayPtr had advanced to. Case
+// folding and the match-on-full-needle-consumed logic were already correct.
 INLINE i32 Shell_ContainsSubString(const char* hay, const char* needle)
 {
 	for (const char *hayPtr = hay; *hayPtr; hayPtr++)
@@ -5419,7 +5423,7 @@ INLINE i32 Shell_ContainsSubString(const char* hay, const char* needle)
 		for (; *needlePtr; needlePtr++)
 		{
 			char needleChar = *needlePtr;
-			char hayChar = hay[needlePtr-needle];
+			char hayChar = hayPtr[needlePtr-needle];
 
 			if (needleChar >= 'A' && needleChar <= 'Z')
 				needleChar += ' ';
