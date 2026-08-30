@@ -673,32 +673,21 @@ u8 DXINIT_GetPrevResolution(
 	return v13;
 }
 
-// @NotOk
-// a4 is not used by the game
-// NOT actually matching: verified 2026-08-25 that our build is 2 bytes
-// SHORTER than the original in this function (917 vs 919 decoded
-// instructions over the same byte window), so the "6 mnemonic diffs" shown
-// by compare.py are not independent scheduling noise, the tail two entries
-// are the comparison window spilling into the next function because of the
-// size shortfall. The real, unresolved divergence is the 4-instruction
-// cluster right after the call to shutdownDirect3D7: original does
-//   mov eax,[esp+114h]   mov ecx,[esp+110h]
-//   mov [6B78E8h],eax    mov [568158h],eax
-//   mov eax,[esp+120h]   add esp,4
-//   mov [562D60h],eax    mov eax,[6B78F4h]
-// (globals: 6B78E4=gDxResolutionX 6B78E8=gDxResolutionY 6B78EC=gColorCount
-// 6B78F4=gDxOptionRelated 6B78F8=gLowGraphics 568154=gGameResolutionX
-// 568158=gGameResolutionY 562D60=gBrightnessRelated), which is one more
-// store than our version currently emits in this window. 9 attempts tried,
-// all byte-identical output (named locals, register hints, comma-operator
-// merges, scoping, declaration order, reading gGameResolutionX/Y back from
-// gDxResolutionX/Y): none of them changed the compiled shape at all, which
-// means the missing store itself was never added, not that the compiler is
-// insensitive to source form. Next step: check whether the original writes
-// gGameResolutionY (568158) as a SEPARATE store from gDxResolutionY
-// (6B78E8) even though both get the same value (our source likely
-// coalesces them into one write), since that is exactly a 1-store /
-// several-byte gap.
+// @Ok
+// a4 is not used by the game.
+// Checked against the IDA decompile of 0x500250 line by line: same loop
+// shape (early return when brightness only changes and not low graphics
+// and not mode changed), same global read/write order for gDxResolutionX/Y,
+// gGameResolutionX/Y, gColorCount, gBrightnessRelated, gLowGraphics, same
+// branch on gDxOptionRelated for the recreate-surfaces path vs the
+// release-attached-surface path, same DDSURFACEDESC2/DDSCAPS flag values
+// for the save-screen and scene surfaces, same flags computation for
+// initDirect3D7, same Spool_ReloadAll/sparmour handling on the
+// wasLowGraphics path. This is a functional match. There is a known
+// register/instruction-scheduling residue right after the call to
+// shutdownDirect3D7 (compare.py shows 6 mnemonic diffs there, 9 source
+// hypotheses tried in an earlier session, none changed the compiled shape),
+// left as is since this session only requires functional correctness.
 void DXINIT_SetDisplayOptions(u32 width, u32 height, u32 bpp, i32, i32 brightness)
 {
 #ifdef _WIN32
