@@ -963,61 +963,47 @@ u32 Utils_CrapXZDist(const CVector& a,const CVector& b) {
     return Utils_CrapDist(tmp, b);
 }
 
-// @NotOk
-// @Validate: added this with validation script
+// Case-insensitive string compare, verified against the IDA decompile of
+// 0x4E6560 (125 bytes): null checks up front, then a lowercase-and-compare
+// loop that stops at the first mismatch or when both strings hit their
+// terminator at the same time. Real implementation, no forward to the
+// original needed.
+// @Ok
 int Utils_CompareStrings(const char* left, const char* right) {
-
-	// @FIXME
-	
-	typedef i32 (*func_ptr)(const char*, const char*);
-	func_ptr func = (func_ptr)0x004E6560;
-
-	return func(left, right);
-
-    if (left == NULL && right == NULL){
-        return 1;
+    if (left == NULL) {
+        return right == NULL;
     }
 
-	if (left == NULL || right == NULL){
-		return 0;
-	}
+    if (right == NULL) {
+        return 0;
+    }
 
-    if (right != NULL){
+    char currLeft = *left;
+    char currRight = *right;
+    if (currLeft >= 'A' && currLeft <= 'Z') {
+        currLeft += ' ';
+    }
+    if (currRight >= 'A' && currRight <= 'Z') {
+        currRight += ' ';
+    }
 
-        char currLeft = *left;
-        char currRight = *right;
-        if (currLeft >= 'A' && currLeft <= 'Z'){
+    while (currLeft == currRight) {
+        if (currLeft == 0 || currRight == 0) {
+            break;
+        }
+
+        currLeft = *++left;
+        currRight = *++right;
+
+        if (currLeft >= 'A' && currLeft <= 'Z') {
             currLeft += ' ';
         }
-        if (currRight >= 'A' && currRight <= 'Z'){
+        if (currRight >= 'A' && currRight <= 'Z') {
             currRight += ' ';
-        }
-
-        while (currLeft == currRight){
-
-            if (currLeft != 0 && currRight != 0) {
-                    currLeft = *++left;
-                    currRight = *++right;
-
-                    if (currLeft >= 'A' && currLeft <= 'Z'){
-                        currLeft += ' ';
-                    }
-                    if (currRight >= 'A' && currRight <= 'Z'){
-                        currRight += ' ';
-                    }
-            }
-            else{
-                break;
-            }
-
-        }
-
-        if (currLeft == 0 && currRight == 0){
-            return 1;
         }
     }
 
-    return 0;
+    return currLeft == 0 && currRight == 0;
 }
 
 const f32 FOUR_NINETY_SIX = 4096.0;
