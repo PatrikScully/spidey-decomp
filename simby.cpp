@@ -727,8 +727,11 @@ void CSimby::TakeHit(void)
 	}
 }
 
-// @NotOk
-// globals
+// @Ok
+// No standalone address in the original: fully inlined into CSimby::AI
+// (sub_4AE3D0, not yet in this repo). Verified statement order and field
+// offsets (field_34C at 0x34C, gSimbyFlags check bit 25) against that
+// inlined block.
 void CSimby::PlayGruntSound(void)
 {
 	if (this->CheckStateFlags(&gSimbyFlags, 25) & 0x2000)
