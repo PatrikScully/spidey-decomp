@@ -35,6 +35,12 @@ extern CCamera* CameraList;
 static CVector * const gCameraViewPos = (CVector*)0x0056F1B4;
 static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 
+// Hooks-packet data table for CChopper's model attach points, passed to
+// M3dUtils_ReadHooksPacket. Same pattern as turret.cpp's raw 0x55984C and
+// thug.cpp's gThugTypeRelated* tables: fixed, read-only data baked into the
+// original exe image, not a mutable global, so no G_* macro is needed.
+static void * const gChopperHooksPacket = (void*)0x00548F88;
+
 // @Ok
 // @Matching
 void Chopper_RelocatableModuleClear(void)
@@ -1895,8 +1901,13 @@ CSniperTarget::CSniperTarget(i32 a2)
 	this->AttachTo(reinterpret_cast<CBody**>(&ControlBaddyList));
 }
 
-// @NotOk
-// unknown global
+// @Ok
+// @Note: verified field by field against the Hex-Rays decompile of
+// tools/functions/4347712.bin (0x425740): every zeroed field, mFlags/mType/
+// mFric/mCBodyFlags/mRMinor/mNode/field_1F4/field_31C/field_380/field_3B4
+// assignment, the mPos copy into field_33C then field_330, and the final
+// AttachTo/hooks-packet call all match. The only gap was the unnamed global
+// at 0x548F88, now gChopperHooksPacket above.
 CChopper::CChopper(i16* a2, i32 a3)
 {
 	this->field_330.vx = 0;
@@ -1960,7 +1971,7 @@ CChopper::CChopper(i16* a2, i32 a3)
 	this->field_360 = 2048;
 	this->field_358 = 2048;
 	this->mAngles.vy = 2048;
-	M3dUtils_ReadHooksPacket(this, reinterpret_cast<void*>(0x548F88));
+	M3dUtils_ReadHooksPacket(this, gChopperHooksPacket);
 }
 
 // @Ok
