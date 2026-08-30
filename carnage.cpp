@@ -2177,8 +2177,10 @@ INLINE i32 CCarnage::CalculateAngleDelta(void)
 	return result;
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// Verified fully inlined into ?SelectAttack@CCarnage (0x41DB20, IDA decompile): angle = CalcAim(this)
+// + offset, wrapped to 0xFFF, magdir at radius 868, then SnapArenaPosition. Matches the inlined shape
+// at the call site. INLINE, so this has no standalone address to diff against.
 INLINE void CCarnage::GetArenaPositionFromAngleOffset(
 		i32 a2,
 		CVector *a3)
