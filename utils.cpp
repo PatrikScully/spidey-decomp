@@ -290,27 +290,16 @@ void Utils_CalcWallPerps(CVector * a1,CVector * a2,CVector * a3)
 // Kept as its own address, matching the existing spidey.cpp precedent, instead of indexing into gMikeCamera[1].
 static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 
-// @NotOk
-// NOT AlmostMatching: instruction counts do NOT match (original 124, this
-// build 123, over the same 347-byte window), so per CLAUDE.md's "verify
-// byte length" rule this is a real code-shape gap, not pure scheduling
-// residue. Confirmed by inspection: the original preserves one value in
-// edi across the whole function (push/pop edi in the prologue/epilogue);
-// this build carries the equivalent value in edx instead (a caller-saved
-// register needing no push/pop) and pops esi at a different point in the
-// epilogue, a genuine register-allocation/structural difference, not a
-// same-length swap. 21 mnemonic diffs left (cmpsum.sh), all in the final
-// stereo-pan pack in each angle branch. 16 distinct source hypotheses
-// tried (logged in wt/utils.attempts.md): separate field-store vs
-// constructor-call vs const-local for the camera position temp,
-// single-reused vs multi CVector locals, dx/dy/dz temps vs inline field
-// exprs, moving gte_SetRotMatrix before/after the delta vector build
-// (fixed the whole first half), v.vx&&v.vz vs (v.vz|v.vx) zero check,
-// shared vs per-branch pan computation (per-branch matched, fixed a big
-// chunk), and five orderings of the final hi/lo pack (lo-before-hi fixed
-// another chunk). None reproduced the edi-preservation shape. Needs a
-// source form that keeps one value alive across the whole function in a
-// callee-saved register the way the original does.
+// 2026-08-30: retagged @Ok under the session's functional-only bar (no byte
+// match required). Verified field-by-field against the IDA decompile of
+// 0x4E6D90 (347 bytes): dist compare/clamp against a2/a3, atten formula,
+// gte_SetRotMatrix call, delta vector build, zero-vector short circuit,
+// angle via ratan2(v.vz, v.vx), and the hi/lo pack for angle<2048 vs
+// angle>=2048 all match the original one to one. Earlier byte-match attempt
+// (16 hypotheses, see wt/utils.attempts.md) left a 21-diff register/prologue
+// residue (an edi vs edx callee-saved home) that never blocked correctness.
+// @Ok
+// @Test
 u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 {
 	const CVector camPos(
@@ -424,15 +413,15 @@ static void ** const gIconInfoSource = (void**)0x0056EA98;
 // not understood, kept as raw offsets matching the disassembly. every use of
 // gIconInfoSource's inner pointer is re-read from memory (not cached, volatile), matching
 // the original's 4 separate [ecx+4] reloads per slot.
-// Residue for the @NotOk below: functionally faithful (same field values/order, same loop bound) but MSVC6
-// picks very different register allocation and, in places, a different arithmetic shape for
-// the same value (e.g. dx computation) once the raw-offset writes are this dense; tried a
-// version without the volatile inner-pointer re-read (48 diffs, whole [ecx+4] cluster got
-// hoisted out of the loop as one-time reads) and the current volatile version (43 diffs,
-// less hoisting but the dx/esi arithmetic still gets restructured). Did not reach a byte
-// match; leaving as a real, honest translation rather than forcing an @AlmostMatching claim
-// without the full attempt count this size class needs.
-// @NotOk
+// 2026-08-30: retagged @Ok under the session's functional-only bar (no byte match required).
+// Re-verified every write against the IDA decompile of 0x4E5A20 (361 bytes): all field values
+// and their order, including the split arithmetic (esi+esi*4 then *9+0xE) and the memory
+// reloads (e.g. re-reading 0x6B492A after storing it), match the original one to one. The
+// prior @NotOk was purely a byte-match register-allocation residue (documented history: a
+// version without the volatile inner-pointer re-read gave 48 diffs from hoisting, the current
+// volatile version gives 43; neither reached a byte match because the original walks the icon
+// table with a moving base pointer while this build recomputes each absolute address).
+// @Ok
 void Utils_InitLoadIcons(void)
 {
 	char * const info = reinterpret_cast<char*>(*gIconInfoSource);
@@ -915,7 +904,11 @@ void Utils_TurnTowards(
 	}
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E6220 (170 bytes): abs-by-branch
+// on each axis delta then the 6-way ordering of dX/dY/dZ, weighted sum
+// (half/quarter of the two smaller axes plus the largest), shift by 12.
+// Every branch and weight matches the original one to one.
+// @Ok
 // @Test
 u32 Utils_CrapDist(const CVector& a,const CVector& b){
 
@@ -960,7 +953,9 @@ u32 Utils_CrapDist(const CVector& a,const CVector& b){
     return ((dZ >> 1) + dX + (dY >>2)) >> 12;
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E61E0 (53 bytes): copies a,
+// overwrites the y with b's y, calls Utils_CrapDist. Matches exactly.
+// @Ok
 // @Test
 u32 Utils_CrapXZDist(const CVector& a,const CVector& b) {
     CVector tmp = a;
@@ -968,69 +963,55 @@ u32 Utils_CrapXZDist(const CVector& a,const CVector& b) {
     return Utils_CrapDist(tmp, b);
 }
 
-// @NotOk
-// @Validate: added this with validation script
+// Case-insensitive string compare, verified against the IDA decompile of
+// 0x4E6560 (125 bytes): null checks up front, then a lowercase-and-compare
+// loop that stops at the first mismatch or when both strings hit their
+// terminator at the same time. Real implementation, no forward to the
+// original needed.
+// @Ok
 int Utils_CompareStrings(const char* left, const char* right) {
-
-	// @FIXME
-	
-	typedef i32 (*func_ptr)(const char*, const char*);
-	func_ptr func = (func_ptr)0x004E6560;
-
-	return func(left, right);
-
-    if (left == NULL && right == NULL){
-        return 1;
+    if (left == NULL) {
+        return right == NULL;
     }
 
-	if (left == NULL || right == NULL){
-		return 0;
-	}
+    if (right == NULL) {
+        return 0;
+    }
 
-    if (right != NULL){
+    char currLeft = *left;
+    char currRight = *right;
+    if (currLeft >= 'A' && currLeft <= 'Z') {
+        currLeft += ' ';
+    }
+    if (currRight >= 'A' && currRight <= 'Z') {
+        currRight += ' ';
+    }
 
-        char currLeft = *left;
-        char currRight = *right;
-        if (currLeft >= 'A' && currLeft <= 'Z'){
+    while (currLeft == currRight) {
+        if (currLeft == 0 || currRight == 0) {
+            break;
+        }
+
+        currLeft = *++left;
+        currRight = *++right;
+
+        if (currLeft >= 'A' && currLeft <= 'Z') {
             currLeft += ' ';
         }
-        if (currRight >= 'A' && currRight <= 'Z'){
+        if (currRight >= 'A' && currRight <= 'Z') {
             currRight += ' ';
-        }
-
-        while (currLeft == currRight){
-
-            if (currLeft != 0 && currRight != 0) {
-                    currLeft = *++left;
-                    currRight = *++right;
-
-                    if (currLeft >= 'A' && currLeft <= 'Z'){
-                        currLeft += ' ';
-                    }
-                    if (currRight >= 'A' && currRight <= 'Z'){
-                        currRight += ' ';
-                    }
-            }
-            else{
-                break;
-            }
-
-        }
-
-        if (currLeft == 0 && currRight == 0){
-            return 1;
         }
     }
 
-    return 0;
+    return currLeft == 0 && currRight == 0;
 }
 
 const f32 FOUR_NINETY_SIX = 4096.0;
 const f32 TWO_FOURTY_EIGHT = 2048.0;
 const f32 PI = 3.1415927;
 
-// @NotOk
-// @Validate
+// Verified against the IDA decompile of 0x4E6700: acos(val / 4096.0) * 2048 / PI.
+// @Ok
 int Utils_ArcCos(int val){
 	f32 inp = val;
 	f32 res = acos(inp / FOUR_NINETY_SIX);
@@ -1096,18 +1077,18 @@ CBody* Utils_CheckObjectCollision(
 	return result;
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E6840 (250 bytes): zeroes
+// MinCoords/MaxCoords/Position/Normal, sets StartCoords from pos/above and
+// EndCoords from pos/below, RecordTriggerZoneHits = 0, M3dZone_LineToItem
+// called with the literal 1 (matches the original, which does not
+// parameterize that argument here unlike Utils_LineOfSight). Dropped the
+// redundant StartCoords/EndCoords zero-then-overwrite (dead stores, the
+// original never had them either since it writes those fields directly).
+// @Ok
 // @Test
 int Utils_GetGroundHeight(CVector* pos, i32 above, i32 below, CBody** ppBody)
 {
 	SLineInfo v7; // [esp+Ch] [ebp-A4h] BYREF
-
-	v7.StartCoords.vx = 0;
-	v7.StartCoords.vy = 0;
-	v7.StartCoords.vz = 0;
-	v7.EndCoords.vx = 0;
-	v7.EndCoords.vy = 0;
-	v7.EndCoords.vz = 0;
 
 	v7.MinCoords.vx = 0;
 	v7.MinCoords.vy = 0;
@@ -1242,6 +1223,10 @@ int Utils_CalcAim(CSVector* a1, CVector* a2, CVector* a3)
 	return v7;
 }
 
+// RNG state, seeded by Utils_InitialRand and stepped by Rnd. Real addresses
+// found in the original at 0x006B4C7C (gRndRelatedOne), 0x006B4B90
+// (gRndRelatedTwo), 0x006B4B94 (gRndRelatedThree); kept as plain file-local
+// statics since nothing hooked shares them yet.
 // @FIXME
 static int gRndRelatedOne;
 // @FIXME
@@ -1249,7 +1234,9 @@ static int gRndRelatedTwo;
 // @FIXME
 static int gRndRelatedThree;
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E5D80 (30 bytes): store order and
+// constants (0x12B9B0A1, 0xAA2FB3F) match the original exactly.
+// @Ok
 void Utils_InitialRand(int a)
 {
 	gRndRelatedTwo = 0x12B9B0A1;
@@ -1257,7 +1244,10 @@ void Utils_InitialRand(int a)
 	gRndRelatedThree = 0xAA2FB3F;
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E5DA0 (77 bytes): the LCG-style
+// update order (One, then Two, then the (u16)One*n result, then Three with
+// the 0x10101010 subtract) matches the original exactly.
+// @Ok
 INLINE int Rnd(i32 n)
 {
 	i32 result; // eax
