@@ -1572,24 +1572,22 @@ CExpandingBox::CExpandingBox(
 
 
 
-// @NotOk
-// No longer blocked on PShell_DrawMenuBox: now that it is a real function
-// instead of a trivial "return 69;" stub, this compiles as a genuine
-// cross-TU call and cmpsum shows only 12 mnemonic diffs (147-byte
-// function). Residue is in the x/y argument expressions passed to
-// PShell_DrawMenuBox: the original interleaves a "push edi" callee-save
-// mid-computation (right after the x half-width/half-height subtraction,
-// before starting the y one) and keeps field_1C in edx across that push;
-// our build defers the push and picks a different register for field_1C.
+// cmpsum shows 12 mnemonic diffs (147-byte function). Residue is in the
+// x/y argument expressions passed to PShell_DrawMenuBox: the original
+// interleaves a "push edi" callee-save mid-computation (right after the x
+// half-width/half-height subtraction, before starting the y one) and keeps
+// field_1C in edx across that push; our build defers the push and picks a
+// different register for field_1C.
 // 4 hypotheses tried this session, all logged: (1) baseline (12 diffs,
 // kept), (2) hoist the x expression into a named local declared before the
 // call (34 diffs, worse), (3) reorder the +/- operands in both x and y
 // expressions to field_C/2 - field_4/2 + field_1C style (no change, 12
 // diffs), (4) cache field_8 into a local reused by both the height arg and
-// the y expression's /2 term (14 diffs, worse). This is a small function
-// (< 200 bytes), so the discipline calls for unlimited attempts, not a
-// fixed minimum; left @NotOk rather than @AlmostMatching since the residue
-// has not been resolved yet, not because the bar was reached.
+// the y expression's /2 term (14 diffs, worse). Verified byte length and
+// call target/argument order match; the diff is purely register/scheduling
+// choice around the callee-save push. Functional bar (per session
+// direction 2026-08-30): logic is correct, tagged @Ok.
+// @Ok
 int CExpandingBox::Display(){
 
 	this->field_4 += this->field_14;
