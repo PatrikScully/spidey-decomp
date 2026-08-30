@@ -2437,10 +2437,75 @@ void CPlayer::UpdateAndTrackCombo(void)
     printf("CPlayer::UpdateAndTrackCombo(void)");
 }
 
-// @SMALLTODO
+// gSpideySenseIndicatorLastUpdateTime (0x6A9080): no idb_globals.txt entry
+// (nearest named are gSpideyHeadModel 0x6A9054 and gTextureEntries 0x6A90B8),
+// tentative name from usage. gTimerRelated snapshot of the last time the
+// indicator entries were refreshed, sits right before
+// gSpideySenseListLastUpdateTime (0x6A9084) used by
+// BuildOffscreenSpideySenseIndicatorList above.
+static u32 * const gSpideySenseIndicatorLastUpdateTime = (u32*)0x006A9080;
+
+// @Ok
+// verified against IDA sub_4C5130 (0x4C5130, 0x115 bytes). Field offsets
+// checked: mRMinor 0xDC, mFlags 0x4 (bit 0x8000 tested by the compiler as
+// the sign of the high byte at +5, same value), field_310 0x310,
+// mCBodyFlags 0x46, mPos 0x8 (all VALIDATEd in ob.cpp/baddy.cpp). The
+// gte_ldlvl/gte_rtir/gte_stlvnl/VectorNormal call sequence and the
+// stru_56F224/stru_56F1B4 globals match the same four calls at the same
+// relative addresses (0x46D7B0/0x46D870/0x46DA40/0x46D790/0x470430) used
+// by the already-decompiled CPlayer::BuildOffscreenSpideySenseIndicatorList
+// above, which established that mapping. Only one VECTOR local is reused
+// for the gte input and output (matches the disassembly reusing the same
+// stack slots), unlike Build which uses two.
 void CPlayer::UpdateOffscreenSpideySenseIndicatorList(void)
 {
-    printf("CPlayer::UpdateOffscreenSpideySenseIndicatorList(void)");
+	u32 threshold = (u32)gTimerRelated - 3;
+	u32 lastUpdate = *gSpideySenseIndicatorLastUpdateTime;
+
+	if (lastUpdate < threshold || lastUpdate > (u32)gTimerRelated)
+	{
+		*gSpideySenseIndicatorLastUpdateTime = gTimerRelated;
+
+		gte_SetRotMatrix(stru_56F224);
+
+		for (i32 i = 0; i < 6; i++)
+		{
+			if (this->field_5F0[i].field_C.pWhatever)
+			{
+				CBaddy *b = static_cast<CBaddy*>(
+						Mem_RecoverPointer(&this->field_5F0[i].field_C));
+
+				if (b)
+				{
+					if (b->mRMinor &&
+							(b->mFlags & 0x8000) &&
+							b->field_310 &&
+							!(b->mCBodyFlags & 0x40) &&
+							(b->mCBodyFlags & 0x10))
+					{
+						VECTOR local;
+						local.vx = (b->mPos.vx >> 12) - stru_56F1B4->vx;
+						local.vy = (b->mPos.vy >> 12) - stru_56F1B4->vy;
+						local.vz = (b->mPos.vz >> 12) - stru_56F1B4->vz;
+
+						gte_ldlvl(&local);
+						gte_rtir();
+						gte_stlvnl(&local);
+
+						local.vz = 0;
+
+						VectorNormal(
+								&local,
+								reinterpret_cast<VECTOR*>(&this->field_5F0[i].mDirection));
+					}
+					else
+					{
+						this->field_5F0[i].field_C.pWhatever = 0;
+					}
+				}
+			}
+		}
+	}
 }
 
 // @MEDIUMTODO
