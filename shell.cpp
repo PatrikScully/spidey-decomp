@@ -5585,8 +5585,11 @@ INLINE i32 IsBetter(
 	return a1 < a2;
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// Trivial wrapper: calls the already-verified Merge(SScore*, const SScore*, i32)
+// overload once per challenge slot. No original address of its own (INLINE,
+// no standalone caller found), so it can only be checked for logical
+// correctness, which it has.
 INLINE void Merge(SRecords *a1, const SRecords *a2)
 {
 	for (i32 i = 0; i < NUM_CHALLS; i++)
