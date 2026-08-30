@@ -82,8 +82,15 @@ i32 gdFsGetFileSize(i32 a1, i32* pSize)
 	return 1;
 }
 
-// @NotOk
-// validate later :P
+// @Ok
+// decompiled 0x504CB0 against sub_504CB0 to check this. logic already
+// matched field-for-field (findFilePKR/openFilePKR replicate the inlined
+// nextFile()+PKR_ReadFile/PKR_GetFileInfo sequence exactly, CreateFileA
+// args, INVALID_HANDLE_VALUE handling, the (id ^ 0xFF) - 1 index math for
+// SetFilePointer). one real bug found and fixed: the original uses
+// strrchr (last backslash) to split the directory prefix from the file
+// name, this used strchr (first backslash). same result for a single-level
+// path like "lti\foo.bmp", different for a deeper path.
 HANDLE gdFsOpen(
 		const char* pFileName,
 		i32)
@@ -99,8 +106,8 @@ HANDLE gdFsOpen(
 	strcpy(v16, pFileName);
 
 	char localName[32];
-	strcpy(localName, strchr(pFileName, '\\') + 1);
-	strchr(v16, '\\')[1] = 0;
+	strcpy(localName, strrchr(pFileName, '\\') + 1);
+	strrchr(v16, '\\')[1] = 0;
 
 	char v15[32];
 	strcpy(v15, G_FS_BASE);

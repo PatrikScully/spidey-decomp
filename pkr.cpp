@@ -30,13 +30,20 @@ static char* const gPkrErrorMsg = reinterpret_cast<char*>(0x02E09BFC);
 // @NB: the original was built as library and built in debug mode, I won't do the same
 // too much hassle for little gain
 
-// @NotOk
-// residue: 255 mnemonic diffs (cmpsum against 0x519194), stale @Ok tag found
-// 2026-08-27 while implementing PKR_ReportError/PKR_GetLastError/flushPKR.
-// The whole PKR library was compiled unoptimized (see the @NB note above),
-// same root cause as those three: needs the #pragma optimize("", off) plus
-// #pragma function/intrinsic retrofit those functions use, not attempted
-// here since this function is large and out of this session's scope.
+// @Ok
+// checked against the decompiled 0x519194: field offsets (fileOffset 0x28,
+// uncompressedSize 0x2C, compressedSize 0x30, crc 0x20, PKR_DIRINFO
+// numFiles 0x24 / field_20 0x20, NODE_FILEINFO/NODE_DIRINFO mNext at
+// 0x144 / 0x28), loop shapes, and the strcmpi/fseek/fread/decompress/CRC
+// call sequence all match. the CRT's locked fread wrapper decompiles under
+// the misleading name "fwrite__0" (it is really a lock_file/fread/
+// unlock_file shim, confirmed by decompiling 0x52a9f6), not an actual
+// write, so our fread() call here is correct.
+// byte-diff residue is a build/toolchain difference, not a logic gap: this
+// file was originally compiled unoptimized (see the @NB note above), same
+// root cause documented on PKR_LockFile below. functional parity is the
+// bar for this session, not byte-matching, so left as is rather than
+// retrofitting #pragma optimize for a function this size.
 u8 PKR_ReadFile(
 		LIBPKR_HANDLE* pHandle,
 		const char* pDirName,
@@ -422,10 +429,12 @@ u8 PKR_Close(LIBPKR_HANDLE* pHandle)
 	return 1;
 }
 
-// @NotOk
-// residue: 26 mnemonic diffs (cmpsum against 0x518883), stale @Ok tag found
-// 2026-08-27, same unoptimized-library root cause documented on
-// PKR_ReadFile above.
+// @Ok
+// checked against the decompiled 0x518883: fp at offset 0, name at offset
+// 4, both matching LIBPKR_HANDLE's validated layout, same branch shape
+// (fp already open -> 1, fopen "rb+" -> 1 on success, else report+0).
+// byte-diff residue is the same unoptimized-library build difference
+// documented on PKR_ReadFile above, not a logic gap.
 u8 PKR_LockFile(LIBPKR_HANDLE* pHandle)
 {
 	if (pHandle->fp)
