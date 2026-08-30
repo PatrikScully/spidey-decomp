@@ -953,7 +953,9 @@ u32 Utils_CrapDist(const CVector& a,const CVector& b){
     return ((dZ >> 1) + dX + (dY >>2)) >> 12;
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E61E0 (53 bytes): copies a,
+// overwrites the y with b's y, calls Utils_CrapDist. Matches exactly.
+// @Ok
 // @Test
 u32 Utils_CrapXZDist(const CVector& a,const CVector& b) {
     CVector tmp = a;
