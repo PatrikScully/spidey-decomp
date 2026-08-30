@@ -21,6 +21,7 @@
 #include "init.h"
 #include "ps2redbook.h"
 #include "m3dutils.h"
+#include "m3dinit.h"
 #include "db.h"
 #include "ps2funcs.h"
 #include "tweak.h"
@@ -1701,7 +1702,8 @@ static u32 * const gAltTextureSet = (u32*)0x00552830;
 // mouse-related flag used by the input helper below
 static u8 * const gMouseRelated = (u8*)0x005FAE9D;
 
-// inlines sub_440E40: splits pad/mouse triggers into per-button flags
+// static helper inlining sub_440E40: splits pad/mouse triggers into per-button flags
+// @Bogus
 static void Shell_ReadTriggers(i32 *pSelect, i32 *pBack, i32 *pAny, i32 *pMouse)
 {
 	i32 mask = 0x40000;
@@ -1719,6 +1721,7 @@ static void Shell_ReadTriggers(i32 *pSelect, i32 *pBack, i32 *pAny, i32 *pMouse)
 		*pBack = 0;
 }
 
+// @Ok
 i32 Shell_LoadGame(void)
 {
 	print_if_false(gShellInitialized != 0, "Called Shell_LoadGame() without shell initialised");
@@ -2393,21 +2396,24 @@ void Shell_RollCredits(void)
     printf("Shell_RollCredits(void)");
 }
 
-// @FIXME forward to original
+// forward to original, slider drawing helper (0x498060, 472B), not yet decompiled
+// @MEDIUMTODO
 EXPORT void DrawSlider(i32 a1, i32 a2, i32 a3, i32 a4)
 {
 	typedef void (*func_ptr)(i32, i32, i32, i32);
 	func_ptr func = (func_ptr)0x00498060;
 	func(a1, a2, a3, a4);
 }
-// @FIXME forward to original
+// forward to original, slider drag helper (0x497F80, 219B), not yet decompiled
+// @MEDIUMTODO
 EXPORT i32 SliderDrag(i32 a1, i32 a2, i32 a3)
 {
 	typedef i32 (*func_ptr)(i32, i32, i32);
 	func_ptr func = (func_ptr)0x00497F80;
 	return func(a1, a2, a3);
 }
-// @FIXME forward to original
+// forward to original, menu cleanup helper (0x515850, 290B), not yet decompiled
+// @MEDIUMTODO
 EXPORT void sub_515850(void)
 {
 	typedef void (*func_ptr)(void);
@@ -2645,10 +2651,532 @@ void Shell_SFXMusic(void)
 	}
 }
 
-// @MEDIUMTODO
-void Shell_SaveGame(const u32 *,u32 *)
+// @Ok
+// Memory card save machine. States: 0 intro, 1 card load, 4 format confirm,
+// 7 card error, 8 slot menu, 9 overwrite confirm, 10 writing, 11 write failed,
+// 12 save complete, 13 card full, 14 formatting, 15 format failed, 16 format
+// complete. States 13-16 draw no text (original defect, only the title bar).
+// The gShellMenuAbort check returns WITHOUT writing *pResult or cleaning up,
+// exactly like the original (jump straight to the plain epilogue).
+void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 {
-    printf("Shell_SaveGame(u32 const *,u32 *)");
+	// defined once in PCShell.cpp, called here through local externs (same
+	// pattern as Shell_ScreenAdjust/Shell_ShowRecord above).
+	extern void gsub_430880(void);
+	extern void gsub_430680(void);
+
+	i32 fromGame = *pFromGame;
+	gShellFromGame = fromGame;
+	i32 savedSkyColor = 0;
+	if (fromGame != 0)
+	{
+		PShell_Initialise();
+		M3d_FadeColour = 0xFFFFFF;
+		M3dInit_SetFoggingParams(0, 0x1770, 0x800);
+		savedSkyColor = Db_SkyColor;
+		Db_SkyColor = 0;
+		gBFoggingRelated = 1;
+		Db_UpdateSky();
+	}
+
+	// checksum of the save being written, 46 dwords after mChecksum
+	gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
+
+	PShell_NormalFont();
+
+	CMenu* pMenu = new CMenu(256, 0, 0, 256, 256, 16);
+	pMenu->AddEntry("no");
+	pMenu->AddEntry("yes");
+
+	i32 state = 0;
+	CMenu* pSlotMenu = 0;
+	i32 titleEase = 0;
+	i32 introCount = 0;
+	i32 writeCount = 0;
+	i32 retryCount = 0;
+	i32 writeFailed = 0;
+	i32 result = 0;
+	*(i32*)0x005512EC = 384;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		i32 vblanks = Vblanks;
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		Shell_DrawTitleBar(titleEase, 38, "save game", 1, 0, 150, -21, 29);
+		Mess_SetRGB(0x6B, 0x5D, 0xA7, 0);
+		Mess_SetRGBBottom(0x3E, 54, 96);
+		Mess_SetSort(0);
+		switch (state)
+		{
+		case 8:
+			if (pSlotMenu != 0 && pSlotMenu->FinishedZooming())
+			{
+				SSaveGame* pSlot = &gSaveGameSlots[pSlotMenu->mLine];
+				i32 slotValid = 0;
+				if (pSlot->mChecksum != 0 && pSlot->mChecksum == Shell_CalculateGameChecksum(pSlot))
+				{
+					slotValid = 1;
+					Mess_SetTextJustify(0);
+					Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+					Mess_SetRGBBottom(0x28, 35, 62);
+					Mess_SetTextJustify(1);
+					Mess_DrawText(216, 70, "Okay to overwrite", 0, 0x1000);
+					Mess_SetRGB(0x80, 0x80, 0x80, 0);
+					Mess_SetRGBBottom(0x45, 60, 107);
+					Shell_DisplayGameInfo(190, 85, pSlot);
+				}
+				Mess_SetTextJustify(0);
+				Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+				Mess_SetRGBBottom(0x28, 35, 62);
+				Mess_SetTextJustify(1);
+				if (slotValid != 0)
+					Mess_DrawText(216, 115, "previously saved game", 0, 0x1000);
+				else
+					Mess_DrawText(190, 70, "in this save slot ?", 0, 0x1000);
+				Mess_SetRGB(0x80, 0x80, 0x80, 0);
+				Mess_SetRGBBottom(0x45, 60, 107);
+				Shell_DisplayGameInfo(190, slotValid != 0 ? 130 : 85, &gSaveGame);
+			}
+			if (pSlotMenu != 0)
+				pSlotMenu->Display();
+			break;
+		case 9:
+			Mess_DrawText(256, 83, "Okay to overwrite", 0, 0x1000);
+			Mess_DrawText(256, 100, "previously saved game", 0, 0x1000);
+			Mess_DrawText(256, 117, "in this save slot ?", 0, 0x1000);
+			pMenu->mY = 148;
+			pMenu->Display();
+			break;
+		case 10:
+			Mess_DrawText(256, 98, "Now Saving data", 0, 0x1000);
+			break;
+		case 11:
+			Mess_DrawText(256, 110, "attempt to write to", 0, 0x1000);
+			Mess_DrawText(256, 127, "save file failed !", 0, 0x1000);
+			Mess_DrawText(256, 170, "press enter to continue.", 0, 0x1000);
+			break;
+		case 12:
+			Mess_DrawText(256, 110, "save completed", 0, 0x1000);
+			Mess_DrawText(256, 140, "press enter to continue.", 0, 0x1000);
+			break;
+		default:
+			break;
+		}
+		PCSHELL_DrawMouseCursor();
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+		titleEase = PShell_MoveTowards(titleEase, 128);
+		if ((++TTime & 1) != 0)
+			Card_CheckStatus(0, 0);
+		if ((pSlotMenu != 0 && pSlotMenu->mLine > 0x28) || pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*gShellMenuAbort != 0)
+			return;
+		i32 vSelect, vBack, vAny, vMouse;
+		Shell_ReadTriggers(&vSelect, &vBack, &vAny, &vMouse);
+		if (state == 9)
+		{
+			if (pMenu != 0 && pMenu->mLine >= 0x28)
+			{
+				vSelect = 0;
+				vMouse = 0;
+			}
+		}
+		else if (pSlotMenu != 0 && pSlotMenu->mLine >= 0x28)
+		{
+			vSelect = 0;
+			vMouse = 0;
+		}
+		if (writeFailed != 0)
+		{
+			vSelect = 0;
+			vBack = 0;
+			vAny = 0;
+			vMouse = 0;
+			writeFailed = 0;
+		}
+		i32 IsMouseOverText = 0;
+		i32 exiting = 0;
+		switch (state)
+		{
+		case 0:
+			if (introCount != 0)
+			{
+				if (--introCount == 0)
+					state = 1;
+			}
+			else
+			{
+				introCount = 10;
+			}
+			break;
+		case 1:
+			if (CardStatus == -2)
+			{
+				state = 4;
+				pMenu->Reset();
+			}
+			else if (CardStatus == -1)
+			{
+				state = 7;
+			}
+			else if (CardStatus == 1)
+			{
+				if (Card_Load() != 0)
+				{
+					Pause(1);
+					state = Card_GetFreeBlocks(0, 0) >= 1 ? 8 : 13;
+				}
+				else
+				{
+					state = 8;
+				}
+			}
+			break;
+		case 4:
+			pMenu->Update();
+			if (CardStatus == -1)
+			{
+				state = 7;
+			}
+			else if (CardStatus > 0 && CardStatus <= 2)
+			{
+				state = 0;
+			}
+			if (vSelect != 0)
+			{
+				if (pMenu->ChoiceIs("yes"))
+				{
+					SFX_Play(0x1F, 0x2000, 0);
+					state = 14;
+					writeCount = 4;
+					retryCount = 4;
+				}
+				else
+				{
+					exiting = 1;
+				}
+			}
+			break;
+		case 7:
+			if (pSlotMenu != 0)
+			{
+				delete pSlotMenu;
+				pSlotMenu = 0;
+			}
+			if (CardStatus == -2 || (CardStatus > 0 && CardStatus <= 2))
+			{
+				state = 0;
+			}
+			else if (G_SCONTROL[0].Circle.Triggered != 0)
+			{
+				G_SCONTROL[0].Circle.Triggered = 0;
+			}
+			break;
+		case 8:
+		{
+			if (CardStatus == -1)
+			{
+				state = 7;
+				break;
+			}
+			if (pSlotMenu == 0)
+			{
+				PShell_NormalFont();
+				pSlotMenu = new CMenu(90, 70, 0, 256, 256, 15);
+				Shell_AddGameSlots(pSlotMenu);
+				pSlotMenu->Zoom(0);
+			}
+			pSlotMenu->Update();
+			if (PCSHELL_CheckTriggers(256, 1, 1))
+			{
+				i32 mLine = pSlotMenu->mLine;
+				u8 mJust = pSlotMenu->mJustification;
+				const char* name = pSlotMenu->mEntry[mLine].name;
+				i32 x, y;
+				pSlotMenu->GetEntryXY(name, &x, &y);
+				IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJust);
+			}
+			if (vSelect == 0 && IsMouseOverText == 0)
+				break;
+			SFX_Play(0x1F, 0x2000, 0);
+			SSaveGame* pSlot = &gSaveGameSlots[pSlotMenu->mLine];
+			if (pSlot->mChecksum != 0 && pSlot->mChecksum == Shell_CalculateGameChecksum(pSlot))
+			{
+				state = 9;
+				pMenu->Reset();
+				Pad_ClearTriggers(G_SCONTROL);
+				break;
+			}
+			i32 v34 = Shell_InputName(gSaveGame.field_3F, 1, 0, 0);
+			if (v34 == -1)
+			{
+				state = 7;
+				if (pSlotMenu != 0)
+				{
+					delete pSlotMenu;
+					pSlotMenu = 0;
+				}
+			}
+			else if (v34 != 0)
+			{
+				if (v34 == 1)
+				{
+					SFX_Play(0x1F, 0x2000, 0);
+					gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
+					memcpy(pSlot, &gSaveGame, sizeof(SSaveGame));
+					for (i32 j = 0; j < NUM_CHALLS; j++)
+						Merge((SScore*)(gMergeBuffer + j * 25 + 3), &gGlobalRecords.mScores[j * 5], gChallenges[j].field_C);
+					state = 10;
+					gGlobalRecords = *(SRecords*)gMergeBuffer;
+					writeCount = 4;
+					retryCount = 4;
+				}
+				else
+				{
+					print_if_false(0, "Bad return value from Shell_InputName");
+				}
+			}
+			else
+			{
+				state = 8;
+			}
+			break;
+		}
+		case 9:
+		{
+			if (CardStatus == -1)
+			{
+				state = 7;
+				break;
+			}
+			pMenu->Update();
+			if (PCSHELL_CheckTriggers(256, 1, 1))
+			{
+				i32 mLine = pMenu->mLine;
+				u8 mJust = pMenu->mJustification;
+				const char* name = pMenu->mEntry[mLine].name;
+				i32 x, y;
+				pMenu->GetEntryXY(name, &x, &y);
+				IsMouseOverText = PCSHELL_IsMouseOverText(name, x, y, mJust);
+			}
+			if (vSelect != 0 || IsMouseOverText != 0)
+			{
+				if (pMenu->ChoiceIs("yes"))
+				{
+					SFX_Play(0x1F, 0x2000, 0);
+					if (pSlotMenu != 0)
+					{
+						// prefill the name prompt with the existing save's name
+						Utils_CopyString(gSaveGameSlots[pSlotMenu->mLine].field_3F, gSaveGame.field_3F, 9);
+						gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
+						i32 v48 = Shell_InputName(gSaveGame.field_3F, 1, 0, 0);
+						if (v48 == -1)
+						{
+							state = 7;
+							delete pSlotMenu;
+							pSlotMenu = 0;
+							Pad_ClearTriggers(G_SCONTROL);
+						}
+						else if (v48 != 0)
+						{
+							if (v48 == 1)
+							{
+								SFX_Play(0x1F, 0x2000, 0);
+								gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
+								memcpy(&gSaveGameSlots[pSlotMenu->mLine], &gSaveGame, sizeof(SSaveGame));
+								for (i32 k = 0; k < NUM_CHALLS; k++)
+									Merge((SScore*)(gMergeBuffer + k * 25 + 3), &gGlobalRecords.mScores[k * 5], gChallenges[k].field_C);
+								gGlobalRecords = *(SRecords*)gMergeBuffer;
+								state = 10;
+								writeCount = 4;
+								retryCount = 4;
+								Pad_ClearTriggers(G_SCONTROL);
+							}
+							else
+							{
+								print_if_false(0, "Bad return value from Shell_InputName");
+								Pad_ClearTriggers(G_SCONTROL);
+							}
+						}
+						else
+						{
+							SFX_Play(0x23, 0x2000, 0);
+							state = 8;
+							Pad_ClearTriggers(G_SCONTROL);
+						}
+					}
+				}
+				else
+				{
+					SFX_Play(0x23, 0x2000, 0);
+					state = 8;
+					Pad_ClearTriggers(G_SCONTROL);
+				}
+			}
+			// back button: fall back to the slot menu (runs even on the same
+			// frame as a menu selection, overwriting the state set above)
+			if (vBack != 0)
+			{
+				SFX_Play(0x23, 0x2000, 0);
+				state = 8;
+				vBack = 0;
+				Pad_ClearTriggers(G_SCONTROL);
+			}
+			break;
+		}
+		case 10:
+			if (CardStatus == -1)
+			{
+				state = 7;
+			}
+			else if (pSlotMenu != 0)
+			{
+				if (--writeCount < 0 && CardStatus != 0)
+				{
+					if (Card_Write() == 0)
+					{
+						delete pSlotMenu;
+						pSlotMenu = 0;
+						state = 12;
+						writeFailed = 1;
+					}
+					else if (--retryCount >= 0)
+					{
+						writeCount = 60 * (4 - retryCount);
+					}
+					else
+					{
+						state = 11;
+						i32 v56 = pSlotMenu->mLine;
+						writeFailed = 1;
+						gSaveGameSlots[v56].mChecksum = 0;
+					}
+				}
+			}
+			break;
+		case 11:
+			if (vAny == 0 && !PCSHELL_CheckTriggers(256, 1, 1))
+				break;
+			SFX_Play(0x1F, 0x2000, 0);
+			state = 8;
+			break;
+		case 12:
+			if (vAny == 0 && !PCSHELL_CheckTriggers(256, 1, 1))
+				break;
+			SFX_Play(0x1F, 0x2000, 0);
+			result = 1;
+			exiting = 1;
+			break;
+		case 13:
+			switch (CardStatus)
+			{
+			case -2:
+				state = 0;
+				break;
+			case -1:
+				state = 7;
+				break;
+			case 2:
+				state = 0;
+				break;
+			default:
+				break;
+			}
+			if (vAny != 0 || PCSHELL_CheckTriggers(256, 1, 1))
+				exiting = 1;
+			break;
+		case 14:
+			if (CardStatus == -1)
+			{
+				state = 7;
+			}
+			else if (--writeCount < 0 && CardStatus != 0)
+			{
+				if (Card_FormatCard(0, 0) == 1)
+				{
+					state = 16;
+					writeFailed = 1;
+				}
+				else if (--retryCount >= 0)
+				{
+					writeCount = 60 * (4 - retryCount);
+				}
+				else
+				{
+					state = 15;
+					writeFailed = 1;
+				}
+			}
+			break;
+		case 15:
+			if (CardStatus == -1)
+			{
+				state = 7;
+			}
+			else if (vAny != 0 || PCSHELL_CheckTriggers(256, 1, 1))
+			{
+				exiting = 1;
+			}
+			break;
+		case 16:
+			if (vAny == 0 && !PCSHELL_CheckTriggers(256, 1, 1))
+				break;
+			SFX_Play(0x1F, 0x2000, 0);
+			state = 0;
+			break;
+		default:
+			break;
+		}
+		if (exiting != 0)
+			SFX_Play(0x23, 0x2000, 0);
+		if (exiting == 0)
+		{
+			if (Vblanks == vblanks)
+				Pause(1);
+			DoVblankProcessing = 0;
+			Pause(1);
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			gsub_430680();
+			if (DoVblankProcessing == 0)
+			{
+				Utils_VblankProcessing();
+				DoVblankProcessing = 1;
+			}
+			PCSHELL_Relax();
+			continue;
+		}
+		if (pMenu != 0)
+			delete pMenu;
+		if (pSlotMenu != 0)
+			delete pSlotMenu;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		Pad_ClearTriggers(G_SCONTROL);
+		if (fromGame != 0)
+			PShell_Cleanup();
+		*pResult = result;
+		if (fromGame != 0)
+		{
+			gBFoggingRelated = 1;
+			Db_SkyColor = savedSkyColor;
+			Db_UpdateSky();
+		}
+		return;
+	}
 }
 
 // Shell_ScreenAdjust and Shell_ShowRecord call these as real out-of-line functions
