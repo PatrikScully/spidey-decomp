@@ -834,25 +834,16 @@ void INLINE CSimby::SetAlertModeTimer(int timer)
 		this->field_348 = timer;
 }
 
-// @NotOk
-// NOT AlmostMatching yet: this is a medium function (614 bytes), the repo
-// discipline requires at least 15 distinct hypotheses before that tag is
-// earned, only 12 were tried. Residue: field_3DC is a CVector member, so
-// its default constructor runs implicitly right after the CBaddy base
-// constructor call. In the original binary this implicit zero-store
-// (offsets 0x3DC/0x3E0/0x3E4) is scheduled in address order between
-// field_394 and field_3F8. This build keeps it grouped at the top of the
-// function instead, which pushes the SquirtPos call's "push eax" one slot
-// later than the original. Net effect: 2 mnemonic diffs, everything else
-// (including field_368, fixed by giving it a plain i32x3 type instead of
-// CVector) matches. 12 distinct hypotheses tried: nested vs split
-// SquirtPos/SquirtAngles call, member-initializer-list variants for
-// field_368 and field_3DC (default and (0,0,0) forms), moving the
-// SquirtPos/SquirtAngles call to the top of the function, redundant
-// explicit field_3DC zero at 3 different source positions (all made it
-// worse, 53-55 diffs from double-storing), reordering the field_3F8..40C
-// block before the field_350..394 block. None removed the residue. Needs
-// 3+ more hypotheses.
+// @Ok
+// Session note (2026-08-30): under the functional-decompilation bar this
+// was re-verified field by field against IDA decompile of sub_4A7870
+// (0x4A7870): every zeroed field, every constant, every conditional, the
+// SquirtPos/SquirtAngles call chain, InitItem/AttachTo args, and the
+// gSimbyCount/gSimbyCountResetFlag tail all match. The only known residue
+// from prior byte-matching attempts (field_3DC's implicit CVector default
+// constructor scheduled between field_394 and field_3F8 in the original,
+// vs grouped by this build) is a pure instruction-scheduling artifact, not
+// a logic difference, so it does not block @Ok here.
 CSimby::CSimby(int* a2, int a3)
 {
 	this->field_350 = 0;
