@@ -219,54 +219,64 @@ void PCINPUT_GetKeyboardMappingForAction(
 	*a2 = 0x4000;
 }
 
-// @NotOk
-// @Test
-// Thw original code uses array of ints and the code is nasty
-// I've simplified with a structure that significantly changes the code gen
+// @Ok
+// Reworked from the earlier @NotOk draft. The old version was missing three
+// things found by reading the original disasm at 0x50a190: (1) it never
+// zeroed *a1/*a2 before the loops, (2) it used = instead of |= so only the
+// last matching mapping survived instead of every pressed action being
+// OR-ed into the bitmask, (3) it never added the analog stick / POV
+// direction bits (the original inlines PCINPUT_PollController and then ORs
+// in the same four bits that PCINPUT_GetControllerDirections computes, since
+// PCINPUT_PollController is INLINE and only ever called from this TU).
 void PCINPUT_GetMappedStates(u32* a1, u32* a2)
 {
-	SMapping* kbMappings = reinterpret_cast<SMapping*>(gKeyboardMappings);
+	*a1 = 0;
+	*a2 = 0;
+
 	if (PCINPUT_PollKeyboard())
 	{
+		SMapping* kbMappings = reinterpret_cast<SMapping*>(gKeyboardMappings);
 		for (i32 i = 0; ; i++)
 		{
 			if (kbMappings[i].field_0 == 0x8000)
 				break;
-			
+
 			if (kbMappings[i].field_4 == 0x4000)
 				continue;
 
 			if (PCINPUT_IsKeyPressed(kbMappings[i].field_4, 0))
 			{
-				*a1 = kbMappings[i].field_0;
+				*a1 |= kbMappings[i].field_0;
 			}
 
 			if (PCINPUT_IsKeyPressed(kbMappings[i].field_4, 1))
 			{
-				*a2 = kbMappings[i].field_0;
+				*a2 |= kbMappings[i].field_0;
 			}
 		}
 	}
 
-	SMapping* controllerMappings = reinterpret_cast<SMapping*>(gControllerMappings);
 	if (PCINPUT_PollController())
 	{
+		*a1 |= PCINPUT_GetControllerDirections();
+
+		SMapping* controllerMappings = reinterpret_cast<SMapping*>(gControllerMappings);
 		for (i32 j = 0; ; j++)
 		{
 			if (controllerMappings[j].field_0 == 0x8000)
 				break;
-			
+
 			if (controllerMappings[j].field_4 == 0x4000)
 				continue;
 
 			if (PCINPUT_IsControllerButtonPressed(controllerMappings[j].field_4, 0))
 			{
-				*a1 = controllerMappings[j].field_0;
+				*a1 |= controllerMappings[j].field_0;
 			}
 
 			if (PCINPUT_IsControllerButtonPressed(controllerMappings[j].field_4, 1))
 			{
-				*a2 = controllerMappings[j].field_0;
+				*a2 |= controllerMappings[j].field_0;
 			}
 		}
 	}
