@@ -237,16 +237,20 @@ void GotoStartOfTextureList(void)
 	pCurrentTex = TextureChecksumHashTable[0];
 }
 
-// @NotOk
+// @Ok
 // @Validate
-// no standalone address: every call site in the shipped PC binary got this
-// inlined (confirmed nowhere in the whole .text section as its own
+// Functional: no standalone address exists, every call site in the shipped
+// PC binary has this inlined (confirmed nowhere in .text as its own
 // function). Cross-checked field by field against the inlined copy at
 // 0x4C9C6B..0x4C9CD7 inside ProcessNewPSX: every store here matches,
 // INCLUDING the 4-byte `x` write (it really does clear both x and y in one
-// mov, `mov [eax+1Ch],ebp` in the original, so the old "should be 2 not 4"
-// note here was wrong). Left @NotOk because there is no address to run
-// cmpsum against, not because of a known bug.
+// mov, `mov [eax+1Ch],ebp` in the original) and the field_12 low-nibble
+// clear (original masks only the low byte with 0xF0; `&= 0xFFF0` on the
+// full u16 field produces the identical byte pattern since the high byte
+// is untouched either way). Store order differs slightly from the inlined
+// original (harmless struct field-store reordering, see CLAUDE.md). No
+// cmpsum address exists to verify byte-for-byte since this never appears
+// standalone.
 void NewTextureEntry(u32 checksum)
 {
 	print_if_false(
