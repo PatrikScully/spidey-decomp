@@ -2672,9 +2672,11 @@ INLINE void CRhino::ShakePad(void)
 	}
 }
 
-// @NotOk
-// validate when get shocked
-i32 CRhino::GetShockDamage(void)
+// @Ok
+// Confirmed inlined into GetShocked's case 1 (0x47E420): the exact same
+// switch on DifficultyLevel (dword_54D474) with 175/125/75/0-default values
+// appears there directly, no separate call, same as ShakePad/PlaySingleAnim.
+INLINE i32 CRhino::GetShockDamage(void)
 {
 	switch ( DifficultyLevel )
 	{
