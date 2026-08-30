@@ -1077,18 +1077,18 @@ CBody* Utils_CheckObjectCollision(
 	return result;
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E6840 (250 bytes): zeroes
+// MinCoords/MaxCoords/Position/Normal, sets StartCoords from pos/above and
+// EndCoords from pos/below, RecordTriggerZoneHits = 0, M3dZone_LineToItem
+// called with the literal 1 (matches the original, which does not
+// parameterize that argument here unlike Utils_LineOfSight). Dropped the
+// redundant StartCoords/EndCoords zero-then-overwrite (dead stores, the
+// original never had them either since it writes those fields directly).
+// @Ok
 // @Test
 int Utils_GetGroundHeight(CVector* pos, i32 above, i32 below, CBody** ppBody)
 {
 	SLineInfo v7; // [esp+Ch] [ebp-A4h] BYREF
-
-	v7.StartCoords.vx = 0;
-	v7.StartCoords.vy = 0;
-	v7.StartCoords.vz = 0;
-	v7.EndCoords.vx = 0;
-	v7.EndCoords.vy = 0;
-	v7.EndCoords.vz = 0;
 
 	v7.MinCoords.vx = 0;
 	v7.MinCoords.vy = 0;
