@@ -780,8 +780,11 @@ i32 CSimby::PlayAndAttachXAPlease(
 	return 0;
 }
 
-// @NotOk
-// understand ptr
+// @Ok
+// No standalone address in the original: inlined into CSimby::Trapped
+// (sub_4A87B0, not yet in this repo, the caller's dumbAssPad > 0 check
+// lives there, not here). Verified this function's own body against the
+// inlined check (Mem_RecoverPointer at field_104, v2[1048], threshold 40).
 i32 INLINE CSimby::FireTrappedToDeath(void)
 {
 	u8 *v2 = reinterpret_cast<u8*>(Mem_RecoverPointer(&this->field_104));
