@@ -521,12 +521,18 @@ void CRhino::AttackPlayer(void)
 	}
 }
 
-// @MEDIUMTODO
-// Best-effort translation of a large (0x480-byte) 13-state switch. Case 5
-// (the horn-impale sphere cast against MechList, gNumDomes-gated) is the
-// least certain part: the exact SHitInfo-like fields and the mAngVel.vy /
-// mAngAcc.vy resets are inferred from struct offsets, not confirmed by a
-// build match.
+// @Ok
+// Verified case-by-case against the disasm (0x47F800). Fixed two real bugs
+// found by comparing against the ground truth: (1) case 2's early-wait
+// check had the condition inverted (must return/wait while field_288 bit 2
+// is clear AND field_330 is still positive, not the reverse); (2) case 5's
+// gNumDomes branch was swapped (gNumDomes != 0 is the small-radius "already
+// impaled" case that sets bothFlags=9, gNumDomes == 0 is the full
+// SHitInfo/Hit-call case, not the other way around), and its final
+// mAnimFinished-or-close-enough branch was missing the actual state
+// transition entirely (was just an early "break", but the original sets
+// field_330=10, dumbAssPad=0xA and conditionally calls PlayXAPlease(0,3,1)
+// there instead of doing nothing).
 void CRhino::ChargePlayer(void)
 {
 	switch (this->dumbAssPad)
@@ -585,9 +591,9 @@ void CRhino::ChargePlayer(void)
 			{
 				this->field_288 &= ~2;
 			}
-			else if (this->field_330 <= 0)
+			else if (this->field_330 > 0)
 			{
-				break;
+				return;
 			}
 
 			this->field_330 = 0;
@@ -630,47 +636,43 @@ void CRhino::ChargePlayer(void)
 
 			{
 				i32 dist = Utils_CrapXZDist(this->mPos, MechList->mPos);
-				bool handled = false;
 
 				if (dist < Utils_GetValueFromDifficultyLevel(0x258, 0x190, 0x154, 0x12C))
 				{
-					CVector unused(0, 0, 0);
-
 					this->MarkAIProcList(0, 0x100, 0);
 					this->mAngVel.vy = 0;
 					this->mAngAcc.vy = 0;
-
-					if (!gNumDomes)
-					{
-						if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x2AF8))
-						{
-							this->field_31C.bothFlags = 9;
-							this->dumbAssPad = 0;
-							handled = true;
-						}
-					}
-					else if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x1800))
-					{
-						SHitInfo hit;
-						hit.field_C = MechList->mPos - this->mPos;
-						hit.field_0 = 0xE;
-						hit.field_4 = 0xC;
-						hit.field_8 = 0x1E;
-
-						MechList->Hit(&hit);
-
-						this->PlaySingleAnim(0xC, 0, -1);
-						this->field_218 |= 1;
-						this->MarkAIProcList(0, 0x100, 0);
-						this->dumbAssPad = 0xA;
-						this->field_330 = 5;
-						this->field_344 = gAttackRelated;
-						handled = true;
-					}
 				}
 
-				if (handled)
-					break;
+				CVector unused(0, 0, 0);
+
+				if (gNumDomes)
+				{
+					if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x2AF8))
+					{
+						this->field_31C.bothFlags = 9;
+						this->dumbAssPad = 0;
+						return;
+					}
+				}
+				else if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x1800))
+				{
+					SHitInfo hit;
+					hit.field_C = MechList->mPos - this->mPos;
+					hit.field_0 = 0xE;
+					hit.field_4 = 0xC;
+					hit.field_8 = 0x1E;
+
+					MechList->Hit(&hit);
+
+					this->PlaySingleAnim(0xC, 0, -1);
+					this->field_218 |= 1;
+					this->MarkAIProcList(0, 0x100, 0);
+					this->dumbAssPad = 0xA;
+					this->field_330 = 5;
+					this->field_344 = gAttackRelated;
+					return;
+				}
 
 				if (this->field_288 & 8)
 				{
@@ -678,21 +680,30 @@ void CRhino::ChargePlayer(void)
 					this->field_218 |= 2;
 				}
 
-				if (!this->mAnimFinished)
-					break;
+				if (this->mAnimFinished || ((this->field_218 & 2) && this->field_334 < dist))
+				{
+					this->field_330 = 10;
 
-				if ((this->field_218 & 2) && this->field_334 < dist)
-					break;
+					if (this->field_334 < 300)
+					{
+						this->PlayXAPlease(0, 3, 1);
+					}
 
-				this->field_330 += this->field_80;
-				this->field_334 = dist;
+					this->dumbAssPad = 0xA;
+					this->field_218 &= ~1;
+				}
+				else
+				{
+					this->field_330 += this->field_80;
+					this->field_334 = dist;
 
-				if (this->field_330 < 0x12C)
-					break;
-
-				this->PlaySingleAnim(8, 0, -1);
-				new CAIProc_AccZ(this, 0x50, 0, 8);
-				this->dumbAssPad = 7;
+					if (this->field_330 >= 0x12C)
+					{
+						this->PlaySingleAnim(8, 0, -1);
+						new CAIProc_AccZ(this, 0x50, 0, 8);
+						this->dumbAssPad = 7;
+					}
+				}
 			}
 			break;
 		case 7:
