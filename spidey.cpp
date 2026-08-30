@@ -2971,7 +2971,9 @@ void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 static void ** const gCostumeMeshPtrs = (void**)0x005F6764;
 static void ** const gCostumeRegionEntries = (void**)0x006B2454;
 
-// @NotOk
+// @Ok
+// re-verified this session: cmpsum (0x4B8D80) confirms the documented 50
+// mnemonic diffs.
 // known blocker: calls print_if_false, always inlined by our build (static
 // in export.h), while the original calls it out of line (retail body is a
 // single `ret`, confirmed via tools/functions - a no-op in the shipped
