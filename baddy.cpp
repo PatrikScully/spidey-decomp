@@ -375,8 +375,11 @@ u16 CBaddy::CheckStateFlags(SStateFlags *sFlags, int a3){
 	return 0;	
 }
 
-// @NotOk
-// Revisit??
+// @Ok
+// Fixed bug: the non-snap branch returned the pre-adjustment delta (v4).
+// The original computes v4 -= v5 before the sign check and returns that
+// (the remaining delta after this frame's turn), confirmed against the
+// original disasm at 0x4030c0.
 int CBaddy::YawTowards(int a2, int a3){
 
 	int vy; // edi
@@ -401,6 +404,7 @@ int CBaddy::YawTowards(int a2, int a3){
 
 	v5 = (a3 * v4) >> 8;
 	this->mAngles.vy += v5;
+	v4 -= v5;
 	if ( v5 && ((int)this->mAngles.vy - a2 > 0) != (vy - a2> 0))
 	{
 		return v4;
