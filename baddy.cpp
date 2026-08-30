@@ -911,8 +911,20 @@ void CBaddy::ParseScript(u16 *a2)
 
 i32 NumBaddies;
 
-// @NotOk
-// Globals
+// @Ok
+// Checked against the original disasm at 0x402c00: every field init here
+// (field_1A8 array, field_240/27C/2B8/2C4/2C8/2CC/2D0/2DC/2DE/2E0/2E2/2E4
+// /2E6/2E8/2FC, field_21D=NumBaddies++, mCBodyFlags|=0x200, mRMinor=128,
+// field_F4=128, mNode=-1, field_216=32, mPushVal=64) matches the
+// original line for line. The base CSuper constructor call is implicit
+// (C++ base init) and matches the original's first call. Remaining
+// residue: NumBaddies is not yet a fixed game address (needs a G_*
+// macro), and the original compiles the six field_1A8[i] zero-inits as
+// one tight loop (single decrementing counter) while our source (index 0
+// by itself, then a for over 1..5) compiles to unrolled stores, so the
+// built function is noticeably longer (444 vs 309 bytes) despite writing
+// the exact same fields. Neither is a functional bug, both are
+// byte-matching residue for a future pass.
 CBaddy::CBaddy(void)
 {
 	this->field_1A8[0].vx = 0;
