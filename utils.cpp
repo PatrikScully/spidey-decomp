@@ -904,7 +904,11 @@ void Utils_TurnTowards(
 	}
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E6220 (170 bytes): abs-by-branch
+// on each axis delta then the 6-way ordering of dX/dY/dZ, weighted sum
+// (half/quarter of the two smaller axes plus the largest), shift by 12.
+// Every branch and weight matches the original one to one.
+// @Ok
 // @Test
 u32 Utils_CrapDist(const CVector& a,const CVector& b){
 
