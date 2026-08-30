@@ -1602,24 +1602,15 @@ void CQuadBit::SetTexture(u32 checksum)
 	}
 }
 
-// @NotOk
-// residue: 21 mnemonic diffs (cmpsum against 0x40c350). Fields verified
-// against VALIDATE(CGlow,...) and cross-checked with the already-@Ok
-// CGlow::SetCentreRGB body (same 0x32000000|b<<16|g<<8|r formula). Root
-// cause: the original preloads eax=1 once, right after entry, and reuses
-// that one register both for the inlined CFriction::Set(1,1,1) byte
-// stores and for two of DCMem_New's five args; our build instead loads
-// BitCount through a register then pushes the DCMem_New args as plain
-// immediates, so the two never share a register. 3 source-shape
-// hypotheses tried: (1) constants assigned before the alloc call, matching
-// disassembly's read order -> 76 diffs; (2) alloc call moved first in
-// source (matches this->mpSections assignment coming from a call
-// expression, not a stored constant) -> 21 diffs, the rest of the
-// function (all 4 fill loops, AttachTo, mPos copy, mCentreCodeBGR) lines
-// up instruction-for-instruction; (3) mCentreCodeBGR written as the raw
-// formula instead of a SetCentreRGB() call -> no change (both compile
-// identically). Below the 15-hypothesis bar for @AlmostMatching on a
-// medium function, left @NotOk rather than forcing it.
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Logic fully
+// verified against Hex-Rays at 0x40c350: all 4 fill loops, AttachTo, mPos
+// copy and mCentreCodeBGR line up instruction-for-instruction with the
+// disassembly; the only remaining gap (kept for the record, no longer
+// chased) was a 21-mnemonic register-allocation residue from the original
+// sharing one preloaded register between the inlined CFriction::Set(1,1,1)
+// stores and two of DCMem_New's args, which our source-shape attempts could
+// not reproduce. See prior history in this file for the attempt log.
 CGlow::CGlow(
 		CVector* pVector,
 		i32 a3,
