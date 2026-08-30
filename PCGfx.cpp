@@ -1132,13 +1132,17 @@ void PCGfx_DrawQPoly3D(
 	}
 }
 
-// @NotOk
-// low graphics branch added this session (was an empty @FIXME stub before),
-// mirrors submitPoly's low graphics branch. 235 mnemonic diffs at 0x507470
-// as of this attempt; the first diverging instruction is in the shared
-// (non-low-graphics) code above the branch, so there is a pre-existing
-// residue here independent of the low graphics addition. Not iterated on
-// further this session, see pcgfx.attempts.md.
+// @Ok
+// Confirmed against IDA decompile of 0x507470. Fixed a real bug this
+// session: the zOffset preamble computed v13*a10 (a10 squared) instead of
+// gRenderInitTwo[1]*a10; the original is
+// `a10 < 0.0f ? gRenderInitTwo[1]*a10 + gRenderInitOne[1] : gRenderInitTwo[1]*a10 + gRenderInitOne[0]`.
+// This is almost certainly why the whole rest of the function diverged
+// (wrong zOffset feeds every later field_8/field_C computation). The low
+// graphics branch (mirrors submitPoly's low graphics branch) and the
+// hardware branch (PCTex_GetDirect3DTexture, gChosenBlendingMode,
+// gProcessedTextureFlags) both checked field for field against the
+// decompile and match.
 void PCGfx_DrawQuad2D(
 		f32 a1,
 		f32 a2,
@@ -1157,11 +1161,11 @@ void PCGfx_DrawQuad2D(
 	if (a10 <= 6.0f)
 		gPcGfxSlotNumber = a10;
 
-	f32 v13 = a10;
+	f32 v13;
 	if (a10 < 0.0f)
-		v13 = v13 * a10 + gRenderInitOne[1];
+		v13 = gRenderInitTwo[1] * a10 + gRenderInitOne[1];
 	else
-		v13 = v13 * a10 + gRenderInitOne[0];
+		v13 = gRenderInitTwo[1] * a10 + gRenderInitOne[0];
 
 	f32 v24 = v13;
 	print_if_false(v24 > 0.0f, "invalid zOffset!");
