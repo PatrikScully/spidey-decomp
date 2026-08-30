@@ -783,9 +783,13 @@ void CCarnage::SelectAttack(void)
 	}
 }
 
-// @NotOk
-// @Note: size is off by 1 (0x36B vs 0x36C) but had a couple bugs that i found, should validate
-// @Test
+// @Ok
+// Verified against IDA decompile of 0x41BD50 (?Hit@CCarnage@@UAEHPAUSHitInfo@@@Z, 876 bytes):
+// found and fixed a real bug, the angle-wrap subtraction was "v13 -= 4906" (typo), original
+// subtracts 4096 same as the other wrap branch. Everything else (early-return anim/frame gates,
+// health subtraction, field_0 flag nesting for the stagger-direction/pushback/slide math) matches
+// field for field. field_218 clearing is two ANDs here (&~7 then &~0x78) vs one AND &~0x7F in the
+// original, same net bitmask, not chasing it under the functional bar.
 i32 CCarnage::Hit(SHitInfo* pInfo)
 {
 	if (this->mHealth <= 0)
@@ -858,7 +862,7 @@ i32 CCarnage::Hit(SHitInfo* pInfo)
 			}
 			else if (v13 > 2048)
 			{
-				v13 -= 4906;
+				v13 -= 4096;
 			}
 
 			if (v13 < -256)
