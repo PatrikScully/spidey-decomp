@@ -1010,8 +1010,8 @@ const f32 FOUR_NINETY_SIX = 4096.0;
 const f32 TWO_FOURTY_EIGHT = 2048.0;
 const f32 PI = 3.1415927;
 
-// @NotOk
-// @Validate
+// Verified against the IDA decompile of 0x4E6700: acos(val / 4096.0) * 2048 / PI.
+// @Ok
 int Utils_ArcCos(int val){
 	f32 inp = val;
 	f32 res = acos(inp / FOUR_NINETY_SIX);
