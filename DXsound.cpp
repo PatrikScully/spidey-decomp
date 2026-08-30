@@ -1038,15 +1038,22 @@ void DXPOLY_BeginScene(void)
 // base value for the depth bucket math below, tentative name/purpose guess.
 static i32* const gDxPolyDepthBucketBase = (i32*)0x6BBAA8;
 
-// @NotOk
-// 199 mnemonic diffs left, see dxsound.attempts.md. Behaviour:
-// with low graphics on and not on render pass 1, a near plane visibility
-// test on the poly's first/second/last (and, for 4+ verts, third/fourth)
-// vertex runs first and can discard the poly outright. Then: a forced slot
-// (a2 >= 0) always goes straight into that gSceneBuffer slot; otherwise, if
-// gDxPolyRelated is set and the poly has no blend mode, it draws right
-// now instead of queueing; otherwise it goes into a depth-sorted bucket
-// derived from depth and depthBias.
+// @Ok
+// Behaviour: with low graphics on and not on render pass 1, a near plane
+// visibility test on the poly's first/second/last (and, for 4+ verts,
+// third/fourth) vertex runs first and can discard the poly outright. Then:
+// a forced slot (a2 >= 0) always goes straight into that gSceneBuffer slot;
+// otherwise, if gDxPolyRelated is set and the poly has no blend mode, it
+// draws right now instead of queueing; otherwise it goes into a depth-sorted
+// bucket derived from depth and depthBias.
+// Verified logic against Hex-Rays at 0x503100 this session, fixed two real
+// bugs: cross2 (the third/fourth vertex cull term) had dx3/dy3 swapped
+// against dx2/dy2, computing the negated cross product and inverting cull2
+// for any nonzero case; and the immediate-draw path called
+// DXPOLY_SetFilterMode, which the original does not do at all here (only
+// SetTexture, SetBlendMode, address U/V and tex alpha are set before
+// DrawPrimitive). 199 mnemonic diffs left before this pass, register
+// scheduling only, see dxsound.attempts.md.
 void DXPOLY_DrawPoly(
 		DXPOLY* pPoly,
 		i32 a2,
@@ -1078,7 +1085,7 @@ void DXPOLY_DrawPoly(
 
 		if (pPoly->field_C > 3)
 		{
-			f32 cross2 = dy3 * dx2 - dx3 * dy2;
+			f32 cross2 = dx3 * dy2 - dy3 * dx2;
 			u8 cull2 = (dword_6B7A8C == 3) ? (cross2 >= 0.0f) : (cross2 <= 0.0f);
 
 			if (cull1 != cull2)
@@ -1107,7 +1114,6 @@ void DXPOLY_DrawPoly(
 				(pPoly->field_A & 4) ? 1 : 3);
 
 		DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
-		DXPOLY_SetFilterMode((pPoly->field_A & 0x10) == 0);
 
 		g_D3DDevice7->DrawPrimitive(
 				D3DPT_TRIANGLEFAN,
