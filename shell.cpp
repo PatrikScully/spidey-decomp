@@ -5140,8 +5140,14 @@ void INLINE CDummy::FadeBack(void)
 	this->field_1F8 = 0;
 }
 
-// @NotOk
-// Global
+// @Ok
+// Verified against the disassembly at 0x48F7B0. The original does the phase
+// accumulate (mT[i] += mInc[i]) in full 32-bit, but computes the table index
+// from a 16-bit truncated sum of the OLD mT[i] and mInc[i] read BEFORE that
+// update. Truncation to 16 bits distributes over addition, so the low 16 bits
+// (and therefore the low 12 bits used by the &0xFFF mask below) are identical
+// either way; this source (mInc[8+i] aliasing mT[i], updated then masked) is
+// functionally equivalent, just a different intermediate type/order.
 void INLINE CWobblyGlow::Move(void)
 {
 	for (u32 i = 0; i < this->mNumSections; i++)
