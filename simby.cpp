@@ -929,8 +929,12 @@ CSimby::CSimby(int* a2, int a3)
 		*gSimbyCountResetFlag = 0;
 }
 
-// @NotOk
-// Globals
+// @Ok
+// verified against IDA decompile of sub_4A7740 (0x4A7740): this default
+// constructor only zeroes fields, sets InitItem("symbi_02") unconditionally
+// (no level-id branch, unlike the other constructor), sets mType, and does
+// the gSimbyCount/MakeVertexWibbler dance. No AttachTo call in the
+// original either, matches.
 CSimby::CSimby(void)
 {
 	this->field_350 = 0;
@@ -967,11 +971,10 @@ CSimby::CSimby(void)
 	this->InitItem("symbi_02");
 	this->mType = 324;
 
-	int * dword_682C5C = reinterpret_cast<int*>(0x682C5C);
-	if (!*dword_682C5C)
+	if (!*gSimbyCount)
 		MakeVertexWibbler();
 
-	*dword_682C5C = *dword_682C5C + 1;
+	(*gSimbyCount)++;
 }
 
 // @Ok
