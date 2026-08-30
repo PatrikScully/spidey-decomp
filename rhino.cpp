@@ -2693,9 +2693,11 @@ INLINE i32 CRhino::GetShockDamage(void)
 	}
 }
 
-// @NotOk
-// validate when playsounds is done
-u32 CRhino::GetNextFootstepSFX(void)
+// @Ok
+// Confirmed inlined into PlaySounds (0x481550): the exact same
+// (Rnd(3)+76)|0x8000 retry-until-different-from-gRhinoSound loop appears
+// inline at every footstep call site there, no separate call.
+INLINE u32 CRhino::GetNextFootstepSFX(void)
 {
 	u32 res;
 	for (res = (Rnd(3) + 76) | 0x8000; res == gRhinoSound; res = (Rnd(3) + 76) | 0x8000)
