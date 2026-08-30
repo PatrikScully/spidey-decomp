@@ -1099,8 +1099,11 @@ void INLINE CSimby::SetUpUnitFromDirection(CVector* a2, i32 a3)
 }
 
 
-// @NotOk
-// missing texture related
+// @Ok
+// verified against IDA decompile of sub_4A28C0 (0x4A28C0): field_68.vx was
+// wrongly copied from mPos.vz, fixed to mPos.vx. SetTexture call was missing,
+// added back (reads a Texture* from a table at 0x56EA9C, offset 44, same
+// pattern as CSimbyDroplet's texture lookup at 0x56EAC4).
 CEmber::CEmber(const CVector* a2, i32 a3)
 {
 	this->field_68.vx = 0;
@@ -1109,14 +1112,14 @@ CEmber::CEmber(const CVector* a2, i32 a3)
 
 	this->mPos = *a2;
 
-	this->field_68.vx = this->mPos.vz;
+	this->field_68.vx = this->mPos.vx;
 	this->field_68.vz = this->mPos.vz;
 
 	this->field_78.vx = Rnd(10) + 10;
 	this->field_78.vy = Rnd(4096);
 	this->field_78.vz = Rnd(4096);
 
-	//this->SetTexture(*(Texture **)(gTextureRelated + 44));
+	this->SetTexture(*(Texture **)(*reinterpret_cast<i32*>(0x56EA9C) + 44));
 
 	this->mScale = Rnd(200) + 350;
 	this->field_84 = 255;
