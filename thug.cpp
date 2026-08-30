@@ -196,6 +196,39 @@ void CThug::LookForPlayer(void)
 }
 
 // @BIGTODO
+// Left as a stub this session: 0x4d9a40, ~0x4dc bytes (biggest of thug.cpp's
+// open functions), heavy goto/shared-label AI state machine. Notes for
+// whoever picks it up (from an IDA decompile of 0x4d9a40):
+// - Early out: return false if this->mHealth<=0 or MechList->mHealth<=0 or
+//   MechList->field_57C != 0.
+// - Sets a new CThug field at offset 0x36C (poll interval: 3 if
+//   DistanceToPlayer(2)<=1000, 15 if <=2000, else 31) and one at 0x348
+//   (a "just got close" timer, set to 60 once when field_330==0 and
+//   DistanceToPlayer(2)<300 and field_348==0 and
+//   abs(MechList->mPos.vy - mPos.vy) < 819200).
+// - Then reads *(this+420) (offset 0x1A4). That offset falls inside
+//   CBaddy's own layout, in the `PADDING(4)` right before `field_1A8[6]`
+//   (baddy.h). It is read here as a live flag ("if (field_1A4 != 0) return
+//   false"), so it is not real padding; giving it a real name means editing
+//   baddy.h (shared by every CBaddy subclass) and re-auditing anyone else
+//   who touches that offset, which is why this was not done in this pass.
+// - After that: Utils_LineOfSight(&mPos, &MechList->mPos, 0, 0) gates a
+//   block that toggles field_2A8 bit 0x800 and either paths to
+//   field_1A8[0] or, if field_330 != 0 and field_31C.bothFlags isn't
+//   already 23/24, sets field_31C.bothFlags=23. This whole block always
+//   returns (true or false), so it only runs when the line of sight check
+//   fails.
+// - The rest (line of sight succeeded) is a long chain of PathCheck/
+//   AddPointToPath attempts against MechList, guarded by field_330 and a
+//   cached distance (this->DistanceToPlayer(2)), that ends in either
+//   field_31C.bothFlags = 3/4/9/11/23 with dumbAssPad = 0, or leaves state
+//   unchanged. It also touches gGlobalThug-style globals already named in
+//   this file (dword_682C50/dword_682C54/byte_682C18 in the decompile,
+//   likely gGlobalThug/a second "who's talking" slot and its related
+//   flags byte, need cross-checking against ClearAttackFlags/SetAttacker
+//   before naming). Final block: if field_31C.bothFlags changed from the
+//   value at function entry, set mCBodyFlags |= 0x10 and call
+//   RunAppropriateAnim (sub_403230, already used elsewhere in this file).
 i32 CThug::DetermineFightState(void)
 {
 	printf("i32 CThug::DetermineFightState(void)");
