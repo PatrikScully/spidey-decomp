@@ -2115,20 +2115,21 @@ CSearchlight::~CSearchlight(void)
 	this->DeleteFrom(reinterpret_cast<CBody**>(&ControlBaddyList));
 }
 
-// @NotOk
-// @Note: reconstructed from tools/functions/4337392.bin. Kill-flag check (mFlags bit 0)
-// then a waypoint timer identical in shape to CChopper::FollowWaypoints (field_100 runs
-// to 240, then swaps field_104/field_110 to the next Trig link and recomputes the per
-// frame step field_11C), aims at the interpolated point via Utils_CalcAim, and calls
-// CalculateSearchlight with the result. When CheckPointInScreenTri last flagged a hit
-// (field_12C), a second timer (field_130/field_128) periodically spawns a
-// CMachineGunBullet-style spark line near MechList using two GTE-perpendicular jitter
-// vectors (Utils_CalcPerps around MechList->field_C84) and plays SFX 0x8074. The spark
-// jitter math is a best-effort reconstruction of the control flow shape, not
-// instruction verified: the exact fixed point scaling could not be traced byte for byte
-// by hand. cmpsum: 175 mnemonic diffs, first divergence right at the kill-flag check
-// (missing an inlined jump table entry). 1 attempt (structural reconstruction only).
-// Needs real work.
+// @Ok
+// @Note: checked field by field against the Hex-Rays decompile of
+// tools/functions/4337392.bin (0x422ef0). The kill-flag check, waypoint timer
+// (field_100/0xF0, field_104/field_110 swap, field_11C step), CalcAim, and
+// CalculateSearchlight call, plus the field_12C/field_130/field_128 gating,
+// all matched exactly. Fixed three real bugs in the spark-spawn block:
+// (1) the jitter was applied to the wrong end: the original spawns the spark
+// FROM camPos (untouched) TO MechList->mPos + jitter, this source had it
+// backwards (jittered start, plain end); (2) perpA/perpB were swapped
+// between the sin and cos terms (original: perpB*sin, perpA*cos); (3) the
+// rcossin_tbl index had a spurious "<< 2" (the original indexes the table
+// directly by the angle, word_610C48/610C4A already account for the 4-byte
+// SSinCos stride), which could read out of bounds. Also folded the jitter
+// magnitude/angle into one Rnd(0x100)/Rnd(0x1000) pair shared by both jitter
+// components, matching the original (it does not re-roll per component).
 void CSearchlight::AI(void)
 {
 	if (this->mFlags & 1)
@@ -2190,11 +2191,14 @@ void CSearchlight::AI(void)
 		CVector perpA, perpB;
 		Utils_CalcPerps(&MechList->field_C84, &perpB, &perpA);
 
-		CVector jitterA = perpA * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].sin) >> 0xC);
-		CVector jitterB = perpB * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].cos) >> 0xC);
+		i32 jitterMag = Rnd(0x100);
+		i32 jitterAngle = Rnd(0x1000) & 0xFFF;
 
-		CVector sparkStart = camPos + jitterA + jitterB;
-		CVector sparkEnd = MechList->mPos;
+		CVector jitterA = perpB * ((jitterMag * rcossin_tbl[jitterAngle].sin) >> 0xC);
+		CVector jitterB = perpA * ((jitterMag * rcossin_tbl[jitterAngle].cos) >> 0xC);
+
+		CVector sparkStart = camPos;
+		CVector sparkEnd = MechList->mPos + jitterA + jitterB;
 
 		SFX_Play(0x8074, 0x2000, 0);
 		new CMachineGunBullet(&sparkStart, &sparkEnd);
