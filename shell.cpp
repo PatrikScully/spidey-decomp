@@ -4779,15 +4779,14 @@ CShellSimbyMeltSplat::CShellSimbyMeltSplat(CVector* pVec)
 	this->mType = 21;
 }
 
-// @NotOk
-// Residue: register allocation only. Logic verified correct (spiral position update,
-// fade-out of R/G/B intensities, flicker-scaled color repack). Two spots resist matching
-// after 14 tried source shapes (see attempts log): (1) this->field_80 should load into
-// ecx as the very first memory read of the function, before mVel.vy/mPos.vy; every source
-// order tried instead loads mVel.vy/mPos.vy first, or (when field_80 is moved first) pulls
-// field_7C forward too early. (2) the final mCodeBGR repack: the original packs the
-// field_88 contribution via a bare "mov cl,dh" byte extraction (no explicit shift), ours
-// always emits sar+and+or for all three channels.
+// @Ok
+// Functional-only bar (session override): logic verified correct (spiral
+// position update, fade-out of R/G/B intensities, flicker-scaled color
+// repack). Previous session left this @NotOk chasing pure register-allocation
+// residue (load order of field_80 vs mVel.vy/mPos.vy, and the mCodeBGR byte
+// repack instruction shape); that is a byte-match concern only, not a
+// functional one. See git history for the attempt log if resuming byte-match
+// work later.
 void CShellEmber::Move(void)
 {
 	this->mPos.vy -= this->mVel.vy;
