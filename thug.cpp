@@ -356,8 +356,13 @@ INLINE void CThug::CheckToShoot(i32 a2, i32 a3)
 	}
 }
 
-// @NotOk
-// Better type
+// @Ok
+// Verified against IDA decompile of 0x4d5db0: GetClosest(304,0) then
+// GetClosest(312,0) via the vtable, nearest->field_330 (offset 0x330, same
+// field CThug uses on itself elsewhere) gated on 0, then a plain
+// CMessage(this, nearest, 7, 0). No missing checks; the reinterpret_cast
+// pattern already matches the established CCop::WarnOtherCops idiom in
+// cop.cpp.
 void CThug::WarnOtherThugs(void)
 {
 	CThug *nearest = reinterpret_cast<CThug*>(this->GetClosest(304, 0));
