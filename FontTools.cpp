@@ -973,15 +973,14 @@ INLINE i32 Font::heightAboveBaseline(char* pStr)
 	return (max_h * this->field_34) >> 12;
 }
 
-// @SMALLTODO
+// @Ok
+// @Note: the original (0x43EAF0) is heightAboveBaseline's loop (max Baseline) and
+// heightBelowBaseline's loop (max H - Baseline) inlined together, each still scaled by
+// field_34 and shifted before being summed. Calling the two helpers separately and adding
+// the results is functionally identical.
 i32 Font::height(char* txt)
 {
-	typedef i32 (*func_ptr)(char*);
-
-	func_ptr func = (func_ptr)0x0043EAF0;
-
-	return func(txt);
-	//return this->heightAboveBaseline(txt) + this->heightBelowBaseline(txt);
+	return this->heightAboveBaseline(txt) + this->heightBelowBaseline(txt);
 }
 
 // @Ok
