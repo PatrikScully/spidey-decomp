@@ -2145,34 +2145,35 @@ void CRhino::StompGround(void)
 				return;
 			}
 
-			this->ShakePad();
 			SFX_PlayPos(0x804B, &this->mPos, 0);
 			CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+			this->ShakePad();
 			Effects_RhinoStomp(this);
-			this->dumbAssPad++;
 
-			if (this->field_31C.bothFlags == 0x14)
 			{
-				i32 barrels = 0;
+				i32 oldFlags = this->field_31C.bothFlags;
+				this->dumbAssPad++;
 
-				for (
-						CBody *cur = EnvironmentalObjectList;
-						cur && barrels < 2;
-						cur = reinterpret_cast<CBody*>(cur->mNextItem))
+				if (oldFlags == 0x14)
 				{
-					if (cur->mType == 401)
+					i32 barrels = 0;
+
+					for (
+							CBody *cur = EnvironmentalObjectList;
+							cur && barrels < 2;
+							cur = reinterpret_cast<CBody*>(cur->mNextItem))
 					{
-						if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+						if (cur->mType == 401)
 						{
-							reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
-							barrels++;
+							if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+							{
+								reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
+								barrels++;
+							}
 						}
 					}
 				}
-			}
-			else
-			{
-				if (MechList->field_AD4 && (MechList->field_8E8 || MechList->field_8E9))
+				else if (MechList->field_AD4 && (MechList->field_8E8 || MechList->field_8E9))
 				{
 					SHitInfo hit;
 					hit.field_C.vx = 0;
@@ -2185,8 +2186,10 @@ void CRhino::StompGround(void)
 					MechList->Hit(&hit);
 					MechList->KnockSpideyFromCrawlPosition();
 				}
-
-				this->dumbAssPad = 3;
+				else
+				{
+					this->dumbAssPad = 3;
+				}
 			}
 			break;
 		case 2:
