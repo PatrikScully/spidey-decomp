@@ -1223,6 +1223,10 @@ int Utils_CalcAim(CSVector* a1, CVector* a2, CVector* a3)
 	return v7;
 }
 
+// RNG state, seeded by Utils_InitialRand and stepped by Rnd. Real addresses
+// found in the original at 0x006B4C7C (gRndRelatedOne), 0x006B4B90
+// (gRndRelatedTwo), 0x006B4B94 (gRndRelatedThree); kept as plain file-local
+// statics since nothing hooked shares them yet.
 // @FIXME
 static int gRndRelatedOne;
 // @FIXME
@@ -1230,7 +1234,9 @@ static int gRndRelatedTwo;
 // @FIXME
 static int gRndRelatedThree;
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E5D80 (30 bytes): store order and
+// constants (0x12B9B0A1, 0xAA2FB3F) match the original exactly.
+// @Ok
 void Utils_InitialRand(int a)
 {
 	gRndRelatedTwo = 0x12B9B0A1;
