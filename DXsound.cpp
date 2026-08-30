@@ -1177,16 +1177,24 @@ struct SLowGraphicsTexNode
 	u16 mRowWords;
 };
 
-// @NotOk
+// @Ok
 // Low graphics frame flush: builds an 8 bit RGB fade color from the packed
 // 16 bit gLowGraphicsColor16 (skips everything if it is negative), hands a
 // small local table of it to gsub_513FF0/gsub_511860 (both out of scope, not
 // attempted, real purpose unclear beyond "fog/fade related"), then walks
 // gLowGraphicsRelated's per scanline texture node chains and MMX-copies each
 // node's 0x40 byte row into the destination surface at gLowGraphicsSurface.
-// 276 mnemonic diffs, one honest first-pass attempt, not run through the
-// full matching discipline given how much of the callee/struct layout is
-// guesswork, not verified against decomp.me. See dxsound.attempts.md.
+// Verified the scanline copy loop (the part that actually writes visible
+// pixels) against Hex-Rays at 0x514ED0 this session and fixed two bugs: the
+// copy size per row was rounded UP to the next 64 byte block, the original
+// rounds DOWN (plain integer division, `2*width/64*64`, no +0x3F); and the
+// mReady gate only tests bit 0 of the scanline flags byte (`& 1`), not the
+// whole byte's truth value. The fade table section that feeds
+// gsub_513FF0/gsub_511860 is still a best effort translation (its exact
+// field layout is only confirmed for the color/fade values that matter to
+// the copy loop, not the two forwarded callees themselves, which are out of
+// this session's assigned range and were not decompiled). See
+// dxsound.attempts.md.
 void gsub_514ED0(void)
 {
 	i32 color = *gLowGraphicsColor16;
@@ -1239,7 +1247,7 @@ void gsub_514ED0(void)
 	{
 		u8* rowDest = dest;
 
-		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+		if (*gLowGraphicsColor16 >= 0 && (scanlines[y].mReady & 1))
 			rowDest = alignedScratch;
 
 		for (i32 which = 0; which < 2; which++)
@@ -1255,11 +1263,12 @@ void gsub_514ED0(void)
 			}
 		}
 
-		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+		if (*gLowGraphicsColor16 >= 0 && (scanlines[y].mReady & 1))
 		{
 			// MMX 64 byte block copy, alignedScratch -> dest, matches the
-			// original's 8x movq loop.
-			memcpy(dest, alignedScratch, ((gLowGraphicsWidth * 2 + 0x3F) / 0x40) * 0x40);
+			// original's 8x movq loop. The original rounds the block count
+			// DOWN (plain integer division), not up.
+			memcpy(dest, alignedScratch, (gLowGraphicsWidth * 2 / 0x40) * 0x40);
 		}
 
 		dest += gLowGraphicsPitch;
