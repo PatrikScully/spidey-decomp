@@ -3426,25 +3426,38 @@ void CPlayer::SetTargetTorsoAngle(i16, int)
 }
 
 
-static i32 * const dword_60CFE8 = (i32*)0x60CFE8;
-static i32 * const dword_54D474 = (i32*)0x54D474;
-static char * const byte_682770 = (char*)0x682770;
+// gWebbingDecreaseDisabled (0x60CFE8): no idb_globals.txt entry, tentative
+// name from usage (gates DecreaseWebbing below alongside field_1AC and the
+// CurrentSuit checks).
+static i32 * const gWebbingDecreaseDisabled = (i32*)0x60CFE8;
+// gDifficultyLevel (0x54D474): named DifficultyLevel in idb_globals.txt.
+static i32 * const gDifficultyLevel = (i32*)0x54D474;
+// byte_682770: no idb_globals.txt entry for this exact address, but it
+// sits directly before Redbook_XAPaused (0x682771, idb_globals.txt) and
+// gates a Redbook_XAPlay call the same way a "currently playing" flag
+// would; tentative name only, not confirmed.
+static char * const gRedbookXaPlayingMaybe = (char*)0x682770;
 extern int CurrentSuit;
 
-// @NotOk
-// Globals
-// The part with >> 12 has a jump in the original rather than it's perfect
+// @Ok
+// verified against IDA sub_4BB0A0 (0x4BB0A0, 0xD3 bytes). Found and fixed
+// one bug from an earlier revision: when gDifficultyLevel is neither 0
+// nor 1, the original sets v4 = a2 directly (unshifted, no >>12 at all)
+// and jumps straight past the shift; the earlier revision left v4
+// uninitialised in that case (no else branch). All field offsets
+// (field_1AC 0x1AC, mWebbing 0x5D4, field_5D8 0x5D8, field_5E8 0x5E8,
+// field_E10 0xE10) match the disassembly.
 char CPlayer::DecreaseWebbing(i32 a2)
 {
 	if (!this->field_1AC &&
-			!*dword_60CFE8 &&
+			!*gWebbingDecreaseDisabled &&
 			CurrentSuit != 3 &&
 			CurrentSuit != 4)
 	{
 		int v3;
 		int v4;
 
-		int tmpDword = *dword_54D474;
+		int tmpDword = *gDifficultyLevel;
 		if (!tmpDword)
 		{
 			v3 = a2 << 7;
@@ -3454,6 +3467,10 @@ char CPlayer::DecreaseWebbing(i32 a2)
 		{
 			v3 = a2 << 11;
 			v4 = v3 >> 12;
+		}
+		else
+		{
+			v4 = a2;
 		}
 
 		int v5 = this->mWebbing;
@@ -3475,7 +3492,7 @@ char CPlayer::DecreaseWebbing(i32 a2)
 
 		if (!this->field_E10)
 		{
-			if (!*byte_682770)
+			if (!*gRedbookXaPlayingMaybe)
 			{
 				Redbook_XAPlay(33, Rnd(3) + 2, 0);
 			}
