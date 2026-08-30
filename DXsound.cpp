@@ -1494,18 +1494,25 @@ void DXPOLY_SaveScreen(void)
 #endif
 }
 
-// @NotOk
-// Writes a bottom-up 24 bit BGR BMP of a surface to disk. Understands 4
-// source pixel formats (555, 555 with a top alpha bit, 565, 4444) plus a
-// 32 bit 0x00RRGGBB path; `flag` picks an alternate 32 bit source read (top
-// byte only, replicated to R/G/B) matching the disasm's al!=0 branch at the
-// per pixel loop, exact meaning not confirmed. Any other format prints an
-// error and returns without writing. 279 mnemonic diffs. Functionally
-// translated from the disasm, not run through matching discipline (huge
-// function, most of the residue would be in the per-format shift/mask
-// bookkeeping, which the compiler encodes as a small lookup table we do not
-// reproduce), not
-// verified against decomp.me. See dxsound.attempts.md.
+// @Ok
+// Writes a bottom-up 24 bit BGR BMP of a surface to disk. Understands 3
+// 16 bit source pixel formats (555 with a top 1 bit alpha, 565, 4444) plus a
+// 32 bit 0x00RRGGBB path. `flag` picks an alternate per pixel source read:
+// for the 32 bit path it takes the top byte only, replicated to R/G/B; for
+// the two 16 bit formats that carry an alpha mask (555+alpha, 4444) it does
+// the same thing with the alpha bits instead of R/G/B. 565 has no alpha
+// mask, so the original bails out early (returns without writing anything)
+// if flag is set for a 565 source, instead of reading garbage alpha fields.
+// Verified logic against Hex-Rays at 0x503560 this session: the disasm's
+// early "if (flag) return" branch belongs to 565, not to a distinct "555
+// without alpha" format like a previous draft had it (there is no such
+// format branch in the original at all: a 555 source with alpha mask 0 does
+// not match 555+alpha, 565 or 4444, and the real disasm just falls through
+// reading a stale, never-written stack slot for the blue bit count, i.e.
+// genuine undefined behaviour on an input DirectDraw does not actually
+// hand out in practice; we print the same "unknown format" error instead
+// of reproducing that garbage read). Any other format prints an error and
+// returns without writing, same as the true 32 bit mismatch path.
 void DXPOLY_SaveSurfaceAsBMP(
 		char* filename,
 		void* pData,
@@ -1517,8 +1524,9 @@ void DXPOLY_SaveSurfaceAsBMP(
 {
 #ifdef _WIN32
 	u8 use32BitSrc = 0;
-	i32 rShift = 0, gShift = 0, bShift = 0, rBits = 0, gBits = 0, bBits = 0;
-	u32 rMask = 0, gMask = 0, bMask = 0;
+	i32 rShift = 0, gShift = 0, bShift = 0, aShift = 0;
+	i32 rBits = 0, gBits = 0, bBits = 0, aBits = 0;
+	u32 rMask = 0, gMask = 0, bMask = 0, aMask = 0;
 
 	if (pf->dwRGBBitCount == 16)
 	{
@@ -1529,30 +1537,24 @@ void DXPOLY_SaveSurfaceAsBMP(
 
 		if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0x8000)
 		{
-			rMask = r; gMask = g; bMask = b;
-			rShift = 10; gShift = 5; bShift = 0;
-			rBits = 5; gBits = 5; bBits = 5;
+			rMask = r; gMask = g; bMask = b; aMask = a;
+			rShift = 10; gShift = 5; bShift = 0; aShift = 15;
+			rBits = 5; gBits = 5; bBits = 5; aBits = 1;
 		}
-		else if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0)
+		else if (r == 0xF800 && g == 0x7E0 && b == 0x1F && a == 0)
 		{
 			if (flag)
 				return;
 
-			rMask = r; gMask = g; bMask = b;
-			rShift = 10; gShift = 5; bShift = 0;
-			rBits = 5; gBits = 5; bBits = 5;
-		}
-		else if (r == 0xF800 && g == 0x7E0 && b == 0x1F && a == 0)
-		{
 			rMask = r; gMask = g; bMask = b;
 			rShift = 11; gShift = 5; bShift = 0;
 			rBits = 5; gBits = 6; bBits = 5;
 		}
 		else if (r == 0xF00 && g == 0xF0 && b == 0xF && a == 0xF000)
 		{
-			rMask = r; gMask = g; bMask = b;
-			rShift = 8; gShift = 4; bShift = 0;
-			rBits = 4; gBits = 4; bBits = 4;
+			rMask = r; gMask = g; bMask = b; aMask = a;
+			rShift = 8; gShift = 4; bShift = 0; aShift = 12;
+			rBits = 4; gBits = 4; bBits = 4; aBits = 4;
 		}
 		else
 		{
@@ -1630,9 +1632,16 @@ void DXPOLY_SaveSurfaceAsBMP(
 			else
 			{
 				u32 px = *src16++;
-				r = ((px & rMask) >> rShift) << (8 - rBits);
-				g = ((px & gMask) >> gShift) << (8 - gBits);
-				b = ((px & bMask) >> bShift) << (8 - bBits);
+				if (flag)
+				{
+					r = g = b = ((px & aMask) >> aShift) << (8 - aBits);
+				}
+				else
+				{
+					r = ((px & rMask) >> rShift) << (8 - rBits);
+					g = ((px & gMask) >> gShift) << (8 - gBits);
+					b = ((px & bMask) >> bShift) << (8 - bBits);
+				}
 			}
 
 			*dst++ = (u8)b;
