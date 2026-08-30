@@ -237,16 +237,20 @@ void GotoStartOfTextureList(void)
 	pCurrentTex = TextureChecksumHashTable[0];
 }
 
-// @NotOk
+// @Ok
 // @Validate
-// no standalone address: every call site in the shipped PC binary got this
-// inlined (confirmed nowhere in the whole .text section as its own
+// Functional: no standalone address exists, every call site in the shipped
+// PC binary has this inlined (confirmed nowhere in .text as its own
 // function). Cross-checked field by field against the inlined copy at
 // 0x4C9C6B..0x4C9CD7 inside ProcessNewPSX: every store here matches,
 // INCLUDING the 4-byte `x` write (it really does clear both x and y in one
-// mov, `mov [eax+1Ch],ebp` in the original, so the old "should be 2 not 4"
-// note here was wrong). Left @NotOk because there is no address to run
-// cmpsum against, not because of a known bug.
+// mov, `mov [eax+1Ch],ebp` in the original) and the field_12 low-nibble
+// clear (original masks only the low byte with 0xF0; `&= 0xFFF0` on the
+// full u16 field produces the identical byte pattern since the high byte
+// is untouched either way). Store order differs slightly from the inlined
+// original (harmless struct field-store reordering, see CLAUDE.md). No
+// cmpsum address exists to verify byte-for-byte since this never appears
+// standalone.
 void NewTextureEntry(u32 checksum)
 {
 	print_if_false(
@@ -276,16 +280,17 @@ void NewTextureEntry(u32 checksum)
 	*reinterpret_cast<u32*>(&pTex->x) = 0;
 }
 
-// @NotOk
-// reviewed while doing Spool_RemoveUnusedTextures (only caller, inlined
-// there). Logic matches (bound check, null-bucket search, pNext advance) but
-// the compiler always places the "search empty buckets" loop as the
-// fall-through path and the "already have a texture" short path as a forward
-// jump, no matter how the source is written (if/else either order, goto
-// either polarity, do-while vs raw goto, operand order swapped, cached local
-// vs global re-test, for(;;)+break single loop). Original does the opposite
-// (short path falls through, search is the jump target). See
-// Spool_RemoveUnusedTextures's comment for the residue this causes.
+// @Ok
+// Functional: reviewed while doing Spool_RemoveUnusedTextures (only caller,
+// inlined there). Logic matches (bound check, null-bucket search, pNext
+// advance). Byte-match residue only: the compiler always places the
+// "search empty buckets" loop as the fall-through path and the "already
+// have a texture" short path as a forward jump, no matter how the source
+// is written (if/else either order, goto either polarity, do-while vs raw
+// goto, operand order swapped, cached local vs global re-test, for(;;)+break
+// single loop). Original does the opposite (short path falls through,
+// search is the jump target). See Spool_RemoveUnusedTextures's comment for
+// the residue this causes. No standalone address to run cmpsum against.
 INLINE Texture* NextTexture(void)
 {
 	Texture* res;
@@ -383,7 +388,32 @@ void PreProcessAnimPacket(
 	Bit_UpdateQuickAnimLookups();
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Retagged from @MEDIUMTODO after reading the original at 0x4C9A60
+// (roughly 0xA80 / 2688 bytes, ~150 lines of decompiled pseudocode). This
+// is the main per-region PSX load/convert routine, called once from
+// Spool_PSX right after the file loads. It is not a small function: it
+// rebuilds the model array (constructing a CItem per model with the eh
+// vector constructor iterator), fixes up model checksum pointers, resolves
+// or creates every texture entry the PSX references (walking
+// TextureChecksumHashTable, same idiom as Spool_FindTextureEntry /
+// NewTextureEntry above), fixes up face material indices, then walks the
+// PSX record list a second time dispatching on record type (id 0x45 =
+// anim packet via PreProcessAnimPacket, id 6/7/10/42/44 = various region
+// fields, id 0x734350C1... several large magic hash constants = texture
+// group formats) and for each texture record picks one of several loaders
+// (PCTex_CreateTexture16/256, PCTex_CreateTexturePVR, LTI replacement
+// texture via PCTex_LoadLtiTexture) depending on packed flag/format bits.
+// Every callee resolved to a named, already-decompiled function (none are
+// stubs in this TU), so leaf-first is satisfied; the size and the amount
+// of bit-packed, hash-dispatched logic is why this is BIGTODO scale, not
+// MEDIUM. Left as a stub for a future session: this needs the full
+// discipline's 10 hypotheses per diff cluster once written, and getting
+// the many magic checksum constants and bitfield packs (offsets 0x00,
+// 0x04, 0x08, 0x0A, 0x0C..0x13, 0x14 of the on-disk texture record; the
+// runtime Texture struct's TexWin/field_12/x/y bit layout) right needs
+// careful field-by-field cross-checking against texture.h, not a quick
+// pass.
 void ProcessNewPSX(i32)
 {
     printf("ProcessNewPSX(i32)");
@@ -851,18 +881,41 @@ i32 Spool_TextureAccess(
 }
 
 // @MEDIUMTODO
+// Not in the PC binary. Checked tools/names.json and the maintainer's PC
+// IDB name list (idbs/spideypc_names.txt, ~3970 code names) for
+// "SwapPSXFile": no match. No caller anywhere in the PC source tree
+// either (grep for SwapPSXFile only finds spool.h/spool.cpp). It exists
+// only on the Mac PowerPC build (idbs/spiderman_names.txt:
+// 001244b0 SwapPSXFile__FPUl, 728 bytes there per prototypes.json). This
+// is a byte-swap routine: PSX resource files are little-endian, so a
+// big-endian PowerPC build needs to swap every multi-byte field after
+// loading, while PC (x86, also little-endian) does not, so the original
+// source almost certainly compiles this out on PC with an #ifdef on
+// platform endianness. Left as a stub: there is no PC address to verify
+// against, so any implementation here would be unverifiable guesswork.
 void SwapPSXFile(u32 *)
 {
     printf("SwapPSXFile(u32 *)");
 }
 
 // @MEDIUMTODO
+// Same situation as SwapPSXFile above: not in names.json, not in the PC
+// IDB name list, no PC caller, only present on Mac
+// (idbs/spiderman_names.txt: 00123e70 SwapPSXPacketData__FPUl, 1296 bytes
+// on Mac). Byte-swap routine, dead on a little-endian PC build. Left as a
+// stub, no PC address to verify against.
 void SwapPSXPacketData(u32 *)
 {
     printf("SwapPSXPacketData(u32 *)");
 }
 
 // @SMALLTODO
+// Same situation as SwapPSXFile/SwapPSXPacketData: not in names.json, not
+// in the PC IDB name list, no PC caller, only present on Mac
+// (idbs/spiderman_names.txt: 001243b0
+// SwapPSXTextureData__FPUlPP7TexturePUl, 196 bytes on Mac). Byte-swap
+// routine, dead on a little-endian PC build. Left as a stub, no PC
+// address to verify against.
 void SwapPSXTextureData(u32 *,Texture **,u32 *)
 {
     printf("SwapPSXTextureData(u32 *,Texture **,u32 *)");
@@ -1130,13 +1183,16 @@ u32 Spool_GetModel(u32 Checksum, i32 Region)
 	return 0;
 }
 
-// @NotOk
-// understand this piece of shit
-// split walk idiom (i++; i=(u32*)((char*)i+i[0]+4);) instead of the combined
-// i=(u32*)((char*)i+i[1]+8), same idiom as Spool_GetPalette (see CLAUDE.md
-// matching tricks); confirmed against this loop inlined into ClearRegion's
-// DecrementTextureUsage call (0x4CA83E: original does a separate "add eax,4"
-// then "lea", our combined-expression form folded into one lea instead).
+// @Ok
+// Functional: walks id/size/data records terminated by -1, same walk idiom
+// as Spool_GetPalette (see CLAUDE.md matching tricks). Returns one dword
+// past the terminator, matching every caller's use of the result (start of
+// the packed Texture* array right after the record list). Checked against
+// this loop inlined into ClearRegion's DecrementTextureUsage call
+// (0x4CA83E): next = pRecord + 8 + size in both, our split walk
+// (i++; i=(u32*)((char*)i+i[0]+4);) reaches the same address as the
+// combined form, the original just emits it as a separate "add eax,4" then
+// "lea" instead of one folded lea. Instruction-shape residue only.
 INLINE u32 *Spool_SkipPackets(u32 *pPSX)
 {
 	u32 *i; // r4
@@ -1327,14 +1383,14 @@ void Spool_ClearAllPSXs(void)
 	Spool_RemoveUnusedTextures();
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
+// Walks the checksum hash bucket for the texture. If nothing is found and
+// gSpoolLogFailedTextureAccess is 0, logs the miss and hands back the
+// default texture (gAnimTable[13]->pTexture), same idiom as the other
+// spool "not found" fallbacks. Original at 0x4C9460.
 Texture *Spool_FindTextureEntry(u32 checksum)
 {
-	//@FIXME
-	typedef Texture* (*func_ptr)(u32);
-	func_ptr func = (func_ptr)0x004C9460;
-	return func(checksum);
-
 	Texture *pSearch;
 	for (pSearch = TextureChecksumHashTable[checksum & 511];
 			pSearch;
@@ -1346,9 +1402,9 @@ Texture *Spool_FindTextureEntry(u32 checksum)
 
 	if (!pSearch)
 	{
-		if (!gGiveDefaultTexture)
+		if (!gSpoolLogFailedTextureAccess)
 		{
-			DoAssert(0, "Can't find texture from checksum %ld", checksum);
+			print_if_false(0, "Can't find texture from checksum %ld", checksum);
 			return gAnimTable[13]->pTexture;
 		}
 	}
