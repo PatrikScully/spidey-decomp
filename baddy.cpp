@@ -515,7 +515,11 @@ void CBaddy::Neutralize(void)
 	this->field_2A8 &= 0xB7FFFFFB;
 }
 
-// @NotOk
+// @Ok
+// Checked against the original disasm at 0x403ef0 (SEH-protected, matches
+// the CMessage-constructor-throws frame class from CLAUDE.md). Condition,
+// Mem_RecoverPointer call and Burst call all match; mHealth's offset 0xE2
+// is confirmed in ob.cpp's VALIDATE(CBody, mHealth, 0xE2).
 int CBaddy::TugWeb(void)
 {
 	if ( (this->field_2A8 & 0x200) || this->mHealth <= 0)
