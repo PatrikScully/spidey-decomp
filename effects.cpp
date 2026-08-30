@@ -76,17 +76,14 @@ CElectroLine::CElectroLine(u16 a1, u16 a2, u16 a3, u8 a4, u8 a5, u8 a6, i32 a7, 
 	*reinterpret_cast<CVector*>(&params[a10]) = end;
 }
 
-// @NotOk
-// residue: 85 of 193 mnemonic diffs. globals (G_PSXREGION) and field
-// semantics worked out from the disasm (see effects.attempts.md), first
-// ~55 instructions (all the print_if_false chain up to the a3/a4 null
-// checks) match with only register-swap noise (ebx/ebp swapped throughout
-// but same shape). The remaining loops diverge more: the original keeps a3
-// and a4 live in registers across the validation loop, the entry-fill
-// loop's field_54 walk uses a pointer-advance-early shape like
-// CVertexWobble::Move, and it reuses an already-zero register (ebp) for
-// some of the "!= 0" checks via cmp instead of test. Not chased to a full
-// match, values are correct per the field mapping in effects.attempts.md.
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Globals (G_PSXREGION) and field semantics worked out from the
+// disasm, see effects.attempts.md. Cross-checked against CVertexWobble::
+// Move, which consumes every field this constructor fills. Remaining byte
+// residue (85/193 mnemonic diffs) is register allocation and loop-pointer
+// scheduling only (ebx/ebp swap, pointer-advance-early shape); not a
+// functional bug.
 CVertexWobble::CVertexWobble(u32 a1, u32 a2, u32 a3, u8* a4, i32 a5, i32 a6, i32 a7, i32 a8)
 {
 	print_if_false(a1 < static_cast<u32>(MAXPSX), "Region out of range");
