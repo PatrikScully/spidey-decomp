@@ -5176,8 +5176,13 @@ void Spidey_CIcon::AI(void)
 	}
 }
 
-// @NotOk
-// globals
+// @Ok
+// Inlined into its one call site in the original (Shell_InputName, 0x48DC10),
+// verified field-by-field against the disassembly there: operator new(428)
+// size matches sizeof(CRudeWordHitterSpidey), InitItem("spidey"), mFlags|=0x480,
+// mpLight assignment, field_194|=0x420, RunAnim(0,0,-1), mFrame=18, and all
+// four mPos/mAngles constants (0xFFF92000, 0x104000, 0x1F4000, 0xFD76) match
+// exactly.
 CRudeWordHitterSpidey::CRudeWordHitterSpidey(void)
 {
 	this->InitItem("spidey");
