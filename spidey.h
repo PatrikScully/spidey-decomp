@@ -351,7 +351,6 @@ class CPlayer : public CSuper
 		EXPORT void SetTargetTorsoAngle(i16, i32);
 		EXPORT char DecreaseWebbing(i32);
 		EXPORT void RenderLookaroundReticle(void);
-		EXPORT void DrawRecticle(u16, u16, u32);
 		EXPORT void SetTargetTorsoAngle(i16, bool);
 		EXPORT void CreateJumpingSmashKickTrail(void);
 		EXPORT void PlaySingleAnim(i32, i32, i32);

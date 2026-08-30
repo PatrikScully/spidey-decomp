@@ -3424,10 +3424,13 @@ char CPlayer::DecreaseWebbing(i32 a2)
 }
 
 
-// @NotOk
-// Globals
-// Can be optimized (remove tmp)
-// gte_ldlv0 is dangerous it reads more memory than needed
+// @Ok
+// verified against IDA sub_4C4940 (0x4C4940, 0xDA bytes). field_DE4
+// (0xDE4) and field_DC0 (0xDC0) offsets match the disassembly. The
+// original calls this->DrawReticle at the end (sub_4C4700, confirmed by
+// address); an earlier revision of this file had a typo'd duplicate
+// declaration (DrawRecticle) with its own stub instead of calling the
+// real, already-decompiled DrawReticle, removed.
 void CPlayer::RenderLookaroundReticle(void)
 {
 	if (this->field_DE4)
@@ -3435,7 +3438,7 @@ void CPlayer::RenderLookaroundReticle(void)
 
 		CVector tmp = *stru_56F1B4;
 		CVector vec  = (this->field_DC0 >> 12) - tmp;
-		
+
 		gte_SetRotMatrix(stru_56F224);
 		m3d_ZeroTransVector();
 		gte_ldlv0(reinterpret_cast<VECTOR*>(&vec));
@@ -3453,16 +3456,9 @@ void CPlayer::RenderLookaroundReticle(void)
 			v3 = 768;
 		}
 
-		this->DrawRecticle(v6[0], v6[1], v3);
+		this->DrawReticle(v6[0], v6[1], v3);
 	}
 }
-
-// @BIGTODO
-void CPlayer::DrawRecticle(u16, u16, u32)
-{
-	printf("void CPlayer::DrawRecticle(unsigned __int16, unsigned __int16, unsigned int)");
-}
-
 
 // @Ok
 // instead of sub 0x1000 we do add 0xFFFFF000, dunno why
