@@ -12,6 +12,10 @@
 #include <cstring>
 #include <cstdlib>
 
+#ifdef _WIN32
+#include <mmsystem.h>
+#endif
+
 // #define VALIDATE_TWIDDLE
 
 i32 gRenderTest;
@@ -484,12 +488,310 @@ void parseCommandLine(char *)
     printf("parseCommandLine(char *)");
 }
 
-// @BIGTODO
-// DRM stuff can ignore for now
-EXPORT u8 gDrmShit(i32)
+// keep these three as real out-of-line calls (matches the original, which
+// calls them instead of inlining them)
+#pragma auto_inline(off)
+
+// forward to original: returns a pointer to the DRM XOR key table, a 400
+// byte block of scrambled bytes sitting right after the "s_burn"/"missing"
+// strings in the data segment. The table itself belongs to DXinit.cpp's TU
+// (next to displayDIError, its named neighbour), so it is not duplicated
+// here.
+// 0x4FC230, 6 bytes
+static u8* DRM_GetXorKeyTable(void)
 {
-	printf("void gDrmShit(i32)");
-	return 0;
+	typedef u8* (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x004FC230;
+	return func();
+}
+
+// reads a file (relative to the exe directory, unless the name already has
+// a drive letter or starts with "\\") and XOR-decodes it with the DRM key
+// table. lpBuffer[0] is overwritten with the file's dword count; the
+// decoded payload starts at lpBuffer+4 (the file's own first 4 bytes are
+// discarded, not decoded).
+// 0x516250, 390 bytes
+static u32* DRM_ReadReferenceTOC(u32* lpBuffer, const char* fileName)
+{
+#ifdef _WIN32
+	char filename[260];
+
+	if (strchr(fileName, ':') != NULL || strncmp(fileName, "\\\\", 2) == 0)
+	{
+		strcpy(filename, fileName);
+	}
+	else
+	{
+		GetModuleFileNameA(NULL, filename, sizeof(filename));
+		char* lastSlash = strrchr(filename, '\\');
+		if (lastSlash != NULL)
+		{
+			*lastSlash = 0;
+		}
+		strcat(filename, "\\");
+		strcat(filename, fileName);
+	}
+
+	HANDLE hFile = CreateFileA(filename, 0x80000000, 1, NULL, 3, 0, NULL);
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		return NULL;
+	}
+
+	u32 fileSize = GetFileSize(hFile, NULL);
+	if (fileSize < 4 || (fileSize & 3) != 0)
+	{
+		CloseHandle(hFile);
+		return NULL;
+	}
+
+	DWORD bytesRead;
+	ReadFile(hFile, lpBuffer, fileSize, &bytesRead, NULL);
+	CloseHandle(hFile);
+
+	if (bytesRead < fileSize)
+	{
+		return NULL;
+	}
+
+	*lpBuffer = fileSize >> 2;
+
+	u8* key = DRM_GetXorKeyTable();
+	u8* data = (u8*)lpBuffer;
+	for (u32 i = 0; i < fileSize - 4; i++)
+	{
+		data[i + 4] ^= key[i % 400];
+	}
+
+	return lpBuffer;
+#else
+	return NULL;
+#endif
+}
+
+// scans every drive letter for an audio CD whose track count and per track
+// length (in milliseconds) match the reference in a1: a1[0] is the
+// expected track count, a1[2..] the expected per track lengths (a1[1] is
+// skipped over, same as the original). Returns 0 if a matching disc is
+// found, an MCI/DRM error code otherwise.
+// 0x516470, 688 bytes
+static i32 DRM_CheckDiscInDrive(u32* a1)
+{
+#ifdef _WIN32
+	if (a1 == NULL)
+	{
+		return 0x124;
+	}
+
+	// close any leftover 3rd party CD player windows, they can keep the
+	// drive open and make MCI_OPEN fail
+	for (i32 n = 0; n < 100; n++)
+	{
+		HWND hWndPlayer = FindWindowA("SJE_CdPlayerClass", NULL);
+		if (hWndPlayer == NULL)
+		{
+			break;
+		}
+		SendMessageA(hWndPlayer, WM_CLOSE, 0, 0);
+	}
+
+	for (i32 driveIndex = 0; driveIndex < 26; driveIndex++)
+	{
+		char rootPath[4];
+		rootPath[0] = (char)('A' + driveIndex);
+		rootPath[1] = ':';
+		rootPath[2] = '\\';
+		rootPath[3] = 0;
+
+		if (GetDriveTypeA(rootPath) != DRIVE_CDROM)
+		{
+			continue;
+		}
+
+		char elementName[3];
+		elementName[0] = (char)('A' + driveIndex);
+		elementName[1] = ':';
+		elementName[2] = 0;
+
+		MCI_OPEN_PARMSA openParms;
+		memset(&openParms, 0, sizeof(openParms));
+		openParms.lpstrDeviceType = (LPCSTR)MCI_DEVTYPE_CD_AUDIO;
+		openParms.lpstrElementName = elementName;
+
+		if (mciSendCommandA(0, MCI_OPEN,
+				MCI_OPEN_TYPE | MCI_OPEN_TYPE_ID | MCI_OPEN_ELEMENT | MCI_OPEN_SHAREABLE | MCI_WAIT,
+				(DWORD)&openParms) != 0)
+		{
+			continue;
+		}
+
+		MCIDEVICEID deviceId = openParms.wDeviceID;
+		i32 result;
+		i32 matched = 0;
+		u32 numTracks = 0;
+		u32 trackLengths[128];
+
+		MCI_SET_PARMS setParms;
+		memset(&setParms, 0, sizeof(setParms));
+		setParms.dwTimeFormat = MCI_FORMAT_MILLISECONDS;
+
+		if (mciSendCommandA(deviceId, MCI_SET, MCI_SET_TIME_FORMAT, (DWORD)&setParms) != 0)
+		{
+			result = 0xA6;
+		}
+		else
+		{
+			MCI_STATUS_PARMS statusParms;
+			memset(&statusParms, 0, sizeof(statusParms));
+			statusParms.dwItem = MCI_STATUS_NUMBER_OF_TRACKS;
+
+			if (mciSendCommandA(deviceId, MCI_STATUS, MCI_STATUS_ITEM, (DWORD)&statusParms) != 0)
+			{
+				result = 0xB0;
+			}
+			else
+			{
+				numTracks = statusParms.dwReturn;
+
+				if (numTracks > 0x80)
+				{
+					result = 0xB6;
+				}
+				else
+				{
+					u32 track;
+					for (track = 1; track <= numTracks; track++)
+					{
+						MCI_STATUS_PARMS trackParms;
+						memset(&trackParms, 0, sizeof(trackParms));
+						trackParms.dwItem = MCI_STATUS_LENGTH;
+						trackParms.dwTrack = track;
+
+						i32 err = mciSendCommandA(deviceId, MCI_STATUS,
+								MCI_STATUS_ITEM | MCI_TRACK, (DWORD)&trackParms);
+
+						trackLengths[track - 1] = (err == 0) ? trackParms.dwReturn : 0;
+					}
+
+					MCI_STATUS_PARMS lengthParms;
+					memset(&lengthParms, 0, sizeof(lengthParms));
+					lengthParms.dwItem = MCI_STATUS_LENGTH;
+
+					if (mciSendCommandA(deviceId, MCI_STATUS, MCI_STATUS_ITEM, (DWORD)&lengthParms) != 0)
+					{
+						result = 0xCF;
+					}
+					else
+					{
+						u32 totalLength = lengthParms.dwReturn;
+
+						// valid disc total length window, about 74.5 to
+						// 80.5 minutes
+						if (totalLength < 4470000)
+						{
+							result = 0xDB;
+						}
+						else if (totalLength > 4830512)
+						{
+							result = 0xDF;
+						}
+						else
+						{
+							result = 0;
+						}
+					}
+
+					if (result == 0 && numTracks == a1[0])
+					{
+						u32 matchCount = 2;
+
+						if (numTracks > 2)
+						{
+							for (matchCount = 2; matchCount < numTracks; matchCount++)
+							{
+								if (trackLengths[matchCount - 1] != a1[matchCount])
+								{
+									break;
+								}
+							}
+						}
+
+						if (matchCount == numTracks)
+						{
+							matched = 1;
+						}
+					}
+				}
+			}
+		}
+
+		mciSendCommandA(deviceId, MCI_CLOSE, 0, 0);
+
+		if (matched)
+		{
+			return 0;
+		}
+	}
+
+	return 0x15F;
+#else
+	return 0x15F;
+#endif
+}
+
+#pragma auto_inline(on)
+
+// @Ok
+// checks whether a legitimate Spider-Man audio CD is in a drive. Reads the
+// reference track TOC out of the (XOR scrambled) texture.dat, then scans
+// every drive for a disc whose track lengths match it. If Destination is
+// given and the reference starts with a version tag ("V??.?"), copies that
+// tag into Destination. Shared by the WinMain-time check and the periodic
+// recheck (locally bypassed for dev builds via the SPIDEY_NO_CD_CHECK
+// patch in main.cpp, which overwrites this function's entry point).
+// dead code note: the "!= NULL" address check below can never be false
+// (it is always the address of a local); it is kept because the original
+// compiled the exact same no-op comparison.
+// 0x5163E0, 141 bytes
+EXPORT i32 gDrmShit(char* Destination)
+{
+	if (Destination != NULL)
+	{
+		*Destination = 0;
+	}
+
+	// flat decode target: dword count, then a 28 byte version tag, then up
+	// to 128 reference track lengths, matching the original's stack layout
+	struct
+	{
+		i32 dwordCount;
+		char versionTag[28];
+		u32 refToc[128];
+	} decoded;
+
+	if (DRM_ReadReferenceTOC((u32*)&decoded, "texture.dat") == NULL)
+	{
+		return 2;
+	}
+
+	i32 result;
+
+	if (decoded.versionTag[0] == 'V' && decoded.versionTag[3] == '.' && &decoded.versionTag[0] != NULL)
+	{
+		if (Destination != NULL)
+		{
+			strncpy(Destination, decoded.versionTag, 0x1E);
+		}
+
+		decoded.refToc[0] = decoded.dwordCount - 8;
+		result = DRM_CheckDiscInDrive(decoded.refToc);
+	}
+	else
+	{
+		result = DRM_CheckDiscInDrive((u32*)&decoded);
+	}
+
+	return (result != 0) ? 3 : 0;
 }
 
 // @Ok
