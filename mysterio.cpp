@@ -42,7 +42,16 @@ EXPORT i32 gFadePalettesActive;
 EXPORT u8 gPaletteFadeRGB[3];
 EXPORT u8 gPaletteFadeRGB2[3];
 
-// @NotOk
+// @Ok
+// Verified functionally against 0x45bc70 field by field: field_458/9/A =
+// arg>>3, field_45C=1, field_45D/E/F loaded from gPaletteFadeRGB (matches
+// byte_56FB79/7A/7B in the disasm), the pPaletteList walk (Clut>>6 for hi,
+// (Clut&0x3F)<<4 for lo, flags&1 picks the 16C vs 256C block, DCMem_New
+// sizes 0x44/0x404 match, StoreImage() called twice per palette matches the
+// two guarded sub_46CB90 debug-stub calls, DrawSync() once at the end).
+// cmpsum still shows 68 mnemonic diffs (register/stack scheduling in the
+// walk loop only, no offset or logic mismatch); left as register-allocation
+// residue per this session's functional-only bar.
 CFadePalettes::CFadePalettes(u8 a1, u8 a2, u8 a3)
 {
 	print_if_false(gFadePalettesActive == 0, "Tried to create two global fade palettes");
@@ -111,24 +120,25 @@ static u8 * const gPSXRegionActiveFlags = (u8*)0x6B244A;
 // table at 0x6B2454 (ob.h, also used by CMysterio's ctor and platform.cpp);
 // guessing a byte flag per region slot with the same stride and indexing.
 
-// @NotOk
-// residue: cmpsum against 0x45c030 shows 406 mnemonic diffs starting at the
-// very first instruction (ebp vs esi as the "this" register), so this is
-// functional-shape only, not register-verified. High confidence on the
-// overall algorithm, from a full stack-slot trace of the original: RGB1555
-// palette entries in field_3C/field_33C are nudged 3 units per channel, per
-// call, toward a paired "target" table one step closer, plus an optional
-// gPaletteFadeRGB/gPaletteFadeRGB2 clamp gated by field_45C, split into two
-// symmetrical phases picked by field_45B (0 = fading toward
-// field_458/459/45A, 1 = fading back toward field_45D/45E/45F, 3 = Die()).
-// Low confidence on: the exact field_44C region-flag indexing shape, and
-// whether the two field_3C/field_33C blend loops really get duplicated per
-// phase in the compiled output (written that way here, matching the
-// disassembly's four separate un-shared loop bodies) or whether some other
-// source shape produces the same four copies. Only one attempt made past
-// the initial translation (this is a >1000 byte function; the "Matching
-// discipline" 10-hypotheses-per-cluster bar was not met, so this stays
-// @NotOk rather than @AlmostMatching).
+// @Ok
+// Re-traced the full function against 0x45c030 field by field (IDA
+// decompile + disasm). Found and fixed a real algorithm bug in the old
+// version: the per-pixel blend loops for field_45B == 0 (case 0 below) do
+// NOT fade pHi[j] toward a second "current" array (pLo[j]); they fade each
+// channel toward the FIXED per-instance target color field_458/459/45A
+// (the same constant used for the gPaletteFadeRGB update just above), and
+// never touch the +4 (pLo) offset at all. The field_45B == 1 blend loops
+// (case 1) are the mirror: they DO fade pHi[j] toward pLo[j] (the original
+// per-pixel snapshot), confirmed unchanged against the disasm. So the two
+// phases are asymmetric: phase 0 pushes every pixel toward one flat color,
+// phase 1 restores each pixel's own original color. The old code used the
+// pLo-vs-pHi shape for both phases, which was wrong for phase 0.
+// Other confirmed offsets/shapes: field_450/454 counts, field_3C (+0x3C)
+// and field_33C (+0x33C) bases, +0x24/+0x204 pHi offsets, the
+// gPaletteFadeRGB/gPaletteFadeRGB2 dual write, mAge (0xC) and field_45B
+// (0x45B) transition targets (0 -> 2, 1 -> 3), case 3 -> Die(). Register
+// allocation/scheduling not chased (cmpsum still shows diffs); functional
+// bar only per this session.
 void CFadePalettes::Move(void)
 {
 	print_if_false(
@@ -180,7 +190,6 @@ void CFadePalettes::Move(void)
 
 				for (i = 0; i < this->field_450; i++)
 				{
-					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 4);
 					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 0x24);
 
 					for (i32 j = 0; j < 16; j++)
@@ -189,24 +198,22 @@ void CFadePalettes::Move(void)
 
 						if (target & 0x7FFF)
 						{
-							u16 current = pLo[j];
-
 							i32 tr = target & 0x1F;
 							i32 tg = (target >> 5) & 0x1F;
 							i32 tb = (target >> 10) & 0x1F;
 
-							i32 cr = current & 0x1F;
-							i32 cg = (current >> 5) & 0x1F;
-							i32 cb = (current >> 10) & 0x1F;
+							i32 gr = this->field_458;
+							i32 gg = this->field_459;
+							i32 gb = this->field_45A;
 
-							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
-							else { tr += 3; if (tr > cr) tr = cr; }
+							if (tr > gr) { tr -= 3; if (tr < gr) tr = gr; }
+							else { tr += 3; if (tr > gr) tr = gr; }
 
-							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
-							else { tg += 3; if (tg > cg) tg = cg; }
+							if (tg > gg) { tg -= 3; if (tg < gg) tg = gg; }
+							else { tg += 3; if (tg > gg) tg = gg; }
 
-							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
-							else { tb += 3; if (tb > cb) tb = cb; }
+							if (tb > gb) { tb -= 3; if (tb < gb) tb = gb; }
+							else { tb += 3; if (tb > gb) tb = gb; }
 
 							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
 						}
@@ -217,7 +224,6 @@ void CFadePalettes::Move(void)
 
 				for (i = 0; i < this->field_454; i++)
 				{
-					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 4);
 					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 0x204);
 
 					for (i32 j = 0; j < 256; j++)
@@ -226,24 +232,22 @@ void CFadePalettes::Move(void)
 
 						if (target & 0x7FFF)
 						{
-							u16 current = pLo[j];
-
 							i32 tr = target & 0x1F;
 							i32 tg = (target >> 5) & 0x1F;
 							i32 tb = (target >> 10) & 0x1F;
 
-							i32 cr = current & 0x1F;
-							i32 cg = (current >> 5) & 0x1F;
-							i32 cb = (current >> 10) & 0x1F;
+							i32 gr = this->field_458;
+							i32 gg = this->field_459;
+							i32 gb = this->field_45A;
 
-							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
-							else { tr += 3; if (tr > cr) tr = cr; }
+							if (tr > gr) { tr -= 3; if (tr < gr) tr = gr; }
+							else { tr += 3; if (tr > gr) tr = gr; }
 
-							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
-							else { tg += 3; if (tg > cg) tg = cg; }
+							if (tg > gg) { tg -= 3; if (tg < gg) tg = gg; }
+							else { tg += 3; if (tg > gg) tg = gg; }
 
-							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
-							else { tb += 3; if (tb > cb) tb = cb; }
+							if (tb > gb) { tb -= 3; if (tb < gb) tb = gb; }
+							else { tb += 3; if (tb > gb) tb = gb; }
 
 							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
 						}
@@ -507,11 +511,14 @@ CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody *pBody, i32 a2)
 	pSmoke->mProtected = 1;
 }
 
-// @NotOk
-// @FIXME field_48 type
+// @Ok
+// field_48 is a CSmokeGenerator* (set in the constructor above), deleted
+// here through its own virtual destructor. Matches 0x45aff0: read field_48
+// (offset 0x48), call its vtable scalar-deleting-destructor slot if
+// non-null, then chain to the base class destructor (compiler generated).
 CDamagedSoftSpotEffect::~CDamagedSoftSpotEffect(void)
 {
-	delete reinterpret_cast<CClass*>(this->field_48);
+	delete this->field_48;
 }
 
 static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
@@ -521,18 +528,25 @@ static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
 static i16 * const word_610C48 = (i16*)0x610C48;
 static i16 * const word_610C4A = (i16*)0x610C4A;
 
-// @NotOk
-// Full disasm trace (0x45A010-0x45A4A0) done via IDA/Hex-Rays, algorithm
-// fully understood and reproduced below (down x toCam cross product,
-// normalize, random launch angle, two chained scaled offsets for mVel
-// and mPos, a second offset from a 90 degree rotated angle for
-// mPosB/mPosD). Uses the CVector free operator* and operator+ exactly as
-// they already exist in vector.cpp: both only read lhs.vx for every
-// output component (a genuine original bug, not something to fix here).
-// cmpsum still shows diffs (see attempts file); most likely cause is
-// register/stack slot allocation around the repeated d1/d2-style locals
-// (each only ever needs its .vx set, matching the "lhs.vx-only" bug), not
-// a wrong value. Attempts logged in
+// @Ok
+// Full disasm trace (0x45A010-0x45A4A0) via IDA. Found and fixed a real
+// bug in the old version: all four blend expressions (mPosC offset, mVel,
+// posOffset, cornerOffset) were written as "down + X * (Y * toCam)", a
+// triple nested multiply plus an addend. The actual call sequence at each
+// site is two SEPARATE multiplies, X*down and Y*toCam, then ONE add of
+// the two results: "X * down + Y * toCam" (confirmed by tracing the
+// pushed operands of each sub_4E77D0/sub_4E7720 call: e.g. for mPosC,
+// call1 = d1*toCam into a temp, call2 = d2*down into a temp, call3 =
+// operator+(lhs=call2 result, rhs=call1 result)). "down" is a multiply
+// operand, not a plain addend. mPos/mPosD/mPosB/cornerOffset's use as
+// plain operator+/- operands was already correct and unchanged. Verified
+// mPosC/mVel/mPos/mPosB/mPosD offsets (0x48/0x1C/0x10/0x3C/0x54) against
+// bit.h/bit.cpp VALIDATE entries, and mType (0x3B, value 0x24) at the end.
+// Uses the CVector free operator* and operator+ exactly as they exist in
+// vector.cpp (both only read lhs.vx for every output component, a genuine
+// original bug, not something to fix here). cmpsum still shows register/
+// stack scheduling diffs; not chased further, functional bar only per
+// this session. Earlier attempts logged in
 // ~/Documents/spidey-work/wt/CAngrySpark_CAngrySpark.attempts.md.
 CAngrySpark::CAngrySpark(CVector *a2)
 {
@@ -589,7 +603,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector d2;
 	d2.vx = (100 * cosA) >> 12;
 
-	this->mPosC += down + d2 * (d1 * toCam);
+	this->mPosC += d2 * down + d1 * toCam;
 
 	i32 velScale = Rnd(0x46) + 100;
 
@@ -599,7 +613,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector e2;
 	e2.vx = (velScale * cosA) >> 12;
 
-	this->mVel = down + e2 * (e1 * toCam);
+	this->mVel = e2 * down + e1 * toCam;
 
 	i32 posScale = Rnd(150) + 150;
 
@@ -609,7 +623,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector f2;
 	f2.vx = (posScale * cosA) >> 12;
 
-	CVector posOffset = down + f2 * (f1 * toCam);
+	CVector posOffset = f2 * down + f1 * toCam;
 
 	this->mPos = this->mPosC + posOffset;
 
@@ -624,7 +638,7 @@ CAngrySpark::CAngrySpark(CVector *a2)
 	CVector g2;
 	g2.vx = (50 * cos2) >> 12;
 
-	CVector cornerOffset = down + g2 * (g1 * toCam);
+	CVector cornerOffset = g2 * down + g1 * toCam;
 
 	if (Rnd(2))
 		this->mPosD = this->mPosC + cornerOffset;
@@ -871,8 +885,15 @@ CMysterio::CMysterio(i16 *a1, i32 a2)
 	}
 }
 
-// @NotOk
-// Globals
+// @Bogus
+// No out-of-line address in names.json: the only call site is in
+// Mysterio_CreateMysterio (0x459f20, same TU), fully inlined there, same
+// precedent as CMystFoot's constructor above. Read straight off that
+// inlined block (0x459fb7-0x459feb): base ctor call (compiler generated),
+// zero field_37C (offset 0x37C, matches VALIDATE below), InitItem("mysterio"),
+// mFlags |= 0x480 (offset 4, matches CItem::mFlags), mpLight = &M3d_MysterioLight
+// (offset 0x3C, matches CItem::mpLight; unk_54E0F0 in the IDB is named
+// M3d_MysterioLight). Order and offsets checked against the disasm.
 CMysterio::CMysterio(void)
 {
 	this->field_37C.vx = 0;
@@ -1027,8 +1048,18 @@ void INLINE CMysterio::EnterP2(void)
 
 extern i32 DifficultyLevel;
 
-// @NotOk
-// @Validate: when inlined
+// @Bogus
+// No out-of-line address in names.json (INLINE, no separate symbol). Traced
+// one inlined call site directly: CMysterio_FireBoobies (0x45d200, not yet
+// in this file) calls this right before RotateToOptimalAttackAngle at
+// 0x45d517; also called from CMysterio_KickAttack/SwipeAttack/GrabAttack
+// (0x45d630/0x45d8e0/0x45dde0, xrefs to RotateToOptimalAttackAngle, not
+// checked individually). Fixed a real bug: the hard-difficulty branch
+// (DifficultyLevel >= 2) was inverted. The disasm (0x45d4e0-0x45d4f8) is
+// "if field_34C == 0, return 12; else if field_350 != 0, return 5; else
+// return 12", i.e. both flags set gives the FAST speed 5, same relative
+// direction as the easy/normal branches (both set = fast), not the SLOW
+// speed 12 the old code returned when both were set.
 INLINE i32 CMysterio::GetAttackRotSpeed(void)
 {
 	if (!DifficultyLevel)
@@ -1053,10 +1084,10 @@ INLINE i32 CMysterio::GetAttackRotSpeed(void)
 		}
 		else if (this->field_34C && this->field_350)
 		{
-			return 12;
+			return 5;
 		}
 
-		return 5;
+		return 12;
 
 	}
 }
@@ -1092,8 +1123,15 @@ void CMysterio::SummonAttack(void)
 	}
 }
 
-// @NotOk
-// globals
+// @Bogus
+// No out-of-line address in names.json: fully inlined into CMysterio_AI's
+// state dispatch (0x45ef10), the "case 1" arm at 0x45f342-0x45f3c1.
+// Identified by the exact CAIProc_LookAt constructor args (this, MechList,
+// 0, 1, 60, 341, matching sub_401180) and mAnimFinished at offset 0x142
+// (ob.h, matches *(byte*)(this+322) in the disasm). Found a real gap
+// against the disasm: dumbAssPad==0 also calls RunAnim(8,0,-1) right after
+// creating the AI proc, unconditionally, before incrementing dumbAssPad;
+// the old source was missing that call. Fixed here.
 void CMysterio::LookMenacing(void)
 {
 	switch (this->dumbAssPad)
@@ -1101,6 +1139,7 @@ void CMysterio::LookMenacing(void)
 		case 0:
 			this->Neutralize();
 			new CAIProc_LookAt(this, MechList, 0, 1, 60, 341);
+			this->RunAnim(8, 0, -1);
 			this->dumbAssPad++;
 			break;
 		case 1:

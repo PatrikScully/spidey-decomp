@@ -10,6 +10,7 @@
 
 #include "reloc.h"
 
+class CSmokeGenerator;
 
 class CMystFoot : public CBaddy
 {
@@ -204,8 +205,7 @@ class CDamagedSoftSpotEffect : public CNonRenderedBit
 		SHandle field_3C;
 		i32 field_44;
 
-		// @FIXME  type
-		void *field_48;
+		CSmokeGenerator *field_48;
 };
 
 void validate_CMystFoot(void);
