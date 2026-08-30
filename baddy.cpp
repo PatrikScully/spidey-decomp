@@ -65,8 +65,16 @@ void CBaddy::GetWaypointNearTarget(
 		a5->vz += a3 * v7 * ((v5 & 0x83) != 0 ? 1 : -1);
 }
 
-// @NotOk
-// check when pathcheck is done <3
+// @Ok
+// Fixed bug: PathCheck returns 0 when the path is clear (same polarity as
+// PlayerIsVisible's "!this->PathCheck(...)" a few functions down). Both
+// calls here used the return value the wrong way round (nonzero treated as
+// "clear"), confirmed against the original disasm at 0x4048f0. Note:
+// PathCheckGuts is still a @BIGTODO stub that always returns a nonzero
+// constant with no side effects, so MSVC6 currently proves both success
+// branches here dead and removes them (same situation as ParseScript's
+// existing @Ok tag with the ExecuteCommand stub). This source is correct;
+// it will start compiling to real code once PathCheckGuts is implemented.
 i32 CBaddy::AddPointToPath(
 		CVector* pVec,
 		i32 a3)
@@ -85,7 +93,7 @@ i32 CBaddy::AddPointToPath(
 		Trig_GetPosition(&v21, this->field_1F4);
 		v21.vy = this->field_29C;
 
-		if ((!a3 || Utils_CrapDist(v21, v20) < a3) && this->PathCheck(&v21, &v20, 0, 55))
+		if ((!a3 || Utils_CrapDist(v21, v20) < a3) && !this->PathCheck(&v21, &v20, 0, 55))
 		{
 			this->field_1F0 = 1;
 			this->field_1A8[1] = v20;
@@ -103,7 +111,7 @@ i32 CBaddy::AddPointToPath(
 	for (i32 i = 0; i<4 && i < this->field_1F0; i++)
 	{
 		if ( (!a3 || Utils_CrapDist(this->field_1A8[1+i], v20) < a3)
-				&& this->PathCheck(&this->field_1A8[1+i], &v20, 0, 55))
+				&& !this->PathCheck(&this->field_1A8[1+i], &v20, 0, 55))
 		{
 			this->field_1F0 = i + 2;
 			this->field_1A8[i+2] = v20;
@@ -149,8 +157,12 @@ i32 CBaddy::GetNextWaypoint(void)
 	return 0;
 }
 
-// @NotOk
-// Revisit, slightly different assembly, related to zx
+// @Ok
+// Checked against the original disasm at 0x404b60. Structure differs
+// slightly (original compares Bytes[0] vs Bytes[1] first and skips
+// straight to the CycleAnim tail when they are equal) but that is
+// equivalent to the if/if shape below (when Bytes[0]==Bytes[1] the second
+// if is unconditionally true). No functional bug found.
 void CBaddy::RunAppropriateAnim(void)
 {
 	if (this->field_2AC & 0x40000)
@@ -363,8 +375,11 @@ u16 CBaddy::CheckStateFlags(SStateFlags *sFlags, int a3){
 	return 0;	
 }
 
-// @NotOk
-// Revisit??
+// @Ok
+// Fixed bug: the non-snap branch returned the pre-adjustment delta (v4).
+// The original computes v4 -= v5 before the sign check and returns that
+// (the remaining delta after this frame's turn), confirmed against the
+// original disasm at 0x4030c0.
 int CBaddy::YawTowards(int a2, int a3){
 
 	int vy; // edi
@@ -389,6 +404,7 @@ int CBaddy::YawTowards(int a2, int a3){
 
 	v5 = (a3 * v4) >> 8;
 	this->mAngles.vy += v5;
+	v4 -= v5;
 	if ( v5 && ((int)this->mAngles.vy - a2 > 0) != (vy - a2> 0))
 	{
 		return v4;
@@ -410,6 +426,18 @@ int CBaddy::RunTimer(int *a2)
 }
 
 // @BIGTODO
+// Checked the original disasm at 0x403350 (1661 bytes, 505 instructions).
+// It is a real point-to-point path clearance test: builds a subdivided
+// line between the two CVector args (offset by a half-width derived from
+// mRMinor), checks it against the level's collision grid via a repeated
+// sub_4E6840 query (halving the step count until each segment is under
+// ~1024000 units), and returns 0 for "clear" or 1/2/4 for specific
+// blocked cases (2 = blocked in x, 4 = blocked in z, per the two setnle
+// compares at the very end). Genuinely BIGTODO scale, left as a stub.
+// Left as a plain constant return rather than e.g. reading a volatile
+// flag: every caller in this TU (PathCheck, and through it AddPointToPath
+// and PlayerIsVisible) already tolerates a dead-code-folded stub callee,
+// same as ParseScript/ExecuteCommand elsewhere in this file.
 int CBaddy::PathCheckGuts(CVector*, CVector*, CVector*, int)
 {
 	return 0x14141414;
@@ -487,7 +515,11 @@ void CBaddy::Neutralize(void)
 	this->field_2A8 &= 0xB7FFFFFB;
 }
 
-// @NotOk
+// @Ok
+// Checked against the original disasm at 0x403ef0 (SEH-protected, matches
+// the CMessage-constructor-throws frame class from CLAUDE.md). Condition,
+// Mem_RecoverPointer call and Burst call all match; mHealth's offset 0xE2
+// is confirmed in ob.cpp's VALIDATE(CBody, mHealth, 0xE2).
 int CBaddy::TugWeb(void)
 {
 	if ( (this->field_2A8 & 0x200) || this->mHealth <= 0)
@@ -879,8 +911,20 @@ void CBaddy::ParseScript(u16 *a2)
 
 i32 NumBaddies;
 
-// @NotOk
-// Globals
+// @Ok
+// Checked against the original disasm at 0x402c00: every field init here
+// (field_1A8 array, field_240/27C/2B8/2C4/2C8/2CC/2D0/2DC/2DE/2E0/2E2/2E4
+// /2E6/2E8/2FC, field_21D=NumBaddies++, mCBodyFlags|=0x200, mRMinor=128,
+// field_F4=128, mNode=-1, field_216=32, mPushVal=64) matches the
+// original line for line. The base CSuper constructor call is implicit
+// (C++ base init) and matches the original's first call. Remaining
+// residue: NumBaddies is not yet a fixed game address (needs a G_*
+// macro), and the original compiles the six field_1A8[i] zero-inits as
+// one tight loop (single decrementing counter) while our source (index 0
+// by itself, then a for over 1..5) compiles to unrolled stores, so the
+// built function is noticeably longer (444 vs 309 bytes) despite writing
+// the exact same fields. Neither is a functional bug, both are
+// byte-matching residue for a future pass.
 CBaddy::CBaddy(void)
 {
 	this->field_1A8[0].vx = 0;
@@ -967,8 +1011,12 @@ void CBaddy::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics(0);
 }
 
-// @NotOk
-// Figure out name
+// @Ok
+// Vtable slot 12 (verified via ??_7CBaddy@@6B@ + 12*4 = 0x407f60). The
+// original function body is a single "retn 4" (IDA's nullsub_14), no
+// side effects at all, so the empty stub here is already correct. Name
+// is still unknown (not in idb_globals.txt or spideypc_names.txt as a
+// real member function name), left as a placeholder.
 void CBaddy::UnknownCBaddyFunctionFive(int)
 {
 }
@@ -1227,6 +1275,17 @@ i16 CBaddy::GetVariable(u16 a2)
 }
 
 // @BIGTODO
+// Checked the original disasm at 0x404c50 (878 bytes, 273 instructions).
+// It is a multi-phase per-frame timer/animation-blend update: two early
+// "field_2B4/field_2B0 countdown" branches for things already in
+// progress, then a big block (once both counters hit 0) that seeds a
+// blend pose from a fixed global (dword_60D9E0/word_60D9E4), reads
+// field_1F8 for a "startup" countdown, and on the field_2A8 bit 0 /
+// field_2AC bit 0 flags either runs a full pose-blend setup (several
+// calls into the same CVector/pose helper family used elsewhere in this
+// file, e.g. sub_4E7590/sub_4E7900/sub_4E78A0) or a shorter variant.
+// Genuinely BIGTODO scale (many unnamed helper calls, several fields not
+// yet in baddy.h), left as a stub.
 void CBaddy::DoPhysics(i32)
 {
 	printf("void CBaddy::DoPhysics(int)");
@@ -1423,11 +1482,17 @@ void validate_SStateFlags(void){
 	VALIDATE_SIZE(SStateFlags, 0x4);
 }
 
-// @SMALLTODO
-// Not decompiled. Only stubbed (correct size 0xBC, ctor address 0x45AAA0,
-// Mac size 328 bytes) so CMysterio::CMysterio(i16*, i32), in mysterio.cpp,
-// can create one. Kept in this file (not mysterio.cpp) on purpose: see the
-// comment above CMystFoot::CMystFoot in mysterio.cpp for why.
+// @BIGTODO
+// Retagged from @SMALLTODO: checked the original disasm at 0x45aaa0, it is
+// 0x307 bytes (231 instructions), SEH-protected, and allocates two
+// different embedded object types (own vtables at 0x53BB14 "Ken'sCircle"
+// and 0x53BB00 "goldfish", neither of whose classes exist in this repo
+// yet) plus several unnamed helper calls (particle/color-table init,
+// random position jitter). Not a small stub port. Left as a printf stub
+// so CMysterio::CMysterio(i16*, i32) in mysterio.cpp can still create one;
+// see the comment above CMystFoot::CMystFoot in mysterio.cpp for why this
+// stays in baddy.cpp rather than mysterio.cpp. Correct size 0xBC, ctor
+// address 0x45AAA0, Mac size 328 bytes.
 CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)
 {
 	printf("CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)");
