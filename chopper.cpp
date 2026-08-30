@@ -605,12 +605,16 @@ void CChopper::AimGunPod(void)
 	}
 }
 
-// @NotOk
-// @Note: fix ApplyPose and 188
+// @Ok
+// @Note: checked against the Hex-Rays decompile inlined into
+// tools/functions/4350624.bin's CChopper::AI (0x4262a0, RotateBlades is
+// INLINE so has no separate original address). The blade-rotation indices
+// (ptr[6], ptr[13]) already matched; the pose data address was wrong
+// (0x1A2BD8), the original uses 0x548F48, the same table AimGunPod uses.
 void INLINE CChopper::RotateBlades(void)
 {
 	if (!this->mpJoints)
-		this->ApplyPose(reinterpret_cast<i16*>(0x1A2BD8));
+		this->ApplyPose(reinterpret_cast<i16*>(0x548F48));
 
 	u16* ptr = reinterpret_cast<u16*>(this->mpJoints);
 
