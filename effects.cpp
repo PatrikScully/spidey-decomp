@@ -12,7 +12,18 @@
 
 extern i32 CurrentSuit;
 
-EXPORT i32 gTextureRelated;
+// dword_56EA9C: a pointer (set up by the game, not by this repo) to a
+// table of effect Texture* entries, indexed by byte offset (stride 4).
+// Same table simby.cpp's CEmber::CEmber reads via a raw address cast at
+// offset 44 (0x56EA9C+44, "same pattern as CSimbyDroplet's texture lookup
+// at 0x56EAC4"). Confirmed via IDA decompile of CBouncingRock::
+// CBouncingRock (0x43B550) and several other effect constructors
+// (CSymbioteBladeWallSplat, CSymbioteBladeSplat, CSymbioteBladeSpark,
+// CLizSpitSplat, CEmber, CSmokeJet) that all read *(Texture**)(dword_56EA9C
+// + offset). Needs one extra dereference the old plain-i32 declaration was
+// missing (gTextureRelated held its own uninitialized value, not the
+// game's pointer at 0x56EA9C).
+#define G_TEXTURE_RELATED (*reinterpret_cast<i32*>(0x56EA9C))
 
 // per-vertex wobble state for CVertexWobble, 22 bytes. tentative layout from
 // CVertexWobble::CVertexWobble and CVertexWobble::Move.
@@ -278,8 +289,16 @@ CBouncingRock::~CBouncingRock(void)
 {
 }
 
-// @NotOk
-// globals
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified against a fresh IDA decompile of 0x43B550. Fixed a real
+// bug: the texture lookups used gTextureRelated (a plain repo i32, holding
+// nothing useful at runtime) as if it were the table base itself; the
+// original reads it as a pointer stored by the game at a fixed address
+// (0x56EA9C), see the G_TEXTURE_RELATED comment above. a4 selects the
+// texture by checksum-like constant (0x28001F00 / 0x3288E271); the two
+// branches are logically if/else-if on a4, written here as the original's
+// inverted first condition to keep the same block layout.
 CBouncingRock::CBouncingRock(
 		CVector* a2,
 		i32 a3,
@@ -291,13 +310,13 @@ CBouncingRock::CBouncingRock(
 	{
 		if ( a4 == 0x3288E271 )
 		{
-			this->SetTexture(*reinterpret_cast<Texture **>(gTextureRelated + 20));
+			this->SetTexture(*reinterpret_cast<Texture **>(G_TEXTURE_RELATED + 20));
 			this->mSemiTransparencyRate = 0;
 		}
 	}
 	else
 	{
-		this->SetTexture(*reinterpret_cast<Texture **>(gTextureRelated + 44));
+		this->SetTexture(*reinterpret_cast<Texture **>(G_TEXTURE_RELATED + 44));
 	}
 
 	this->mScale = Rnd(200) + 350;
