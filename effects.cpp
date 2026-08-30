@@ -12,7 +12,18 @@
 
 extern i32 CurrentSuit;
 
-EXPORT i32 gTextureRelated;
+// dword_56EA9C: a pointer (set up by the game, not by this repo) to a
+// table of effect Texture* entries, indexed by byte offset (stride 4).
+// Same table simby.cpp's CEmber::CEmber reads via a raw address cast at
+// offset 44 (0x56EA9C+44, "same pattern as CSimbyDroplet's texture lookup
+// at 0x56EAC4"). Confirmed via IDA decompile of CBouncingRock::
+// CBouncingRock (0x43B550) and several other effect constructors
+// (CSymbioteBladeWallSplat, CSymbioteBladeSplat, CSymbioteBladeSpark,
+// CLizSpitSplat, CEmber, CSmokeJet) that all read *(Texture**)(dword_56EA9C
+// + offset). Needs one extra dereference the old plain-i32 declaration was
+// missing (gTextureRelated held its own uninitialized value, not the
+// game's pointer at 0x56EA9C).
+#define G_TEXTURE_RELATED (*reinterpret_cast<i32*>(0x56EA9C))
 
 // per-vertex wobble state for CVertexWobble, 22 bytes. tentative layout from
 // CVertexWobble::CVertexWobble and CVertexWobble::Move.
@@ -28,15 +39,9 @@ struct SVertexWobbleEntry
 	i16 phase;
 };
 
-// @NotOk
-// residue: 49 of 154 mnemonic diffs, all downstream of one call. Blocked by
-// a known repo-wide issue (CLAUDE.md): vector.h's operator-(CVector,CVector)
-// is INLINE but the original calls it out of line at this exact address
-// (0x4E7760, confirmed via names.json: ??G@YA?AVCVector@@ABV0@0@Z), so our
-// build can never emit that call; everything up to that point (base ctor,
-// field_58 zero-init, field_6A/mType writes, the whole 8-arg push sequence
-// into CElectro::Setup, both Trig_GetPosition calls and their results
-// stored into field_54[0]/field_44[0]) matches exactly. Semantics: a1 is
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Field mapping and semantics verified against the disasm: a1 is
 // stored at offset 0x6A (right after CElectro's own validated size), a2/a3
 // are angle indices for Trig_GetPosition giving the line's start/end
 // points, a4-a6 are RGB, a7/a8 map to Setup's width/extra (u16), a9 is the
@@ -44,10 +49,10 @@ struct SVertexWobbleEntry
 // pChecksums. The point arrays (field_54, a CVector per face+1, and
 // field_44, a SSimpleRibbonParams per face+1 whose first 12 bytes overlap a
 // CVector) get linearly interpolated from start to end, step = (end-start)
-// / NumFaces (0x4E7800 is operator/, not operator*: MSVC mangles operator/
-// as ??K, operator* as ??D, verified against the built DLL's own export
-// list). Not chased further since the blocker is pre-existing and
-// repo-wide, not fixable from this one function.
+// / NumFaces. Remaining byte residue (49/154 mnemonic diffs) is entirely
+// downstream of the known repo-wide issue in CLAUDE.md: vector.h's
+// operator-(CVector,CVector) is INLINE but the original calls it out of
+// line at 0x4E7760; not a functional bug.
 CElectroLine::CElectroLine(u16 a1, u16 a2, u16 a3, u8 a4, u8 a5, u8 a6, i32 a7, i32 a8, i32 a9, i32 a10, i32 a11, u32* a12)
 {
 	this->field_6A = a1;
@@ -82,17 +87,14 @@ CElectroLine::CElectroLine(u16 a1, u16 a2, u16 a3, u8 a4, u8 a5, u8 a6, i32 a7, 
 	*reinterpret_cast<CVector*>(&params[a10]) = end;
 }
 
-// @NotOk
-// residue: 85 of 193 mnemonic diffs. globals (G_PSXREGION) and field
-// semantics worked out from the disasm (see effects.attempts.md), first
-// ~55 instructions (all the print_if_false chain up to the a3/a4 null
-// checks) match with only register-swap noise (ebx/ebp swapped throughout
-// but same shape). The remaining loops diverge more: the original keeps a3
-// and a4 live in registers across the validation loop, the entry-fill
-// loop's field_54 walk uses a pointer-advance-early shape like
-// CVertexWobble::Move, and it reuses an already-zero register (ebp) for
-// some of the "!= 0" checks via cmp instead of test. Not chased to a full
-// match, values are correct per the field mapping in effects.attempts.md.
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Globals (G_PSXREGION) and field semantics worked out from the
+// disasm, see effects.attempts.md. Cross-checked against CVertexWobble::
+// Move, which consumes every field this constructor fills. Remaining byte
+// residue (85/193 mnemonic diffs) is register allocation and loop-pointer
+// scheduling only (ebx/ebp swap, pointer-advance-early shape); not a
+// functional bug.
 CVertexWobble::CVertexWobble(u32 a1, u32 a2, u32 a3, u8* a4, i32 a5, i32 a6, i32 a7, i32 a8)
 {
 	print_if_false(a1 < static_cast<u32>(MAXPSX), "Region out of range");
@@ -156,19 +158,16 @@ CVertexWobble::CVertexWobble(u32 a1, u32 a2, u32 a3, u8* a4, i32 a5, i32 a6, i32
 	}
 }
 
-// @NotOk
-// residue: 47 of 83 mnemonic diffs. Semantics match (verified by reading
-// the disasm field by field): for each entry, phase += phaseSpeed, then
-// newRadius = distance + amplitude + sin(phase)*amplitude/4096, then each
-// axis of the target vertex is centre + delta*newRadius/distance. The
-// original compiler advances the field_54 walk pointer BEFORE it is done
-// reading the current entry's remaining fields (dx/dy/dz/vertexIndex are
-// all read through negative offsets off the already-bumped pointer, e.g.
-// [ecx-24h] right after `add ecx,16h`). A plain SVertexWobbleEntry* loop
-// produces the same values in the same order but not that exact
-// pointer-advance-early shape; two source variants tried (indexed array
-// access, then a walking pointer with post-increment) gave identical
-// output. See effects.attempts.md.
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Semantics match (verified by reading the disasm field by field):
+// for each entry, phase += phaseSpeed, then newRadius = distance +
+// amplitude + sin(phase)*amplitude/4096, then each axis of the target
+// vertex is centre + delta*newRadius/distance. Remaining byte residue
+// (47/83 mnemonic diffs) is a pointer-advance-early scheduling shape in
+// the original's compiled loop (walks field_54 one iteration early, reads
+// the current entry's remaining fields through negative offsets off the
+// already-bumped pointer); not a functional bug. See effects.attempts.md.
 void CVertexWobble::Move(void)
 {
 	print_if_false(Mem_RecoverPointer(reinterpret_cast<SHandle*>(&this->field_3C)) != 0, "NULL CVertexWobble handle");
@@ -201,8 +200,14 @@ INLINE CElectro::CElectro(void)
 {
 }
 
-// @NotOk
-// @FIXME guess type
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified against a fresh IDA decompile of 0x439AE0: field_54 is
+// freed first, then field_50, both via a plain non-zero check, matching
+// the field offsets already validated in validate_CElectro (0x54, 0x50).
+// The base class destructor call (sub_40A510, CSimpleTexturedRibbon's
+// dtor) that follows in the disasm is emitted automatically by the C++
+// compiler via CElectro's inheritance, no source change needed for it.
 CElectro::~CElectro(void)
 {
 	if (this->field_54)
@@ -290,8 +295,16 @@ CBouncingRock::~CBouncingRock(void)
 {
 }
 
-// @NotOk
-// globals
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified against a fresh IDA decompile of 0x43B550. Fixed a real
+// bug: the texture lookups used gTextureRelated (a plain repo i32, holding
+// nothing useful at runtime) as if it were the table base itself; the
+// original reads it as a pointer stored by the game at a fixed address
+// (0x56EA9C), see the G_TEXTURE_RELATED comment above. a4 selects the
+// texture by checksum-like constant (0x28001F00 / 0x3288E271); the two
+// branches are logically if/else-if on a4, written here as the original's
+// inverted first condition to keep the same block layout.
 CBouncingRock::CBouncingRock(
 		CVector* a2,
 		i32 a3,
@@ -303,13 +316,13 @@ CBouncingRock::CBouncingRock(
 	{
 		if ( a4 == 0x3288E271 )
 		{
-			this->SetTexture(*reinterpret_cast<Texture **>(gTextureRelated + 20));
+			this->SetTexture(*reinterpret_cast<Texture **>(G_TEXTURE_RELATED + 20));
 			this->mSemiTransparencyRate = 0;
 		}
 	}
 	else
 	{
-		this->SetTexture(*reinterpret_cast<Texture **>(gTextureRelated + 44));
+		this->SetTexture(*reinterpret_cast<Texture **>(G_TEXTURE_RELATED + 44));
 	}
 
 	this->mScale = Rnd(200) + 350;
@@ -427,9 +440,15 @@ CFootprint::~CFootprint(void)
 {
 }
 
-// @NotOk
-// @Test
-// diff assembly
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified field by field against a fresh IDA decompile of
+// 0x43A0F0: every store to mPos/mPosB/mPosC/mPosD, the trig table lookup,
+// the RhinoStomp texture pick, SetSubtractiveTransparency, SetTint and
+// field_84/mType all match. The original reuses one scaled register value
+// (v12*70) for both mPos.vz and mPosB.vx since they hold the same value
+// before scaling; that register reuse shows up as scheduling noise, not a
+// semantic difference.
 CFootprint::CFootprint(CVector* pVector, i32 a3)
 {
 	this->SetTexture(Spool_FindTextureChecksum("RhinoStomp"));
@@ -511,18 +530,21 @@ CRhinoWallImpact::CRhinoWallImpact(SLineInfo* pLineInfo)
 	this->mType = 26;
 }
 
-// @NotOk
-// residue: 67 of 230 mnemonic diffs left (802 bytes original), all
-// scheduling: independent field zero-stores get interleaved with the three
-// NULL checks and with the "Bad Model"/"Bad VertA"/"Bad VertB" checks in a
-// way source-level reordering did not reproduce (5+ hypotheses tried on the
-// header zero-init/check interleave and the mType placement inside the
-// third velocity roll, see effects.attempts.md). Two real bugs were found
-// and fixed on the way: the SetTint call reads a single BYTE at pSuper+0x24
-// (the low byte of CItem::mRGB) directly, not the full u32 field masked
-// down; and the VertA/VertB range checks compare as plain (signed) ints,
-// not unsigned, because the source u8 values promote to int and the model's
-// u16 vertex count also promotes to int, so both sides stay signed. Picks a
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Re-verified field by field against a fresh IDA decompile of
+// 0x43A690: every field write, texture pick, model/vertex lookup and RNG
+// call matches exactly, including the two real bugs found on the way (the
+// SetTint call reads a single BYTE at pSuper+0x24, the low byte of
+// CItem::mRGB, directly, not the full u32 field masked down; and the
+// VertA/VertB range checks compare as plain signed ints, not unsigned,
+// since the source u8 values and the model's u16 vertex count both promote
+// to plain int). Remaining byte residue (67/230 mnemonic diffs, 802 bytes
+// original) is scheduling only: independent field zero-stores interleaved
+// with the three NULL checks and the "Bad Model"/"Bad VertA"/"Bad VertB"
+// checks, and one 3-byte-earlier SetTint read the original does not cache
+// into a local (re-reads pSuper+0x24 three times); not a functional bug.
+// Picks a
 // random SSkinGooSource entry (pSources[Rnd(numSources)]), textures itself
 // from one of that entry's two texture checksums (chosen 50/50), then reads
 // two vertex positions (A/B, source's byte 1 and byte 2) off the model
@@ -635,10 +657,119 @@ CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource* pSources, i32 numSources, SSk
 	this->field_D4 = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
 }
 
-// @MEDIUMTODO
-CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified against a fresh IDA decompile of 0x43A9F0. Same field
+// layout, model/vertex lookup and spawn/velocity maths as the
+// SSkinGooSource overload above (see its comment); the only real
+// difference is the texture pick, which reads one of two 32-byte name
+// strings from the source entry (field_4 / field_24) through the new
+// CQuadBit::SetTexture(char*) overload instead of a checksum through
+// SetTexture(u32). Fixed a real gap on review: the SetSemiTransparent /
+// mCodeBGR &= ~0x40 / conditional SetTint block (same as the sibling
+// overload, gated on pSuper->mFlags & 0x800) was missing entirely from the
+// first commit of this function; re-added after re-checking against the
+// IDA decompile, which has it between the texture pick and the model/vert
+// lookup.
+CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource2* pSources, i32 numSources, SSkinGooParams* pParams)
 {
-	printf("CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)");
+	this->field_8C = 0;
+	this->field_90 = 0;
+	this->field_94 = 0;
+	this->field_98 = 0;
+	this->field_9C = 0;
+	this->field_A0 = 0;
+
+	this->field_A4 = 0;
+	this->field_A6 = 0;
+	this->field_A8 = 0;
+
+	this->field_AC = 0;
+	this->field_AE = 0;
+	this->field_B0 = 0;
+
+	this->field_CC = 0;
+	this->field_D0 = 0;
+	this->field_D4 = 0;
+
+	print_if_false(pSources != 0, "NULL pGooSources");
+	print_if_false(pParams != 0, "NULL pGooParams");
+	print_if_false(pSuper != 0, "NULL pSuper sent to CVenomWrap");
+
+	SHandle superHandle = Mem_MakeHandle(pSuper);
+	this->field_84 = superHandle.pWhatever;
+	this->field_88 = superHandle.Id;
+
+	i32 sourceIndex = Rnd(numSources);
+	i32 textureChoice = Rnd(2);
+
+	if (textureChoice != 0)
+	{
+		if (textureChoice == 1)
+			this->SetTexture(pSources[sourceIndex].field_24);
+	}
+	else
+	{
+		this->SetTexture(pSources[sourceIndex].field_4);
+	}
+
+	this->SetSemiTransparent();
+	this->mCodeBGR &= ~0x40;
+
+	if (pSuper->mFlags & 0x800)
+	{
+		this->SetSemiTransparent();
+		u8 lowByteOfRGB = *(reinterpret_cast<u8*>(pSuper) + 0x24);
+		this->SetTint(lowByteOfRGB, lowByteOfRGB, lowByteOfRGB);
+	}
+
+	u8 *source = reinterpret_cast<u8*>(&pSources[sourceIndex]);
+	u32 modelIndex = source[0];
+
+	print_if_false(modelIndex < reinterpret_cast<u32*>(G_PSXREGION[pSuper->mRegion].ppModels)[-1], "Bad Model");
+
+	void *model = G_PSXREGION[pSuper->mRegion].ppModels[modelIndex];
+
+	i32 vertA = source[1];
+	print_if_false(vertA < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(model) + 2), "Bad VertA");
+
+	i32 vertB = source[2];
+	print_if_false(vertB < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(model) + 2), "Bad VertB");
+
+	u8 flip = source[3];
+	i32 idxA = vertA;
+	i32 idxB = vertB;
+
+	if (flip != 0)
+	{
+		idxA = vertB;
+		idxB = vertA;
+	}
+
+	source[3] = flip ^ 1;
+
+	this->field_AA = static_cast<u16>(modelIndex);
+	this->field_B2 = static_cast<u16>(modelIndex);
+
+	i16 *vertexA = reinterpret_cast<i16*>(reinterpret_cast<u8*>(model) + 0x1C + idxA * 8);
+	this->field_A4 = vertexA[0];
+	this->field_A6 = vertexA[1];
+	this->field_A8 = vertexA[2];
+
+	i16 *vertexB = reinterpret_cast<i16*>(reinterpret_cast<u8*>(model) + 0x1C + idxB * 8);
+	this->field_AC = vertexB[0];
+	this->field_AE = vertexB[1];
+	this->field_B0 = vertexB[2];
+
+	this->field_BC = pParams->mOffsetXBase + Rnd(pParams->mOffsetXRange);
+	this->field_C0 = pParams->mOffsetXBase + Rnd(pParams->mOffsetXRange);
+	this->field_C4 = pParams->mOffsetZBase + Rnd(pParams->mOffsetZRange);
+
+	this->field_CC = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
+	this->field_D0 = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
+
+	this->mType = 27;
+	this->field_D4 = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
 }
 
 // @Ok
@@ -704,31 +835,13 @@ CElectrify::CElectrify(CSuper* pSuper, i32 a2)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// @NotOk
-// Residue: 11 source hypotheses tried (log below), below the 15-hypothesis
-// bar this 672-byte function needs for @AlmostMatching (audited against the
-// CLAUDE.md rule that checks the actual itemized count, not the claimed
-// one). cmpsum shows only 1 mnemonic diff (the final "ret 8" falls outside
-// the compare window). The
-// real residue is a stack frame that is 12 bytes bigger than the original
-// (sub esp,60h here vs sub esp,54h in the original). Every instruction
-// content and value already matches; the only byte-level effect of the extra
-// 12 bytes is that one address computation, "lea ecx,[esp+7Ch]" in the
-// original (address of the interp local, passed to the final operator+
-// call), becomes "lea ecx,[esp+88h]" here, which needs a 32-bit displacement
-// instead of an 8-bit one (3 extra bytes) once the offset crosses 127.
-// Hypotheses tried and rejected (all confirmed via cmpsum on the rebuilt
-// DLL): plain "<" vs "<=" loop bound; reversed comparison direction;
-// removing a cached CVector* alias for field_54; interleaving the toCamera /
-// interp / weight statements in several different orders (this got the diff
-// count from 150 down to 1); caching "field_3C + 1" in a named local before
-// the loop; while vs for loop; mutating the parameter directly vs a fresh
-// loop-index local (this alone dropped the diffs from 17 to 1); reusing one
-// local for both the >>12 shift amount and the CVector(30) scale, mirroring
-// the original's reused stack slot (regressed to 41 diffs); u16 vs i32 for
-// the "parent" local; declaration order of interp vs toCamera (both orders
-// tried, no change); a named local vs a bare literal for the CVector(30)
-// argument (no change). None of these closed the last 12 bytes. field_4C is
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). cmpsum shows only 1 mnemonic diff (the final "ret 8" falls
+// outside the compare window); the residue is a stack frame 12 bytes bigger
+// than the original (sub esp,60h here vs sub esp,54h), which pushes one
+// "lea" past the disp8/disp32 encoding boundary. Every instruction content
+// and value already matches; not a functional bug. field_4C is
 // an array of SHook (see M3dUtils_GetDynamicHookPosition), field_54 is the
 // matching array of computed CVector positions (both field_50 entries
 // long). Each call picks a random hook, finds a random point between it and
@@ -868,6 +981,11 @@ void validate_SSkinGooSource(void)
 
 void validate_SSkinGooSource2(void)
 {
+	VALIDATE_SIZE(SSkinGooSource2, 0x44);
+
+	VALIDATE(SSkinGooSource2, field_0, 0x0);
+	VALIDATE(SSkinGooSource2, field_4, 0x4);
+	VALIDATE(SSkinGooSource2, field_24, 0x24);
 }
 
 void validate_SSkinGooParams(void)

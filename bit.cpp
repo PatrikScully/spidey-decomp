@@ -1982,6 +1982,28 @@ void CQuadBit::SetTexture(Texture *pTex)
 }
 
 // @Ok
+// By-name overload, address 0x409280 (unnamed in names.json, sits right
+// after SetTexture(u32)). Looks the texture up by name and stores it with
+// no null check, same field writes as SetTexture(Texture*). Needed by
+// CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*),
+// which stores two texture name strings per source entry instead of
+// checksums. Spool_FindTextureEntry(char*) never returns null (falls back
+// to gAnimTable[13]->pTexture), which is why this overload skips the null
+// check that SetTexture(u32) has.
+void CQuadBit::SetTexture(char* pName)
+{
+	this->mpTexture = Spool_FindTextureEntry(pName);
+	if (this->mpTexture->field_12 & 0xF0)
+		this->mCodeBGR |= 0x20u;
+
+	this->field_74 = *reinterpret_cast<u32*>(&this->mpTexture->u0);
+	this->field_78 = *reinterpret_cast<u32*>(&this->mpTexture->u1);
+	this->field_7C = *reinterpret_cast<u32*>(&this->mpTexture->u2);
+
+	this->field_80 = this->mpTexture->TexWin;
+}
+
+// @Ok
 // @Matching
 INLINE CNonRenderedBit::CNonRenderedBit(void)
 {

@@ -91,8 +91,17 @@ struct SSkinGooSource
 	u32 field_8;
 };
 
+// Layout worked out from CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32,
+// SSkinGooParams*): field_0 is the same packed 4 bytes as SSkinGooSource
+// (model index, vertex A index, vertex B index, flip flag), but field_4 and
+// field_24 are two 32-byte texture NAME strings (picked 50/50, looked up
+// through the new CQuadBit::SetTexture(char*) overload) instead of
+// checksums. 4 + 32 + 32 = 0x44 total.
 struct SSkinGooSource2
 {
+	u32 field_0;
+	char field_4[32];
+	char field_24[32];
 };
 
 // @FIXME guessed field names, layout worked out from

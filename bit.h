@@ -191,6 +191,7 @@ public:
 	EXPORT void SetTexture(u32);
 	EXPORT void SetTexture(Texture*);
 	EXPORT void SetTexture(char*, i32);
+	EXPORT void SetTexture(char*);
 };
 
 class CFT4Bit : public CBit
