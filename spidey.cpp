@@ -3161,14 +3161,20 @@ void CPlayer::SetCamAngleLock(u16 a1)
 	}
 }
 
-static int * const dword_660F80 = (int*)0x660F80;
-static int * const dword_60F76C = (int*)0x60F76C;
+// gWideScreen (0x660F80): named in idb_globals.txt.
+static i32 * const gWideScreen = (i32*)0x660F80;
+// dword_60F76C: falls inside gAnimWebcart (0x60F760, idb_globals.txt) at
+// byte offset 0xC. Structure of gAnimWebcart is not known, so this is a
+// tentative slot name only, not a real standalone global.
+static i32 * const gAnimWebcart_field_C = (i32*)0x60F76C;
 
-// @NotOk
-// globals need to replace. CameraList (camera.h, real address 0x56F3B8) is
-// used below in place of a placeholder gGlobalThisCamera that used to be
-// declared here (0x69696969); see the comment near gLookaroundCamAngle1
-// above for the same fix applied earlier in the file.
+// @Ok
+// verified against IDA sub_4C3810 (0x4C3810, 0x8A bytes). Field offsets
+// (field_8EA 0x8EA, field_C90 0xC90, field_CB4 0xCB4, field_CE4 0xCE4,
+// field_56C 0x56C, mpJoints 0x188, field_DE4 0xDE4) all match the
+// disassembly directly, no VALIDATE conflicts found. Mem_Delete
+// (sub_458210) and Screen_TargetOn (sub_48AA40) confirmed by address in
+// names.json.
 void CPlayer::ExitLookaroundMode(void)
 {
 	if (this->field_8EA)
@@ -3179,8 +3185,8 @@ void CPlayer::ExitLookaroundMode(void)
 		this->field_56C = 0;
 		this->field_8EA = 0;
 
-		*dword_660F80 = 0;
-		*dword_60F76C = 0;
+		*gWideScreen = 0;
+		*gAnimWebcart_field_C = 0;
 
 
 		if (c90)
