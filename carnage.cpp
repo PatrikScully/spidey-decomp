@@ -163,9 +163,12 @@ EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x10, 0xD, 0x10, 0xE, 0x10, 0xF
 EXPORT i32 gCarnageGrabbedHoldXa[4] = { 0x48, 0xA, 0x48, 0xC };
 EXPORT i32 gCarnageGrabbedHoldWhatIfXa[4] = { 0x11, 0x7, 0x11, 0x9 };
 
-// tentative: XA lines played while winding up to throw blades (CCarnage::ThrowBlades case 0).
-EXPORT i32 gCarnageThrowBladesXa[6] = { 0x48, 7, 0x48, 7, 0x48, 7 };
-EXPORT i32 gCarnageThrowBladesWhatIfXa[6] = { 0x11, 7, 0x11, 7, 0x11, 7 };
+// XA lines played while winding up to throw blades (CCarnage::ThrowBlades case 0). Not in
+// idb_globals.txt yet, but read straight out of the binary at 0x00548C04/0x00548C1C (IDA
+// get_bytes), right before gCarnageGettingGrabbedXa (0x548C34). Previous values here were an
+// unverified guess, now corrected.
+EXPORT i32 gCarnageThrowBladesXa[6] = { 0x47, 0xB, 0x4A, 0xB, 0x4A, 0xC };
+EXPORT i32 gCarnageThrowBladesWhatIfXa[6] = { 0x10, 0xB, 0x4A, 0xB, 0x4A, 0xC };
 
 // @Ok
 // Found and fixed real bugs via IDA decompile+disasm of 0x41CFD0 (CCarnage_GettingGrabbed):
@@ -339,10 +342,14 @@ void CCarnage::GettingGrabbed(void)
 	}
 }
 
-// @NotOk
-// residue: not fully verified against a rebuild yet, see attempts file. Structural translation of a
-// 6-way switch(dumbAssPad); needs the new CSymbioteBlade stub above (leaf callee, out of this file's
-// assigned list).
+// @Ok
+// Verified against IDA decompile of 0x41EA00 (CCarnage_ThrowBlades). All 6 states (mAnim/mFrame
+// gates, hook offsets 0x11/0xD/0x11 for cases 0/2/3, shared SFX_PlayPos+dumbAssPad++ tail, the
+// field_E1C/angle-diff/Rnd(4) branch tree in case 4, the mAnimFinished checks in cases 1 and 5)
+// already matched field for field. The one real bug: gCarnageThrowBladesXa/WhatIfXa (case 0's
+// PlayXA, gated 60% by PlayXA's own Rnd(100)<=a4) were an unverified guess, corrected to the real
+// bytes read from 0x548C04/0x548C1C via IDA get_bytes. Needs the CSymbioteBlade stub above (out of
+// this file's assigned functions, only stubbed as a leaf callee).
 void CCarnage::ThrowBlades(void)
 {
 	switch (this->dumbAssPad)
