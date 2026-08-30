@@ -2214,6 +2214,14 @@ INLINE i32 countLeadingZeroBits(u32 num)
 	return count;
 }
 
+// not a real PC function. There is no separate address for it in
+// names.json or the maintainer's IDB. The compiler fully inlined its body
+// into PCTex_CreateTexturePVRInId (the whole "convert or raw-copy the
+// source bitmap into the texture surface" block, both the software
+// renderer path and the D3D system-memory surface path). Mac has it as its
+// own function (.downloadTexture__FP9PCTexturePUsii, 0x174870). Leaving
+// this stub as is, same as copyBitmap above and obtainWaterLevelInPoolA7
+// in l5a7lsc.cpp.
 // @MEDIUMTODO
 void downloadTexture(SPCTexture *,u16 *,i32,i32)
 {
