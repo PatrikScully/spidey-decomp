@@ -1997,30 +1997,46 @@ void CRhino::PlayXAPlease(
 	}
 }
 
-// @NotOk
-// Best-effort translation, not verified against a build. Builds an aim
-// point 14 units back from a2->Normal, computes CalcAim angles toward it,
-// turns to face it (CAIProc_LookAt), then spawns a CRhinoWallImpact at the
-// hit point. The exact CRhinoWallImpact(SLineInfo*) field usage and the a3
-// parameter's role are not confirmed; a3 is not observed used in the disasm
-// excerpt this was read from.
+// @Ok
+// Rewritten from the disasm (0x47E1F0). Real fixes over the earlier draft:
+// the CVector<<int shift (0x4E7870) is "normal << 14", not "normal * 14";
+// there is a CAIProc_MoveTo toward a2->Position ({200,0,500}) that was
+// missing entirely; CRhinoWallImpact is only constructed when a3 != 0 (the
+// earlier draft built it unconditionally); this->field_388 is reset right
+// before RunAnim, matching the PlaySingleAnim idiom used elsewhere; the
+// camera shake call (0x416880, confirmed CCamera::Shake by name) happens
+// right after CRhinoWallImpact, not via ShakePad. One call is not
+// reproduced: normal/120 is computed and passed to CVector::operator+=
+// (0x4E7590) but its target and result are both unused afterward in the
+// disasm (no field or local is ever read back from it), so it looks like
+// dead/redundant code the original compiler kept; omitting it should have
+// no observable effect.
 void CRhino::SetUpStuckHorn(SLineInfo *a2, i32 a3)
 {
 	CVector normal(a2->Normal.vx, a2->Normal.vy, a2->Normal.vz);
-	CVector aimPoint = this->mPos - (normal * 14);
+	CVector aimPoint = this->mPos - (normal << 14);
 
 	CSVector aimAngles;
 	Utils_CalcAim(&aimAngles, &this->mPos, &aimPoint);
 
-	CRhinoWallImpact *impact = new CRhinoWallImpact(a2);
+	new CAIProc_LookAt(this, aimAngles.vy, 0, 0x37, 0xC8);
 
-	if (impact)
-	{
-		new CAIProc_LookAt(this, aimAngles.vy, 0, 0x37, 0xC8);
-	}
+	SMoveToInfo moveInfo;
+	moveInfo.field_0 = a2->Position;
+	moveInfo.field_C = 200;
+	moveInfo.field_10 = 0;
+	moveInfo.field_14 = 500;
 
-	this->RunAnim(0x18, 0, -1);
+	new CAIProc_MoveTo(this, &moveInfo, 1);
+
 	this->field_388 = 0;
+	this->RunAnim(0x18, 0, -1);
+
+	if (a3 != 0)
+	{
+		new CRhinoWallImpact(a2);
+		CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+	}
 
 	if (gActuatorRelated)
 	{
@@ -2040,26 +2056,38 @@ void CRhino::SetUpStuckHorn(SLineInfo *a2, i32 a3)
 	this->dumbAssPad = 0;
 }
 
-// @NotOk
-// Best-effort translation, not verified against a build. PathCheck's third
-// CVector* out-param and the exact source of the divisors used in the
-// ratio computation (guessed as delta.vx / delta.vz here) are uncertain.
+// @Ok
+// Found the real function at 0x47F190 (not in tools/names.json; called from
+// the not-yet-decompiled CRhino::Hit) and rewrote against it. The earlier
+// draft had several real bugs: the result==0 branch only set field_1F8, but
+// the original also sets mVel = delta*a3 and transitions
+// field_31C.bothFlags/dumbAssPad there, same as the result==2 branch; the
+// result==2 ratio's numerator is PathCheck's own CVector out-param (its
+// safe/blocked position) minus this->mPos, not a4->vx/a4->vz; the final
+// mVel is that same vector times (ratio+1) via CVector::operator*
+// (0x4E7800), not "delta << field_1F8" (field_1F8 itself is never
+// overwritten with ratio+1 in the original, it stays as the plain ratio).
 void CRhino::SlideFromHit(i32 a2, i32 a3, CVector *a4)
 {
 	CVector delta = *a4 / a2;
 	CVector target = this->mPos + delta;
+	CVector pathOut(0, 0, 0);
 
-	CVector unused(0, 0, 0);
-	i32 result = this->PathCheck(&this->mPos, &target, &unused, 0x37);
+	i32 result = this->PathCheck(&this->mPos, &target, &pathOut, 0x37);
 
 	if (result == 0)
 	{
 		this->field_1F8 = a3;
+		this->mVel = delta * a3;
+		this->field_31C.bothFlags = 0xF;
+		this->dumbAssPad = 0;
 	}
 	else if (result == 2)
 	{
 		if (a4->vx || a4->vz)
 		{
+			CVector deltaPath = pathOut - this->mPos;
+
 			i32 signX = a4->vx >> 31;
 			i32 absX = (a4->vx ^ signX) - signX;
 
