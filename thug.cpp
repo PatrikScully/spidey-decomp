@@ -373,8 +373,13 @@ void CThug::WarnOtherThugs(void)
 	}
 }
 
-// @NotOk
-// validate when used
+// @Ok
+// INLINE, no separate PC address (Mac has AdjustPosPlaySound__5CThugFi at
+// 0x001378f0). The 2400/1600 weighted blend of MechList->mPos and mPos is
+// confirmed byte-for-byte against the same formula inlined a second time in
+// CThug_Fall's case 1 (0x4d9200: (1600*mPos.x>>12)+(2400*MechList->mPos.x>>12),
+// same SFX_PlayPos(id, &blendedPos, 0) call shape), so this is the real
+// extracted source of that idiom, not a guess.
 INLINE i32 CThug::AdjustPosPlaySound(i32 a2)
 {
 	CVector v4;
