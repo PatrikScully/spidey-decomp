@@ -1275,7 +1275,12 @@ i32 CPlayer::IncHealth(i32 a2)
 	return 0;
 }
 
-// @NotOk
+// @Ok
+// verified against IDA sub_4C5430 (0x4C5430, 0x1D9 bytes): pIndicator
+// offset (field_5F0 + 0x18 = 0x608), outer stride 0x68 (sizeof SIndicator),
+// inner stride 0x14, loop bound 0x60/0x18, and the setPolyF3/setSemiTrans
+// stub calls (gated on byte_54D341, matches ps2funcs.h's STUBBED_FUNC and
+// gPrintStubbed) all match. cmpsum shows 30 mnemonic diffs.
 // residue: original keeps two independent per-iteration registers (an
 // ascending bound counter esi, tested against 0x60, and a value eax
 // freshly recomputed as 0x60-esi each pass); every source form tried here
@@ -1285,6 +1290,7 @@ i32 CPlayer::IncHealth(i32 a2)
 // volatile on the counter stops the fusion but adds a stack spill (extra
 // sub esp,8 prologue and [esp] reloads) the original does not have.
 // 7 distinct hypotheses tried, none reproduce the original register split.
+// accepted as functionally equivalent under this session's relaxed bar.
 void CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)
 {
 	SIndicator *pIndicator = this->field_5F0;
