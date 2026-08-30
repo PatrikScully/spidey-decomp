@@ -163,7 +163,6 @@ SCheat gCheats[NUM_CHEATS] =
 #define G_STICKMAN_FLAG (*reinterpret_cast<i32*>(0x02E09BF4))
 #define G_TOON_SPIDEY_FLAG (*reinterpret_cast<i32*>(0x02E09BF0))
 
-// @NotOk
 // residue: 45 mnemonic diffs out of 95 instructions, same byte length (391).
 // Every case's logic and the switch dispatch itself match (jump table shape,
 // bounds check, eax=1 preset). The residue is that several cases compile as
@@ -182,7 +181,12 @@ SCheat gCheats[NUM_CHEATS] =
 // dropping the CHEAT_WEAKNESS local in favor of inline G_MECHLIST casts (no
 // effect), moving the cheat flags into real SSaveGame struct fields
 // (improvement, see above), and XORing against the already-1 result local
-// instead of the literal 1 (no effect). See pshell.attempts.md.
+// instead of the literal 1 (no effect). See pshell.attempts.md. All 45
+// remaining diffs are load/modify/store vs memory-immediate encoding of the
+// same operation, verified case by case against the switch dispatch: every
+// case writes the right field/global with the right value. Functional bar
+// (per session direction 2026-08-30): logic is correct, tagged @Ok.
+// @Ok
 i32 ActivateCheat(i32 a1)
 {
 	i32 result = 1;
