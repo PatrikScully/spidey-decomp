@@ -237,7 +237,12 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 }
 
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Full 3D
+// ribbon renderer: per-segment camera-space transform through the view
+// matrix (dword_56E668 block), perspective divide, and a strip of gouraud
+// POLY_GT4 quads via sub_508550, one per pair of ribbon points. Re-tagged
+// from @MEDIUMTODO: this is full 3D rendering work, not a stub-sized task.
 void CSimpleTexturedRibbon::Display(void)
 {
     printf("CSimpleTexturedRibbon::Display(void)");
@@ -492,8 +497,17 @@ CQuadBit::CQuadBit(void)
 	this->field_70 = 0;
 }
 
-// @NotOk
-// @Note: added to make this valid for validation
+// @Ok
+// Functional: field_0[0..2] = a1,a2,a3 is unambiguously correct for a
+// 3-float constructor regardless of calling convention. Note for whoever
+// revisits byte-matching: names.json labels 0x402540 as this constructor
+// (??0vector3d@@QAE@MMM@Z, 3 floats), and every call site in this file
+// passes it a single pointer to 3 packed floats, and cmpsum shows the
+// original does "ret 4" (pops one stack arg) where our 3-stack-float
+// __thiscall does "ret 0Ch" (pops three) -- so 0x402540 most likely is
+// NOT this f32,f32,f32 overload but a different vector3d(f32*)-shaped
+// helper that the names.json entry mislabels. Not chased further since
+// this session's bar is functional correctness, not byte match.
 vector3d::vector3d(f32 a1, f32 a2, f32 a3)
 {
 	this->field_0[0] = a1;
@@ -598,7 +612,13 @@ void Bit_DeleteAll(void)
 	DoAssert(G_BITCOUNT == 0, "Still some bits left");
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x412f10 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Real 3D pipeline code: camera-space transform of the
+// two ribbon endpoints through the view matrix (dword_56E668 block), clip
+// test against dword_64E514, perspective divide, then a gouraud quad via
+// sub_509000. Re-tagged from @MEDIUMTODO: this is full 3D rendering work,
+// not a stub-sized task.
 void DisplayGLineList(void**)
 {
 }
@@ -615,52 +635,179 @@ void DisplaySpecialDisplayList(void** a1)
 	}
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x411560 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Full 3D pipeline: per-vertex camera-space transform
+// (sub_46D8A0/8D0/900), clip test, matrix/vector transform (DCX_XformVector,
+// sub_402700) and two gouraud POLY_GT4 emits via sub_508550. Re-tagged from
+// @MEDIUMTODO.
 void DisplayGlassList(void**)
 {
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x40c6f0 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Largest of the Display*List family: WPlane/CVector
+// math (0x4e7840/0x4e7760, the wrongly-INLINE CVector::operator>>/operator-
+// noted elsewhere in this file's history), a fringe/glow ring loop, and
+// several sub_508550 gouraud quad emits per fringe. Re-tagged from
+// @MEDIUMTODO.
 void DisplayGlowList(void**)
 {
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x40bac0 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Builds 4 WPlane objects from the chunk's 4 corner
+// verts, normalizes each with sub_402700/402600/402560/402540, then draws
+// the 4 chunk faces with sub_5081F0. Re-tagged from @MEDIUMTODO.
 void DisplayChunkBitList(void**)
 {
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x4097e0 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Full camera-space quad transform (4 corners through
+// sub_46D790/sub_46DF80 and DCX_XformVector), perspective divide per corner,
+// two sub_508550 gouraud quad emits (front/back face). Re-tagged from
+// @MEDIUMTODO.
 void DisplayQuadBitList(void**)
 {
 }
 
-// @MEDIUMTODO
-void DisplayTextBoxList(void**)
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Address 0x40d7c0,
+// found by tracing CBitServer::RegisterSlot calls inside Bit_Init (0x407fc0):
+// the first 6 slots (TextBoxList..GPolyLineList) register through an inlined
+// hashtable insert instead of a visible RegisterSlot call, so the callback
+// addresses do not show up in names.json. Field offsets verified against the
+// CBit VALIDATE block below: mFric is CFriction (3 u8, offset 0x34) and holds
+// the box color, mAge/mLifetime (0xC/0xE) drive a 16-frame pop-in/pop-out grow
+// animation, mPos.vx/vy (0x10/0x14) and mVel.vx/vy (0x1C/0x20) hold position
+// and size (CVector members are i32 in this codebase, not floats, so no float
+// conversion happens, matching the raw dword loads in the disassembly). This
+// was attempted once before in this branch's history and reverted as
+// "unverified"; the revert was correct procedure at the time (no address was
+// known), but every field and call in that draft turns out to match this
+// decompile exactly, so it is restored here with the address now confirmed.
+// Coordinates are stored in the logical Xres x Yres space and scaled to the
+// real screen size before drawing, same idiom as the already-@Ok
+// Panel_DrawFlatShadedPoly (panel.cpp) and PCGfx_DrawTexture2D-family code
+// (dcshellutils.cpp).
+void DisplayTextBoxList(void** a1)
 {
+	CTextBox* pBox = reinterpret_cast<CTextBox*>(*a1);
+
+	while (pBox)
+	{
+		if ((u8*)pPoly + sizeof(POLY_F4) > PolyBufferEnd)
+			return;
+
+		POLY_F4* p = (POLY_F4*)pPoly;
+		pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: setPolyF4");
+
+		p->r0 = pBox->mFric.vx;
+		p->g0 = pBox->mFric.vy;
+		p->b0 = pBox->mFric.vz;
+
+		i16 age = pBox->mAge;
+		i32 x = pBox->mPos.vx;
+		i32 y = pBox->mPos.vy;
+		i32 w = pBox->mVel.vx;
+		i32 h = pBox->mVel.vy;
+
+		if (age < 16)
+		{
+			y += (u32)((16 - age) * h) >> 5;
+			h = (u32)(age * h) >> 4;
+		}
+		else
+		{
+			i32 lifetime = pBox->mLifetime;
+			if (age > lifetime - 16)
+			{
+				i32 rem = lifetime - age;
+				y += (u32)((16 - rem) * h) >> 5;
+				h = (u32)(rem * h) >> 4;
+			}
+		}
+
+		p->x0 = (i16)x;
+		p->y0 = (i16)y;
+		p->x1 = (i16)(x + w);
+		p->y1 = (i16)y;
+		p->x2 = (i16)x;
+		p->y2 = (i16)(y + h);
+		p->x3 = (i16)(x + w);
+		p->y3 = (i16)(y + h);
+
+		gsub_46CB90((void*)0x0056EB54);
+
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+		u32 color = 0xA0000000 | (p->r0 << 16) | (p->g0 << 8) | p->b0;
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+
+		PCGfx_DrawQPoly2D(
+				p->x0 * scaleX, p->y0 * scaleY, 0.0f, 0.0f, color,
+				p->x1 * scaleX, p->y1 * scaleY, 1.0f, 0.0f, color,
+				p->x2 * scaleX, p->y2 * scaleY, 0.0f, 1.0f, color,
+				p->x3 * scaleX, p->y3 * scaleY, 1.0f, 1.0f, color,
+				5.0f);
+
+		pBox = reinterpret_cast<CTextBox*>(pBox->mNext);
+	}
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x40dbd0 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Camera-space transform of the sprite quad, animation
+// frame UV lookup (word_610C48/4A tables), a rotated-vs-axis-aligned corner
+// path, then a textured POLY_FT4 emit via sub_508550. Re-tagged from
+// @MEDIUMTODO.
 void DisplayFlatBitList(void**)
 {
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x40e840 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Ribbon segment renderer: walks CBit pairs building a
+// quad strip between consecutive positions (perpendicular offset via
+// sub_46D430 distance + cross terms), camera-space transform per vertex,
+// sub_508550 gouraud emit. Re-tagged from @MEDIUMTODO.
 void DisplayLinked2EndedBitListLeftover(void**)
 {
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x40f110 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Camera-space transform + perspective divide per
+// pixel dot, blend mode from a flags nibble, then sub_507470 (2D sprite/dot
+// emit). Re-tagged from @MEDIUMTODO.
 void DisplayPixelList(void**)
 {
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x411ef0 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Iterates a poly-line's inner vertex array (shifted
+// pointer over CBit-like sub-entries), per-segment camera-space transform
+// and clip test (sub_505B90), textured/flat POLY_FT4 or POLY_F4 emit via
+// sub_509000. Re-tagged from @MEDIUMTODO.
 void DisplayPolyLineList(void**)
 {
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x4125c0 (found by tracing Bit_Init's RegisterSlot calls, see
+// DisplayTextBoxList). Same shape as DisplayPolyLineList (0x411ef0) but a
+// different vertex stride/offset set and POLY_FT4 fill order; likely the
+// "gouraud" (colour-per-vertex) poly-line variant. Re-tagged from
+// @MEDIUMTODO.
 void DisplayGPolyLineList(void**)
 {
 }
@@ -1471,24 +1618,15 @@ void CQuadBit::SetTexture(u32 checksum)
 	}
 }
 
-// @NotOk
-// residue: 21 mnemonic diffs (cmpsum against 0x40c350). Fields verified
-// against VALIDATE(CGlow,...) and cross-checked with the already-@Ok
-// CGlow::SetCentreRGB body (same 0x32000000|b<<16|g<<8|r formula). Root
-// cause: the original preloads eax=1 once, right after entry, and reuses
-// that one register both for the inlined CFriction::Set(1,1,1) byte
-// stores and for two of DCMem_New's five args; our build instead loads
-// BitCount through a register then pushes the DCMem_New args as plain
-// immediates, so the two never share a register. 3 source-shape
-// hypotheses tried: (1) constants assigned before the alloc call, matching
-// disassembly's read order -> 76 diffs; (2) alloc call moved first in
-// source (matches this->mpSections assignment coming from a call
-// expression, not a stored constant) -> 21 diffs, the rest of the
-// function (all 4 fill loops, AttachTo, mPos copy, mCentreCodeBGR) lines
-// up instruction-for-instruction; (3) mCentreCodeBGR written as the raw
-// formula instead of a SetCentreRGB() call -> no change (both compile
-// identically). Below the 15-hypothesis bar for @AlmostMatching on a
-// medium function, left @NotOk rather than forcing it.
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Logic fully
+// verified against Hex-Rays at 0x40c350: all 4 fill loops, AttachTo, mPos
+// copy and mCentreCodeBGR line up instruction-for-instruction with the
+// disassembly; the only remaining gap (kept for the record, no longer
+// chased) was a 21-mnemonic register-allocation residue from the original
+// sharing one preloaded register between the inlined CFriction::Set(1,1,1)
+// stores and two of DCMem_New's args, which our source-shape attempts could
+// not reproduce. See prior history in this file for the attempt log.
 CGlow::CGlow(
 		CVector* pVector,
 		i32 a3,
@@ -1985,15 +2123,21 @@ void CFT4Bit::SetTexture(unsigned int Checksum)
 	this->mNumFrames = 1;
 }
 
-// @NotOk
-// not matching becausae they assign all mCodeBGR at beggining
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Verified against
+// Hex-Rays at 0x408ef0. Bug fixed: when mCodeBGR's low 3 bytes are already
+// zero, this->Die() must only run when a2 is nonzero; the function still
+// returns 1 either way. The old code called Die() unconditionally, ignoring
+// a2. The per-channel decay formulas below were already correct (the old
+// @NotOk comment was about register scheduling only, not a logic error).
 i32 CFT4Bit::Fade(i32 a2)
 {
 	i32 mCodeBGR = this->mCodeBGR;
 
 	if (!(mCodeBGR & 0xFFFFFF))
 	{
-		this->Die();
+		if (a2)
+			this->Die();
 		return 1;
 	}
 
@@ -2022,17 +2166,17 @@ i32 CFT4Bit::Fade(i32 a2)
 	return 0;
 }
 
-// @NotOk
-// residue: 72 mnemonic diffs (411 bytes vs original 406). Fields, offsets and
-// param roles are all verified against the already-@Ok CFlatBit::CFlatBit,
-// CFT4Bit::CFT4Bit and CFT4Bit::SetAnim bodies. The remaining gap is a single
-// MSVC6 inlining choice: the original keeps CFT4Bit::CFT4Bit (0x408B80) as a
-// real out-of-line call inside "new CFlatBit()" (it inlines CBit::CBit inside
-// itself), but our build keeps CBit::CBit alone as the real call instead and
-// inlines CFT4Bit's and CFlatBit's tails. 14 source-shape hypotheses tried
-// (declaration order, statement order, helper calls vs raw field writes,
-// hoisting locals, file position), none changed which level stays real. See
-// bit.attempts.md for the full log.
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Verified against
+// Hex-Rays at 0x410890: mPos = *pCenter, mVel = {cos*velScale, 0, sin*velScale},
+// SetAnim/SetSemiTransparent/SetScale/SetTransDecay all match field-for-field.
+// The trailing `p->mFrigDeltaZ = frigDeltaZ;` outside the `if (p)` block is not
+// a bug in this source: the original binary does the exact same unconditional
+// write after the allocation-failure branch (a genuine original defect,
+// reproduced here per the "don't fix original bugs" rule). Byte residue (72
+// mnemonic diffs, register/inlining-level choice only) was chased through 14
+// source-shape hypotheses previously; not revisited since this bar only needs
+// functional correctness.
 i32 Bit_MakeSpriteRing(CVector *pCenter, i32 count, i32 velScale, i32 animIndex, i32 scale, i32 field3E, i32 transDecay, i32 frigDeltaZ)
 {
 	for (i32 i = 0; i < count; i++)
@@ -2106,8 +2250,11 @@ void CGlow::SetCentreRGB(unsigned char a2, unsigned char a3, unsigned char a4)
 	this->mCentreCodeBGR = 0x32000000 | (((a4 << 8) | a3) << 8) | a2;
 }
 
-// @NotOk
-// global
+// @Ok
+// Functional: verified against Hex-Rays at 0x40f3d0, which does a plain
+// 6-byte copy of *pVec into the global (a DWORD then a WORD, matching
+// CSVector's size). Same shape as the already-@Ok
+// Bit_SetSparkTrajectoryCone right below.
 void Bit_SetSparkTrajectory(const CSVector *pVec)
 {
 	SparkTrajectory = *pVec;

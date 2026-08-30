@@ -588,6 +588,7 @@ EXPORT void Bit_ReduceRGB(u32*, i32);
 EXPORT void Bit_SetSparkSize(u32);
 
 EXPORT void DisplaySpecialDisplayList(void**);
+EXPORT void DisplayTextBoxList(void**);
 
 EXPORT void Bit_Init(void);
 EXPORT void Bit_DeleteAll(void);
