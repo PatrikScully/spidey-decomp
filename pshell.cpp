@@ -1612,19 +1612,17 @@ int CExpandingBox::Display(){
 		this->field_2C);
 }
 
-// cmpsum: 66 mnemonic diffs (233-byte original, 235 code bytes built,
-// verified via full instruction decode that nothing is missing or extra).
-// Verified 2026-08-30 by decoding the built function in full: the tail
-// (final return, our `if (a3 > field_2C+v4) return 5; return 3;`) compiles
-// in the original as branchless arithmetic (setle/dec/and 2/add 3 on the
-// comparison result) instead of a branch, same class of "composed if"
-// register/codegen residue documented elsewhere in this file
-// (PShell_DrawHighlight, CExpandingBox::Display). Decoded both sides
-// instruction by instruction: every early-return threshold (field_1C-14,
-// field_20+7/-3, field_8 range, the v4 formula) and the final 1/2/4/5/3
-// result values match exactly, only the register allocation and
-// branch-vs-arithmetic shape for the last comparison differs. Functional
-// bar (per session direction 2026-08-30): logic is correct, tagged @Ok.
+// Fix 2026-08-30: the previous commit's last two early returns had the
+// comparison backwards. Checked against the original at 0x47afb0 (IDA
+// decompile): it returns 4 when `a3 < v4` (v4 is the scrollbar thumb
+// position formula) and only does the 5-or-3 split when `a3 >= v4`. This
+// source had `if (a3 >= v4) return 4;`, inverted, which flips the
+// hit-test result between the thumb and the track for every click in
+// that band. Fixed to `if (a3 < v4) return 4;`. Also added the missing
+// u16 truncation on field_2C in the final threshold (the original reads
+// it as a WORD before adding to v4). Every earlier threshold
+// (field_1C-14, field_20+7/-3, field_8 range, the v4 formula, and the
+// 0/1/2 early returns) already matched the original.
 // @Ok
 i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 {
@@ -1658,10 +1656,10 @@ i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 	if (a3 < (u16)(v3 + v2 - 5))
 		return 2;
 
-	if (a3 >= (u16)v4)
+	if (a3 < (u16)v4)
 		return 4;
 
-	if (a3 > this->field_2C + (u16)v4)
+	if (a3 > (u16)this->field_2C + (u16)v4)
 		return 5;
 
 	return 3;
