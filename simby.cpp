@@ -640,8 +640,11 @@ void CSimby::SetUpHandPos(void)
 	this->field_3DC = (a2 + a3) >> 1;
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// verified against IDA decompile of sub_4ACFB0 (0x4ACFB0), all four
+// substates match (offsets, constants, call args). Case 2 has SetUpHandPos's
+// body inlined in the original; kept as a call to the already-decompiled
+// SetUpHandPos here, functionally identical.
 void CSimby::Shoot(void)
 {
 	switch (this->dumbAssPad)
