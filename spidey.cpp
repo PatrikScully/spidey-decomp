@@ -3564,8 +3564,13 @@ void CPlayer::PutCameraBehind(i32 a2)
 }
 
 
-// @NotOk
-// not matching become smoke trai lhas no cosntructor so it's inlined af
+// @Ok
+// verified against IDA sub_4C0D50 (0x4C0D50, 0x109 bytes). Both branches
+// pass the same three bytes of field_580 to the constructor: byte 0
+// (LOBYTE), byte 1 (BYTE1) and byte 2 (BYTE2), in that order. An earlier
+// revision of this file had two bugs found here: the first branch passed
+// the whole int for the first byte argument instead of truncating it, and
+// both branches swapped byte 1 and byte 2. Fixed both.
 void CPlayer::CreateJumpingSmashKickTrail(void)
 {
 	CVector vec;
@@ -3583,9 +3588,9 @@ void CPlayer::CreateJumpingSmashKickTrail(void)
 		CSmokeTrail *smokeTrail = new CSmokeTrail(
 				&vec,
 				4,
-				args,
-				*(reinterpret_cast<unsigned char*>(&args) + 2),
-				*(reinterpret_cast<unsigned char*>(&args) + 1));
+				static_cast<unsigned char>(args),
+				*(reinterpret_cast<unsigned char*>(&args) + 1),
+				*(reinterpret_cast<unsigned char*>(&args) + 2));
 
 		this->field_584 = smokeTrail;
 	}
@@ -3601,8 +3606,8 @@ void CPlayer::CreateJumpingSmashKickTrail(void)
 				&vec,
 				4,
 				static_cast<unsigned char>(args),
-				*(reinterpret_cast<unsigned char*>(&args) + 2),
-				*(reinterpret_cast<unsigned char*>(&args) + 1));
+				*(reinterpret_cast<unsigned char*>(&args) + 1),
+				*(reinterpret_cast<unsigned char*>(&args) + 2));
 
 		this->field_588 = smokeTrail;
 	}
