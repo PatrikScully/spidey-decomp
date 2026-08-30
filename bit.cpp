@@ -2241,8 +2241,11 @@ void CGlow::SetCentreRGB(unsigned char a2, unsigned char a3, unsigned char a4)
 	this->mCentreCodeBGR = 0x32000000 | (((a4 << 8) | a3) << 8) | a2;
 }
 
-// @NotOk
-// global
+// @Ok
+// Functional: verified against Hex-Rays at 0x40f3d0, which does a plain
+// 6-byte copy of *pVec into the global (a DWORD then a WORD, matching
+// CSVector's size). Same shape as the already-@Ok
+// Bit_SetSparkTrajectoryCone right below.
 void Bit_SetSparkTrajectory(const CSVector *pVec)
 {
 	SparkTrajectory = *pVec;
