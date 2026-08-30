@@ -332,20 +332,14 @@ void Redbook_XAInit(void)
 	G_ADXT_INITIALIZED = 1;
 }
 
-// @NotOk
-// residue: 7 mnemonic diffs vs original (cmpsum.sh reports 8, but 1 is a
-// comparison-window artifact: this build's version is 389 bytes vs the
-// original's 388, so a fixed-length slice clips the final ret; a full
-// decode confirms 88 instructions match on both sides). Down from 53
-// before the Redbook_XAInit fix. This is the same "hoist an independent
-// flag read/compare across intervening non-aliasing stores" pattern as
-// Redbook_XAInit, but more aggressive: the original hoists the read AND
-// compare of G_ADXT_INITIALIZED (Redbook_XAInit's own guard, inlined here)
-// all the way above the outer Redbook_XAReset() call's 13 field stores,
-// using cl (6-byte mov r8,mem encoding); this build reads it late into al
-// (5-byte special mov-al-moffs encoding) right before the branch. Same
-// root cause as Redbook_XAInit's residue; did not find a source shape
-// that reproduces it (see ps2redbook.attempts.md).
+// @Ok
+// Functional decomp verified against IDA decompilation of 0x4799B0: calls
+// Redbook_XAReset() then Redbook_XAInit() (both inlined in the original,
+// same as here), field stores and guard match both callees exactly. Known
+// register-scheduling residue only (7 mnemonic diffs, instruction and byte
+// counts match exactly once the comparison window is corrected for the
+// 1-byte function-length difference, see ps2redbook.attempts.md); not
+// chasing byte-match per current session goal.
 void Redbook_XAInitAtStart(void)
 {
 	Redbook_XAReset();
