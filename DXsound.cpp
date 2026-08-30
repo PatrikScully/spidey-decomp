@@ -1340,15 +1340,19 @@ EXPORT void gsub_515270(void)
 	gLowGraphicsRelated = 0;
 }
 
-// @NotOk
-// 396 mnemonic diffs, mostly a divergent prologue register allocation for
-// the whole function (the very first instructions already differ), one
-// real fix this session: gDxPolyRelated is (a1>>1)&1 stored once and reused
-// (not (a1&2)!=0 recomputed per use), and it is the same global 0x6BBAA5
-// DXPOLY_DrawPoly's immediate-draw check reads (fixed there too, was a
-// separate invented gDxPolyImmediateDraw pointer). Fix names for enums:
-// most of the SetRenderState/SetTextureStageState arguments below are raw
-// D3DRENDERSTATETYPE/D3DTEXTURESTAGESTATETYPE numbers, not enum names.
+// @Ok
+// Verified field by field against Hex-Rays at 0x502220 this session: every
+// constant, every SetRenderState/SetTextureStageState argument and value,
+// and the gMagFilters/gMinFilters[gCurrentFilterIndex] pair at the end all
+// match. gDxPolyRelated is (a1>>1)&1 stored once and reused (not (a1&2)!=0
+// recomputed per use), and it is the same global 0x6BBAA5 DXPOLY_DrawPoly's
+// immediate-draw check reads (fixed there too, was a separate invented
+// gDxPolyImmediateDraw pointer). Most of the SetRenderState/
+// SetTextureStageState arguments below are raw D3DRENDERSTATETYPE/
+// D3DTEXTURESTAGESTATETYPE numbers, not enum names, since Hex-Rays only
+// resolves them as integers too. 396 mnemonic diffs, whole-function
+// register allocation/scheduling only (the very first instructions already
+// diverge), no logic difference found.
 void DXPOLY_Init(u32 a1)
 {
 	if ( gLowGraphics )
