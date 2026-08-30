@@ -23,6 +23,7 @@
 #include "m3dutils.h"
 #include "m3dinit.h"
 #include "db.h"
+#include "camera.h"
 #include "ps2funcs.h"
 #include "tweak.h"
 #include "ps2gamefmv.h"
@@ -1499,11 +1500,290 @@ void Shell_GameCovers(void)
     printf("Shell_GameCovers(void)");
 }
 
-// @MEDIUMTODO
-i32 Shell_InputName(char *,i32,i32, const char *)
+// word lists are defined further down in this file
+extern char *gBadWords[30];
+extern char *gGoodWords[30];
+
+// @Ok
+i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 {
-    printf("Shell_InputName(char *,i32,i32,char *)");
-	return 0x27092024;
+	print_if_false(gShellInitialized != 0, "Called Shell_InputName() without shell initialised");
+
+	i32 result = 0;
+	i32 textEase = 0;
+	i32 textCountdown = 0;
+	i32 textSlide = 0;
+	i32 textOffset = 0;
+	char originalName[9];
+	char nameSave[9];
+	char badWord[12];
+	char keyName[32];
+	CRudeWordHitterSpidey *pSpidey = 0;
+	i32 nameLen = 0;
+	i32 titleX = 0;
+	i32 goodLen = 0;
+	i32 foundBadWord = 0;
+	i32 w = 0;
+	char *j = 0;
+	i32 c = 0;
+	i32 key = 0;
+	i32 i = 0;
+	u32 vblankAtDraw = 0;
+
+	if (pDesc != 0)
+	{
+		textEase = 32;
+		textOffset = 32;
+		textCountdown = 90;
+	}
+
+	Utils_InitialRand(Vblanks);
+	for (i = 10000; i != 0; --i)
+		Rnd(10);
+
+	Pause(1);
+	DrawSync();
+
+	memcpy(originalName, pName, 9);
+
+	nameLen = (i32)strlen(pName);
+	if (nameLen < 8)
+	{
+		memset(&pName[nameLen], '.', 8 - nameLen);
+		nameLen = 0;
+	}
+
+	pName[8] = 0;
+
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	if (a2 == 0)
+	{
+		titleX = 128;
+		*(i32*)0x005512EC = 256;
+	}
+
+	while (2)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		vblankAtDraw = Vblanks;
+
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+
+		Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+		Mess_SetSort(4095);
+		Mess_DrawText(textOffset + 256, 196, pName, 0, 0x1000);
+
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+
+		if (a3 != 0)
+			Shell_DrawTitleBar(titleX, 38, "enter cheat", 1, 0, 150, -21, 29);
+		else
+			Shell_DrawTitleBar(titleX, 38, "Input name", 1, 0, 150, -21, 29);
+
+		Mess_SetRGB(0x80, 0x80, 0x80, 0);
+		Mess_DrawText(textOffset + 256, 167, "Finish", 0, 0x1000);
+
+		if (pSpidey != 0)
+		{
+			M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+			TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+			M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+			M3d_Render(pSpidey);
+			M3d_RenderCleanup();
+		}
+
+		if (textCountdown != 0 && pDesc != 0)
+		{
+			PShell_SmallFont();
+			Mess_SetRGB(0x64, 0x64, 0x64, 0);
+			Mess_SetRGBBottom(0x64, 100, 100);
+			Mess_SetShadowRGB(0xFF);
+			Mess_SetTextJustify(0);
+			Mess_DrawText(256, 55, pDesc, 0, 0x1000);
+			PShell_NormalFont();
+			PShell_DefaultText();
+			Mess_SetShadowRGB(0x29);
+		}
+
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+
+		titleX = PShell_MoveTowards(titleX, 128);
+		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 256);
+
+		if (textEase - 2 < 0)
+			textEase = 0;
+		else
+			textEase -= 2;
+		textSlide += 690;
+		textOffset = textEase * rcossin_tbl[textSlide & 0xFFF].cos / 4096;
+
+		if (textCountdown != 0)
+			--textCountdown;
+
+		++TTime;
+		Pad_Update();
+
+		if (*gShellMenuAbort != 0)
+			return -1;
+
+		if (a3 == 0)
+		{
+			Card_CheckStatus(0, 0);
+			if (CardStatus == -1)
+			{
+				result = -1;
+				memcpy(pName, originalName, 9);
+				goto done;
+			}
+		}
+
+		if (pSpidey != 0)
+			Pad_Clear(gSControl);
+
+		for (key = 0; key < 256; ++key)
+		{
+			if (PCINPUT_IsKeyPressed(key, 1) == 0)
+				continue;
+
+			DXINPUT_GetKeyName(key, keyName);
+
+			if (strlen(keyName) == 1)
+			{
+				if ((keyName[0] >= 'A' && keyName[0] <= 'Z' || keyName[0] >= '0' && keyName[0] <= '9') && nameLen < 8)
+				{
+					pName[nameLen++] = keyName[0];
+					SFX_Play(0x1F, 0x2000, 0);
+				}
+			}
+			else
+			{
+				if (strcmpi(keyName, "BACK") == 0)
+				{
+					if (nameLen == 0)
+						continue;
+					pName[--nameLen] = '.';
+					SFX_Play(0x29, 0x3FFF, 0);
+					continue;
+				}
+
+				if (strcmpi(keyName, "SPACE") == 0 && nameLen < 8)
+				{
+					pName[nameLen++] = ' ';
+					SFX_Play(0x29, 0x3FFF, 0);
+					continue;
+				}
+			}
+		}
+
+		if (PCSHELL_CheckTriggers(65552, 1, 1) != 0)
+		{
+			memcpy(nameSave, pName, 9);
+
+			foundBadWord = 0;
+			for (w = 0; w < 29; ++w)
+			{
+				Utils_CopyString(gBadWords[w], badWord, 9);
+				for (j = badWord; *j; j++)
+					*j -= 1;
+				if (pName[0] != 0 && Shell_ContainsSubString(pName, badWord))
+				{
+					foundBadWord = 1;
+					break;
+				}
+			}
+
+			if (foundBadWord != 0)
+			{
+				goodLen = Utils_CopyString(gGoodWords[Rnd(30)], nameSave, 9);
+				if (goodLen < 8)
+					memset(&nameSave[goodLen], '.', 8 - goodLen);
+				if (goodLen != 0)
+				{
+					if (pSpidey != 0)
+						delete pSpidey;
+					pSpidey = new CRudeWordHitterSpidey;
+					goto restOfLoop;
+				}
+			}
+
+			if (pName[0] == '.')
+				goto restOfLoop;
+
+			for (c = 0; pName[c] != '.'; ++c)
+			{
+				if (c >= 8)
+				{
+					result = 1;
+					goto done;
+				}
+			}
+			pName[c] = 0;
+			result = 1;
+			goto done;
+		}
+
+	restOfLoop:
+		if (PCSHELL_CheckTriggers(131616, 1, 1) != 0)
+		{
+			result = -1;
+			memcpy(pName, originalName, 9);
+			goto done;
+		}
+
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		if (pSpidey != 0)
+		{
+			pSpidey->AI();
+
+			if (pSpidey->mAnim == 100 && pSpidey->mFrame == 6)
+				memcpy(pName, nameSave, 9);
+
+			if (pSpidey->mPos.vy > 0x104000)
+			{
+				delete pSpidey;
+				pSpidey = 0;
+			}
+		}
+
+		if (Vblanks == vblankAtDraw)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+		DrawSync();
+		PCSHELL_Relax();
+	}
+
+done:
+	if (pSpidey != 0)
+		delete pSpidey;
+
+	Pause(1);
+	DrawSync();
+	DrawSync();
+	Pad_ClearTriggers(gSControl);
+
+	return result;
 }
 
 EXPORT u8 gInLegalScreen;
