@@ -821,15 +821,27 @@ CChopper::~CChopper(void)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4346880.bin (missile homing AI:
-// timer decay, difficulty-based speed ramp, aim via Utils_CalcAim/
-// Utils_TurnTowards, step toward target, hit check, then either pulse the
-// target's links and Explode, or re-target to the next type-1002 link).
-// The stepping loop (0x425572-0x42562f) and the final link-walk branch are
-// best-effort reconstructions of the control flow shape, not fully
-// instruction-verified. cmpsum: 200 mnemonic diffs, first divergence right at
-// the field_120 timer decrement (source-level if/else shape differs from the
-// original's branchless sub/clamp). 1 attempt, not iterated. Needs real work.
+// @Note: checked against the Hex-Rays decompile of tools/functions/4346880.bin
+// (0x425400). Everything up to and including the mVel computation
+// (Utils_GetVecFromMagDir(&mVel, field_108>>12, &mAngles)) matches this
+// source. The stepping loop below that does NOT match: the original mutates
+// this->mPos DIRECTLY inside the collision-check loop (mPos += mVel*2 each
+// iteration, via CVector::operator+=), and ALSO updates a turn-smoothing
+// sub-state each iteration (this+136/138/142/144/148/149, a CSVector pair
+// plus shift-amount bytes, fed through CSVector::Mask()/KillSmall() and a
+// manual "x - (x >> shift)" IIR-style smoothing formula) before the
+// Utils_Dist(mPos, field_110) < 0x80 hit check, not just a plain position
+// accumulate in a local. This source's version steps a local `pos` copy with
+// no per-step turn-state update, which is a real behavioural gap (the missile
+// homing curve depends on that per-substep smoothing feeding mAngVel-derived
+// state forward into later frames), not just register residue. AFTER the
+// loop, the original also repositions the smoke ribbon at
+// mPos - Utils_GetVecFromMagDir(128, mAngles) (a fixed offset behind the
+// missile along its facing), not at mPos directly as this source's
+// field_F8->SetPos(this->mPos) does. The this+136 region's exact field
+// identity (offsets relative to CBody, likely inside/near mAngVel's
+// smoothing state) was not resolved. Left @NotOk: fixing this needs mapping
+// those fields properly, which is more than triage time allows in this pass.
 void CChopperMissile::AI(void)
 {
 	if (this->field_120)
@@ -1140,17 +1152,25 @@ INLINE CChopperMissile::CChopperMissile(
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4338352.bin. Casts a ray from mPos along
-// a2's direction (Utils_GetVecFromMagDir then M3dColij_InitLineInfo/M3dZone_LineToItem)
-// to find where the beam hits geometry, computes an apparent beam radius from the hit
-// distance (sqrt-smoothed when the hit is close, linear scale otherwise), then builds
-// two GTE cross-product basis vectors perpendicular to the beam (same
-// gte_ldopv1/ldopv2/op12/stlvnl/VectorNormal idiom as CChopper::StartStrafeOnslaught)
-// and sweeps a 32-segment fan of points using rcossin_tbl into field_138[] (CVector[66],
-// the light cone mesh). The exact fixed point scaling inside the fan loop and the
-// near/far radius blend are a best-effort reconstruction of the control flow shape from
-// the disassembly, not instruction verified: heavy PS1 GTE fixed point math with a
-// stack layout that could not be traced byte for byte by hand.
+// @Note: checked against the Hex-Rays decompile of tools/functions/4338352.bin
+// (0x4232b0). Confirmed WRONG: this source computes the beam radius from
+// lineinfo.Distance (hit distance), but the original computes it from
+// -(beamDir DOT lineinfo.Normal) >> 12, i.e. a foreshortening factor from the
+// angle between the beam and the hit surface, not the hit distance at all
+// (physically makes more sense for a light-cone flaring on angled surfaces).
+// That value is stored in a field right before field_138 (a1[77], i.e.
+// this+0x134, one CVector-worth before field_138 starts), not used directly
+// as a radius. The sqrt branch threshold (4073/0xFE9) does match this
+// source's, but is tested against the dot-product value, not Distance. The
+// two GTE basis-vector calls after the branch use 4 near-identical looking
+// calls that IDA mislabels "qt_register_signal_spy_callbacks" (a bogus FLIRT
+// signature match, not real Qt calls; almost certainly gte_ldopv1/ldopv2 or
+// similar), so the cross-product basis reconstruction needs re-deriving
+// against the real GTE op order, not assumed from the CStartStrafeOnslaught
+// precedent. The fan loop also scales by two different constants (275 and
+// 315) applied to both near and far basis components, not a single `radius`
+// value multiplied post-hoc as this source does. Left @NotOk: the beam
+// radius algorithm needs a real rewrite, not a residue chase.
 // cmpsum: 307 mnemonic diffs, first divergence right at the prologue register
 // allocation. 1 attempt (structural reconstruction only). Needs real work.
 void CSearchlight::CalculateSearchlight(CSVector* a2)
