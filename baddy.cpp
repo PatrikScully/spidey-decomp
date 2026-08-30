@@ -1482,11 +1482,17 @@ void validate_SStateFlags(void){
 	VALIDATE_SIZE(SStateFlags, 0x4);
 }
 
-// @SMALLTODO
-// Not decompiled. Only stubbed (correct size 0xBC, ctor address 0x45AAA0,
-// Mac size 328 bytes) so CMysterio::CMysterio(i16*, i32), in mysterio.cpp,
-// can create one. Kept in this file (not mysterio.cpp) on purpose: see the
-// comment above CMystFoot::CMystFoot in mysterio.cpp for why.
+// @BIGTODO
+// Retagged from @SMALLTODO: checked the original disasm at 0x45aaa0, it is
+// 0x307 bytes (231 instructions), SEH-protected, and allocates two
+// different embedded object types (own vtables at 0x53BB14 "Ken'sCircle"
+// and 0x53BB00 "goldfish", neither of whose classes exist in this repo
+// yet) plus several unnamed helper calls (particle/color-table init,
+// random position jitter). Not a small stub port. Left as a printf stub
+// so CMysterio::CMysterio(i16*, i32) in mysterio.cpp can still create one;
+// see the comment above CMystFoot::CMystFoot in mysterio.cpp for why this
+// stays in baddy.cpp rather than mysterio.cpp. Correct size 0xBC, ctor
+// address 0x45AAA0, Mac size 328 bytes.
 CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)
 {
 	printf("CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)");
