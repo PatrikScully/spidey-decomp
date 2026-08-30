@@ -1674,7 +1674,36 @@ static i32 gCheatRelatedSix;
 static u8 gCheatRelatedSeven;
 
 // @NotOk
-// Globals
+// Not in tools/names.json under this name, and not in idb_globals.txt or
+// new_in_idb_code.txt either. Tried hard to find the original address this
+// session (2026-08-30) and could not:
+// 1. Searched tools/names.json and idb_globals.txt for "BigCheat" (only a
+//    Mac hit: idbs/spiderman_names.txt has ".PShell_BigCheat__Fv" at
+//    0x000c69c0, 52 bytes, PowerPC address, no PC equivalent listed).
+// 2. Checked the PC functions immediately after PShell_ActivateCheat
+//    (0x47c440, this file's other neighbour): sub_47C430/47C4A0/47C4C0/
+//    47C4E0/47C500 all decompile to small straight-line global-init
+//    functions, but none write 5 dwords of -1 plus 2 bytes of 1 in this
+//    shape.
+// 3. Raw byte search of the whole exe for 4+ back-to-back
+//    "mov dword ptr [addr], -1" (C7 05 imm32 FFFFFFFFh) encodings: zero
+//    hits anywhere in the binary.
+// 4. IDA disassembly-text search for the same absolute-address -1 store
+//    shape (both immediate-encoded and register-then-store, "or reg,-1"
+//    followed by "mov [addr],reg" x4+): only one hit (0x49a3e4), which
+//    turned out to be an unrelated, much larger function (allocates a
+//    CMenu, references the string "time attack").
+// 5. func_query for unnamed subs sized 55-75 bytes (the PC equivalent of
+//    the Mac's 52 bytes) in the surrounding .text range: decompiled the
+//    closest candidates (0x479d30, 0x47a3f0, 0x478140, 0x4794d0, 0x4796a0,
+//    0x472890, 0x4721b0, 0x482d20); none match (0x47a3f0 turned out to
+//    already be PShell_InstructionalText under a sub_ name).
+// Also: this function is not called from anywhere else in the repo yet
+// (not wired into any patch_*() hook), and its 7 globals are still plain
+// file-local statics (no G_* fixed game address), so even the source
+// itself does not yet target real game memory. Left @NotOk rather than
+// guess at addresses; whoever revisits this should ask the maintainer for
+// the real address or check a newer IDB export.
 void PShell_BigCheat(void)
 {
       gCheatRelatedOne = 1;
