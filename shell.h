@@ -322,7 +322,10 @@ class CShellMysterioHeadCircle : public CQuadBit
 
 		SHandle field_84;
 
-		PADDING(4);
+		// Real field, not padding: read/written by Move (this+35 in the original,
+		// i.e. offset 0x8C) as a plain i32 phase accumulator, right before
+		// field_90 (this+36, the per-frame increment added to it).
+		i32 field_8C;
 
 		i32 field_90;
 };

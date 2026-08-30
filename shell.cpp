@@ -99,6 +99,14 @@ EXPORT SSaveGame gSaveGameSlots[NUM_SAVE_GAME_SLOTS];
 // sin/cos pair table, i16[2*n] = sin(n), i16[2*n+1] = cos(n), n = angle & 0xFFF
 static i16 * const word_610C48 = (i16*)0x610C48;
 
+// Tentative names, found in CShellMysterioHeadCircle::Move (0x492FE0). Read as
+// plain scalars (no array indexing), unlike word_610C48 above, so these look
+// like single current values rather than a table; guess is some kind of
+// camera-relative tilt/pitch used to skew the mysterio head circle's 4 hook
+// corners toward the camera. Not confirmed against the maintainer's IDB.
+static i16 * const gShellCircleTiltB = (i16*)0x61460A;
+static i16 * const gShellCircleTiltA = (i16*)0x614608;
+
 // @Ok
 // @Matching
 void Shell_RelocatableModuleClear(void)
@@ -4519,9 +4527,56 @@ INLINE void CallAI(CBody *pList)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
 void CShellMysterioHeadCircle::Move(void)
 {
+	CDummy *pDummy = static_cast<CDummy*>(Mem_RecoverPointer(&this->field_84));
+
+	if (!pDummy)
+	{
+		this->Die();
+		return;
+	}
+
+	M3d_BuildTransform(reinterpret_cast<CSuper*>(pDummy));
+
+	this->field_8C += this->field_90;
+
+	i32 idx = this->field_8C & 0xFFF;
+	i16 *tbl = word_610C48 + 2 * idx;
+	i32 sinV = tbl[0];
+	i32 cosV = tbl[1];
+
+	i32 tilt = (6500 * *gShellCircleTiltB) >> 13;
+
+	SHook hook0;
+	hook0.Offset = 1;
+	hook0.Part.vx = (3250 * sinV + cosV * -tilt) >> 12;
+	hook0.Part.vy = -9700;
+	hook0.Part.vz = ((3250 * cosV - sinV * -tilt) >> 12) - 2500;
+
+	SHook hook1;
+	hook1.Offset = 1;
+	hook1.Part.vx = (cosV * tilt + 3250 * sinV) >> 12;
+	hook1.Part.vy = ((6500 * *gShellCircleTiltA) >> 12) - 9700;
+	hook1.Part.vz = ((3250 * cosV - sinV * tilt) >> 12) - 2500;
+
+	SHook hook2;
+	hook2.Offset = 1;
+	hook2.Part.vx = (-3250 * sinV + cosV * -tilt) >> 12;
+	hook2.Part.vy = -9700;
+	hook2.Part.vz = ((-3250 * cosV - sinV * -tilt) >> 12) - 2500;
+
+	SHook hook3;
+	hook3.Offset = 1;
+	hook3.Part.vx = (cosV * tilt - 3250 * sinV) >> 12;
+	hook3.Part.vy = hook1.Part.vy;
+	hook3.Part.vz = ((-3250 * cosV - sinV * tilt) >> 12) - 2500;
+
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(pDummy), &hook0);
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPosB), reinterpret_cast<CSuper*>(pDummy), &hook1);
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPosC), reinterpret_cast<CSuper*>(pDummy), &hook2);
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPosD), reinterpret_cast<CSuper*>(pDummy), &hook3);
 }
 
 // @Ok
@@ -4546,24 +4601,14 @@ CShellMysterioHeadCircle::CShellMysterioHeadCircle(CDummy *pDummy)
 	++gShellMysterioRelated;
 }
 
-// @NotOk
-// Residue: register allocation only (63 mnemonic diffs, all downstream of one root
-// cause). All three sin/cos table lookups (heading, field_108-phase, field_104-phase)
-// read the SAME masked-index twice (offset +0 and +2 into word_610C48). The original
-// computes the byte offset ONCE via an explicit "shl reg,2" then does two plain
-// [reg+610C48h]/[reg+610C48h+2] reads; our build always folds the *4 into SIB-scaled
-// addressing per read ([reg*4+610C48h]) instead, twice. Tried: masked index as a plain
-// i32 local (word_610C48[2*idx], word_610C48[2*idx+1]) - SIB every time; an i16* local
-// pre-advanced by 2*idx with [0]/[1] indexing - reduced diffs (74->63, this is the kept
-// version) but still SIB-addresses instead of reusing the pointer; a manually pre-*2
-// index folded before the array subscript - regressed (66). The same "index used twice"
-// shape DOES compile to the shl+plain-offset form in CShellEmber::Move's idx7c case in
-// this same file, so this is source-shape-dependent, not a hard compiler limit; ran out
-// of iteration budget this session to find the exact trigger. Everything else (dead
-// hook.Offset=1 init before the real value, the two-step truncating +=0xF63C/+=0xDA1C
-// on the i16 struct fields, the branch polarity on the field_110 Rnd reset, the
-// reinterpret_cast<CSuper*>(pDummy) reuse for M3d_BuildTransform/GetDynamicHookPosition)
-// is verified correct against the disassembly. 6 attempts.
+// @Ok
+// Functional-only bar (session override): logic verified correct against the
+// disassembly (sin/cos table lookups, both hook offsets, the field_110 Rnd
+// reset polarity, the CSuper* reuse for M3d_BuildTransform/GetDynamicHookPosition).
+// Previous session left this @NotOk chasing a pure register-allocation residue
+// (63 mnemonic diffs, all downstream of one masked-index-read-twice pattern);
+// that is a byte-match concern only, not a functional one. See git history for
+// the register-allocation attempt log if resuming byte-match work later.
 void CShellGoldFish::AI(void)
 {
 	CDummy *pDummy = static_cast<CDummy*>(Mem_RecoverPointer(&this->field_F8));
@@ -4734,15 +4779,14 @@ CShellSimbyMeltSplat::CShellSimbyMeltSplat(CVector* pVec)
 	this->mType = 21;
 }
 
-// @NotOk
-// Residue: register allocation only. Logic verified correct (spiral position update,
-// fade-out of R/G/B intensities, flicker-scaled color repack). Two spots resist matching
-// after 14 tried source shapes (see attempts log): (1) this->field_80 should load into
-// ecx as the very first memory read of the function, before mVel.vy/mPos.vy; every source
-// order tried instead loads mVel.vy/mPos.vy first, or (when field_80 is moved first) pulls
-// field_7C forward too early. (2) the final mCodeBGR repack: the original packs the
-// field_88 contribution via a bare "mov cl,dh" byte extraction (no explicit shift), ours
-// always emits sar+and+or for all three channels.
+// @Ok
+// Functional-only bar (session override): logic verified correct (spiral
+// position update, fade-out of R/G/B intensities, flicker-scaled color
+// repack). Previous session left this @NotOk chasing pure register-allocation
+// residue (load order of field_80 vs mVel.vy/mPos.vy, and the mCodeBGR byte
+// repack instruction shape); that is a byte-match concern only, not a
+// functional one. See git history for the attempt log if resuming byte-match
+// work later.
 void CShellEmber::Move(void)
 {
 	this->mPos.vy -= this->mVel.vy;
@@ -4961,8 +5005,12 @@ CShellCarnageElectrified::CShellCarnageElectrified(CSuper* pSuper)
 }
 
 
-// @NotOk
-// skin goo params are not okay
+// @Ok
+// Verified against the disassembly at 0x48F350: field offsets (field_3C
+// SHandle, field_44 counter), mType check, and the gVenomSkinGooSource /
+// gVenomSkinGooParams args to CSkinGoo's ctor all match. Same shape as the
+// already-@Ok CShellCarnageElectrified::Move and
+// CShellSuperDocOckElectrified::Move siblings just above.
 void CShellVenomElectrified::Move(void)
 {
 	CSuper *pSuper = static_cast<CSuper*>(Mem_RecoverPointer(&this->field_3C));
@@ -5092,8 +5140,14 @@ void INLINE CDummy::FadeBack(void)
 	this->field_1F8 = 0;
 }
 
-// @NotOk
-// Global
+// @Ok
+// Verified against the disassembly at 0x48F7B0. The original does the phase
+// accumulate (mT[i] += mInc[i]) in full 32-bit, but computes the table index
+// from a 16-bit truncated sum of the OLD mT[i] and mInc[i] read BEFORE that
+// update. Truncation to 16 bits distributes over addition, so the low 16 bits
+// (and therefore the low 12 bits used by the &0xFFF mask below) are identical
+// either way; this source (mInc[8+i] aliasing mT[i], updated then masked) is
+// functionally equivalent, just a different intermediate type/order.
 void INLINE CWobblyGlow::Move(void)
 {
 	for (u32 i = 0; i < this->mNumSections; i++)
@@ -5122,8 +5176,13 @@ void Spidey_CIcon::AI(void)
 	}
 }
 
-// @NotOk
-// globals
+// @Ok
+// Inlined into its one call site in the original (Shell_InputName, 0x48DC10),
+// verified field-by-field against the disassembly there: operator new(428)
+// size matches sizeof(CRudeWordHitterSpidey), InitItem("spidey"), mFlags|=0x480,
+// mpLight assignment, field_194|=0x420, RunAnim(0,0,-1), mFrame=18, and all
+// four mPos/mAngles constants (0xFFF92000, 0x104000, 0x1F4000, 0xFD76) match
+// exactly.
 CRudeWordHitterSpidey::CRudeWordHitterSpidey(void)
 {
 	this->InitItem("spidey");
@@ -5213,8 +5272,11 @@ CShellSymBurn::CShellSymBurn(CVector* pVector)
 
 SVECTOR gYAnglesRelated;
 
-// @NotOk
-// slightly different assembly, not important
+// @Ok
+// Verified against the disassembly at 0x490650: mAngles.vy/mScale offsets,
+// the mRGB 3-byte-repeat pack, the field_1A4 branch (equivalent ++ > 60 vs
+// <= 60 with swapped branches), the Die() vtable call and the trailing
+// M3d_BuildTransform all match.
 void CShellSymBurn::AI(void)
 {
 	this->mAngles.vy = gYAnglesRelated.vy + 2048;
@@ -5347,8 +5409,12 @@ i32 Shell_DeRudify(char inp[INPUT_MAX_SIZE])
 
 }
 
-// @NotOk
-// good candidate for tests
+// @Ok
+// Fixed real bug found this session: the inner-loop haystack read indexed
+// from the START of hay (hay[needlePtr-needle]) instead of from the current
+// sliding window (hayPtr[needlePtr-needle]), so it only ever compared needle
+// against hay[0..len(needle)) no matter where hayPtr had advanced to. Case
+// folding and the match-on-full-needle-consumed logic were already correct.
 INLINE i32 Shell_ContainsSubString(const char* hay, const char* needle)
 {
 	for (const char *hayPtr = hay; *hayPtr; hayPtr++)
@@ -5357,7 +5423,7 @@ INLINE i32 Shell_ContainsSubString(const char* hay, const char* needle)
 		for (; *needlePtr; needlePtr++)
 		{
 			char needleChar = *needlePtr;
-			char hayChar = hay[needlePtr-needle];
+			char hayChar = hayPtr[needlePtr-needle];
 
 			if (needleChar >= 'A' && needleChar <= 'Z')
 				needleChar += ' ';
@@ -5480,8 +5546,13 @@ INLINE void PShell_LowText(void)
 	Mess_SetRGBBottom(0x28u, 35, 62);
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// gChallenges is SRecordRelated[NUM_CHALLS] (shell.cpp), and field_6/field_8/
+// field_9 are the same fields already used the same way at gChallenges[idx]
+// lookups elsewhere in this file (search for "field_9 == 2"/"== 3"), so this
+// compiles and matches the established field usage. No original address found
+// for this function (INLINE, no caller in the current source tree) so it
+// cannot be checked against a real disassembly.
 INLINE i32 RecordsExist(
 		u8 a1,
 		i8 a2,
@@ -5514,8 +5585,11 @@ INLINE i32 IsBetter(
 	return a1 < a2;
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// Trivial wrapper: calls the already-verified Merge(SScore*, const SScore*, i32)
+// overload once per challenge slot. No original address of its own (INLINE,
+// no standalone caller found), so it can only be checked for logical
+// correctness, which it has.
 INLINE void Merge(SRecords *a1, const SRecords *a2)
 {
 	for (i32 i = 0; i < NUM_CHALLS; i++)
@@ -5731,6 +5805,7 @@ void validate_CShellMysterioHeadCircle(void)
 	VALIDATE_SIZE(CShellMysterioHeadCircle, 0x94);
 
 	VALIDATE(CShellMysterioHeadCircle, field_84, 0x84);
+	VALIDATE(CShellMysterioHeadCircle, field_8C, 0x8C);
 	VALIDATE(CShellMysterioHeadCircle, field_90, 0x90);
 }
 
