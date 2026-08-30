@@ -2157,17 +2157,17 @@ i32 CFT4Bit::Fade(i32 a2)
 	return 0;
 }
 
-// @NotOk
-// residue: 72 mnemonic diffs (411 bytes vs original 406). Fields, offsets and
-// param roles are all verified against the already-@Ok CFlatBit::CFlatBit,
-// CFT4Bit::CFT4Bit and CFT4Bit::SetAnim bodies. The remaining gap is a single
-// MSVC6 inlining choice: the original keeps CFT4Bit::CFT4Bit (0x408B80) as a
-// real out-of-line call inside "new CFlatBit()" (it inlines CBit::CBit inside
-// itself), but our build keeps CBit::CBit alone as the real call instead and
-// inlines CFT4Bit's and CFlatBit's tails. 14 source-shape hypotheses tried
-// (declaration order, statement order, helper calls vs raw field writes,
-// hoisting locals, file position), none changed which level stays real. See
-// bit.attempts.md for the full log.
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Verified against
+// Hex-Rays at 0x410890: mPos = *pCenter, mVel = {cos*velScale, 0, sin*velScale},
+// SetAnim/SetSemiTransparent/SetScale/SetTransDecay all match field-for-field.
+// The trailing `p->mFrigDeltaZ = frigDeltaZ;` outside the `if (p)` block is not
+// a bug in this source: the original binary does the exact same unconditional
+// write after the allocation-failure branch (a genuine original defect,
+// reproduced here per the "don't fix original bugs" rule). Byte residue (72
+// mnemonic diffs, register/inlining-level choice only) was chased through 14
+// source-shape hypotheses previously; not revisited since this bar only needs
+// functional correctness.
 i32 Bit_MakeSpriteRing(CVector *pCenter, i32 count, i32 velScale, i32 animIndex, i32 scale, i32 field3E, i32 transDecay, i32 frigDeltaZ)
 {
 	for (i32 i = 0; i < count; i++)
