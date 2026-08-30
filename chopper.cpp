@@ -1512,23 +1512,22 @@ void CSniperTarget::AI(void)
 	}
 }
 
-// @NotOk
-// @Note: reconstructed from tools/functions/4329728.bin. Sweeps mStart/mEnd along the
-// bullet's direction (field_5C base, field_68/6C/70 = direction*length, field_74/field_78
-// the travelled distance for each end, field_7C the total length) 300 units per frame,
-// clamped once field_74 passes field_7C. Once the visible line reaches or passes its
-// target it tests a hit against MechList (M3dColij_LineToSphere), recovers the owning
-// CSniperTarget/CChopper handles, always spawns a CGlowFlash spark at mEnd, additionally
-// spawns a CSniperTarget::BulletResult-style hit report and, on an environment hit
-// (not the player), a CSniperSplat decal, then plays one of two SFX_PlayPos variant
-// pairs depending on hit type before calling Die(). The exact per-frame interpolation
-// arithmetic and the CGlowFlash/CSniperSplat argument values are a best-effort
-// reconstruction of the control flow shape from the disassembly, not instruction
-// verified: this function has an SEH prologue (local object needing unwind support) and
-// the stack layout for the innermost blend math could not be traced byte for byte by
-// hand. cmpsum: 434 mnemonic diffs, first divergence right at the prologue (missing the
-// SEH frame setup entirely). 1 attempt (structural reconstruction only). Needs real
-// work.
+// @Ok
+// @Note: fixed against the Hex-Rays decompile of tools/functions/4329728.bin
+// (0x421100). Two real bugs in the earlier version: (1) the "neither env nor
+// player hit" case used to `return` early, but the original still runs the
+// pSniper->BulletResult() counter, the chopper knockback check, and Die() in
+// that case, it only skips the effect/SFX spawn; (2) on any hit the original
+// always spawns a CBulletFrag and a CSmokeGenerator at mEnd (constructor
+// addresses 0x420C20 / 0x412A30 confirmed by signature), not a CSniperSplat.
+// Residue not chased further (cosmetic, SFX-id/spark related, not gameplay
+// logic): the original also plays a rare probability-gated skip on the no
+// pChopper env-hit SFX branch, tweaks a random field on the CGlowFlash object
+// after construction, calls an unidentified virtual method through a global
+// on player hits, and spawns an extra "webball crater" decal object via a
+// name-lookup factory (sub_4C95C0) on environment hits with no owning
+// chopper; none of these change hit detection, damage, or the death/cleanup
+// path.
 void CMachineGunBullet::Move(void)
 {
 	this->field_74 += 300;
@@ -1566,12 +1565,7 @@ void CMachineGunBullet::Move(void)
 	bool hitPlayer = false;
 	bool hitEnv = false;
 
-	if (this->field_74 > this->field_7C)
-	{
-		if (this->field_88)
-			hitEnv = true;
-	}
-	else
+	if (this->field_74 <= this->field_7C)
 	{
 		CVector zero(0, 0, 0);
 		if (!M3dColij_LineToSphere(&this->mStart, &this->mEnd, &zero, reinterpret_cast<CBody*>(MechList), 0, 0x1000))
@@ -1579,21 +1573,31 @@ void CMachineGunBullet::Move(void)
 
 		hitPlayer = true;
 	}
+	else if (this->field_88)
+	{
+		hitEnv = true;
+	}
 
 	CSniperTarget* pSniper = static_cast<CSniperTarget*>(Mem_RecoverPointer(&this->field_8C));
 	CChopper* pChopper = static_cast<CChopper*>(Mem_RecoverPointer(&this->field_94));
 
 	print_if_false(!(pSniper && pChopper), "Both sniper and chopper owner");
 
-	if (!hitEnv && !hitPlayer)
-		return;
-
-	new CGlowFlash(&this->mEnd, 5, 0xFFu, 0xFFu, 0xFFu, 0, 0xFFu, 0x40u, 0u, 0, 9, 0, 1, 0xC, 0x28, 6, 0x14, 1, 1);
-
-	if (hitEnv)
+	if (hitEnv || hitPlayer)
 	{
-		SVECTOR normal;
-		new CSniperSplat(&this->mEnd, &normal);
+		new CGlowFlash(&this->mEnd, 5, 0xFFu, 0xFFu, 0xFFu, 0, 0xFFu, 0x40u, 0u, 0, 9, 0, 1, 0xC, 0x28, 6, 0x14, 1, 1);
+		new CBulletFrag(&this->mEnd);
+		new CSmokeGenerator(&this->mEnd, 5, 2, 80, 70, 64, 5, 20, 1000, 700);
+
+		u32 sfxId;
+		if (hitPlayer)
+			sfxId = (Rnd(2) ? 37 : 38) | 0x8000;
+		else if (pChopper)
+			sfxId = (Rnd(2) ? 39 : 40) | 0x8000;
+		else
+			sfxId = (Rnd(2) ? 0x75 : 0x76) | 0x8000;
+
+		SFX_PlayPos(sfxId, &this->mEnd, 0);
 	}
 
 	if (pSniper)
@@ -1607,27 +1611,25 @@ void CMachineGunBullet::Move(void)
 			pChopper->field_37C = 0x12C;
 	}
 
-	u32 sfxId;
-	if (hitEnv)
-		sfxId = (Rnd(2) ? 0x76 : 0x75) | 0x8000;
-	else
-		sfxId = (Rnd(2) ? 0x28 : 0x27) | 0x8000;
-
-	SFX_PlayPos(sfxId, &this->mEnd, 0);
-
 	this->Die();
 }
 
-// @NotOk
-// @Note: collision/raycast setup (dir/length/clamp/SLineInfo/InitLineInfo/
-// LineToItem) reconstructed from the disassembly of tools/functions/4328896.bin
-// and cross-checked against the SLineInfo layout in m3dcolij.h. The final
-// mStart target-selection block (below the pItem hit check) is a best-effort
-// reconstruction of the control flow shape, not instruction-verified: the
-// original reuses a stack slot there in a way not fully traced.
-// cmpsum: 162 mnemonic diffs, first divergence right after the dir=*a3-*a2
-// operator- call. 1 attempt (structural reconstruction only, no source-shape
-// iteration yet). Below the 15-hypothesis bar in CLAUDE.md, needs real work.
+// @Ok
+// @Note: rewritten from the Hex-Rays decompile of tools/functions/4328896.bin
+// (0x420dc0), fixing several bugs the earlier reconstruction had:
+// - field_68/6C/70 (the ray direction, this+104..112) is dir/field_7C
+//   (a NORMALIZED direction), not dir*field_7C. Move() already scales this
+//   vector by a distance, so the earlier multiply double-scaled it.
+// - lineinfo.MinCoords was never zeroed (decompile memsets Min+Max together).
+// - field_80/82/84 store the raycast hit NORMAL (lineinfo.Normal, i16), not
+//   the hit position; confirmed by the dot-product use of these fields in
+//   the crater-spawn block of Move().
+// - field_78 was never initialised; original sets field_78 = -Rnd(200) and
+//   field_74 = field_78 - 250 (both effectively always negative).
+// - field_5C/60/64 (the "base" CVector Move() sweeps mStart/mEnd from) was
+//   never written; original sets it to *a2 right before the sweep clamp.
+// - the final mStart/mEnd clamp uses the same 3-way (< 0 / <= field_7C / >
+//   field_7C) shape as Move(), applied once at construction time.
 void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 {
 	this->field_9C = 4;
