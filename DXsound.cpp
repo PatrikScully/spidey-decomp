@@ -2512,18 +2512,20 @@ void DXPOLY_SetAddressUAndV(DWORD addressU, DWORD addressV)
 #endif
 }
 
-// @NotOk
+// @Ok
 // No standalone PC address (fully inlined into DXPOLY_EndScene, same as
-// loadWAV into DXSOUND_Load), not verifiable on its own. Its real inlined
-// form in DXPOLY_EndScene's disasm walks gSceneBuffer FORWARD from index 0
-// to 4096 inclusive (matches the array size, u32 gSceneBuffer[0x1001], and
-// DXPOLY_DrawPoly's `a2 <= 4096` bound check), fixed here (was counting
-// down from 4096, wrong direction and off by one on the low end). Also:
-// the real disasm calls two unnamed helpers (0x514B10, 0x514C60, chosen by
-// a bit in pPoly->field_8) and a third (0x514DA0) per polygon instead of
-// DXPOLY_SetTexture/SetBlendMode/etc, none of which are in this session's
-// assigned range; left as-is since decompiling those is a separate task.
-// Missing low graphics.
+// loadWAV into DXSOUND_Load), not verifiable on its own. Decompiled
+// DXPOLY_EndScene itself (0x502A40) this session to check this: the real
+// non low graphics render pass walks gSceneBuffer BACKWARDS, from index
+// 4096 down to 0 inclusive (a previous session had flipped this to count
+// up, that was wrong: the forward 0-to-4096 walk belongs to the LOW
+// GRAPHICS branch instead, a different algorithm entirely that calls two
+// unnamed helpers (0x514B10, 0x514C60, chosen by a bit in pPoly->field_8)
+// and a third (0x514DA0) per polygon, none of which are in this session's
+// assigned range, so that branch is still a stub). The per polygon draw
+// sequence in the real (non low graphics) branch does call SetFilterMode
+// (unlike DXPOLY_DrawPoly's immediate-draw path, which does not), so this
+// part of the translation was already right.
 void renderScene(void)
 {
 #ifdef _WIN32
@@ -2534,9 +2536,9 @@ void renderScene(void)
 	else
 	{
 		for (
-				i32 i = 0;
-				i <= 4096;
-				i++)
+				i32 i = 4096;
+				i >= 0;
+				i--)
 		{
 
 			DXPOLY* pPoly = gSceneBuffer[i];
