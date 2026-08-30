@@ -49,10 +49,17 @@ void FileIO_Continue(void)
 {
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
+// this is a debug-only print in the original source. in the release build
+// (the one we match) it compiles down to an empty function that just does
+// "retn" (nullsub_1 at 0x4015B0, confirmed by decompiling FileIO_Open
+// 0x430940 and FileIO_Load 0x430A40: every DebugPrintfX call site there
+// resolves to a call to that same empty stub). cdecl callers still push the
+// format string and varargs and clean the stack themselves, so an empty
+// body here is correct, not a placeholder.
 void DebugPrintfX(char *,...)
 {
-    printf("DebugPrintfX(char *,...)");
 }
 
 // @Ok
