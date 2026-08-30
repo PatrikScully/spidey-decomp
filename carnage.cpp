@@ -1955,10 +1955,13 @@ void CCarnage::TakeHit(void)
 	}
 }
 
-// @NotOk
-// residue: one dead-looking read/store in the field_218&1 branch not yet reproduced,
-// see ~/Documents/spidey-work/wt/carnage.attempts.md (8 hypotheses tried).
-// Structurally 199 vs 200 original instructions, off by exactly this one spot.
+// @Ok
+// Found the real gap via IDA decompile of 0x41CD40 (j_CCarnage_DoPhysics/CCarnage_DoPhysics): the
+// field_218&1 branch does more than TurnTowards, it also derives a forward speed from how fast the
+// turn is (my_abs(mAngVel.vy), (64-turnRate)<<6 floored at 0, scaled x17/x6/x8 by mAnim==7/16/other)
+// and feeds that into GetVecFromMagDir(&mVel, speed>>12, &sameAimVector) to set mVel. That whole
+// block was missing before (this is what the old "one dead-looking read/store" note was circling).
+// field_218&2/&4 branches only do TurnTowards, no such block, matches disasm.
 void CCarnage::DoPhysics(void)
 {
 	if (this->field_218 & 1)
@@ -1966,6 +1969,19 @@ void CCarnage::DoPhysics(void)
 		CSVector v1;
 		Utils_CalcAim(&v1, &this->mPos, &this->field_240);
 		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, CSVector(0, v1.vy, 0), 10);
+
+		i32 turnRate = my_abs(this->mAngVel.vy);
+		i32 speed = (turnRate < 64) ? (64 - turnRate) << 6 : 0;
+
+		i32 scaled;
+		if (this->mAnim == 7)
+			scaled = 17 * speed;
+		else if (this->mAnim == 16)
+			scaled = 6 * speed;
+		else
+			scaled = 8 * speed;
+
+		Utils_GetVecFromMagDir(&this->mVel, scaled >> 12, &v1);
 	}
 	else if (this->field_218 & 2)
 	{
