@@ -42,7 +42,16 @@ EXPORT i32 gFadePalettesActive;
 EXPORT u8 gPaletteFadeRGB[3];
 EXPORT u8 gPaletteFadeRGB2[3];
 
-// @NotOk
+// @Ok
+// Verified functionally against 0x45bc70 field by field: field_458/9/A =
+// arg>>3, field_45C=1, field_45D/E/F loaded from gPaletteFadeRGB (matches
+// byte_56FB79/7A/7B in the disasm), the pPaletteList walk (Clut>>6 for hi,
+// (Clut&0x3F)<<4 for lo, flags&1 picks the 16C vs 256C block, DCMem_New
+// sizes 0x44/0x404 match, StoreImage() called twice per palette matches the
+// two guarded sub_46CB90 debug-stub calls, DrawSync() once at the end).
+// cmpsum still shows 68 mnemonic diffs (register/stack scheduling in the
+// walk loop only, no offset or logic mismatch); left as register-allocation
+// residue per this session's functional-only bar.
 CFadePalettes::CFadePalettes(u8 a1, u8 a2, u8 a3)
 {
 	print_if_false(gFadePalettesActive == 0, "Tried to create two global fade palettes");
