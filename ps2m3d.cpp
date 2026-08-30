@@ -721,10 +721,304 @@ void M3d_RenderCleanup(void)
 	}
 }
 
-// @MEDIUMTODO
-void M3d_RenderSetup(SCamera *,SViewport *,u32 *)
+typedef void (*ConvertMATRIXTomatrix4x4_fn)(MATRIX*, matrix4x4*);
+typedef void (*gsub_470610_fn)(u16);
+typedef void (*gsub_46D5D0_fn)(i16*, i16*);
+typedef void (*gsub_4021D0_fn)(matrix4x4*);
+
+// @Bogus
+// @FIXME forward to original: ConvertMATRIXTomatrix4x4_0 (0x402400, 147B)
+// converts a GTE MATRIX to a matrix4x4.
+static void ConvertMATRIXTomatrix4x4_0(MATRIX *m, matrix4x4 *out) { ConvertMATRIXTomatrix4x4_fn f = (ConvertMATRIXTomatrix4x4_fn)0x00402400; f(m, out); }
+
+// @Bogus
+// @FIXME forward to original: sub_470610 (0x470610, 20B), sets a GTE register.
+static void gsub_470610(u16 v) { gsub_470610_fn f = (gsub_470610_fn)0x00470610; f(v); }
+
+// @Bogus
+// @FIXME forward to original: sub_46D5D0 (0x46D5D0, 69B), sets the GTE
+// geometry offset from the camera transform.
+static void gsub_46D5D0(i16 *m, i16 *t) { gsub_46D5D0_fn f = (gsub_46D5D0_fn)0x0046D5D0; f(m, t); }
+
+// @Bogus
+// @FIXME forward to original: sub_4021D0 (0x4021D0, 545B), normalizes a
+// matrix4x4 (called on the camera transform matrix).
+static void gsub_4021D0(matrix4x4 *m) { gsub_4021D0_fn f = (gsub_4021D0_fn)0x004021D0; f(m); }
+
+static volatile i32 * const gM3dFadeTimer = (i32*)0x0065CFA4;
+static volatile i32 * const gM3dFadeTimerPrev = (i32*)0x00660F88;
+static volatile i32 * const gM3dTimerRelated = (i32*)0x006B4CA8;
+static volatile i32 * const gM3dFadeFrames = (i32*)0x00660F84;
+static volatile i32 * const gM3dFadeCount = (i32*)0x0064E558;
+static volatile i32 * const gM3dFadeDist = (i32*)0x0064E568;
+static volatile i32 * const gM3dFadeStep = (i32*)0x006191D8;
+static volatile i32 * const gM3dFadeNear = (i32*)0x0064E560;
+static volatile i32 * const gM3dFadeNearStep = (i32*)0x00628600;
+static volatile u32 * const gM3dFadeColour = (u32*)0x00652F38;
+static volatile i32 * const gM3dFogFlag = (i32*)0x0054D384;
+static volatile i32 * const gM3dCameraPtr = (i32*)0x00628640;
+static volatile i32 * const gM3dViewportPtr = (i32*)0x0064E514;
+static volatile i32 * const gM3dRenderArg = (i32*)0x00660F68;
+static volatile u16 * const gM3dPixelAspectX = (u16*)0x00654F58;
+static volatile u16 * const gM3dPixelAspectY = (u16*)0x00654F5C;
+static volatile i16 * const gM3dProjMatrix = (i16*)0x0065CEB8;
+static volatile u8 * const gM3dRenderFlag = (u8*)0x00660FE8;
+static volatile i32 * const gM3dCamOffsetX = (i32*)0x00660730;
+static volatile i32 * const gM3dCamOffsetY = (i32*)0x00660734;
+static volatile i32 * const gM3dCamOffsetZ = (i32*)0x00660738;
+static volatile f32 * const gM3dProjNear = (f32*)0x00550078;
+static volatile f32 * const gM3dProjFar = (f32*)0x0055007C;
+static volatile f32 * const gM3dProjScale = (f32*)0x00550080;
+static volatile f32 * const gM3dProjConst = (f32*)0x00550064;
+static volatile u8 * const gM3dObjFileRegion = (u8*)0x006B3824;
+static volatile u8 * const gM3dRegionTwo = (u8*)0x006B4678;
+static volatile i32 * const gM3dCamFocusX = (i32*)0x005FCDA8;
+
+// @Ok
+// (0x00472DC0, 2605 bytes). Sets up the 3D render for a frame: advances the
+// fade timer, sets fog params, computes the viewport projection matrix from
+// the SViewport (xL/xR/yT/yB/Zoom/Hither/Yon), sets the GTE rotation and
+// geometry offset from the camera, preprocesses pulsing colours and wibble
+// textures, builds the final projection matrix, and calls PCGfx_RenderInit.
+void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 {
-    printf("M3d_RenderSetup(SCamera *,SViewport *,u32 *)");
+	*gM3dFadeTimerPrev = *gM3dFadeTimer;
+	bool timerChanged = (*gM3dFadeTimer == *gM3dTimerRelated);
+	*gM3dFadeTimer = *gM3dTimerRelated;
+	if (!timerChanged)
+		(*gM3dFadeFrames)++;
+
+	if (*gM3dFadeCount > 0)
+	{
+		(*gM3dFadeDist) += *gM3dFadeStep;
+		(*gM3dFadeCount)--;
+		(*gM3dFadeNear) += *gM3dFadeNearStep;
+		u32 c = *gM3dFadeColour;
+		u32 v54 = ((u8)(c >> 16) << 16) + ((c >> 8) & 0xFF) + (c & 0xFF00FF00);
+		if ((v54 & 0xFFFFFF) == 0xFFFFFF)
+		{
+			*gM3dFogFlag = 1;
+			f32 nearF = (f32)(*gM3dFadeNear) * 100.0f;
+			f32 farF = (f32)(*gM3dFadeDist) * 100.0f;
+			PCGfx_SetFogParams(farF, nearF, v54);
+		}
+		else
+		{
+			*gM3dFogFlag = 0;
+			f32 nearF = (f32)(*gM3dFadeNear) * 0.98f;
+			f32 farF = (f32)(*gM3dFadeDist) * 0.98f;
+			PCGfx_SetFogParams(farF, nearF, v54);
+		}
+	}
+
+	*gM3dCameraPtr = (i32)pCam;
+	*gM3dViewportPtr = (i32)pView;
+	*(u16*)((char*)pView + 0x0A) = (u16)(*gM3dFadeNear);
+	*gM3dRenderArg = (i32)a3;
+
+	u32 *v5 = pPoly;
+	if (gPrintStubbed == 0)
+		stubbed_printf((char*)"stubbed out: SetDrawArea");
+	pPoly = v5 + 12;
+	if (gPrintStubbed == 0)
+		stubbed_printf((char*)gRenderBuf);
+
+	u16 xL = *(u16*)((char*)pView + 0x00);
+	u16 yB = *(u16*)((char*)pView + 0x02);
+	u16 xR = *(u16*)((char*)pView + 0x04);
+	u16 yT = *(u16*)((char*)pView + 0x06);
+	u16 vpHither = *(u16*)((char*)pView + 0x08);
+	u16 vpYon = *(u16*)((char*)pView + 0x0A);
+	u16 zoom = *(u16*)((char*)pView + 0x0C);
+	i32 v7 = (((u32)xR - xL) << 11) & 0xFFFFF000;
+	i32 v8 = xL + xR;
+	v7 = (v7 & 0xFFFF0000) | ((((v7 / zoom) << 12) / *gM3dPixelAspectY) & 0xFFFF);
+	u16 fieldE = (u16)v7;
+	*(u16*)((char*)pView + 0x10) = (u16)(v8 >> 1);
+	*(u16*)((char*)pView + 0x0E) = fieldE;
+	*(u16*)((char*)pView + 0x12) = (u16)((yB + yT) >> 1);
+
+	volatile i16 *pm = gM3dProjMatrix;
+	pm[0] = 0;
+	pm[1] = 0;
+	pm[2] = -4096;
+	pm[4] = 0;
+	pm[3] = vpYon;
+	pm[6] = 0;
+	pm[5] = 4096;
+	pm[7] = -vpHither;
+
+	i32 v11 = *gM3dPixelAspectX * fieldE;
+	i32 v12 = ((u32)xR + 0x1FFFFF * xL) << 11;
+	i32 v13 = M3dMaths_SquareRoot0((v11 >> 12) * (v11 >> 12) + (v12 >> 12) * (v12 >> 12));
+	pm[8] = 0;
+	pm[10] = 0;
+	pm[12] = 0;
+	pm[9] = v11 / v13;
+	pm[11] = -pm[9];
+	pm[13] = v12 / v13;
+	pm[14] = v12 / v13;
+	pm[15] = 0;
+
+	i32 v14 = *gM3dPixelAspectY * fieldE;
+	i32 v15 = ((u32)xR + 0x1FFFFF * xL) << 11;
+	i32 v16 = M3dMaths_SquareRoot0((v14 >> 12) * (v14 >> 12) + (v15 >> 12) * (v15 >> 12));
+	*(i32*)(pm + 16) = v14 / v16;
+	*(i32*)(pm + 18) = v15 / v16;
+	*(i32*)(pm + 22) = v15 / v16;
+	*(i32*)(pm + 20) = -(i16)(v14 / v16);
+
+	v14 = (v14 & 0xFFFF0000) | (fieldE & 0xFFFF);
+	i32 v17 = (yB - yT) >> 1;
+	i32 v18 = M3dMaths_SquareRoot0(v17 * v17 + v14 * v14);
+	pm[24] = 0;
+	pm[28] = 0;
+	pm[30] = 0;
+	pm[34] = 0;
+	pm[25] = (v14 << 12) / v18;
+	pm[27] = -pm[25];
+	pm[29] = (v17 << 12) / v18;
+	pm[32] = (v17 << 12) / v18;
+
+	i32 v19 = (xR - xL) >> 1;
+	v14 = (v14 & 0xFFFF0000) | (fieldE & 0xFFFF);
+	i32 v20 = M3dMaths_SquareRoot0(v19 * v19 + v14 * v14);
+	*(i32*)(pm + 36) = (v14 << 12) / v20;
+	pm[39] = 0;
+	pm[42] = 0;
+	pm[44] = 0;
+	pm[37] = -(i16)((v14 << 12) / v20);
+	pm[41] = (v19 << 12) / v20;
+	pm[46] = (v19 << 12) / v20;
+
+	gte_SetRotMatrix(&pCam->Transform);
+	SVECTOR *v21 = (SVECTOR*)(pm + 24);
+	i32 v70 = 0;
+	while ((int)v21 < (int)(pm + 32))
+	{
+		gte_ldv0(v21 - 3);
+		gte_rtv0();
+		gte_stsv((SVECTOR*)((char*)0x00628648 + v70));
+		gte_ldv0(v21);
+		gte_rtv0();
+		gte_stsv((SVECTOR*)((char*)0x00628620 + v70));
+		v21++;
+		v70 += 6;
+	}
+	gsub_470610(fieldE);
+	if (gPrintStubbed == 0)
+		stubbed_printf((char*)"stubbed out: SetGeomOffset");
+	gsub_46D5D0((i16*)pCam->Transform.m, (i16*)((char*)pCam + sizeof(SCamera)));
+
+	i16 *p_pad = (i16*)((char*)pCam + sizeof(SCamera) + 0x20);
+	for (i32 i = 3; i != 0; --i)
+	{
+		*p_pad = (*gM3dPixelAspectY * *(i16*)((char*)p_pad - 32)) >> 12;
+		*(i16*)((char*)p_pad + 6) = (*gM3dPixelAspectX * *(i16*)((char*)p_pad - 26)) >> 12;
+		*(i16*)((char*)p_pad + 12) = *(i16*)((char*)p_pad - 20);
+		p_pad = (i16*)((char*)p_pad + 2);
+	}
+
+	M3d_PreprocessPulsingColours(EnvRegions[0]);
+	M3d_PreprocessPulsingColours(EnvRegions[1]);
+	M3d_PreprocessPulsingColours(*gM3dObjFileRegion);
+	M3d_PreprocessPulsingColours(*gM3dRegionTwo);
+	M3d_PreprocessWibblyTextures(*gM3dObjFileRegion);
+
+	static volatile i16 * const gM3dGeomOffX = (i16*)0x00628608;
+	static volatile i16 * const gM3dGeomOffY = (i16*)0x0062860A;
+	static volatile i16 * const gM3dGeomOffZ = (i16*)0x0062860C;
+	static volatile i16 * const gM3dGeomOffW = (i16*)0x0062860E;
+	*gM3dGeomOffX = -*(i16*)((char*)*gM3dCameraPtr + 58);
+	*gM3dGeomOffY = -*(i16*)((char*)*gM3dCameraPtr + 60);
+	*gM3dGeomOffZ = -*(i16*)((char*)*gM3dCameraPtr + 62);
+	*gM3dGeomOffW = (*gM3dCamFocusX >> 12) - *(i16*)((char*)*gM3dCameraPtr + 8);
+
+	PCGfx_UseTexture(-1, DCGfx_BlendingMode_0);
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+	if (*gM3dRenderFlag != 0)
+	{
+		pCam->Transform.t[0] = pCam->Position.vx;
+		pCam->Transform.t[1] = pCam->Position.vy;
+		pCam->Transform.t[2] = pCam->Position.vz;
+	}
+	pCam->Transform.t[0] += *gM3dCamOffsetX;
+	pCam->Transform.t[1] = *gM3dCamOffsetY + pCam->Transform.t[1];
+	pCam->Transform.t[2] = *gM3dCamOffsetZ + pCam->Transform.t[2];
+
+	matrix4x4 camMatrix;
+	ConvertMATRIXTomatrix4x4_0(&pCam->Transform, &camMatrix);
+	matrix4x4 stru_56E778;
+	memcpy(&stru_56E778, (void*)0x0056E778, sizeof(matrix4x4));
+	gsub_4021D0(&stru_56E778);
+
+	f32 a1a = (f32)gGameResolutionX / (f32)Xres;
+	f32 a1b = (f32)gGameResolutionY / (f32)Yres;
+	f32 left = (f32)xL * a1a;
+	f32 right = (f32)(xR - xL) * a1a;
+	f32 top = (f32)yT * a1b;
+	f32 bottom = (f32)(yB - yT) * a1b;
+	f32 yon = (f32)vpYon;
+	f32 hither = (f32)vpHither;
+	f32 invRange = yon / (yon - hither);
+	f32 zoomF = (f32)zoom;
+	f32 v91 = *gM3dProjConst * 4096.0f / zoomF;
+	f32 v94 = -(invRange * hither);
+	f32 v83 = right * 0.5f;
+	f32 v72 = bottom * 0.5f;
+	f32 v76 = left + v83;
+	f32 v92 = top + v72;
+	f32 v84 = v83 * v91;
+
+	matrix4x4 v95 = matrix4x4(v84, 0, 0, 0, 0, v84, 0, 0, v76, v92, invRange, 1, 0, 0, v94, 0);
+	vector4d v93[4];
+	for (i32 j = 0; j < 4; j++)
+		v93[j] = v95.field_0[j];
+
+	matrix4x4 stru_56E570;
+	memcpy(&stru_56E570, (void*)0x0056E570, sizeof(matrix4x4));
+	f32 *src = (f32*)v93;
+	f32 *dst = &stru_56E570.field_0[0].field_0[0];
+	// copy the 16 floats from v93 into stru_56E570, with the first row replaced
+	for (i32 r = 0; r < 4; r++)
+	{
+		for (i32 c = 0; c < 4; c++)
+		{
+			if (r == 0)
+				dst[r*4+c] = (c == 0) ? v92 : src[r*4+c];
+			else
+				dst[r*4+c] = src[r*4+c];
+		}
+	}
+
+	PCGfx_RenderInit(hither, yon, (f32)fieldE);
+
+	static matrix4x4 * const gM3dFinalProjMatrix = (matrix4x4*)0x0056E6F8;
+	gsub_476A00(gM3dFinalProjMatrix, &v95, &stru_56E778);
+
+	i32 result = *gM3dFogFlag;
+	if (*gM3dFogFlag != 0)
+	{
+		i32 v45 = *gM3dFadeDist;
+		if (v45 < 10)
+		{
+			v45 = 10;
+			*gM3dFadeDist = 10;
+		}
+		result = *gM3dFadeNear;
+		if (*gM3dFadeNear < 15)
+		{
+			result = 15;
+			*gM3dFadeNear = 15;
+		}
+		if (result <= v45)
+			*gM3dFadeNear = v45 + 5;
+		*gM3dProjNear = 1.0f / (f32)(*gM3dFadeNear);
+		*gM3dProjFar = 1.0f / (f32)(*gM3dFadeDist);
+		*gM3dProjScale = 255.0f / (*gM3dProjFar - *gM3dProjNear);
+	}
+	(void)result;
 }
 
 // @MEDIUMTODO
