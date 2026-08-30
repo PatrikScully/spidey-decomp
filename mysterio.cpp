@@ -507,11 +507,14 @@ CDamagedSoftSpotEffect::CDamagedSoftSpotEffect(CBody *pBody, i32 a2)
 	pSmoke->mProtected = 1;
 }
 
-// @NotOk
-// @FIXME field_48 type
+// @Ok
+// field_48 is a CSmokeGenerator* (set in the constructor above), deleted
+// here through its own virtual destructor. Matches 0x45aff0: read field_48
+// (offset 0x48), call its vtable scalar-deleting-destructor slot if
+// non-null, then chain to the base class destructor (compiler generated).
 CDamagedSoftSpotEffect::~CDamagedSoftSpotEffect(void)
 {
-	delete reinterpret_cast<CClass*>(this->field_48);
+	delete this->field_48;
 }
 
 static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
