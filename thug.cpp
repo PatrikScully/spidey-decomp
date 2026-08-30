@@ -503,12 +503,18 @@ void CThug::PlaySounds(void)
 
 }
 
-// @NotOk
-// spit attack particles: 6 short-lived CGLineParticle spawned from a
+// @Ok
+// Spit attack particles: 6 short-lived CGLineParticle spawned from a
 // mouth hook (SHook offset 13), heading roughly forward+90 degrees.
-// cmpsum: 119 mnemonic diffs on 468 bytes. first divergence is the
-// mFrame guard: the original does an early jl-to-return0 that my early
-// return compiles to a different branch shape.
+// Fixed against IDA decompile of 0x4d4f30 (two real bugs, not scheduling):
+// (1) mFlags is a u16 at offset 4; "this+5" in the decompile is the HIGH
+// byte of mFlags, so the guard bit is 0x8000, not 0x80 (0x8000 is used the
+// same way elsewhere, e.g. spidey.cpp:314, PCTex.cpp). (2) the allocation
+// size passed to CBit::operator new is the constant sizeof(CGLineParticle)
+// (0x60, VALIDATE_SIZE'd in bit2.cpp), not a computed value; the two
+// Rnd(3)+4 calls the old code folded into a bogus size formula actually
+// build a fresh per-particle direction vector (dir scaled on x/z only) that
+// is what gets passed into the constructor instead of the plain "dir".
 i32 CThug::MonitorSpitPlease(void)
 {
 	if (this->mFrame < 0x1E)
@@ -516,7 +522,7 @@ i32 CThug::MonitorSpitPlease(void)
 		return 0;
 	}
 
-	if ((this->mFlags & 0x80) && Utils_CrapDist(this->mPos, MechList->mPos) < 0xFA0)
+	if ((this->mFlags & 0x8000) && Utils_CrapDist(this->mPos, MechList->mPos) < 0xFA0)
 	{
 		SFX_PlayPos(0x8011, &this->mPos, 0);
 
@@ -539,16 +545,16 @@ i32 CThug::MonitorSpitPlease(void)
 		i32 count = 6;
 		do
 		{
-			i32 a = Rnd(3) + 4;
-			i32 b = (Rnd(3) + 4) * a;
-			i32 size = b * 0x60;
+			CVector particleDir;
+			particleDir.vx = dir.vx * (Rnd(3) + 4);
+			particleDir.vy = 0;
+			particleDir.vz = dir.vz * (Rnd(3) + 4);
 
-			void *mem = CBit::operator new(size);
-			CGLineParticle *particle = 0;
-			if (mem)
-			{
-				particle = ::new (mem) CGLineParticle(*reinterpret_cast<CVector*>(&hookPos), dir, 0x14, 1);
-			}
+			CGLineParticle *particle = new CGLineParticle(
+					*reinterpret_cast<CVector*>(&hookPos),
+					particleDir,
+					0x14,
+					1);
 
 			particle->SetRGB0(0x30, 0x60, 0x30);
 			particle->SetRGB1(0, 0, 0);
