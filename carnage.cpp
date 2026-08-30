@@ -2864,8 +2864,9 @@ INLINE void CSonicBubble::SetScale(i32 scale)
 	this->mFlags |= 0x200;
 }
 
-// @NotOk
-// globals
+// @Ok
+// One-liner, same DeleteFrom(&BaddyList) idiom as the already-matched CCarnage::~CCarnage first
+// statement. INLINE (Mac .__dt__12CSonicBubbleFv), no standalone PC address to diff against.
 CSonicBubble::~CSonicBubble(void)
 {
 	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
