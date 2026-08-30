@@ -894,8 +894,10 @@ setChaseFlag2:
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// Confirmed inlined into AttackPlayer's case 2 on PC (0x480170): the same
+// field_288 bit-0x10 test, SHitInfo build (14, 11, MechList->mPos-mPos, 15)
+// and Hit call appear directly there, matching this body exactly.
 INLINE i32 CRhino::CheckIfPlayerHit(void)
 {
 	i32 v4;
