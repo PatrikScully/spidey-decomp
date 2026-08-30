@@ -770,7 +770,7 @@ void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, 
 	submitPoly(verts, 4);
 }
 
-// @NotOk
+// @Ok
 // Same shape as PCGfx_DrawTPoly2D (screen space poly, own DXPOLY build,
 // direct DXPOLY_DrawPoly call, manual gDxPolys pointer walk), just 4
 // vertices instead of 3 (field_C=4, loop count 4). Reuses the zOffset
