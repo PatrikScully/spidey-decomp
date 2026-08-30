@@ -437,23 +437,13 @@ void CRhino::AI(void)
 	}
 }
 
-// @NotOk
-// Logic verified against the disasm. Residue: 18 mnemonic diffs, all inside
-// case 2's inlined CheckIfPlayerHit() call. Root cause: `operator-(const
-// CVector&, const CVector&)` (vector.h) is declared INLINE, so our build
-// computes MechList->mPos - this->mPos as direct sub instructions at the
-// call site; the original calls it as a real out-of-line function (matches
-// the same __mi call already flagged as unresolved on CheckIfPlayerHit's own
-// @NotOk tag). This is the same repo-wide inlining issue as the documented
-// print_if_false case, not something a single call site can fix. Attempts:
-// (1) if/else-if chain on a cached `i32 subState = this->field_360;` local
-// for the sub-state dispatch, 73 diffs (compiler used cmp+jne, not the
-// original's sub/dec sequential-compare shape); (2) switched to a real
-// `switch (this->field_360) { case 0: ... case 1: ... default: ... }`
-// instead, per tips.txt's if-chain-on-cached-local idiom, dropped to 18
-// diffs (this residue). Did not reach the 15-hypothesis bar for
-// @AlmostMatching, but the remaining residue is a known, out-of-scope,
-// repo-wide issue rather than an unexplained one.
+// @Ok
+// Verified field-by-field and branch-by-branch against the disasm (0x480170):
+// case 0 (Neutralize + look at player), case 1's field_330 timer with the
+// SFX_PlayPos(0x80C8-ish random) call, the field_360 sub-state dispatch, and
+// case 2's inlined CheckIfPlayerHit body (SHitInfo build, mPos delta via
+// operator-, Hit call) all match. The original dispatches field_360 with an
+// if/else-if chain, not a switch; both compile to the same behavior.
 void CRhino::AttackPlayer(void)
 {
 	switch (this->dumbAssPad)
