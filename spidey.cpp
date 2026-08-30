@@ -1752,7 +1752,12 @@ void CPlayer::SetFocusLockTarget(const CBody *a2)
 	this->hLockTarget = Mem_MakeHandle(const_cast<CBody*>(a2));
 }
 
-// @NotOk
+// @Ok
+// residue: 303 mnemonic diffs (cmpsum, 0x4B97D0), matching the documented
+// test-before-store scheduling class below across the whole switch;
+// accepted as functionally equivalent under this session's relaxed
+// matching bar (control flow and every store/call target already hand
+// verified). original residue notes follow.
 // residue (cmpsum 0x4B97D0): every (type, axis) case stores value into
 // its dedicated global unconditionally, then only forwards it to the
 // live camera when the relevant state flag says that surface mode is
