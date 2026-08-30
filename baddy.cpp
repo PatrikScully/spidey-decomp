@@ -1275,6 +1275,17 @@ i16 CBaddy::GetVariable(u16 a2)
 }
 
 // @BIGTODO
+// Checked the original disasm at 0x404c50 (878 bytes, 273 instructions).
+// It is a multi-phase per-frame timer/animation-blend update: two early
+// "field_2B4/field_2B0 countdown" branches for things already in
+// progress, then a big block (once both counters hit 0) that seeds a
+// blend pose from a fixed global (dword_60D9E0/word_60D9E4), reads
+// field_1F8 for a "startup" countdown, and on the field_2A8 bit 0 /
+// field_2AC bit 0 flags either runs a full pose-blend setup (several
+// calls into the same CVector/pose helper family used elsewhere in this
+// file, e.g. sub_4E7590/sub_4E7900/sub_4E78A0) or a shorter variant.
+// Genuinely BIGTODO scale (many unnamed helper calls, several fields not
+// yet in baddy.h), left as a stub.
 void CBaddy::DoPhysics(i32)
 {
 	printf("void CBaddy::DoPhysics(int)");
