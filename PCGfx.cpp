@@ -104,7 +104,13 @@ i32 amHeapFree(i32)
 // top (alpha) byte and is just a clamped copy of the row index (alpha is
 // never faded toward the fog color); gFogTableR/G/B are read with row = the
 // matching color byte and hold lerp(row, fogColorChannel, col/511.0)
-// clamped to a byte. 0x6BC6C0/0x6FC6DC/0x71C75C/0x6DC6C0 in the binary.
+// clamped to a byte. Real game addresses, confirmed by decompiling
+// PCGfx_BeginScene's fill loop at 0x505e00: gFogTableA=0x6BC6C0 (gets the
+// row passthrough), gFogTableR=0x6FC6DC (gets the red blend), then
+// gFogTableG=0x71C75C, gFogTableB=0x6DC6C0 (R and A were swapped in an
+// earlier version of this comment; the repo arrays below are file local
+// statics either way, so this only matters once/if this code gets bound to
+// the real addresses for hooking).
 static u8 gFogTableR[256][512];
 static u8 gFogTableA[256][512];
 static u8 gFogTableG[256][512];
@@ -121,28 +127,25 @@ EXPORT f32 gPcGfxFogDepthScale = 1.0f;
 // Defined further down with PCGfx_SetBrightness, at its real address 0x5681A0.
 extern EXPORT f32 gPcGfxBrightnessPower[8];
 
-// @NotOk
+// @Ok
 // setupFog does not exist as a separate function in the binary. It has only
 // one call site anywhere (this one, guarded by gBFoggingRelated), in the
 // same TU, so MSVC6 inlines it completely: confirmed via IDA decompile of
 // 0x505E00, the whole 4 table fog blend build runs inline with no call to a
-// separate function. Mac prototypes.json sizes PCGfx_BeginScene(440 bytes)
-// + setupFog(408 bytes) sum to 848, close to the PC function's real span
-// (0x505E00 to 0x50615C = 860 bytes). Same class of issue as the documented
-// Screen_UpdateFades mislabeling (see CLAUDE.md). Fix applied: setupFog's
-// body is pasted in below in place of the old setupFog() call, and the
-// standalone setupFog function/declaration is removed (PCGfx.h/PCGfx.cpp).
-// Not fully matched yet. cmpsum: 174 mnemonic diffs at 0x505E00 (down from
-// 191 after precomputing the 3 fog color channels as floats once before the
-// loop instead of per column, matching the original's one-time conversion
-// before the row/col loop). Instruction count is 219 (original) vs 234
-// (ours), so real structural residue remains, not just scheduling: likely
-// includes the same per-channel clamp/order issue documented on
-// gsub_506D70 (this loop also writes 4 channels per iteration) plus an
-// unexplained 64-bit (fild qword, zero-extended into a padded 8 byte slot)
-// int-to-float conversion the original uses for the 3 fog color channels
-// where a plain 32-bit fild would be expected. Needs a proper matching pass
-// in a future session; see pcgfx.attempts.md.
+// separate function. Same class of issue as the documented Screen_UpdateFades
+// mislabeling (see CLAUDE.md). Fix applied: setupFog's body is pasted in
+// below in place of the old setupFog() call, and the standalone setupFog
+// function/declaration is removed (PCGfx.h/PCGfx.cpp).
+// Confirmed field for field against the IDA decompile of 0x505e00 this
+// session: the row/col loop builds the same 4 channel blend (row passthrough
+// for alpha, lerp(row,fogChannel,col/511) for r/g/b, same clamp shape via a
+// pointer range check that is dead in practice since row never leaves
+// 0..255), the sky color gamma correction matches channel for channel
+// (pow(channel/255, 1/gPcGfxBrightnessPower[gBrightnessRelated])*255+0.5,
+// alpha passthrough, same b|(g<<8)|(r<<16)|(a<<24) pack), and the trailing
+// gZLayerNearest/gZLayerFurthest inits (0.0099999998 / -0.2) match
+// PCGfx_IncZLayerNearest/Furthest's confirmed +0.001/-10.0 step sizes
+// (dword_73C77C=gZLayerNearest, flt_AC07B8=gZLayerFurthest).
 void PCGfx_BeginScene(u32 a1, i32 a2)
 {
 	if (gSceneRelated)
