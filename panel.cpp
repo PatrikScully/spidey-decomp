@@ -406,6 +406,7 @@ static i32 * const gBombTimerAnimOnePos = (i32*)0x0060F66C;
 static i32 * const gBombTimerAnimTwoPos = (i32*)0x0060F74C;
 static i32 * const gBombTimerLastMinute = (i32*)0x0060F780;
 
+// @Ok
 void Panel_DisplayTimer(void)
 {
 	i32 LevelId = Trig_GetLevelId();

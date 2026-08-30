@@ -107,6 +107,7 @@ i32 Shatter_Face(CItem *,u32 *,i32,i32,i32,i32,i32)
 // 0x6A7658: last glass shatter position (for sound distance comparison).
 static CVector gLastGlassShatterPos;
 
+// @Ok
 i32 Shatter_Glass(i32 count, CVector const *pA, CVector const *pB, CVector const *pC, CVector const *pNormal, u8 r, u8 g, u8 b)
 {
     CVector center = (*pB + *pC) >> 1;
