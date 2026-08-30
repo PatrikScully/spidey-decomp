@@ -3052,7 +3052,9 @@ void spideyLog(char *,...)
     printf("spideyLog(char *,...)");
 }
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B9180 (0x4B9180).
+// cmpsum confirms the documented 22 mnemonic diffs.
 // gCostumeRegionEntries[Region * 17] holds a per-region pointer table (same
 // table Spidey_SwapSuitTextures/Spidey_BagHead already use); index 7 is the
 // head model entry. entry+2 (u16) is the vertex/part count, entry+0x1C is
