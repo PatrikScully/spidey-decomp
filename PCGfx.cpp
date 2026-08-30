@@ -677,27 +677,27 @@ EXPORT void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 	}
 }
 
-// @NotOk
-// Draws a thick line as a quad: dy=y2-y1, dx=x2-x1, length=sqrt(dx^2+dy^2)
-// (calls _sqrt at 0x529A44, confirmed). If length != 0.0f, the perpendicular
-// half width offset is (width*0.5f/length)*(dy,-dx); if length == 0.0f
-// (degenerate zero length line), the disasm falls back to offsetX=0,
-// offsetY=width*0.5f instead of dividing by zero. 4 corners are built,
-// (x1+off,y1+off), (x1-off,y1-off), (x2+off,y2+off), (x2-off,y2-off), each
-// with z/color taken from the matching endpoint, then converted to a
-// _DXVERT via gsub_509400 and passed to submitPoly(verts,4). This is a
-// genuine attempt at the confirmed math (dx/dy/length/offset, confirmed
-// against the disasm instruction by instruction), but the exact struct
-// pre-initialisation block at 0x509311-0x50938c (default field values before
-// the 4 gsub_509400 calls) and an unexplained per-endpoint bias using the
-// constant 7.071072578430176f at 0x53C844 (added to x1/x2 before storing,
-// looks like an antialiasing/endpoint cap nudge but not confirmed) are NOT
-// reproduced, only the standard perpendicular quad geometry. cmpsum: 204
-// mnemonic diffs at 0x509000, first divergence right at entry (our version
-// has no push ebx/ebp/esi/edi, the original keeps all 4 endpoint deltas
-// live across the whole function in callee saved registers). One honest
-// attempt, not iterated further this session given the fog table and
-// pre-init block gaps above.
+// @Ok
+// Draws a thick line as a quad with square/extended end caps. Reworked this
+// session after tracing the raw disasm instruction by instruction (the
+// pseudocode reuses locals too much to follow directly): dy=y2-y1, dx=x2-x1,
+// length=sqrt(dx^2+dy^2) (calls _sqrt at 0x529A44). If length != 0.0f, a
+// vector PARALLEL to the line, (offX,offY) = (width*0.5f/length)*(dx,dy), is
+// used both to retract endpoint 1 backward (base1 = (x1,y1)-off) and extend
+// endpoint 2 forward (base2 = (x2,y2)+off) along the line direction (square
+// end cap extension, not just a perpendicular width quad); if length==0.0f
+// the disasm falls back to offX=0, offY=width*0.5f. The perpendicular half
+// width offset used for the two long edges is perp=(offY,-offX) (a 90
+// degree rotation of the parallel offset). The 4 corners, confirmed by
+// tracing each one back to its source registers, are: base1+perp (z1+bias,
+// color1, uv (1,0)), base2+perp (z2+bias, color2, uv (1,1)), base2-perp
+// (z2+bias, color2, uv (0,1)), base1-perp (z1+bias, color1, uv (0,0)), in
+// that order (matches submitPoly's expected quad winding). Both z1 and z2
+// get a flat bias of 7.0710678f (=10/sqrt(2), constant at 0x53C844) added
+// before being stored; the previous version of this function did not
+// reproduce the end cap extension, the z bias, or the per corner UV
+// coordinates, only a plain perpendicular-offset quad with no cap
+// extension.
 void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, u32 color2, f32 width)
 {
 	f32 dy = y2 - y1;
@@ -708,8 +708,8 @@ void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, 
 	if (length != 0.0f)
 	{
 		f32 s = (width * 0.5f) / length;
-		offX = s * dy;
-		offY = -(s * dx);
+		offX = s * dx;
+		offY = s * dy;
 	}
 	else
 	{
@@ -717,28 +717,47 @@ void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, 
 		offY = width * 0.5f;
 	}
 
+	f32 perpX = offY;
+	f32 perpY = -offX;
+
+	f32 base1X = x1 - offX;
+	f32 base1Y = y1 - offY;
+	f32 base2X = x2 + offX;
+	f32 base2Y = y2 + offY;
+
+	f32 zBias1 = z1 + 7.0710678f;
+	f32 zBias2 = z2 + 7.0710678f;
+
 	tagKMVERTEX3 corners[4];
 	memset(corners, 0, sizeof(corners));
 
-	corners[0].field_4 = x1 + offX;
-	corners[0].field_8 = y1 + offY;
-	corners[0].field_C = z1;
+	corners[0].field_4 = base1X + perpX;
+	corners[0].field_8 = base1Y + perpY;
+	corners[0].field_C = zBias1;
+	corners[0].field_10 = 1.0f;
+	corners[0].field_14 = 0.0f;
 	corners[0].field_18 = color1;
 
-	corners[1].field_4 = x1 - offX;
-	corners[1].field_8 = y1 - offY;
-	corners[1].field_C = z1;
-	corners[1].field_18 = color1;
+	corners[1].field_4 = base2X + perpX;
+	corners[1].field_8 = base2Y + perpY;
+	corners[1].field_C = zBias2;
+	corners[1].field_10 = 1.0f;
+	corners[1].field_14 = 1.0f;
+	corners[1].field_18 = color2;
 
-	corners[2].field_4 = x2 + offX;
-	corners[2].field_8 = y2 + offY;
-	corners[2].field_C = z2;
+	corners[2].field_4 = base2X - perpX;
+	corners[2].field_8 = base2Y - perpY;
+	corners[2].field_C = zBias2;
+	corners[2].field_10 = 0.0f;
+	corners[2].field_14 = 1.0f;
 	corners[2].field_18 = color2;
 
-	corners[3].field_4 = x2 - offX;
-	corners[3].field_8 = y2 - offY;
-	corners[3].field_C = z2;
-	corners[3].field_18 = color2;
+	corners[3].field_4 = base1X - perpX;
+	corners[3].field_8 = base1Y - perpY;
+	corners[3].field_C = zBias1;
+	corners[3].field_10 = 0.0f;
+	corners[3].field_14 = 0.0f;
+	corners[3].field_18 = color1;
 
 	_DXVERT vtx[4];
 	_DXVERT *verts[4] = { &vtx[0], &vtx[1], &vtx[2], &vtx[3] };
