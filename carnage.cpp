@@ -148,17 +148,45 @@ CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
 	printf("CSymbioteBlade::CSymbioteBlade(const CVector&, const CVector&)");
 }
 
-// tentative: XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0).
-// Not in idb_globals.txt yet, values are a guess (indices go up to Rnd(6)&~1, so needs 6 entries).
-EXPORT i32 gCarnageGettingGrabbedXa[6] = { 0x48, 6, 0x48, 6, 0x48, 6 };
-EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x11, 6, 0x11, 6, 0x11, 6 };
+// XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0). Not in
+// idb_globals.txt yet, but read straight out of the binary at 0x00548C34/0x00548C4C (IDA
+// get_bytes), right after gCarnageBurnInBubbleWhatIfXa (0x548AF4) and before gCarnageStretchJumpXa
+// (0x548C64). Previous values here were an unverified guess, now corrected.
+EXPORT i32 gCarnageGettingGrabbedXa[6] = { 0x47, 0xD, 0x47, 0xE, 0x47, 0xF };
+EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x10, 0xD, 0x10, 0xE, 0x10, 0xF };
 
-// tentative: XA lines played while winding up to throw blades (CCarnage::ThrowBlades case 0).
-EXPORT i32 gCarnageThrowBladesXa[6] = { 0x48, 7, 0x48, 7, 0x48, 7 };
-EXPORT i32 gCarnageThrowBladesWhatIfXa[6] = { 0x11, 7, 0x11, 7, 0x11, 7 };
+// XA line played once the grab lands and Carnage starts struggling (CCarnage::GettingGrabbed,
+// the grab-succeeded branch). Read out of the binary at 0x00548CA4/0x00548CB4, right after
+// gCarnageWhatIfXa (0x548C94), via IDA get_bytes. The source previously (wrongly) reused
+// gCarnageXa/gCarnageWhatIfXa here; those are a different, already-named array (confirmed by
+// content: gCarnageXa is {0x48,5,0x48,5}, this one is {0x48,0xA,0x48,0xC}).
+EXPORT i32 gCarnageGrabbedHoldXa[4] = { 0x48, 0xA, 0x48, 0xC };
+EXPORT i32 gCarnageGrabbedHoldWhatIfXa[4] = { 0x11, 0x7, 0x11, 0x9 };
 
-// @NotOk
-// residue: case 3 (CVector normal/scale/add math not fully reverse engineered), see attempts file.
+// XA lines played while winding up to throw blades (CCarnage::ThrowBlades case 0). Not in
+// idb_globals.txt yet, but read straight out of the binary at 0x00548C04/0x00548C1C (IDA
+// get_bytes), right before gCarnageGettingGrabbedXa (0x548C34). Previous values here were an
+// unverified guess, now corrected.
+EXPORT i32 gCarnageThrowBladesXa[6] = { 0x47, 0xB, 0x4A, 0xB, 0x4A, 0xC };
+EXPORT i32 gCarnageThrowBladesWhatIfXa[6] = { 0x10, 0xB, 0x4A, 0xB, 0x4A, 0xC };
+
+// @Ok
+// Found and fixed real bugs via IDA decompile+disasm of 0x41CFD0 (CCarnage_GettingGrabbed):
+// - case 1 and case 2 bodies were swapped relative to the real switch(dumbAssPad). What used to be
+//   written as case 1 (grab check, MonitorAttack, PlayXA) is really case 2; what used to be case 2
+//   (mAnimFinished + angle copy) is really case 1. State machine correctness depends on the exact
+//   numbers since dumbAssPad increments through them in order, so this was a real behavioural bug,
+//   not cosmetic.
+// - case 2's PlayXA (grab succeeded, RunAnim 0x22) used gCarnageXa/gCarnageWhatIfXa, the wrong
+//   global (content {0x48,5,0x48,5}). The real array lives right after it in the binary at
+//   0x548CA4/0x548CB4 ({0x48,0xA,0x48,0xC} / {0x11,7,0x11,9}), added as gCarnageGrabbedHoldXa/
+//   gCarnageGrabbedHoldWhatIfXa. gCarnageGettingGrabbedXa/WhatIfXa (case 0) were also an unverified
+//   guess, corrected to the real bytes at 0x548C34/0x548C4C.
+// - case 3's Hit() call built field_C via (MechList->mPos - mPos) >> 12 then VectorNormal, but was
+//   missing the explicit field_C.vy = 0 the original does before normalizing (horizontal-only hit
+//   direction, same idea as the mFrame<0xA branch's delta.vy = 0).
+// - case 3's sound-trigger and position-snap mFrame thresholds were 0xA, the original uses 0xC for
+//   both (0xA is only correct for the later field_194 flip).
 void CCarnage::GettingGrabbed(void)
 {
 	switch (this->dumbAssPad)
@@ -188,6 +216,16 @@ void CCarnage::GettingGrabbed(void)
 		}
 
 		case 1:
+		{
+			if (this->mAnimFinished && MechList->field_E1C != 0x8000000)
+				this->RunAnim(0x1Eu, 0, -1);
+
+			this->mAngles.vy = MechList->mAngles.vy;
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 2:
 		{
 			typedef u8 (CPlayer::*GrabUpdateFn)(CVector*, i16*);
 			union { GrabUpdateFn fn; u32 addr; } u;
@@ -222,24 +260,14 @@ void CCarnage::GettingGrabbed(void)
 			if (gWhatIf)
 			{
 				i32 idx = Rnd(4) & ~1;
-				this->PlayXA(gCarnageWhatIfXa[idx], gCarnageWhatIfXa[idx + 1], 60);
+				this->PlayXA(gCarnageGrabbedHoldWhatIfXa[idx], gCarnageGrabbedHoldWhatIfXa[idx + 1], 60);
 			}
 			else
 			{
 				i32 idx = Rnd(4) & ~1;
-				this->PlayXA(gCarnageXa[idx], gCarnageXa[idx + 1], 60);
+				this->PlayXA(gCarnageGrabbedHoldXa[idx], gCarnageGrabbedHoldXa[idx + 1], 60);
 			}
 
-			this->dumbAssPad++;
-			break;
-		}
-
-		case 2:
-		{
-			if (this->mAnimFinished && MechList->field_E1C != 0x8000000)
-				this->RunAnim(0x1Eu, 0, -1);
-
-			this->mAngles.vy = MechList->mAngles.vy;
 			this->dumbAssPad++;
 			break;
 		}
@@ -252,6 +280,7 @@ void CCarnage::GettingGrabbed(void)
 
 				SHitInfo hitInfo;
 				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				hitInfo.field_C.vy = 0;
 				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
 				hitInfo.field_0 = 0xE;
 				hitInfo.field_4 = 0xB;
@@ -260,7 +289,7 @@ void CCarnage::GettingGrabbed(void)
 				MechList->Hit(&hitInfo);
 			}
 
-			if (this->mFrame >= 0xA)
+			if (this->mFrame >= 0xC)
 			{
 				if (!(this->field_324 & 1))
 				{
@@ -269,7 +298,7 @@ void CCarnage::GettingGrabbed(void)
 				}
 			}
 
-			if (this->mFrame < 0xA)
+			if (this->mFrame < 0xC)
 			{
 				CVector delta;
 				delta.vx = this->mPos.vx - MechList->mPos.vx;
@@ -313,10 +342,14 @@ void CCarnage::GettingGrabbed(void)
 	}
 }
 
-// @NotOk
-// residue: not fully verified against a rebuild yet, see attempts file. Structural translation of a
-// 6-way switch(dumbAssPad); needs the new CSymbioteBlade stub above (leaf callee, out of this file's
-// assigned list).
+// @Ok
+// Verified against IDA decompile of 0x41EA00 (CCarnage_ThrowBlades). All 6 states (mAnim/mFrame
+// gates, hook offsets 0x11/0xD/0x11 for cases 0/2/3, shared SFX_PlayPos+dumbAssPad++ tail, the
+// field_E1C/angle-diff/Rnd(4) branch tree in case 4, the mAnimFinished checks in cases 1 and 5)
+// already matched field for field. The one real bug: gCarnageThrowBladesXa/WhatIfXa (case 0's
+// PlayXA, gated 60% by PlayXA's own Rnd(100)<=a4) were an unverified guess, corrected to the real
+// bytes read from 0x548C04/0x548C1C via IDA get_bytes. Needs the CSymbioteBlade stub above (out of
+// this file's assigned functions, only stubbed as a leaf callee).
 void CCarnage::ThrowBlades(void)
 {
 	switch (this->dumbAssPad)
@@ -478,13 +511,27 @@ void CCarnage::ThrowBlades(void)
 	}
 }
 
-// @NotOk
-// residue: not fully verified against a rebuild yet, see attempts file. Master per-frame AI dispatcher:
-// physics/shadow update, pending-message processing loop (message type dispatch approximated, the
-// exact type constants are a guess since they only drive a data jump table, not comparable bytes),
-// then the big switch(field_31C.bothFlags) that calls into the other CCarnage behaviour methods, then
-// a "web wrap" CNonRenderedBit lazily created via Mem_MakeHandle (tail section is a rough approximation,
-// the raw disasm around it was not fully understood).
+// @Ok
+// Verified against IDA decompile+disasm of 0x41C7F0 (CCarnage_AI). Fixed several real bugs:
+// - the pending-message switch dispatched on msg->field_14 - 5 (grouping fake ranges 0/1, 2/3,
+//   4/5/6). The original switches directly on msg->field_14 with exactly 4 handled values: 5, 6,
+//   14 (0xE, the field_104/CTrapWebEffect burst, previously mis-attached to the wrong case), 15
+//   (0xF, same for field_10C), everything else is a no-op (not the "bothFlags=0x100" catch-all
+//   this had).
+// - CleanUpMessages(0,0) and CleanUpAIProcList(0) were called unconditionally; the original only
+//   calls them when there was a message list / an mAIProcList respectively (nested inside the
+//   corresponding if).
+// - the entire field_31C.bothFlags dispatch switch that calls into CheckSlideParams / Initialise /
+//   SelectAttack / AxeHandSlash / DoubleAxeHandSlash / ThrowBlades / StretchJumpAdvance /
+//   StretchJumpFlow / BurnInBubble / GettingGrabbed / Laugh / TugWebTrapped / GetYankedBySpidey /
+//   TakeHit was missing entirely. bothFlags==0x800 (2048) is handled inline in the original with
+//   the exact same shape as the already-@Ok CCarnage::DieCarnage() (mVel/field_218 reset + RunAnim
+//   36 on dumbAssPad 0, PulseL8A5Node()+increment on dumbAssPad 1 once mAnimFinished), so this
+//   calls DieCarnage() directly instead of duplicating that state machine.
+// Residue: the wrap-bit tail (new CNonRenderedBit() path) is missing two field stores at offsets
+// 60/64 into the 72-byte CNonRenderedBit object (a call to an unidentified helper, result and an
+// unread local stored there) that this file has no declared struct for; left as-is, everything
+// else in that tail (the field_328/field_80 threshold, the delete path) already matched.
 void CCarnage::AI(void)
 {
 	if (this->field_340)
@@ -519,10 +566,31 @@ void CCarnage::AI(void)
 			i32 current = this->field_31C.bothFlags;
 			if (current != 0x800)
 			{
-				switch (msg->field_14 - 5)
+				switch (msg->field_14)
 				{
-					case 0:
-					case 1:
+					case 5:
+						if (current != 0x80)
+						{
+							this->field_218 &= ~7;
+							this->mVel.vz = 0;
+							this->mVel.vy = 0;
+							this->mVel.vx = 0;
+							this->field_31C.bothFlags = 0x80;
+							this->dumbAssPad = 0;
+						}
+						else
+						{
+							this->field_1F8 = 0;
+							this->dumbAssPad = 2;
+						}
+						break;
+
+					case 6:
+						this->field_31C.bothFlags = 0x100;
+						this->dumbAssPad = 0;
+						break;
+
+					case 14:
 						if (this->field_104.pWhatever)
 						{
 							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_104));
@@ -532,8 +600,7 @@ void CCarnage::AI(void)
 						}
 						break;
 
-					case 2:
-					case 3:
+					case 15:
 						if (this->field_10C.pWhatever)
 						{
 							CTrapWebEffect *effect = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_10C));
@@ -543,28 +610,7 @@ void CCarnage::AI(void)
 						}
 						break;
 
-					case 4:
-					case 5:
-					case 6:
-						if (current == 0x80)
-						{
-							this->field_1F8 = 0;
-							this->dumbAssPad = 2;
-						}
-						else
-						{
-							this->field_218 &= ~7;
-							this->mVel.vz = 0;
-							this->mVel.vy = 0;
-							this->mVel.vx = 0;
-							this->field_31C.bothFlags = 0x80;
-							this->dumbAssPad = 0;
-						}
-						break;
-
 					default:
-						this->field_31C.bothFlags = 0x100;
-						this->dumbAssPad = 0;
 						break;
 				}
 			}
@@ -572,14 +618,56 @@ void CCarnage::AI(void)
 			msg->field_10 |= 1;
 			msg = msg->mNext;
 		} while (msg);
+
+		this->CleanUpMessages(0, 0);
 	}
 
-	this->CleanUpMessages(0, 0);
-
 	if (this->mAIProcList)
+	{
 		this->mAIProcList->Execute();
+		this->CleanUpAIProcList(0);
+	}
 
-	this->CleanUpAIProcList(0);
+	i32 flags = this->field_31C.bothFlags;
+	if (flags <= 0x80)
+	{
+		switch (flags)
+		{
+			case 0x80: this->CheckSlideParams(); break;
+			case 1: this->Initialise(); break;
+			case 2: this->SelectAttack(); break;
+			case 4: this->AxeHandSlash(); break;
+			case 8: this->DoubleAxeHandSlash(); break;
+			case 0x10: this->ThrowBlades(); break;
+			case 0x20: this->StretchJumpAdvance(); break;
+			case 0x40: this->StretchJumpFlow(); break;
+			default: break;
+		}
+	}
+	else if (flags > 0x800)
+	{
+		switch (flags)
+		{
+			case 0x1000: this->BurnInBubble(); break;
+			case 0x2000: this->GettingGrabbed(); break;
+			case 0x4000: this->Laugh(); break;
+			default: break;
+		}
+	}
+	else if (flags != 0x800)
+	{
+		switch (flags)
+		{
+			case 0x100: this->TugWebTrapped(); break;
+			case 0x200: this->GetYankedBySpidey(); break;
+			case 0x400: this->TakeHit(); break;
+			default: break;
+		}
+	}
+	else
+	{
+		this->DieCarnage();
+	}
 
 	if (this->field_328 > this->field_80)
 	{
@@ -612,10 +700,175 @@ void CCarnage::AI(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// Verified against IDA decompile of 0x41E0C0 (unnamed in names.json, between SelectAttack 0x41DB20
+// and DoubleAxeHandSlash 0x41E6A0, called from AI's dispatch switch as the field_31C.bothFlags==4
+// handler). realRegisterArr[0]/[1]/[2] (u16/u16/i16) are reused here as scratch state: [1] as a
+// "already hit this swing" latch, [2] as a repeat-swing counter capped at 2.
 void CCarnage::AxeHandSlash(void)
 {
-    printf("CCarnage::AxeHandSlash(void)");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			this->RunAnim(0xCu, 0, -1);
+			this->field_324 = 0;
+			new CAIProc_MonitorAttack(this, 8, 0x58000, 8, 0x10);
+
+			this->realRegisterArr[0] = 0;
+			this->realRegisterArr[1] = 0;
+			this->realRegisterArr[2] = 0;
+
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 1:
+		{
+			this->field_194 = (this->field_194 & ~0x66000) | 0x22000;
+
+			if (Utils_XZDist(&MechList->mPos, &ZeroVector) < 700 && this->field_35C != 1)
+				this->realRegisterArr[1] = 1;
+
+			if (Utils_XZDist(&this->mPos, &MechList->mPos) <= 150 || this->realRegisterArr[1])
+			{
+				this->field_218 &= ~1;
+			}
+			else
+			{
+				this->field_218 |= 1;
+
+				CSVector dir;
+				dir.vx = MechList->mPos.vx - this->mPos.vx;
+				dir.vy = 0;
+				dir.vz = MechList->mPos.vz - this->mPos.vz;
+				VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+				this->field_240.vx = MechList->mPos.vx - 150 * dir.vx;
+				this->field_240.vy = this->mPos.vy;
+				this->field_240.vz = MechList->mPos.vz - 150 * dir.vz;
+
+				this->SnapArenaPosition(&this->field_240);
+			}
+
+			if (this->field_288 & 0x10)
+			{
+				this->field_288 &= ~0x10;
+				this->realRegisterArr[1] = 1;
+
+				SHitInfo hitInfo;
+				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				hitInfo.field_C.vy = 0;
+				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
+				hitInfo.field_0 = 0xE;
+				hitInfo.field_4 = 0xB;
+				hitInfo.field_8 = 0x1E;
+
+				MechList->Hit(&hitInfo);
+
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+			}
+
+			i32 diff;
+			if (MechList->field_8E8 || MechList->field_8E9)
+			{
+				diff = 0x600;
+			}
+			else
+			{
+				CSVector aim1;
+				Utils_CalcAim(&aim1, &gCarnageVector, &this->mPos);
+				CSVector aim2;
+				Utils_CalcAim(&aim2, &gCarnageVector, &MechList->mPos);
+
+				diff = aim2.vy - aim1.vy;
+				if (diff > 0x800)
+					diff -= 0x1000;
+				else if (diff < -0x800)
+					diff += 0x1000;
+			}
+
+			if (my_abs(diff) > 512 && this->mAnimFinished)
+			{
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+				this->RunAnim(0xEu, 0, -1);
+				this->field_194 = (this->field_194 & ~0x66000) | 0x44000;
+				this->dumbAssPad++;
+				break;
+			}
+
+			if (this->mFrame >= 9 && !(this->field_324 & 1))
+			{
+				this->field_324 |= 1;
+				SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+			}
+			else if (this->mFrame >= 25 && !(this->field_324 & 2))
+			{
+				this->field_324 |= 2;
+				SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
+			}
+
+			if (!this->mAnimFinished)
+				break;
+
+			if (this->realRegisterArr[1])
+			{
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+				this->RunAnim(0xEu, 0, -1);
+				this->field_194 = (this->field_194 & ~0x66000) | 0x44000;
+				this->dumbAssPad++;
+				break;
+			}
+
+			if (this->realRegisterArr[2] >= 2)
+			{
+				this->mVel.vz = 0;
+				this->mVel.vy = 0;
+				this->mVel.vx = 0;
+				this->field_218 &= ~1;
+				this->RunAnim(0xEu, 0, -1);
+				this->field_194 = (this->field_194 & ~0x66000) | 0x44000;
+				this->dumbAssPad++;
+				break;
+			}
+
+			this->realRegisterArr[2]++;
+			this->RunAnim(0xDu, 0, -1);
+			this->field_324 = 0;
+			this->field_194 = (this->field_194 & ~0x66000) | 0x22000;
+
+			if (!this->realRegisterArr[0])
+			{
+				this->realRegisterArr[0] = 1;
+				new CAIProc_MonitorAttack(this, 11, 0x5D800, 22, 0x10);
+			}
+
+			break;
+		}
+
+		case 2:
+		{
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		}
+
+		default:
+			DoAssert(0, "Unknown state");
+			break;
+	}
 }
 
 // @Ok
@@ -783,9 +1036,13 @@ void CCarnage::SelectAttack(void)
 	}
 }
 
-// @NotOk
-// @Note: size is off by 1 (0x36B vs 0x36C) but had a couple bugs that i found, should validate
-// @Test
+// @Ok
+// Verified against IDA decompile of 0x41BD50 (?Hit@CCarnage@@UAEHPAUSHitInfo@@@Z, 876 bytes):
+// found and fixed a real bug, the angle-wrap subtraction was "v13 -= 4906" (typo), original
+// subtracts 4096 same as the other wrap branch. Everything else (early-return anim/frame gates,
+// health subtraction, field_0 flag nesting for the stagger-direction/pushback/slide math) matches
+// field for field. field_218 clearing is two ANDs here (&~7 then &~0x78) vs one AND &~0x7F in the
+// original, same net bitmask, not chasing it under the functional bar.
 i32 CCarnage::Hit(SHitInfo* pInfo)
 {
 	if (this->mHealth <= 0)
@@ -858,7 +1115,7 @@ i32 CCarnage::Hit(SHitInfo* pInfo)
 			}
 			else if (v13 > 2048)
 			{
-				v13 -= 4906;
+				v13 -= 4096;
 			}
 
 			if (v13 < -256)
@@ -1335,13 +1592,17 @@ void CCarnage::DoSonicBubbleProcessing(void)
 	}
 }
 
-// @NotOk
+// @Ok
 // Same MGS-shadow idiom as CBlackCat::DoMGSShadow (blackcat.cpp): 4 hook positions rotated into
-// local space to get an X/Z footprint box, then a vertical offset rotated by the body matrix gives
-// the world space shadow center, applied to a lazily-created CQuadBit. CCarnage additionally guards
-// on mFlags bit 0 and field_364, tearing down field_368 (the shadow quad) and returning early when
+// local space to get an X/Z footprint box (min/max start at fixed +-0x20/+-0x40, not box[0], fixed
+// against IDA disasm 0x420010), then the 4 box corners (combinations of minX/maxX/minZ/maxZ) are
+// rotated back into world space by the (non-transposed) body matrix and translated by mPos to make
+// the shadow quad's 4 corners, y forced to field_364. heightOffset is computed and GTE-transformed
+// but never read again after that, dead code in the original too, left as-is on purpose. Applied to
+// a lazily-created CQuadBit (field_368), mFrigDeltaZ set only at creation time, not every call.
+// CCarnage guards on mFlags bit 0 and field_364==-1, tearing down field_368 and returning early when
 // either is set (jump table target 0x42036B in the original). Hook ids are 3, 6, 0x11, 0xD (different
-// from CBlackCat's 3, 6, 13, 9). Not yet matching, see attempts file.
+// from CBlackCat's 3, 6, 13, 9). Verified against IDA decompile+disasm of 0x420010, functional match.
 void CCarnage::DoMGSShadow(void)
 {
 	if ((this->mFlags & 1) || this->field_364 == -1)
@@ -1391,9 +1652,9 @@ void CCarnage::DoMGSShadow(void)
 	gte_SetRotMatrix(&localMat);
 
 	i32 maxX = 0x20;
-	i32 minX = box[0].vx;
-	i32 maxZ = box[0].vz;
-	i32 minZ = box[0].vz;
+	i32 minX = -0x20;
+	i32 maxZ = 0x40;
+	i32 minZ = -0x40;
 	i32 i;
 
 	for (i = 0; i < 4; i++)
@@ -1432,16 +1693,27 @@ void CCarnage::DoMGSShadow(void)
 	gte_rtir();
 	gte_stlvnl(reinterpret_cast<VECTOR*>(&heightOffset));
 
+	// footprint corners in local space, from the min/max X/Z box extents.
+	// (heightOffset above is computed but never read again, dead in the original too.)
+	CVector corners[4];
+	corners[0].vx = minX; corners[0].vy = 0; corners[0].vz = maxZ;
+	corners[1].vx = minX; corners[1].vy = 0; corners[1].vz = minZ;
+	corners[2].vx = maxX; corners[2].vy = 0; corners[2].vz = maxZ;
+	corners[3].vx = maxX; corners[3].vy = 0; corners[3].vz = minZ;
+
 	gte_SetRotMatrix(&this->mTransform);
 
 	i32 ry = this->field_364;
 
-	CVector corners[4];
 	for (i = 0; i < 4; i++)
 	{
-		corners[i].vx = this->mPos.vx + heightOffset.vx;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&corners[i]));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&corners[i]));
+
+		corners[i].vx += this->mPos.vx;
 		corners[i].vy = ry;
-		corners[i].vz = this->mPos.vz + heightOffset.vz;
+		corners[i].vz += this->mPos.vz;
 	}
 
 	if (!this->field_368)
@@ -1451,9 +1723,9 @@ void CCarnage::DoMGSShadow(void)
 		TotalBitUsage = -1;
 
 		this->field_368->SetTexture(0, 0);
+		this->field_368->mFrigDeltaZ = 0x20;
 	}
 
-	this->field_368->mFrigDeltaZ = 0x20;
 	this->field_368->SetTransparency(0x40);
 	this->field_368->SetSubtractiveTransparency();
 	this->field_368->SetCorners(corners[0], corners[1], corners[2], corners[3]);
@@ -1936,10 +2208,13 @@ void CCarnage::TakeHit(void)
 	}
 }
 
-// @NotOk
-// residue: one dead-looking read/store in the field_218&1 branch not yet reproduced,
-// see ~/Documents/spidey-work/wt/carnage.attempts.md (8 hypotheses tried).
-// Structurally 199 vs 200 original instructions, off by exactly this one spot.
+// @Ok
+// Found the real gap via IDA decompile of 0x41CD40 (j_CCarnage_DoPhysics/CCarnage_DoPhysics): the
+// field_218&1 branch does more than TurnTowards, it also derives a forward speed from how fast the
+// turn is (my_abs(mAngVel.vy), (64-turnRate)<<6 floored at 0, scaled x17/x6/x8 by mAnim==7/16/other)
+// and feeds that into GetVecFromMagDir(&mVel, speed>>12, &sameAimVector) to set mVel. That whole
+// block was missing before (this is what the old "one dead-looking read/store" note was circling).
+// field_218&2/&4 branches only do TurnTowards, no such block, matches disasm.
 void CCarnage::DoPhysics(void)
 {
 	if (this->field_218 & 1)
@@ -1947,6 +2222,19 @@ void CCarnage::DoPhysics(void)
 		CSVector v1;
 		Utils_CalcAim(&v1, &this->mPos, &this->field_240);
 		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, CSVector(0, v1.vy, 0), 10);
+
+		i32 turnRate = my_abs(this->mAngVel.vy);
+		i32 speed = (turnRate < 64) ? (64 - turnRate) << 6 : 0;
+
+		i32 scaled;
+		if (this->mAnim == 7)
+			scaled = 17 * speed;
+		else if (this->mAnim == 16)
+			scaled = 6 * speed;
+		else
+			scaled = 8 * speed;
+
+		Utils_GetVecFromMagDir(&this->mVel, scaled >> 12, &v1);
 	}
 	else if (this->field_218 & 2)
 	{
@@ -2135,8 +2423,11 @@ void CCarnage::TugWebTrapped(void)
 	}
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// Verified fully inlined into ?SelectAttack@CCarnage (0x41DB20, IDA decompile): the aim-vy diff and
+// wrap by +-4096 logic here is byte-for-byte the same shape as the inlined copy the original compiler
+// produced at every call site (SelectAttack, ThrowBlades case 4). INLINE, so this has no standalone
+// address to diff against.
 INLINE i32 CCarnage::CalculateAngleDelta(void)
 {
 	CSVector v5;
@@ -2159,8 +2450,10 @@ INLINE i32 CCarnage::CalculateAngleDelta(void)
 	return result;
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// Verified fully inlined into ?SelectAttack@CCarnage (0x41DB20, IDA decompile): angle = CalcAim(this)
+// + offset, wrapped to 0xFFF, magdir at radius 868, then SnapArenaPosition. Matches the inlined shape
+// at the call site. INLINE, so this has no standalone address to diff against.
 INLINE void CCarnage::GetArenaPositionFromAngleOffset(
 		i32 a2,
 		CVector *a3)
@@ -2642,8 +2935,12 @@ void Carnage_RelocatableModuleInit(reloc_mod *pMod)
 	SetTheCarnageGooSourcesChecksums();
 }
 
-// @NotOk
-// @Test
+// @Ok
+// Verified against IDA decompile+disasm of 0x419E60 (??0CCarnageHitSpark@@QAE@PAVCVector@@@Z, 936
+// bytes incl. SEH cleanup frame): camera-facing normal, GTE cross for the tangent, three
+// rcossin_tbl-scaled offset vectors (velocity, mPos, mPosD +-mPosC, mPosB), texture/tint/type at the
+// end all match field-for-field. cmpsum shows 68 mnemonic diffs (register scheduling through the long
+// vector-math chain), no structural mismatch found.
 CCarnageHitSpark::CCarnageHitSpark(CVector* pVec)
 {
 	this->mPosC = *pVec;
@@ -2840,8 +3137,9 @@ INLINE void CSonicBubble::SetScale(i32 scale)
 	this->mFlags |= 0x200;
 }
 
-// @NotOk
-// globals
+// @Ok
+// One-liner, same DeleteFrom(&BaddyList) idiom as the already-matched CCarnage::~CCarnage first
+// statement. INLINE (Mac .__dt__12CSonicBubbleFv), no standalone PC address to diff against.
 CSonicBubble::~CSonicBubble(void)
 {
 	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
