@@ -5,6 +5,8 @@
 #include "m3dinit.h"
 #include "SpideyDX.h"
 #include "spool.h"
+#include <math.h>
+#include <string.h>
 
 #include "validate.h"
 
@@ -199,9 +201,9 @@ void M3d_Render(void*)
 }
 
 // @MEDIUMTODO
-void DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *,void const *)
+void DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *)
 {
-    printf("DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *,void const *)");
+    printf("DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *)");
 }
 
 // @MEDIUMTODO
@@ -339,10 +341,134 @@ void M3d_PreprocessWibblyTextures(i32)
     printf("M3d_PreprocessWibblyTextures(i32)");
 }
 
-// @MEDIUMTODO
-void M3d_RenderBackground(void *)
+static volatile u8 * const gM3dBackgroundFlag = (u8*)0x00550024;
+static volatile i32 * const gM3dBackgroundDword = (i32*)0x00660F90;
+static u32 ** const gM3dBackgroundClut = (u32**)0x0064F5D0;
+static volatile u32 * const * const gM3dBackgroundModelData = (u32* const*)0x005F6764;
+static volatile i32 * const gM3dBackgroundSave = (i32*)0x0054D384;
+static volatile f32 * const gM3dBackgroundScale = (f32*)0x00550090;
+static volatile u8 * const gM3dBackgroundFlagTwo = (u8*)0x00652F3C;
+static volatile u8 * const gM3dBackgroundFlagThree = (u8*)0x00660FE2;
+static i32 * const gM3dIdentityOne = (i32*)0x0064E518;
+static i32 * const gM3dIdentityTwo = (i32*)0x0064E51C;
+static i32 * const gM3dIdentityThree = (i32*)0x0064E520;
+
+// @Ok
+// (0x004747C0, 1089 bytes). Renders the background models. Walks a linked
+// list of background entries (next at +0x20) from the end, and for each
+// entry that is usable and in a usable PSX region, builds a rotation matrix
+// from the entry's angles, scales it, and renders the model.
+void M3d_RenderBackground(void *pList)
 {
-    printf("M3d_RenderBackground(void *)");
+	if (pList == 0)
+		return;
+
+	PCGfx_SetRenderParameter(DCGfx_RenderParameter_4, (DCGfx_RenderSetting)(DCGfx_RenderSetting_e | DCGfx_RenderSetting_1));
+	PCGfx_SetRenderParameter(DCGfx_RenderParameter_1, DCGfx_RenderSetting_9);
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+	u8 savedFlag = *gM3dBackgroundFlag;
+	*gM3dBackgroundFlag = 1;
+	*gM3dBackgroundFlagTwo = 1;
+
+	// count the nodes in the linked list
+	i32 count = 0;
+	void *node = pList;
+	while (node != 0)
+	{
+		node = *(void**)((u8*)node + 0x20);
+		count++;
+	}
+
+	for (i32 i = count; i > 0; i--)
+	{
+		if (i >= 11 || *gM3dBackgroundFlagThree == 0)
+		{
+			// find the i-th node from the start
+			void *v4 = pList;
+			i32 v5 = i - 1;
+			while (v5 != 0)
+			{
+				v4 = *(void**)((u8*)v4 + 0x20);
+				v5--;
+			}
+
+			i8 entryFlag = *(i8*)((u8*)v4 + 5);
+			u8 region = *(u8*)((u8*)v4 + 0x1F);
+			if (entryFlag >= 0 && PSXRegion[region].Usable != 0)
+			{
+				*gM3dBackgroundDword = -65536;
+				*gM3dBackgroundClut = PSXRegion[region].pColourTable;
+				u16 modelIndex = *(u16*)((u8*)v4 + 0x1A);
+				SModel *pModel = PSXRegion[region].ppModels[modelIndex];
+				DCModelData *pModelData = (DCModelData*)(gM3dBackgroundModelData[region] + 36 * modelIndex);
+				i16 angleX = *(i16*)((u8*)v4 + 0x14);
+				i16 angleY = *(i16*)((u8*)v4 + 0x16);
+				i16 angleZ = *(i16*)((u8*)v4 + 0x18);
+
+				matrix4x4 v48;
+				if (angleX != 0 || angleY != 0 || angleZ != 0)
+				{
+					f32 scale = 3.1415927f / 2048.0f;
+					f32 z = (f32)angleZ * scale;
+					f32 y = (f32)angleY * scale;
+					f32 x = (f32)angleX * scale;
+					f32 sinx = (f32)sin(x), cosx = (f32)cos(x);
+					f32 siny = (f32)sin(y), cosy = (f32)cos(y);
+					f32 sinz = (f32)sin(z), cosz = (f32)cos(z);
+					f32 c00 = cosz * cosy;
+					f32 c01 = sinz * siny;
+					f32 c02 = cosz * siny;
+					f32 c03 = sinz * cosy;
+					f32 c10 = cosy * sinx;
+					f32 c11 = -sinx;
+					f32 c12 = siny * sinx;
+					f32 c20 = c00 * sinx + c01;
+					f32 c21 = cosx * sinz;
+					f32 c22 = c02 * sinx - c03;
+					f32 c23 = c03 * sinx - c02;
+					f32 c30 = sinz * sinx;
+					f32 c31 = c01 * sinx + c00;
+					v48 = matrix4x4(c31, c30, c23, 0, c22, c21, c20, 0, c12, c11, c10, 0, 0, 0, 0, 1.0f);
+				}
+				else
+				{
+					// identity matrix from the global tables
+					v48 = matrix4x4(
+						gM3dIdentityOne[0], gM3dIdentityOne[1], gM3dIdentityOne[2], gM3dIdentityOne[3],
+						gM3dIdentityOne[4], gM3dIdentityOne[5], gM3dIdentityOne[6], gM3dIdentityOne[7],
+						gM3dIdentityOne[8], gM3dIdentityOne[9], gM3dIdentityOne[10], gM3dIdentityOne[11],
+						gM3dIdentityOne[12], gM3dIdentityOne[13], gM3dIdentityOne[14], gM3dIdentityOne[15]);
+				}
+
+				f32 s = *gM3dBackgroundScale;
+				matrix4x4 v49 = matrix4x4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1.0f);
+
+				matrix4x4 v50;
+				gsub_476A00(&v50, &v48, &v49);
+				memcpy(&v48, &v50, sizeof(matrix4x4));
+
+				i32 saved = *gM3dBackgroundSave;
+				*gM3dBackgroundSave = 0;
+				i32 modelFlags = *(i32*)((u8*)pModelData + 0xC);
+				if ((modelFlags & 0x100) == 0)
+				{
+					if ((modelFlags & 0x4000) != 0)
+						DC_PSXModel_RenderModel(pModel, &v48, 0, pModelData);
+					else
+						DCModel_RenderModel(pModel, pModelData, &v48);
+				}
+				*gM3dBackgroundSave = saved;
+			}
+		}
+	}
+
+	*gM3dBackgroundFlagTwo = 0;
+	*gM3dBackgroundFlag = savedFlag;
+	PCGfx_SetRenderParameter(DCGfx_RenderParameter_1, DCGfx_RenderSetting_8);
+	PCGfx_SetRenderParameter(DCGfx_RenderParameter_4, DCGfx_RenderSetting_e);
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+	*gM3dBackgroundFlagThree = 0;
 }
 
 // @Ok
