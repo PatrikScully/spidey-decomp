@@ -388,7 +388,32 @@ void PreProcessAnimPacket(
 	Bit_UpdateQuickAnimLookups();
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Retagged from @MEDIUMTODO after reading the original at 0x4C9A60
+// (roughly 0xA80 / 2688 bytes, ~150 lines of decompiled pseudocode). This
+// is the main per-region PSX load/convert routine, called once from
+// Spool_PSX right after the file loads. It is not a small function: it
+// rebuilds the model array (constructing a CItem per model with the eh
+// vector constructor iterator), fixes up model checksum pointers, resolves
+// or creates every texture entry the PSX references (walking
+// TextureChecksumHashTable, same idiom as Spool_FindTextureEntry /
+// NewTextureEntry above), fixes up face material indices, then walks the
+// PSX record list a second time dispatching on record type (id 0x45 =
+// anim packet via PreProcessAnimPacket, id 6/7/10/42/44 = various region
+// fields, id 0x734350C1... several large magic hash constants = texture
+// group formats) and for each texture record picks one of several loaders
+// (PCTex_CreateTexture16/256, PCTex_CreateTexturePVR, LTI replacement
+// texture via PCTex_LoadLtiTexture) depending on packed flag/format bits.
+// Every callee resolved to a named, already-decompiled function (none are
+// stubs in this TU), so leaf-first is satisfied; the size and the amount
+// of bit-packed, hash-dispatched logic is why this is BIGTODO scale, not
+// MEDIUM. Left as a stub for a future session: this needs the full
+// discipline's 10 hypotheses per diff cluster once written, and getting
+// the many magic checksum constants and bitfield packs (offsets 0x00,
+// 0x04, 0x08, 0x0A, 0x0C..0x13, 0x14 of the on-disk texture record; the
+// runtime Texture struct's TexWin/field_12/x/y bit layout) right needs
+// careful field-by-field cross-checking against texture.h, not a quick
+// pass.
 void ProcessNewPSX(i32)
 {
     printf("ProcessNewPSX(i32)");
