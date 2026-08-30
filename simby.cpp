@@ -1028,8 +1028,11 @@ void MakeVertexWibbler(void)
 			1, 6, v2, 0x50, 0x50, 0xC8, 0x96);
 }
 
-// @NotOk
-// can't get it to match should be good enough
+// @Ok
+// verified the BYTE0/1/2 color-blend formula against IDA decompile of
+// sub_4AF3B0 (0x4AF3B0) term by term, matches. The decompile shows the
+// per-byte adds masked/truncated explicitly (u8 cast, u16 cast, &0xFF0000),
+// this source relies on the same truncation via the BYTE0/1/2 macros.
 void CSimby::FlashUpdate(void)
 {
 	
