@@ -5546,8 +5546,13 @@ INLINE void PShell_LowText(void)
 	Mess_SetRGBBottom(0x28u, 35, 62);
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// gChallenges is SRecordRelated[NUM_CHALLS] (shell.cpp), and field_6/field_8/
+// field_9 are the same fields already used the same way at gChallenges[idx]
+// lookups elsewhere in this file (search for "field_9 == 2"/"== 3"), so this
+// compiles and matches the established field usage. No original address found
+// for this function (INLINE, no caller in the current source tree) so it
+// cannot be checked against a real disassembly.
 INLINE i32 RecordsExist(
 		u8 a1,
 		i8 a2,
