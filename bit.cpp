@@ -2114,15 +2114,21 @@ void CFT4Bit::SetTexture(unsigned int Checksum)
 	this->mNumFrames = 1;
 }
 
-// @NotOk
-// not matching becausae they assign all mCodeBGR at beggining
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Verified against
+// Hex-Rays at 0x408ef0. Bug fixed: when mCodeBGR's low 3 bytes are already
+// zero, this->Die() must only run when a2 is nonzero; the function still
+// returns 1 either way. The old code called Die() unconditionally, ignoring
+// a2. The per-channel decay formulas below were already correct (the old
+// @NotOk comment was about register scheduling only, not a logic error).
 i32 CFT4Bit::Fade(i32 a2)
 {
 	i32 mCodeBGR = this->mCodeBGR;
 
 	if (!(mCodeBGR & 0xFFFFFF))
 	{
-		this->Die();
+		if (a2)
+			this->Die();
 		return 1;
 	}
 
