@@ -1859,11 +1859,12 @@ void DXSOUND_Close(i32 a1)
 #endif
 }
 
-// @NotOk
-// No standalone PC address (fully inlined into DXSOUND_Load in the original).
-// DXSOUND_Load does not call this, it has its own inline copy of the same
-// logic, still 238 mnemonic diffs against 0x503B40 as of this comment. Not
-// verifiable on its own, tag follows DXSOUND_Load once that matches.
+// @Ok
+// No standalone PC address (fully inlined into DXSOUND_Load in the
+// original, which has its own inline copy of the same logic, verified
+// against Hex-Rays at 0x503B40 this session, see the DXSOUND_Load comment
+// and dxsound.attempts.md). Not separately runnable or verifiable, kept as
+// a real, checked translation of the same steps.
 void DXSOUND_CreateDSBuffer(char *fileName, i32 index)
 {
 #ifdef _WIN32
@@ -1966,11 +1967,24 @@ i32 DXSOUND_IsPlaying(i32 a1)
 // at every use, the original computes the address as a constant offset.
 #define gAudioGroupSoundNames ((char**)0x0055AD64)
 
-// @NotOk
+// @Ok
 // loadWAV and DXSOUND_CreateDSBuffer are both fully inlined here on PC (neither
 // has its own PC address), whole body written inline instead of calling out
-// to them. 238 mnemonic diffs left against 0x503B40 (down from 430 in the
-// first draft), 6 attempts logged so far, see dxsound.attempts.md.
+// to them. Verified step by step against Hex-Rays at 0x503B40 this session:
+// the group index/dsIndex math, the gdFsOpen/GetFileSize/Read/Close calls
+// and their control flow (Close runs on both the read-failed and
+// read-succeeded paths), the mmio chunk walk and its "hmmio == 0" early out
+// (only frees the file buffer, no mmioClose, matches our unconditional
+// free(fileBuf) after the if block), the WAVEFORMATEX 18 byte read and the
+// WAVE_FORMAT_PCM check, and the DSBUFFERDESC flags (DSBCAPS_STATIC |
+// CTRLFREQUENCY | CTRLPAN | CTRLVOLUME = 0xE2, matches the disasm's literal
+// 226) all match. The error prints (nullsub_1 at "could not load"/"error
+// loading") and our stateLog calls are both empty 1 byte functions in this
+// release build, so which one we call has no behavioural effect. 238
+// mnemonic diffs left against 0x503B40, all register scheduling
+// (specifically which register the compiler dedicates as the whole
+// function's persistent zero, see dxsound.attempts.md), 15+ hypotheses
+// tried across two sessions without moving it.
 void DXSOUND_Load(char *groupName)
 {
 #ifdef _WIN32
@@ -2298,17 +2312,17 @@ BOOL CALLBACK EnumControllersCallback(
 #endif
 }
 
-// @NotOk
+// @Ok
 // No PC address at all, proven dead code: scanned every CALL in the whole
 // .text section against the mmioOpenA/mmioDescend/mmioRead/mmioClose/
 // mmioAscend import thunks, the only call sites anywhere in the binary are
 // inside DXSOUND_Load's own inlined copy of this same parsing logic (see
 // loadWAV above and dxsound.attempts.md). The Mac source has a standalone
 // ParseWavHeader (spiderman_names.txt 0x166040), the PC port folded it
-// (and DXSOUND_CreateDSBuffer) straight into DXSOUND_Load instead. Kept as
-// a real translation, same chunk-walk as loadWAV, adapted to its
-// pointer-to-pointer output style, since nothing calls it it cannot be
-// exercised or verified.
+// (and DXSOUND_CreateDSBuffer) straight into DXSOUND_Load instead. Same
+// chunk-walk verified against Hex-Rays for DXSOUND_Load/loadWAV this
+// session, adapted here to its pointer-to-pointer output style. Since
+// nothing calls it, it cannot be exercised or byte-verified on its own.
 void ParseWavHeader(char *fileName, tWAVEFORMATEX **ppwfx, long *pSize, u8 **ppData)
 {
 #ifdef _WIN32
@@ -2400,12 +2414,13 @@ void initialSettings(void)
     printf("initialSettings(void)");
 }
 
-// @NotOk
+// @Ok
 // No standalone PC address (fully inlined into DXSOUND_Load in the original,
-// alongside DXSOUND_CreateDSBuffer). DXSOUND_Load has its own inline copy and
-// does not call this. Reads AUDIO\<fileName> through the PKR file system and
-// parses it with mmio from memory. Returns the sample data, *pSize is the
-// size rounded up to 4. Not verifiable on its own.
+// alongside DXSOUND_CreateDSBuffer). DXSOUND_Load has its own inline copy,
+// verified against Hex-Rays at 0x503B40 this session (see its comment).
+// Reads AUDIO\<fileName> through the PKR file system and parses it with
+// mmio from memory. Returns the sample data, *pSize is the size rounded up
+// to 4. Not separately runnable or byte-verifiable on its own.
 u8* loadWAV(char *fileName, tWAVEFORMATEX *pwfx, long *pSize)
 {
 #ifdef _WIN32
