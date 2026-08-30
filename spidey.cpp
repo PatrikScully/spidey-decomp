@@ -1427,7 +1427,9 @@ static i32 * const gKillTauntHistory5 = (i32*)0x006A7FF8;
 static i32 * const gKillTauntLastVariant = (i32*)0x006A9070;
 static i32 * const gKillNotifyCallCount = (i32*)0x0060CFBC;
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4BBC60 (0x4BBC60,
+// 0x27A bytes). cmpsum confirms the documented 122 mnemonic diffs.
 // residue: 122 mnemonic diffs. the baddy-list scan, the two damage-window
 // conditions, all six table picks, the repeat-check against the history and
 // the final shift+play all match structurally (same globals, same call
