@@ -3146,7 +3146,9 @@ u8 CPlayer::IncreaseWebbing(i32 amount)
 	return 1;
 }
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B9E50 (0x4B9E50,
+// 0x59 bytes). cmpsum confirms the documented 23 mnemonic diffs.
 // residue: original computes &a1 and pushes both call args first, then
 // stores a1.vx/vy/vz through the post-push stack offsets. our build always
 // hoists the two zero stores (vx, vz) before the address-of/push, keeping
