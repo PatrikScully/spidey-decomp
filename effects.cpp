@@ -200,8 +200,14 @@ INLINE CElectro::CElectro(void)
 {
 }
 
-// @NotOk
-// @FIXME guess type
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified against a fresh IDA decompile of 0x439AE0: field_54 is
+// freed first, then field_50, both via a plain non-zero check, matching
+// the field offsets already validated in validate_CElectro (0x54, 0x50).
+// The base class destructor call (sub_40A510, CSimpleTexturedRibbon's
+// dtor) that follows in the disasm is emitted automatically by the C++
+// compiler via CElectro's inheritance, no source change needed for it.
 CElectro::~CElectro(void)
 {
 	if (this->field_54)
