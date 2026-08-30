@@ -1335,13 +1335,17 @@ void CCarnage::DoSonicBubbleProcessing(void)
 	}
 }
 
-// @NotOk
+// @Ok
 // Same MGS-shadow idiom as CBlackCat::DoMGSShadow (blackcat.cpp): 4 hook positions rotated into
-// local space to get an X/Z footprint box, then a vertical offset rotated by the body matrix gives
-// the world space shadow center, applied to a lazily-created CQuadBit. CCarnage additionally guards
-// on mFlags bit 0 and field_364, tearing down field_368 (the shadow quad) and returning early when
+// local space to get an X/Z footprint box (min/max start at fixed +-0x20/+-0x40, not box[0], fixed
+// against IDA disasm 0x420010), then the 4 box corners (combinations of minX/maxX/minZ/maxZ) are
+// rotated back into world space by the (non-transposed) body matrix and translated by mPos to make
+// the shadow quad's 4 corners, y forced to field_364. heightOffset is computed and GTE-transformed
+// but never read again after that, dead code in the original too, left as-is on purpose. Applied to
+// a lazily-created CQuadBit (field_368), mFrigDeltaZ set only at creation time, not every call.
+// CCarnage guards on mFlags bit 0 and field_364==-1, tearing down field_368 and returning early when
 // either is set (jump table target 0x42036B in the original). Hook ids are 3, 6, 0x11, 0xD (different
-// from CBlackCat's 3, 6, 13, 9). Not yet matching, see attempts file.
+// from CBlackCat's 3, 6, 13, 9). Verified against IDA decompile+disasm of 0x420010, functional match.
 void CCarnage::DoMGSShadow(void)
 {
 	if ((this->mFlags & 1) || this->field_364 == -1)
@@ -1391,9 +1395,9 @@ void CCarnage::DoMGSShadow(void)
 	gte_SetRotMatrix(&localMat);
 
 	i32 maxX = 0x20;
-	i32 minX = box[0].vx;
-	i32 maxZ = box[0].vz;
-	i32 minZ = box[0].vz;
+	i32 minX = -0x20;
+	i32 maxZ = 0x40;
+	i32 minZ = -0x40;
 	i32 i;
 
 	for (i = 0; i < 4; i++)
@@ -1432,16 +1436,27 @@ void CCarnage::DoMGSShadow(void)
 	gte_rtir();
 	gte_stlvnl(reinterpret_cast<VECTOR*>(&heightOffset));
 
+	// footprint corners in local space, from the min/max X/Z box extents.
+	// (heightOffset above is computed but never read again, dead in the original too.)
+	CVector corners[4];
+	corners[0].vx = minX; corners[0].vy = 0; corners[0].vz = maxZ;
+	corners[1].vx = minX; corners[1].vy = 0; corners[1].vz = minZ;
+	corners[2].vx = maxX; corners[2].vy = 0; corners[2].vz = maxZ;
+	corners[3].vx = maxX; corners[3].vy = 0; corners[3].vz = minZ;
+
 	gte_SetRotMatrix(&this->mTransform);
 
 	i32 ry = this->field_364;
 
-	CVector corners[4];
 	for (i = 0; i < 4; i++)
 	{
-		corners[i].vx = this->mPos.vx + heightOffset.vx;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&corners[i]));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&corners[i]));
+
+		corners[i].vx += this->mPos.vx;
 		corners[i].vy = ry;
-		corners[i].vz = this->mPos.vz + heightOffset.vz;
+		corners[i].vz += this->mPos.vz;
 	}
 
 	if (!this->field_368)
@@ -1451,9 +1466,9 @@ void CCarnage::DoMGSShadow(void)
 		TotalBitUsage = -1;
 
 		this->field_368->SetTexture(0, 0);
+		this->field_368->mFrigDeltaZ = 0x20;
 	}
 
-	this->field_368->mFrigDeltaZ = 0x20;
 	this->field_368->SetTransparency(0x40);
 	this->field_368->SetSubtractiveTransparency();
 	this->field_368->SetCorners(corners[0], corners[1], corners[2], corners[3]);
