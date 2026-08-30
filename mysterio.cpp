@@ -1102,8 +1102,15 @@ void CMysterio::SummonAttack(void)
 	}
 }
 
-// @NotOk
-// globals
+// @Bogus
+// No out-of-line address in names.json: fully inlined into CMysterio_AI's
+// state dispatch (0x45ef10), the "case 1" arm at 0x45f342-0x45f3c1.
+// Identified by the exact CAIProc_LookAt constructor args (this, MechList,
+// 0, 1, 60, 341, matching sub_401180) and mAnimFinished at offset 0x142
+// (ob.h, matches *(byte*)(this+322) in the disasm). Found a real gap
+// against the disasm: dumbAssPad==0 also calls RunAnim(8,0,-1) right after
+// creating the AI proc, unconditionally, before incrementing dumbAssPad;
+// the old source was missing that call. Fixed here.
 void CMysterio::LookMenacing(void)
 {
 	switch (this->dumbAssPad)
@@ -1111,6 +1118,7 @@ void CMysterio::LookMenacing(void)
 		case 0:
 			this->Neutralize();
 			new CAIProc_LookAt(this, MechList, 0, 1, 60, 341);
+			this->RunAnim(8, 0, -1);
 			this->dumbAssPad++;
 			break;
 		case 1:
