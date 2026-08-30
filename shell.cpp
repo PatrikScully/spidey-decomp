@@ -99,6 +99,14 @@ EXPORT SSaveGame gSaveGameSlots[NUM_SAVE_GAME_SLOTS];
 // sin/cos pair table, i16[2*n] = sin(n), i16[2*n+1] = cos(n), n = angle & 0xFFF
 static i16 * const word_610C48 = (i16*)0x610C48;
 
+// Tentative names, found in CShellMysterioHeadCircle::Move (0x492FE0). Read as
+// plain scalars (no array indexing), unlike word_610C48 above, so these look
+// like single current values rather than a table; guess is some kind of
+// camera-relative tilt/pitch used to skew the mysterio head circle's 4 hook
+// corners toward the camera. Not confirmed against the maintainer's IDB.
+static i16 * const gShellCircleTiltB = (i16*)0x61460A;
+static i16 * const gShellCircleTiltA = (i16*)0x614608;
+
 // @Ok
 // @Matching
 void Shell_RelocatableModuleClear(void)
@@ -4519,9 +4527,56 @@ INLINE void CallAI(CBody *pList)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
 void CShellMysterioHeadCircle::Move(void)
 {
+	CDummy *pDummy = static_cast<CDummy*>(Mem_RecoverPointer(&this->field_84));
+
+	if (!pDummy)
+	{
+		this->Die();
+		return;
+	}
+
+	M3d_BuildTransform(reinterpret_cast<CSuper*>(pDummy));
+
+	this->field_8C += this->field_90;
+
+	i32 idx = this->field_8C & 0xFFF;
+	i16 *tbl = word_610C48 + 2 * idx;
+	i32 sinV = tbl[0];
+	i32 cosV = tbl[1];
+
+	i32 tilt = (6500 * *gShellCircleTiltB) >> 13;
+
+	SHook hook0;
+	hook0.Offset = 1;
+	hook0.Part.vx = (3250 * sinV + cosV * -tilt) >> 12;
+	hook0.Part.vy = -9700;
+	hook0.Part.vz = ((3250 * cosV - sinV * -tilt) >> 12) - 2500;
+
+	SHook hook1;
+	hook1.Offset = 1;
+	hook1.Part.vx = (cosV * tilt + 3250 * sinV) >> 12;
+	hook1.Part.vy = ((6500 * *gShellCircleTiltA) >> 12) - 9700;
+	hook1.Part.vz = ((3250 * cosV - sinV * tilt) >> 12) - 2500;
+
+	SHook hook2;
+	hook2.Offset = 1;
+	hook2.Part.vx = (-3250 * sinV + cosV * -tilt) >> 12;
+	hook2.Part.vy = -9700;
+	hook2.Part.vz = ((-3250 * cosV - sinV * -tilt) >> 12) - 2500;
+
+	SHook hook3;
+	hook3.Offset = 1;
+	hook3.Part.vx = (cosV * tilt - 3250 * sinV) >> 12;
+	hook3.Part.vy = hook1.Part.vy;
+	hook3.Part.vz = ((-3250 * cosV - sinV * tilt) >> 12) - 2500;
+
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPos), reinterpret_cast<CSuper*>(pDummy), &hook0);
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPosB), reinterpret_cast<CSuper*>(pDummy), &hook1);
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPosC), reinterpret_cast<CSuper*>(pDummy), &hook2);
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mPosD), reinterpret_cast<CSuper*>(pDummy), &hook3);
 }
 
 // @Ok
@@ -5731,6 +5786,7 @@ void validate_CShellMysterioHeadCircle(void)
 	VALIDATE_SIZE(CShellMysterioHeadCircle, 0x94);
 
 	VALIDATE(CShellMysterioHeadCircle, field_84, 0x84);
+	VALIDATE(CShellMysterioHeadCircle, field_8C, 0x8C);
 	VALIDATE(CShellMysterioHeadCircle, field_90, 0x90);
 }
 
