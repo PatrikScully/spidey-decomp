@@ -2091,6 +2091,14 @@ INLINE ClutPC* clutToClutPc(const u16* pClut)
 	return res;
 }
 
+// not a real PC function. There is no separate address for it in
+// names.json or the maintainer's IDB. The compiler fully inlined its body
+// into PCTex_CreateTexturePVRInId: both "formats already match" branches
+// there (the software renderer path and the D3D system-memory surface
+// path) do the same row-by-row memcpy with independent source/dest pitch
+// that copyBitmap would have done on Mac. Mac has it as its own function
+// (.copyBitmap__FPCviPviiii, 0x1747d0). Leaving this stub as is, same as
+// downloadTexture below and obtainWaterLevelInPoolA7 in l5a7lsc.cpp.
 // @SMALLTODO
 void copyBitmap(void const *,i32,void *,i32,i32,i32,i32)
 {
