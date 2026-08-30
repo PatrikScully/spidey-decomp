@@ -181,13 +181,6 @@ void Pad_Button(SButton* pBut, i32 state)
 	}
 }
 
-// @SMALLTODO
-i32 gsub_479520(i32 a1, i32 a2)
-{
-	printf("gsub_479520(i32, i32)");
-	return 0x13082026;
-}
-
 // @Ok
 // @Matching
 INLINE void Pad_Clear(SControl *pControl)

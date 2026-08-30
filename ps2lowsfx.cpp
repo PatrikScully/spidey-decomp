@@ -772,13 +772,6 @@ void SFX_Off(void)
 		stubbed_printf("Stubbed: SFX_Off( void )\n");
 }
 
-// @SMALLTODO
-i32 gsub_472340(void)
-{
-	printf("gsub_472340(void)");
-	return 0x13082026;
-}
-
 u8 testBuf[0x800];
 
 // @Ok

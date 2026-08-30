@@ -113,9 +113,6 @@ EXPORT void SFX_ModifyPos(u32,const CVector *,i32);
 EXPORT void SFX_ModifyVol(u32,i32,i32);
 EXPORT void SFX_Off(void);
 
-// Unnamed in tools/names.json (0x00472340, 139 bytes). Called from
-// PShell_EndTrainingInit (pshell.cpp). Not decompiled this session.
-EXPORT i32 gsub_472340(void);
 EXPORT void SFX_ParseSFXFile(char *,u32 *,u16 *,i32,i32);
 EXPORT void SFX_Pause(void);
 EXPORT void SFX_SetVoiceVolume(u32,i16);

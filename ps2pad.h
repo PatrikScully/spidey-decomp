@@ -85,11 +85,6 @@ EXPORT void DCPad_ExpireVibrations(void);
 EXPORT void DCPad_ShutDownVibrations(void);
 EXPORT i32 DCPad_Vibrate(i32,signed char,u8,u8);
 EXPORT void Pad_Button(SButton *,i32);
-
-// Unnamed in tools/names.json (0x00479520, 21 bytes). Called twice from
-// PShell_EndTrainingInit (pshell.cpp) as gsub_479520(0,0) and
-// gsub_479520(0,1). Not decompiled this session.
-EXPORT i32 gsub_479520(i32, i32);
 EXPORT void Pad_Clear(SControl *);
 EXPORT void Pad_ClearAll(void);
 EXPORT void Pad_ClearAllOne(i32);

@@ -658,7 +658,7 @@ void PShell_EndTrainingDisplay(void)
 // (0x0047B720, 812 bytes). Housekeeping calls at the top, in order:
 // print_if_false(1, <str at 0x00551AF4>) (condition is always true, never
 // prints, looks like a reached-here marker), Mess_DeleteAll,
-// Bit_ClearTextBoxes, gsub_472340, Redbook_XAStop.
+// Bit_ClearTextBoxes, SFX_StopAll, Redbook_XAStop.
 //
 // The record box build (CClass::operator new(0x44) then direct field
 // writes in the order field_1C=0x78, field_20=0x29, field_C=0x116,
@@ -732,7 +732,7 @@ void PShell_EndTrainingInit(void)
 
 	Mess_DeleteAll();
 	Bit_ClearTextBoxes();
-	gsub_472340();
+	SFX_StopAll();
 	Redbook_XAStop();
 
 	i32 oldScreenMode = gScreenModeFlag;
@@ -750,8 +750,8 @@ void PShell_EndTrainingInit(void)
 		*(i32*)((char*)MechList + 0x60) = 0;
 	}
 
-	gsub_479520(0, 0);
-	gsub_479520(1, 0);
+	Pad_ActuatorOff(0, 0);
+	Pad_ActuatorOff(0, 1);
 
 	i32 levelId = Trig_GetLevelID();
 
