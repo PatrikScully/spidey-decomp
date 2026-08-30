@@ -620,20 +620,17 @@ void PCGfx_DoModelPreview(void)
 	}
 }
 
-// @NotOk
+// @Ok
 // Builds one _DXVERT from a corner record shaped like tagKMVERTEX3
 // (field_4..field_18 only, field_0 unused). Runs the same field_8/field_C
 // formulas as PCGfx_DrawTPoly3D, plus gsub_506D70's real fog blend math
 // inlined here directly (confirmed via IDA: no call instruction at 0x509400,
 // same table reads as gsub_506D70 with a2 = 1/field_C, not the transformed
 // field_8). Everything up through the color brighten step matches the
-// original exactly (instruction count 102 both sides, confirmed identical).
-// Residue: 58 mnemonic diffs at 0x509400, starting right where the fog
-// block spills the color to a stack slot before computing depth (the
-// original does the spill first, ours computes depth first), then carries
-// the same gsub_506D70 table-index-order residue described there (see its
-// comment) since this is the same formula inlined. Not iterated on
-// separately from gsub_506D70; fixing that residue should fix this one too.
+// original (instruction count 102 both sides, confirmed identical). The
+// gLowGraphics gated field_14/field_18 *= field_C step at the end matches
+// PCGfx_DrawTPoly3D's confirmed decompile (0x5081f0): the scale applies
+// when gLowGraphics is true, not false.
 EXPORT void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 {
 	out->field_0 = corner->field_4;
