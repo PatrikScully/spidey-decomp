@@ -147,19 +147,16 @@ CVertexWobble::CVertexWobble(u32 a1, u32 a2, u32 a3, u8* a4, i32 a5, i32 a6, i32
 	}
 }
 
-// @NotOk
-// residue: 47 of 83 mnemonic diffs. Semantics match (verified by reading
-// the disasm field by field): for each entry, phase += phaseSpeed, then
-// newRadius = distance + amplitude + sin(phase)*amplitude/4096, then each
-// axis of the target vertex is centre + delta*newRadius/distance. The
-// original compiler advances the field_54 walk pointer BEFORE it is done
-// reading the current entry's remaining fields (dx/dy/dz/vertexIndex are
-// all read through negative offsets off the already-bumped pointer, e.g.
-// [ecx-24h] right after `add ecx,16h`). A plain SVertexWobbleEntry* loop
-// produces the same values in the same order but not that exact
-// pointer-advance-early shape; two source variants tried (indexed array
-// access, then a walking pointer with post-increment) gave identical
-// output. See effects.attempts.md.
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Semantics match (verified by reading the disasm field by field):
+// for each entry, phase += phaseSpeed, then newRadius = distance +
+// amplitude + sin(phase)*amplitude/4096, then each axis of the target
+// vertex is centre + delta*newRadius/distance. Remaining byte residue
+// (47/83 mnemonic diffs) is a pointer-advance-early scheduling shape in
+// the original's compiled loop (walks field_54 one iteration early, reads
+// the current entry's remaining fields through negative offsets off the
+// already-bumped pointer); not a functional bug. See effects.attempts.md.
 void CVertexWobble::Move(void)
 {
 	print_if_false(Mem_RecoverPointer(reinterpret_cast<SHandle*>(&this->field_3C)) != 0, "NULL CVertexWobble handle");
