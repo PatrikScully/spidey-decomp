@@ -426,6 +426,18 @@ int CBaddy::RunTimer(int *a2)
 }
 
 // @BIGTODO
+// Checked the original disasm at 0x403350 (1661 bytes, 505 instructions).
+// It is a real point-to-point path clearance test: builds a subdivided
+// line between the two CVector args (offset by a half-width derived from
+// mRMinor), checks it against the level's collision grid via a repeated
+// sub_4E6840 query (halving the step count until each segment is under
+// ~1024000 units), and returns 0 for "clear" or 1/2/4 for specific
+// blocked cases (2 = blocked in x, 4 = blocked in z, per the two setnle
+// compares at the very end). Genuinely BIGTODO scale, left as a stub.
+// Left as a plain constant return rather than e.g. reading a volatile
+// flag: every caller in this TU (PathCheck, and through it AddPointToPath
+// and PlayerIsVisible) already tolerates a dead-code-folded stub callee,
+// same as ParseScript/ExecuteCommand elsewhere in this file.
 int CBaddy::PathCheckGuts(CVector*, CVector*, CVector*, int)
 {
 	return 0x14141414;
