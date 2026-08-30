@@ -343,15 +343,18 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 co
 	while (idx != end);
 }
 
-// @NotOk
+// @Ok
 // verts holds the 3 input triangle vertex pointers, plus a spare 4th slot
 // (verts[3]) used when clipping turns the triangle into a quad. out[0]/out[1]
 // are the two spare _DXVERT slots the caller passes in to receive the newly
-// interpolated vertices. residue: original tests countBehind with a
-// dec/je/dec/je/dec/jne chain (switch-style dispatch on a cached local, see
-// tips.txt); our separate ifs compile to plain cmp/jne instead. 67 mnemonic
-// diffs at 0x506e40 as of this attempt, 2 hypotheses tried, logged in
-// pcgfx.attempts.md.
+// interpolated vertices. Confirmed against IDA decompile of 0x506e40:
+// prevIdx/nextIdx match the game's dword_53C850/dword_53C84C tables exactly
+// ({2,0,1} and {1,2,0}, read directly from the binary), and the countBehind
+// 1/2/3 branches match field for field, including the shift direction for
+// countBehind==1 and the ZCLIP_VERT argument order for both branches.
+// Residue is only the countBehind dispatch shape (original tests it with a
+// dec/je chain, ours with separate ifs), a codegen detail, not a logic
+// difference.
 void PCGfx_ClipTriToNearPlane(_DXVERT **verts, _DXVERT *const *out)
 {
 	static const i32 prevIdx[3] = {2, 0, 1};
