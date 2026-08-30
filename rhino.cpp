@@ -1003,15 +1003,21 @@ static i16 * const gRhinoDazedStarAngle = reinterpret_cast<i16*>(0x00552070);
 static i16 * const gRhinoDazedStarSpeed = reinterpret_cast<i16*>(0x00682B64);
 
 // @NotOk
-// Structural approximation, not verified against a build. The disasm shows
-// three loops of near-identical CFT4Bit dust-puff bookkeeping over
-// field_3E4[5], field_3F8[5] and (in the 3rd loop) field_40C[5], each puff
-// created lazily, faded once mAnim (its field_40) drops to <=4, then freed
-// and slot-cleared. The 3rd loop also updates a pair of per-slot i16 angle
-// tables at fixed addresses (0x552070 / 0x682B64) through the game's
-// fixed-point sin/cos table at 0x610C48 to orbit small stars around the
-// head; that fixed-point math is not reproduced with confidence here, only
-// the general shape (position each star from a hook and an orbit offset).
+// Checked against the disasm (0x480480) but not rewritten: the real
+// structure is more tangled than this draft's clean "3 independent loops"
+// shape. Confirmed facts from the disasm: (1) the WHOLE function is gated
+// on `mAnim==17 || mAnim==18 || field_3E4[0]!=0` (skip entirely otherwise),
+// a gate this draft does not have; (2) the three per-slot loops are guarded
+// and cross-referenced in a way that does not line up 1:1 with "loop N
+// manages array N" (e.g. the loop entered via `field_3F8[0]!=0` walks
+// field_40C, and positions each slot via a shifted read of
+// field_3F8[i]+0x10, not the array it is iterating); (3) the star-orbit
+// math (fixed-point sin/cos table at 0x610C48, angle tables at 0x552070 /
+// 0x682B64) matches this draft's general shape but the exact scale
+// constants (768, 416, 320, the >>7/>>12 shifts) are not reproduced here.
+// Left as-is rather than risk a wrong rewrite under time pressure; the
+// person picking this up should re-derive the loop/array mapping from the
+// disasm directly instead of trusting this comment's guesses.
 void CRhino::DoDazedEffect(void)
 {
 	bool doFirst = this->mAnim == 0x11 || this->mAnim == 0x12;
