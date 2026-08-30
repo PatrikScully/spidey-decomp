@@ -1808,7 +1808,7 @@ INLINE CBit::~CBit()
 // @Matching
 INLINE void CBit::Die(void)
 {
-	DoAssert(this->mProtected == 0, "A protected bit die");
+	ASSERT(this->mProtected == 0, "A protected bit die");
 	this->mDead = 1;
 }
 
@@ -2018,7 +2018,8 @@ INLINE CFT4Bit::~CFT4Bit()
 
 
 // @Ok
-void CFT4Bit::SetAnimSpeed(short s)
+// @Matching
+void CFT4Bit::SetAnimSpeed(i16 s)
 {
 	this->mAnimSpeed = s;
 }
@@ -2039,7 +2040,9 @@ INLINE void CFT4Bit::SetSemiTransparent()
 }
 
 // @Ok
-void CFT4Bit::SetTransparency(unsigned char t){
+// @Matching
+void CFT4Bit::SetTransparency(u8 t)
+{
 	this->mCodeBGR = t | this->mCodeBGR & 0xFF000000 | ((t | (t << 8)) << 8);
 }
 
@@ -2091,32 +2094,26 @@ void CFT4Bit::SetTexture(Texture* pTexture)
 }
 
 // @Ok
-void CFT4Bit::SetTexture(unsigned int Checksum)
+// @Matching
+void CFT4Bit::SetTexture(u32 Checksum)
 {
-	int v4; // ecx
-	int v5; // eax
-	int v6; // edx
-	int v7; // ecx
-
-	DoAssert(this->mpPSXAnim == 0, "mpPSXAnim already set?");
+	ASSERT(this->mpPSXAnim == 0, "mpPSXAnim already set?");
 
 	Texture *pTexture = Spool_FindTextureEntry(Checksum);
-	print_if_false(pTexture != 0, "Bad checksum sent to SetTexture");
+	ASSERT(pTexture != 0, "No Texture for SetTexture");
 
-	this->mpPSXAnim = static_cast<SAnimFrame*>(DCMem_New(sizeof(SAnimFrame), 0, 1, 0, 1));
-
+	this->mpPSXAnim = static_cast<SAnimFrame*>(Mem_New(sizeof(SAnimFrame)));
 	this->mDeleteAnimOnDestruction = 1;
 
-	v4 = (u8)pTexture->v2;
-	v5 = (u8)pTexture->u1 - (u8)pTexture->u0;
-	v6 = (u8)pTexture->v0;
+	i32 w = pTexture->u1 - pTexture->u0;
+	i32 h = pTexture->v2 - pTexture->v0;
 
-	this->mpPSXAnim->Width = v5;
+	this->mpPSXAnim->Width = w;
+	this->mpPSXAnim->Height = h;
 
-	v7 = v4 - v6;
-	this->mpPSXAnim->Height = v7;
-	this->mpPSXAnim->OffX = v5 / -2;
-	this->mpPSXAnim->OffY = v7 / -2;
+	this->mpPSXAnim->OffX = w / -2;
+	this->mpPSXAnim->OffY = h / -2;
+
 	this->mpPSXAnim->pTexture = pTexture;
 	this->mpPSXFrame = this->mpPSXAnim;
 
@@ -2124,44 +2121,33 @@ void CFT4Bit::SetTexture(unsigned int Checksum)
 }
 
 // @Ok
-// Functional (session-wide functional-only bar, 2026-08-30). Verified against
-// Hex-Rays at 0x408ef0. Bug fixed: when mCodeBGR's low 3 bytes are already
-// zero, this->Die() must only run when a2 is nonzero; the function still
-// returns 1 either way. The old code called Die() unconditionally, ignoring
-// a2. The per-channel decay formulas below were already correct (the old
-// @NotOk comment was about register scheduling only, not a logic error).
-i32 CFT4Bit::Fade(i32 a2)
+// @Matching
+i32 CFT4Bit::Fade(i32 die)
 {
-	i32 mCodeBGR = this->mCodeBGR;
-
-	if (!(mCodeBGR & 0xFFFFFF))
+	if (!(this->mCodeBGR & 0xFFFFFF))
 	{
-		if (a2)
+		if (die)
+		{
 			this->Die();
+		}
+
 		return 1;
 	}
 
-	u16 v6 = this->mTransDecay;
-	u8 v10;
-	if (v6 > (u16)(this->mCodeBGR & 0xFF))
-		v10 = 0;
-	else
-		v10 = (this->mCodeBGR & 0xFF) - (this->mTransDecay & 0xFF);
+	u8 r = (this->mCodeBGR) & 0xFF;
+	u8 g = (this->mCodeBGR >> 8) & 0xFF;
+	u8 b = (this->mCodeBGR >> 16) & 0xFF;
 
-	u8 v7;
-	if (v6 > (u16)((this->mCodeBGR & 0xFF00) >> 8))
-		v7 = 0;
-	else
-		v7 = ((this->mCodeBGR & 0xFF00) >> 8) - (this->mTransDecay & 0xFF);
+#define DECAY_COLOR(x) if (this->mTransDecay > (x)) (x) = 0; else (x) -= this->mTransDecay;
 
-	u8 v8;
-	if (v6 > (u16)((this->mCodeBGR & 0xFF0000) >> 16))
-		v8 = 0;
-	else
-		v8 = ((this->mCodeBGR & 0xFFFF00) >> 16) - (this->mTransDecay & 0xFF);
+	DECAY_COLOR(r);
+	DECAY_COLOR(g);
+	DECAY_COLOR(b);
+
+#undef DECAY_COLOR 
 
 
-	this->mCodeBGR = (mCodeBGR & 0xFF000000) | (((v8 << 8) | v7) << 8) | v10;
+	this->mCodeBGR = (this->mCodeBGR & 0xFF000000) | r | (g << 8) | (b << 16);
 
 	return 0;
 }
@@ -2983,6 +2969,11 @@ void patch_CFT4Bit(void)
 	PATCH_PUSH_RET(0x00408CF0, CFT4Bit::SetAnim);
 	PATCH_PUSH_RET(0x00408E90, CFT4Bit::SetFrame);
 	PATCH_PUSH_RET_POLY(0x00408DF0, CFT4Bit::SetTexture, "?SetTexture@CFT4Bit@@QAEXPAUTexture@@@Z");
+	PATCH_PUSH_RET(0x00408EF0, CFT4Bit::Fade);
+	PATCH_PUSH_RET(0x00408C60, CFT4Bit::SetAnimSpeed);
+	PATCH_PUSH_RET(0x00408C90, CFT4Bit::SetTransparency);
+
+	PATCH_PUSH_RET_POLY(0x004C9460, CFT4Bit::SetTexture, "?Spool_FindTextureEntry@@YAPAUTexture@@I@Z");
 
 	PATCH_PUSH_RET_POLY(0x0040F980, CSimpleAnim::Move, "?Move@CSimpleAnim@@UAEXXZ");
 }
