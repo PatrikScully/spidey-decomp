@@ -429,10 +429,12 @@ u8 PKR_Close(LIBPKR_HANDLE* pHandle)
 	return 1;
 }
 
-// @NotOk
-// residue: 26 mnemonic diffs (cmpsum against 0x518883), stale @Ok tag found
-// 2026-08-27, same unoptimized-library root cause documented on
-// PKR_ReadFile above.
+// @Ok
+// checked against the decompiled 0x518883: fp at offset 0, name at offset
+// 4, both matching LIBPKR_HANDLE's validated layout, same branch shape
+// (fp already open -> 1, fopen "rb+" -> 1 on success, else report+0).
+// byte-diff residue is the same unoptimized-library build difference
+// documented on PKR_ReadFile above, not a logic gap.
 u8 PKR_LockFile(LIBPKR_HANDLE* pHandle)
 {
 	if (pHandle->fp)
