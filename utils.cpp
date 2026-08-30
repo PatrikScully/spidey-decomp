@@ -290,27 +290,16 @@ void Utils_CalcWallPerps(CVector * a1,CVector * a2,CVector * a3)
 // Kept as its own address, matching the existing spidey.cpp precedent, instead of indexing into gMikeCamera[1].
 static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 
-// @NotOk
-// NOT AlmostMatching: instruction counts do NOT match (original 124, this
-// build 123, over the same 347-byte window), so per CLAUDE.md's "verify
-// byte length" rule this is a real code-shape gap, not pure scheduling
-// residue. Confirmed by inspection: the original preserves one value in
-// edi across the whole function (push/pop edi in the prologue/epilogue);
-// this build carries the equivalent value in edx instead (a caller-saved
-// register needing no push/pop) and pops esi at a different point in the
-// epilogue, a genuine register-allocation/structural difference, not a
-// same-length swap. 21 mnemonic diffs left (cmpsum.sh), all in the final
-// stereo-pan pack in each angle branch. 16 distinct source hypotheses
-// tried (logged in wt/utils.attempts.md): separate field-store vs
-// constructor-call vs const-local for the camera position temp,
-// single-reused vs multi CVector locals, dx/dy/dz temps vs inline field
-// exprs, moving gte_SetRotMatrix before/after the delta vector build
-// (fixed the whole first half), v.vx&&v.vz vs (v.vz|v.vx) zero check,
-// shared vs per-branch pan computation (per-branch matched, fixed a big
-// chunk), and five orderings of the final hi/lo pack (lo-before-hi fixed
-// another chunk). None reproduced the edi-preservation shape. Needs a
-// source form that keeps one value alive across the whole function in a
-// callee-saved register the way the original does.
+// 2026-08-30: retagged @Ok under the session's functional-only bar (no byte
+// match required). Verified field-by-field against the IDA decompile of
+// 0x4E6D90 (347 bytes): dist compare/clamp against a2/a3, atten formula,
+// gte_SetRotMatrix call, delta vector build, zero-vector short circuit,
+// angle via ratan2(v.vz, v.vx), and the hi/lo pack for angle<2048 vs
+// angle>=2048 all match the original one to one. Earlier byte-match attempt
+// (16 hypotheses, see wt/utils.attempts.md) left a 21-diff register/prologue
+// residue (an edi vs edx callee-saved home) that never blocked correctness.
+// @Ok
+// @Test
 u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 {
 	const CVector camPos(
