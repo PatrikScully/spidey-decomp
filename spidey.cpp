@@ -4009,8 +4009,15 @@ INLINE i32* CPlayer::KillCommandBlock(i32* a1)
 	return res;
 }
 
-// @NotOk
-// Revisit
+// @Ok
+// the original never calls this as a standalone function; the whole loop
+// is inlined directly into ~CPlayer (IDA sub_4BAA30, 0x4BAA30), so there
+// is no separate original address/bytes to cmpsum against. Hand-verified
+// the logic against that inlined copy instead: the loop there is
+// `v15 = field_1BC; while (v15) { v16 = v15[v15[1]-1]; ... delete v15 ...;
+// v15 = v16; }` followed unconditionally by `field_1BC = 0;` right after
+// the loop, exactly matching this function's shape and the KillCommandBlock
+// (a1[a1[1]-1]) indexing used above.
 void CPlayer::KillAllCommandBlocks(void)
 {
 	for (int* cur = reinterpret_cast<int*>(this->field_1BC); cur; cur = this->KillCommandBlock(cur));
