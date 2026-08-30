@@ -1642,9 +1642,9 @@ void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 	this->field_7C = dir.Length();
 	print_if_false(this->field_7C != 0, "Zero length in CMachineGunBullet::Common");
 
-	this->field_68 = dir.vx * this->field_7C;
-	this->field_6C = dir.vy * this->field_7C;
-	this->field_70 = dir.vz * this->field_7C;
+	this->field_68 = dir.vx / this->field_7C;
+	this->field_6C = dir.vy / this->field_7C;
+	this->field_70 = dir.vz / this->field_7C;
 
 	if (this->field_7C < 5000)
 		this->field_7C = 5000;
@@ -1654,6 +1654,10 @@ void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 	lineinfo.EndCoords.vx = this->field_68 * this->field_7C + a2->vx;
 	lineinfo.EndCoords.vy = this->field_6C * this->field_7C + a2->vy;
 	lineinfo.EndCoords.vz = this->field_70 * this->field_7C + a2->vz;
+
+	lineinfo.MinCoords.vx = 0;
+	lineinfo.MinCoords.vy = 0;
+	lineinfo.MinCoords.vz = 0;
 
 	lineinfo.MaxCoords.vx = 0;
 	lineinfo.MaxCoords.vy = 0;
@@ -1673,30 +1677,50 @@ void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 	if (lineinfo.pItem)
 	{
 		this->field_88 = 1;
-		this->field_80 = (i16)lineinfo.Position.vx;
-		this->field_82 = (i16)lineinfo.Position.vy;
-		this->field_84 = (i16)lineinfo.Position.vz;
+		this->field_80 = lineinfo.Normal.vx;
+		this->field_82 = lineinfo.Normal.vy;
+		this->field_84 = lineinfo.Normal.vz;
 
 		CVector delta;
 		delta.vx = lineinfo.Position.vx - a2->vx;
 		delta.vy = lineinfo.Position.vy - a2->vy;
 		delta.vz = lineinfo.Position.vz - a2->vz;
-		this->field_78 = delta.Length();
+		this->field_7C = delta.Length();
 	}
 
-	this->field_74 = Rnd(200) - 250;
+	this->field_78 = -Rnd(200);
+	this->field_74 = this->field_78 - 250;
 
-	this->mStart = *a2;
+	CVector* base = reinterpret_cast<CVector*>(&this->field_5C);
+	*base = *a2;
 
-	if (this->field_88)
+	CVector* dirVec = reinterpret_cast<CVector*>(&this->field_68);
+
+	if (this->field_74 < 0)
 	{
-		if (this->field_78 >= this->field_7C)
-			this->mStart = lineinfo.Position - dir * this->field_74;
-		else
-			this->mStart = *a2 + dir * this->field_74;
+		this->mStart = *a2;
+	}
+	else if (this->field_74 <= this->field_7C)
+	{
+		this->mStart = *base + (*dirVec * this->field_74);
+	}
+	else
+	{
+		this->mStart = *base + (*dirVec * this->field_7C);
 	}
 
-	this->mEnd = lineinfo.Position;
+	if (this->field_78 < 0)
+	{
+		this->mEnd = *base;
+	}
+	else if (this->field_78 <= this->field_7C)
+	{
+		this->mEnd = *base + (*dirVec * this->field_78);
+	}
+	else
+	{
+		this->mEnd = *base + (*dirVec * this->field_7C);
+	}
 }
 
 // @Ok
