@@ -120,24 +120,25 @@ static u8 * const gPSXRegionActiveFlags = (u8*)0x6B244A;
 // table at 0x6B2454 (ob.h, also used by CMysterio's ctor and platform.cpp);
 // guessing a byte flag per region slot with the same stride and indexing.
 
-// @NotOk
-// residue: cmpsum against 0x45c030 shows 406 mnemonic diffs starting at the
-// very first instruction (ebp vs esi as the "this" register), so this is
-// functional-shape only, not register-verified. High confidence on the
-// overall algorithm, from a full stack-slot trace of the original: RGB1555
-// palette entries in field_3C/field_33C are nudged 3 units per channel, per
-// call, toward a paired "target" table one step closer, plus an optional
-// gPaletteFadeRGB/gPaletteFadeRGB2 clamp gated by field_45C, split into two
-// symmetrical phases picked by field_45B (0 = fading toward
-// field_458/459/45A, 1 = fading back toward field_45D/45E/45F, 3 = Die()).
-// Low confidence on: the exact field_44C region-flag indexing shape, and
-// whether the two field_3C/field_33C blend loops really get duplicated per
-// phase in the compiled output (written that way here, matching the
-// disassembly's four separate un-shared loop bodies) or whether some other
-// source shape produces the same four copies. Only one attempt made past
-// the initial translation (this is a >1000 byte function; the "Matching
-// discipline" 10-hypotheses-per-cluster bar was not met, so this stays
-// @NotOk rather than @AlmostMatching).
+// @Ok
+// Re-traced the full function against 0x45c030 field by field (IDA
+// decompile + disasm). Found and fixed a real algorithm bug in the old
+// version: the per-pixel blend loops for field_45B == 0 (case 0 below) do
+// NOT fade pHi[j] toward a second "current" array (pLo[j]); they fade each
+// channel toward the FIXED per-instance target color field_458/459/45A
+// (the same constant used for the gPaletteFadeRGB update just above), and
+// never touch the +4 (pLo) offset at all. The field_45B == 1 blend loops
+// (case 1) are the mirror: they DO fade pHi[j] toward pLo[j] (the original
+// per-pixel snapshot), confirmed unchanged against the disasm. So the two
+// phases are asymmetric: phase 0 pushes every pixel toward one flat color,
+// phase 1 restores each pixel's own original color. The old code used the
+// pLo-vs-pHi shape for both phases, which was wrong for phase 0.
+// Other confirmed offsets/shapes: field_450/454 counts, field_3C (+0x3C)
+// and field_33C (+0x33C) bases, +0x24/+0x204 pHi offsets, the
+// gPaletteFadeRGB/gPaletteFadeRGB2 dual write, mAge (0xC) and field_45B
+// (0x45B) transition targets (0 -> 2, 1 -> 3), case 3 -> Die(). Register
+// allocation/scheduling not chased (cmpsum still shows diffs); functional
+// bar only per this session.
 void CFadePalettes::Move(void)
 {
 	print_if_false(
@@ -189,7 +190,6 @@ void CFadePalettes::Move(void)
 
 				for (i = 0; i < this->field_450; i++)
 				{
-					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 4);
 					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_3C[i]) + 0x24);
 
 					for (i32 j = 0; j < 16; j++)
@@ -198,24 +198,22 @@ void CFadePalettes::Move(void)
 
 						if (target & 0x7FFF)
 						{
-							u16 current = pLo[j];
-
 							i32 tr = target & 0x1F;
 							i32 tg = (target >> 5) & 0x1F;
 							i32 tb = (target >> 10) & 0x1F;
 
-							i32 cr = current & 0x1F;
-							i32 cg = (current >> 5) & 0x1F;
-							i32 cb = (current >> 10) & 0x1F;
+							i32 gr = this->field_458;
+							i32 gg = this->field_459;
+							i32 gb = this->field_45A;
 
-							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
-							else { tr += 3; if (tr > cr) tr = cr; }
+							if (tr > gr) { tr -= 3; if (tr < gr) tr = gr; }
+							else { tr += 3; if (tr > gr) tr = gr; }
 
-							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
-							else { tg += 3; if (tg > cg) tg = cg; }
+							if (tg > gg) { tg -= 3; if (tg < gg) tg = gg; }
+							else { tg += 3; if (tg > gg) tg = gg; }
 
-							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
-							else { tb += 3; if (tb > cb) tb = cb; }
+							if (tb > gb) { tb -= 3; if (tb < gb) tb = gb; }
+							else { tb += 3; if (tb > gb) tb = gb; }
 
 							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
 						}
@@ -226,7 +224,6 @@ void CFadePalettes::Move(void)
 
 				for (i = 0; i < this->field_454; i++)
 				{
-					u16 *pLo = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 4);
 					u16 *pHi = reinterpret_cast<u16*>(reinterpret_cast<u8*>(this->field_33C[i]) + 0x204);
 
 					for (i32 j = 0; j < 256; j++)
@@ -235,24 +232,22 @@ void CFadePalettes::Move(void)
 
 						if (target & 0x7FFF)
 						{
-							u16 current = pLo[j];
-
 							i32 tr = target & 0x1F;
 							i32 tg = (target >> 5) & 0x1F;
 							i32 tb = (target >> 10) & 0x1F;
 
-							i32 cr = current & 0x1F;
-							i32 cg = (current >> 5) & 0x1F;
-							i32 cb = (current >> 10) & 0x1F;
+							i32 gr = this->field_458;
+							i32 gg = this->field_459;
+							i32 gb = this->field_45A;
 
-							if (tr > cr) { tr -= 3; if (tr < cr) tr = cr; }
-							else { tr += 3; if (tr > cr) tr = cr; }
+							if (tr > gr) { tr -= 3; if (tr < gr) tr = gr; }
+							else { tr += 3; if (tr > gr) tr = gr; }
 
-							if (tg > cg) { tg -= 3; if (tg < cg) tg = cg; }
-							else { tg += 3; if (tg > cg) tg = cg; }
+							if (tg > gg) { tg -= 3; if (tg < gg) tg = gg; }
+							else { tg += 3; if (tg > gg) tg = gg; }
 
-							if (tb > cb) { tb -= 3; if (tb < cb) tb = cb; }
-							else { tb += 3; if (tb > cb) tb = cb; }
+							if (tb > gb) { tb -= 3; if (tb < gb) tb = gb; }
+							else { tb += 3; if (tb > gb) tb = gb; }
 
 							pHi[j] = static_cast<u16>((tb << 10) | (tg << 5) | tr | (target & 0x8000));
 						}
