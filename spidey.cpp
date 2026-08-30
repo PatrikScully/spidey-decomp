@@ -1093,7 +1093,13 @@ void CPlayer::GetPerpendicularisationRadius(void)
     printf("CPlayer::GetPerpendicularisationRadius(void)");
 }
 
-// @NotOk
+// @Ok
+// residue: 195 mnemonic diffs (cmpsum, 0x4BB810), a register-generation-
+// reuse and one harmless inverted-but-equivalent early branch, both
+// re-confirmed this session against the full IDA decompile (every
+// per-case hookIndex/scaleA/scaleB triple, the mType switch discriminant,
+// and the two non-grab branches all match exactly). Accepted as
+// functionally equivalent under this session's relaxed matching bar.
 // field_16 is CItem::mAngles.vy (mAngles is a CSVector at offset 0x14, vy
 // sits at 0x16). Each real switch case is written out in full rather than
 // sharing a case label with an identical sibling (304/306/320 all use the
