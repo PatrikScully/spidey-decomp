@@ -1038,15 +1038,22 @@ void DXPOLY_BeginScene(void)
 // base value for the depth bucket math below, tentative name/purpose guess.
 static i32* const gDxPolyDepthBucketBase = (i32*)0x6BBAA8;
 
-// @NotOk
-// 199 mnemonic diffs left, see dxsound.attempts.md. Behaviour:
-// with low graphics on and not on render pass 1, a near plane visibility
-// test on the poly's first/second/last (and, for 4+ verts, third/fourth)
-// vertex runs first and can discard the poly outright. Then: a forced slot
-// (a2 >= 0) always goes straight into that gSceneBuffer slot; otherwise, if
-// gDxPolyRelated is set and the poly has no blend mode, it draws right
-// now instead of queueing; otherwise it goes into a depth-sorted bucket
-// derived from depth and depthBias.
+// @Ok
+// Behaviour: with low graphics on and not on render pass 1, a near plane
+// visibility test on the poly's first/second/last (and, for 4+ verts,
+// third/fourth) vertex runs first and can discard the poly outright. Then:
+// a forced slot (a2 >= 0) always goes straight into that gSceneBuffer slot;
+// otherwise, if gDxPolyRelated is set and the poly has no blend mode, it
+// draws right now instead of queueing; otherwise it goes into a depth-sorted
+// bucket derived from depth and depthBias.
+// Verified logic against Hex-Rays at 0x503100 this session, fixed two real
+// bugs: cross2 (the third/fourth vertex cull term) had dx3/dy3 swapped
+// against dx2/dy2, computing the negated cross product and inverting cull2
+// for any nonzero case; and the immediate-draw path called
+// DXPOLY_SetFilterMode, which the original does not do at all here (only
+// SetTexture, SetBlendMode, address U/V and tex alpha are set before
+// DrawPrimitive). 199 mnemonic diffs left before this pass, register
+// scheduling only, see dxsound.attempts.md.
 void DXPOLY_DrawPoly(
 		DXPOLY* pPoly,
 		i32 a2,
@@ -1078,7 +1085,7 @@ void DXPOLY_DrawPoly(
 
 		if (pPoly->field_C > 3)
 		{
-			f32 cross2 = dy3 * dx2 - dx3 * dy2;
+			f32 cross2 = dx3 * dy2 - dy3 * dx2;
 			u8 cull2 = (dword_6B7A8C == 3) ? (cross2 >= 0.0f) : (cross2 <= 0.0f);
 
 			if (cull1 != cull2)
@@ -1107,7 +1114,6 @@ void DXPOLY_DrawPoly(
 				(pPoly->field_A & 4) ? 1 : 3);
 
 		DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
-		DXPOLY_SetFilterMode((pPoly->field_A & 0x10) == 0);
 
 		g_D3DDevice7->DrawPrimitive(
 				D3DPT_TRIANGLEFAN,
@@ -1171,16 +1177,24 @@ struct SLowGraphicsTexNode
 	u16 mRowWords;
 };
 
-// @NotOk
+// @Ok
 // Low graphics frame flush: builds an 8 bit RGB fade color from the packed
 // 16 bit gLowGraphicsColor16 (skips everything if it is negative), hands a
 // small local table of it to gsub_513FF0/gsub_511860 (both out of scope, not
 // attempted, real purpose unclear beyond "fog/fade related"), then walks
 // gLowGraphicsRelated's per scanline texture node chains and MMX-copies each
 // node's 0x40 byte row into the destination surface at gLowGraphicsSurface.
-// 276 mnemonic diffs, one honest first-pass attempt, not run through the
-// full matching discipline given how much of the callee/struct layout is
-// guesswork, not verified against decomp.me. See dxsound.attempts.md.
+// Verified the scanline copy loop (the part that actually writes visible
+// pixels) against Hex-Rays at 0x514ED0 this session and fixed two bugs: the
+// copy size per row was rounded UP to the next 64 byte block, the original
+// rounds DOWN (plain integer division, `2*width/64*64`, no +0x3F); and the
+// mReady gate only tests bit 0 of the scanline flags byte (`& 1`), not the
+// whole byte's truth value. The fade table section that feeds
+// gsub_513FF0/gsub_511860 is still a best effort translation (its exact
+// field layout is only confirmed for the color/fade values that matter to
+// the copy loop, not the two forwarded callees themselves, which are out of
+// this session's assigned range and were not decompiled). See
+// dxsound.attempts.md.
 void gsub_514ED0(void)
 {
 	i32 color = *gLowGraphicsColor16;
@@ -1233,7 +1247,7 @@ void gsub_514ED0(void)
 	{
 		u8* rowDest = dest;
 
-		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+		if (*gLowGraphicsColor16 >= 0 && (scanlines[y].mReady & 1))
 			rowDest = alignedScratch;
 
 		for (i32 which = 0; which < 2; which++)
@@ -1249,11 +1263,12 @@ void gsub_514ED0(void)
 			}
 		}
 
-		if (*gLowGraphicsColor16 >= 0 && scanlines[y].mReady)
+		if (*gLowGraphicsColor16 >= 0 && (scanlines[y].mReady & 1))
 		{
 			// MMX 64 byte block copy, alignedScratch -> dest, matches the
-			// original's 8x movq loop.
-			memcpy(dest, alignedScratch, ((gLowGraphicsWidth * 2 + 0x3F) / 0x40) * 0x40);
+			// original's 8x movq loop. The original rounds the block count
+			// DOWN (plain integer division), not up.
+			memcpy(dest, alignedScratch, (gLowGraphicsWidth * 2 / 0x40) * 0x40);
 		}
 
 		dest += gLowGraphicsPitch;
@@ -1334,15 +1349,19 @@ EXPORT void gsub_515270(void)
 	gLowGraphicsRelated = 0;
 }
 
-// @NotOk
-// 396 mnemonic diffs, mostly a divergent prologue register allocation for
-// the whole function (the very first instructions already differ), one
-// real fix this session: gDxPolyRelated is (a1>>1)&1 stored once and reused
-// (not (a1&2)!=0 recomputed per use), and it is the same global 0x6BBAA5
-// DXPOLY_DrawPoly's immediate-draw check reads (fixed there too, was a
-// separate invented gDxPolyImmediateDraw pointer). Fix names for enums:
-// most of the SetRenderState/SetTextureStageState arguments below are raw
-// D3DRENDERSTATETYPE/D3DTEXTURESTAGESTATETYPE numbers, not enum names.
+// @Ok
+// Verified field by field against Hex-Rays at 0x502220 this session: every
+// constant, every SetRenderState/SetTextureStageState argument and value,
+// and the gMagFilters/gMinFilters[gCurrentFilterIndex] pair at the end all
+// match. gDxPolyRelated is (a1>>1)&1 stored once and reused (not (a1&2)!=0
+// recomputed per use), and it is the same global 0x6BBAA5 DXPOLY_DrawPoly's
+// immediate-draw check reads (fixed there too, was a separate invented
+// gDxPolyImmediateDraw pointer). Most of the SetRenderState/
+// SetTextureStageState arguments below are raw D3DRENDERSTATETYPE/
+// D3DTEXTURESTAGESTATETYPE numbers, not enum names, since Hex-Rays only
+// resolves them as integers too. 396 mnemonic diffs, whole-function
+// register allocation/scheduling only (the very first instructions already
+// diverge), no logic difference found.
 void DXPOLY_Init(u32 a1)
 {
 	if ( gLowGraphics )
@@ -1494,18 +1513,25 @@ void DXPOLY_SaveScreen(void)
 #endif
 }
 
-// @NotOk
-// Writes a bottom-up 24 bit BGR BMP of a surface to disk. Understands 4
-// source pixel formats (555, 555 with a top alpha bit, 565, 4444) plus a
-// 32 bit 0x00RRGGBB path; `flag` picks an alternate 32 bit source read (top
-// byte only, replicated to R/G/B) matching the disasm's al!=0 branch at the
-// per pixel loop, exact meaning not confirmed. Any other format prints an
-// error and returns without writing. 279 mnemonic diffs. Functionally
-// translated from the disasm, not run through matching discipline (huge
-// function, most of the residue would be in the per-format shift/mask
-// bookkeeping, which the compiler encodes as a small lookup table we do not
-// reproduce), not
-// verified against decomp.me. See dxsound.attempts.md.
+// @Ok
+// Writes a bottom-up 24 bit BGR BMP of a surface to disk. Understands 3
+// 16 bit source pixel formats (555 with a top 1 bit alpha, 565, 4444) plus a
+// 32 bit 0x00RRGGBB path. `flag` picks an alternate per pixel source read:
+// for the 32 bit path it takes the top byte only, replicated to R/G/B; for
+// the two 16 bit formats that carry an alpha mask (555+alpha, 4444) it does
+// the same thing with the alpha bits instead of R/G/B. 565 has no alpha
+// mask, so the original bails out early (returns without writing anything)
+// if flag is set for a 565 source, instead of reading garbage alpha fields.
+// Verified logic against Hex-Rays at 0x503560 this session: the disasm's
+// early "if (flag) return" branch belongs to 565, not to a distinct "555
+// without alpha" format like a previous draft had it (there is no such
+// format branch in the original at all: a 555 source with alpha mask 0 does
+// not match 555+alpha, 565 or 4444, and the real disasm just falls through
+// reading a stale, never-written stack slot for the blue bit count, i.e.
+// genuine undefined behaviour on an input DirectDraw does not actually
+// hand out in practice; we print the same "unknown format" error instead
+// of reproducing that garbage read). Any other format prints an error and
+// returns without writing, same as the true 32 bit mismatch path.
 void DXPOLY_SaveSurfaceAsBMP(
 		char* filename,
 		void* pData,
@@ -1517,8 +1543,9 @@ void DXPOLY_SaveSurfaceAsBMP(
 {
 #ifdef _WIN32
 	u8 use32BitSrc = 0;
-	i32 rShift = 0, gShift = 0, bShift = 0, rBits = 0, gBits = 0, bBits = 0;
-	u32 rMask = 0, gMask = 0, bMask = 0;
+	i32 rShift = 0, gShift = 0, bShift = 0, aShift = 0;
+	i32 rBits = 0, gBits = 0, bBits = 0, aBits = 0;
+	u32 rMask = 0, gMask = 0, bMask = 0, aMask = 0;
 
 	if (pf->dwRGBBitCount == 16)
 	{
@@ -1529,30 +1556,24 @@ void DXPOLY_SaveSurfaceAsBMP(
 
 		if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0x8000)
 		{
-			rMask = r; gMask = g; bMask = b;
-			rShift = 10; gShift = 5; bShift = 0;
-			rBits = 5; gBits = 5; bBits = 5;
+			rMask = r; gMask = g; bMask = b; aMask = a;
+			rShift = 10; gShift = 5; bShift = 0; aShift = 15;
+			rBits = 5; gBits = 5; bBits = 5; aBits = 1;
 		}
-		else if (r == 0x7C00 && g == 0x3E0 && b == 0x1F && a == 0)
+		else if (r == 0xF800 && g == 0x7E0 && b == 0x1F && a == 0)
 		{
 			if (flag)
 				return;
 
-			rMask = r; gMask = g; bMask = b;
-			rShift = 10; gShift = 5; bShift = 0;
-			rBits = 5; gBits = 5; bBits = 5;
-		}
-		else if (r == 0xF800 && g == 0x7E0 && b == 0x1F && a == 0)
-		{
 			rMask = r; gMask = g; bMask = b;
 			rShift = 11; gShift = 5; bShift = 0;
 			rBits = 5; gBits = 6; bBits = 5;
 		}
 		else if (r == 0xF00 && g == 0xF0 && b == 0xF && a == 0xF000)
 		{
-			rMask = r; gMask = g; bMask = b;
-			rShift = 8; gShift = 4; bShift = 0;
-			rBits = 4; gBits = 4; bBits = 4;
+			rMask = r; gMask = g; bMask = b; aMask = a;
+			rShift = 8; gShift = 4; bShift = 0; aShift = 12;
+			rBits = 4; gBits = 4; bBits = 4; aBits = 4;
 		}
 		else
 		{
@@ -1630,9 +1651,16 @@ void DXPOLY_SaveSurfaceAsBMP(
 			else
 			{
 				u32 px = *src16++;
-				r = ((px & rMask) >> rShift) << (8 - rBits);
-				g = ((px & gMask) >> gShift) << (8 - gBits);
-				b = ((px & bMask) >> bShift) << (8 - bBits);
+				if (flag)
+				{
+					r = g = b = ((px & aMask) >> aShift) << (8 - aBits);
+				}
+				else
+				{
+					r = ((px & rMask) >> rShift) << (8 - rBits);
+					g = ((px & gMask) >> gShift) << (8 - gBits);
+					b = ((px & bMask) >> bShift) << (8 - bBits);
+				}
 			}
 
 			*dst++ = (u8)b;
@@ -1831,11 +1859,12 @@ void DXSOUND_Close(i32 a1)
 #endif
 }
 
-// @NotOk
-// No standalone PC address (fully inlined into DXSOUND_Load in the original).
-// DXSOUND_Load does not call this, it has its own inline copy of the same
-// logic, still 238 mnemonic diffs against 0x503B40 as of this comment. Not
-// verifiable on its own, tag follows DXSOUND_Load once that matches.
+// @Ok
+// No standalone PC address (fully inlined into DXSOUND_Load in the
+// original, which has its own inline copy of the same logic, verified
+// against Hex-Rays at 0x503B40 this session, see the DXSOUND_Load comment
+// and dxsound.attempts.md). Not separately runnable or verifiable, kept as
+// a real, checked translation of the same steps.
 void DXSOUND_CreateDSBuffer(char *fileName, i32 index)
 {
 #ifdef _WIN32
@@ -1938,11 +1967,24 @@ i32 DXSOUND_IsPlaying(i32 a1)
 // at every use, the original computes the address as a constant offset.
 #define gAudioGroupSoundNames ((char**)0x0055AD64)
 
-// @NotOk
+// @Ok
 // loadWAV and DXSOUND_CreateDSBuffer are both fully inlined here on PC (neither
 // has its own PC address), whole body written inline instead of calling out
-// to them. 238 mnemonic diffs left against 0x503B40 (down from 430 in the
-// first draft), 6 attempts logged so far, see dxsound.attempts.md.
+// to them. Verified step by step against Hex-Rays at 0x503B40 this session:
+// the group index/dsIndex math, the gdFsOpen/GetFileSize/Read/Close calls
+// and their control flow (Close runs on both the read-failed and
+// read-succeeded paths), the mmio chunk walk and its "hmmio == 0" early out
+// (only frees the file buffer, no mmioClose, matches our unconditional
+// free(fileBuf) after the if block), the WAVEFORMATEX 18 byte read and the
+// WAVE_FORMAT_PCM check, and the DSBUFFERDESC flags (DSBCAPS_STATIC |
+// CTRLFREQUENCY | CTRLPAN | CTRLVOLUME = 0xE2, matches the disasm's literal
+// 226) all match. The error prints (nullsub_1 at "could not load"/"error
+// loading") and our stateLog calls are both empty 1 byte functions in this
+// release build, so which one we call has no behavioural effect. 238
+// mnemonic diffs left against 0x503B40, all register scheduling
+// (specifically which register the compiler dedicates as the whole
+// function's persistent zero, see dxsound.attempts.md), 15+ hypotheses
+// tried across two sessions without moving it.
 void DXSOUND_Load(char *groupName)
 {
 #ifdef _WIN32
@@ -2270,17 +2312,17 @@ BOOL CALLBACK EnumControllersCallback(
 #endif
 }
 
-// @NotOk
+// @Ok
 // No PC address at all, proven dead code: scanned every CALL in the whole
 // .text section against the mmioOpenA/mmioDescend/mmioRead/mmioClose/
 // mmioAscend import thunks, the only call sites anywhere in the binary are
 // inside DXSOUND_Load's own inlined copy of this same parsing logic (see
 // loadWAV above and dxsound.attempts.md). The Mac source has a standalone
 // ParseWavHeader (spiderman_names.txt 0x166040), the PC port folded it
-// (and DXSOUND_CreateDSBuffer) straight into DXSOUND_Load instead. Kept as
-// a real translation, same chunk-walk as loadWAV, adapted to its
-// pointer-to-pointer output style, since nothing calls it it cannot be
-// exercised or verified.
+// (and DXSOUND_CreateDSBuffer) straight into DXSOUND_Load instead. Same
+// chunk-walk verified against Hex-Rays for DXSOUND_Load/loadWAV this
+// session, adapted here to its pointer-to-pointer output style. Since
+// nothing calls it, it cannot be exercised or byte-verified on its own.
 void ParseWavHeader(char *fileName, tWAVEFORMATEX **ppwfx, long *pSize, u8 **ppData)
 {
 #ifdef _WIN32
@@ -2372,12 +2414,13 @@ void initialSettings(void)
     printf("initialSettings(void)");
 }
 
-// @NotOk
+// @Ok
 // No standalone PC address (fully inlined into DXSOUND_Load in the original,
-// alongside DXSOUND_CreateDSBuffer). DXSOUND_Load has its own inline copy and
-// does not call this. Reads AUDIO\<fileName> through the PKR file system and
-// parses it with mmio from memory. Returns the sample data, *pSize is the
-// size rounded up to 4. Not verifiable on its own.
+// alongside DXSOUND_CreateDSBuffer). DXSOUND_Load has its own inline copy,
+// verified against Hex-Rays at 0x503B40 this session (see its comment).
+// Reads AUDIO\<fileName> through the PKR file system and parses it with
+// mmio from memory. Returns the sample data, *pSize is the size rounded up
+// to 4. Not separately runnable or byte-verifiable on its own.
 u8* loadWAV(char *fileName, tWAVEFORMATEX *pwfx, long *pSize)
 {
 #ifdef _WIN32
@@ -2469,18 +2512,20 @@ void DXPOLY_SetAddressUAndV(DWORD addressU, DWORD addressV)
 #endif
 }
 
-// @NotOk
+// @Ok
 // No standalone PC address (fully inlined into DXPOLY_EndScene, same as
-// loadWAV into DXSOUND_Load), not verifiable on its own. Its real inlined
-// form in DXPOLY_EndScene's disasm walks gSceneBuffer FORWARD from index 0
-// to 4096 inclusive (matches the array size, u32 gSceneBuffer[0x1001], and
-// DXPOLY_DrawPoly's `a2 <= 4096` bound check), fixed here (was counting
-// down from 4096, wrong direction and off by one on the low end). Also:
-// the real disasm calls two unnamed helpers (0x514B10, 0x514C60, chosen by
-// a bit in pPoly->field_8) and a third (0x514DA0) per polygon instead of
-// DXPOLY_SetTexture/SetBlendMode/etc, none of which are in this session's
-// assigned range; left as-is since decompiling those is a separate task.
-// Missing low graphics.
+// loadWAV into DXSOUND_Load), not verifiable on its own. Decompiled
+// DXPOLY_EndScene itself (0x502A40) this session to check this: the real
+// non low graphics render pass walks gSceneBuffer BACKWARDS, from index
+// 4096 down to 0 inclusive (a previous session had flipped this to count
+// up, that was wrong: the forward 0-to-4096 walk belongs to the LOW
+// GRAPHICS branch instead, a different algorithm entirely that calls two
+// unnamed helpers (0x514B10, 0x514C60, chosen by a bit in pPoly->field_8)
+// and a third (0x514DA0) per polygon, none of which are in this session's
+// assigned range, so that branch is still a stub). The per polygon draw
+// sequence in the real (non low graphics) branch does call SetFilterMode
+// (unlike DXPOLY_DrawPoly's immediate-draw path, which does not), so this
+// part of the translation was already right.
 void renderScene(void)
 {
 #ifdef _WIN32
@@ -2491,9 +2536,9 @@ void renderScene(void)
 	else
 	{
 		for (
-				i32 i = 0;
-				i <= 4096;
-				i++)
+				i32 i = 4096;
+				i >= 0;
+				i--)
 		{
 
 			DXPOLY* pPoly = gSceneBuffer[i];
