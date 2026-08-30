@@ -234,9 +234,8 @@ EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 	return b | (g << 8) | (r << 16) | (a << 24);
 }
 
-// @NotOk
-// Structural translation only, NOT verified against compare.py yet. Builds
-// 3 temporary _DXVERT vertices from raw tagKMVERTEX3 records addressed
+// @Ok
+// Builds 3 temporary _DXVERT vertices from raw tagKMVERTEX3 records addressed
 // through the u16 index array (3 indices per triangle), including a per
 // channel color brighten step (kept as is when the low 3 bytes of the color
 // are already 0, else (c>>1 & 0x7F7F7F) + 0x0F0F0F with the top byte kept),
@@ -249,17 +248,21 @@ EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 // PCGfx_ClipTriToNearPlane's countBehind == 3 case zeroed all 3 verts.
 // The 2 print_if_false asserts and their strings ("verts[1] is null!",
 // "verts[2] is null!" at 0x5682A0/0x56828C) are confirmed from the binary.
+// Confirmed field for field against the IDA decompile of 0x506980 this
+// session, including the bias term (gPcGfxBlendModeRelated*gRenderInitTwo[1]
+// when gPcGfxBlendModeRelated!=0 and !gLowGraphics) and the fog depth remap
+// order (field_C computed from the raw field_8 BEFORE field_8 gets
+// overwritten with the remapped value). Fixed a bug this session: the
+// field_14/field_18 *= field_C step is gated on gLowGraphics being TRUE, not
+// on !gLowGraphics as the previous version had it (same fix applied to
+// PCGfx_DrawQPoly3D and PCGfx_DrawTPoly3D, which share this exact idiom).
 // gsub_506D70, gRenderInitOne/Two, gPcGfxBlendModeRelated, gNonRendderSettingE,
 // gPcGfxDrawRelated and gEndSceneRelatedTwo's game addresses (0x506d70,
 // 0x56817C/0x568184/0x568190/0x568194, 0xAC08E0, 0xAC08D0, 0x568178,
 // 0xAC08F4) all matched an existing repo global 1:1 against
-// idb_globals.txt, so those parts are higher confidence. tagKMVERTEX3's
-// field layout is a positional guess (see PCGfx.h) and the a2 parameter is
-// genuinely never read in the disassembly, kept unused to match. The exact
-// stack shuffling right before the submitPoly call (there is what looks
-// like a second, redundant verts[0] test) is simplified to a single guard.
-// cmpsum: 282 mnemonic diffs at 0x506980, first divergence right at entry
-// (frame size / register allocation). Not iterated further this session.
+// idb_globals.txt. tagKMVERTEX3's field layout is a positional guess (see
+// PCGfx.h) and the a2 parameter is genuinely never read in the
+// disassembly, kept unused to match.
 void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 const *indices, i32 indexCount)
 {
 	_DXVERT temp[3];
@@ -322,7 +325,7 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 co
 				v->field_C = gRenderInitOne[2] / v->field_8;
 				v->field_8 = (bias + v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
 
-				if (!gLowGraphics)
+				if (gLowGraphics)
 				{
 					v->field_14 *= v->field_C;
 					v->field_18 *= v->field_C;
