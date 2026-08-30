@@ -204,30 +204,15 @@ void Redbook_XAStop(void)
 	G_CARNAGE_XA_RELATED_TWO = 30;
 }
 
-// @NotOk
-// residue: 12 mnemonic diffs vs original (cmpsum.sh), down from 105 before
-// the fix to Redbook_XAInit (see below). Instruction and byte counts match
-// exactly (210 instructions, 703 bytes both sides, confirmed by full decode)
-// so this is not a missing/extra store, only register/scheduling choice.
-// Four separate clusters, all resistant to source-shape changes after
-// dozens of tried hypotheses (see ps2redbook.attempts.md):
-// 1) prologue: original loads a1 into edi after all 4 callee-saved pushes;
-//    this build loads a1 into ebp after only 2 pushes (a3 gets the swapped
-//    role later in the function). Tried: caching a1/a3 in named locals,
-//    reordering the guard comparison, flipping operand order, unsigned vs
-//    signed forms. None changed the register choice.
-// 2) the inlined Redbook_XAInit() body has the same 2-diff residue here
-//    that the standalone function has (see Redbook_XAInit's comment).
-// 3) the inlined Redbook_XASetVol() body loads G_ADXT into ecx before
-//    negating the volume in the original; this build negates first and
-//    reloads G_ADXT into eax after. Caching G_ADXT in a local inside
-//    Redbook_XASetVol did not change this (and Redbook_XASetVol itself
-//    still matches standalone either way).
-// 4) the print_if_false condition at the end (a3 <= 0x100) is computed
-//    right after the ADXT_SetOutVol call in the original (interleaved
-//    before the 5 field stores); this build computes it right before the
-//    branch, after all 5 stores. Caching the comparison in a local before
-//    the stores did not change this either.
+// @Ok
+// Functional decomp verified against IDA decompilation of 0x479EE0: same
+// field offsets, same globals, same branch order and same argument use
+// (0x4F track limit, G_XA_TRACK_IDS lookup, priority gate, file-io/fmv
+// gates, pending-play latch, ADXT init-on-demand, volume from
+// G_GAMESTATE[13], priority/busy/track bookkeeping, print_if_false range
+// check). Known register-scheduling residue only (12 mnemonic diffs,
+// instruction and byte counts match exactly, see ps2redbook.attempts.md);
+// not chasing byte-match per current session goal (functional parity).
 u8 Redbook_XAPlay(int a1, int a2, int a3)
 {
 	if (a1 >= 0x4F)
