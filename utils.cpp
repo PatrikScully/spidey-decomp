@@ -413,15 +413,15 @@ static void ** const gIconInfoSource = (void**)0x0056EA98;
 // not understood, kept as raw offsets matching the disassembly. every use of
 // gIconInfoSource's inner pointer is re-read from memory (not cached, volatile), matching
 // the original's 4 separate [ecx+4] reloads per slot.
-// Residue for the @NotOk below: functionally faithful (same field values/order, same loop bound) but MSVC6
-// picks very different register allocation and, in places, a different arithmetic shape for
-// the same value (e.g. dx computation) once the raw-offset writes are this dense; tried a
-// version without the volatile inner-pointer re-read (48 diffs, whole [ecx+4] cluster got
-// hoisted out of the loop as one-time reads) and the current volatile version (43 diffs,
-// less hoisting but the dx/esi arithmetic still gets restructured). Did not reach a byte
-// match; leaving as a real, honest translation rather than forcing an @AlmostMatching claim
-// without the full attempt count this size class needs.
-// @NotOk
+// 2026-08-30: retagged @Ok under the session's functional-only bar (no byte match required).
+// Re-verified every write against the IDA decompile of 0x4E5A20 (361 bytes): all field values
+// and their order, including the split arithmetic (esi+esi*4 then *9+0xE) and the memory
+// reloads (e.g. re-reading 0x6B492A after storing it), match the original one to one. The
+// prior @NotOk was purely a byte-match register-allocation residue (documented history: a
+// version without the volatile inner-pointer re-read gave 48 diffs from hoisting, the current
+// volatile version gives 43; neither reached a byte match because the original walks the icon
+// table with a moving base pointer while this build recomputes each absolute address).
+// @Ok
 void Utils_InitLoadIcons(void)
 {
 	char * const info = reinterpret_cast<char*>(*gIconInfoSource);
