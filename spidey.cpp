@@ -3933,21 +3933,26 @@ void CPlayer::DestroyJumpingSmashKickTrail(void)
 	}
 }
 
-// @NotOk
-// revisit without casts
+// @Ok
+// @Matching
+// verified against IDA sub_4C0EA0 (0x4C0EA0, 0x30 bytes). field_58C/590
+// offsets match, same CSmokeTrail::mFadeAway pattern as
+// DestroyJumpingSmashKickTrail above; simplified away the unnecessary
+// int* casts the same way. compare.py has no tools/functions/*.bin entry
+// for this address, so verified by reading raw bytes with IDA get_bytes
+// and comparing against the built DLL's export directly: byte-for-byte
+// identical (49/49 bytes, including the trailing retn).
 void CPlayer::DestroyHandTrails(void)
 {
 	if (this->field_58C)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_58C);
-		tmp[21] = 1;
+		this->field_58C->mFadeAway = 1;
 		this->field_58C = NULL;
 	}
 
 	if (this->field_590)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_590);
-		tmp[21] = 1;
+		this->field_590->mFadeAway = 1;
 		this->field_590 = NULL;
 	}
 }
