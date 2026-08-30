@@ -1011,8 +1011,12 @@ void CBaddy::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics(0);
 }
 
-// @NotOk
-// Figure out name
+// @Ok
+// Vtable slot 12 (verified via ??_7CBaddy@@6B@ + 12*4 = 0x407f60). The
+// original function body is a single "retn 4" (IDA's nullsub_14), no
+// side effects at all, so the empty stub here is already correct. Name
+// is still unknown (not in idb_globals.txt or spideypc_names.txt as a
+// real member function name), left as a placeholder.
 void CBaddy::UnknownCBaddyFunctionFive(int)
 {
 }
