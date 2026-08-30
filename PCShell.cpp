@@ -787,15 +787,210 @@ void CMenu::EntryEnable(u32 a2, u32 a3)
 	}
 }
 
-// @BIGTODO
+// original address 0x4015b0, IDA calls it nullsub_1: a genuinely empty
+// function in the game binary (just a ret), not one of our printf stubs.
+// CMenu::ProcessMouse calls it once per scrollbar hit with a debug string,
+// but the body does nothing with it. Kept out of line (not just dropped) to
+// mirror the original call shape.
+// @Ok
+EXPORT void gsub_4015B0(const char*)
+{
+}
+
+// scrollbar debug strings, addresses and content read directly from the
+// original exe via IDA (0x568828, 0x568810, 0x568840, 0x5687F8, 0x5687E0).
+static char* STR_SCROLLBAR_LINE_UP = "Scrollbar - Line Up.\r\n";
+static char* STR_SCROLLBAR_LINE_DOWN = "Scrollbar - Line Down\r\n";
+static char* STR_SCROLLBAR_THUMB = "Scrollbar - Thumb\r\n";
+static char* STR_SCROLLBAR_PAGE_UP = "Scrollbar - Page Up\r\n";
+static char* STR_SCROLLBAR_PAGE_DOWN = "Scrollbar - Page Down\r\n";
+
 // Mac symbol ProcessMouse__5CMenuFv, address 0x50C8A0. Same-TU rule as
 // EntryEnable above: CMenu::Update (front.cpp) calls this with a direct
 // call, so it must live out of line here, not as a printf stub in front.cpp
 // (that would get auto-inlined under /Ob2 and corrupt CMenu::Update's match).
+//
+// Handles mouse input for a menu: dragging the scrollbar thumb, clicking the
+// scrollbar arrows/page areas, and hovering/clicking a text line. Returns 1
+// if a scrollbar action was taken, 2 if the highlighted line changed because
+// of hover, 0 otherwise.
+// @Ok
 i32 CMenu::ProcessMouse(void)
 {
-	printf("CMenu::ProcessMouse(void)");
-	return 0;
+	if (gRenderTest & 0x10)
+		return 0;
+
+	u8 savedLine = this->mLine;
+
+	if (this->field_30 != 0 && PCSHELL_CheckTriggers(0x100, 0, 1))
+	{
+		// currently dragging the scrollbar thumb: convert the mouse Y motion
+		// this frame into a line-by-line scroll, using field_34 as the pixel
+		// distance per line and field_38 as the leftover drag distance.
+		this->field_38 = this->field_38 + (f32)gShellMouseOffsetY;
+
+		if (this->field_38 < this->field_34)
+		{
+			do
+			{
+				if (this->mCursorLine < this->mNumLines - this->field_1B)
+					this->mCursorLine++;
+
+				this->field_38 = this->field_38 - this->field_34;
+			} while (this->field_38 < this->field_34);
+		}
+
+		f32 limit = (f32)(i32)(-this->field_34);
+
+		if (this->field_38 < limit)
+		{
+			do
+			{
+				if (this->mCursorLine != 0)
+					this->mCursorLine--;
+
+				this->field_38 = this->field_38 + this->field_34;
+			} while (this->field_38 < limit);
+		}
+
+		return 1;
+	}
+
+	this->field_30 = 0;
+
+	if (this->ptr_to != 0 && PCSHELL_CheckTriggers(0x100, 1, 1))
+	{
+		i32 x, y;
+		PCINPUT_GetMouseHotspotPosition(&x, &y);
+		PCSHELL_CoordsPCtoDC(&x, &y);
+
+		switch (this->ptr_to->ScrollBarHitTest(x, y))
+		{
+		case 1: // up arrow
+			gsub_4015B0(STR_SCROLLBAR_LINE_UP);
+
+			if (this->mCursorLine != 0)
+			{
+				this->mCursorLine--;
+				return 1;
+			}
+			break;
+
+		case 2: // down arrow
+		{
+			gsub_4015B0(STR_SCROLLBAR_LINE_DOWN);
+
+			i32 limit = this->field_32 - this->field_1B;
+
+			if (this->mCursorLine < limit)
+			{
+				do
+				{
+					this->mCursorLine++;
+				} while (this->mCursorLine < limit && this->mEntry[this->mCursorLine].unk_b == 0);
+
+				return 1;
+			}
+			break;
+		}
+
+		case 3: // thumb grab
+		{
+			gsub_4015B0(STR_SCROLLBAR_THUMB);
+
+			CExpandingBox* box = this->ptr_to;
+			this->field_30 = 1;
+
+			i32 range = this->mNumLines - this->field_1B;
+			f32 boxHeight = (f32)(box->field_8 - box->field_2C - 21);
+
+			this->field_38 = 0.0f;
+			this->field_34 = (boxHeight / (f32)range / 512.0f) * (f32)gDxResolutionX;
+
+			return 1;
+		}
+
+		case 4: // page up
+			gsub_4015B0(STR_SCROLLBAR_PAGE_UP);
+
+			if (this->mCursorLine != 0)
+			{
+				i32 pageSize = this->field_1B - 1;
+				u8 count = 0;
+
+				while (count < pageSize)
+				{
+					if (this->mCursorLine == 0)
+						break;
+
+					this->mCursorLine--;
+
+					if (this->mEntry[this->mCursorLine].unk_b != 0)
+						count++;
+				}
+
+				return 1;
+			}
+			break;
+
+		case 5: // page down
+		{
+			gsub_4015B0(STR_SCROLLBAR_PAGE_DOWN);
+
+			i32 limit = this->field_32 - this->field_1B;
+
+			if (this->mCursorLine < limit)
+			{
+				i32 pageSize = this->field_1B - 1;
+				u8 count = 0;
+
+				while (count < pageSize)
+				{
+					if (this->mCursorLine >= limit)
+						break;
+
+					this->mCursorLine++;
+
+					if (this->mEntry[this->mCursorLine].unk_b != 0)
+						count++;
+				}
+
+				return 1;
+			}
+			break;
+		}
+		}
+	}
+
+	// no scrollbar action taken this frame: reset the left-click trigger
+	// latch and, if the mouse moved, check whether it is now hovering a
+	// different (enabled) text line.
+	gMouseTriggerRelated[7] = 0;
+
+	if (PCSHELL_MouseMoved())
+	{
+		i32 y = this->mY;
+
+		for (i32 i = this->mCursorLine;
+				i < this->mNumLines && i < (this->mCursorLine + this->field_1B);
+				i++)
+		{
+			y += this->mEntry[i].unk_a;
+
+			if (this->mEntry[i].unk_b)
+			{
+				if (PCSHELL_IsMouseOverText(this->mEntry[i].name, this->mX, y, this->mJustification))
+				{
+					if (this->mEntry[i].what == 0)
+						this->SetLine((char)i);
+				}
+
+				y += this->mLineSep;
+			}
+		}
+	}
+
+	return this->mLine != savedLine ? 2 : 0;
 }
 
 // @Ok

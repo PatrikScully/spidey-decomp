@@ -120,8 +120,14 @@ public:
 	i32 mLineSep;
 	i16 field_30;
 	u16 field_32;
-	i32 field_34;
-	i32 field_38;
+
+	// scrollbar thumb drag state, set up in CMenu::ProcessMouse's thumb-grab
+	// case (0x50c8a0): field_34 is the pixel step per visible line (drag speed),
+	// field_38 is the accumulated mouse-Y delta since the last line change.
+	// confirmed float (not int) by the fld/fadd/fcomp/fstp float ops on this
+	// memory in the original disassembly.
+	f32 field_34;
+	f32 field_38;
 
 	SEntry mEntry[40];
 };
