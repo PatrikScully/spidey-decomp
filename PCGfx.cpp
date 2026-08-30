@@ -2262,12 +2262,13 @@ CSuper* createSuperItem(CItem *pItem)
 	return pSuper;
 }
 
-// @NotOk
-// gLowGraphics true/false take almost the same shape but are not shared code
-// (mBlendMode/field_A/field_C are sourced differently, field_C is a hardcoded
-// 4 on the low graphics side but the real vertex count otherwise); not
-// verified against compare.py yet beyond a first pass, residue logged in
-// pcgfx.attempts.md.
+// @Ok
+// Confirmed against IDA decompile of 0x5071b0. Fixed a bug this session:
+// the low graphics branch set field_C to a hardcoded 4 instead of count;
+// the original writes count in both branches (the low graphics/hardware
+// split only changes how field_4/mBlendMode/field_A are sourced, not
+// field_C). gLowGraphics true/false otherwise take the same shape (copy
+// vertex fields, per vertex color brighten step, fog clamp loop).
 void submitPoly(_DXVERT **verts, i32 count)
 {
 	i32 idx = gEndSceneRelatedTwo;
@@ -2289,7 +2290,7 @@ void submitPoly(_DXVERT **verts, i32 count)
 		if (gUseTextureRelated < 0)
 			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
 
-		p->field_C = 4;
+		p->field_C = count;
 
 		if (count > 0)
 		{
