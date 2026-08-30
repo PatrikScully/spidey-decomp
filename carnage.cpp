@@ -148,17 +148,42 @@ CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
 	printf("CSymbioteBlade::CSymbioteBlade(const CVector&, const CVector&)");
 }
 
-// tentative: XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0).
-// Not in idb_globals.txt yet, values are a guess (indices go up to Rnd(6)&~1, so needs 6 entries).
-EXPORT i32 gCarnageGettingGrabbedXa[6] = { 0x48, 6, 0x48, 6, 0x48, 6 };
-EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x11, 6, 0x11, 6, 0x11, 6 };
+// XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0). Not in
+// idb_globals.txt yet, but read straight out of the binary at 0x00548C34/0x00548C4C (IDA
+// get_bytes), right after gCarnageBurnInBubbleWhatIfXa (0x548AF4) and before gCarnageStretchJumpXa
+// (0x548C64). Previous values here were an unverified guess, now corrected.
+EXPORT i32 gCarnageGettingGrabbedXa[6] = { 0x47, 0xD, 0x47, 0xE, 0x47, 0xF };
+EXPORT i32 gCarnageGettingGrabbedWhatIfXa[6] = { 0x10, 0xD, 0x10, 0xE, 0x10, 0xF };
+
+// XA line played once the grab lands and Carnage starts struggling (CCarnage::GettingGrabbed,
+// the grab-succeeded branch). Read out of the binary at 0x00548CA4/0x00548CB4, right after
+// gCarnageWhatIfXa (0x548C94), via IDA get_bytes. The source previously (wrongly) reused
+// gCarnageXa/gCarnageWhatIfXa here; those are a different, already-named array (confirmed by
+// content: gCarnageXa is {0x48,5,0x48,5}, this one is {0x48,0xA,0x48,0xC}).
+EXPORT i32 gCarnageGrabbedHoldXa[4] = { 0x48, 0xA, 0x48, 0xC };
+EXPORT i32 gCarnageGrabbedHoldWhatIfXa[4] = { 0x11, 0x7, 0x11, 0x9 };
 
 // tentative: XA lines played while winding up to throw blades (CCarnage::ThrowBlades case 0).
 EXPORT i32 gCarnageThrowBladesXa[6] = { 0x48, 7, 0x48, 7, 0x48, 7 };
 EXPORT i32 gCarnageThrowBladesWhatIfXa[6] = { 0x11, 7, 0x11, 7, 0x11, 7 };
 
-// @NotOk
-// residue: case 3 (CVector normal/scale/add math not fully reverse engineered), see attempts file.
+// @Ok
+// Found and fixed real bugs via IDA decompile+disasm of 0x41CFD0 (CCarnage_GettingGrabbed):
+// - case 1 and case 2 bodies were swapped relative to the real switch(dumbAssPad). What used to be
+//   written as case 1 (grab check, MonitorAttack, PlayXA) is really case 2; what used to be case 2
+//   (mAnimFinished + angle copy) is really case 1. State machine correctness depends on the exact
+//   numbers since dumbAssPad increments through them in order, so this was a real behavioural bug,
+//   not cosmetic.
+// - case 2's PlayXA (grab succeeded, RunAnim 0x22) used gCarnageXa/gCarnageWhatIfXa, the wrong
+//   global (content {0x48,5,0x48,5}). The real array lives right after it in the binary at
+//   0x548CA4/0x548CB4 ({0x48,0xA,0x48,0xC} / {0x11,7,0x11,9}), added as gCarnageGrabbedHoldXa/
+//   gCarnageGrabbedHoldWhatIfXa. gCarnageGettingGrabbedXa/WhatIfXa (case 0) were also an unverified
+//   guess, corrected to the real bytes at 0x548C34/0x548C4C.
+// - case 3's Hit() call built field_C via (MechList->mPos - mPos) >> 12 then VectorNormal, but was
+//   missing the explicit field_C.vy = 0 the original does before normalizing (horizontal-only hit
+//   direction, same idea as the mFrame<0xA branch's delta.vy = 0).
+// - case 3's sound-trigger and position-snap mFrame thresholds were 0xA, the original uses 0xC for
+//   both (0xA is only correct for the later field_194 flip).
 void CCarnage::GettingGrabbed(void)
 {
 	switch (this->dumbAssPad)
@@ -188,6 +213,16 @@ void CCarnage::GettingGrabbed(void)
 		}
 
 		case 1:
+		{
+			if (this->mAnimFinished && MechList->field_E1C != 0x8000000)
+				this->RunAnim(0x1Eu, 0, -1);
+
+			this->mAngles.vy = MechList->mAngles.vy;
+			this->dumbAssPad++;
+			break;
+		}
+
+		case 2:
 		{
 			typedef u8 (CPlayer::*GrabUpdateFn)(CVector*, i16*);
 			union { GrabUpdateFn fn; u32 addr; } u;
@@ -222,24 +257,14 @@ void CCarnage::GettingGrabbed(void)
 			if (gWhatIf)
 			{
 				i32 idx = Rnd(4) & ~1;
-				this->PlayXA(gCarnageWhatIfXa[idx], gCarnageWhatIfXa[idx + 1], 60);
+				this->PlayXA(gCarnageGrabbedHoldWhatIfXa[idx], gCarnageGrabbedHoldWhatIfXa[idx + 1], 60);
 			}
 			else
 			{
 				i32 idx = Rnd(4) & ~1;
-				this->PlayXA(gCarnageXa[idx], gCarnageXa[idx + 1], 60);
+				this->PlayXA(gCarnageGrabbedHoldXa[idx], gCarnageGrabbedHoldXa[idx + 1], 60);
 			}
 
-			this->dumbAssPad++;
-			break;
-		}
-
-		case 2:
-		{
-			if (this->mAnimFinished && MechList->field_E1C != 0x8000000)
-				this->RunAnim(0x1Eu, 0, -1);
-
-			this->mAngles.vy = MechList->mAngles.vy;
 			this->dumbAssPad++;
 			break;
 		}
@@ -252,6 +277,7 @@ void CCarnage::GettingGrabbed(void)
 
 				SHitInfo hitInfo;
 				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				hitInfo.field_C.vy = 0;
 				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
 				hitInfo.field_0 = 0xE;
 				hitInfo.field_4 = 0xB;
@@ -260,7 +286,7 @@ void CCarnage::GettingGrabbed(void)
 				MechList->Hit(&hitInfo);
 			}
 
-			if (this->mFrame >= 0xA)
+			if (this->mFrame >= 0xC)
 			{
 				if (!(this->field_324 & 1))
 				{
@@ -269,7 +295,7 @@ void CCarnage::GettingGrabbed(void)
 				}
 			}
 
-			if (this->mFrame < 0xA)
+			if (this->mFrame < 0xC)
 			{
 				CVector delta;
 				delta.vx = this->mPos.vx - MechList->mPos.vx;
