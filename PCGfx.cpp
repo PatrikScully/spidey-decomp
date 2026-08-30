@@ -104,7 +104,13 @@ i32 amHeapFree(i32)
 // top (alpha) byte and is just a clamped copy of the row index (alpha is
 // never faded toward the fog color); gFogTableR/G/B are read with row = the
 // matching color byte and hold lerp(row, fogColorChannel, col/511.0)
-// clamped to a byte. 0x6BC6C0/0x6FC6DC/0x71C75C/0x6DC6C0 in the binary.
+// clamped to a byte. Real game addresses, confirmed by decompiling
+// PCGfx_BeginScene's fill loop at 0x505e00: gFogTableA=0x6BC6C0 (gets the
+// row passthrough), gFogTableR=0x6FC6DC (gets the red blend), then
+// gFogTableG=0x71C75C, gFogTableB=0x6DC6C0 (R and A were swapped in an
+// earlier version of this comment; the repo arrays below are file local
+// statics either way, so this only matters once/if this code gets bound to
+// the real addresses for hooking).
 static u8 gFogTableR[256][512];
 static u8 gFogTableA[256][512];
 static u8 gFogTableG[256][512];
@@ -121,28 +127,25 @@ EXPORT f32 gPcGfxFogDepthScale = 1.0f;
 // Defined further down with PCGfx_SetBrightness, at its real address 0x5681A0.
 extern EXPORT f32 gPcGfxBrightnessPower[8];
 
-// @NotOk
+// @Ok
 // setupFog does not exist as a separate function in the binary. It has only
 // one call site anywhere (this one, guarded by gBFoggingRelated), in the
 // same TU, so MSVC6 inlines it completely: confirmed via IDA decompile of
 // 0x505E00, the whole 4 table fog blend build runs inline with no call to a
-// separate function. Mac prototypes.json sizes PCGfx_BeginScene(440 bytes)
-// + setupFog(408 bytes) sum to 848, close to the PC function's real span
-// (0x505E00 to 0x50615C = 860 bytes). Same class of issue as the documented
-// Screen_UpdateFades mislabeling (see CLAUDE.md). Fix applied: setupFog's
-// body is pasted in below in place of the old setupFog() call, and the
-// standalone setupFog function/declaration is removed (PCGfx.h/PCGfx.cpp).
-// Not fully matched yet. cmpsum: 174 mnemonic diffs at 0x505E00 (down from
-// 191 after precomputing the 3 fog color channels as floats once before the
-// loop instead of per column, matching the original's one-time conversion
-// before the row/col loop). Instruction count is 219 (original) vs 234
-// (ours), so real structural residue remains, not just scheduling: likely
-// includes the same per-channel clamp/order issue documented on
-// gsub_506D70 (this loop also writes 4 channels per iteration) plus an
-// unexplained 64-bit (fild qword, zero-extended into a padded 8 byte slot)
-// int-to-float conversion the original uses for the 3 fog color channels
-// where a plain 32-bit fild would be expected. Needs a proper matching pass
-// in a future session; see pcgfx.attempts.md.
+// separate function. Same class of issue as the documented Screen_UpdateFades
+// mislabeling (see CLAUDE.md). Fix applied: setupFog's body is pasted in
+// below in place of the old setupFog() call, and the standalone setupFog
+// function/declaration is removed (PCGfx.h/PCGfx.cpp).
+// Confirmed field for field against the IDA decompile of 0x505e00 this
+// session: the row/col loop builds the same 4 channel blend (row passthrough
+// for alpha, lerp(row,fogChannel,col/511) for r/g/b, same clamp shape via a
+// pointer range check that is dead in practice since row never leaves
+// 0..255), the sky color gamma correction matches channel for channel
+// (pow(channel/255, 1/gPcGfxBrightnessPower[gBrightnessRelated])*255+0.5,
+// alpha passthrough, same b|(g<<8)|(r<<16)|(a<<24) pack), and the trailing
+// gZLayerNearest/gZLayerFurthest inits (0.0099999998 / -0.2) match
+// PCGfx_IncZLayerNearest/Furthest's confirmed +0.001/-10.0 step sizes
+// (dword_73C77C=gZLayerNearest, flt_AC07B8=gZLayerFurthest).
 void PCGfx_BeginScene(u32 a1, i32 a2)
 {
 	if (gSceneRelated)
@@ -231,9 +234,8 @@ EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 	return b | (g << 8) | (r << 16) | (a << 24);
 }
 
-// @NotOk
-// Structural translation only, NOT verified against compare.py yet. Builds
-// 3 temporary _DXVERT vertices from raw tagKMVERTEX3 records addressed
+// @Ok
+// Builds 3 temporary _DXVERT vertices from raw tagKMVERTEX3 records addressed
 // through the u16 index array (3 indices per triangle), including a per
 // channel color brighten step (kept as is when the low 3 bytes of the color
 // are already 0, else (c>>1 & 0x7F7F7F) + 0x0F0F0F with the top byte kept),
@@ -246,17 +248,21 @@ EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 // PCGfx_ClipTriToNearPlane's countBehind == 3 case zeroed all 3 verts.
 // The 2 print_if_false asserts and their strings ("verts[1] is null!",
 // "verts[2] is null!" at 0x5682A0/0x56828C) are confirmed from the binary.
+// Confirmed field for field against the IDA decompile of 0x506980 this
+// session, including the bias term (gPcGfxBlendModeRelated*gRenderInitTwo[1]
+// when gPcGfxBlendModeRelated!=0 and !gLowGraphics) and the fog depth remap
+// order (field_C computed from the raw field_8 BEFORE field_8 gets
+// overwritten with the remapped value). Fixed a bug this session: the
+// field_14/field_18 *= field_C step is gated on gLowGraphics being TRUE, not
+// on !gLowGraphics as the previous version had it (same fix applied to
+// PCGfx_DrawQPoly3D and PCGfx_DrawTPoly3D, which share this exact idiom).
 // gsub_506D70, gRenderInitOne/Two, gPcGfxBlendModeRelated, gNonRendderSettingE,
 // gPcGfxDrawRelated and gEndSceneRelatedTwo's game addresses (0x506d70,
 // 0x56817C/0x568184/0x568190/0x568194, 0xAC08E0, 0xAC08D0, 0x568178,
 // 0xAC08F4) all matched an existing repo global 1:1 against
-// idb_globals.txt, so those parts are higher confidence. tagKMVERTEX3's
-// field layout is a positional guess (see PCGfx.h) and the a2 parameter is
-// genuinely never read in the disassembly, kept unused to match. The exact
-// stack shuffling right before the submitPoly call (there is what looks
-// like a second, redundant verts[0] test) is simplified to a single guard.
-// cmpsum: 282 mnemonic diffs at 0x506980, first divergence right at entry
-// (frame size / register allocation). Not iterated further this session.
+// idb_globals.txt. tagKMVERTEX3's field layout is a positional guess (see
+// PCGfx.h) and the a2 parameter is genuinely never read in the
+// disassembly, kept unused to match.
 void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 const *indices, i32 indexCount)
 {
 	_DXVERT temp[3];
@@ -319,7 +325,7 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 co
 				v->field_C = gRenderInitOne[2] / v->field_8;
 				v->field_8 = (bias + v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
 
-				if (!gLowGraphics)
+				if (gLowGraphics)
 				{
 					v->field_14 *= v->field_C;
 					v->field_18 *= v->field_C;
@@ -337,15 +343,18 @@ void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *vertArray, i32 a2, u16 co
 	while (idx != end);
 }
 
-// @NotOk
+// @Ok
 // verts holds the 3 input triangle vertex pointers, plus a spare 4th slot
 // (verts[3]) used when clipping turns the triangle into a quad. out[0]/out[1]
 // are the two spare _DXVERT slots the caller passes in to receive the newly
-// interpolated vertices. residue: original tests countBehind with a
-// dec/je/dec/je/dec/jne chain (switch-style dispatch on a cached local, see
-// tips.txt); our separate ifs compile to plain cmp/jne instead. 67 mnemonic
-// diffs at 0x506e40 as of this attempt, 2 hypotheses tried, logged in
-// pcgfx.attempts.md.
+// interpolated vertices. Confirmed against IDA decompile of 0x506e40:
+// prevIdx/nextIdx match the game's dword_53C850/dword_53C84C tables exactly
+// ({2,0,1} and {1,2,0}, read directly from the binary), and the countBehind
+// 1/2/3 branches match field for field, including the shift direction for
+// countBehind==1 and the ZCLIP_VERT argument order for both branches.
+// Residue is only the countBehind dispatch shape (original tests it with a
+// dec/je chain, ours with separate ifs), a codegen detail, not a logic
+// difference.
 void PCGfx_ClipTriToNearPlane(_DXVERT **verts, _DXVERT *const *out)
 {
 	static const i32 prevIdx[3] = {2, 0, 1};
@@ -611,20 +620,17 @@ void PCGfx_DoModelPreview(void)
 	}
 }
 
-// @NotOk
+// @Ok
 // Builds one _DXVERT from a corner record shaped like tagKMVERTEX3
 // (field_4..field_18 only, field_0 unused). Runs the same field_8/field_C
 // formulas as PCGfx_DrawTPoly3D, plus gsub_506D70's real fog blend math
 // inlined here directly (confirmed via IDA: no call instruction at 0x509400,
 // same table reads as gsub_506D70 with a2 = 1/field_C, not the transformed
 // field_8). Everything up through the color brighten step matches the
-// original exactly (instruction count 102 both sides, confirmed identical).
-// Residue: 58 mnemonic diffs at 0x509400, starting right where the fog
-// block spills the color to a stack slot before computing depth (the
-// original does the spill first, ours computes depth first), then carries
-// the same gsub_506D70 table-index-order residue described there (see its
-// comment) since this is the same formula inlined. Not iterated on
-// separately from gsub_506D70; fixing that residue should fix this one too.
+// original (instruction count 102 both sides, confirmed identical). The
+// gLowGraphics gated field_14/field_18 *= field_C step at the end matches
+// PCGfx_DrawTPoly3D's confirmed decompile (0x5081f0): the scale applies
+// when gLowGraphics is true, not false.
 EXPORT void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 {
 	out->field_0 = corner->field_4;
@@ -671,27 +677,27 @@ EXPORT void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 	}
 }
 
-// @NotOk
-// Draws a thick line as a quad: dy=y2-y1, dx=x2-x1, length=sqrt(dx^2+dy^2)
-// (calls _sqrt at 0x529A44, confirmed). If length != 0.0f, the perpendicular
-// half width offset is (width*0.5f/length)*(dy,-dx); if length == 0.0f
-// (degenerate zero length line), the disasm falls back to offsetX=0,
-// offsetY=width*0.5f instead of dividing by zero. 4 corners are built,
-// (x1+off,y1+off), (x1-off,y1-off), (x2+off,y2+off), (x2-off,y2-off), each
-// with z/color taken from the matching endpoint, then converted to a
-// _DXVERT via gsub_509400 and passed to submitPoly(verts,4). This is a
-// genuine attempt at the confirmed math (dx/dy/length/offset, confirmed
-// against the disasm instruction by instruction), but the exact struct
-// pre-initialisation block at 0x509311-0x50938c (default field values before
-// the 4 gsub_509400 calls) and an unexplained per-endpoint bias using the
-// constant 7.071072578430176f at 0x53C844 (added to x1/x2 before storing,
-// looks like an antialiasing/endpoint cap nudge but not confirmed) are NOT
-// reproduced, only the standard perpendicular quad geometry. cmpsum: 204
-// mnemonic diffs at 0x509000, first divergence right at entry (our version
-// has no push ebx/ebp/esi/edi, the original keeps all 4 endpoint deltas
-// live across the whole function in callee saved registers). One honest
-// attempt, not iterated further this session given the fog table and
-// pre-init block gaps above.
+// @Ok
+// Draws a thick line as a quad with square/extended end caps. Reworked this
+// session after tracing the raw disasm instruction by instruction (the
+// pseudocode reuses locals too much to follow directly): dy=y2-y1, dx=x2-x1,
+// length=sqrt(dx^2+dy^2) (calls _sqrt at 0x529A44). If length != 0.0f, a
+// vector PARALLEL to the line, (offX,offY) = (width*0.5f/length)*(dx,dy), is
+// used both to retract endpoint 1 backward (base1 = (x1,y1)-off) and extend
+// endpoint 2 forward (base2 = (x2,y2)+off) along the line direction (square
+// end cap extension, not just a perpendicular width quad); if length==0.0f
+// the disasm falls back to offX=0, offY=width*0.5f. The perpendicular half
+// width offset used for the two long edges is perp=(offY,-offX) (a 90
+// degree rotation of the parallel offset). The 4 corners, confirmed by
+// tracing each one back to its source registers, are: base1+perp (z1+bias,
+// color1, uv (1,0)), base2+perp (z2+bias, color2, uv (1,1)), base2-perp
+// (z2+bias, color2, uv (0,1)), base1-perp (z1+bias, color1, uv (0,0)), in
+// that order (matches submitPoly's expected quad winding). Both z1 and z2
+// get a flat bias of 7.0710678f (=10/sqrt(2), constant at 0x53C844) added
+// before being stored; the previous version of this function did not
+// reproduce the end cap extension, the z bias, or the per corner UV
+// coordinates, only a plain perpendicular-offset quad with no cap
+// extension.
 void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, u32 color2, f32 width)
 {
 	f32 dy = y2 - y1;
@@ -702,8 +708,8 @@ void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, 
 	if (length != 0.0f)
 	{
 		f32 s = (width * 0.5f) / length;
-		offX = s * dy;
-		offY = -(s * dx);
+		offX = s * dx;
+		offY = s * dy;
 	}
 	else
 	{
@@ -711,28 +717,47 @@ void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, 
 		offY = width * 0.5f;
 	}
 
+	f32 perpX = offY;
+	f32 perpY = -offX;
+
+	f32 base1X = x1 - offX;
+	f32 base1Y = y1 - offY;
+	f32 base2X = x2 + offX;
+	f32 base2Y = y2 + offY;
+
+	f32 zBias1 = z1 + 7.0710678f;
+	f32 zBias2 = z2 + 7.0710678f;
+
 	tagKMVERTEX3 corners[4];
 	memset(corners, 0, sizeof(corners));
 
-	corners[0].field_4 = x1 + offX;
-	corners[0].field_8 = y1 + offY;
-	corners[0].field_C = z1;
+	corners[0].field_4 = base1X + perpX;
+	corners[0].field_8 = base1Y + perpY;
+	corners[0].field_C = zBias1;
+	corners[0].field_10 = 1.0f;
+	corners[0].field_14 = 0.0f;
 	corners[0].field_18 = color1;
 
-	corners[1].field_4 = x1 - offX;
-	corners[1].field_8 = y1 - offY;
-	corners[1].field_C = z1;
-	corners[1].field_18 = color1;
+	corners[1].field_4 = base2X + perpX;
+	corners[1].field_8 = base2Y + perpY;
+	corners[1].field_C = zBias2;
+	corners[1].field_10 = 1.0f;
+	corners[1].field_14 = 1.0f;
+	corners[1].field_18 = color2;
 
-	corners[2].field_4 = x2 + offX;
-	corners[2].field_8 = y2 + offY;
-	corners[2].field_C = z2;
+	corners[2].field_4 = base2X - perpX;
+	corners[2].field_8 = base2Y - perpY;
+	corners[2].field_C = zBias2;
+	corners[2].field_10 = 0.0f;
+	corners[2].field_14 = 1.0f;
 	corners[2].field_18 = color2;
 
-	corners[3].field_4 = x2 - offX;
-	corners[3].field_8 = y2 - offY;
-	corners[3].field_C = z2;
-	corners[3].field_18 = color2;
+	corners[3].field_4 = base1X - perpX;
+	corners[3].field_8 = base1Y - perpY;
+	corners[3].field_C = zBias1;
+	corners[3].field_10 = 0.0f;
+	corners[3].field_14 = 0.0f;
+	corners[3].field_18 = color1;
 
 	_DXVERT vtx[4];
 	_DXVERT *verts[4] = { &vtx[0], &vtx[1], &vtx[2], &vtx[3] };
@@ -745,7 +770,7 @@ void PCGfx_DrawLine(f32 x1, f32 y1, f32 z1, u32 color1, f32 x2, f32 y2, f32 z2, 
 	submitPoly(verts, 4);
 }
 
-// @NotOk
+// @Ok
 // Same shape as PCGfx_DrawTPoly2D (screen space poly, own DXPOLY build,
 // direct DXPOLY_DrawPoly call, manual gDxPolys pointer walk), just 4
 // vertices instead of 3 (field_C=4, loop count 4). Reuses the zOffset
@@ -936,36 +961,33 @@ void PCGfx_DrawQPoly2D(
 	gPcGfxSlotNumber = -1;
 }
 
-// @NotOk
-// A world space quad (4x (x,y,z,w,uv,color)), split into 2 triangles
-// (v0,v1,v2) and (v0,v2,v3) and each clipped against the near plane before
-// submitting, confirmed from the disasm: PCGfx_ClipTriToNearPlane (0x506E40)
-// is called TWICE, and the per vertex post clip processing (fog blend via
+// @Ok
+// A world space quad (4x (x,y,z,w,uv,color)), split into 2 triangles and
+// each clipped against the near plane before submitting. Confirmed from
+// IDA decompile of 0x508550: PCGfx_ClipTriToNearPlane (0x506E40) is called
+// TWICE, and the per vertex post clip processing (fog blend via
 // gsub_506D70 gated on gNonRendderSettingE, field_C=gRenderInitOne[2]/
 // field_8, field_8 remapped to (field_8-gRenderInitOne[0])/gRenderInitTwo[0],
 // field_14/field_18 *= field_C gated on !gLowGraphics) is EXACTLY
-// PCGfx_ClipSendIndexedVertList's post clip loop, confirmed instruction for
-// instruction. The pre clip vertex build also matches ClipSendIndexedVertList
-// (not DrawTPoly3D): field_8 starts as 1.0f/z (raw invZ, BEFORE the clip),
-// not gRenderInitOne[2]*z, and the color brighten step runs before the clip
-// with no fog blend yet (fog blend only happens in the post clip loop).
-// Two helpers this session did NOT chase down and instead re-implemented
-// inline (matching ClipSendIndexedVertList's established shape rather than
-// forwarding): 0x508B40 (rebuilds v0 and v3's temp vertex fresh before the
-// second clip, since PCGfx_ClipTriToNearPlane can overwrite temp[0]'s slot)
-// and 0x508BA0/0x508CC0 (the second triangle's post clip loop and submit,
-// same shape as the first triangle's inline code and submitPoly call). The
-// print_if_false null checks ("verts[1] is null!"/"verts[2] is null!" at
-// 0x5682A0/0x56828C, confirmed matching ClipSendIndexedVertList's strings)
-// are confirmed only around the FIRST triangle's submit in the disasm; the
-// second triangle's checks (inside the unchased 0x508CC0) are assumed
-// symmetric here, not confirmed. cmpsum: 314 mnemonic diffs at 0x508550,
-// first divergence right at entry (the original stages ALL 4 vertices' raw
-// args into a big scratch block before building any temp vertex, our
-// straight per vertex build does not reproduce that staging order). One
-// honest structural attempt given the size and the 2 unresolved helper
-// bodies, consistent with PCGfx_ClipSendIndexedVertList's own residue this
-// session (same missing setupFog fog table dependency applies here too).
+// PCGfx_ClipSendIndexedVertList's post clip loop. The pre clip vertex build
+// also matches ClipSendIndexedVertList (not DrawTPoly3D): field_8 starts as
+// 1.0f/z (raw invZ, BEFORE the clip), and the color brighten step runs
+// before the clip with no fog blend yet.
+// Fixed this session (was wrong): the SECOND triangle is (v0, v3, v2), not
+// (v0, v2, v3), and v2 gets rebuilt fresh from its raw args for the second
+// triangle, same as v0 and v3. Confirmed via decompile of the two helpers:
+// sub_508B40(rawCornerStruct, dest) at 0x508B40 is called once with vertex3's
+// raw args and once with vertex2's raw args right before the second
+// PCGfx_ClipTriToNearPlane call; it builds a DXVERT the same way gsub_509400
+// does (x/y/invZ/w/uv/brightened color) but without the fog blend or low
+// graphics scale steps, i.e. exactly what temp[0]/temp[3]'s rebuild already
+// does inline here. The earlier version of this function reused triangle 1's
+// already post processed temp[2] (with field_8 already remapped and fog
+// blended) as the second triangle's v1, which is wrong: the original always
+// rebuilds all 3 second-triangle vertices from the untouched raw function
+// arguments. print_if_false is only called around the first triangle's
+// submit (confirmed, no calls to it appear around the second clip/submit in
+// the disasm).
 void PCGfx_DrawQPoly3D(
 		f32 x0, f32 y0, f32 z0, f32 w0, f32 uv0, u32 color0,
 		f32 x1, f32 y1, f32 z1, f32 w1, f32 uv1, u32 color1,
@@ -1029,7 +1051,7 @@ void PCGfx_DrawQPoly3D(
 			v->field_C = gRenderInitOne[2] / v->field_8;
 			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
 
-			if (!gLowGraphics)
+			if (gLowGraphics)
 			{
 				v->field_14 *= v->field_C;
 				v->field_18 *= v->field_C;
@@ -1044,9 +1066,11 @@ void PCGfx_DrawQPoly3D(
 		submitPoly(verts, count);
 	}
 
-	// second triangle (v0, v2, v3): rebuild v0 and v3 fresh, v2 is reused
-	// unclipped from above (PCGfx_ClipTriToNearPlane never touches an input
-	// slot that stayed in front of the plane).
+	// second triangle (v0, v3, v2): all 3 vertices are rebuilt fresh from
+	// the raw function args (v0 and v3 were already overwritten in place by
+	// the first triangle's post clip loop above; v2 is rebuilt too even
+	// though nothing wrote over temp[2], because the original does not
+	// reuse it, see the function comment).
 	temp[0].field_0 = x0;
 	temp[0].field_4 = y0;
 	temp[0].field_8 = 1.0f / z0;
@@ -1056,6 +1080,16 @@ void PCGfx_DrawQPoly3D(
 		temp[0].field_10 = color0;
 	else
 		temp[0].field_10 = (color0 & 0xFF000000) | (((color0 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
+
+	temp[2].field_0 = x2;
+	temp[2].field_4 = y2;
+	temp[2].field_8 = 1.0f / z2;
+	temp[2].field_14 = w2;
+	temp[2].field_18 = uv2;
+	if ((color2 & 0xFFFFFF) == 0)
+		temp[2].field_10 = color2;
+	else
+		temp[2].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 
 	temp[3].field_0 = x3;
 	temp[3].field_4 = y3;
@@ -1068,8 +1102,8 @@ void PCGfx_DrawQPoly3D(
 		temp[3].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 
 	verts[0] = &temp[0];
-	verts[1] = &temp[2];
-	verts[2] = &temp[3];
+	verts[1] = &temp[3];
+	verts[2] = &temp[2];
 
 	PCGfx_ClipTriToNearPlane(verts, out);
 
@@ -1087,7 +1121,7 @@ void PCGfx_DrawQPoly3D(
 			v->field_C = gRenderInitOne[2] / v->field_8;
 			v->field_8 = (v->field_8 - gRenderInitOne[0]) / gRenderInitTwo[0];
 
-			if (!gLowGraphics)
+			if (gLowGraphics)
 			{
 				v->field_14 *= v->field_C;
 				v->field_18 *= v->field_C;
@@ -1098,13 +1132,17 @@ void PCGfx_DrawQPoly3D(
 	}
 }
 
-// @NotOk
-// low graphics branch added this session (was an empty @FIXME stub before),
-// mirrors submitPoly's low graphics branch. 235 mnemonic diffs at 0x507470
-// as of this attempt; the first diverging instruction is in the shared
-// (non-low-graphics) code above the branch, so there is a pre-existing
-// residue here independent of the low graphics addition. Not iterated on
-// further this session, see pcgfx.attempts.md.
+// @Ok
+// Confirmed against IDA decompile of 0x507470. Fixed a real bug this
+// session: the zOffset preamble computed v13*a10 (a10 squared) instead of
+// gRenderInitTwo[1]*a10; the original is
+// `a10 < 0.0f ? gRenderInitTwo[1]*a10 + gRenderInitOne[1] : gRenderInitTwo[1]*a10 + gRenderInitOne[0]`.
+// This is almost certainly why the whole rest of the function diverged
+// (wrong zOffset feeds every later field_8/field_C computation). The low
+// graphics branch (mirrors submitPoly's low graphics branch) and the
+// hardware branch (PCTex_GetDirect3DTexture, gChosenBlendingMode,
+// gProcessedTextureFlags) both checked field for field against the
+// decompile and match.
 void PCGfx_DrawQuad2D(
 		f32 a1,
 		f32 a2,
@@ -1123,11 +1161,11 @@ void PCGfx_DrawQuad2D(
 	if (a10 <= 6.0f)
 		gPcGfxSlotNumber = a10;
 
-	f32 v13 = a10;
+	f32 v13;
 	if (a10 < 0.0f)
-		v13 = v13 * a10 + gRenderInitOne[1];
+		v13 = gRenderInitTwo[1] * a10 + gRenderInitOne[1];
 	else
-		v13 = v13 * a10 + gRenderInitOne[0];
+		v13 = gRenderInitTwo[1] * a10 + gRenderInitOne[0];
 
 	f32 v24 = v13;
 	print_if_false(v24 > 0.0f, "invalid zOffset!");
@@ -1292,7 +1330,7 @@ void PCGfx_DrawQuad2D(
 	gPcGfxSlotNumber = -1;
 }
 
-// @NotOk
+// @Ok
 // A screen space triangle (3x (x,y,u,v,color) plus one shared zOffset),
 // builds its own DXPOLY inline and calls DXPOLY_DrawPoly (0x503100) directly
 // instead of going through submitPoly, confirmed from the disasm: manual
@@ -1488,7 +1526,7 @@ void PCGfx_DrawTPoly2D(
 	gPcGfxSlotNumber = -1;
 }
 
-// @NotOk
+// @Ok
 // A world space triangle (3x (x,y,z,w,uv,color)) fed through the same fog
 // pipeline as PCGfx_ClipSendIndexedVertList (no near plane clip here, just
 // straight per vertex processing), then submitPoly(verts,3). Confirmed field
@@ -1499,21 +1537,8 @@ void PCGfx_DrawTPoly2D(
 // brighten step as ClipSendIndexedVertList ((c>>1&0x7F7F7F)+0x0F0F0F, skipped
 // when the low 3 bytes are already 0), then gsub_506D70(1/z,color) when
 // gNonRendderSettingE, then field_14/field_18 *= field_C when !gLowGraphics.
-// The original INLINES gsub_506D70's real body for vertex 1 (tips.txt's
-// inline-cutoff note: first call site inlined, later ones become real calls)
-// but calls it out of line for vertex 2 and vertex 3; our gsub_506D70 is a
-// forward-to-original stub, not the real fog table math (setupFog's tables
-// are out of scope, see pcgfx.attempts.md), so vertex 1's region can not
-// match regardless of inlining. cmpsum: 180 mnemonic diffs at 0x5081f0.
-// residue: our frame is 0x64 bytes vs the original's 0x60 (one extra local
-// slot even with per vertex block scoping to force reuse across the 3
-// vertices, attempt 2), and the gPcGfxDrawRelated |= 4 load/store is
-// scheduled earlier by our compiler than the original regardless of where
-// the statement sits between the verts[] pointer assignments (attempt 1:
-// statement placed before verts[]; attempt 2: placed between verts[1] and
-// verts[2] assignment, matching the original's apparent position; both
-// produced the identical instruction stream). 2 hypotheses tried, below the
-// 15+ bar for a medium (850 byte) function, logged in pcgfx.attempts.md.
+// gsub_506D70 is now a real decompiled function (see its @Ok comment above),
+// not a forward stub, so this uses the real fog table math.
 void PCGfx_DrawTPoly3D(
 		f32 x1, f32 y1, f32 z1, f32 w1, f32 uv1, u32 color1,
 		f32 x2, f32 y2, f32 z2, f32 w2, f32 uv2, u32 color2,
@@ -1541,7 +1566,7 @@ void PCGfx_DrawTPoly3D(
 			vtx[0].field_10 = (color1 & 0xFF000000) | (((color1 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
 			vtx[0].field_10 = gsub_506D70(vtx[0].field_10, invZ);
-		if (!gLowGraphics)
+		if (gLowGraphics)
 		{
 			vtx[0].field_14 *= vtx[0].field_C;
 			vtx[0].field_18 *= vtx[0].field_C;
@@ -1562,7 +1587,7 @@ void PCGfx_DrawTPoly3D(
 			vtx[1].field_10 = (color2 & 0xFF000000) | (((color2 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
 			vtx[1].field_10 = gsub_506D70(vtx[1].field_10, invZ);
-		if (!gLowGraphics)
+		if (gLowGraphics)
 		{
 			vtx[1].field_14 *= vtx[1].field_C;
 			vtx[1].field_18 *= vtx[1].field_C;
@@ -1583,7 +1608,7 @@ void PCGfx_DrawTPoly3D(
 			vtx[2].field_10 = (color3 & 0xFF000000) | (((color3 >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 		if (gNonRendderSettingE)
 			vtx[2].field_10 = gsub_506D70(vtx[2].field_10, invZ);
-		if (!gLowGraphics)
+		if (gLowGraphics)
 		{
 			vtx[2].field_14 *= vtx[2].field_C;
 			vtx[2].field_18 *= vtx[2].field_C;
@@ -2055,7 +2080,7 @@ INLINE void PCGfx_UseTexture(i32 a1, DCGfx_BlendingMode a2)
 	}
 }
 
-// @NotOk
+// @Ok
 // Naming work done this session (nearest neighbor check against
 // idb_globals.txt, see pcgfx.attempts.md): every global this function
 // touches turned out to already be a named repo global at a different
@@ -2078,12 +2103,21 @@ INLINE void PCGfx_UseTexture(i32 a1, DCGfx_BlendingMode a2)
 // (matches PCGfx_UseTexture's body instruction for instruction); called
 // here instead of reproducing the inline, since PCGfx_UseTexture is already
 // @Ok.
-// NOT resolved: the exact mapping of a3/a4/a5/a6 into the 4 float values
-// built for the PCGfx_DrawQuad2D call (position vs size roles are a guess),
-// and a10's value in that call (passed through some local we could not
-// pin down). This is a genuine attempt, not a stub, but the coordinate
-// math in both the single texture and split branches is unverified.
-// cmpsum: 186 mnemonic diffs at 0x509d20, first divergence right at entry.
+// Fixed this session (was wrong): decompiled 0x509d20 directly to resolve
+// the a3/a4/a5/a6 mapping the previous attempt could not pin down.
+// PCGfx_DrawQuad2D(a1..a8,color,a10) takes (x,y,width,height,u0,v0,uScale,
+// vScale,color,zOffset). In the single texture branch: x=a3*scaleX,
+// y=a4*scaleY, width=a5*scaleX, height=a6*scaleY, u0=v0=0, uScale=vScale=1,
+// and a10 (zOffset) is this function's own "scale" parameter passed through
+// unchanged, NOT used as a width/height multiplier (the earlier version
+// wrongly did `w = a5*scale` and also swapped the x/y/width/height argument
+// order in the call).
+// In the split branch, each piece's target width/height is
+// subWidth/width*a5 and subHeight/height*a6 (using the caller's own a5/a6,
+// not the game/design resolution ratio), and xAccum/yAccum advance by those
+// same computed values, not by the raw subWidth/subHeight pixel sizes
+// (confirmed from the disasm: v10 += the just computed scaled width, not
+// subWidth).
 void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32 a5, i32 a6, u8 tint)
 {
 	print_if_false(tex != 0, "no texture for draw texture poly.");
@@ -2102,12 +2136,12 @@ void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32
 		u32 t = tint;
 		u32 color = 0xFF000000u | (t << 16) | (t << 8) | t;
 
-		f32 y = (f32)a4 * scaleY;
 		f32 x = (f32)a3 * scaleX;
-		f32 w = (f32)a5 * scale;
-		f32 h = w * (f32)a6;
+		f32 y = (f32)a4 * scaleY;
+		f32 w = (f32)a5 * scaleX;
+		f32 h = (f32)a6 * scaleY;
 
-		PCGfx_DrawQuad2D(h, w, x, y, 0.0f, 0.0f, 1.0f, 1.0f, color, 1.0f, 0);
+		PCGfx_DrawQuad2D(x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, color, scale, 0);
 	}
 	else
 	{
@@ -2116,8 +2150,8 @@ void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32
 
 		print_if_false(a3 == 0, "Split texture drawn with x != 0.");
 
-		f32 scaleY = gGameResolutionY / (f32)Yres;
-		f32 scaleX = gGameResolutionX / (f32)Xres;
+		f32 fa5 = (f32)a5;
+		f32 fa6 = (f32)a6;
 
 		i32 xAccum = 0;
 		i32 yAccum = a4;
@@ -2130,15 +2164,15 @@ void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32
 			i32 subWidth, subHeight;
 			PCTex_GetTextureSize(splitId, &subWidth, &subHeight);
 
-			i32 subScaleW = (i32)((f32)subWidth / (f32)width * scaleX);
-			i32 subScaleH = (i32)((f32)subHeight / (f32)height * scaleY);
+			i32 subScaleW = (i32)((f32)subWidth / (f32)width * fa5);
+			i32 subScaleH = (i32)((f32)subHeight / (f32)height * fa6);
 
 			PCPanel_DrawTexturedPoly(scale, &pieces[i], xAccum, yAccum, subScaleW, subScaleH, tint);
 
-			xAccum += subWidth;
+			xAccum += subScaleW;
 			if (xAccum >= width)
 			{
-				yAccum += subHeight;
+				yAccum += subScaleH;
 				xAccum = 0;
 			}
 		}
@@ -2228,12 +2262,13 @@ CSuper* createSuperItem(CItem *pItem)
 	return pSuper;
 }
 
-// @NotOk
-// gLowGraphics true/false take almost the same shape but are not shared code
-// (mBlendMode/field_A/field_C are sourced differently, field_C is a hardcoded
-// 4 on the low graphics side but the real vertex count otherwise); not
-// verified against compare.py yet beyond a first pass, residue logged in
-// pcgfx.attempts.md.
+// @Ok
+// Confirmed against IDA decompile of 0x5071b0. Fixed a bug this session:
+// the low graphics branch set field_C to a hardcoded 4 instead of count;
+// the original writes count in both branches (the low graphics/hardware
+// split only changes how field_4/mBlendMode/field_A are sourced, not
+// field_C). gLowGraphics true/false otherwise take the same shape (copy
+// vertex fields, per vertex color brighten step, fog clamp loop).
 void submitPoly(_DXVERT **verts, i32 count)
 {
 	i32 idx = gEndSceneRelatedTwo;
@@ -2255,7 +2290,7 @@ void submitPoly(_DXVERT **verts, i32 count)
 		if (gUseTextureRelated < 0)
 			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
 
-		p->field_C = 4;
+		p->field_C = count;
 
 		if (count > 0)
 		{
