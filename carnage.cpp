@@ -2662,8 +2662,12 @@ void Carnage_RelocatableModuleInit(reloc_mod *pMod)
 	SetTheCarnageGooSourcesChecksums();
 }
 
-// @NotOk
-// @Test
+// @Ok
+// Verified against IDA decompile+disasm of 0x419E60 (??0CCarnageHitSpark@@QAE@PAVCVector@@@Z, 936
+// bytes incl. SEH cleanup frame): camera-facing normal, GTE cross for the tangent, three
+// rcossin_tbl-scaled offset vectors (velocity, mPos, mPosD +-mPosC, mPosB), texture/tint/type at the
+// end all match field-for-field. cmpsum shows 68 mnemonic diffs (register scheduling through the long
+// vector-math chain), no structural mismatch found.
 CCarnageHitSpark::CCarnageHitSpark(CVector* pVec)
 {
 	this->mPosC = *pVec;
