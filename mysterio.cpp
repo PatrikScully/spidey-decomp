@@ -874,8 +874,15 @@ CMysterio::CMysterio(i16 *a1, i32 a2)
 	}
 }
 
-// @NotOk
-// Globals
+// @Bogus
+// No out-of-line address in names.json: the only call site is in
+// Mysterio_CreateMysterio (0x459f20, same TU), fully inlined there, same
+// precedent as CMystFoot's constructor above. Read straight off that
+// inlined block (0x459fb7-0x459feb): base ctor call (compiler generated),
+// zero field_37C (offset 0x37C, matches VALIDATE below), InitItem("mysterio"),
+// mFlags |= 0x480 (offset 4, matches CItem::mFlags), mpLight = &M3d_MysterioLight
+// (offset 0x3C, matches CItem::mpLight; unk_54E0F0 in the IDB is named
+// M3d_MysterioLight). Order and offsets checked against the disasm.
 CMysterio::CMysterio(void)
 {
 	this->field_37C.vx = 0;
