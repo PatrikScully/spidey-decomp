@@ -7,6 +7,13 @@
 #include "mem.h"
 #include "utils.h"
 #include "PCShell.h"
+#include "SpideyDX.h"
+#include "m3dinit.h"
+#include "PCGfx.h"
+
+// stru_56F224: a fixed MATRIX the original loads into the GTE rotation
+// register before projecting the target position (0x56F224).
+static MATRIX * const gTargetRotMatrix = (MATRIX*)0x56F224;
 
 
 EXPORT bool gScreenTarget;
@@ -93,10 +100,77 @@ void Screen_DrawArrow(void)
 	gsub_46CB90((void*)0x0056EB54);
 }
 
-// @MEDIUMTODO
+// @Ok
+// (0x0048AA90, 925 bytes). Draws the 4-triangle target reticle. The IDB
+// decompiler mangled the FPU scaling; the logic is: project the target with
+// the GTE, then for each of 4 triangles build 3 corners from rcossin_tbl
+// offsets around the screen x/y and scale by gGameResolution/Yres,Xres.
 void Screen_DrawTarget(void)
 {
-    printf("Screen_DrawTarget(void)");
+	if (!gScreenTarget)
+		return;
+
+	gte_SetRotMatrix(gTargetRotMatrix);
+	m3d_ZeroTransVector();
+
+	VECTOR relPos;
+	relPos.vx = (gTargetRelated.vx >> 12) - gMikeCamera[0].Position.vx;
+	relPos.vy = (gTargetRelated.vy >> 12) - gMikeCamera[0].Position.vy;
+	relPos.vz = (gTargetRelated.vz >> 12) - gMikeCamera[0].Position.vz;
+	gte_ldlv0(&relPos);
+	gte_rtps();
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+	u8 *pPolyByte = (u8*)pPoly;
+	if (pPolyByte + 80 >= PolyBufferEnd)
+		return;
+
+	u8 *pQuad = pPolyByte + 4;  // quad data starts 4 bytes in (header)
+	pPoly = (u32*)(pPolyByte + 80);
+
+	i32 screenXY;
+	gte_stsxy(&screenXY);
+	i16 screenX = (i16)screenXY;
+	i16 screenY = (i16)(screenXY >> 16);
+
+	f32 yScale = (f32)gGameResolutionY / (f32)Yres;
+	f32 xScale = (f32)gGameResolutionX / (f32)Xres;
+
+	i32 angleA = gTargetTwo;
+	i32 angleB = gTargetTwo + 128;
+	for (i32 i = 0; i < 4; i++)
+	{
+		u8 *v = pQuad + i * 20;
+		*(u32*)v = 41120;  // 0xA0A0 gray
+
+		i16 c0x = screenX + (((gTargetOne - 12) * rcossin_tbl[angleA & 0xFFF].sin) >> 12);
+		i16 c0y = screenY + 320 * (((gTargetOne - 12) * rcossin_tbl[angleA & 0xFFF].cos) >> 12) / 512;
+		i16 c1x = screenX + ((gTargetOne * rcossin_tbl[(angleB - 256) & 0xFFF].sin) >> 12);
+		i16 c1y = screenY + 320 * ((gTargetOne * rcossin_tbl[(angleB - 256) & 0xFFF].cos) >> 12) / 512;
+		i16 c2x = screenX + ((gTargetOne * rcossin_tbl[angleB & 0xFFF].sin) >> 12);
+		i16 c2y = screenY + 320 * ((gTargetOne * rcossin_tbl[angleB & 0xFFF].cos) >> 12) / 512;
+
+		*(i16*)(v + 4) = c0x;
+		*(i16*)(v + 6) = c0y;
+		*(i16*)(v + 8) = c1x;
+		*(i16*)(v + 10) = c1y;
+		*(i16*)(v + 12) = c2x;
+		*(i16*)(v + 14) = c2y;
+
+		f32 p0x = (f32)c0x * xScale;
+		f32 p0y = (f32)c0y * yScale;
+		f32 p1x = (f32)c1x * xScale;
+		f32 p1y = (f32)c1y * yScale;
+		f32 p2x = (f32)c2x * xScale;
+		f32 p2y = (f32)c2y * yScale;
+
+		PCGfx_DrawQPoly2D(p0x, p0y, 1.0f, 0.0f, 41120, p1x, p1y, 0.0f, 0.0f, 41120,
+				p2x, p2y, 0.0f, 1.0f, 41120, p2x, p2y, 1.0f, 1.0f, 41120, 5.0f);
+
+		angleA += 1024;
+		angleB += 1024;
+	}
 }
 
 // Same two addresses as gFrontCameraModeFlagOne/Two in front.cpp (0x56FB78 /
