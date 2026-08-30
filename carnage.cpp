@@ -2150,8 +2150,11 @@ void CCarnage::TugWebTrapped(void)
 	}
 }
 
-// @NotOk
-// @Note: validate when inlined
+// @Ok
+// Verified fully inlined into ?SelectAttack@CCarnage (0x41DB20, IDA decompile): the aim-vy diff and
+// wrap by +-4096 logic here is byte-for-byte the same shape as the inlined copy the original compiler
+// produced at every call site (SelectAttack, ThrowBlades case 4). INLINE, so this has no standalone
+// address to diff against.
 INLINE i32 CCarnage::CalculateAngleDelta(void)
 {
 	CSVector v5;
