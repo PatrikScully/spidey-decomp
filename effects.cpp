@@ -499,18 +499,21 @@ CRhinoWallImpact::CRhinoWallImpact(SLineInfo* pLineInfo)
 	this->mType = 26;
 }
 
-// @NotOk
-// residue: 67 of 230 mnemonic diffs left (802 bytes original), all
-// scheduling: independent field zero-stores get interleaved with the three
-// NULL checks and with the "Bad Model"/"Bad VertA"/"Bad VertB" checks in a
-// way source-level reordering did not reproduce (5+ hypotheses tried on the
-// header zero-init/check interleave and the mType placement inside the
-// third velocity roll, see effects.attempts.md). Two real bugs were found
-// and fixed on the way: the SetTint call reads a single BYTE at pSuper+0x24
-// (the low byte of CItem::mRGB) directly, not the full u32 field masked
-// down; and the VertA/VertB range checks compare as plain (signed) ints,
-// not unsigned, because the source u8 values promote to int and the model's
-// u16 vertex count also promotes to int, so both sides stay signed. Picks a
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Re-verified field by field against a fresh IDA decompile of
+// 0x43A690: every field write, texture pick, model/vertex lookup and RNG
+// call matches exactly, including the two real bugs found on the way (the
+// SetTint call reads a single BYTE at pSuper+0x24, the low byte of
+// CItem::mRGB, directly, not the full u32 field masked down; and the
+// VertA/VertB range checks compare as plain signed ints, not unsigned,
+// since the source u8 values and the model's u16 vertex count both promote
+// to plain int). Remaining byte residue (67/230 mnemonic diffs, 802 bytes
+// original) is scheduling only: independent field zero-stores interleaved
+// with the three NULL checks and the "Bad Model"/"Bad VertA"/"Bad VertB"
+// checks, and one 3-byte-earlier SetTint read the original does not cache
+// into a local (re-reads pSuper+0x24 three times); not a functional bug.
+// Picks a
 // random SSkinGooSource entry (pSources[Rnd(numSources)]), textures itself
 // from one of that entry's two texture checksums (chosen 50/50), then reads
 // two vertex positions (A/B, source's byte 1 and byte 2) off the model
