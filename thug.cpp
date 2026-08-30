@@ -870,10 +870,117 @@ void CThug::LookConfused(void)
 	}
 }
 
-// @MEDIUMTODO
-i32 CThug::WallHitCheck(CVector*, CVector*, i32)
+// @Ok
+// Same logic as CCop::WallHitCheck (cop.cpp). Confirmed via IDA decompile of
+// 0x4292c0 (the address GetLaunched calls into): every field this function
+// touches (mPos, field_21E, field_218, field_1F8, mHealth, PathCheck,
+// AddPointToPath) lives on the shared CBaddy/CBody base, so the compiler
+// merged the two identical bodies at link time and names.json happens to
+// label the shared address as CCop's. Functional only, not verified byte
+// for byte (no separate CThug address exists to compare against).
+i32 CThug::WallHitCheck(CVector* a2, CVector* a3, i32 a4)
 {
-	return 0x13072024;
+	i32 result = 1;
+
+	i32 adjY = this->mPos.vy + ((this->field_21E - 20) << 12);
+
+	CVector v1;
+	v1.vx = a2->vx;
+	v1.vy = adjY;
+	v1.vz = a2->vz;
+
+	CVector v2;
+	v2.vx = this->mPos.vx;
+	v2.vy = adjY;
+	v2.vz = this->mPos.vz;
+
+	CVector posBuf;
+	posBuf.vx = 0;
+	posBuf.vy = 0;
+	posBuf.vz = 0;
+
+	this->field_218 &= ~0x500;
+
+	i32 pathResult = this->PathCheck(&v2, &v1, &posBuf, 55);
+
+	if (pathResult == 4)
+	{
+		this->field_1F8 = 0;
+		return 3;
+	}
+
+	if (pathResult != 2)
+	{
+		this->field_218 |= 0x100;
+		this->field_1F8 = a4 - 1;
+
+		if (this->mHealth > 0)
+		{
+			if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(a2, 0))
+			{
+				this->field_2A8 &= ~0x10000000;
+				return result;
+			}
+
+			this->mHealth = 0;
+		}
+
+		return result;
+	}
+
+	i32 dx = posBuf.vx - this->mPos.vx;
+	i32 dxSign = dx >> 31;
+	i32 absDx = (dx ^ dxSign) - dxSign;
+
+	i32 dz = posBuf.vz - this->mPos.vz;
+	i32 dzSign = dz >> 31;
+	i32 absDz = (dz ^ dzSign) - dzSign;
+
+	i32 dividend;
+	i32 divisor;
+
+	if (absDx <= absDz)
+	{
+		i32 a3zSign = a3->vz >> 31;
+		divisor = (a3->vz ^ a3zSign) - a3zSign;
+		dividend = absDz;
+	}
+	else
+	{
+		i32 a3xSign = a3->vx >> 31;
+		divisor = (a3->vx ^ a3xSign) - a3xSign;
+		dividend = absDx;
+	}
+
+	this->field_1F8 = dividend / divisor;
+
+	if (this->field_1F8 > a4)
+	{
+		this->field_1F8 = a4;
+	}
+	else
+	{
+		result = 2;
+	}
+
+	posBuf.vx = a3->vx * this->field_1F8 + this->mPos.vx;
+	posBuf.vy = this->mPos.vy;
+	posBuf.vz = a3->vz * this->field_1F8 + this->mPos.vz;
+
+	this->field_218 |= 0x400;
+
+	if (this->mHealth > 0)
+	{
+		if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(&posBuf, 0))
+		{
+			this->field_2A8 &= ~0x10000000;
+			return result;
+		}
+
+		this->mHealth = 0;
+	}
+
+	return result;
 }
 
 // @Ok
