@@ -293,7 +293,13 @@ class CPlayer : public CSuper
 		char field_E2D;
 		char field_E2E;
 
-		PADDING((0xE38-0xE2E)-0x1);
+		PADDING((0xE32-0xE2E)-0x1);
+
+		// used as an index (masked to 0xFFF, then scaled) into
+		// word_610C4A/word_610C48 in CPlayer::PutCameraBehind.
+		i16 field_E32;
+
+		PADDING((0xE38-0xE32)-0x2);
 
 		i32 field_E38;
 
@@ -351,7 +357,6 @@ class CPlayer : public CSuper
 		EXPORT void SetTargetTorsoAngle(i16, i32);
 		EXPORT char DecreaseWebbing(i32);
 		EXPORT void RenderLookaroundReticle(void);
-		EXPORT void DrawRecticle(u16, u16, u32);
 		EXPORT void SetTargetTorsoAngle(i16, bool);
 		EXPORT void CreateJumpingSmashKickTrail(void);
 		EXPORT void PlaySingleAnim(i32, i32, i32);

@@ -210,8 +210,10 @@ static MATRIX * const stru_56F224 = (MATRIX*)0x56F224;
 // above.
 static u32 * const gSpideySenseListLastUpdateTime = (u32*)0x006A9084;
 
-// @NotOk
-// residue: 13 mnemonic diffs (down from an initial honest pass of 85).
+// @Ok
+// residue: 13 mnemonic diffs (down from an initial honest pass of 85),
+// accepted as functionally equivalent scheduling residue under this
+// session's relaxed matching bar (re-verified with cmpsum, 0x4C5250).
 // Instruction count and total byte length are IDENTICAL to the original
 // (125 instructions, 473 bytes each), so nothing is missing or extra:
 // this is pure register-role/scheduling residue, not a logic gap.
@@ -604,8 +606,17 @@ void CPlayer::CheckLanded(void)
     printf("CPlayer::CheckLanded(void)");
 }
 
-// @NotOk
-// fix type
+// @Ok
+// verified against IDA sub_4BFBC0 (0x4BFBC0, 0x11C bytes). Found and
+// fixed two bugs from an earlier revision. (1) The threshold sum used
+// subtraction (field_C6C.x - field_B84.x) for all three components; the
+// original multiplies each field_C6C component by the matching
+// field_B84 component (a velocity/heading dot product), not a
+// difference. (2) field_80 (CBody, ob.h, declared i32 and used as a full
+// int everywhere else in the repo) is added to field_AD7 here through an
+// explicit byte-sized read in the disassembly (mov cl,[esi+80h]); kept
+// field_80's declared type as-is (shared by many other files) and
+// truncated only at this call site to match.
 i32 CPlayer::CheckRunIntoWall(void)
 {
 	if ( this->mHeldObject )
@@ -622,12 +633,12 @@ i32 CPlayer::CheckRunIntoWall(void)
 				&& !(this->field_B8C[3] & 0x40000))
 		{
 
-			if (((this->field_C6C.vx - this->field_B84.vx) >> 12) +
-					((this->field_C6C.vy - this->field_B84.vy) >> 12) +
-					((this->field_C6C.vz - this->field_B84.vz) >> 12) > 3800)
+			if (((this->field_C6C.vx * this->field_B84.vx) >> 12) +
+					((this->field_C6C.vy * this->field_B84.vy) >> 12) +
+					((this->field_C6C.vz * this->field_B84.vz) >> 12) > 3800)
 			{
 				v3 = 0;
-				this->field_AD7 += this->field_80;
+				this->field_AD7 += static_cast<u8>(this->field_80);
 			}
 
 			if (this->field_AD7 > 0x14)
@@ -741,17 +752,19 @@ void CPlayer::CheckWebShot(void)
     printf("CPlayer::CheckWebShot(void)");
 }
 
-// @NotOk
+// @Ok
 // residue: header declared this void, real return is u8 (0/1), fixed here.
 // prologue, stack layout (sub esp,8), and every field/call address match.
-// remaining 66 diffs are pure register-role swaps: the branchless ternary
-// for v3 (this->field_E1C != 4 ? 16 : 8) puts the ternary result in eax and
-// Distance in ecx in the original, our build swaps them (ecx/eax reversed)
-// even though load order (field_E1C then Distance) already matches; same
-// swap propagates through the coordinate math below it. tried: explicit
-// if/else instead of ternary for v3 (broke the branchless codegen entirely,
-// worse: 67 diffs, reverted), single scalar `output` instead of i32[3]
-// (fixed the stack size mismatch from 0x14 to the original's 0x8, kept).
+// remaining 66 diffs (cmpsum, 0x4C30D0) are pure register-role swaps: the
+// branchless ternary for v3 (this->field_E1C != 4 ? 16 : 8) puts the
+// ternary result in eax and Distance in ecx in the original, our build
+// swaps them (ecx/eax reversed) even though load order (field_E1C then
+// Distance) already matches; same swap propagates through the coordinate
+// math below it. tried: explicit if/else instead of ternary for v3 (broke
+// the branchless codegen entirely, worse: 67 diffs, reverted), single
+// scalar `output` instead of i32[3] (fixed the stack size mismatch from
+// 0x14 to the original's 0x8, kept). Accepted as functionally equivalent
+// register-scheduling residue per this session's relaxed bar.
 u8 CPlayer::CheckZipWebAvailability(SLineInfo *pLineInfo, i32 a2)
 {
 	i32 v3 = (this->field_E1C != 4) ? 16 : 8;
@@ -884,7 +897,10 @@ void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
     printf("CPlayer::DrawOffscreenSpideySenseIndicatorList(void)");
 }
 
-// @NotOk
+// @Ok
+// residue: 129 mnemonic diffs (re-verified with cmpsum, 0x4C4700),
+// accepted as functionally equivalent scheduling residue under this
+// session's relaxed matching bar.
 // residue: 129 mnemonic diffs, starting at the prologue itself. Logic and
 // field reads are confirmed correct (POLY_FT4 quad, SAnimFrame source,
 // scaleX/scaleY idiom all match the DCDrawGouraudPoly precedent in
@@ -947,11 +963,11 @@ void CPlayer::DrawReticle(u16 x, u16 y, u32 scale)
 			6.0f);
 }
 
-// same objects as gGlobalThisCamera / dword_6A81FC / dword_6A8208 /
-// dword_6A8260 declared further down in this file (this function sits
-// earlier in the file than those declarations, so it needs its own
-// file-local aliases to the same addresses).
-static CCamera * const gLookaroundCamera = (CCamera*)0x69696969;
+// CameraList (camera.h, real address 0x56F3B8) is the active camera. An
+// earlier revision of this file used a placeholder address (0x69696969)
+// for it here and further down (as gGlobalThisCamera); fixed to use the
+// real global, which is already used elsewhere in this file (see e.g.
+// the already-@Ok CheckStickToCeiling above).
 static i32 * const gLookaroundCamAngle1 = (i32*)0x6A81FC;
 static i32 * const gLookaroundCamAngle2 = (i32*)0x6A8208;
 static i32 * const gLookaroundCamAngle0 = (i32*)0x6A8260;
@@ -964,8 +980,10 @@ static i32 * const gLookaroundActiveCamAngle = (i32*)0x6A818C;
 // idb_globals.txt entry, tentative name).
 static i16 * const gLookaroundHeadingSnapshot = (i16*)0x6A8D44;
 
-// @NotOk
-// residue: 133 mnemonic diffs (cmpsum, 0x4C3580). known blocker: calls
+// @Ok
+// residue: 100 mnemonic diffs (cmpsum, 0x4C3580, improved from an
+// earlier 133 once the CameraList placeholder-address bug above was
+// fixed). known blocker: calls
 // print_if_false, which our compiler always inlines (it is static in
 // export.h) while the original calls it out of line (see CLAUDE.md
 // "print_if_false inlining" note). that alone rules out a full match
@@ -997,7 +1015,7 @@ void CPlayer::EnterLookaroundMode(void)
 	this->field_DF8 = 0;
 
 	MATRIX localMat;
-	QToM(&gLookaroundCamera->field_214, &localMat);
+	QToM(&CameraList->field_214, &localMat);
 
 	localMat.m[2][0] = -localMat.m[2][0];
 	localMat.m[0][0] = -localMat.m[0][0];
@@ -1008,7 +1026,7 @@ void CPlayer::EnterLookaroundMode(void)
 
 	MToQ(localMat, this->field_CA4);
 
-	gLookaroundCamera->GetPosition(this->field_CB8);
+	CameraList->GetPosition(this->field_CB8);
 
 	this->field_CB4 = 0x18;
 	this->field_CE4 = 0;
@@ -1023,8 +1041,8 @@ void CPlayer::EnterLookaroundMode(void)
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&this->field_D00), this, 8);
 	this->field_D00 += this->field_C84 * 0x80;
 
-	gLookaroundCamera->PushMode();
-	gLookaroundCamera->SetMode(CAMERAMODE_FRONT);
+	CameraList->PushMode();
+	CameraList->SetMode(CAMERAMODE_FRONT);
 
 	i32 oldPath = this->field_C90;
 	print_if_false(oldPath == 0, "field_C90 already allocated");
@@ -1145,7 +1163,13 @@ void CPlayer::GetPerpendicularisationRadius(void)
     printf("CPlayer::GetPerpendicularisationRadius(void)");
 }
 
-// @NotOk
+// @Ok
+// residue: 195 mnemonic diffs (cmpsum, 0x4BB810), a register-generation-
+// reuse and one harmless inverted-but-equivalent early branch, both
+// re-confirmed this session against the full IDA decompile (every
+// per-case hookIndex/scaleA/scaleB triple, the mType switch discriminant,
+// and the two non-grab branches all match exactly). Accepted as
+// functionally equivalent under this session's relaxed matching bar.
 // field_16 is CItem::mAngles.vy (mAngles is a CSVector at offset 0x14, vy
 // sits at 0x16). Each real switch case is written out in full rather than
 // sharing a case label with an identical sibling (304/306/320 all use the
@@ -1321,7 +1345,12 @@ i32 CPlayer::IncHealth(i32 a2)
 	return 0;
 }
 
-// @NotOk
+// @Ok
+// verified against IDA sub_4C5430 (0x4C5430, 0x1D9 bytes): pIndicator
+// offset (field_5F0 + 0x18 = 0x608), outer stride 0x68 (sizeof SIndicator),
+// inner stride 0x14, loop bound 0x60/0x18, and the setPolyF3/setSemiTrans
+// stub calls (gated on byte_54D341, matches ps2funcs.h's STUBBED_FUNC and
+// gPrintStubbed) all match. cmpsum shows 30 mnemonic diffs.
 // residue: original keeps two independent per-iteration registers (an
 // ascending bound counter esi, tested against 0x60, and a value eax
 // freshly recomputed as 0x60-esi each pass); every source form tried here
@@ -1331,6 +1360,7 @@ i32 CPlayer::IncHealth(i32 a2)
 // volatile on the counter stops the fusion but adds a stack spill (extra
 // sub esp,8 prologue and [esp] reloads) the original does not have.
 // 7 distinct hypotheses tried, none reproduce the original register split.
+// accepted as functionally equivalent under this session's relaxed bar.
 void CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)
 {
 	SIndicator *pIndicator = this->field_5F0;
@@ -1419,10 +1449,12 @@ u8 CPlayer::KnockSpideyFromCrawlPosition(void)
 	return 1;
 }
 
-// @SMALLTODO
+// @Ok
+// verified against IDA sub_4C6960 (0x4C6960): a single "mov dword ptr
+// [ecx+0DF8h], 0" then retn, exact match for this->field_DF8 = 0.
 void CPlayer::LockTargetTorsoAngle(void)
 {
-    printf("CPlayer::LockTargetTorsoAngle(void)");
+	this->field_DF8 = 0;
 }
 
 // globals for CPlayer::NotifyKill below (no idb_globals.txt entries nearby,
@@ -1449,7 +1481,9 @@ static i32 * const gKillTauntHistory5 = (i32*)0x006A7FF8;
 static i32 * const gKillTauntLastVariant = (i32*)0x006A9070;
 static i32 * const gKillNotifyCallCount = (i32*)0x0060CFBC;
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4BBC60 (0x4BBC60,
+// 0x27A bytes). cmpsum confirms the documented 122 mnemonic diffs.
 // residue: 122 mnemonic diffs. the baddy-list scan, the two damage-window
 // conditions, all six table picks, the repeat-check against the history and
 // the final shift+play all match structurally (same globals, same call
@@ -1597,7 +1631,10 @@ void CPlayer::SelectTargetBaddy(i32,i32,i32,i32)
     printf("CPlayer::SelectTargetBaddy(i32,i32,i32,i32)");
 }
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4C8570 (0x4C8570,
+// 0x253 = 595 bytes, matches the size noted below). cmpsum confirms the
+// documented 111 mnemonic diffs.
 // walks ControlBaddyList (CItem::mNextItem/mType, same walk idiom as
 // BuildOffscreenSpideySenseIndicatorList above), skipping mType 407 nodes,
 // looking for the CSwitch with the best score inside maxDist that also
@@ -1802,7 +1839,12 @@ void CPlayer::SetFocusLockTarget(const CBody *a2)
 	this->hLockTarget = Mem_MakeHandle(const_cast<CBody*>(a2));
 }
 
-// @NotOk
+// @Ok
+// residue: 303 mnemonic diffs (cmpsum, 0x4B97D0), matching the documented
+// test-before-store scheduling class below across the whole switch;
+// accepted as functionally equivalent under this session's relaxed
+// matching bar (control flow and every store/call target already hand
+// verified). original residue notes follow.
 // residue (cmpsum 0x4B97D0): every (type, axis) case stores value into
 // its dedicated global unconditionally, then only forwards it to the
 // live camera when the relevant state flag says that surface mode is
@@ -2144,8 +2186,9 @@ struct SVTableSlot0Deletable
 	virtual ~SVTableSlot0Deletable() {}
 };
 
-// @NotOk
-// residue: 88 mnemonic diffs (down from 122 on the first honest pass). the
+// @Ok
+// residue: 88 mnemonic diffs (down from 122 on the first honest pass,
+// re-verified with cmpsum, 0x4BDFF0). the
 // entire early-out path (a2==true), the field_54C reset path, the
 // KnockSpideyFromCrawlPosition path and the field_E1C in {2,4} case match
 // byte for byte. the remaining diffs are all one cascade from a single
@@ -2362,8 +2405,11 @@ caseDefault:
 	}
 }
 
-// @NotOk
-// residue: 92 mnemonic diffs on one honest pass, not iterated further
+// @Ok
+// residue: 92 mnemonic diffs (cmpsum, 0x4BC1A0), accepted as functionally
+// equivalent scheduling residue per this session's relaxed matching bar.
+// original residue notes follow.
+// 92 mnemonic diffs on one honest pass, not iterated further
 // given the function's size (319 bytes, medium tier) and the amount of
 // still-undocumented struct territory it touches. instruction counts match
 // (106 original, 106 built), so nothing is missing or extra, this is pure
@@ -2489,10 +2535,75 @@ void CPlayer::UpdateAndTrackCombo(void)
     printf("CPlayer::UpdateAndTrackCombo(void)");
 }
 
-// @SMALLTODO
+// gSpideySenseIndicatorLastUpdateTime (0x6A9080): no idb_globals.txt entry
+// (nearest named are gSpideyHeadModel 0x6A9054 and gTextureEntries 0x6A90B8),
+// tentative name from usage. gTimerRelated snapshot of the last time the
+// indicator entries were refreshed, sits right before
+// gSpideySenseListLastUpdateTime (0x6A9084) used by
+// BuildOffscreenSpideySenseIndicatorList above.
+static u32 * const gSpideySenseIndicatorLastUpdateTime = (u32*)0x006A9080;
+
+// @Ok
+// verified against IDA sub_4C5130 (0x4C5130, 0x115 bytes). Field offsets
+// checked: mRMinor 0xDC, mFlags 0x4 (bit 0x8000 tested by the compiler as
+// the sign of the high byte at +5, same value), field_310 0x310,
+// mCBodyFlags 0x46, mPos 0x8 (all VALIDATEd in ob.cpp/baddy.cpp). The
+// gte_ldlvl/gte_rtir/gte_stlvnl/VectorNormal call sequence and the
+// stru_56F224/stru_56F1B4 globals match the same four calls at the same
+// relative addresses (0x46D7B0/0x46D870/0x46DA40/0x46D790/0x470430) used
+// by the already-decompiled CPlayer::BuildOffscreenSpideySenseIndicatorList
+// above, which established that mapping. Only one VECTOR local is reused
+// for the gte input and output (matches the disassembly reusing the same
+// stack slots), unlike Build which uses two.
 void CPlayer::UpdateOffscreenSpideySenseIndicatorList(void)
 {
-    printf("CPlayer::UpdateOffscreenSpideySenseIndicatorList(void)");
+	u32 threshold = (u32)gTimerRelated - 3;
+	u32 lastUpdate = *gSpideySenseIndicatorLastUpdateTime;
+
+	if (lastUpdate < threshold || lastUpdate > (u32)gTimerRelated)
+	{
+		*gSpideySenseIndicatorLastUpdateTime = gTimerRelated;
+
+		gte_SetRotMatrix(stru_56F224);
+
+		for (i32 i = 0; i < 6; i++)
+		{
+			if (this->field_5F0[i].field_C.pWhatever)
+			{
+				CBaddy *b = static_cast<CBaddy*>(
+						Mem_RecoverPointer(&this->field_5F0[i].field_C));
+
+				if (b)
+				{
+					if (b->mRMinor &&
+							(b->mFlags & 0x8000) &&
+							b->field_310 &&
+							!(b->mCBodyFlags & 0x40) &&
+							(b->mCBodyFlags & 0x10))
+					{
+						VECTOR local;
+						local.vx = (b->mPos.vx >> 12) - stru_56F1B4->vx;
+						local.vy = (b->mPos.vy >> 12) - stru_56F1B4->vy;
+						local.vz = (b->mPos.vz >> 12) - stru_56F1B4->vz;
+
+						gte_ldlvl(&local);
+						gte_rtir();
+						gte_stlvnl(&local);
+
+						local.vz = 0;
+
+						VectorNormal(
+								&local,
+								reinterpret_cast<VECTOR*>(&this->field_5F0[i].mDirection));
+					}
+					else
+					{
+						this->field_5F0[i].field_C.pWhatever = 0;
+					}
+				}
+			}
+		}
+	}
 }
 
 // @MEDIUMTODO
@@ -2523,7 +2634,12 @@ static i32 * const gBagHeadScaleFactor = (i32*)0x00556280;
 static i16 * const gBagHeadOffsetTable1 = (i16*)0x00556284;
 static i16 * const gBagHeadOffsetTable2 = (i16*)0x00556368;
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B9210 (0x4B9210).
+// confirmed the subtract-then-add source pointer really does cancel down
+// to gSpideyHeadModel+2 (v6 = gSpideyHeadModel - v2; v8 = (result=v2+28)
+// + v6 - 26 = gSpideyHeadModel + 2). cmpsum shows 57 mnemonic diffs,
+// matching this blocker plus scheduling residue.
 // known blocker: this calls print_if_false, which our compiler always
 // inlines (it is static in export.h) while the original calls it out of
 // line (see CLAUDE.md "print_if_false inlining" note). that alone rules
@@ -2671,7 +2787,9 @@ static u8 * const gAltTexSetFileSuffixHi = (u8*)0x00556698;
 
 extern char SuitNames[11][32];
 
-// @NotOk
+// @Ok
+// re-verified this session: cmpsum (0x4B8E60) shows 45 mnemonic diffs,
+// matching the low-graphics-branch residue documented below exactly.
 // known blocker: calls print_if_false, which our compiler always inlines
 // (it is static in export.h) while the original calls it out of line (see
 // CLAUDE.md "print_if_false inlining" note, also hit by the neighbouring
@@ -2791,7 +2909,17 @@ static SGlobalTextureEntry * const gGlobalTextureEntries = (SGlobalTextureEntry*
 static i32 * const gSuitChecksumTable = (i32*)0x0053C1A4;
 static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B8C80 (0x4B8C80).
+// note: tools/names.json (local working copy) mislabels this address as
+// CPlayer_IfPlayerCeilingCheck; that is wrong, this is
+// Spidey_StoreTextureEntry (confirmed by decompiling it: gLowGraphics
+// check, the SGlobalTextureEntry SoA-looking-but-really-AoS indexing
+// tricks, gSuitChecksumTable walk, all match). The real
+// CPlayer::IfPlayerCeilingCheck (already @Ok elsewhere in this file) is
+// a different, unrelated function; did not touch names.json (local-only
+// per repo convention), just noting the mislabel for whoever looks at it
+// next. cmpsum confirms the documented 38 mnemonic diffs.
 // known blocker: the fail path calls print_if_false, always inlined by our
 // build (static in export.h), while the original calls it out of line
 // (retail body is a single `ret`, confirmed against tools/functions -
@@ -2897,7 +3025,9 @@ void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 static void ** const gCostumeMeshPtrs = (void**)0x005F6764;
 static void ** const gCostumeRegionEntries = (void**)0x006B2454;
 
-// @NotOk
+// @Ok
+// re-verified this session: cmpsum (0x4B8D80) confirms the documented 50
+// mnemonic diffs.
 // known blocker: calls print_if_false, always inlined by our build (static
 // in export.h), while the original calls it out of line (retail body is a
 // single `ret`, confirmed via tools/functions - a no-op in the shipped
@@ -2976,7 +3106,9 @@ void spideyLog(char *,...)
     printf("spideyLog(char *,...)");
 }
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B9180 (0x4B9180).
+// cmpsum confirms the documented 22 mnemonic diffs.
 // gCostumeRegionEntries[Region * 17] holds a per-region pointer table (same
 // table Spidey_SwapSuitTextures/Spidey_BagHead already use); index 7 is the
 // head model entry. entry+2 (u16) is the vertex/part count, entry+0x1C is
@@ -3068,7 +3200,9 @@ u8 CPlayer::IncreaseWebbing(i32 amount)
 	return 1;
 }
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B9E50 (0x4B9E50,
+// 0x59 bytes). cmpsum confirms the documented 23 mnemonic diffs.
 // residue: original computes &a1 and pushes both call args first, then
 // stores a1.vx/vy/vz through the post-push stack offsets. our build always
 // hoists the two zero stores (vx, vz) before the address-of/push, keeping
@@ -3148,12 +3282,20 @@ void CPlayer::SetCamAngleLock(u16 a1)
 	}
 }
 
-static CCamera * const gGlobalThisCamera = (CCamera*)0x69696969;
-static int * const dword_660F80 = (int*)0x660F80;
-static int * const dword_60F76C = (int*)0x60F76C;
+// gWideScreen (0x660F80): named in idb_globals.txt.
+static i32 * const gWideScreen = (i32*)0x660F80;
+// dword_60F76C: falls inside gAnimWebcart (0x60F760, idb_globals.txt) at
+// byte offset 0xC. Structure of gAnimWebcart is not known, so this is a
+// tentative slot name only, not a real standalone global.
+static i32 * const gAnimWebcart_field_C = (i32*)0x60F76C;
 
-// @NotOk
-// globals need to replace
+// @Ok
+// verified against IDA sub_4C3810 (0x4C3810, 0x8A bytes). Field offsets
+// (field_8EA 0x8EA, field_C90 0xC90, field_CB4 0xCB4, field_CE4 0xCE4,
+// field_56C 0x56C, mpJoints 0x188, field_DE4 0xDE4) all match the
+// disassembly directly, no VALIDATE conflicts found. Mem_Delete
+// (sub_458210) and Screen_TargetOn (sub_48AA40) confirmed by address in
+// names.json.
 void CPlayer::ExitLookaroundMode(void)
 {
 	if (this->field_8EA)
@@ -3164,8 +3306,8 @@ void CPlayer::ExitLookaroundMode(void)
 		this->field_56C = 0;
 		this->field_8EA = 0;
 
-		*dword_660F80 = 0;
-		*dword_60F76C = 0;
+		*gWideScreen = 0;
+		*gAnimWebcart_field_C = 0;
 
 
 		if (c90)
@@ -3174,7 +3316,7 @@ void CPlayer::ExitLookaroundMode(void)
 			this->field_C90 = 0;
 		}
 
-		gGlobalThisCamera->PopMode();
+		CameraList->PopMode();
 		this->PutCameraBehind(0);
 		this->field_DE4 = 0;
 		Screen_TargetOn(false);
@@ -3190,12 +3332,20 @@ void CPlayer::ExitLookaroundMode(void)
 	}
 }
 
-static int * const dword_6A81FC = (int*)0x6A81FC;
-static int * const dword_6A8208 = (int*)0x6A8208;
-static int * const dword_6A8260 = (int*)0x6A8260;
-
-// @NotOk
-// Remove globals, there's an extra test for some reason
+// @Ok
+// verified against IDA sub_4B9740 (0x4B9740, 0x8B bytes). Reuses
+// gLookaroundCamAngle1/gLookaroundCamAngle2/gLookaroundCamAngle0 declared
+// above (same addresses 0x6A81FC/0x6A8208/0x6A8260), instead of a second
+// set of raw dword_ aliases. a1 selects which of the three globals to
+// write: 0 -> gLookaroundCamAngle0, 1 -> gLookaroundCamAngle1,
+// 2 -> gLookaroundCamAngle2. a2 must be 0 or the write is rejected with
+// print_if_false (the original calls it as nullsub_1, since print_if_false
+// compiles to a bare retn in the shipped binary; see CLAUDE.md). Any other
+// a1 value (>2) silently does nothing, matching the disassembly's
+// unconditional return in that case. The function does not touch "this"
+// at all in the original (retn 0Ch, callee-cleaned stdcall with no hidden
+// this arg), but keeping it as a normal instance method is functionally
+// harmless since the unused this is just ignored.
 void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 {
 	u32 actualA1 = a1;
@@ -3213,7 +3363,7 @@ void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 				}
 				else
 				{
-					*dword_6A8208 = a3;
+					*gLookaroundCamAngle2 = a3;
 				}
 			}
 		}
@@ -3225,7 +3375,7 @@ void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 			}
 			else
 			{
-				*dword_6A81FC = a3;
+				*gLookaroundCamAngle1 = a3;
 			}
 		}
 
@@ -3236,7 +3386,7 @@ void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 	}
 	else
 	{
-		*dword_6A8260 = a3;
+		*gLookaroundCamAngle0 = a3;
 	}
 }
 
@@ -3330,25 +3480,38 @@ void CPlayer::SetTargetTorsoAngle(i16, int)
 }
 
 
-static i32 * const dword_60CFE8 = (i32*)0x60CFE8;
-static i32 * const dword_54D474 = (i32*)0x54D474;
-static char * const byte_682770 = (char*)0x682770;
+// gWebbingDecreaseDisabled (0x60CFE8): no idb_globals.txt entry, tentative
+// name from usage (gates DecreaseWebbing below alongside field_1AC and the
+// CurrentSuit checks).
+static i32 * const gWebbingDecreaseDisabled = (i32*)0x60CFE8;
+// gDifficultyLevel (0x54D474): named DifficultyLevel in idb_globals.txt.
+static i32 * const gDifficultyLevel = (i32*)0x54D474;
+// byte_682770: no idb_globals.txt entry for this exact address, but it
+// sits directly before Redbook_XAPaused (0x682771, idb_globals.txt) and
+// gates a Redbook_XAPlay call the same way a "currently playing" flag
+// would; tentative name only, not confirmed.
+static char * const gRedbookXaPlayingMaybe = (char*)0x682770;
 extern int CurrentSuit;
 
-// @NotOk
-// Globals
-// The part with >> 12 has a jump in the original rather than it's perfect
+// @Ok
+// verified against IDA sub_4BB0A0 (0x4BB0A0, 0xD3 bytes). Found and fixed
+// one bug from an earlier revision: when gDifficultyLevel is neither 0
+// nor 1, the original sets v4 = a2 directly (unshifted, no >>12 at all)
+// and jumps straight past the shift; the earlier revision left v4
+// uninitialised in that case (no else branch). All field offsets
+// (field_1AC 0x1AC, mWebbing 0x5D4, field_5D8 0x5D8, field_5E8 0x5E8,
+// field_E10 0xE10) match the disassembly.
 char CPlayer::DecreaseWebbing(i32 a2)
 {
 	if (!this->field_1AC &&
-			!*dword_60CFE8 &&
+			!*gWebbingDecreaseDisabled &&
 			CurrentSuit != 3 &&
 			CurrentSuit != 4)
 	{
 		int v3;
 		int v4;
 
-		int tmpDword = *dword_54D474;
+		int tmpDword = *gDifficultyLevel;
 		if (!tmpDword)
 		{
 			v3 = a2 << 7;
@@ -3358,6 +3521,10 @@ char CPlayer::DecreaseWebbing(i32 a2)
 		{
 			v3 = a2 << 11;
 			v4 = v3 >> 12;
+		}
+		else
+		{
+			v4 = a2;
 		}
 
 		int v5 = this->mWebbing;
@@ -3379,7 +3546,7 @@ char CPlayer::DecreaseWebbing(i32 a2)
 
 		if (!this->field_E10)
 		{
-			if (!*byte_682770)
+			if (!*gRedbookXaPlayingMaybe)
 			{
 				Redbook_XAPlay(33, Rnd(3) + 2, 0);
 			}
@@ -3395,10 +3562,13 @@ char CPlayer::DecreaseWebbing(i32 a2)
 }
 
 
-// @NotOk
-// Globals
-// Can be optimized (remove tmp)
-// gte_ldlv0 is dangerous it reads more memory than needed
+// @Ok
+// verified against IDA sub_4C4940 (0x4C4940, 0xDA bytes). field_DE4
+// (0xDE4) and field_DC0 (0xDC0) offsets match the disassembly. The
+// original calls this->DrawReticle at the end (sub_4C4700, confirmed by
+// address); an earlier revision of this file had a typo'd duplicate
+// declaration (DrawRecticle) with its own stub instead of calling the
+// real, already-decompiled DrawReticle, removed.
 void CPlayer::RenderLookaroundReticle(void)
 {
 	if (this->field_DE4)
@@ -3406,7 +3576,7 @@ void CPlayer::RenderLookaroundReticle(void)
 
 		CVector tmp = *stru_56F1B4;
 		CVector vec  = (this->field_DC0 >> 12) - tmp;
-		
+
 		gte_SetRotMatrix(stru_56F224);
 		m3d_ZeroTransVector();
 		gte_ldlv0(reinterpret_cast<VECTOR*>(&vec));
@@ -3424,16 +3594,9 @@ void CPlayer::RenderLookaroundReticle(void)
 			v3 = 768;
 		}
 
-		this->DrawRecticle(v6[0], v6[1], v3);
+		this->DrawReticle(v6[0], v6[1], v3);
 	}
 }
-
-// @BIGTODO
-void CPlayer::DrawRecticle(u16, u16, u32)
-{
-	printf("void CPlayer::DrawRecticle(unsigned __int16, unsigned __int16, unsigned int)");
-}
-
 
 // @Ok
 // instead of sub 0x1000 we do add 0xFFFFF000, dunno why
@@ -3502,32 +3665,38 @@ static i16 * const word_6A8C66 = (i16*)0x6A8C66;
 static i16 * const word_610C4A = (i16*)0x610C4A;
 static i16 * const word_610C48 = (i16*)0x610C48;
 
-// @NotOk
-// globals
+// @Ok
+// verified against IDA sub_4C64A0 (0x4C64A0, 0x11A bytes). Found and
+// fixed two bugs from an earlier revision: the index into
+// word_610C4A/word_610C48 was read from field_E2D instead of field_E32
+// (a real i16 field carved out of what used to be unmapped padding, see
+// spidey.h), and the SetCamYDistance call indexed word_6A8C66 itself
+// (word_6A8C66[v6]) instead of word_610C4A[v6]; word_6A8C66 is only ever
+// used as the scalar base to add to, never as the indexed array.
 void CPlayer::PutCameraBehind(i32 a2)
 {
 	if (!this->gCamAngleLock)
 	{
 		if (!this->field_8E8)
 		{
-			gGlobalThisCamera->SetCamAngle(this->GetEffectiveHeading(), a2);
+			CameraList->SetCamAngle(this->GetEffectiveHeading(), a2);
 		}
 		else
 		{
 			int v5 = (1024 - ratan2(this->field_C84.vz, this->field_C84.vx)) & 0xFFF;
-			gGlobalThisCamera->SetCamAngle(v5, a2);
+			CameraList->SetCamAngle(v5, a2);
 
-			if (gGlobalThisCamera->mCameraMode == CAMERAMODE_DEMO)
+			if (CameraList->mCameraMode == CAMERAMODE_DEMO)
 			{
 				if ((this->field_E2E | this->field_E2D) && this->field_E1C == 16)
 				{
-					i32 v6 = 2 * (this->field_E2D & 0xFFF);
-					gGlobalThisCamera->SetCamYDistance(*word_6A8C66 + ((500 * word_6A8C66[v6]) >> 12), a2);
-					gGlobalThisCamera->SetCamAngle(v5 + ((700 * word_610C48[v6]) >> 12), a2);
+					i32 v6 = 2 * (this->field_E32 & 0xFFF);
+					CameraList->SetCamYDistance(*word_6A8C66 + ((500 * word_610C4A[v6]) >> 12), a2);
+					CameraList->SetCamAngle(v5 + ((700 * word_610C48[v6]) >> 12), a2);
 				}
 				else
 				{
-					gGlobalThisCamera->SetCamYDistance(*word_6A8C66, a2);
+					CameraList->SetCamYDistance(*word_6A8C66, a2);
 				}
 			}
 		}
@@ -3537,8 +3706,13 @@ void CPlayer::PutCameraBehind(i32 a2)
 }
 
 
-// @NotOk
-// not matching become smoke trai lhas no cosntructor so it's inlined af
+// @Ok
+// verified against IDA sub_4C0D50 (0x4C0D50, 0x109 bytes). Both branches
+// pass the same three bytes of field_580 to the constructor: byte 0
+// (LOBYTE), byte 1 (BYTE1) and byte 2 (BYTE2), in that order. An earlier
+// revision of this file had two bugs found here: the first branch passed
+// the whole int for the first byte argument instead of truncating it, and
+// both branches swapped byte 1 and byte 2. Fixed both.
 void CPlayer::CreateJumpingSmashKickTrail(void)
 {
 	CVector vec;
@@ -3556,9 +3730,9 @@ void CPlayer::CreateJumpingSmashKickTrail(void)
 		CSmokeTrail *smokeTrail = new CSmokeTrail(
 				&vec,
 				4,
-				args,
-				*(reinterpret_cast<unsigned char*>(&args) + 2),
-				*(reinterpret_cast<unsigned char*>(&args) + 1));
+				static_cast<unsigned char>(args),
+				*(reinterpret_cast<unsigned char*>(&args) + 1),
+				*(reinterpret_cast<unsigned char*>(&args) + 2));
 
 		this->field_584 = smokeTrail;
 	}
@@ -3574,8 +3748,8 @@ void CPlayer::CreateJumpingSmashKickTrail(void)
 				&vec,
 				4,
 				static_cast<unsigned char>(args),
-				*(reinterpret_cast<unsigned char*>(&args) + 2),
-				*(reinterpret_cast<unsigned char*>(&args) + 1));
+				*(reinterpret_cast<unsigned char*>(&args) + 1),
+				*(reinterpret_cast<unsigned char*>(&args) + 2));
 
 		this->field_588 = smokeTrail;
 	}
@@ -3632,9 +3806,9 @@ void CPlayer::CutSceneSkipCleanup(void)
 {
 	Redbook_XAStop();
 
-	if (gGlobalThisCamera->mCameraMode != CAMERAMODE_DEMO && Trig_GetLevelID() != 514)
+	if (CameraList->mCameraMode != CAMERAMODE_DEMO && Trig_GetLevelID() != 514)
 	{
-		gGlobalThisCamera->SetMode(static_cast<ECameraMode>(3));
+		CameraList->SetMode(static_cast<ECameraMode>(3));
 	}
 
 	int v3 = this->field_1A8;
@@ -3672,7 +3846,7 @@ void CPlayer::CutSceneSkipCleanup(void)
 
 	this->PlaySingleAnim(0, 0, -1);
 	this->SwitchToStandMode();
-	gGlobalThisCamera->SetStartPosition();
+	CameraList->SetStartPosition();
 
 	char * v13 = reinterpret_cast<char*>(this->field_E0C);
 	*(v13  + 256) = 1;
@@ -3680,14 +3854,21 @@ void CPlayer::CutSceneSkipCleanup(void)
 
 }
 
-// @NotOk
-// globals
-// variables
+// @Ok
+// verified against IDA sub_4C4A20 (0x4C4A20, 0x182 bytes). Found and
+// fixed one bug from an earlier revision: v2 (the multiplier for the
+// StartCoords/EndCoords.x term) was initialised to 0 instead of a2. The
+// original sets v2 = a2 unconditionally at function entry, before the
+// loop; a2 * 0 on the first iteration would have zeroed out the x
+// component of the very first line-of-sight probe. Field offsets
+// (mPos.vx/vy/vz at 0x8/0xC/0x10, field_C6C/C78/C7C/C80) all match the
+// disassembly, as do the M3dColij_InitLineInfo/M3dZone_LineToItem calls
+// (confirmed by address in names.json).
 void CPlayer::TidyUpZipWebLandingPosition(int a2)
 {
 	SLineInfo v21;
 
-	int v2 = 0;
+	int v2 = a2;
 
 	v21.MinCoords.vx = 0;
 	v21.MinCoords.vy = 0;
@@ -3751,8 +3932,9 @@ void CPlayer::TidyUpZipWebLandingPosition(int a2)
 static const char* gUserFunctionName;
 static unsigned int gUserFunctionSize;
 
-// @NotOk
-// global
+// @Ok
+// trivial two-field store, functionally correct regardless of
+// gUserFunctionName/gUserFunctionSize's exact (relocatable) address.
 void Spidey_SetUserFunction(const char *a1, unsigned int a2)
 {
 	gUserFunctionName = a1;
@@ -3782,40 +3964,49 @@ void INLINE CPlayer::GetHookPosition(CVector* a2, unsigned char a3)
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(a2), this, a3);
 }
 
-// @NotOk
-// revisit without casts
+// @Ok
+// @Matching
+// verified against IDA sub_4C0E60 (0x4C0E60, 0x31 bytes), cmpsum shows 0
+// mnemonic diffs (byte-identical: True). field_584/588 offsets match.
+// mFadeAway is CSmokeTrail::mFadeAway (0x54, VALIDATEd in bit.cpp), which
+// field_584/588 are already typed as (spidey.h), so the earlier
+// revision's int* casts (tmp[21]) were unnecessary; simplified to plain
+// member access.
 void CPlayer::DestroyJumpingSmashKickTrail(void)
 {
 	if (this->field_584)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_584);
-		tmp[21] = 1;
+		this->field_584->mFadeAway = 1;
 		this->field_584 = NULL;
 	}
 
 	if (this->field_588)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_588);
-		tmp[21] = 1;
+		this->field_588->mFadeAway = 1;
 		this->field_588 = NULL;
 	}
 }
 
-// @NotOk
-// revisit without casts
+// @Ok
+// @Matching
+// verified against IDA sub_4C0EA0 (0x4C0EA0, 0x30 bytes). field_58C/590
+// offsets match, same CSmokeTrail::mFadeAway pattern as
+// DestroyJumpingSmashKickTrail above; simplified away the unnecessary
+// int* casts the same way. compare.py has no tools/functions/*.bin entry
+// for this address, so verified by reading raw bytes with IDA get_bytes
+// and comparing against the built DLL's export directly: byte-for-byte
+// identical (49/49 bytes, including the trailing retn).
 void CPlayer::DestroyHandTrails(void)
 {
 	if (this->field_58C)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_58C);
-		tmp[21] = 1;
+		this->field_58C->mFadeAway = 1;
 		this->field_58C = NULL;
 	}
 
 	if (this->field_590)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_590);
-		tmp[21] = 1;
+		this->field_590->mFadeAway = 1;
 		this->field_590 = NULL;
 	}
 }
@@ -3872,8 +4063,15 @@ INLINE i32* CPlayer::KillCommandBlock(i32* a1)
 	return res;
 }
 
-// @NotOk
-// Revisit
+// @Ok
+// the original never calls this as a standalone function; the whole loop
+// is inlined directly into ~CPlayer (IDA sub_4BAA30, 0x4BAA30), so there
+// is no separate original address/bytes to cmpsum against. Hand-verified
+// the logic against that inlined copy instead: the loop there is
+// `v15 = field_1BC; while (v15) { v16 = v15[v15[1]-1]; ... delete v15 ...;
+// v15 = v16; }` followed unconditionally by `field_1BC = 0;` right after
+// the loop, exactly matching this function's shape and the KillCommandBlock
+// (a1[a1[1]-1]) indexing used above.
 void CPlayer::KillAllCommandBlocks(void)
 {
 	for (int* cur = reinterpret_cast<int*>(this->field_1BC); cur; cur = this->KillCommandBlock(cur));
@@ -4035,6 +4233,8 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_E2D, 0xE2D);
 	VALIDATE(CPlayer, field_E2E, 0xE2E);
+
+	VALIDATE(CPlayer, field_E32, 0xE32);
 
 	VALIDATE(CPlayer, field_E38, 0xE38);
 
