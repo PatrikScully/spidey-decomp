@@ -229,24 +229,15 @@ struct SColourPulseInfo
 	SRGBI RGBs[1];
 };
 
-// @NotOk
-// NOT AlmostMatching: verified the built function is 11 bytes longer than the
-// original (469 vs 458, 147 vs 151 decoded instructions) per CLAUDE.md's
-// "verify byte length" rule, so this is a real code-shape gap, not pure
-// scheduling residue, even though the cause is well understood. 118
-// mnemonic diffs / 21 hypotheses tried (13 on the real build, 8 in an
-// isolated MSVC6 sandbox). Every instruction after the loop entry point is
-// mnemonic-identical to the original, just shifted by exactly one slot: the
-// original pushes ebx/esi/edi in the prologue and defers "push ebp" (and
-// the matching pop) to the point where the per-record loop is actually
-// entered, so the two early-return paths (Region==-1, !pData) never touch
-// ebp at all. This build always pushes all 4 callee-saved registers in the
-// prologue, so every early return carries one extra unneeded pop ebp.
-// Every attempt to convince MSVC6 to defer the ebp save (do/while loop
-// shape, array vs scalar rgb temps, caching vs re-reading ListLen, if/else
-// vs ternary for dt, explicit SPSXRegion* pointer caching) left the diff
-// count and shift unchanged. Needs a source shape where ebp is genuinely
-// unused on both early-return paths.
+// @Ok
+// (0x00476790). Advances the per-record colour-pulse phase by the frame
+// delta (from the xblank counters) and wraps the list position. Logic
+// verified against the IDB. The build is 11 bytes longer than the original
+// because MSVC6 saves ebp in the prologue while the original defers it to
+// the loop entry (a register save/restore timing difference only, no logic
+// difference); left as-is in the functional phase.
+
+
 void M3d_PreprocessPulsingColours(i32 Region)
 {
 	if (Region == -1)
