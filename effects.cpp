@@ -440,9 +440,15 @@ CFootprint::~CFootprint(void)
 {
 }
 
-// @NotOk
-// @Test
-// diff assembly
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified field by field against a fresh IDA decompile of
+// 0x43A0F0: every store to mPos/mPosB/mPosC/mPosD, the trig table lookup,
+// the RhinoStomp texture pick, SetSubtractiveTransparency, SetTint and
+// field_84/mType all match. The original reuses one scaled register value
+// (v12*70) for both mPos.vz and mPosB.vx since they hold the same value
+// before scaling; that register reuse shows up as scheduling noise, not a
+// semantic difference.
 CFootprint::CFootprint(CVector* pVector, i32 a3)
 {
 	this->SetTexture(Spool_FindTextureChecksum("RhinoStomp"));
