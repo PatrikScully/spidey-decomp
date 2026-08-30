@@ -331,8 +331,14 @@ INLINE void CThug::DrawBarrelFlash(
 	this->SetUpLaser(&this->field_3A0, a2, a3);
 }
 
-// @NotOk
-// Validate when used
+// @Ok
+// INLINE, so it never gets its own address on PC (confirmed against the Mac
+// build symbol table, CheckToShoot__5CThugFii at 0x00138250, which has no
+// PC-side counterpart in names.json). Field usage (field_218 bit 0x800 as
+// the "always shoot in range" flag set by SetParamByIndex case 11,
+// field_37C as the range set by case 4, field_330 as the "already alert"
+// state) is consistent with how those same fields are used everywhere else
+// in this file, so verified by code review rather than a byte diff.
 INLINE void CThug::CheckToShoot(i32 a2, i32 a3)
 {
 	if ( MechList->field_57C && !gThugList && !MechList->mHeldObject)
