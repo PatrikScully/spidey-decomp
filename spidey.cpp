@@ -3910,21 +3910,25 @@ void INLINE CPlayer::GetHookPosition(CVector* a2, unsigned char a3)
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(a2), this, a3);
 }
 
-// @NotOk
-// revisit without casts
+// @Ok
+// @Matching
+// verified against IDA sub_4C0E60 (0x4C0E60, 0x31 bytes), cmpsum shows 0
+// mnemonic diffs (byte-identical: True). field_584/588 offsets match.
+// mFadeAway is CSmokeTrail::mFadeAway (0x54, VALIDATEd in bit.cpp), which
+// field_584/588 are already typed as (spidey.h), so the earlier
+// revision's int* casts (tmp[21]) were unnecessary; simplified to plain
+// member access.
 void CPlayer::DestroyJumpingSmashKickTrail(void)
 {
 	if (this->field_584)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_584);
-		tmp[21] = 1;
+		this->field_584->mFadeAway = 1;
 		this->field_584 = NULL;
 	}
 
 	if (this->field_588)
 	{
-		int *tmp = reinterpret_cast<int*>(this->field_588);
-		tmp[21] = 1;
+		this->field_588->mFadeAway = 1;
 		this->field_588 = NULL;
 	}
 }
