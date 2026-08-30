@@ -309,12 +309,18 @@ void CSymBurn::AI(void)
 	M3d_BuildTransform(this);
 }
 
-// @NotOk
-// globals
+// guess: live CSymBurn instance counter, no idb_globals.txt entry nearby.
+// Found because CSymBurn::CSymBurn has no standalone address in the
+// original: it is fully inlined into CSimbyFireDeath::CSimbyFireDeath
+// (sub_4A3640, not yet in this repo), which is where this address was found.
+static i32 * const gSymBurnCount = reinterpret_cast<i32*>(0x60CF94);
+
+// @Ok
+// The destructor (sub_4A31B0) has its own address, verified directly.
 CSymBurn::~CSymBurn(void)
 {
 	this->DeleteFrom(&MiscList);
-	(*reinterpret_cast<i32*>(0x60CF94)) -= 1;
+	(*gSymBurnCount) -= 1;
 }
 
 
