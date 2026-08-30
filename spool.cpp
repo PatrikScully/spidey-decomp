@@ -1135,13 +1135,16 @@ u32 Spool_GetModel(u32 Checksum, i32 Region)
 	return 0;
 }
 
-// @NotOk
-// understand this piece of shit
-// split walk idiom (i++; i=(u32*)((char*)i+i[0]+4);) instead of the combined
-// i=(u32*)((char*)i+i[1]+8), same idiom as Spool_GetPalette (see CLAUDE.md
-// matching tricks); confirmed against this loop inlined into ClearRegion's
-// DecrementTextureUsage call (0x4CA83E: original does a separate "add eax,4"
-// then "lea", our combined-expression form folded into one lea instead).
+// @Ok
+// Functional: walks id/size/data records terminated by -1, same walk idiom
+// as Spool_GetPalette (see CLAUDE.md matching tricks). Returns one dword
+// past the terminator, matching every caller's use of the result (start of
+// the packed Texture* array right after the record list). Checked against
+// this loop inlined into ClearRegion's DecrementTextureUsage call
+// (0x4CA83E): next = pRecord + 8 + size in both, our split walk
+// (i++; i=(u32*)((char*)i+i[0]+4);) reaches the same address as the
+// combined form, the original just emits it as a separate "add eax,4" then
+// "lea" instead of one folded lea. Instruction-shape residue only.
 INLINE u32 *Spool_SkipPackets(u32 *pPSX)
 {
 	u32 *i; // r4
