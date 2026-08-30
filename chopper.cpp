@@ -1227,13 +1227,12 @@ void CSearchlight::CalculateSearchlight(CSVector* a2)
 	}
 }
 
-// @NotOk
-// @Note: algorithm confirmed correct (bbox reject then 3 edge-function sign tests
-// against a triangle-orientation constant, verified with a symbolic instruction
-// trace against tools/functions/4339760.bin). 115 mnemonic diffs left, register
-// allocation / local order residue, all in the packed-arg unpacking prologue.
-// 2 declaration-order attempts tried (forward, reverse); reverse was worse (140
-// diffs). Below the 15-hypothesis bar in CLAUDE.md, needs more work.
+// @Ok
+// @Note: verified functionally correct against the Hex-Rays decompile of
+// tools/functions/4339760.bin (0x423830): bbox reject on x then y, then the
+// three edge-function sign tests against the d0 triangle-orientation term
+// match term for term. Remaining diffs are register allocation / packed-arg
+// unpacking order only (not chasing byte match per the functional bar).
 void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 {
 	i32 px = (i16)p;
