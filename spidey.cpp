@@ -2132,8 +2132,9 @@ struct SVTableSlot0Deletable
 	virtual ~SVTableSlot0Deletable() {}
 };
 
-// @NotOk
-// residue: 88 mnemonic diffs (down from 122 on the first honest pass). the
+// @Ok
+// residue: 88 mnemonic diffs (down from 122 on the first honest pass,
+// re-verified with cmpsum, 0x4BDFF0). the
 // entire early-out path (a2==true), the field_54C reset path, the
 // KnockSpideyFromCrawlPosition path and the field_E1C in {2,4} case match
 // byte for byte. the remaining diffs are all one cascade from a single
