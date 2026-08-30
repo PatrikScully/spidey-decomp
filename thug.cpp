@@ -1322,9 +1322,62 @@ void CThug::SetThugType(int type)
 
 }
 
-// @BIGTODO
-void CThug::RunToWhereTheActionIs(CVector*)
-{}
+// @Ok
+// Reconstructed from IDA decompile of 0x4da560. Builds a point 100 units
+// past the target (away from us) on x and z, keeping our own y. Tries the
+// direct path to MechList first, then the far point, then (if the far
+// point is blocked) falls back to CThug::TryAddingCollidePointToPath, which
+// is the exact same >=100-unit-check-then-scale-by-3700 idiom this function
+// inlines by hand in the original (confirmed by comparing against the
+// already-decompiled TryAddingCollidePointToPath body below).
+void CThug::RunToWhereTheActionIs(CVector* a2)
+{
+	if (Utils_CrapDist(this->mPos, *a2) > 3500)
+		return;
+
+	if (!this->AddPointToPath(&this->mPos, 0))
+		return;
+
+	CVector farPoint;
+	farPoint.vx = a2->vx + ((a2->vx - this->mPos.vx <= 0) ? 409600 : -409600);
+	farPoint.vy = this->mPos.vy;
+	farPoint.vz = a2->vz + ((a2->vz - this->mPos.vz <= 0) ? 409600 : -409600);
+
+	i32 addedPoint = 0;
+
+	if (!MechList->field_57C
+			&& this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) == 0
+			&& this->AddPointToPath(&MechList->mPos, 0))
+	{
+		addedPoint = 1;
+	}
+	else
+	{
+		i32 pathResult = this->PathCheck(&this->mPos, &farPoint, &farPoint, 55);
+
+		if (pathResult == 0)
+		{
+			if (!this->AddPointToPath(&farPoint, 0))
+				return;
+
+			addedPoint = 1;
+		}
+		else if (pathResult == 2)
+		{
+			addedPoint = this->TryAddingCollidePointToPath(&farPoint);
+		}
+	}
+
+	if (addedPoint)
+	{
+		this->Neutralize();
+		this->field_2F0 |= 1;
+		this->field_2A8 &= ~0x10000000;
+		this->field_330 = 60;
+		this->field_31C.bothFlags = 2;
+		this->dumbAssPad = 0;
+	}
+}
 
 // @Ok
 void CThug::HelpOutBuddy(CMessage *pMessage)
