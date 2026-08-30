@@ -1365,10 +1365,12 @@ u8 CPlayer::KnockSpideyFromCrawlPosition(void)
 	return 1;
 }
 
-// @SMALLTODO
+// @Ok
+// verified against IDA sub_4C6960 (0x4C6960): a single "mov dword ptr
+// [ecx+0DF8h], 0" then retn, exact match for this->field_DF8 = 0.
 void CPlayer::LockTargetTorsoAngle(void)
 {
-    printf("CPlayer::LockTargetTorsoAngle(void)");
+	this->field_DF8 = 0;
 }
 
 // globals for CPlayer::NotifyKill below (no idb_globals.txt entries nearby,
