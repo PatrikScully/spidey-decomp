@@ -893,11 +893,11 @@ void CPlayer::DrawReticle(u16 x, u16 y, u32 scale)
 			6.0f);
 }
 
-// same objects as gGlobalThisCamera / dword_6A81FC / dword_6A8208 /
-// dword_6A8260 declared further down in this file (this function sits
-// earlier in the file than those declarations, so it needs its own
-// file-local aliases to the same addresses).
-static CCamera * const gLookaroundCamera = (CCamera*)0x69696969;
+// CameraList (camera.h, real address 0x56F3B8) is the active camera. An
+// earlier revision of this file used a placeholder address (0x69696969)
+// for it here and further down (as gGlobalThisCamera); fixed to use the
+// real global, which is already used elsewhere in this file (see e.g.
+// the already-@Ok CheckStickToCeiling above).
 static i32 * const gLookaroundCamAngle1 = (i32*)0x6A81FC;
 static i32 * const gLookaroundCamAngle2 = (i32*)0x6A8208;
 static i32 * const gLookaroundCamAngle0 = (i32*)0x6A8260;
@@ -943,7 +943,7 @@ void CPlayer::EnterLookaroundMode(void)
 	this->field_DF8 = 0;
 
 	MATRIX localMat;
-	QToM(&gLookaroundCamera->field_214, &localMat);
+	QToM(&CameraList->field_214, &localMat);
 
 	localMat.m[2][0] = -localMat.m[2][0];
 	localMat.m[0][0] = -localMat.m[0][0];
@@ -954,7 +954,7 @@ void CPlayer::EnterLookaroundMode(void)
 
 	MToQ(localMat, this->field_CA4);
 
-	gLookaroundCamera->GetPosition(this->field_CB8);
+	CameraList->GetPosition(this->field_CB8);
 
 	this->field_CB4 = 0x18;
 	this->field_CE4 = 0;
@@ -969,8 +969,8 @@ void CPlayer::EnterLookaroundMode(void)
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&this->field_D00), this, 8);
 	this->field_D00 += this->field_C84 * 0x80;
 
-	gLookaroundCamera->PushMode();
-	gLookaroundCamera->SetMode(CAMERAMODE_FRONT);
+	CameraList->PushMode();
+	CameraList->SetMode(CAMERAMODE_FRONT);
 
 	i32 oldPath = this->field_C90;
 	print_if_false(oldPath == 0, "field_C90 already allocated");
@@ -3161,12 +3161,14 @@ void CPlayer::SetCamAngleLock(u16 a1)
 	}
 }
 
-static CCamera * const gGlobalThisCamera = (CCamera*)0x69696969;
 static int * const dword_660F80 = (int*)0x660F80;
 static int * const dword_60F76C = (int*)0x60F76C;
 
 // @NotOk
-// globals need to replace
+// globals need to replace. CameraList (camera.h, real address 0x56F3B8) is
+// used below in place of a placeholder gGlobalThisCamera that used to be
+// declared here (0x69696969); see the comment near gLookaroundCamAngle1
+// above for the same fix applied earlier in the file.
 void CPlayer::ExitLookaroundMode(void)
 {
 	if (this->field_8EA)
@@ -3187,7 +3189,7 @@ void CPlayer::ExitLookaroundMode(void)
 			this->field_C90 = 0;
 		}
 
-		gGlobalThisCamera->PopMode();
+		CameraList->PopMode();
 		this->PutCameraBehind(0);
 		this->field_DE4 = 0;
 		Screen_TargetOn(false);
@@ -3523,24 +3525,24 @@ void CPlayer::PutCameraBehind(i32 a2)
 	{
 		if (!this->field_8E8)
 		{
-			gGlobalThisCamera->SetCamAngle(this->GetEffectiveHeading(), a2);
+			CameraList->SetCamAngle(this->GetEffectiveHeading(), a2);
 		}
 		else
 		{
 			int v5 = (1024 - ratan2(this->field_C84.vz, this->field_C84.vx)) & 0xFFF;
-			gGlobalThisCamera->SetCamAngle(v5, a2);
+			CameraList->SetCamAngle(v5, a2);
 
-			if (gGlobalThisCamera->mCameraMode == CAMERAMODE_DEMO)
+			if (CameraList->mCameraMode == CAMERAMODE_DEMO)
 			{
 				if ((this->field_E2E | this->field_E2D) && this->field_E1C == 16)
 				{
 					i32 v6 = 2 * (this->field_E2D & 0xFFF);
-					gGlobalThisCamera->SetCamYDistance(*word_6A8C66 + ((500 * word_6A8C66[v6]) >> 12), a2);
-					gGlobalThisCamera->SetCamAngle(v5 + ((700 * word_610C48[v6]) >> 12), a2);
+					CameraList->SetCamYDistance(*word_6A8C66 + ((500 * word_6A8C66[v6]) >> 12), a2);
+					CameraList->SetCamAngle(v5 + ((700 * word_610C48[v6]) >> 12), a2);
 				}
 				else
 				{
-					gGlobalThisCamera->SetCamYDistance(*word_6A8C66, a2);
+					CameraList->SetCamYDistance(*word_6A8C66, a2);
 				}
 			}
 		}
@@ -3645,9 +3647,9 @@ void CPlayer::CutSceneSkipCleanup(void)
 {
 	Redbook_XAStop();
 
-	if (gGlobalThisCamera->mCameraMode != CAMERAMODE_DEMO && Trig_GetLevelID() != 514)
+	if (CameraList->mCameraMode != CAMERAMODE_DEMO && Trig_GetLevelID() != 514)
 	{
-		gGlobalThisCamera->SetMode(static_cast<ECameraMode>(3));
+		CameraList->SetMode(static_cast<ECameraMode>(3));
 	}
 
 	int v3 = this->field_1A8;
@@ -3685,7 +3687,7 @@ void CPlayer::CutSceneSkipCleanup(void)
 
 	this->PlaySingleAnim(0, 0, -1);
 	this->SwitchToStandMode();
-	gGlobalThisCamera->SetStartPosition();
+	CameraList->SetStartPosition();
 
 	char * v13 = reinterpret_cast<char*>(this->field_E0C);
 	*(v13  + 256) = 1;
