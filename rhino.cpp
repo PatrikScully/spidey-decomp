@@ -2509,8 +2509,21 @@ void CRhino::HitWall(void)
 	}
 }
 
-// @NotOk
-// figure out types of fields that call destructors
+// @Ok
+// Verified against the raw disasm (0x47DFE0). It writes RhinoVtable at
+// entry, then calls two zero/fixed-arg helpers that map cleanly onto
+// DeleteFrom(&BaddyList) (same &dword_56E990/BaddyList address the
+// constructor's AttachTo call uses) and Panel_DestroyHealthBar(), then does
+// the field_3E0/field_3E4/field_3F8/field_40C delete-and-clear cleanup
+// (walked as one shifted-pointer loop over all three arrays in the
+// original, done here as three ordinary indexed loops for the same
+// effect), then sets gBossRelated (confirmed at 0x56E998 by the
+// maintainer's IDB) back to 0 before chaining to the base class
+// destructor. Hex-Rays mistypes this function's "this" as
+// std::locale::_Locimp in its decompiled view (its base-class-destructor
+// tail call happens to be byte-identical to _Locimp's own trivial
+// destructor and got folded with it at link time); the raw instruction
+// listing settles it, since it writes CRhino's own vtable at offset 0.
 CRhino::~CRhino(void)
 {
 	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
