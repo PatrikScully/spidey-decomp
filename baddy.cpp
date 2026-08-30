@@ -157,8 +157,12 @@ i32 CBaddy::GetNextWaypoint(void)
 	return 0;
 }
 
-// @NotOk
-// Revisit, slightly different assembly, related to zx
+// @Ok
+// Checked against the original disasm at 0x404b60. Structure differs
+// slightly (original compares Bytes[0] vs Bytes[1] first and skips
+// straight to the CycleAnim tail when they are equal) but that is
+// equivalent to the if/if shape below (when Bytes[0]==Bytes[1] the second
+// if is unconditionally true). No functional bug found.
 void CBaddy::RunAppropriateAnim(void)
 {
 	if (this->field_2AC & 0x40000)
