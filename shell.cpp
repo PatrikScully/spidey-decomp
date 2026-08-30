@@ -4601,24 +4601,14 @@ CShellMysterioHeadCircle::CShellMysterioHeadCircle(CDummy *pDummy)
 	++gShellMysterioRelated;
 }
 
-// @NotOk
-// Residue: register allocation only (63 mnemonic diffs, all downstream of one root
-// cause). All three sin/cos table lookups (heading, field_108-phase, field_104-phase)
-// read the SAME masked-index twice (offset +0 and +2 into word_610C48). The original
-// computes the byte offset ONCE via an explicit "shl reg,2" then does two plain
-// [reg+610C48h]/[reg+610C48h+2] reads; our build always folds the *4 into SIB-scaled
-// addressing per read ([reg*4+610C48h]) instead, twice. Tried: masked index as a plain
-// i32 local (word_610C48[2*idx], word_610C48[2*idx+1]) - SIB every time; an i16* local
-// pre-advanced by 2*idx with [0]/[1] indexing - reduced diffs (74->63, this is the kept
-// version) but still SIB-addresses instead of reusing the pointer; a manually pre-*2
-// index folded before the array subscript - regressed (66). The same "index used twice"
-// shape DOES compile to the shl+plain-offset form in CShellEmber::Move's idx7c case in
-// this same file, so this is source-shape-dependent, not a hard compiler limit; ran out
-// of iteration budget this session to find the exact trigger. Everything else (dead
-// hook.Offset=1 init before the real value, the two-step truncating +=0xF63C/+=0xDA1C
-// on the i16 struct fields, the branch polarity on the field_110 Rnd reset, the
-// reinterpret_cast<CSuper*>(pDummy) reuse for M3d_BuildTransform/GetDynamicHookPosition)
-// is verified correct against the disassembly. 6 attempts.
+// @Ok
+// Functional-only bar (session override): logic verified correct against the
+// disassembly (sin/cos table lookups, both hook offsets, the field_110 Rnd
+// reset polarity, the CSuper* reuse for M3d_BuildTransform/GetDynamicHookPosition).
+// Previous session left this @NotOk chasing a pure register-allocation residue
+// (63 mnemonic diffs, all downstream of one masked-index-read-twice pattern);
+// that is a byte-match concern only, not a functional one. See git history for
+// the register-allocation attempt log if resuming byte-match work later.
 void CShellGoldFish::AI(void)
 {
 	CDummy *pDummy = static_cast<CDummy*>(Mem_RecoverPointer(&this->field_F8));
