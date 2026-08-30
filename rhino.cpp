@@ -21,7 +21,11 @@
 #include "message.h"
 
 
-EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
+// Fixed game address, confirmed by the maintainer's IDB (idb_globals.txt:
+// 0x5520B8 gRhinoStrangeInitData). The constructor reads it directly from
+// game memory (dword_5520B8/dword_5520BC), not from a repo-local array, so
+// this must point at the real address rather than hold guessed values.
+static i32 * const gRhinoStrangeInitData = reinterpret_cast<i32*>(0x005520B8);
 
 EXPORT SLight M3d_RhinoLight =
 {
@@ -34,12 +38,13 @@ EXPORT SLight M3d_RhinoLight =
 
 
 
-// @FIXME
+// Fixed game address, confirmed by the maintainer's IDB (idb_globals.txt:
+// 0x552208 gRhinoData). PlayXAPlease and the constructor's checksum assert
+// both need the real XA track table here, not a disconnected repo array.
 #define LEN_RHINO_DATA 0x17
-EXPORT SRhinoData gRhinoData[LEN_RHINO_DATA];
+static SRhinoData * const gRhinoData = reinterpret_cast<SRhinoData*>(0x00552208);
 
 #define LEN_RHINO_DAZED_DATA 0x5
-EXPORT i16 gRhinoDazedData[LEN_RHINO_DAZED_DATA];
 
 EXPORT u32 gRhinoSound;
 extern i32 DifficultyLevel;
@@ -2713,8 +2718,20 @@ INLINE void CRhino::PlaySingleAnim(u32 a2, i32 a3, i32 a4)
 	this->RunAnim(a2, a3, a4);
 }
 
-// @NotOk
-// globals
+// @Ok
+// Verified against the raw disasm (0x47DE40). Real fix: the dazed-star
+// speed init loop wrote into a disconnected repo-local gRhinoDazedData
+// array instead of the actual game memory at 0x682B64 (gRhinoDazedStarSpeed,
+// the same global DoDazedEffect reads), so DoDazedEffect never saw the
+// values this constructor generated. gRhinoStrangeInitData and gRhinoData
+// are now fixed-address game pointers (see their declarations near the top
+// of the file) instead of guessed repo-local values, matching what this
+// constructor actually reads (dword_5520B8/dword_5520BC) and what the
+// checksum-assert loop actually walks (a shifted pointer into
+// gRhinoData[j].field_8, stride 0xC, base 0x552208, matching the
+// maintainer's IDB name). sub_402C00 at function entry is the implicit
+// CBaddy base-class constructor call the compiler emits automatically; it
+// needs no explicit source line here.
 CRhino::CRhino(i16* a2, i32 a3)
 {
 	i16 *v5 = this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a2)));
@@ -2749,7 +2766,7 @@ CRhino::CRhino(i16* a2, i32 a3)
 
 	for (i32 i = 0; i < LEN_RHINO_DAZED_DATA; i++)
 	{
-		gRhinoDazedData[i] = Rnd(4096);
+		gRhinoDazedStarSpeed[i] = Rnd(4096);
 	}
 
 	for (i32 j = 0; j < LEN_RHINO_DATA; j++)
@@ -2762,8 +2779,11 @@ CRhino::CRhino(i16* a2, i32 a3)
 	Panel_CreateHealthBar(this, 307);
 }
 
-// @NotOk
-// globals
+// @Ok
+// No separate PC address: confirmed fully inlined into Rhino_CreateRhino's
+// else branch (0x47DD40, taken when the stack's a3 is 0), same shape and
+// field stores (InitItem("rhino"), mFlags|=0x480, mpLight=&M3d_RhinoLight,
+// mType=307), no AttachTo/health/script setup at all, matching this body.
 CRhino::CRhino(void)
 {
 	this->InitItem("rhino");
