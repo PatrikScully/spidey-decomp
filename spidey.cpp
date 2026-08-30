@@ -2855,7 +2855,17 @@ static SGlobalTextureEntry * const gGlobalTextureEntries = (SGlobalTextureEntry*
 static i32 * const gSuitChecksumTable = (i32*)0x0053C1A4;
 static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B8C80 (0x4B8C80).
+// note: tools/names.json (local working copy) mislabels this address as
+// CPlayer_IfPlayerCeilingCheck; that is wrong, this is
+// Spidey_StoreTextureEntry (confirmed by decompiling it: gLowGraphics
+// check, the SGlobalTextureEntry SoA-looking-but-really-AoS indexing
+// tricks, gSuitChecksumTable walk, all match). The real
+// CPlayer::IfPlayerCeilingCheck (already @Ok elsewhere in this file) is
+// a different, unrelated function; did not touch names.json (local-only
+// per repo convention), just noting the mislabel for whoever looks at it
+// next. cmpsum confirms the documented 38 mnemonic diffs.
 // known blocker: the fail path calls print_if_false, always inlined by our
 // build (static in export.h), while the original calls it out of line
 // (retail body is a single `ret`, confirmed against tools/functions -
