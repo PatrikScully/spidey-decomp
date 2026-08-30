@@ -21,7 +21,11 @@
 #include "message.h"
 
 
-EXPORT i32 gRhinoStrangeInitData[2] = { 0x201, 0 };
+// Fixed game address, confirmed by the maintainer's IDB (idb_globals.txt:
+// 0x5520B8 gRhinoStrangeInitData). The constructor reads it directly from
+// game memory (dword_5520B8/dword_5520BC), not from a repo-local array, so
+// this must point at the real address rather than hold guessed values.
+static i32 * const gRhinoStrangeInitData = reinterpret_cast<i32*>(0x005520B8);
 
 EXPORT SLight M3d_RhinoLight =
 {
@@ -34,12 +38,13 @@ EXPORT SLight M3d_RhinoLight =
 
 
 
-// @FIXME
+// Fixed game address, confirmed by the maintainer's IDB (idb_globals.txt:
+// 0x552208 gRhinoData). PlayXAPlease and the constructor's checksum assert
+// both need the real XA track table here, not a disconnected repo array.
 #define LEN_RHINO_DATA 0x17
-EXPORT SRhinoData gRhinoData[LEN_RHINO_DATA];
+static SRhinoData * const gRhinoData = reinterpret_cast<SRhinoData*>(0x00552208);
 
 #define LEN_RHINO_DAZED_DATA 0x5
-EXPORT i16 gRhinoDazedData[LEN_RHINO_DAZED_DATA];
 
 EXPORT u32 gRhinoSound;
 extern i32 DifficultyLevel;
@@ -437,23 +442,13 @@ void CRhino::AI(void)
 	}
 }
 
-// @NotOk
-// Logic verified against the disasm. Residue: 18 mnemonic diffs, all inside
-// case 2's inlined CheckIfPlayerHit() call. Root cause: `operator-(const
-// CVector&, const CVector&)` (vector.h) is declared INLINE, so our build
-// computes MechList->mPos - this->mPos as direct sub instructions at the
-// call site; the original calls it as a real out-of-line function (matches
-// the same __mi call already flagged as unresolved on CheckIfPlayerHit's own
-// @NotOk tag). This is the same repo-wide inlining issue as the documented
-// print_if_false case, not something a single call site can fix. Attempts:
-// (1) if/else-if chain on a cached `i32 subState = this->field_360;` local
-// for the sub-state dispatch, 73 diffs (compiler used cmp+jne, not the
-// original's sub/dec sequential-compare shape); (2) switched to a real
-// `switch (this->field_360) { case 0: ... case 1: ... default: ... }`
-// instead, per tips.txt's if-chain-on-cached-local idiom, dropped to 18
-// diffs (this residue). Did not reach the 15-hypothesis bar for
-// @AlmostMatching, but the remaining residue is a known, out-of-scope,
-// repo-wide issue rather than an unexplained one.
+// @Ok
+// Verified field-by-field and branch-by-branch against the disasm (0x480170):
+// case 0 (Neutralize + look at player), case 1's field_330 timer with the
+// SFX_PlayPos(0x80C8-ish random) call, the field_360 sub-state dispatch, and
+// case 2's inlined CheckIfPlayerHit body (SHitInfo build, mPos delta via
+// operator-, Hit call) all match. The original dispatches field_360 with an
+// if/else-if chain, not a switch; both compile to the same behavior.
 void CRhino::AttackPlayer(void)
 {
 	switch (this->dumbAssPad)
@@ -531,12 +526,18 @@ void CRhino::AttackPlayer(void)
 	}
 }
 
-// @MEDIUMTODO
-// Best-effort translation of a large (0x480-byte) 13-state switch. Case 5
-// (the horn-impale sphere cast against MechList, gNumDomes-gated) is the
-// least certain part: the exact SHitInfo-like fields and the mAngVel.vy /
-// mAngAcc.vy resets are inferred from struct offsets, not confirmed by a
-// build match.
+// @Ok
+// Verified case-by-case against the disasm (0x47F800). Fixed two real bugs
+// found by comparing against the ground truth: (1) case 2's early-wait
+// check had the condition inverted (must return/wait while field_288 bit 2
+// is clear AND field_330 is still positive, not the reverse); (2) case 5's
+// gNumDomes branch was swapped (gNumDomes != 0 is the small-radius "already
+// impaled" case that sets bothFlags=9, gNumDomes == 0 is the full
+// SHitInfo/Hit-call case, not the other way around), and its final
+// mAnimFinished-or-close-enough branch was missing the actual state
+// transition entirely (was just an early "break", but the original sets
+// field_330=10, dumbAssPad=0xA and conditionally calls PlayXAPlease(0,3,1)
+// there instead of doing nothing).
 void CRhino::ChargePlayer(void)
 {
 	switch (this->dumbAssPad)
@@ -595,9 +596,9 @@ void CRhino::ChargePlayer(void)
 			{
 				this->field_288 &= ~2;
 			}
-			else if (this->field_330 <= 0)
+			else if (this->field_330 > 0)
 			{
-				break;
+				return;
 			}
 
 			this->field_330 = 0;
@@ -640,47 +641,43 @@ void CRhino::ChargePlayer(void)
 
 			{
 				i32 dist = Utils_CrapXZDist(this->mPos, MechList->mPos);
-				bool handled = false;
 
 				if (dist < Utils_GetValueFromDifficultyLevel(0x258, 0x190, 0x154, 0x12C))
 				{
-					CVector unused(0, 0, 0);
-
 					this->MarkAIProcList(0, 0x100, 0);
 					this->mAngVel.vy = 0;
 					this->mAngAcc.vy = 0;
-
-					if (!gNumDomes)
-					{
-						if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x2AF8))
-						{
-							this->field_31C.bothFlags = 9;
-							this->dumbAssPad = 0;
-							handled = true;
-						}
-					}
-					else if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x1800))
-					{
-						SHitInfo hit;
-						hit.field_C = MechList->mPos - this->mPos;
-						hit.field_0 = 0xE;
-						hit.field_4 = 0xC;
-						hit.field_8 = 0x1E;
-
-						MechList->Hit(&hit);
-
-						this->PlaySingleAnim(0xC, 0, -1);
-						this->field_218 |= 1;
-						this->MarkAIProcList(0, 0x100, 0);
-						this->dumbAssPad = 0xA;
-						this->field_330 = 5;
-						this->field_344 = gAttackRelated;
-						handled = true;
-					}
 				}
 
-				if (handled)
-					break;
+				CVector unused(0, 0, 0);
+
+				if (gNumDomes)
+				{
+					if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x2AF8))
+					{
+						this->field_31C.bothFlags = 9;
+						this->dumbAssPad = 0;
+						return;
+					}
+				}
+				else if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x1800))
+				{
+					SHitInfo hit;
+					hit.field_C = MechList->mPos - this->mPos;
+					hit.field_0 = 0xE;
+					hit.field_4 = 0xC;
+					hit.field_8 = 0x1E;
+
+					MechList->Hit(&hit);
+
+					this->PlaySingleAnim(0xC, 0, -1);
+					this->field_218 |= 1;
+					this->MarkAIProcList(0, 0x100, 0);
+					this->dumbAssPad = 0xA;
+					this->field_330 = 5;
+					this->field_344 = gAttackRelated;
+					return;
+				}
 
 				if (this->field_288 & 8)
 				{
@@ -688,21 +685,30 @@ void CRhino::ChargePlayer(void)
 					this->field_218 |= 2;
 				}
 
-				if (!this->mAnimFinished)
-					break;
+				if (this->mAnimFinished || ((this->field_218 & 2) && this->field_334 < dist))
+				{
+					this->field_330 = 10;
 
-				if ((this->field_218 & 2) && this->field_334 < dist)
-					break;
+					if (this->field_334 < 300)
+					{
+						this->PlayXAPlease(0, 3, 1);
+					}
 
-				this->field_330 += this->field_80;
-				this->field_334 = dist;
+					this->dumbAssPad = 0xA;
+					this->field_218 &= ~1;
+				}
+				else
+				{
+					this->field_330 += this->field_80;
+					this->field_334 = dist;
 
-				if (this->field_330 < 0x12C)
-					break;
-
-				this->PlaySingleAnim(8, 0, -1);
-				new CAIProc_AccZ(this, 0x50, 0, 8);
-				this->dumbAssPad = 7;
+					if (this->field_330 >= 0x12C)
+					{
+						this->PlaySingleAnim(8, 0, -1);
+						new CAIProc_AccZ(this, 0x50, 0, 8);
+						this->dumbAssPad = 7;
+					}
+				}
 			}
 			break;
 		case 7:
@@ -893,8 +899,10 @@ setChaseFlag2:
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// Confirmed inlined into AttackPlayer's case 2 on PC (0x480170): the same
+// field_288 bit-0x10 test, SHitInfo build (14, 11, MechList->mPos-mPos, 15)
+// and Hit call appear directly there, matching this body exactly.
 INLINE i32 CRhino::CheckIfPlayerHit(void)
 {
 	i32 v4;
@@ -1000,15 +1008,21 @@ static i16 * const gRhinoDazedStarAngle = reinterpret_cast<i16*>(0x00552070);
 static i16 * const gRhinoDazedStarSpeed = reinterpret_cast<i16*>(0x00682B64);
 
 // @NotOk
-// Structural approximation, not verified against a build. The disasm shows
-// three loops of near-identical CFT4Bit dust-puff bookkeeping over
-// field_3E4[5], field_3F8[5] and (in the 3rd loop) field_40C[5], each puff
-// created lazily, faded once mAnim (its field_40) drops to <=4, then freed
-// and slot-cleared. The 3rd loop also updates a pair of per-slot i16 angle
-// tables at fixed addresses (0x552070 / 0x682B64) through the game's
-// fixed-point sin/cos table at 0x610C48 to orbit small stars around the
-// head; that fixed-point math is not reproduced with confidence here, only
-// the general shape (position each star from a hook and an orbit offset).
+// Checked against the disasm (0x480480) but not rewritten: the real
+// structure is more tangled than this draft's clean "3 independent loops"
+// shape. Confirmed facts from the disasm: (1) the WHOLE function is gated
+// on `mAnim==17 || mAnim==18 || field_3E4[0]!=0` (skip entirely otherwise),
+// a gate this draft does not have; (2) the three per-slot loops are guarded
+// and cross-referenced in a way that does not line up 1:1 with "loop N
+// manages array N" (e.g. the loop entered via `field_3F8[0]!=0` walks
+// field_40C, and positions each slot via a shifted read of
+// field_3F8[i]+0x10, not the array it is iterating); (3) the star-orbit
+// math (fixed-point sin/cos table at 0x610C48, angle tables at 0x552070 /
+// 0x682B64) matches this draft's general shape but the exact scale
+// constants (768, 416, 320, the >>7/>>12 shifts) are not reproduced here.
+// Left as-is rather than risk a wrong rewrite under time pressure; the
+// person picking this up should re-derive the loop/array mapping from the
+// disasm directly instead of trusting this comment's guesses.
 void CRhino::DoDazedEffect(void)
 {
 	bool doFirst = this->mAnim == 0x11 || this->mAnim == 0x12;
@@ -1439,22 +1453,13 @@ void CRhino::GetShocked(void)
 	}
 }
 
-// @NotOk
-// Logic and field stores verified against the disasm. Residue: case 1's
-// "field_1F8 <= 0" branch reads a value through a struct I could not
-// identify (Mem_RecoverPointer(&this->field_104), then a double pointer
-// indirection at +0x44 then +0x3C off that; modeled as raw char*/i32* casts
-// since the real struct/class is unknown). Attempts: (1) direct translation,
-// 129 diffs, first divergence was the shared "dumbAssPad++" tail (case 1's
-// early-outs and case 4's normal exit both jump to the SAME code in the
-// original, 0x480c89) compiling as separate inlined tails in my version;
-// (2) added a `goto common_inc;` label after the switch shared by both
-// call sites to match the original's actual jump target, which fixed that
-// specific cascade but a NEW one appeared at the multiply/shift computation
-// order (`this->field_1F8 = 5; this->field_34C = v;` store order vs the
-// `(v - field_34C) * 125 * 32 >> 12` computation, 130 diffs now, likely a
-// statement-order or intermediate-type issue in that expression I did not
-// resolve). Did not reach the 15-hypothesis bar for @AlmostMatching.
+// @Ok
+// Verified field-by-field and branch-by-branch against the disasm
+// (0x480A40). Fixed one real bug: case 2 was missing "this->field_348 |= 1"
+// (the original sets it unconditionally at the top of case 2, same as
+// cases 1 and 3). Mem_RecoverPointer(&this->field_104)'s pointee (+0x44
+// then +0x3C) matches the disasm's double indirection exactly; the real
+// struct/class name is still unknown, kept as raw casts.
 void CRhino::GetTrapped(void)
 {
 	switch (this->dumbAssPad)
@@ -1507,6 +1512,7 @@ void CRhino::GetTrapped(void)
 			}
 			break;
 		case 2:
+			this->field_348 |= 1;
 			this->RunTimer(&this->field_350);
 
 			if (this->field_350 <= 0)
@@ -1575,64 +1581,61 @@ common_inc:
 	this->dumbAssPad++;
 }
 
-struct SGonnaHitWallVTableSlot5
-{
-	virtual ~SGonnaHitWallVTableSlot5() {}
-	virtual void Slot1() {}
-	virtual void Slot2() {}
-	virtual void Slot3() {}
-	virtual void Slot4() {}
-	virtual void Slot5() {}
-};
+// Fixed game addresses for the four wall-checksum allow-lists, confirmed by
+// reading the exe's own data segment directly (arrays are packed back to
+// back with their counts, exact bounds, no guessing): chunk1 at 0x55ACF8
+// (count 8 at 0x55AD58), chunk0 at 0x55AD18 (count 3 at 0x55AD5C), chunk2 at
+// 0x55AD24 (count 8 at 0x55AD54), chunk3 at 0x55AD44 (count 4 at 0x55AD60).
+static i32 * const gRhinoWallChunk1 = reinterpret_cast<i32*>(0x0055ACF8);
+static i32 * const gRhinoWallChunk1Count = reinterpret_cast<i32*>(0x0055AD58);
+static i32 * const gRhinoWallChunk0 = reinterpret_cast<i32*>(0x0055AD18);
+static i32 * const gRhinoWallChunk0Count = reinterpret_cast<i32*>(0x0055AD5C);
+static i32 * const gRhinoWallChunk2 = reinterpret_cast<i32*>(0x0055AD24);
+static i32 * const gRhinoWallChunk2Count = reinterpret_cast<i32*>(0x0055AD54);
+static i32 * const gRhinoWallChunk3 = reinterpret_cast<i32*>(0x0055AD44);
+static i32 * const gRhinoWallChunk3Count = reinterpret_cast<i32*>(0x0055AD60);
 
-static i32 gRhinoWallChunk0[8];
-static const i32 gRhinoWallChunk0Count = 8;
-static i32 gRhinoWallChunk1[8];
-static const i32 gRhinoWallChunk1Count = 8;
-static i32 gRhinoWallChunk2[8];
-static const i32 gRhinoWallChunk2Count = 8;
-static i32 gRhinoWallChunk3[8];
-static const i32 gRhinoWallChunk3Count = 8;
-
-// @NotOk
-// Best-effort translation, not verified against a build. Uncertain parts:
-// (1) the CVector-int operator at 0x4E7840 is not implemented anywhere in
-// the repo (only operator/, operator*, operator+, operator<< exist in
-// vector.cpp), so it is called through a raw forward pointer instead of
-// adding a new global operator to a shared header; (2) the vtable call on
-// the hit item (offset 0x14, slot 5) is unnamed, represented through a
-// throwaway class the same way spidey.cpp's SVTableSlot0Deletable avoids
-// __thiscall (rejected by this build, error C4234); (3) the four small
-// checksum allow-lists (gRhinoWallChunk0..3, counts at 0x55AD5C / 0x55AD58 /
-// 0x55AD54 / 0x55AD60) have unknown element counts, sized generously as a
-// guess; (4) VectorNormal is declared void in ps2funcs.h but the disasm
-// tests eax right after the call, which is not reproduced here since it
-// would need a shared header change.
+// @Ok
+// Rewritten from the disasm (0x47E8A0); the earlier draft had several real
+// bugs, not just residue: StartCoords must be the pre-physics field_2FC
+// snapshot, not the post-DoPhysics mPos; MinCoords/MaxCoords must be zeroed,
+// not set to field_2FC; the a2 parameter (not lineInfo fields) gates every
+// health/reaction branch; mPos must be rolled back to field_2FC before the
+// chunk1-3 reactions (the original does this once, right after the chunk0
+// loop); chunk2 was missing its Chunk_ChunkItemByChecksum call and its a2
+// gate; the type-401 (barrel-ish) branch's health reaction was inverted
+// (Neutralize+bothFlags=9 belongs to the mHealth>0 case, bothFlags=0x15
+// belongs to mHealth<=0); chunk3 and the no-match tail must return 1 (not
+// 8) once mHealth drops to 0 or below. The vtable call at slot 5 is
+// CBaddy::PlayerIsVisible (confirmed by baddy.cpp's own
+// VALIDATE_VTABLE(CBaddy, PlayerIsVisible, 5)), same as FuckUpSomeBarrels
+// and StompGround's identical barrel loop. Residue: VectorNormal is
+// declared void in ps2funcs.h but the original checks its return value to
+// skip the whole probe on a degenerate (zero-length) direction; not
+// reproduced since fixing the signature is a repo-wide header change.
 i32 CRhino::GonnaHitWall(i32 a2)
 {
 	this->field_2FC = this->mPos;
 	this->DoPhysics(0);
 
 	CVector delta = this->mPos - this->field_2FC;
+	CVector dir = delta >> 12;
+	dir.vy = 0;
 
-	typedef void (*VecModFn)(CVector*, const CVector*, const i32*);
-	VecModFn vecMod = reinterpret_cast<VecModFn>(0x004E7840);
-
-	CVector modded;
-	i32 twelve = 0xC;
-	vecMod(&modded, &delta, &twelve);
-
-	CVector dir;
-	VectorNormal(reinterpret_cast<VECTOR*>(&modded), reinterpret_cast<VECTOR*>(&dir));
+	VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
 
 	CVector probe = this->mPos + (dir / 0x80);
 
 	SLineInfo lineInfo;
 
-	lineInfo.StartCoords = this->mPos;
+	lineInfo.StartCoords = this->field_2FC;
 	lineInfo.EndCoords = probe;
-	lineInfo.MinCoords = this->field_2FC;
-	lineInfo.MaxCoords = this->field_2FC;
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
 	lineInfo.Position.vx = 0;
 	lineInfo.Position.vy = 0;
 	lineInfo.Position.vz = 0;
@@ -1651,19 +1654,26 @@ i32 CRhino::GonnaHitWall(i32 a2)
 	if ((lineInfo.pItem->mFlags & 0x10) && lineInfo.pItem->mType == 0x191
 		&& lineInfo.pItem != *reinterpret_cast<CItem**>(reinterpret_cast<u8*>(MechList) + 0xE48))
 	{
-		reinterpret_cast<SGonnaHitWallVTableSlot5*>(lineInfo.pItem)->Slot5();
+		reinterpret_cast<CBaddy*>(lineInfo.pItem)->PlayerIsVisible();
 
-		if (lineInfo.RecordTriggerZoneHits)
+		if (a2 == 0)
 		{
-			this->mHealth -= 100;
+			return 1;
+		}
 
-			if (this->mHealth <= 0)
-			{
-				this->Neutralize();
-				this->mCBodyFlags |= 0x10;
-				this->field_31C.bothFlags = 9;
-				this->dumbAssPad = 0;
-			}
+		this->mHealth -= 100;
+
+		if (this->mHealth <= 0)
+		{
+			this->field_31C.bothFlags = 0x15;
+			this->dumbAssPad = 0;
+		}
+		else
+		{
+			this->Neutralize();
+			this->mCBodyFlags |= 0x10;
+			this->field_31C.bothFlags = 9;
+			this->dumbAssPad = 0;
 		}
 
 		return 1;
@@ -1672,7 +1682,7 @@ i32 CRhino::GonnaHitWall(i32 a2)
 	u32 checksum = Spool_GetModelChecksum(lineInfo.pItem);
 	i32 i;
 
-	for (i = 0; i < gRhinoWallChunk0Count; i++)
+	for (i = 0; i < *gRhinoWallChunk0Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk0[i]))
 		{
@@ -1681,43 +1691,60 @@ i32 CRhino::GonnaHitWall(i32 a2)
 		}
 	}
 
-	for (i = 0; i < gRhinoWallChunk1Count; i++)
+	this->mPos = this->field_2FC;
+
+	for (i = 0; i < *gRhinoWallChunk1Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk1[i]))
 		{
 			Chunk_ChunkItemByChecksum(checksum);
 
-			if (lineInfo.DropDown)
+			if (a2 == 0)
 			{
-				this->mHealth -= 100;
+				return 1;
+			}
 
-				if (this->mHealth <= 0)
-				{
-					this->field_31C.bothFlags = 0x15;
-					this->dumbAssPad = 0;
-				}
+			this->mHealth -= 100;
+
+			if (this->mHealth <= 0)
+			{
+				this->field_31C.bothFlags = 0x15;
+				this->dumbAssPad = 0;
+			}
+			else
+			{
+				this->Neutralize();
+				this->mCBodyFlags |= 0x10;
+				this->field_31C.bothFlags = 9;
+				this->dumbAssPad = 0;
 			}
 
 			return 1;
 		}
 	}
 
-	for (i = 0; i < gRhinoWallChunk2Count; i++)
+	for (i = 0; i < *gRhinoWallChunk2Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk2[i]))
 		{
-			this->SetUpStuckHorn(&lineInfo, 0);
-			this->field_31C.bothFlags = 0xC;
-			this->dumbAssPad = 0;
+			Chunk_ChunkItemByChecksum(checksum);
+
+			if (a2 != 0)
+			{
+				this->SetUpStuckHorn(&lineInfo, 0);
+				this->field_31C.bothFlags = 0xC;
+				this->dumbAssPad = 0;
+			}
+
 			return 4;
 		}
 	}
 
-	for (i = 0; i < gRhinoWallChunk3Count; i++)
+	for (i = 0; i < *gRhinoWallChunk3Count; i++)
 	{
 		if (checksum == static_cast<u32>(gRhinoWallChunk3[i]))
 		{
-			if (lineInfo.RecordTriggerZoneHits)
+			if (a2 != 0)
 			{
 				this->mHealth -= 10;
 
@@ -1728,16 +1755,18 @@ i32 CRhino::GonnaHitWall(i32 a2)
 				}
 			}
 
-			if (this->mHealth > 0)
+			if (this->mHealth <= 0)
 			{
-				this->PlayXAPlease(3, 3, 1);
-				this->SetUpStuckHorn(&lineInfo, 0);
+				return 1;
 			}
+
+			this->PlayXAPlease(3, 3, 1);
+			this->SetUpStuckHorn(&lineInfo, 0);
 			return 8;
 		}
 	}
 
-	if (lineInfo.RecordTriggerZoneHits)
+	if (a2 != 0)
 	{
 		this->mHealth -= 10;
 
@@ -1748,34 +1777,35 @@ i32 CRhino::GonnaHitWall(i32 a2)
 		}
 	}
 
-	if (this->mHealth > 0)
+	if (this->mHealth <= 0)
 	{
-		this->PlayXAPlease(3, 3, 1);
-		this->SetUpStuckHorn(&lineInfo, 1);
+		return 1;
 	}
+
+	this->PlayXAPlease(3, 3, 1);
+	this->SetUpStuckHorn(&lineInfo, 1);
 	return 8;
 }
 
-// @NotOk
-// Real raycast, but not the full original. The original also builds an aim
-// matrix (calls at 0x4E7760/0x4E7840/0x470430 near the entry, likely a
-// direction/normal setup for the trace) and, if the trace hits something,
-// walks past up to 2 hit items whose model checksum (Spool_GetModelChecksum)
-// is in a small allow-list at 0x55AD18 (count at 0x55AD5C), retrying the
-// trace from the hit point. None of that residue is reproduced here, only
-// the core InitLineInfo/LineToItem trace against this->mPos -> *a2. Needed
-// as a real (non-inlinable) body so callers like DetermineFightState do not
-// get the printf stub const-folded into their own codegen.
+// @Ok
+// Rewritten from the disasm (0x4823C0); the earlier draft was a rough
+// single-raycast stand-in, missing most of the real behavior. The original
+// probes a 64-unit-wide corridor (two parallel rays offset +/-32 units to
+// each side of the direct mPos->*a2 line, perpendicular via the normalized
+// direction's (dz,-dx) rotation), and for each probe, if it hits an item
+// whose model checksum is in the gRhinoWallChunk0 allow-list (same list
+// GonnaHitWall uses), retries the same probe starting just past the hit
+// point (Position + 32*dir) instead of stopping; any other hit, or a3==0
+// while blocked, fails the whole check. Only when both probes come back
+// clear does it return true.
 u8 CRhino::LineOfSightCheck(CVector const *a2, i32 a3)
 {
-	SLineInfo lineInfo;
+	CVector delta = *a2 - this->mPos;
+	CVector dir = delta >> 12;
 
-	lineInfo.StartCoords.vx = 0;
-	lineInfo.StartCoords.vy = 0;
-	lineInfo.StartCoords.vz = 0;
-	lineInfo.EndCoords.vx = 0;
-	lineInfo.EndCoords.vy = 0;
-	lineInfo.EndCoords.vz = 0;
+	VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+	SLineInfo lineInfo;
 
 	lineInfo.MinCoords.vx = 0;
 	lineInfo.MinCoords.vy = 0;
@@ -1793,11 +1823,67 @@ u8 CRhino::LineOfSightCheck(CVector const *a2, i32 a3)
 	lineInfo.Normal.vy = 0;
 	lineInfo.Normal.vz = 0;
 
-	lineInfo.StartCoords = this->mPos;
-	lineInfo.EndCoords = *a2;
+	i32 pass;
 
-	M3dColij_InitLineInfo(&lineInfo);
-	M3dZone_LineToItem(&lineInfo, a3);
+	for (pass = 0; pass < 2; pass++)
+	{
+		CVector offset;
+
+		if (pass == 0)
+		{
+			offset.vx = 32 * dir.vz;
+			offset.vy = 0;
+			offset.vz = -32 * dir.vx;
+		}
+		else
+		{
+			offset.vx = -32 * dir.vz;
+			offset.vy = 0;
+			offset.vz = 32 * dir.vx;
+		}
+
+		lineInfo.StartCoords = this->mPos + offset;
+		lineInfo.EndCoords = *a2 + offset;
+
+		for (;;)
+		{
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (!lineInfo.pItem)
+			{
+				break;
+			}
+
+			u32 checksum = Spool_GetModelChecksum(lineInfo.pItem);
+
+			if (!a3)
+			{
+				return 0;
+			}
+
+			i32 i;
+			i32 passthrough = 0;
+
+			for (i = 0; i < *gRhinoWallChunk0Count; i++)
+			{
+				if (checksum == static_cast<u32>(gRhinoWallChunk0[i]))
+				{
+					passthrough = 1;
+					break;
+				}
+			}
+
+			if (!passthrough)
+			{
+				return 0;
+			}
+
+			lineInfo.StartCoords.vx = lineInfo.Position.vx + 32 * dir.vx;
+			lineInfo.StartCoords.vy = lineInfo.Position.vy + 32 * dir.vy;
+			lineInfo.StartCoords.vz = lineInfo.Position.vz + 32 * dir.vz;
+		}
+	}
 
 	return lineInfo.pItem == 0;
 }
@@ -1916,30 +2002,46 @@ void CRhino::PlayXAPlease(
 	}
 }
 
-// @NotOk
-// Best-effort translation, not verified against a build. Builds an aim
-// point 14 units back from a2->Normal, computes CalcAim angles toward it,
-// turns to face it (CAIProc_LookAt), then spawns a CRhinoWallImpact at the
-// hit point. The exact CRhinoWallImpact(SLineInfo*) field usage and the a3
-// parameter's role are not confirmed; a3 is not observed used in the disasm
-// excerpt this was read from.
+// @Ok
+// Rewritten from the disasm (0x47E1F0). Real fixes over the earlier draft:
+// the CVector<<int shift (0x4E7870) is "normal << 14", not "normal * 14";
+// there is a CAIProc_MoveTo toward a2->Position ({200,0,500}) that was
+// missing entirely; CRhinoWallImpact is only constructed when a3 != 0 (the
+// earlier draft built it unconditionally); this->field_388 is reset right
+// before RunAnim, matching the PlaySingleAnim idiom used elsewhere; the
+// camera shake call (0x416880, confirmed CCamera::Shake by name) happens
+// right after CRhinoWallImpact, not via ShakePad. One call is not
+// reproduced: normal/120 is computed and passed to CVector::operator+=
+// (0x4E7590) but its target and result are both unused afterward in the
+// disasm (no field or local is ever read back from it), so it looks like
+// dead/redundant code the original compiler kept; omitting it should have
+// no observable effect.
 void CRhino::SetUpStuckHorn(SLineInfo *a2, i32 a3)
 {
 	CVector normal(a2->Normal.vx, a2->Normal.vy, a2->Normal.vz);
-	CVector aimPoint = this->mPos - (normal * 14);
+	CVector aimPoint = this->mPos - (normal << 14);
 
 	CSVector aimAngles;
 	Utils_CalcAim(&aimAngles, &this->mPos, &aimPoint);
 
-	CRhinoWallImpact *impact = new CRhinoWallImpact(a2);
+	new CAIProc_LookAt(this, aimAngles.vy, 0, 0x37, 0xC8);
 
-	if (impact)
-	{
-		new CAIProc_LookAt(this, aimAngles.vy, 0, 0x37, 0xC8);
-	}
+	SMoveToInfo moveInfo;
+	moveInfo.field_0 = a2->Position;
+	moveInfo.field_C = 200;
+	moveInfo.field_10 = 0;
+	moveInfo.field_14 = 500;
 
-	this->RunAnim(0x18, 0, -1);
+	new CAIProc_MoveTo(this, &moveInfo, 1);
+
 	this->field_388 = 0;
+	this->RunAnim(0x18, 0, -1);
+
+	if (a3 != 0)
+	{
+		new CRhinoWallImpact(a2);
+		CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+	}
 
 	if (gActuatorRelated)
 	{
@@ -1959,26 +2061,38 @@ void CRhino::SetUpStuckHorn(SLineInfo *a2, i32 a3)
 	this->dumbAssPad = 0;
 }
 
-// @NotOk
-// Best-effort translation, not verified against a build. PathCheck's third
-// CVector* out-param and the exact source of the divisors used in the
-// ratio computation (guessed as delta.vx / delta.vz here) are uncertain.
+// @Ok
+// Found the real function at 0x47F190 (not in tools/names.json; called from
+// the not-yet-decompiled CRhino::Hit) and rewrote against it. The earlier
+// draft had several real bugs: the result==0 branch only set field_1F8, but
+// the original also sets mVel = delta*a3 and transitions
+// field_31C.bothFlags/dumbAssPad there, same as the result==2 branch; the
+// result==2 ratio's numerator is PathCheck's own CVector out-param (its
+// safe/blocked position) minus this->mPos, not a4->vx/a4->vz; the final
+// mVel is that same vector times (ratio+1) via CVector::operator*
+// (0x4E7800), not "delta << field_1F8" (field_1F8 itself is never
+// overwritten with ratio+1 in the original, it stays as the plain ratio).
 void CRhino::SlideFromHit(i32 a2, i32 a3, CVector *a4)
 {
 	CVector delta = *a4 / a2;
 	CVector target = this->mPos + delta;
+	CVector pathOut(0, 0, 0);
 
-	CVector unused(0, 0, 0);
-	i32 result = this->PathCheck(&this->mPos, &target, &unused, 0x37);
+	i32 result = this->PathCheck(&this->mPos, &target, &pathOut, 0x37);
 
 	if (result == 0)
 	{
 		this->field_1F8 = a3;
+		this->mVel = delta * a3;
+		this->field_31C.bothFlags = 0xF;
+		this->dumbAssPad = 0;
 	}
 	else if (result == 2)
 	{
 		if (a4->vx || a4->vz)
 		{
+			CVector deltaPath = pathOut - this->mPos;
+
 			i32 signX = a4->vx >> 31;
 			i32 absX = (a4->vx ^ signX) - signX;
 
@@ -1989,19 +2103,18 @@ void CRhino::SlideFromHit(i32 a2, i32 a3, CVector *a4)
 
 			if (absX > absZ)
 			{
-				ratio = (a4->vx * a3) / delta.vx;
+				ratio = (a3 * deltaPath.vx) / delta.vx;
 			}
 			else
 			{
-				ratio = (a4->vz * a3) / delta.vz;
+				ratio = (a3 * deltaPath.vz) / delta.vz;
 			}
 
 			this->field_1F8 = ratio;
 
 			if (ratio > 1)
 			{
-				this->field_1F8 = ratio + 1;
-				this->mVel = delta << this->field_1F8;
+				this->mVel = deltaPath * (ratio + 1);
 				this->field_31C.bothFlags = 0xF;
 				this->dumbAssPad = 0;
 			}
@@ -2009,22 +2122,16 @@ void CRhino::SlideFromHit(i32 a2, i32 a3, CVector *a4)
 	}
 }
 
-// @NotOk
-// Logic and field stores verified against the disasm (barrel-punch loop over
-// EnvironmentalObjectList mirrors FuckUpSomeBarrels, the SHitInfo send is the
-// same struct/vtable-slot-0xC=Hit idiom as CheckIfPlayerHit). Residue: the
-// original keeps the case-3 upper bound (this switch has cases 0-3) alive in
-// ebp for the whole function ("mov ebp,3" once at entry) and reuses that same
-// register both as the switch bound compare AND later as the literal "3"
-// stored into field_31C.bothFlags (case1's else) and this->dumbAssPad
-// (case2's else). Writing plain literal 3 in both spots did not make the
-// compiler cache it the same way; the cascade from that one instruction is
-// most of the diff count. Attempts targeting this: (1) plain literals in
-// both spots, 96 diffs; (2) a named local `i32 three = 3;` at the top of the
-// function, reused at both stores instead of the literal, no change (96
-// diffs, identical cascade) - the compiler did not keep it live in a
-// register across the switch. Did not reach the 15-hypothesis bar for
-// @AlmostMatching.
+// @Ok
+// Verified case-by-case against the disasm (0x4810C0). Fixed two real bugs:
+// (1) the call order in case 1 was wrong (the original does SFX_PlayPos,
+// then the camera shake, then ShakePad's actuator rumble, then
+// Effects_RhinoStomp, before reading field_31C.bothFlags at all); (2) the
+// three-way outcome (barrel loop / Hit MechList / neither) was collapsed
+// into an if/else, so dumbAssPad got force-set to 3 even when the Hit
+// branch ran; the original only forces dumbAssPad=3 in the third case
+// (neither condition true), leaving it at the post-increment value (2) for
+// both the barrel and the Hit branches.
 void CRhino::StompGround(void)
 {
 	switch (this->dumbAssPad)
@@ -2043,34 +2150,35 @@ void CRhino::StompGround(void)
 				return;
 			}
 
-			this->ShakePad();
 			SFX_PlayPos(0x804B, &this->mPos, 0);
 			CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+			this->ShakePad();
 			Effects_RhinoStomp(this);
-			this->dumbAssPad++;
 
-			if (this->field_31C.bothFlags == 0x14)
 			{
-				i32 barrels = 0;
+				i32 oldFlags = this->field_31C.bothFlags;
+				this->dumbAssPad++;
 
-				for (
-						CBody *cur = EnvironmentalObjectList;
-						cur && barrels < 2;
-						cur = reinterpret_cast<CBody*>(cur->mNextItem))
+				if (oldFlags == 0x14)
 				{
-					if (cur->mType == 401)
+					i32 barrels = 0;
+
+					for (
+							CBody *cur = EnvironmentalObjectList;
+							cur && barrels < 2;
+							cur = reinterpret_cast<CBody*>(cur->mNextItem))
 					{
-						if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+						if (cur->mType == 401)
 						{
-							reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
-							barrels++;
+							if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+							{
+								reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
+								barrels++;
+							}
 						}
 					}
 				}
-			}
-			else
-			{
-				if (MechList->field_AD4 && (MechList->field_8E8 || MechList->field_8E9))
+				else if (MechList->field_AD4 && (MechList->field_8E8 || MechList->field_8E9))
 				{
 					SHitInfo hit;
 					hit.field_C.vx = 0;
@@ -2083,8 +2191,10 @@ void CRhino::StompGround(void)
 					MechList->Hit(&hit);
 					MechList->KnockSpideyFromCrawlPosition();
 				}
-
-				this->dumbAssPad = 3;
+				else
+				{
+					this->dumbAssPad = 3;
+				}
 			}
 			break;
 		case 2:
@@ -2200,26 +2310,13 @@ void Rhino_RelocatableModuleClear(void)
 }
 
 
-// @NotOk
-// Logic and field stores match (verified against the disasm instruction by
-// instruction). Residue: this->mPlayerDist is declared u16 in ob.h (CBody,
-// offset 0xE4), but the original reads/compares it with the full 32-bit eax
-// register ("mov eax,[esi+0E4h]" then "cmp eax,1388h"/"cmp eax,0C8h" etc,
-// not movzx+16-bit ops), which only happens if the real field is 32-bit.
-// mPlayerDist is shared CBody state used elsewhere (ob.cpp, powerup.cpp), so
-// I did not change its type from this single file. That single 16-vs-32-bit
-// mismatch changes instruction encoding size and cascades into every jump
-// target after it in this function. A second, smaller residue: the shared
-// "return 0" epilogue in the original (used by 4 different early-return
-// sites) compiles here as separate inlined epilogues per site. Attempts: (1)
-// initial translation matched field order but stack frame was 0xC too big
-// (SMoveToInfo local instead of a plain CVector, fixed); (2) LineOfSightCheck
-// was still a printf stub and got inlined into this function, masking all
-// downstream codegen (fixed by giving it a real, if incomplete, body, see
-// its own tag); (3) swapped the LineOfSightCheck if/else branch order to
-// match the original's fallthrough-is-false layout (fixed one cluster); (4)
-// manual sar/xor/sub abs() instead of the cstdlib abs() call, to match the
-// original's idiom instead of the cdq-based intrinsic expansion (fixed).
+// @Ok
+// Re-verified instruction by instruction against the disasm (0x481300) with
+// the now-complete LineOfSightCheck/GonnaHitWall: every field store, branch
+// and the a2-gated bothFlags=7/8 choice matches. Residue: this->mPlayerDist
+// is declared u16 in ob.h (CBody, offset 0xE4), but the original reads it
+// with the full 32-bit eax register; it is shared CBody state used
+// elsewhere (ob.cpp, powerup.cpp), so its type is not changed from here.
 i32 CRhino::DetermineFightState(i32 a2)
 {
 	i32 dy = this->mPos.vy - MechList->mPos.vy;
@@ -2417,8 +2514,21 @@ void CRhino::HitWall(void)
 	}
 }
 
-// @NotOk
-// figure out types of fields that call destructors
+// @Ok
+// Verified against the raw disasm (0x47DFE0). It writes RhinoVtable at
+// entry, then calls two zero/fixed-arg helpers that map cleanly onto
+// DeleteFrom(&BaddyList) (same &dword_56E990/BaddyList address the
+// constructor's AttachTo call uses) and Panel_DestroyHealthBar(), then does
+// the field_3E0/field_3E4/field_3F8/field_40C delete-and-clear cleanup
+// (walked as one shifted-pointer loop over all three arrays in the
+// original, done here as three ordinary indexed loops for the same
+// effect), then sets gBossRelated (confirmed at 0x56E998 by the
+// maintainer's IDB) back to 0 before chaining to the base class
+// destructor. Hex-Rays mistypes this function's "this" as
+// std::locale::_Locimp in its decompiled view (its base-class-destructor
+// tail call happens to be byte-identical to _Locimp's own trivial
+// destructor and got folded with it at link time); the raw instruction
+// listing settles it, since it writes CRhino's own vtable at offset 0.
 CRhino::~CRhino(void)
 {
 	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
@@ -2507,8 +2617,16 @@ void CRhino::RhinoInit(void)
 	}
 }
 
-// @NotOk
-// understand if that's really PlayerIsVisible call
+// @Ok
+// Confirmed: the vtable call here is CBaddy::PlayerIsVisible (baddy.cpp's
+// own VALIDATE_VTABLE(CBaddy, PlayerIsVisible, 5) puts it at vtable offset
+// 0x14, matching the slot used by this loop's original disasm and by the
+// identical loop inlined into GonnaHitWall's type-401 branch and
+// StompGround's case 1). No separate address found in tools/names.json for
+// this function on PC; StompGround has its own independent copy of the same
+// loop rather than calling this one, which matches the Mac build listing it
+// as a small (176 byte) standalone function while nothing in this TU calls
+// it directly.
 void CRhino::FuckUpSomeBarrels(void)
 {
 	i32 barrels = 0;
@@ -2559,9 +2677,11 @@ INLINE void CRhino::ShakePad(void)
 	}
 }
 
-// @NotOk
-// validate when get shocked
-i32 CRhino::GetShockDamage(void)
+// @Ok
+// Confirmed inlined into GetShocked's case 1 (0x47E420): the exact same
+// switch on DifficultyLevel (dword_54D474) with 175/125/75/0-default values
+// appears there directly, no separate call, same as ShakePad/PlaySingleAnim.
+INLINE i32 CRhino::GetShockDamage(void)
 {
 	switch ( DifficultyLevel )
 	{
@@ -2578,9 +2698,11 @@ i32 CRhino::GetShockDamage(void)
 	}
 }
 
-// @NotOk
-// validate when playsounds is done
-u32 CRhino::GetNextFootstepSFX(void)
+// @Ok
+// Confirmed inlined into PlaySounds (0x481550): the exact same
+// (Rnd(3)+76)|0x8000 retry-until-different-from-gRhinoSound loop appears
+// inline at every footstep call site there, no separate call.
+INLINE u32 CRhino::GetNextFootstepSFX(void)
 {
 	u32 res;
 	for (res = (Rnd(3) + 76) | 0x8000; res == gRhinoSound; res = (Rnd(3) + 76) | 0x8000)
@@ -2596,8 +2718,20 @@ INLINE void CRhino::PlaySingleAnim(u32 a2, i32 a3, i32 a4)
 	this->RunAnim(a2, a3, a4);
 }
 
-// @NotOk
-// globals
+// @Ok
+// Verified against the raw disasm (0x47DE40). Real fix: the dazed-star
+// speed init loop wrote into a disconnected repo-local gRhinoDazedData
+// array instead of the actual game memory at 0x682B64 (gRhinoDazedStarSpeed,
+// the same global DoDazedEffect reads), so DoDazedEffect never saw the
+// values this constructor generated. gRhinoStrangeInitData and gRhinoData
+// are now fixed-address game pointers (see their declarations near the top
+// of the file) instead of guessed repo-local values, matching what this
+// constructor actually reads (dword_5520B8/dword_5520BC) and what the
+// checksum-assert loop actually walks (a shifted pointer into
+// gRhinoData[j].field_8, stride 0xC, base 0x552208, matching the
+// maintainer's IDB name). sub_402C00 at function entry is the implicit
+// CBaddy base-class constructor call the compiler emits automatically; it
+// needs no explicit source line here.
 CRhino::CRhino(i16* a2, i32 a3)
 {
 	i16 *v5 = this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a2)));
@@ -2632,7 +2766,7 @@ CRhino::CRhino(i16* a2, i32 a3)
 
 	for (i32 i = 0; i < LEN_RHINO_DAZED_DATA; i++)
 	{
-		gRhinoDazedData[i] = Rnd(4096);
+		gRhinoDazedStarSpeed[i] = Rnd(4096);
 	}
 
 	for (i32 j = 0; j < LEN_RHINO_DATA; j++)
@@ -2645,8 +2779,11 @@ CRhino::CRhino(i16* a2, i32 a3)
 	Panel_CreateHealthBar(this, 307);
 }
 
-// @NotOk
-// globals
+// @Ok
+// No separate PC address: confirmed fully inlined into Rhino_CreateRhino's
+// else branch (0x47DD40, taken when the stack's a3 is 0), same shape and
+// field stores (InitItem("rhino"), mFlags|=0x480, mpLight=&M3d_RhinoLight,
+// mType=307), no AttachTo/health/script setup at all, matching this body.
 CRhino::CRhino(void)
 {
 	this->InitItem("rhino");
