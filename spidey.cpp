@@ -3211,12 +3211,20 @@ void CPlayer::ExitLookaroundMode(void)
 	}
 }
 
-static int * const dword_6A81FC = (int*)0x6A81FC;
-static int * const dword_6A8208 = (int*)0x6A8208;
-static int * const dword_6A8260 = (int*)0x6A8260;
-
-// @NotOk
-// Remove globals, there's an extra test for some reason
+// @Ok
+// verified against IDA sub_4B9740 (0x4B9740, 0x8B bytes). Reuses
+// gLookaroundCamAngle1/gLookaroundCamAngle2/gLookaroundCamAngle0 declared
+// above (same addresses 0x6A81FC/0x6A8208/0x6A8260), instead of a second
+// set of raw dword_ aliases. a1 selects which of the three globals to
+// write: 0 -> gLookaroundCamAngle0, 1 -> gLookaroundCamAngle1,
+// 2 -> gLookaroundCamAngle2. a2 must be 0 or the write is rejected with
+// print_if_false (the original calls it as nullsub_1, since print_if_false
+// compiles to a bare retn in the shipped binary; see CLAUDE.md). Any other
+// a1 value (>2) silently does nothing, matching the disassembly's
+// unconditional return in that case. The function does not touch "this"
+// at all in the original (retn 0Ch, callee-cleaned stdcall with no hidden
+// this arg), but keeping it as a normal instance method is functionally
+// harmless since the unused this is just ignored.
 void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 {
 	u32 actualA1 = a1;
@@ -3234,7 +3242,7 @@ void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 				}
 				else
 				{
-					*dword_6A8208 = a3;
+					*gLookaroundCamAngle2 = a3;
 				}
 			}
 		}
@@ -3246,7 +3254,7 @@ void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 			}
 			else
 			{
-				*dword_6A81FC = a3;
+				*gLookaroundCamAngle1 = a3;
 			}
 		}
 
@@ -3257,7 +3265,7 @@ void CPlayer::SetSpideyLookaroundCamValue(u16 a1, u16 a2, i16 a3)
 	}
 	else
 	{
-		*dword_6A8260 = a3;
+		*gLookaroundCamAngle0 = a3;
 	}
 }
 
