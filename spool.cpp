@@ -1327,14 +1327,14 @@ void Spool_ClearAllPSXs(void)
 	Spool_RemoveUnusedTextures();
 }
 
-// @SMALLTODO
+// @Ok
+// @Matching
+// Walks the checksum hash bucket for the texture. If nothing is found and
+// gSpoolLogFailedTextureAccess is 0, logs the miss and hands back the
+// default texture (gAnimTable[13]->pTexture), same idiom as the other
+// spool "not found" fallbacks. Original at 0x4C9460.
 Texture *Spool_FindTextureEntry(u32 checksum)
 {
-	//@FIXME
-	typedef Texture* (*func_ptr)(u32);
-	func_ptr func = (func_ptr)0x004C9460;
-	return func(checksum);
-
 	Texture *pSearch;
 	for (pSearch = TextureChecksumHashTable[checksum & 511];
 			pSearch;
@@ -1346,9 +1346,9 @@ Texture *Spool_FindTextureEntry(u32 checksum)
 
 	if (!pSearch)
 	{
-		if (!gGiveDefaultTexture)
+		if (!gSpoolLogFailedTextureAccess)
 		{
-			DoAssert(0, "Can't find texture from checksum %ld", checksum);
+			print_if_false(0, "Can't find texture from checksum %ld", checksum);
 			return gAnimTable[13]->pTexture;
 		}
 	}
