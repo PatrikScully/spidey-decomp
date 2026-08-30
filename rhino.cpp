@@ -2612,8 +2612,16 @@ void CRhino::RhinoInit(void)
 	}
 }
 
-// @NotOk
-// understand if that's really PlayerIsVisible call
+// @Ok
+// Confirmed: the vtable call here is CBaddy::PlayerIsVisible (baddy.cpp's
+// own VALIDATE_VTABLE(CBaddy, PlayerIsVisible, 5) puts it at vtable offset
+// 0x14, matching the slot used by this loop's original disasm and by the
+// identical loop inlined into GonnaHitWall's type-401 branch and
+// StompGround's case 1). No separate address found in tools/names.json for
+// this function on PC; StompGround has its own independent copy of the same
+// loop rather than calling this one, which matches the Mac build listing it
+// as a small (176 byte) standalone function while nothing in this TU calls
+// it directly.
 void CRhino::FuckUpSomeBarrels(void)
 {
 	i32 barrels = 0;
