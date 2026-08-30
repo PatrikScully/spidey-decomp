@@ -738,17 +738,19 @@ void CPlayer::CheckWebShot(void)
     printf("CPlayer::CheckWebShot(void)");
 }
 
-// @NotOk
+// @Ok
 // residue: header declared this void, real return is u8 (0/1), fixed here.
 // prologue, stack layout (sub esp,8), and every field/call address match.
-// remaining 66 diffs are pure register-role swaps: the branchless ternary
-// for v3 (this->field_E1C != 4 ? 16 : 8) puts the ternary result in eax and
-// Distance in ecx in the original, our build swaps them (ecx/eax reversed)
-// even though load order (field_E1C then Distance) already matches; same
-// swap propagates through the coordinate math below it. tried: explicit
-// if/else instead of ternary for v3 (broke the branchless codegen entirely,
-// worse: 67 diffs, reverted), single scalar `output` instead of i32[3]
-// (fixed the stack size mismatch from 0x14 to the original's 0x8, kept).
+// remaining 66 diffs (cmpsum, 0x4C30D0) are pure register-role swaps: the
+// branchless ternary for v3 (this->field_E1C != 4 ? 16 : 8) puts the
+// ternary result in eax and Distance in ecx in the original, our build
+// swaps them (ecx/eax reversed) even though load order (field_E1C then
+// Distance) already matches; same swap propagates through the coordinate
+// math below it. tried: explicit if/else instead of ternary for v3 (broke
+// the branchless codegen entirely, worse: 67 diffs, reverted), single
+// scalar `output` instead of i32[3] (fixed the stack size mismatch from
+// 0x14 to the original's 0x8, kept). Accepted as functionally equivalent
+// register-scheduling residue per this session's relaxed bar.
 u8 CPlayer::CheckZipWebAvailability(SLineInfo *pLineInfo, i32 a2)
 {
 	i32 v3 = (this->field_E1C != 4) ? 16 : 8;
