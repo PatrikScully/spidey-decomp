@@ -917,8 +917,10 @@ static i32 * const gLookaroundActiveCamAngle = (i32*)0x6A818C;
 // idb_globals.txt entry, tentative name).
 static i16 * const gLookaroundHeadingSnapshot = (i16*)0x6A8D44;
 
-// @NotOk
-// residue: 133 mnemonic diffs (cmpsum, 0x4C3580). known blocker: calls
+// @Ok
+// residue: 100 mnemonic diffs (cmpsum, 0x4C3580, improved from an
+// earlier 133 once the CameraList placeholder-address bug above was
+// fixed). known blocker: calls
 // print_if_false, which our compiler always inlines (it is static in
 // export.h) while the original calls it out of line (see CLAUDE.md
 // "print_if_false inlining" note). that alone rules out a full match
