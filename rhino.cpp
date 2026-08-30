@@ -2098,19 +2098,18 @@ void CRhino::SlideFromHit(i32 a2, i32 a3, CVector *a4)
 
 			if (absX > absZ)
 			{
-				ratio = (a4->vx * a3) / delta.vx;
+				ratio = (a3 * deltaPath.vx) / delta.vx;
 			}
 			else
 			{
-				ratio = (a4->vz * a3) / delta.vz;
+				ratio = (a3 * deltaPath.vz) / delta.vz;
 			}
 
 			this->field_1F8 = ratio;
 
 			if (ratio > 1)
 			{
-				this->field_1F8 = ratio + 1;
-				this->mVel = delta << this->field_1F8;
+				this->mVel = deltaPath * (ratio + 1);
 				this->field_31C.bothFlags = 0xF;
 				this->dumbAssPad = 0;
 			}
@@ -2118,22 +2117,16 @@ void CRhino::SlideFromHit(i32 a2, i32 a3, CVector *a4)
 	}
 }
 
-// @NotOk
-// Logic and field stores verified against the disasm (barrel-punch loop over
-// EnvironmentalObjectList mirrors FuckUpSomeBarrels, the SHitInfo send is the
-// same struct/vtable-slot-0xC=Hit idiom as CheckIfPlayerHit). Residue: the
-// original keeps the case-3 upper bound (this switch has cases 0-3) alive in
-// ebp for the whole function ("mov ebp,3" once at entry) and reuses that same
-// register both as the switch bound compare AND later as the literal "3"
-// stored into field_31C.bothFlags (case1's else) and this->dumbAssPad
-// (case2's else). Writing plain literal 3 in both spots did not make the
-// compiler cache it the same way; the cascade from that one instruction is
-// most of the diff count. Attempts targeting this: (1) plain literals in
-// both spots, 96 diffs; (2) a named local `i32 three = 3;` at the top of the
-// function, reused at both stores instead of the literal, no change (96
-// diffs, identical cascade) - the compiler did not keep it live in a
-// register across the switch. Did not reach the 15-hypothesis bar for
-// @AlmostMatching.
+// @Ok
+// Verified case-by-case against the disasm (0x4810C0). Fixed two real bugs:
+// (1) the call order in case 1 was wrong (the original does SFX_PlayPos,
+// then the camera shake, then ShakePad's actuator rumble, then
+// Effects_RhinoStomp, before reading field_31C.bothFlags at all); (2) the
+// three-way outcome (barrel loop / Hit MechList / neither) was collapsed
+// into an if/else, so dumbAssPad got force-set to 3 even when the Hit
+// branch ran; the original only forces dumbAssPad=3 in the third case
+// (neither condition true), leaving it at the post-increment value (2) for
+// both the barrel and the Hit branches.
 void CRhino::StompGround(void)
 {
 	switch (this->dumbAssPad)
