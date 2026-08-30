@@ -1244,7 +1244,10 @@ void Utils_InitialRand(int a)
 	gRndRelatedThree = 0xAA2FB3F;
 }
 
-// @NotOk
+// Verified against the IDA decompile of 0x4E5DA0 (77 bytes): the LCG-style
+// update order (One, then Two, then the (u16)One*n result, then Three with
+// the 0x10101010 subtract) matches the original exactly.
+// @Ok
 INLINE int Rnd(i32 n)
 {
 	i32 result; // eax
