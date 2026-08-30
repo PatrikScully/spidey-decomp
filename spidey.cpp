@@ -3721,14 +3721,21 @@ void CPlayer::CutSceneSkipCleanup(void)
 
 }
 
-// @NotOk
-// globals
-// variables
+// @Ok
+// verified against IDA sub_4C4A20 (0x4C4A20, 0x182 bytes). Found and
+// fixed one bug from an earlier revision: v2 (the multiplier for the
+// StartCoords/EndCoords.x term) was initialised to 0 instead of a2. The
+// original sets v2 = a2 unconditionally at function entry, before the
+// loop; a2 * 0 on the first iteration would have zeroed out the x
+// component of the very first line-of-sight probe. Field offsets
+// (mPos.vx/vy/vz at 0x8/0xC/0x10, field_C6C/C78/C7C/C80) all match the
+// disassembly, as do the M3dColij_InitLineInfo/M3dZone_LineToItem calls
+// (confirmed by address in names.json).
 void CPlayer::TidyUpZipWebLandingPosition(int a2)
 {
 	SLineInfo v21;
 
-	int v2 = 0;
+	int v2 = a2;
 
 	v21.MinCoords.vx = 0;
 	v21.MinCoords.vy = 0;
