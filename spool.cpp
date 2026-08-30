@@ -881,18 +881,41 @@ i32 Spool_TextureAccess(
 }
 
 // @MEDIUMTODO
+// Not in the PC binary. Checked tools/names.json and the maintainer's PC
+// IDB name list (idbs/spideypc_names.txt, ~3970 code names) for
+// "SwapPSXFile": no match. No caller anywhere in the PC source tree
+// either (grep for SwapPSXFile only finds spool.h/spool.cpp). It exists
+// only on the Mac PowerPC build (idbs/spiderman_names.txt:
+// 001244b0 SwapPSXFile__FPUl, 728 bytes there per prototypes.json). This
+// is a byte-swap routine: PSX resource files are little-endian, so a
+// big-endian PowerPC build needs to swap every multi-byte field after
+// loading, while PC (x86, also little-endian) does not, so the original
+// source almost certainly compiles this out on PC with an #ifdef on
+// platform endianness. Left as a stub: there is no PC address to verify
+// against, so any implementation here would be unverifiable guesswork.
 void SwapPSXFile(u32 *)
 {
     printf("SwapPSXFile(u32 *)");
 }
 
 // @MEDIUMTODO
+// Same situation as SwapPSXFile above: not in names.json, not in the PC
+// IDB name list, no PC caller, only present on Mac
+// (idbs/spiderman_names.txt: 00123e70 SwapPSXPacketData__FPUl, 1296 bytes
+// on Mac). Byte-swap routine, dead on a little-endian PC build. Left as a
+// stub, no PC address to verify against.
 void SwapPSXPacketData(u32 *)
 {
     printf("SwapPSXPacketData(u32 *)");
 }
 
 // @SMALLTODO
+// Same situation as SwapPSXFile/SwapPSXPacketData: not in names.json, not
+// in the PC IDB name list, no PC caller, only present on Mac
+// (idbs/spiderman_names.txt: 001243b0
+// SwapPSXTextureData__FPUlPP7TexturePUl, 196 bytes on Mac). Byte-swap
+// routine, dead on a little-endian PC build. Left as a stub, no PC
+// address to verify against.
 void SwapPSXTextureData(u32 *,Texture **,u32 *)
 {
     printf("SwapPSXTextureData(u32 *,Texture **,u32 *)");
