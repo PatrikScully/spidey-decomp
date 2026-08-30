@@ -1330,7 +1330,7 @@ void PCGfx_DrawQuad2D(
 	gPcGfxSlotNumber = -1;
 }
 
-// @NotOk
+// @Ok
 // A screen space triangle (3x (x,y,u,v,color) plus one shared zOffset),
 // builds its own DXPOLY inline and calls DXPOLY_DrawPoly (0x503100) directly
 // instead of going through submitPoly, confirmed from the disasm: manual
