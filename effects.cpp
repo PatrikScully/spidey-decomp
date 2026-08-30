@@ -657,10 +657,104 @@ CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource* pSources, i32 numSources, SSk
 	this->field_D4 = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
 }
 
-// @MEDIUMTODO
-CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified against a fresh IDA decompile of 0x43A9F0. Same field
+// layout, model/vertex lookup and spawn/velocity maths as the
+// SSkinGooSource overload above (see its comment); the only real
+// difference is the texture pick, which reads one of two 32-byte name
+// strings from the source entry (field_4 / field_24) through the new
+// CQuadBit::SetTexture(char*) overload instead of a checksum through
+// SetTexture(u32).
+CSkinGoo::CSkinGoo(CSuper* pSuper, SSkinGooSource2* pSources, i32 numSources, SSkinGooParams* pParams)
 {
-	printf("CSkinGoo::CSkinGoo(CSuper*, SSkinGooSource2*, i32, SSkinGooParams*)");
+	this->field_8C = 0;
+	this->field_90 = 0;
+	this->field_94 = 0;
+	this->field_98 = 0;
+	this->field_9C = 0;
+	this->field_A0 = 0;
+
+	this->field_A4 = 0;
+	this->field_A6 = 0;
+	this->field_A8 = 0;
+
+	this->field_AC = 0;
+	this->field_AE = 0;
+	this->field_B0 = 0;
+
+	this->field_CC = 0;
+	this->field_D0 = 0;
+	this->field_D4 = 0;
+
+	print_if_false(pSources != 0, "NULL pGooSources");
+	print_if_false(pParams != 0, "NULL pGooParams");
+	print_if_false(pSuper != 0, "NULL pSuper sent to CVenomWrap");
+
+	SHandle superHandle = Mem_MakeHandle(pSuper);
+	this->field_84 = superHandle.pWhatever;
+	this->field_88 = superHandle.Id;
+
+	i32 sourceIndex = Rnd(numSources);
+	i32 textureChoice = Rnd(2);
+
+	if (textureChoice != 0)
+	{
+		if (textureChoice == 1)
+			this->SetTexture(pSources[sourceIndex].field_24);
+	}
+	else
+	{
+		this->SetTexture(pSources[sourceIndex].field_4);
+	}
+
+	u8 *source = reinterpret_cast<u8*>(&pSources[sourceIndex]);
+	u32 modelIndex = source[0];
+
+	print_if_false(modelIndex < reinterpret_cast<u32*>(G_PSXREGION[pSuper->mRegion].ppModels)[-1], "Bad Model");
+
+	void *model = G_PSXREGION[pSuper->mRegion].ppModels[modelIndex];
+
+	i32 vertA = source[1];
+	print_if_false(vertA < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(model) + 2), "Bad VertA");
+
+	i32 vertB = source[2];
+	print_if_false(vertB < *reinterpret_cast<u16*>(reinterpret_cast<u8*>(model) + 2), "Bad VertB");
+
+	u8 flip = source[3];
+	i32 idxA = vertA;
+	i32 idxB = vertB;
+
+	if (flip != 0)
+	{
+		idxA = vertB;
+		idxB = vertA;
+	}
+
+	source[3] = flip ^ 1;
+
+	this->field_AA = static_cast<u16>(modelIndex);
+	this->field_B2 = static_cast<u16>(modelIndex);
+
+	i16 *vertexA = reinterpret_cast<i16*>(reinterpret_cast<u8*>(model) + 0x1C + idxA * 8);
+	this->field_A4 = vertexA[0];
+	this->field_A6 = vertexA[1];
+	this->field_A8 = vertexA[2];
+
+	i16 *vertexB = reinterpret_cast<i16*>(reinterpret_cast<u8*>(model) + 0x1C + idxB * 8);
+	this->field_AC = vertexB[0];
+	this->field_AE = vertexB[1];
+	this->field_B0 = vertexB[2];
+
+	this->field_BC = pParams->mOffsetXBase + Rnd(pParams->mOffsetXRange);
+	this->field_C0 = pParams->mOffsetXBase + Rnd(pParams->mOffsetXRange);
+	this->field_C4 = pParams->mOffsetZBase + Rnd(pParams->mOffsetZRange);
+
+	this->field_CC = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
+	this->field_D0 = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
+
+	this->mType = 27;
+	this->field_D4 = (Rnd(2 * pParams->mVelRange + 1) - pParams->mVelRange) << 12;
 }
 
 // @Ok
@@ -872,6 +966,11 @@ void validate_SSkinGooSource(void)
 
 void validate_SSkinGooSource2(void)
 {
+	VALIDATE_SIZE(SSkinGooSource2, 0x44);
+
+	VALIDATE(SSkinGooSource2, field_0, 0x0);
+	VALIDATE(SSkinGooSource2, field_4, 0x4);
+	VALIDATE(SSkinGooSource2, field_24, 0x24);
 }
 
 void validate_SSkinGooParams(void)
