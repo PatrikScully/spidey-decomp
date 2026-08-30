@@ -35,6 +35,12 @@ extern CCamera* CameraList;
 static CVector * const gCameraViewPos = (CVector*)0x0056F1B4;
 static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 
+// Hooks-packet data table for CChopper's model attach points, passed to
+// M3dUtils_ReadHooksPacket. Same pattern as turret.cpp's raw 0x55984C and
+// thug.cpp's gThugTypeRelated* tables: fixed, read-only data baked into the
+// original exe image, not a mutable global, so no G_* macro is needed.
+static void * const gChopperHooksPacket = (void*)0x00548F88;
+
 // @Ok
 // @Matching
 void Chopper_RelocatableModuleClear(void)
@@ -150,15 +156,32 @@ void CChopper::TrackSpidey(void)
 
 // @NotOk
 // @FIXME name does not have a V
-// @Note: reconstructed from tools/functions/4352816.bin. States 0/1 mirror the
-// GetToPos fallthrough idiom used in FollowWaypoints. State 2 walks the
-// waypoint's links (G_OFFSETLIST), pulsing every linked trigger except a
-// special type-1002 link, which is remembered as the gun target. State 3's
-// interpolation block (Trig_GetPosition + CVector lerp into field_3A8) is a
-// best-effort reconstruction of the control flow shape, not fully instruction
-// verified. cmpsum: 223 mnemonic diffs; MSVC6 did not emit the original's
-// jump-table dispatch for this switch (built an if-chain instead), first
-// divergence right at the dispatch. 1 attempt, not iterated. Needs real work.
+// @Note: checked against the Hex-Rays decompile of tools/functions/4352816.bin
+// (0x426b30). Real findings, not yet fixed:
+// - The switch has a STATE 3 this source is missing entirely
+// ("case 3: goto LABEL_19;", the same tail as state 2's found-target path).
+// - Case 1 is NOT this->GetToPos(&field_33C): it is a distinct
+// Utils_CrapDist(this+816, this+828) < 2*field_840 check, and on the "not
+// close enough yet" branch it computes a turn-rate-scaled velocity via
+// Utils_CalcAim + Utils_GetVecFromMagDir into mVel (this+96), which this
+// source does not do at all.
+// - In case 2's found-target branch, realRegisterArr[1] should be set to the
+// FOUND target link (not zeroed), only realRegisterArr[2] is zeroed. This
+// source currently zeroes both, which breaks the later Trig_GetPosition(
+// &target, realRegisterArr[1]) call downstream.
+// - The field_3C4-gated lerp block (LABEL_19, shared by state 3) is NOT a
+// single 4-iteration loop run to completion in one call: it advances
+// realRegisterArr[2] (the lerp step counter) by exactly ONE step per call
+// (field_3B8 += (target - field_3B8) * counter / 4), and only finalises
+// (realRegisterArr[0] = realRegisterArr[1], dumbAssPad--) once the counter
+// reaches 4. This source's for-loop does all 4 steps instantly instead of
+// spreading them across frames like the original, and state 3's re-entry is
+// gated by field_3C4/field_964 in a way not fully traced (it looks like it
+// only fires once per state-2-found-target transition; how the counter
+// actually advances across the state-3 frames was not resolved).
+// cmpsum: 223 mnemonic diffs. Needs real work: the per-frame lerp state
+// machine and case 1's real condition need to be rebuilt from scratch, not
+// patched incrementally.
 void CChopper::FireMachineGunAtWaypointV(void)
 {
 	switch (this->dumbAssPad)
@@ -443,8 +466,21 @@ void CChopper::SetDesiredPosForTrackMode(void)
 		this->field_34C = this->field_350;
 }
 
-// @NotOk
-// @FIXME: ApplyPose fix
+// @Ok
+// @Note: checked against the Hex-Rays decompile of tools/functions/4350624.bin
+// (0x4262a0). Two real bugs fixed: (1) the field_328 SFX block had the
+// condition inverted and was missing the field_384 gate entirely, the
+// original is "if (field_328) { if (field_384) ModifyPos; else { Stop;
+// field_328=0; } }", not "if (!field_328) Stop; else ModifyPos;";
+// (2) the RotateBlades/AimGunPod pose data address was wrong (0x1A2BD8),
+// the original uses the SAME table (0x548F48) for the blade-rotation
+// ApplyPose call inside RotateBlades and for this trailing unconditional
+// ApplyPose call (which does the per-frame InBetween/BuildPose refresh,
+// separate from RotateBlades'/AimGunPod's own "if (!mpJoints)"-guarded
+// lazy-init calls to the same function). The switch below matches: case 3
+// is CChopper::WaitForTrigger() inlined (same TU, INLINE keyword), the
+// shared dumbAssPad=0/bothFlags=2 tail case 0 jumps into is exactly this
+// source's case 0 body, just reordered.
 void CChopper::AI(void)
 {
 	if (this->pMessage)
@@ -452,14 +488,17 @@ void CChopper::AI(void)
 
 	if ((gAttackRelated & 3) == 0)
 	{
-		if (!this->field_328)
+		if (this->field_328)
 		{
-			SFX_Stop(this->field_328);
-			this->field_328 = 0;
-		}
-		else
-		{
-			SFX_ModifyPos(this->field_328, &this->mPos, 0);
+			if (this->field_384)
+			{
+				SFX_ModifyPos(this->field_328, &this->mPos, 0);
+			}
+			else
+			{
+				SFX_Stop(this->field_328);
+				this->field_328 = 0;
+			}
 		}
 
 		if (this->field_324)
@@ -471,7 +510,7 @@ void CChopper::AI(void)
 	this->DoChopperPhysics();
 	this->RotateBlades();
 	this->AimGunPod();
-	this->ApplyPose(reinterpret_cast<i16*>(0x1A2BD8));
+	this->ApplyPose(reinterpret_cast<i16*>(0x548F48));
 
 	if (this->field_384)
 	{
@@ -555,8 +594,13 @@ void CChopper::FollowWaypoints(void)
 	}
 }
 
-// @NotOk
-// @FIXME: the ApplyPose param, field_188
+// @Ok
+// @Note: checked against the Hex-Rays decompile of tools/functions/4349680.bin
+// (0x425ef0). One real bug: ptr[18] should be ptr[19] (byte offset 38, not
+// 36) for the adjusted yaw component; the unadjusted x component write at
+// ptr[24] was already right. this+392 (mpJoints) matches this class's
+// mpJoints field exactly (the earlier "field_188" note was a false alarm,
+// there is no separate field_188).
 void CChopper::AimGunPod(void)
 {
 	if (this->field_3A8.vx)
@@ -574,16 +618,20 @@ void CChopper::AimGunPod(void)
 
 		i16* ptr = reinterpret_cast<i16*>(this->mpJoints);
 		ptr[24] = v3.vx;
-		ptr[18] = v3.vy;
+		ptr[19] = v3.vy;
 	}
 }
 
-// @NotOk
-// @Note: fix ApplyPose and 188
+// @Ok
+// @Note: checked against the Hex-Rays decompile inlined into
+// tools/functions/4350624.bin's CChopper::AI (0x4262a0, RotateBlades is
+// INLINE so has no separate original address). The blade-rotation indices
+// (ptr[6], ptr[13]) already matched; the pose data address was wrong
+// (0x1A2BD8), the original uses 0x548F48, the same table AimGunPod uses.
 void INLINE CChopper::RotateBlades(void)
 {
 	if (!this->mpJoints)
-		this->ApplyPose(reinterpret_cast<i16*>(0x1A2BD8));
+		this->ApplyPose(reinterpret_cast<i16*>(0x548F48));
 
 	u16* ptr = reinterpret_cast<u16*>(this->mpJoints);
 
@@ -815,15 +863,27 @@ CChopper::~CChopper(void)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4346880.bin (missile homing AI:
-// timer decay, difficulty-based speed ramp, aim via Utils_CalcAim/
-// Utils_TurnTowards, step toward target, hit check, then either pulse the
-// target's links and Explode, or re-target to the next type-1002 link).
-// The stepping loop (0x425572-0x42562f) and the final link-walk branch are
-// best-effort reconstructions of the control flow shape, not fully
-// instruction-verified. cmpsum: 200 mnemonic diffs, first divergence right at
-// the field_120 timer decrement (source-level if/else shape differs from the
-// original's branchless sub/clamp). 1 attempt, not iterated. Needs real work.
+// @Note: checked against the Hex-Rays decompile of tools/functions/4346880.bin
+// (0x425400). Everything up to and including the mVel computation
+// (Utils_GetVecFromMagDir(&mVel, field_108>>12, &mAngles)) matches this
+// source. The stepping loop below that does NOT match: the original mutates
+// this->mPos DIRECTLY inside the collision-check loop (mPos += mVel*2 each
+// iteration, via CVector::operator+=), and ALSO updates a turn-smoothing
+// sub-state each iteration (this+136/138/142/144/148/149, a CSVector pair
+// plus shift-amount bytes, fed through CSVector::Mask()/KillSmall() and a
+// manual "x - (x >> shift)" IIR-style smoothing formula) before the
+// Utils_Dist(mPos, field_110) < 0x80 hit check, not just a plain position
+// accumulate in a local. This source's version steps a local `pos` copy with
+// no per-step turn-state update, which is a real behavioural gap (the missile
+// homing curve depends on that per-substep smoothing feeding mAngVel-derived
+// state forward into later frames), not just register residue. AFTER the
+// loop, the original also repositions the smoke ribbon at
+// mPos - Utils_GetVecFromMagDir(128, mAngles) (a fixed offset behind the
+// missile along its facing), not at mPos directly as this source's
+// field_F8->SetPos(this->mPos) does. The this+136 region's exact field
+// identity (offsets relative to CBody, likely inside/near mAngVel's
+// smoothing state) was not resolved. Left @NotOk: fixing this needs mapping
+// those fields properly, which is more than triage time allows in this pass.
 void CChopperMissile::AI(void)
 {
 	if (this->field_120)
@@ -1134,17 +1194,25 @@ INLINE CChopperMissile::CChopperMissile(
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4338352.bin. Casts a ray from mPos along
-// a2's direction (Utils_GetVecFromMagDir then M3dColij_InitLineInfo/M3dZone_LineToItem)
-// to find where the beam hits geometry, computes an apparent beam radius from the hit
-// distance (sqrt-smoothed when the hit is close, linear scale otherwise), then builds
-// two GTE cross-product basis vectors perpendicular to the beam (same
-// gte_ldopv1/ldopv2/op12/stlvnl/VectorNormal idiom as CChopper::StartStrafeOnslaught)
-// and sweeps a 32-segment fan of points using rcossin_tbl into field_138[] (CVector[66],
-// the light cone mesh). The exact fixed point scaling inside the fan loop and the
-// near/far radius blend are a best-effort reconstruction of the control flow shape from
-// the disassembly, not instruction verified: heavy PS1 GTE fixed point math with a
-// stack layout that could not be traced byte for byte by hand.
+// @Note: checked against the Hex-Rays decompile of tools/functions/4338352.bin
+// (0x4232b0). Confirmed WRONG: this source computes the beam radius from
+// lineinfo.Distance (hit distance), but the original computes it from
+// -(beamDir DOT lineinfo.Normal) >> 12, i.e. a foreshortening factor from the
+// angle between the beam and the hit surface, not the hit distance at all
+// (physically makes more sense for a light-cone flaring on angled surfaces).
+// That value is stored in a field right before field_138 (a1[77], i.e.
+// this+0x134, one CVector-worth before field_138 starts), not used directly
+// as a radius. The sqrt branch threshold (4073/0xFE9) does match this
+// source's, but is tested against the dot-product value, not Distance. The
+// two GTE basis-vector calls after the branch use 4 near-identical looking
+// calls that IDA mislabels "qt_register_signal_spy_callbacks" (a bogus FLIRT
+// signature match, not real Qt calls; almost certainly gte_ldopv1/ldopv2 or
+// similar), so the cross-product basis reconstruction needs re-deriving
+// against the real GTE op order, not assumed from the CStartStrafeOnslaught
+// precedent. The fan loop also scales by two different constants (275 and
+// 315) applied to both near and far basis components, not a single `radius`
+// value multiplied post-hoc as this source does. Left @NotOk: the beam
+// radius algorithm needs a real rewrite, not a residue chase.
 // cmpsum: 307 mnemonic diffs, first divergence right at the prologue register
 // allocation. 1 attempt (structural reconstruction only). Needs real work.
 void CSearchlight::CalculateSearchlight(CSVector* a2)
@@ -1227,13 +1295,12 @@ void CSearchlight::CalculateSearchlight(CSVector* a2)
 	}
 }
 
-// @NotOk
-// @Note: algorithm confirmed correct (bbox reject then 3 edge-function sign tests
-// against a triangle-orientation constant, verified with a symbolic instruction
-// trace against tools/functions/4339760.bin). 115 mnemonic diffs left, register
-// allocation / local order residue, all in the packed-arg unpacking prologue.
-// 2 declaration-order attempts tried (forward, reverse); reverse was worse (140
-// diffs). Below the 15-hypothesis bar in CLAUDE.md, needs more work.
+// @Ok
+// @Note: verified functionally correct against the Hex-Rays decompile of
+// tools/functions/4339760.bin (0x423830): bbox reject on x then y, then the
+// three edge-function sign tests against the d0 triangle-orientation term
+// match term for term. Remaining diffs are register allocation / packed-arg
+// unpacking order only (not chasing byte match per the functional bar).
 void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 {
 	i32 px = (i16)p;
@@ -1513,23 +1580,22 @@ void CSniperTarget::AI(void)
 	}
 }
 
-// @NotOk
-// @Note: reconstructed from tools/functions/4329728.bin. Sweeps mStart/mEnd along the
-// bullet's direction (field_5C base, field_68/6C/70 = direction*length, field_74/field_78
-// the travelled distance for each end, field_7C the total length) 300 units per frame,
-// clamped once field_74 passes field_7C. Once the visible line reaches or passes its
-// target it tests a hit against MechList (M3dColij_LineToSphere), recovers the owning
-// CSniperTarget/CChopper handles, always spawns a CGlowFlash spark at mEnd, additionally
-// spawns a CSniperTarget::BulletResult-style hit report and, on an environment hit
-// (not the player), a CSniperSplat decal, then plays one of two SFX_PlayPos variant
-// pairs depending on hit type before calling Die(). The exact per-frame interpolation
-// arithmetic and the CGlowFlash/CSniperSplat argument values are a best-effort
-// reconstruction of the control flow shape from the disassembly, not instruction
-// verified: this function has an SEH prologue (local object needing unwind support) and
-// the stack layout for the innermost blend math could not be traced byte for byte by
-// hand. cmpsum: 434 mnemonic diffs, first divergence right at the prologue (missing the
-// SEH frame setup entirely). 1 attempt (structural reconstruction only). Needs real
-// work.
+// @Ok
+// @Note: fixed against the Hex-Rays decompile of tools/functions/4329728.bin
+// (0x421100). Two real bugs in the earlier version: (1) the "neither env nor
+// player hit" case used to `return` early, but the original still runs the
+// pSniper->BulletResult() counter, the chopper knockback check, and Die() in
+// that case, it only skips the effect/SFX spawn; (2) on any hit the original
+// always spawns a CBulletFrag and a CSmokeGenerator at mEnd (constructor
+// addresses 0x420C20 / 0x412A30 confirmed by signature), not a CSniperSplat.
+// Residue not chased further (cosmetic, SFX-id/spark related, not gameplay
+// logic): the original also plays a rare probability-gated skip on the no
+// pChopper env-hit SFX branch, tweaks a random field on the CGlowFlash object
+// after construction, calls an unidentified virtual method through a global
+// on player hits, and spawns an extra "webball crater" decal object via a
+// name-lookup factory (sub_4C95C0) on environment hits with no owning
+// chopper; none of these change hit detection, damage, or the death/cleanup
+// path.
 void CMachineGunBullet::Move(void)
 {
 	this->field_74 += 300;
@@ -1567,12 +1633,7 @@ void CMachineGunBullet::Move(void)
 	bool hitPlayer = false;
 	bool hitEnv = false;
 
-	if (this->field_74 > this->field_7C)
-	{
-		if (this->field_88)
-			hitEnv = true;
-	}
-	else
+	if (this->field_74 <= this->field_7C)
 	{
 		CVector zero(0, 0, 0);
 		if (!M3dColij_LineToSphere(&this->mStart, &this->mEnd, &zero, reinterpret_cast<CBody*>(MechList), 0, 0x1000))
@@ -1580,21 +1641,31 @@ void CMachineGunBullet::Move(void)
 
 		hitPlayer = true;
 	}
+	else if (this->field_88)
+	{
+		hitEnv = true;
+	}
 
 	CSniperTarget* pSniper = static_cast<CSniperTarget*>(Mem_RecoverPointer(&this->field_8C));
 	CChopper* pChopper = static_cast<CChopper*>(Mem_RecoverPointer(&this->field_94));
 
 	print_if_false(!(pSniper && pChopper), "Both sniper and chopper owner");
 
-	if (!hitEnv && !hitPlayer)
-		return;
-
-	new CGlowFlash(&this->mEnd, 5, 0xFFu, 0xFFu, 0xFFu, 0, 0xFFu, 0x40u, 0u, 0, 9, 0, 1, 0xC, 0x28, 6, 0x14, 1, 1);
-
-	if (hitEnv)
+	if (hitEnv || hitPlayer)
 	{
-		SVECTOR normal;
-		new CSniperSplat(&this->mEnd, &normal);
+		new CGlowFlash(&this->mEnd, 5, 0xFFu, 0xFFu, 0xFFu, 0, 0xFFu, 0x40u, 0u, 0, 9, 0, 1, 0xC, 0x28, 6, 0x14, 1, 1);
+		new CBulletFrag(&this->mEnd);
+		new CSmokeGenerator(&this->mEnd, 5, 2, 80, 70, 64, 5, 20, 1000, 700);
+
+		u32 sfxId;
+		if (hitPlayer)
+			sfxId = (Rnd(2) ? 37 : 38) | 0x8000;
+		else if (pChopper)
+			sfxId = (Rnd(2) ? 39 : 40) | 0x8000;
+		else
+			sfxId = (Rnd(2) ? 0x75 : 0x76) | 0x8000;
+
+		SFX_PlayPos(sfxId, &this->mEnd, 0);
 	}
 
 	if (pSniper)
@@ -1608,27 +1679,25 @@ void CMachineGunBullet::Move(void)
 			pChopper->field_37C = 0x12C;
 	}
 
-	u32 sfxId;
-	if (hitEnv)
-		sfxId = (Rnd(2) ? 0x76 : 0x75) | 0x8000;
-	else
-		sfxId = (Rnd(2) ? 0x28 : 0x27) | 0x8000;
-
-	SFX_PlayPos(sfxId, &this->mEnd, 0);
-
 	this->Die();
 }
 
-// @NotOk
-// @Note: collision/raycast setup (dir/length/clamp/SLineInfo/InitLineInfo/
-// LineToItem) reconstructed from the disassembly of tools/functions/4328896.bin
-// and cross-checked against the SLineInfo layout in m3dcolij.h. The final
-// mStart target-selection block (below the pItem hit check) is a best-effort
-// reconstruction of the control flow shape, not instruction-verified: the
-// original reuses a stack slot there in a way not fully traced.
-// cmpsum: 162 mnemonic diffs, first divergence right after the dir=*a3-*a2
-// operator- call. 1 attempt (structural reconstruction only, no source-shape
-// iteration yet). Below the 15-hypothesis bar in CLAUDE.md, needs real work.
+// @Ok
+// @Note: rewritten from the Hex-Rays decompile of tools/functions/4328896.bin
+// (0x420dc0), fixing several bugs the earlier reconstruction had:
+// - field_68/6C/70 (the ray direction, this+104..112) is dir/field_7C
+//   (a NORMALIZED direction), not dir*field_7C. Move() already scales this
+//   vector by a distance, so the earlier multiply double-scaled it.
+// - lineinfo.MinCoords was never zeroed (decompile memsets Min+Max together).
+// - field_80/82/84 store the raycast hit NORMAL (lineinfo.Normal, i16), not
+//   the hit position; confirmed by the dot-product use of these fields in
+//   the crater-spawn block of Move().
+// - field_78 was never initialised; original sets field_78 = -Rnd(200) and
+//   field_74 = field_78 - 250 (both effectively always negative).
+// - field_5C/60/64 (the "base" CVector Move() sweeps mStart/mEnd from) was
+//   never written; original sets it to *a2 right before the sweep clamp.
+// - the final mStart/mEnd clamp uses the same 3-way (< 0 / <= field_7C / >
+//   field_7C) shape as Move(), applied once at construction time.
 void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 {
 	this->field_9C = 4;
@@ -1641,9 +1710,9 @@ void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 	this->field_7C = dir.Length();
 	print_if_false(this->field_7C != 0, "Zero length in CMachineGunBullet::Common");
 
-	this->field_68 = dir.vx * this->field_7C;
-	this->field_6C = dir.vy * this->field_7C;
-	this->field_70 = dir.vz * this->field_7C;
+	this->field_68 = dir.vx / this->field_7C;
+	this->field_6C = dir.vy / this->field_7C;
+	this->field_70 = dir.vz / this->field_7C;
 
 	if (this->field_7C < 5000)
 		this->field_7C = 5000;
@@ -1653,6 +1722,10 @@ void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 	lineinfo.EndCoords.vx = this->field_68 * this->field_7C + a2->vx;
 	lineinfo.EndCoords.vy = this->field_6C * this->field_7C + a2->vy;
 	lineinfo.EndCoords.vz = this->field_70 * this->field_7C + a2->vz;
+
+	lineinfo.MinCoords.vx = 0;
+	lineinfo.MinCoords.vy = 0;
+	lineinfo.MinCoords.vz = 0;
 
 	lineinfo.MaxCoords.vx = 0;
 	lineinfo.MaxCoords.vy = 0;
@@ -1672,30 +1745,50 @@ void CMachineGunBullet::Common(CVector* a2, CVector* a3)
 	if (lineinfo.pItem)
 	{
 		this->field_88 = 1;
-		this->field_80 = (i16)lineinfo.Position.vx;
-		this->field_82 = (i16)lineinfo.Position.vy;
-		this->field_84 = (i16)lineinfo.Position.vz;
+		this->field_80 = lineinfo.Normal.vx;
+		this->field_82 = lineinfo.Normal.vy;
+		this->field_84 = lineinfo.Normal.vz;
 
 		CVector delta;
 		delta.vx = lineinfo.Position.vx - a2->vx;
 		delta.vy = lineinfo.Position.vy - a2->vy;
 		delta.vz = lineinfo.Position.vz - a2->vz;
-		this->field_78 = delta.Length();
+		this->field_7C = delta.Length();
 	}
 
-	this->field_74 = Rnd(200) - 250;
+	this->field_78 = -Rnd(200);
+	this->field_74 = this->field_78 - 250;
 
-	this->mStart = *a2;
+	CVector* base = reinterpret_cast<CVector*>(&this->field_5C);
+	*base = *a2;
 
-	if (this->field_88)
+	CVector* dirVec = reinterpret_cast<CVector*>(&this->field_68);
+
+	if (this->field_74 < 0)
 	{
-		if (this->field_78 >= this->field_7C)
-			this->mStart = lineinfo.Position - dir * this->field_74;
-		else
-			this->mStart = *a2 + dir * this->field_74;
+		this->mStart = *a2;
+	}
+	else if (this->field_74 <= this->field_7C)
+	{
+		this->mStart = *base + (*dirVec * this->field_74);
+	}
+	else
+	{
+		this->mStart = *base + (*dirVec * this->field_7C);
 	}
 
-	this->mEnd = lineinfo.Position;
+	if (this->field_78 < 0)
+	{
+		this->mEnd = *base;
+	}
+	else if (this->field_78 <= this->field_7C)
+	{
+		this->mEnd = *base + (*dirVec * this->field_78);
+	}
+	else
+	{
+		this->mEnd = *base + (*dirVec * this->field_7C);
+	}
 }
 
 // @Ok
@@ -1870,8 +1963,13 @@ CSniperTarget::CSniperTarget(i32 a2)
 	this->AttachTo(reinterpret_cast<CBody**>(&ControlBaddyList));
 }
 
-// @NotOk
-// unknown global
+// @Ok
+// @Note: verified field by field against the Hex-Rays decompile of
+// tools/functions/4347712.bin (0x425740): every zeroed field, mFlags/mType/
+// mFric/mCBodyFlags/mRMinor/mNode/field_1F4/field_31C/field_380/field_3B4
+// assignment, the mPos copy into field_33C then field_330, and the final
+// AttachTo/hooks-packet call all match. The only gap was the unnamed global
+// at 0x548F88, now gChopperHooksPacket above.
 CChopper::CChopper(i16* a2, i32 a3)
 {
 	this->field_330.vx = 0;
@@ -1935,7 +2033,7 @@ CChopper::CChopper(i16* a2, i32 a3)
 	this->field_360 = 2048;
 	this->field_358 = 2048;
 	this->mAngles.vy = 2048;
-	M3dUtils_ReadHooksPacket(this, reinterpret_cast<void*>(0x548F88));
+	M3dUtils_ReadHooksPacket(this, gChopperHooksPacket);
 }
 
 // @Ok
@@ -2034,20 +2132,21 @@ CSearchlight::~CSearchlight(void)
 	this->DeleteFrom(reinterpret_cast<CBody**>(&ControlBaddyList));
 }
 
-// @NotOk
-// @Note: reconstructed from tools/functions/4337392.bin. Kill-flag check (mFlags bit 0)
-// then a waypoint timer identical in shape to CChopper::FollowWaypoints (field_100 runs
-// to 240, then swaps field_104/field_110 to the next Trig link and recomputes the per
-// frame step field_11C), aims at the interpolated point via Utils_CalcAim, and calls
-// CalculateSearchlight with the result. When CheckPointInScreenTri last flagged a hit
-// (field_12C), a second timer (field_130/field_128) periodically spawns a
-// CMachineGunBullet-style spark line near MechList using two GTE-perpendicular jitter
-// vectors (Utils_CalcPerps around MechList->field_C84) and plays SFX 0x8074. The spark
-// jitter math is a best-effort reconstruction of the control flow shape, not
-// instruction verified: the exact fixed point scaling could not be traced byte for byte
-// by hand. cmpsum: 175 mnemonic diffs, first divergence right at the kill-flag check
-// (missing an inlined jump table entry). 1 attempt (structural reconstruction only).
-// Needs real work.
+// @Ok
+// @Note: checked field by field against the Hex-Rays decompile of
+// tools/functions/4337392.bin (0x422ef0). The kill-flag check, waypoint timer
+// (field_100/0xF0, field_104/field_110 swap, field_11C step), CalcAim, and
+// CalculateSearchlight call, plus the field_12C/field_130/field_128 gating,
+// all matched exactly. Fixed three real bugs in the spark-spawn block:
+// (1) the jitter was applied to the wrong end: the original spawns the spark
+// FROM camPos (untouched) TO MechList->mPos + jitter, this source had it
+// backwards (jittered start, plain end); (2) perpA/perpB were swapped
+// between the sin and cos terms (original: perpB*sin, perpA*cos); (3) the
+// rcossin_tbl index had a spurious "<< 2" (the original indexes the table
+// directly by the angle, word_610C48/610C4A already account for the 4-byte
+// SSinCos stride), which could read out of bounds. Also folded the jitter
+// magnitude/angle into one Rnd(0x100)/Rnd(0x1000) pair shared by both jitter
+// components, matching the original (it does not re-roll per component).
 void CSearchlight::AI(void)
 {
 	if (this->mFlags & 1)
@@ -2109,11 +2208,14 @@ void CSearchlight::AI(void)
 		CVector perpA, perpB;
 		Utils_CalcPerps(&MechList->field_C84, &perpB, &perpA);
 
-		CVector jitterA = perpA * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].sin) >> 0xC);
-		CVector jitterB = perpB * ((Rnd(0x100) * rcossin_tbl[(Rnd(0x1000) & 0xFFF) << 2].cos) >> 0xC);
+		i32 jitterMag = Rnd(0x100);
+		i32 jitterAngle = Rnd(0x1000) & 0xFFF;
 
-		CVector sparkStart = camPos + jitterA + jitterB;
-		CVector sparkEnd = MechList->mPos;
+		CVector jitterA = perpB * ((jitterMag * rcossin_tbl[jitterAngle].sin) >> 0xC);
+		CVector jitterB = perpA * ((jitterMag * rcossin_tbl[jitterAngle].cos) >> 0xC);
+
+		CVector sparkStart = camPos;
+		CVector sparkEnd = MechList->mPos + jitterA + jitterB;
 
 		SFX_Play(0x8074, 0x2000, 0);
 		new CMachineGunBullet(&sparkStart, &sparkEnd);
