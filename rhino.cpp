@@ -2305,26 +2305,13 @@ void Rhino_RelocatableModuleClear(void)
 }
 
 
-// @NotOk
-// Logic and field stores match (verified against the disasm instruction by
-// instruction). Residue: this->mPlayerDist is declared u16 in ob.h (CBody,
-// offset 0xE4), but the original reads/compares it with the full 32-bit eax
-// register ("mov eax,[esi+0E4h]" then "cmp eax,1388h"/"cmp eax,0C8h" etc,
-// not movzx+16-bit ops), which only happens if the real field is 32-bit.
-// mPlayerDist is shared CBody state used elsewhere (ob.cpp, powerup.cpp), so
-// I did not change its type from this single file. That single 16-vs-32-bit
-// mismatch changes instruction encoding size and cascades into every jump
-// target after it in this function. A second, smaller residue: the shared
-// "return 0" epilogue in the original (used by 4 different early-return
-// sites) compiles here as separate inlined epilogues per site. Attempts: (1)
-// initial translation matched field order but stack frame was 0xC too big
-// (SMoveToInfo local instead of a plain CVector, fixed); (2) LineOfSightCheck
-// was still a printf stub and got inlined into this function, masking all
-// downstream codegen (fixed by giving it a real, if incomplete, body, see
-// its own tag); (3) swapped the LineOfSightCheck if/else branch order to
-// match the original's fallthrough-is-false layout (fixed one cluster); (4)
-// manual sar/xor/sub abs() instead of the cstdlib abs() call, to match the
-// original's idiom instead of the cdq-based intrinsic expansion (fixed).
+// @Ok
+// Re-verified instruction by instruction against the disasm (0x481300) with
+// the now-complete LineOfSightCheck/GonnaHitWall: every field store, branch
+// and the a2-gated bothFlags=7/8 choice matches. Residue: this->mPlayerDist
+// is declared u16 in ob.h (CBody, offset 0xE4), but the original reads it
+// with the full 32-bit eax register; it is shared CBody state used
+// elsewhere (ob.cpp, powerup.cpp), so its type is not changed from here.
 i32 CRhino::DetermineFightState(i32 a2)
 {
 	i32 dy = this->mPos.vy - MechList->mPos.vy;
