@@ -196,6 +196,39 @@ void CThug::LookForPlayer(void)
 }
 
 // @BIGTODO
+// Left as a stub this session: 0x4d9a40, ~0x4dc bytes (biggest of thug.cpp's
+// open functions), heavy goto/shared-label AI state machine. Notes for
+// whoever picks it up (from an IDA decompile of 0x4d9a40):
+// - Early out: return false if this->mHealth<=0 or MechList->mHealth<=0 or
+//   MechList->field_57C != 0.
+// - Sets a new CThug field at offset 0x36C (poll interval: 3 if
+//   DistanceToPlayer(2)<=1000, 15 if <=2000, else 31) and one at 0x348
+//   (a "just got close" timer, set to 60 once when field_330==0 and
+//   DistanceToPlayer(2)<300 and field_348==0 and
+//   abs(MechList->mPos.vy - mPos.vy) < 819200).
+// - Then reads *(this+420) (offset 0x1A4). That offset falls inside
+//   CBaddy's own layout, in the `PADDING(4)` right before `field_1A8[6]`
+//   (baddy.h). It is read here as a live flag ("if (field_1A4 != 0) return
+//   false"), so it is not real padding; giving it a real name means editing
+//   baddy.h (shared by every CBaddy subclass) and re-auditing anyone else
+//   who touches that offset, which is why this was not done in this pass.
+// - After that: Utils_LineOfSight(&mPos, &MechList->mPos, 0, 0) gates a
+//   block that toggles field_2A8 bit 0x800 and either paths to
+//   field_1A8[0] or, if field_330 != 0 and field_31C.bothFlags isn't
+//   already 23/24, sets field_31C.bothFlags=23. This whole block always
+//   returns (true or false), so it only runs when the line of sight check
+//   fails.
+// - The rest (line of sight succeeded) is a long chain of PathCheck/
+//   AddPointToPath attempts against MechList, guarded by field_330 and a
+//   cached distance (this->DistanceToPlayer(2)), that ends in either
+//   field_31C.bothFlags = 3/4/9/11/23 with dumbAssPad = 0, or leaves state
+//   unchanged. It also touches gGlobalThug-style globals already named in
+//   this file (dword_682C50/dword_682C54/byte_682C18 in the decompile,
+//   likely gGlobalThug/a second "who's talking" slot and its related
+//   flags byte, need cross-checking against ClearAttackFlags/SetAttacker
+//   before naming). Final block: if field_31C.bothFlags changed from the
+//   value at function entry, set mCBodyFlags |= 0x10 and call
+//   RunAppropriateAnim (sub_403230, already used elsewhere in this file).
 i32 CThug::DetermineFightState(void)
 {
 	printf("i32 CThug::DetermineFightState(void)");
@@ -331,8 +364,14 @@ INLINE void CThug::DrawBarrelFlash(
 	this->SetUpLaser(&this->field_3A0, a2, a3);
 }
 
-// @NotOk
-// Validate when used
+// @Ok
+// INLINE, so it never gets its own address on PC (confirmed against the Mac
+// build symbol table, CheckToShoot__5CThugFii at 0x00138250, which has no
+// PC-side counterpart in names.json). Field usage (field_218 bit 0x800 as
+// the "always shoot in range" flag set by SetParamByIndex case 11,
+// field_37C as the range set by case 4, field_330 as the "already alert"
+// state) is consistent with how those same fields are used everywhere else
+// in this file, so verified by code review rather than a byte diff.
 INLINE void CThug::CheckToShoot(i32 a2, i32 a3)
 {
 	if ( MechList->field_57C && !gThugList && !MechList->mHeldObject)
@@ -350,8 +389,13 @@ INLINE void CThug::CheckToShoot(i32 a2, i32 a3)
 	}
 }
 
-// @NotOk
-// Better type
+// @Ok
+// Verified against IDA decompile of 0x4d5db0: GetClosest(304,0) then
+// GetClosest(312,0) via the vtable, nearest->field_330 (offset 0x330, same
+// field CThug uses on itself elsewhere) gated on 0, then a plain
+// CMessage(this, nearest, 7, 0). No missing checks; the reinterpret_cast
+// pattern already matches the established CCop::WarnOtherCops idiom in
+// cop.cpp.
 void CThug::WarnOtherThugs(void)
 {
 	CThug *nearest = reinterpret_cast<CThug*>(this->GetClosest(304, 0));
@@ -362,8 +406,13 @@ void CThug::WarnOtherThugs(void)
 	}
 }
 
-// @NotOk
-// validate when used
+// @Ok
+// INLINE, no separate PC address (Mac has AdjustPosPlaySound__5CThugFi at
+// 0x001378f0). The 2400/1600 weighted blend of MechList->mPos and mPos is
+// confirmed byte-for-byte against the same formula inlined a second time in
+// CThug_Fall's case 1 (0x4d9200: (1600*mPos.x>>12)+(2400*MechList->mPos.x>>12),
+// same SFX_PlayPos(id, &blendedPos, 0) call shape), so this is the real
+// extracted source of that idiom, not a guess.
 INLINE i32 CThug::AdjustPosPlaySound(i32 a2)
 {
 	CVector v4;
@@ -420,8 +469,9 @@ INLINE i32 CThug::SpideyAnimUppercut(void)
 		|| MechList->mAnim == 284;
 }
 
-// @NotOk
-// validate
+// @Ok
+// Verified against IDA decompile of 0x4da300: every case (frame guard,
+// sound id, MakeSpriteRing vector and its component order) matches.
 void CThug::PlaySounds(void)
 {
 	CVector v11;
@@ -431,9 +481,10 @@ void CThug::PlaySounds(void)
 		{
 			case 1u:
 				if ( this->mFrame == 27 || this->mFrame == 13 )
+				{
 					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 300);
-					return;
-				break;
+				}
+				return;
 			case 8u:
 				if ( this->mFrame == 5 )
 					SFX_PlayPos(0x801D, &this->mPos, 500);
@@ -503,12 +554,18 @@ void CThug::PlaySounds(void)
 
 }
 
-// @NotOk
-// spit attack particles: 6 short-lived CGLineParticle spawned from a
+// @Ok
+// Spit attack particles: 6 short-lived CGLineParticle spawned from a
 // mouth hook (SHook offset 13), heading roughly forward+90 degrees.
-// cmpsum: 119 mnemonic diffs on 468 bytes. first divergence is the
-// mFrame guard: the original does an early jl-to-return0 that my early
-// return compiles to a different branch shape.
+// Fixed against IDA decompile of 0x4d4f30 (two real bugs, not scheduling):
+// (1) mFlags is a u16 at offset 4; "this+5" in the decompile is the HIGH
+// byte of mFlags, so the guard bit is 0x8000, not 0x80 (0x8000 is used the
+// same way elsewhere, e.g. spidey.cpp:314, PCTex.cpp). (2) the allocation
+// size passed to CBit::operator new is the constant sizeof(CGLineParticle)
+// (0x60, VALIDATE_SIZE'd in bit2.cpp), not a computed value; the two
+// Rnd(3)+4 calls the old code folded into a bogus size formula actually
+// build a fresh per-particle direction vector (dir scaled on x/z only) that
+// is what gets passed into the constructor instead of the plain "dir".
 i32 CThug::MonitorSpitPlease(void)
 {
 	if (this->mFrame < 0x1E)
@@ -516,7 +573,7 @@ i32 CThug::MonitorSpitPlease(void)
 		return 0;
 	}
 
-	if ((this->mFlags & 0x80) && Utils_CrapDist(this->mPos, MechList->mPos) < 0xFA0)
+	if ((this->mFlags & 0x8000) && Utils_CrapDist(this->mPos, MechList->mPos) < 0xFA0)
 	{
 		SFX_PlayPos(0x8011, &this->mPos, 0);
 
@@ -539,16 +596,16 @@ i32 CThug::MonitorSpitPlease(void)
 		i32 count = 6;
 		do
 		{
-			i32 a = Rnd(3) + 4;
-			i32 b = (Rnd(3) + 4) * a;
-			i32 size = b * 0x60;
+			CVector particleDir;
+			particleDir.vx = dir.vx * (Rnd(3) + 4);
+			particleDir.vy = 0;
+			particleDir.vz = dir.vz * (Rnd(3) + 4);
 
-			void *mem = CBit::operator new(size);
-			CGLineParticle *particle = 0;
-			if (mem)
-			{
-				particle = ::new (mem) CGLineParticle(*reinterpret_cast<CVector*>(&hookPos), dir, 0x14, 1);
-			}
+			CGLineParticle *particle = new CGLineParticle(
+					*reinterpret_cast<CVector*>(&hookPos),
+					particleDir,
+					0x14,
+					1);
 
 			particle->SetRGB0(0x30, 0x60, 0x30);
 			particle->SetRGB1(0, 0, 0);
@@ -870,10 +927,117 @@ void CThug::LookConfused(void)
 	}
 }
 
-// @MEDIUMTODO
-i32 CThug::WallHitCheck(CVector*, CVector*, i32)
+// @Ok
+// Same logic as CCop::WallHitCheck (cop.cpp). Confirmed via IDA decompile of
+// 0x4292c0 (the address GetLaunched calls into): every field this function
+// touches (mPos, field_21E, field_218, field_1F8, mHealth, PathCheck,
+// AddPointToPath) lives on the shared CBaddy/CBody base, so the compiler
+// merged the two identical bodies at link time and names.json happens to
+// label the shared address as CCop's. Functional only, not verified byte
+// for byte (no separate CThug address exists to compare against).
+i32 CThug::WallHitCheck(CVector* a2, CVector* a3, i32 a4)
 {
-	return 0x13072024;
+	i32 result = 1;
+
+	i32 adjY = this->mPos.vy + ((this->field_21E - 20) << 12);
+
+	CVector v1;
+	v1.vx = a2->vx;
+	v1.vy = adjY;
+	v1.vz = a2->vz;
+
+	CVector v2;
+	v2.vx = this->mPos.vx;
+	v2.vy = adjY;
+	v2.vz = this->mPos.vz;
+
+	CVector posBuf;
+	posBuf.vx = 0;
+	posBuf.vy = 0;
+	posBuf.vz = 0;
+
+	this->field_218 &= ~0x500;
+
+	i32 pathResult = this->PathCheck(&v2, &v1, &posBuf, 55);
+
+	if (pathResult == 4)
+	{
+		this->field_1F8 = 0;
+		return 3;
+	}
+
+	if (pathResult != 2)
+	{
+		this->field_218 |= 0x100;
+		this->field_1F8 = a4 - 1;
+
+		if (this->mHealth > 0)
+		{
+			if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(a2, 0))
+			{
+				this->field_2A8 &= ~0x10000000;
+				return result;
+			}
+
+			this->mHealth = 0;
+		}
+
+		return result;
+	}
+
+	i32 dx = posBuf.vx - this->mPos.vx;
+	i32 dxSign = dx >> 31;
+	i32 absDx = (dx ^ dxSign) - dxSign;
+
+	i32 dz = posBuf.vz - this->mPos.vz;
+	i32 dzSign = dz >> 31;
+	i32 absDz = (dz ^ dzSign) - dzSign;
+
+	i32 dividend;
+	i32 divisor;
+
+	if (absDx <= absDz)
+	{
+		i32 a3zSign = a3->vz >> 31;
+		divisor = (a3->vz ^ a3zSign) - a3zSign;
+		dividend = absDz;
+	}
+	else
+	{
+		i32 a3xSign = a3->vx >> 31;
+		divisor = (a3->vx ^ a3xSign) - a3xSign;
+		dividend = absDx;
+	}
+
+	this->field_1F8 = dividend / divisor;
+
+	if (this->field_1F8 > a4)
+	{
+		this->field_1F8 = a4;
+	}
+	else
+	{
+		result = 2;
+	}
+
+	posBuf.vx = a3->vx * this->field_1F8 + this->mPos.vx;
+	posBuf.vy = this->mPos.vy;
+	posBuf.vz = a3->vz * this->field_1F8 + this->mPos.vz;
+
+	this->field_218 |= 0x400;
+
+	if (this->mHealth > 0)
+	{
+		if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(&posBuf, 0))
+		{
+			this->field_2A8 &= ~0x10000000;
+			return result;
+		}
+
+		this->mHealth = 0;
+	}
+
+	return result;
 }
 
 // @Ok
@@ -1215,9 +1379,62 @@ void CThug::SetThugType(int type)
 
 }
 
-// @BIGTODO
-void CThug::RunToWhereTheActionIs(CVector*)
-{}
+// @Ok
+// Reconstructed from IDA decompile of 0x4da560. Builds a point 100 units
+// past the target (away from us) on x and z, keeping our own y. Tries the
+// direct path to MechList first, then the far point, then (if the far
+// point is blocked) falls back to CThug::TryAddingCollidePointToPath, which
+// is the exact same >=100-unit-check-then-scale-by-3700 idiom this function
+// inlines by hand in the original (confirmed by comparing against the
+// already-decompiled TryAddingCollidePointToPath body below).
+void CThug::RunToWhereTheActionIs(CVector* a2)
+{
+	if (Utils_CrapDist(this->mPos, *a2) > 3500)
+		return;
+
+	if (!this->AddPointToPath(&this->mPos, 0))
+		return;
+
+	CVector farPoint;
+	farPoint.vx = a2->vx + ((a2->vx - this->mPos.vx <= 0) ? 409600 : -409600);
+	farPoint.vy = this->mPos.vy;
+	farPoint.vz = a2->vz + ((a2->vz - this->mPos.vz <= 0) ? 409600 : -409600);
+
+	i32 addedPoint = 0;
+
+	if (!MechList->field_57C
+			&& this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) == 0
+			&& this->AddPointToPath(&MechList->mPos, 0))
+	{
+		addedPoint = 1;
+	}
+	else
+	{
+		i32 pathResult = this->PathCheck(&this->mPos, &farPoint, &farPoint, 55);
+
+		if (pathResult == 0)
+		{
+			if (!this->AddPointToPath(&farPoint, 0))
+				return;
+
+			addedPoint = 1;
+		}
+		else if (pathResult == 2)
+		{
+			addedPoint = this->TryAddingCollidePointToPath(&farPoint);
+		}
+	}
+
+	if (addedPoint)
+	{
+		this->Neutralize();
+		this->field_2F0 |= 1;
+		this->field_2A8 &= ~0x10000000;
+		this->field_330 = 60;
+		this->field_31C.bothFlags = 2;
+		this->dumbAssPad = 0;
+	}
+}
 
 // @Ok
 void CThug::HelpOutBuddy(CMessage *pMessage)
