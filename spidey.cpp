@@ -1577,7 +1577,10 @@ void CPlayer::SelectTargetBaddy(i32,i32,i32,i32)
     printf("CPlayer::SelectTargetBaddy(i32,i32,i32,i32)");
 }
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4C8570 (0x4C8570,
+// 0x253 = 595 bytes, matches the size noted below). cmpsum confirms the
+// documented 111 mnemonic diffs.
 // walks ControlBaddyList (CItem::mNextItem/mType, same walk idiom as
 // BuildOffscreenSpideySenseIndicatorList above), skipping mType 407 nodes,
 // looking for the CSwitch with the best score inside maxDist that also
