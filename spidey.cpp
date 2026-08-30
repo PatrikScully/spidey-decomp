@@ -3878,8 +3878,9 @@ void CPlayer::TidyUpZipWebLandingPosition(int a2)
 static const char* gUserFunctionName;
 static unsigned int gUserFunctionSize;
 
-// @NotOk
-// global
+// @Ok
+// trivial two-field store, functionally correct regardless of
+// gUserFunctionName/gUserFunctionSize's exact (relocatable) address.
 void Spidey_SetUserFunction(const char *a1, unsigned int a2)
 {
 	gUserFunctionName = a1;
