@@ -1037,8 +1037,18 @@ void INLINE CMysterio::EnterP2(void)
 
 extern i32 DifficultyLevel;
 
-// @NotOk
-// @Validate: when inlined
+// @Bogus
+// No out-of-line address in names.json (INLINE, no separate symbol). Traced
+// one inlined call site directly: CMysterio_FireBoobies (0x45d200, not yet
+// in this file) calls this right before RotateToOptimalAttackAngle at
+// 0x45d517; also called from CMysterio_KickAttack/SwipeAttack/GrabAttack
+// (0x45d630/0x45d8e0/0x45dde0, xrefs to RotateToOptimalAttackAngle, not
+// checked individually). Fixed a real bug: the hard-difficulty branch
+// (DifficultyLevel >= 2) was inverted. The disasm (0x45d4e0-0x45d4f8) is
+// "if field_34C == 0, return 12; else if field_350 != 0, return 5; else
+// return 12", i.e. both flags set gives the FAST speed 5, same relative
+// direction as the easy/normal branches (both set = fast), not the SLOW
+// speed 12 the old code returned when both were set.
 INLINE i32 CMysterio::GetAttackRotSpeed(void)
 {
 	if (!DifficultyLevel)
@@ -1063,10 +1073,10 @@ INLINE i32 CMysterio::GetAttackRotSpeed(void)
 		}
 		else if (this->field_34C && this->field_350)
 		{
-			return 12;
+			return 5;
 		}
 
-		return 5;
+		return 12;
 
 	}
 }
