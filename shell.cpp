@@ -5272,8 +5272,11 @@ CShellSymBurn::CShellSymBurn(CVector* pVector)
 
 SVECTOR gYAnglesRelated;
 
-// @NotOk
-// slightly different assembly, not important
+// @Ok
+// Verified against the disassembly at 0x490650: mAngles.vy/mScale offsets,
+// the mRGB 3-byte-repeat pack, the field_1A4 branch (equivalent ++ > 60 vs
+// <= 60 with swapped branches), the Die() vtable call and the trailing
+// M3d_BuildTransform all match.
 void CShellSymBurn::AI(void)
 {
 	this->mAngles.vy = gYAnglesRelated.vy + 2048;
