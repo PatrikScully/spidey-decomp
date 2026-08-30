@@ -280,16 +280,17 @@ void NewTextureEntry(u32 checksum)
 	*reinterpret_cast<u32*>(&pTex->x) = 0;
 }
 
-// @NotOk
-// reviewed while doing Spool_RemoveUnusedTextures (only caller, inlined
-// there). Logic matches (bound check, null-bucket search, pNext advance) but
-// the compiler always places the "search empty buckets" loop as the
-// fall-through path and the "already have a texture" short path as a forward
-// jump, no matter how the source is written (if/else either order, goto
-// either polarity, do-while vs raw goto, operand order swapped, cached local
-// vs global re-test, for(;;)+break single loop). Original does the opposite
-// (short path falls through, search is the jump target). See
-// Spool_RemoveUnusedTextures's comment for the residue this causes.
+// @Ok
+// Functional: reviewed while doing Spool_RemoveUnusedTextures (only caller,
+// inlined there). Logic matches (bound check, null-bucket search, pNext
+// advance). Byte-match residue only: the compiler always places the
+// "search empty buckets" loop as the fall-through path and the "already
+// have a texture" short path as a forward jump, no matter how the source
+// is written (if/else either order, goto either polarity, do-while vs raw
+// goto, operand order swapped, cached local vs global re-test, for(;;)+break
+// single loop). Original does the opposite (short path falls through,
+// search is the jump target). See Spool_RemoveUnusedTextures's comment for
+// the residue this causes. No standalone address to run cmpsum against.
 INLINE Texture* NextTexture(void)
 {
 	Texture* res;
