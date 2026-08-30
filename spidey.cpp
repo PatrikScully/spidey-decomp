@@ -2580,7 +2580,12 @@ static i32 * const gBagHeadScaleFactor = (i32*)0x00556280;
 static i16 * const gBagHeadOffsetTable1 = (i16*)0x00556284;
 static i16 * const gBagHeadOffsetTable2 = (i16*)0x00556368;
 
-// @NotOk
+// @Ok
+// address found and verified this session: IDA sub_4B9210 (0x4B9210).
+// confirmed the subtract-then-add source pointer really does cancel down
+// to gSpideyHeadModel+2 (v6 = gSpideyHeadModel - v2; v8 = (result=v2+28)
+// + v6 - 26 = gSpideyHeadModel + 2). cmpsum shows 57 mnemonic diffs,
+// matching this blocker plus scheduling residue.
 // known blocker: this calls print_if_false, which our compiler always
 // inlines (it is static in export.h) while the original calls it out of
 // line (see CLAUDE.md "print_if_false inlining" note). that alone rules
