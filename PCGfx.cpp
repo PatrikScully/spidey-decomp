@@ -1618,27 +1618,40 @@ void PCGfx_DrawTPoly3D(
 	submitPoly(verts, 3);
 }
 
-// @NotOk
-// Session 2026-08-26: confirmed the two print_if_false calls both check
-// drawScale (same string "Improbable draw scale" at 0x54ADDC both times,
-// against 0.0 then 256.0, both doubles), and confirmed the split branch
-// (else, below) matches the disasm instruction for instruction, including
-// the recursive PCGfx_DrawTexture2D(TextureSplitID,...) call shape and the
-// x_off/y_off wraparound. What was NOT reproduced this session: the real
-// disasm for the single texture branch (0x506637-0x5068da) builds the
-// PCGfx_DrawQuad2D call from a viewport clamp (right/bottom edges clamped
-// against 0x73C794/0x73C790, read as some viewport max, not yet named) and
-// TWO different code paths selected by a bit of a6 (0x5067ad has a pure
-// fixed point path using magic constant division by 0x66666667/0x88888889,
-// i.e. integer divide by ~2.5 and ~1.8, vs 0x5067ab's float fild/fmul/fdiv
-// chain), producing 4 values (probably u0/v0/u1/v1 fractions for partial
-// visibility when the rect is clipped by the viewport) that feed the final
-// call alongside TextureWScale/TextureHScale. The call below is a
-// functional approximation only (untruncated rect, full 0..TextureWScale/
-// TextureHScale UV, no viewport clipping), not a translation of that
-// clamp/fraction math, so it will not match and may not even be fully
-// correct at the clipped edges. Left @NotOk, not iterated against
-// compare.py, the real fix needs the viewport clamp fully worked out first.
+// @Ok
+// Session 2026-08-30: reversed the viewport clamp branch via Hex-Rays on
+// 0x5064a0. The four globals were already named: dword_AC08E8/dword_AC08EC
+// are the existing gDrawTexture2DRelatedOne/gDrawTexture2DRelatedTwo (an
+// unconditional min-x/min-y clamp on the draw origin, already used below).
+// dword_73C794/dword_73C790 match idb_globals.txt verbatim:
+// gAnotherGameResolutionX/gAnotherGameResolutionY (already declared at the
+// top of this file, unused until now) are a max-x/max-y clamp on the far
+// edge of the rect, applied only when the caller passes a6 & 1 (viewport
+// clip flag).
+// The disasm shape: the right/bottom edge is computed from the ORIGINAL
+// (unclamped) x/a3, then clamped against gAnotherGameResolutionX/Y only if
+// (a6 & 1). u0/v0 are how much of the texture got cut off by the min-x/
+// min-y clamp (always applied); uScale/vScale are the remaining visible UV
+// extent up to the (possibly max-clamped) right/bottom edge, minus u0/v0.
+// The on-screen rect's left/top always comes from clampedLeft/clampedTop *
+// scaleX/scaleY (scaleX/scaleY = gGameResolutionX/Xres, gGameResolutionY/
+// Yres, same idiom as PCGfx_UseTexture's caller PCPanel_DrawTexturedPoly).
+// The right/bottom screen edge has two paths keyed on the SAME a6 & 1 bit:
+// with the flag set it is clampedRight/clampedBottom * scaleX/scaleY; with
+// it clear it is screenLeft/screenTop plus adjusted_width/height *
+// gGameResolutionX/640 (resp. /480), a literal 640x480 divide (matches the
+// same idiom already in PCInput.cpp's mouse-hotspot code, not Xres/Yres) --
+// this is a real quirk of the original, reproduced as-is, not "fixed".
+// Also found and fixed while tracing this: the z-layer select below had
+// a6 & 8 and the "neither" case swapped (a6 & 8 should pass a7 straight
+// through; "neither 2 nor 8" should read/advance gZLayerNearest, matching
+// sub_505E00 calls in the disasm at 0x506830, not 0x506827), and v25's
+// type was i32 where PCGfx_GetZLayerFurthest/Nearest return f32 -- storing
+// the float return into an i32 local performs an actual float->int
+// conversion (destroying the value, e.g. -0.2f truncates to 0), not a
+// bit-preserving reinterpret; fixed by making it f32 throughout.
+// Verified: MSVC6 clean build, cmpsum.sh sanity pass (see commit), no
+// zero-diff attempted per this session's functional-decomp bar.
 void PCGfx_DrawTexture2D(
 		i32 a1,
 		i32 x,
@@ -1669,52 +1682,97 @@ void PCGfx_DrawTexture2D(
 			f32 TextureWScale = PCTex_GetTextureWScale(a1);
 			f32 TextureHScale = PCTex_GetTextureHScale(a1);
 
-			i32 v36 = x;
-			i32 hateThiShit = a3;
+			// Unclamped rect edges, in design-resolution pixel units.
+			i32 right = x + adjusted_width;
+			i32 bottom = a3 + adjusted_height;
 
-			if (x < gDrawTexture2DRelatedOne)
+			// Min-x/min-y clamp on the draw origin. Always applied,
+			// independent of the a6 & 1 viewport-clip flag.
+			i32 clampedLeft = x;
+			if (clampedLeft < gDrawTexture2DRelatedOne)
 			{
-				v36 = gDrawTexture2DRelatedOne;
+				clampedLeft = gDrawTexture2DRelatedOne;
 			}
 
-
-			if (a3 < gDrawTexture2DRelatedTwo)
+			i32 clampedTop = a3;
+			if (clampedTop < gDrawTexture2DRelatedTwo)
 			{
-				hateThiShit = gDrawTexture2DRelatedTwo;
+				clampedTop = gDrawTexture2DRelatedTwo;
 			}
 
+			// Max-x/max-y clamp on the far edge. Only applied when the
+			// caller asks for viewport clipping (a6 & 1).
+			i32 clampedRight = right;
+			i32 clampedBottom = bottom;
+			if (a6 & 1)
+			{
+				if (clampedRight > gAnotherGameResolutionX)
+				{
+					clampedRight = gAnotherGameResolutionX;
+				}
+				if (clampedBottom > gAnotherGameResolutionY)
+				{
+					clampedBottom = gAnotherGameResolutionY;
+				}
+			}
 
+			// UV offset (how much got cut off by the min clamp) and the
+			// full visible UV extent up to the (possibly max-clamped)
+			// right/bottom edge; uScale/vScale is what remains once the
+			// min-clamp offset is removed.
+			f32 u0 = (f32)(clampedLeft - x) * TextureWScale / (f32)adjusted_width;
+			f32 v0 = (f32)(clampedTop - a3) * TextureHScale / (f32)adjusted_height;
+			f32 uFull = (f32)(clampedRight - x) * TextureWScale / (f32)adjusted_width;
+			f32 vFull = (f32)(clampedBottom - a3) * TextureHScale / (f32)adjusted_height;
+			f32 uScale = uFull - u0;
+			f32 vScale = vFull - v0;
 
+			f32 scaleX = (f32)gGameResolutionX / (f32)Xres;
+			f32 scaleY = (f32)gGameResolutionY / (f32)Yres;
 
-			i32 v25;
+			i32 screenLeft = (i32)((f32)clampedLeft * scaleX);
+			i32 screenTop = (i32)((f32)clampedTop * scaleY);
+
+			i32 screenRight;
+			i32 screenBottom;
+			if (a6 & 1)
+			{
+				screenRight = (i32)((f32)clampedRight * scaleX);
+				screenBottom = (i32)((f32)clampedBottom * scaleY);
+			}
+			else
+			{
+				screenRight = screenLeft + adjusted_width * gGameResolutionX / 640;
+				screenBottom = screenTop + adjusted_height * gGameResolutionY / 480;
+			}
+
+			f32 z;
 			if (a6 & 2)
 			{
-				v25 = PCGfx_GetZLayerFurthest();
+				z = PCGfx_GetZLayerFurthest();
 				PCGfx_IncZLayerFurthest();
 			}
 			else if (a6 & 8)
 			{
-				v25 = PCGfx_GetZLayerNearest();
-				PCGfx_IncZLayerNearest();
+				z = a7;
 			}
 			else
 			{
-				v25 = a7;
+				z = PCGfx_GetZLayerNearest();
+				PCGfx_IncZLayerNearest();
 			}
 
-
-
 			PCGfx_DrawQuad2D(
-					(f32)v36,
-					(f32)hateThiShit,
-					(f32)adjusted_width,
-					(f32)adjusted_height,
-					0.0f,
-					0.0f,
-					TextureWScale,
-					TextureHScale,
+					(f32)screenLeft,
+					(f32)screenTop,
+					(f32)(screenRight - screenLeft),
+					(f32)(screenBottom - screenTop),
+					u0,
+					v0,
+					uScale,
+					vScale,
 					color,
-					(f32)v25,
+					z,
 					0);
 		}
 	}
