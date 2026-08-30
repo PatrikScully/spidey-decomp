@@ -221,7 +221,12 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 }
 
 
-// @MEDIUMTODO
+// @BIGTODO
+// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Full 3D
+// ribbon renderer: per-segment camera-space transform through the view
+// matrix (dword_56E668 block), perspective divide, and a strip of gouraud
+// POLY_GT4 quads via sub_508550, one per pair of ribbon points. Re-tagged
+// from @MEDIUMTODO: this is full 3D rendering work, not a stub-sized task.
 void CSimpleTexturedRibbon::Display(void)
 {
     printf("CSimpleTexturedRibbon::Display(void)");
