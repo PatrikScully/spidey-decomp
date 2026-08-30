@@ -577,8 +577,13 @@ void CChopper::FollowWaypoints(void)
 	}
 }
 
-// @NotOk
-// @FIXME: the ApplyPose param, field_188
+// @Ok
+// @Note: checked against the Hex-Rays decompile of tools/functions/4349680.bin
+// (0x425ef0). One real bug: ptr[18] should be ptr[19] (byte offset 38, not
+// 36) for the adjusted yaw component; the unadjusted x component write at
+// ptr[24] was already right. this+392 (mpJoints) matches this class's
+// mpJoints field exactly (the earlier "field_188" note was a false alarm,
+// there is no separate field_188).
 void CChopper::AimGunPod(void)
 {
 	if (this->field_3A8.vx)
@@ -596,7 +601,7 @@ void CChopper::AimGunPod(void)
 
 		i16* ptr = reinterpret_cast<i16*>(this->mpJoints);
 		ptr[24] = v3.vx;
-		ptr[18] = v3.vy;
+		ptr[19] = v3.vy;
 	}
 }
 
