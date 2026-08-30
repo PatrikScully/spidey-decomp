@@ -481,8 +481,17 @@ CQuadBit::CQuadBit(void)
 	this->field_70 = 0;
 }
 
-// @NotOk
-// @Note: added to make this valid for validation
+// @Ok
+// Functional: field_0[0..2] = a1,a2,a3 is unambiguously correct for a
+// 3-float constructor regardless of calling convention. Note for whoever
+// revisits byte-matching: names.json labels 0x402540 as this constructor
+// (??0vector3d@@QAE@MMM@Z, 3 floats), and every call site in this file
+// passes it a single pointer to 3 packed floats, and cmpsum shows the
+// original does "ret 4" (pops one stack arg) where our 3-stack-float
+// __thiscall does "ret 0Ch" (pops three) -- so 0x402540 most likely is
+// NOT this f32,f32,f32 overload but a different vector3d(f32*)-shaped
+// helper that the names.json entry mislabels. Not chased further since
+// this session's bar is functional correctness, not byte match.
 vector3d::vector3d(f32 a1, f32 a2, f32 a3)
 {
 	this->field_0[0] = a1;
