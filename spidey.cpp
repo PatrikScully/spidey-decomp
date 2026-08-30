@@ -603,8 +603,17 @@ void CPlayer::CheckLanded(void)
     printf("CPlayer::CheckLanded(void)");
 }
 
-// @NotOk
-// fix type
+// @Ok
+// verified against IDA sub_4BFBC0 (0x4BFBC0, 0x11C bytes). Found and
+// fixed two bugs from an earlier revision. (1) The threshold sum used
+// subtraction (field_C6C.x - field_B84.x) for all three components; the
+// original multiplies each field_C6C component by the matching
+// field_B84 component (a velocity/heading dot product), not a
+// difference. (2) field_80 (CBody, ob.h, declared i32 and used as a full
+// int everywhere else in the repo) is added to field_AD7 here through an
+// explicit byte-sized read in the disassembly (mov cl,[esi+80h]); kept
+// field_80's declared type as-is (shared by many other files) and
+// truncated only at this call site to match.
 i32 CPlayer::CheckRunIntoWall(void)
 {
 	if ( this->mHeldObject )
@@ -621,12 +630,12 @@ i32 CPlayer::CheckRunIntoWall(void)
 				&& !(this->field_B8C[3] & 0x40000))
 		{
 
-			if (((this->field_C6C.vx - this->field_B84.vx) >> 12) +
-					((this->field_C6C.vy - this->field_B84.vy) >> 12) +
-					((this->field_C6C.vz - this->field_B84.vz) >> 12) > 3800)
+			if (((this->field_C6C.vx * this->field_B84.vx) >> 12) +
+					((this->field_C6C.vy * this->field_B84.vy) >> 12) +
+					((this->field_C6C.vz * this->field_B84.vz) >> 12) > 3800)
 			{
 				v3 = 0;
-				this->field_AD7 += this->field_80;
+				this->field_AD7 += static_cast<u8>(this->field_80);
 			}
 
 			if (this->field_AD7 > 0x14)
