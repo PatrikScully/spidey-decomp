@@ -27,6 +27,55 @@ EXPORT SLight M3d_SuperOckLight =
 EXPORT Texture *gSuperDocTexs[15];
 
 // @MEDIUMTODO
+// Investigated 2026-08-31, left as a stub, not attempted. Real Mac size is
+// 1424 bytes (tools/prototypes.json), almost identical to the PC size
+// (1408, address 0x4D0E70), so this is not an inlining-boundary problem
+// like the m3dinit.cpp ParsePSX case, it is genuinely this big: five near
+// duplicate HUD bar draws in one function. Findings for whoever picks this
+// up next:
+// - Every callee already exists and is @Ok in the repo, so this is NOT a
+//   leaf-first blocker in the usual sense: Spool_FindTextureEntry(char*)
+//   (spool.h, loads gSuperDocTexs[i] from the 15 name strings starting at
+//   0x5579BC, "VenomChase_Bar_04" etc, 32 bytes apart, ending at 0x557B9C),
+//   FindBaddyOfType(309) (baddy.h, gets the boss CBaddy*), Utils_XZDist
+//   (utils.h), Spool_FindAnim (spool.h, called with "Sp" + 1), and the
+//   whole Panel_DrawTexturedPoly / DCPanel_DrawTexturedPoly /
+//   Panel_SetStretchedScreenCoords / DCPanel_DrawTexturedPoly_1 /
+//   DCPanel_DrawFlatShadedPoly family (panel.h, all @Ok, PShell_DrawMenuBox
+//   in pshell.cpp is the closest existing precedent for how these combine).
+// - This function reads a byte flag at offset 0x1AC of a *different*,
+//   still-unidentified global object pointer at 0x6A9038 (not the boss
+//   CBaddy*, only ever null-checked and this one byte read, never anything
+//   else) to decide whether to bail out early. That address, its type, and
+//   what sets the flag are all unknown; only its use here is confirmed.
+// - CSuperDocOck (superock.h) needs new fields, all currently swallowed by
+//   existing PADDING() ranges: field_324 (i32, a 0-5 cycling index) and
+//   field_328 (i32, an accumulator: += this->field_80 [CBody's own
+//   per-frame delta, already named] each frame when
+//   !G_POST_WATER_EFFECT [utils.h, already has this macro for 0x5FAE98];
+//   every 4 whole units it consumes 4 and increments field_324, wrapping
+//   field_324 back to 0 after 5); field_35C (checked only for
+//   null/non-null, gates an alternate distance calc via Utils_XZDist(this
+//   + 8, otherObj + 2) when null); field_378 (i32, looks like a 0-4095ish
+//   damage/knockback fraction: drives a screen-shake offset via
+//   rcossin_tbl[...] when > 0xC00, and separately splits into three
+//   0-127-ish weighted sub-values via >>12 shifts of *128, *112/128-style
+//   ratios for the final two DCPanel_DrawFlatShadedPoly calls).
+// - The five bar draws each pull their screen x/y/w/h/color offsets from a
+//   dense table of anonymous i32 constants living in .rdata right after
+//   the texture name strings (0x557B9C through at least 0x557C38, read via
+//   IDA: mostly small values, some negative, e.g. 0, 0x17, 0x16, -7, 0x10,
+//   0xa, -1, -5, 4, 9, ...). Every one of these looks like the same kind
+//   of "field roles not consistent across entries" table CLAUDE.md already
+//   documents for gMenuBoxSlices in pshell.cpp, just five records instead
+//   of thirteen and with an inner 19-iteration sub-loop (esi 0 to 0x156
+//   step 0x12) for one of the bars, i.e. per-segment health pips. Getting
+//   every one of these ~40 constants' x-vs-y-vs-w-vs-h role right, for a
+//   function that draws a boss HUD element with no way to runtime-verify
+//   the visual result this session (per this session's runtime-testing
+//   note), is a lot more risk of a silently wrong but plausible-looking
+//   draw than the callee list alone suggests. Left as a stub rather than
+//   guess constant roles that cannot be checked.
 void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 {
 	printf("void SuperDocOck_DisplayProgressBars(const u32*, u32*)");
