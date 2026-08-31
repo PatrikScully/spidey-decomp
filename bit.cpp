@@ -1067,16 +1067,78 @@ void DisplaySpecialDisplayList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x411560, real name DisplayGlass in tools/names.json (found by
-// tracing Bit_Init's RegisterSlot calls, see DisplayTextBoxList). See the
-// shared family notes above CSimpleTexturedRibbon::Display. Full 3D
-// pipeline: per-vertex camera-space transform (gte_ldv0 = sub_46D8A0, plus
-// still-unnamed sub_46D8D0/sub_46D900 from the same GTE helper cluster),
-// clip test, the Algebra_Transform4/gGfxMatrix invZ pass, and two gouraud
-// POLY_GT4 emits via PCGfx_DrawQPoly3D (sub_508550).
-void DisplayGlassList(void**)
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address 0x411560, real name
+// DisplayGlass in tools/names.json. CORRECTION this session against a fresh IDA decompile: the
+// old note's "grow scale field" / "4th and further offset corners" / "tessellated fan" theory
+// was WRONG - there is no 4th corner and no scale field anywhere in the disasm. CGlassBit only
+// ever has 3 corners (mPosA/B/C, already VALIDATEd) and this function draws exactly one
+// triangle (A, B, C) TWICE (front then back, matching the family's usual double-sided idiom),
+// each time via PCGfx_DrawQPoly3D (sub_508550, already @Ok) with its 4th vertex position
+// DUPLICATED onto the 3rd corner (same xyz, different UV) - a plain trick to get a full 0..1 UV
+// square onto a 3-corner shape using the quad-shaped draw call, not a real 4th point.
+//
+// The gte_ldv0/ldv1/ldv2+rtpt+stsxy3 chain (sub_46D8A0/46D8D0/46D900/46DCE0/46DFA0) the old note
+// flagged only feeds a 28-byte scratch/tag record bump-allocated from the SAME shared buffer
+// flash.cpp's Flash_Display already documents (0x56FB04/0x5FCD1C, aliased there as
+// gEffectRecordBufPos/End - NOT "the pPoly queue" as an earlier pass in this file guessed, that
+// name was wrong). Confirmed dead for the real draw exactly like the family notes already said:
+// the actual screen positions come from a completely separate per-corner Algebra_Transform4/invZ
+// pipeline (same rawPos[3]/4096.0f + fabsf-eps idiom already used throughout this file, e.g.
+// DisplayGLineList). The record's own r/g/b bytes (CGlassBit::mR/mG/mB, offsets 0x67-0x69,
+// already VALIDATEd) ARE reused for the real draw color though - read directly from the bit
+// instead of round-tripping through the scratch buffer. Skipping the scratch-buffer bump alloc
+// (and its capacity bounds check, which would otherwise stop the whole bit loop early once that
+// unrelated shared buffer fills) is a deliberate, documented choice, not an oversight.
+//
+// Blend mode 2 (semi-transparent) and texture slot 1 are set ONCE for the whole list (not
+// per-bit), and colour is a fixed-alpha (0xA0) RGB pack straight from mR/mG/mB with no byte
+// swap (unlike DisplayChunkBitList/DisplayGLineList's R<->B swap - traced independently, this
+// one really does keep R,G,B in that order).
+void DisplayGlassList(void** a1)
 {
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_2);
+
+	RefreshGfxMatrix();
+
+	CGlassBit* pBit = reinterpret_cast<CGlassBit*>(*a1);
+	while (pBit)
+	{
+		f32 rawA[3] = { (f32)pBit->mPosA.vx / 4096.0f, (f32)pBit->mPosA.vy / 4096.0f, (f32)pBit->mPosA.vz / 4096.0f };
+		f32 rawB[3] = { (f32)pBit->mPosB.vx / 4096.0f, (f32)pBit->mPosB.vy / 4096.0f, (f32)pBit->mPosB.vz / 4096.0f };
+		f32 rawC[3] = { (f32)pBit->mPosC.vx / 4096.0f, (f32)pBit->mPosC.vy / 4096.0f, (f32)pBit->mPosC.vz / 4096.0f };
+
+		f32 xfA[4], xfB[4], xfC[4];
+		Algebra_Transform4(xfA, rawA);
+		Algebra_Transform4(xfB, rawB);
+		Algebra_Transform4(xfC, rawC);
+
+		f32 izA = (fabsf(xfA[3]) > 0.00000001f) ? 1.0f / xfA[3] : -1.0e12f;
+		f32 izB = (fabsf(xfB[3]) > 0.00000001f) ? 1.0f / xfB[3] : -1.0e12f;
+		f32 izC = (fabsf(xfC[3]) > 0.00000001f) ? 1.0f / xfC[3] : -1.0e12f;
+
+		f32 sxA = xfA[0] * izA, syA = xfA[1] * izA;
+		f32 sxB = xfB[0] * izB, syB = xfB[1] * izB;
+		f32 sxC = xfC[0] * izC, syC = xfC[1] * izC;
+
+		u32 color = 0xA0000000 | (pBit->mR << 16) | (pBit->mG << 8) | pBit->mB;
+
+		// Face 1: B, A, C (4th vertex duplicates C's position with a different UV corner).
+		PCGfx_DrawQPoly3D(
+			sxB, syB, izB, 0.0f, 1.0f, color,
+			sxA, syA, izA, 0.0f, 0.0f, color,
+			sxC, syC, izC, 1.0f, 0.0f, color,
+			sxC, syC, izC, 1.0f, 1.0f, color);
+
+		// Face 2: A, B, C (winding flipped vs face 1 - back face).
+		PCGfx_DrawQPoly3D(
+			sxA, syA, izA, 0.0f, 0.0f, color,
+			sxB, syB, izB, 0.0f, 1.0f, color,
+			sxC, syC, izC, 1.0f, 0.0f, color,
+			sxC, syC, izC, 1.0f, 1.0f, color);
+
+		pBit = reinterpret_cast<CGlassBit*>(pBit->mNext);
+	}
 }
 
 // @BIGTODO
