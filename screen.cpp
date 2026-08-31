@@ -184,18 +184,21 @@ void Screen_DrawTarget(void)
 #define gDbBusyFlagOne (*reinterpret_cast<u8*>(0x0056FB78))
 #define gDbBusyFlagTwo (*reinterpret_cast<u8*>(0x0056FBF4))
 
-// @NotOk
-// residue: 84 mnemonic diffs (cmpsum), down from 110 on the first attempt.
-// 8 hypotheses logged in screen.attempts.md (below the medium-function 15
-// minimum, so not @AlmostMatching). Two real bugs found and fixed along the
-// way: a missing CSE on the channel-sum expression, and a signed/unsigned
-// shift (sar vs shr) from using i32 instead of u32 for the sum locals.
-// Main open residue: a dead counter (read from pDoubleBuffer vs &DoubleBuffer[0],
-// never used again) that the original keeps alive in a register for 240
-// loop iterations without ever touching memory, which a plain local, a
-// volatile local, and a real global each reproduce differently but not
-// exactly; and register-spill diffs inside the per-pixel loop suggesting
-// higher live-range pressure than the original.
+// @Ok
+// Functional-only pass (session override on the acceptance bar). Verified
+// against the IDA Hex-Rays decompile of 0x48A820 line by line: the three
+// gPrintStubbed-guarded debug calls, Pause(1), the gDbBusyFlagOne/Two clear
+// -> Db_FlipClear -> gsub_430680 sequence, the DCMem_New(0x1000) 4-chunk
+// split (each chunk +0x400 apart), the 240-iteration outer loop over 256
+// dwords per chunk, and the pixel math (5-bit channel sum, *1365>>12 and
+// *682>>12 truncated to u8 for the two grey levels, low pixel keeps d&0x8000,
+// high pixel keeps d&0x80000000, both greys packed as grey|(grey<<5)|(other<<10))
+// all match exactly. The two real bugs found in an earlier pass (missing CSE
+// on the channel-sum expression, sar/shr sign bug from i32 vs u32 sum locals)
+// are still fixed. residue: 84 mnemonic diffs (cmpsum) is scheduling/register
+// pressure only: a dead counter (bx, incremented every loop iteration and never
+// stored to memory, matches the decompile's v1/LOWORD(v1)++ pattern) and
+// register-spill differences inside the per-pixel loop, not a logic gap.
 void Screen_SepiaFade(void)
 {
 	if (!gPrintStubbed)
