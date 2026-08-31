@@ -617,8 +617,7 @@ void CScorpion::TakeHit(void)
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
 CConstantLaser::~CConstantLaser(void)
 {
 	delete reinterpret_cast<CClass*>(this->field_3C);
