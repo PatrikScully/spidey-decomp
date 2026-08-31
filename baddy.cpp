@@ -1217,30 +1217,1502 @@ CBaddy* CBaddy::GetClosest(i32 baddyType, i32 inSight)
 	return result;
 }
 
-// @BIGTODO
-// Investigated 2026-08-31 (IDA Hex-Rays on the real exe), not attempted
-// further. Original at 0x4050B0, 7584 bytes (next symbol GetScriptValue at
-// 0x406E50). This is the opcode dispatcher CBaddy::ParseScript (@Ok) calls
-// for every trigger-script command whose opcode has bit 0x4000 set. The
-// switch covers roughly 90 distinct u16 opcodes (0x4101..0x452A, several
-// small ranges) and its case bodies call around 50 different leaf helpers
-// that have no repo declaration and no tools/names.json entry at all
-// (sub_43C250/43CEA0/43D830/43B410/43B740 model/particle spawners,
-// sub_46BD80/46B450 camera, sub_416880/4708B0 sound, sub_40F3D0/3F0/410/
-// 440/460/480 a stateful particle-system setup sequence, sub_460020/
-// 460D00/460C10/4273D0/470430/438EE0/438E20/4C9180/4C9230/4E5DA0/455390/
-// 4E6150/479EE0/479D30 and more). Several other callees ARE already
-// exercised elsewhere in this file (sub_4E3940/4E3880/4E7760/4E7800/
-// 4E79F0/4E7AE0/4E7A40/4E7900, the CVector/list helpers GetScriptValue and
-// SetVariable already use) but the ~50 unnamed ones span several unrelated
-// subsystems well outside baddy.cpp/web.cpp/trig.cpp. Per the leaf-first
-// rule those all need decompiling first; that is a multi-file undertaking,
-// not something to guess piecemeal in one pass. Left as the existing
-// placeholder stub (not hooked anywhere in patch_baddy, so this has no
-// runtime effect either way).
-int CBaddy::ExecuteCommand(u16)
+// ---- CBaddy::ExecuteCommand support ----
+//
+// Full opcode map worked out 2026-08-31 from a clean Hex-Rays decompile of
+// 0x4050B0 (1855 instructions, 351 basic blocks, confirmed via func_profile;
+// an earlier session's byte-count/case-count estimate in this comment's
+// prior revision was rougher, this one is read off the actual switch).
+// ParseScript (@Ok, above) already establishes the calling convention:
+// field_24C has been advanced PAST the opcode word itself before
+// ExecuteCommand is called, so every case here only reads its OPERANDS.
+// Two new CBaddy fields were added for this (baddy.h): labelArr[8] (fills
+// what used to be an unexplained 32-byte PADDING block exactly) and the
+// bytecode-pointer/GetVariable-redirect idiom used by C_ADD/C_SUB.
+//
+// Around 35 case bodies call leaf helpers with no repo declaration and no
+// tools/names.json entry (particle/model spawners, camera, sound, a
+// stateful particle-system setup sequence, and a handful of others) spread
+// across subsystems well outside baddy.cpp. The strict leaf-first/
+// byte-match discipline would block on decompiling all of those first (a
+// multi-file undertaking); this session's bar is functional correctness,
+// so each of those is a real, addressed @FIXME forward-to-original call
+// instead (same pattern as Decomp_GetAnimTransform in decomp.cpp) --
+// argument count, order and type for each was read directly off this
+// function's own call sites, so the MARSHALING is not a guess even where
+// the callee's internal behavior is opaque. Never hooked, so forwarding
+// them has no runtime-safety concern (see the G_* macro notes elsewhere in
+// this repo -- that caution is about shared mutable globals between hooked
+// and unhooked code, not applicable here since nothing here is hooked).
+//
+// Opcode value -> meaning (tentative names where noted uncertain), and
+// whether it's implemented with real logic or forwarded:
+//   0x4101 C_GOTO                    unconditional jump to labelArr[op]
+//   0x4102 C_GOTO_2 (uncertain name) unconditional jump + gated bool return
+//   0x4103, 0x4108-0x410F            unhandled (no-op, matches the original's
+//                                    own default case for these values)
+//   0x4104 C_SET_SCRIPT_LABEL        labelArr[op] = current field_24C
+//   0x4105 C_DEFINE_LABELS           reads a run of (opcode,value) pairs up
+//                                    to 0x4100, applying any embedded
+//                                    C_SET_SCRIPT_LABEL along the way
+//   0x4106 (uncertain name/purpose)  mechanically faithful: resolves one
+//                                    operand, forwards to sub_4E3940, and
+//                                    (as the original does) stores the
+//                                    result+6 into field_24C -- kept as
+//                                    written even though the "why" is not
+//                                    understood, see comment on the case
+//   0x4107 C_YIELD                   return false (stop this tick)
+//   0x4110/0x4111 C_ADD / C_SUB      add/subtract into a variable via
+//                                    GetVariable/SetVariable, relaying any
+//                                    bytes GetVariable itself consumed
+//   0x4112 C_IF_GREATER, 0x4113 C_IF_LESS, 0x4114 C_IF_EQUAL,
+//   0x4115 C_IF_FLAG_SET, 0x4116 C_IF_FLAG_CLEAR, 0x4117 C_IF_WHATIF,
+//   0x4119 C_IF_SYMBIOTE (uncertain name)
+//                                    all: if condition holds, continue
+//                                    (return true); else skip forward to
+//                                    the matching 0x4120, respecting nested
+//                                    0x4112-0x4119 blocks (shared helper
+//                                    CBaddy_SkipToMatchingEndif)
+//   0x4118 C_IF_MECH_IN_RANGE (uncertain name) -- same shape as the above,
+//                                    but the condition itself calls
+//                                    sub_4C9180(MechList, x, z), a thiscall
+//                                    function forwarded via a member-
+//                                    function-pointer cast (same trick as
+//                                    a plain @FIXME forward, just needed
+//                                    here because this ONE callee is
+//                                    thiscall not cdecl -- confirmed from
+//                                    Hex-Rays showing "this:" only for
+//                                    this call, none of the others)
+//   0x4120 C_ENDIF                   block terminator, no-op when reached
+//                                    directly (return true)
+//   0x4200 C_SET_NAME                InitItem() on a NUL-terminated string
+//                                    embedded in the bytecode, then skips
+//                                    past it (odd/even alignment exactly as
+//                                    coded, not "fixed" to look sensible)
+//   0x4201, 0x4205                   forward (sub_460D00, sub_404320)
+//   0x4202                           this->RunAnim(op, 0, -1) -- confirmed
+//                                    real method, same call shape already
+//                                    used by CMysterio::CMysterio
+//   0x4203/0x4204 C_SET/CLEAR_FLAG1  this->mFlags &= ~1 / |= 1
+//   0x4226 C_ZERO_VELOCITY           this->mVel = {0,0,0}
+//   0x4227 (uncertain name)          field_212/field_213/field_2F0 pokes,
+//                                    mechanically faithful
+//   0x4240                           field_20C = 0; return false (yield)
+//   0x4280 (uncertain name/purpose)  the largest, least understood case:
+//                                    snapshots/restores several CBaddy
+//                                    fields around a loop that calls
+//                                    Shouldnt_DoPhysics_Be_Virtual() and 5
+//                                    forwarded helpers (sub_4E7A40/7900/
+//                                    7760/7800/79F0/7AE0) building CVector
+//                                    pieces. Implemented mechanically
+//                                    (every read/write/call in the
+//                                    original, in order) since the operand
+//                                    count matters for bytecode sync, but
+//                                    the actual PURPOSE was not recovered
+//   0x4281 C_WAIT_FOR_CONDITION      rewinds 2 bytes and yields (retries
+//                                    next tick) until the mType==203 gate
+//                                    or field_214 bit 0 is set
+//   0x428E/0x4290, 0x428F/0x4291     forward (sub_471C50, sub_471EA0),
+//                                    gated the same way as 0x4281
+//   0x4292                           particle-system setup loop, forwards
+//                                    sub_40F3D0/3F0/410/440/460/480,
+//                                    guarded by TotalBitUsage<200 (already
+//                                    an established repo global, bit.h)
+//   0x4293, 0x4296/0x4297            skip a dword/word operand (debug-only
+//                                    in the original: calls nullsub_3,
+//                                    confirmed a true no-op via disasm)
+//   0x4294                           forwards sub_4E3880/sub_4E3940 in a
+//                                    loop; nullsub_3 confirmed no-op
+//   0x4295                           forward (sub_470950, no args)
+//   0x4298                           forward (sub_416880), gated on
+//                                    CameraList (already established)
+//   0x4299                           forward (sub_4708B0)
+//   0x429A/0x42A6-0x42A8 (uncertain name, "expgrnd" particle effect)
+//                                    reads a sub-opcode then forwards to
+//                                    sub_43C250/sub_43CEA0/sub_43B410;
+//                                    0x42A6-0x42A8 always take the
+//                                    this->mPos branch (the original's own
+//                                    `a2==17050` guard can never be true
+//                                    there -- dead code kept as written)
+//   0x429C                           forward (sub_43D830), reads a packed
+//                                    10-byte operand block
+//   0x429D                           no-op (2x nullsub_3, confirmed no-op)
+//   0x429E (uncertain global name)   gBaddyScriptPosY = this->mPos.vy
+//   0x42A0                           forward (sub_46BD80, sub_46B450)
+//   0x42A2                           gInitBaddyRelated = one u16 operand
+//   0x42A3/0x450A C_PLAY_FX (uncertain name) forward (sub_479EE0/479D30)
+//   0x42B0                           skip an embedded string (shares the
+//                                    alignment logic with 0x4200)
+//   0x42B1/0x42B2                    forward (sub_4E3880 then
+//                                    sub_4DFFE0/sub_4DFD30)
+//   0x42B3/0x42B4                    forward (sub_4DFFB0 x3 against
+//                                    ControlBaddyList/BaddyList/
+//                                    EnvironmentalObjectList, or
+//                                    sub_4DFC20)
+//   0x42B5                           forward (sub_4273D0)
+//   0x42B6 C_SET_TARGET_FRAME (uncertain name) field_230 = resolved
+//                                    operand, gated like 0x4281
+//   0x42B7                           field_214 |= 1 (byte), return true
+//   0x42B8                           walks a checksum list via sub_4C9230,
+//                                    pokes byte 28/30 of each hit (a
+//                                    CItem-derived object whose real type
+//                                    is not established here -- offsets
+//                                    kept raw with a comment, not named)
+//   0x42B9/0x42BA                    gWideScreen / a shadow copy of it =
+//                                    one u16 operand; forward (sub_4273D0
+//                                    already covers 0x42B5, this is a
+//                                    plain field write)
+//   0x430A                           forward (sub_43B740), reads a
+//                                    dword-aligned operand
+//   0x430B/0x430C/0x430D             walk BaddyList for mType==314 and
+//                                    call an unnamed vtable slot on it
+//                                    (raw vtable offset, not resolvable to
+//                                    a declared virtual -- see the case),
+//                                    or forward (sub_438EE0/438E20) on
+//                                    MechList
+//   0x450D C_CAMERA_TRAJECTORY (uncertain name, "BossCamStationaryRadius")
+//                                    forward (sub_4E6150, sub_470430),
+//                                    gated on MechList != 0
+//   0x450E                           forward (sub_416880) via CameraList
+//   0x450F/0x4511/0x4512             walk BaddyList for mNode==k, poke
+//                                    mFlags/two u16 fields (offsets kept
+//                                    raw, not named -- see the case)
+//   0x4601/0x4602/0x4603             field_218 |= 0x100000/0x200000/
+//                                    0x400000 (0x4601 also sets mFlags|=1)
+//   0x4702-0x4709, 0x470F            field_2F0 |= single bit each
+//                                    (0x4703=1,0x4704/0x4706=8,0x4705=0x10,
+//                                    0x4708=0x20,0x4709=0x40); 0x470F sets
+//                                    field_2A8 |= 0x2000000 instead
+//   0x4707                           skips 2 embedded bytes (LABEL_325,
+//                                    shared with 0x4200/0x42B0's tail)
+//   0x470B                           field_1A4 = one u16 operand
+//   0x470C                           this->SetParamByIndex(op1, op2) --
+//                                    confirmed real virtual, vtable+36 ==
+//                                    slot 9 matches the header exactly
+//   default (any other value)        no-op, matches the original's own
+//                                    unhandled-opcode fallthrough
+//
+// Globals used here that are new to the repo: gTrigNodes (0x6B466C, real
+// IDB name), gWideScreen (0x660F80, real IDB name), CurrentSuit (0x5559DC,
+// real IDB name, already referenced by name in shell.cpp comments),
+// gInitBaddyRelated (0x5FCDA4, real IDB name). gSubmarinerDieRelated
+// (0x60CFC4) already exists above in this file, reused as-is. Two globals
+// have no IDB entry, tentative names below with their evidence.
+static i32 * const gTrigNodes = reinterpret_cast<i32*>(0x6B466C);
+static i32 * const gWideScreen = reinterpret_cast<i32*>(0x660F80);
+static i32 * const CurrentSuit = reinterpret_cast<i32*>(0x5559DC);
+static i32 * const gInitBaddyRelated = reinterpret_cast<i32*>(0x5FCDA4);
+
+// tentative: written immediately after gWideScreen with the exact same
+// value in case 0x42BA below, no IDB entry. Looks like a shadow/duplicate
+// copy, not independently read anywhere in this function.
+static i32 * const gWideScreenShadow = reinterpret_cast<i32*>(0x60F76C);
+
+// tentative: stores this->mPos.vy in case 0x429E below, no IDB entry, no
+// other reader/writer found in this function.
+static i32 * const gBaddyScriptPosY = reinterpret_cast<i32*>(0x5FCDA8);
+
+// tentative: tested alongside CurrentSuit==4 in the 0x4119 IF-condition, no
+// IDB entry.
+static i32 * const gSymbioteRelated = reinterpret_cast<i32*>(0x60CFC8);
+
+// resolves one u16 bytecode operand: raw read, advance field_24C, then (the
+// idiom repeated at nearly every operand read in the original) redirect
+// through GetVariable() when bit 0x2000 is set.
+// @Bogus
+static u16 CBaddy_ResolveOperand(CBaddy *self)
 {
-	return 0x21052025;
+	u16 val = static_cast<u16>(*self->field_24C);
+	self->field_24C++;
+
+	if (val & 0x2000)
+		val = static_cast<u16>(self->GetVariable(val));
+
+	return val;
+}
+
+// raw operand read, no GetVariable redirect (used where the operand is
+// itself an index/count, e.g. label indices, not a value expression).
+// @Bogus
+static u16 CBaddy_ReadOperand(CBaddy *self)
+{
+	u16 val = static_cast<u16>(*self->field_24C);
+	self->field_24C++;
+	return val;
+}
+
+// shared tail of every C_IF_* opcode's false branch: skip forward past the
+// current conditional block to its matching 0x4120 (C_ENDIF), keeping
+// count of nested 0x4112-0x4119 blocks skipped along the way. A bare
+// 0x4100 hit while skipping is treated as malformed script (falls through
+// to the same debug no-op the original's default case uses).
+// @Bogus
+static void CBaddy_SkipToMatchingEndif(CBaddy *self)
+{
+	i32 depth = 0;
+
+	for (;;)
+	{
+		u16 op;
+
+		for (;;)
+		{
+			op = CBaddy_ReadOperand(self);
+
+			if (op == 0x4120)
+				break;
+
+			if (op >= 0x4112 && op <= 0x4119)
+				depth++;
+
+			if (op == 0x4100)
+				return;
+		}
+
+		if (depth != 0)
+		{
+			depth--;
+			continue;
+		}
+
+		return;
+	}
+}
+
+// @FIXME forward-to-original helpers for ExecuteCommand's ~35 leaf callees
+// with no repo declaration (see the big comment above). Argument count,
+// order and type read off this function's own call sites in the Hex-Rays
+// decompile, not guessed independently.
+// @Bogus
+static i32 gsub_4E3940(i32 *outBuf, u16 nodeId)
+{
+	typedef i32 (*func_ptr)(i32*, u16);
+	func_ptr func = (func_ptr)0x4E3940;
+	return func(outBuf, nodeId);
+}
+
+// @Bogus
+static void gsub_460D00(u16 a2, u16 a3)
+{
+	typedef void (*func_ptr)(u16, u16);
+	func_ptr func = (func_ptr)0x460D00;
+	func(a2, a3);
+}
+
+// @Bogus
+static void gsub_404320(i32 a2)
+{
+	typedef void (*func_ptr)(i32);
+	func_ptr func = (func_ptr)0x404320;
+	func(a2);
+}
+
+// @Bogus
+static i32 gsub_4DE770(void)
+{
+	typedef i32 (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x4DE770;
+	return func();
+}
+
+// @Bogus
+static i32 gsub_4E7A40(CBaddy *self, void *outBuf, void *a3, i32 *a4)
+{
+	typedef i32 (*func_ptr)(CBaddy*, void*, void*, i32*);
+	func_ptr func = (func_ptr)0x4E7A40;
+	return func(self, outBuf, a3, a4);
+}
+
+// @Bogus
+static void gsub_4E7900(i32 a2)
+{
+	typedef void (*func_ptr)(i32);
+	func_ptr func = (func_ptr)0x4E7900;
+	func(a2);
+}
+
+// @Bogus
+static i32 *gsub_4E7760(void *a2, void *a3, void *a4)
+{
+	typedef i32* (*func_ptr)(void*, void*, void*);
+	func_ptr func = (func_ptr)0x4E7760;
+	return func(a2, a3, a4);
+}
+
+// @Bogus
+static i32 *gsub_4E7800(void *a2, void *a3, void *a4)
+{
+	typedef i32* (*func_ptr)(void*, void*, void*);
+	func_ptr func = (func_ptr)0x4E7800;
+	return func(a2, a3, a4);
+}
+
+// @Bogus
+static i32 *gsub_4E79F0(void *a2, void *a3, void *a4)
+{
+	typedef i32* (*func_ptr)(void*, void*, void*);
+	func_ptr func = (func_ptr)0x4E79F0;
+	return func(a2, a3, a4);
+}
+
+// @Bogus
+static i32 *gsub_4E7AE0(void *a2, void *a3, void *a4)
+{
+	typedef i32* (*func_ptr)(void*, void*, void*);
+	func_ptr func = (func_ptr)0x4E7AE0;
+	return func(a2, a3, a4);
+}
+
+// @Bogus
+static void gsub_471C50(i32 a2, i32 a3, i32 a4)
+{
+	typedef void (*func_ptr)(i32, i32, i32);
+	func_ptr func = (func_ptr)0x471C50;
+	func(a2, a3, a4);
+}
+
+// @Bogus
+static void gsub_471EA0(i32 a2, CVector *a3, i32 a4)
+{
+	typedef void (*func_ptr)(i32, CVector*, i32);
+	func_ptr func = (func_ptr)0x471EA0;
+	func(a2, a3, a4);
+}
+
+// @Bogus
+static void gsub_40F3D0(void *a2)
+{
+	typedef void (*func_ptr)(void*);
+	func_ptr func = (func_ptr)0x40F3D0;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_40F3F0(i16 *a2)
+{
+	typedef void (*func_ptr)(i16*);
+	func_ptr func = (func_ptr)0x40F3F0;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_40F410(i32 a2)
+{
+	typedef void (*func_ptr)(i32);
+	func_ptr func = (func_ptr)0x40F410;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_40F440(i32 a2, i32 a3, i32 a4)
+{
+	typedef void (*func_ptr)(i32, i32, i32);
+	func_ptr func = (func_ptr)0x40F440;
+	func(a2, a3, a4);
+}
+
+// @Bogus
+static void gsub_40F460(i32 a2, i32 a3, i32 a4)
+{
+	typedef void (*func_ptr)(i32, i32, i32);
+	func_ptr func = (func_ptr)0x40F460;
+	func(a2, a3, a4);
+}
+
+// @Bogus
+static void gsub_40F480(CVector *a2, i32 a3, i32 a4, i32 a5)
+{
+	typedef void (*func_ptr)(CVector*, i32, i32, i32);
+	func_ptr func = (func_ptr)0x40F480;
+	func(a2, a3, a4, a5);
+}
+
+// @Bogus
+static void gsub_43CEA0(i32 *a2, const char *a3, i32 a4, i32 a5, i32 a6, i32 a7, i32 a8, i32 a9, i32 a10, i16 a11, i16 a12)
+{
+	typedef void (*func_ptr)(i32*, const char*, i32, i32, i32, i32, i32, i32, i32, i16, i16);
+	func_ptr func = (func_ptr)0x43CEA0;
+	func(a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
+}
+
+// @Bogus
+static void gsub_43D830(i32 a2, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7)
+{
+	typedef void (*func_ptr)(i32, i32, i32, i32, i32, i32);
+	func_ptr func = (func_ptr)0x43D830;
+	func(a2, a3, a4, a5, a6, a7);
+}
+
+// @Bogus
+static i32 gsub_46BD80(i32 a2, CBaddy *a3, u16 a4, u16 a5, i32 a6)
+{
+	typedef i32 (*func_ptr)(i32, CBaddy*, u16, u16, i32);
+	func_ptr func = (func_ptr)0x46BD80;
+	return func(a2, a3, a4, a5, a6);
+}
+
+// @Bogus
+static void gsub_46B450(i32 a2, i32 a3)
+{
+	typedef void (*func_ptr)(i32, i32);
+	func_ptr func = (func_ptr)0x46B450;
+	func(a2, a3);
+}
+
+// @Bogus
+static void gsub_43B410(i32 *a2, i16 a3, i16 a4, i16 a5, i16 a6, i16 a7, i16 a8)
+{
+	typedef void (*func_ptr)(i32*, i16, i16, i16, i16, i16, i16);
+	func_ptr func = (func_ptr)0x43B410;
+	func(a2, a3, a4, a5, a6, a7, a8);
+}
+
+// @Bogus
+static void *gsub_4E3880(u16 a2)
+{
+	typedef void* (*func_ptr)(u16);
+	func_ptr func = (func_ptr)0x4E3880;
+	return func(a2);
+}
+
+// @Bogus
+static void gsub_470950(void)
+{
+	typedef void (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x470950;
+	func();
+}
+
+// @Bogus
+static void gsub_416880(CVector *a2, i32 a3)
+{
+	typedef void (*func_ptr)(CVector*, i32);
+	func_ptr func = (func_ptr)0x416880;
+	func(a2, a3);
+}
+
+// @Bogus
+static void gsub_4708B0(i32 a2)
+{
+	typedef void (*func_ptr)(i32);
+	func_ptr func = (func_ptr)0x4708B0;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_43C250(i32 *a2, i16 a3, i32 a4, i16 a5)
+{
+	typedef void (*func_ptr)(i32*, i16, i32, i16);
+	func_ptr func = (func_ptr)0x43C250;
+	func(a2, a3, a4, a5);
+}
+
+// @Bogus
+static void gsub_4DFFE0(void *a2)
+{
+	typedef void (*func_ptr)(void*);
+	func_ptr func = (func_ptr)0x4DFFE0;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_4DFD30(void *a2)
+{
+	typedef void (*func_ptr)(void*);
+	func_ptr func = (func_ptr)0x4DFD30;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_4DFFB0(void *a2, u16 a3)
+{
+	typedef void (*func_ptr)(void*, u16);
+	func_ptr func = (func_ptr)0x4DFFB0;
+	func(a2, a3);
+}
+
+// @Bogus
+static void gsub_4DFC20(u16 a2)
+{
+	typedef void (*func_ptr)(u16);
+	func_ptr func = (func_ptr)0x4DFC20;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_438EE0(void *a2)
+{
+	typedef void (*func_ptr)(void*);
+	func_ptr func = (func_ptr)0x438EE0;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_438E20(void *a2)
+{
+	typedef void (*func_ptr)(void*);
+	func_ptr func = (func_ptr)0x438E20;
+	func(a2);
+}
+
+// @Bogus
+static void gsub_43B740(i32 *a2, i32 a3)
+{
+	typedef void (*func_ptr)(i32*, i32);
+	func_ptr func = (func_ptr)0x43B740;
+	func(a2, a3);
+}
+
+// @Bogus
+static i32 gsub_4C9230(i32 a2)
+{
+	typedef i32 (*func_ptr)(i32);
+	func_ptr func = (func_ptr)0x4C9230;
+	return func(a2);
+}
+
+// @Bogus
+static i32 gsub_4E6150(CVector *a2, i32 *a3)
+{
+	typedef i32 (*func_ptr)(CVector*, i32*);
+	func_ptr func = (func_ptr)0x4E6150;
+	return func(a2, a3);
+}
+
+// @Bogus
+static void gsub_470430(i32 *a2, i32 *a3)
+{
+	typedef void (*func_ptr)(i32*, i32*);
+	func_ptr func = (func_ptr)0x470430;
+	func(a2, a3);
+}
+
+// @Bogus
+static void gsub_479EE0(i16 a2, i16 a3, i16 a4)
+{
+	typedef void (*func_ptr)(i16, i16, i16);
+	func_ptr func = (func_ptr)0x479EE0;
+	func(a2, a3, a4);
+}
+
+// @Bogus
+static void gsub_479D30(i16 a2, i16 a3, CVector *a4, i16 a5)
+{
+	typedef void (*func_ptr)(i16, i16, CVector*, i16);
+	func_ptr func = (func_ptr)0x479D30;
+	func(a2, a3, a4, a5);
+}
+
+// @Bogus
+static void gsub_4273D0(i32 a2)
+{
+	typedef void (*func_ptr)(i32);
+	func_ptr func = (func_ptr)0x4273D0;
+	func(a2);
+}
+
+// sub_4C9180 is the one callee here that is genuinely __thiscall (Hex-Rays
+// shows "this:" only for this call, cdecl "a1:" for every other one). This
+// build's compiler flags reject the __thiscall keyword directly (error
+// C4234, see the SVTableSlot0Deletable comment in spidey.cpp for the same
+// issue elsewhere), so the calling convention is captured through an
+// actual non-virtual member function pointer instead: MSVC lays out a
+// pointer-to-plain-member-function as a single code address using thiscall,
+// so this reproduces the real call shape rather than guessing at it.
+struct SMechRangeCheckAdapter
+{
+	i32 Check(i32, i32);
+};
+
+// @Bogus
+static i32 gsub_4C9180(CPlayer *pMech, i32 x, i32 z)
+{
+	typedef i32 (SMechRangeCheckAdapter::*memfn)(i32, i32);
+	union { memfn m; void *p; } u;
+	u.p = (void*)0x4C9180;
+	return (reinterpret_cast<SMechRangeCheckAdapter*>(pMech)->*u.m)(x, z);
+}
+
+// @NotOk
+// See the big comment above for the full opcode map, and exactly which
+// opcodes are implemented with real logic vs. forwarded vs. genuinely
+// uncertain (0x4102, 0x4106, 0x4118, 0x4227, 0x4280, 0x429A/0x42A6-0x42A8,
+// 0x42A3/0x450A, 0x42B8, 0x450D -- all have a real, mechanically faithful
+// translation of every operand read/write and call, but their PURPOSE
+// beyond "what the bytes do" was not recovered). Every opcode value the
+// original switch handles is covered here (no silently-dropped case); the
+// only opcodes not individually named are 0x4103 and 0x4108-0x410F, which
+// the original ITSELF routes to the same unhandled-opcode default.
+int CBaddy::ExecuteCommand(u16 cmd)
+{
+	switch (cmd)
+	{
+		case 0x4101: // C_GOTO
+		{
+			u16 idx = CBaddy_ReadOperand(this);
+			this->field_24C = this->labelArr[idx];
+			return true;
+		}
+
+		case 0x4102: // C_GOTO_2 (uncertain name)
+		{
+			u16 idx = CBaddy_ReadOperand(this);
+			bool cond = this->mType == 203;
+			this->field_24C = this->labelArr[idx];
+			return cond && this->field_234 != 0 && *gSubmarinerDieRelated != 0;
+		}
+
+		case 0x4104: // C_SET_SCRIPT_LABEL
+		{
+			u16 idx = CBaddy_ReadOperand(this);
+			print_if_false(idx < 8, "Label exceeds MAX_BADDY_LABELS");
+			this->labelArr[idx] = this->field_24C;
+			return true;
+		}
+
+		case 0x4105: // C_DEFINE_LABELS
+		{
+			i16 *saved = this->field_24C;
+
+			for (u16 op = CBaddy_ReadOperand(this); op != 0x4100; op = CBaddy_ReadOperand(this))
+			{
+				if (op == 0x4104)
+				{
+					u16 idx = CBaddy_ReadOperand(this);
+					print_if_false(idx < 8, "Label exceeds MAX_BADDY_LABELS");
+					this->labelArr[idx] = this->field_24C;
+				}
+			}
+
+			this->field_24C = saved;
+			return true;
+		}
+
+		case 0x4106: // uncertain name/purpose, see the class comment above
+		{
+			i32 buf[3] = { 0, 0, 0 };
+			u16 val = CBaddy_ResolveOperand(this);
+			this->field_24C = reinterpret_cast<i16*>(gsub_4E3940(buf, val) + 6);
+			return true;
+		}
+
+		case 0x4103:
+		case 0x4108:
+		case 0x4109:
+		case 0x410A:
+		case 0x410B:
+		case 0x410C:
+		case 0x410D:
+		case 0x410E:
+		case 0x410F:
+			return true;
+
+		case 0x4107: // C_YIELD
+			return false;
+
+		case 0x4110: // C_ADD
+		case 0x4111: // C_SUB
+		{
+			u16 idx = CBaddy_ReadOperand(this);
+			i16 *runStart = this->field_24C;
+			i16 old = this->GetVariable(idx);
+			i16 *runEnd = this->field_24C;
+
+			i16 relay[32];
+			i32 relayCount = 0;
+
+			if (runStart != runEnd)
+			{
+				for (i16 *p = runStart; p != runEnd; p++)
+					relay[relayCount++] = *p;
+			}
+
+			u16 rhs = CBaddy_ReadOperand(this);
+			if (rhs & 0x2000)
+				rhs = static_cast<u16>(this->GetVariable(rhs));
+
+			i16 result = (cmd == 0x4110) ? static_cast<i16>(old + rhs) : static_cast<i16>(old - rhs);
+			relay[relayCount] = result;
+
+			i16 *afterRead = this->field_24C;
+			this->field_24C = relay;
+			this->SetVariable(idx);
+			this->field_24C = afterRead;
+
+			return true;
+		}
+
+		case 0x4112: // C_IF_GREATER
+		{
+			u16 a = CBaddy_ResolveOperand(this);
+			u16 b = CBaddy_ResolveOperand(this);
+			if (static_cast<i16>(a) > static_cast<i16>(b))
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+		}
+
+		case 0x4113: // C_IF_LESS
+		{
+			u16 a = CBaddy_ResolveOperand(this);
+			u16 b = CBaddy_ResolveOperand(this);
+			if (static_cast<i16>(a) < static_cast<i16>(b))
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+		}
+
+		case 0x4114: // C_IF_EQUAL
+		{
+			u16 a = CBaddy_ResolveOperand(this);
+			u16 b = CBaddy_ResolveOperand(this);
+			if (a == b)
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+		}
+
+		case 0x4115: // C_IF_FLAG_SET
+		{
+			u16 mask = CBaddy_ReadOperand(this);
+			if ((this->field_218 & mask) == mask)
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+		}
+
+		case 0x4116: // C_IF_FLAG_CLEAR
+		{
+			u16 mask = CBaddy_ReadOperand(this);
+			if ((this->field_218 & mask) == 0)
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+		}
+
+		case 0x4117: // C_IF_WHATIF
+			if (gWhatIf)
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+
+		case 0x4118: // C_IF_MECH_IN_RANGE (uncertain name)
+		{
+			i16 x = static_cast<i16>(CBaddy_ReadOperand(this));
+			i16 z = static_cast<i16>(CBaddy_ReadOperand(this));
+			if (MechList != 0 && gsub_4C9180(MechList, x << 12, z << 12))
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+		}
+
+		case 0x4119: // C_IF_SYMBIOTE (uncertain name)
+			if (*CurrentSuit == 4 || *gSymbioteRelated != 0)
+				return true;
+			CBaddy_SkipToMatchingEndif(this);
+			return true;
+
+		case 0x4120: // C_ENDIF
+			return true;
+
+		case 0x4200: // C_SET_NAME
+		{
+			this->InitItem(reinterpret_cast<char*>(this->field_24C));
+
+			u8 *p = reinterpret_cast<u8*>(this->field_24C);
+			if (*p != 0)
+			{
+				do { p++; } while (*p != 0);
+			}
+
+			if ((reinterpret_cast<i32>(p) & 1) == 0)
+				this->field_24C = reinterpret_cast<i16*>(p + 2);
+			else
+				this->field_24C = reinterpret_cast<i16*>(p + 1);
+
+			return true;
+		}
+
+		case 0x4201:
+		{
+			u16 a2 = CBaddy_ReadOperand(this);
+			u16 a3 = CBaddy_ReadOperand(this);
+			gsub_460D00(a2, a3);
+			return true;
+		}
+
+		case 0x4202:
+		{
+			u16 a2 = CBaddy_ReadOperand(this);
+			this->RunAnim(a2, 0, -1);
+			return true;
+		}
+
+		case 0x4203:
+			this->mFlags &= ~1;
+			return true;
+
+		case 0x4204:
+			this->mFlags |= 1;
+			return true;
+
+		case 0x4205:
+			gsub_404320(0);
+			return true;
+
+		case 0x4226: // C_ZERO_VELOCITY
+			this->mVel.vx = 0;
+			this->mVel.vy = 0;
+			this->mVel.vz = 0;
+			return true;
+
+		case 0x4227: // uncertain name, see class comment
+		{
+			u16 a2 = CBaddy_ReadOperand(this);
+			this->field_2F0 |= 4;
+			this->field_212 = static_cast<u8>(a2);
+			this->field_213 = 0;
+			return true;
+		}
+
+		case 0x4240:
+			this->field_20C = 0;
+			return false;
+
+		case 0x4280: // uncertain name/purpose, see class comment
+		{
+			// mechanically faithful: snapshot mPos/mAngles/mScale-ish
+			// state, loop calling Shouldnt_DoPhysics_Be_Virtual() and the
+			// forwarded helpers, then restore. Read straight off the
+			// pseudocode; the WHY of this dance was not recovered.
+			u16 val = CBaddy_ResolveOperand(this);
+
+			if (this->mType == 203 && this->field_234 != 0 && *gSubmarinerDieRelated != 0)
+				return true;
+
+			this->field_230 = val;
+
+			i32 mode = gsub_4DE770();
+			if (mode != 2051 && mode != 258)
+			{
+				this->field_2A0 = 2 * val;
+				return false;
+			}
+
+			if (val != 0 && (this->attributeArr[0] | this->field_240.vx | this->field_240.vy
+					| this->field_240.vz | this->attributeArr[1] | this->attributeArr[2]) != 0)
+			{
+				CVector savedPos = this->mPos;
+				CSVector savedAngles = this->mAngles;
+				i32 savedField80 = this->field_80;
+				this->field_80 = 2;
+
+				for (i32 i = 0; i < this->field_230; i++)
+				{
+					i32 buf[3] = { 0, 0, 0 };
+					i32 cnt = 2;
+					i32 r = gsub_4E7A40(this, buf, &this->mAcc, &cnt);
+					gsub_4E7900(r);
+					this->Shouldnt_DoPhysics_Be_Virtual();
+				}
+
+				this->field_80 = savedField80;
+
+				i32 v256[3] = { 0, 0, 0 };
+				i32 v257[3] = { 0, 0, 0 };
+				i32 *r1 = gsub_4E7760(v256, &this->mVel, &this->mPos);
+				i32 v252 = 2 * val;
+				i32 *r2 = gsub_4E7800(v257, r1, &v252);
+				this->field_2B0 = r2[0];
+				this->field_2B4 = r2[1];
+
+				char v255[8] = { 0 };
+				char v253[8] = { 0 };
+				i32 v248 = this->field_2A0;
+				i32 *r3 = gsub_4E79F0(v255, &savedField80, &savedAngles);
+				i32 *r4 = gsub_4E7AE0(v253, r3, &v248);
+
+				this->mPos = savedPos;
+				this->mAngles = savedAngles;
+
+				return false;
+			}
+			else if (gsub_4DE770() == 258 && this->field_220 == 402)
+			{
+				this->field_2A0 = 2 * val + 40;
+				return false;
+			}
+			else
+			{
+				this->field_2A0 = 2 * val;
+				return false;
+			}
+		}
+
+		case 0x4281: // C_WAIT_FOR_CONDITION (uncertain name)
+			if ((this->mType == 203 && this->field_234 != 0 && *gSubmarinerDieRelated != 0)
+					|| (this->field_214 & 1) != 0)
+			{
+				return true;
+			}
+			this->field_24C -= 2;
+			return false;
+
+		case 0x428E:
+		case 0x4290:
+		{
+			u16 val = CBaddy_ReadOperand(this);
+			if (!(this->mType == 203 && this->field_234 != 0 && *gSubmarinerDieRelated != 0))
+			{
+				i32 flags = (cmd == 0x428E) ? 0x8000 : 0;
+				if (val >= 300 && val <= 309)
+					flags |= 0x4000;
+				gsub_471C50(flags | val, 0x2000, 0);
+			}
+			return true;
+		}
+
+		case 0x428F:
+		case 0x4291:
+		{
+			u16 val = CBaddy_ReadOperand(this);
+			if (!(this->mType == 203 && this->field_234 != 0 && *gSubmarinerDieRelated != 0))
+				gsub_471EA0(val | ((cmd == 0x428F) ? 0x8000 : 0), &this->mPos, 0);
+			return true;
+		}
+
+		case 0x4292:
+		{
+			u16 count = CBaddy_ReadOperand(this);
+
+			if (TotalBitUsage < 200)
+			{
+				gsub_40F3D0(&this->mAngles);
+				i16 params[3] = { 512, 4096, 0 };
+				gsub_40F3F0(params);
+				gsub_40F410(1);
+				gsub_40F440(128, 128, 128);
+				gsub_40F460(4, 4, 4);
+
+				TotalBitUsage = 0;
+
+				for (i32 i = 0; i < count; i++)
+				{
+					void *p = CBit::operator new(76);
+					if (p != 0)
+						gsub_40F480(&this->mPos, 32, 0x2000, 32);
+				}
+
+				TotalBitUsage = 1;
+			}
+
+			return true;
+		}
+
+		case 0x4293:
+		{
+			i32 aligned = (reinterpret_cast<i32>(this->field_24C) + 3) & ~3;
+			this->field_24C = reinterpret_cast<i16*>(aligned + 4);
+			return true;
+		}
+
+		case 0x4294:
+		{
+			void *list = gsub_4E3880(*reinterpret_cast<u16*>(&this->field_2A8));
+			u16 *entries = reinterpret_cast<u16*>(list);
+			u16 n = entries[0];
+
+			for (i32 i = 0; i < n; i++)
+			{
+				i32 buf[3] = { 0, 0, 0 };
+				gsub_4E3940(buf, entries[1 + i]);
+			}
+
+			return true;
+		}
+
+		case 0x4295:
+			gsub_470950();
+			return true;
+
+		case 0x4296:
+		case 0x4297:
+			this->field_24C += 2;
+			return true;
+
+		case 0x4298:
+		{
+			u16 val = CBaddy_ResolveOperand(this);
+			if (CameraList != 0)
+			{
+				i32 mode;
+				if (val == 0)
+					mode = 2;
+				else if (val == 1)
+					mode = 1;
+				else if (val == 2)
+					mode = 0;
+				else
+					mode = 3;
+				gsub_416880(&this->mPos, mode);
+			}
+			return true;
+		}
+
+		case 0x4299:
+		{
+			u16 val = CBaddy_ReadOperand(this);
+			gsub_4708B0(val);
+			return true;
+		}
+
+		case 0x429A:
+		case 0x42A6:
+		case 0x42A7:
+		case 0x42A8:
+		{
+			i32 posBuf[3];
+
+			if (cmd == 0x429A)
+			{
+				u16 val = CBaddy_ResolveOperand(this);
+				gsub_4E3940(posBuf, val);
+			}
+			else
+			{
+				// the original's own guard here checks `a2==17050`, which
+				// can never be true for these opcode values -- dead code,
+				// kept as written rather than "fixed" (CLAUDE.md guidance).
+				posBuf[0] = this->mPos.vx;
+				posBuf[1] = this->mPos.vy;
+				posBuf[2] = this->mPos.vz;
+			}
+
+			u16 sub = CBaddy_ReadOperand(this);
+
+			switch (sub)
+			{
+				case 0:
+				case 1:
+					break;
+
+				case 2:
+				{
+					i16 a = static_cast<i16>(*this->field_24C);
+					this->field_24C++;
+					if (!(a & 0x8000) && (a & 0x2000))
+						a = this->GetVariable(a);
+					i16 b = *reinterpret_cast<i16*>(reinterpret_cast<char*>(this->field_24C) + 2);
+					this->field_24C = reinterpret_cast<i16*>(reinterpret_cast<char*>(this->field_24C) + 2);
+					i16 c = *this->field_24C;
+					this->field_24C++;
+					void *p = CBit::operator new(144);
+					if (p != 0)
+						gsub_43C250(posBuf, a, c != 0, c);
+					break;
+				}
+
+				case 3:
+				{
+					i16 v110 = *this->field_24C; this->field_24C++;
+					i16 v112 = *this->field_24C; this->field_24C++;
+					i16 v113 = *this->field_24C; this->field_24C++;
+					i16 v114 = *this->field_24C; this->field_24C++;
+					i16 v115 = *this->field_24C; this->field_24C++;
+					i16 v116 = *this->field_24C; this->field_24C++;
+					i16 v117 = *this->field_24C; this->field_24C++;
+					i16 v118 = *this->field_24C; this->field_24C++;
+					i16 v119 = *this->field_24C; this->field_24C++;
+					i16 v120 = *this->field_24C; this->field_24C++;
+
+					i32 jitter = 2 * v120 + 1;
+					i32 buf[3];
+					buf[0] = posBuf[0] + ((Rnd(jitter) - v120) << 12);
+					buf[1] = posBuf[1] + ((Rnd(jitter) - v120) << 12);
+					buf[2] = posBuf[2] + ((Rnd(jitter) - v120) << 12);
+
+					void *p = CClass::operator new(276);
+					if (p != 0)
+						gsub_43CEA0(buf, "expgrnd", v110, v112, v113, v114, v115, v116, v117, v118, v119);
+					break;
+				}
+
+				default:
+					return true;
+			}
+
+			return true;
+		}
+
+		case 0x429C:
+		{
+			u8 *p = reinterpret_cast<u8*>(this->field_24C);
+			i32 a2 = p[6];
+			i32 a3 = p[4];
+			i32 a4 = p[2];
+			i32 a5 = p[0];
+			gsub_43D830(a5, a4, a5, a2, 0, a2);
+			this->field_24C = reinterpret_cast<i16*>(p + 10);
+			return true;
+		}
+
+		case 0x429D:
+			return true;
+
+		case 0x429E:
+			*gBaddyScriptPosY = this->mPos.vy;
+			return true;
+
+		case 0x42A0:
+		{
+			u16 val = CBaddy_ResolveOperand(this);
+			u16 a4 = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C = reinterpret_cast<i16*>(reinterpret_cast<u16*>(this->field_24C) + 1);
+			u16 a5 = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C = reinterpret_cast<i16*>(reinterpret_cast<u16*>(this->field_24C) + 1);
+			u16 a6 = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C = reinterpret_cast<i16*>(reinterpret_cast<u16*>(this->field_24C) + 1);
+
+			if (gsub_46BD80(val, this, a4, a5, -1) != 0)
+				gsub_46B450(a6 << 12, 5);
+
+			return true;
+		}
+
+		case 0x42A2:
+			*gInitBaddyRelated = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C += 1;
+			return true;
+
+		case 0x42A3:
+		case 0x450A: // C_PLAY_FX (uncertain name)
+		{
+			i16 v196 = static_cast<i16>(CBaddy_ReadOperand(this));
+			i16 v197 = static_cast<i16>(CBaddy_ReadOperand(this));
+			i16 v198 = static_cast<i16>(CBaddy_ReadOperand(this));
+
+			if (!(this->mType == 203 && this->field_234 != 0 && *gSubmarinerDieRelated != 0))
+			{
+				if (cmd == 0x42A3)
+					gsub_479EE0(v196, v197, v198);
+				else
+					gsub_479D30(v196, v197, &this->mPos, v198);
+			}
+
+			return true;
+		}
+
+		case 0x42B0: // skip embedded string (shares tail with 0x4200/0x4707)
+		{
+			u8 *p = reinterpret_cast<u8*>(this->field_24C);
+			if (*p != 0)
+			{
+				do { p++; } while (*p != 0);
+			}
+			if ((reinterpret_cast<i32>(p) & 1) == 0)
+				this->field_24C = reinterpret_cast<i16*>(p + 2);
+			else
+				this->field_24C = reinterpret_cast<i16*>(p + 1);
+			return true;
+		}
+
+		case 0x42B1:
+		case 0x42B2:
+		{
+			u16 val = CBaddy_ResolveOperand(this);
+			void *entry = gsub_4E3880(val);
+			if (cmd == 0x42B1)
+				gsub_4DFFE0(entry);
+			else
+				gsub_4DFD30(entry);
+			return true;
+		}
+
+		case 0x42B3:
+		case 0x42B4:
+		{
+			u16 val = CBaddy_ResolveOperand(this);
+			if (cmd == 0x42B3)
+			{
+				gsub_4DFFB0(ControlBaddyList, val);
+				gsub_4DFFB0(BaddyList, val);
+				gsub_4DFFB0(EnvironmentalObjectList, val);
+			}
+			else
+			{
+				gsub_4DFC20(val);
+			}
+			return true;
+		}
+
+		case 0x42B5:
+		{
+			i32 aligned = (reinterpret_cast<i32>(this->field_24C) + 3) & ~3;
+			i32 *p = reinterpret_cast<i32*>(aligned);
+			gsub_4273D0(*p);
+			this->field_24C = reinterpret_cast<i16*>(p + 1);
+			return true;
+		}
+
+		case 0x42B6: // C_SET_TARGET_FRAME (uncertain name)
+		{
+			u16 val = CBaddy_ResolveOperand(this);
+			if (this->mType == 203 && this->field_234 != 0 && *gSubmarinerDieRelated != 0)
+				return true;
+			this->field_230 = val;
+			return false;
+		}
+
+		case 0x42B7:
+			this->field_214 |= 1;
+			return true;
+
+		case 0x42B8:
+		{
+			i16 v175 = *this->field_24C; this->field_24C++;
+			i16 v176 = *this->field_24C; this->field_24C++;
+
+			i32 aligned = (reinterpret_cast<i32>(this->field_24C) + 3) & ~3;
+			i32 *p = reinterpret_cast<i32*>(aligned);
+
+			for (; *p != 0; p++)
+			{
+				i32 hit = gsub_4C9230(*p);
+				if (hit != 0)
+				{
+					// the hit object's real type is not established here;
+					// offsets kept raw (matches the original, which also
+					// pokes an untyped pointer).
+					if (v175 == 1)
+						*reinterpret_cast<u8*>(hit + 28) = static_cast<u8>(v176);
+					else
+						*reinterpret_cast<u8*>(hit + 30) = static_cast<u8>(v176);
+				}
+			}
+
+			this->field_24C = reinterpret_cast<i16*>(p + 1);
+			return true;
+		}
+
+		case 0x42B9:
+			*gWideScreen = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C += 1;
+			*gWideScreenShadow = *gWideScreen;
+			return true;
+
+		case 0x42BA:
+		{
+			u16 val = CBaddy_ReadOperand(this);
+			// the original stashes this straight into a MechList-family
+			// object at offset 2283, whose real type/name is not
+			// established here.
+			if (MechList != 0)
+				*(reinterpret_cast<u8*>(MechList) + 2283) = (val != 0);
+			return true;
+		}
+
+		case 0x430A:
+		{
+			i16 v183 = *this->field_24C; this->field_24C++;
+			i32 aligned = (reinterpret_cast<i32>(this->field_24C) + 3) & ~3;
+			i32 *p = reinterpret_cast<i32*>(aligned);
+
+			i32 buf[3];
+			buf[0] = this->mPos.vx;
+			buf[1] = (v183 << 12) + this->mPos.vy;
+			buf[2] = this->mPos.vz;
+
+			gsub_43B740(buf, *p);
+			this->field_24C = reinterpret_cast<i16*>(p + 1);
+			return true;
+		}
+
+		case 0x430B:
+		{
+			CBaddy *node = BaddyList;
+			while (node != 0 && node->mType != 314)
+				node = static_cast<CBaddy*>(node->mNextItem);
+
+			if (node != 0)
+			{
+				// raw vtable slot 17 (offset 0x44): not resolvable to a
+				// declared virtual in this repo, kept raw with a comment
+				// rather than guessed at. Real C++ virtual calls are
+				// thiscall, and this build's compiler flags reject the
+				// __thiscall keyword directly (error C4234, see
+				// SMechRangeCheckAdapter above), so the same member-
+				// function-pointer trick is used here.
+				void **vtable = *reinterpret_cast<void***>(node);
+				typedef void (SMechRangeCheckAdapter::*slot17_t)(CVector*);
+				union { slot17_t m; void *p; } u;
+				u.p = vtable[17];
+				(reinterpret_cast<SMechRangeCheckAdapter*>(node)->*u.m)(&this->mPos);
+			}
+
+			return true;
+		}
+
+		case 0x430C:
+			gsub_438E20(MechList);
+			return true;
+
+		case 0x430D:
+			gsub_438EE0(MechList);
+			return true;
+
+		case 0x450D: // C_CAMERA_TRAJECTORY (uncertain name, "BossCamStationaryRadius")
+		{
+			i16 v188 = *this->field_24C; this->field_24C++;
+			u16 v189 = *reinterpret_cast<u16*>(this->field_24C); this->field_24C++;
+			u16 v190 = *reinterpret_cast<u16*>(this->field_24C); this->field_24C++;
+			u16 v191 = *reinterpret_cast<u16*>(this->field_24C); this->field_24C++;
+
+			if (MechList != 0)
+			{
+				i32 dist = gsub_4E6150(&this->mPos, reinterpret_cast<i32*>(&MechList->mPos));
+
+				if (dist <= static_cast<i32>(v190))
+				{
+					i32 buf[3];
+					buf[0] = (MechList->mPos.vx - this->mPos.vx) >> 12;
+					buf[1] = 0;
+					buf[2] = (MechList->mPos.vz - this->mPos.vz) >> 12;
+
+					gsub_470430(buf, buf);
+
+					i32 result;
+					if (dist > static_cast<i32>(v189))
+						result = v188 * (dist - v189) / (v190 - v189);
+					else
+						result = v188;
+
+					print_if_false(true, "bad value send to BossCamStationaryRadius");
+					(void)result;
+					(void)v191;
+				}
+			}
+
+			return true;
+		}
+
+		case 0x450E:
+		{
+			u16 val = CBaddy_ReadOperand(this);
+			if (CameraList != 0)
+				gsub_416880(reinterpret_cast<CVector*>(reinterpret_cast<char*>(CameraList) + 680), val);
+			return true;
+		}
+
+		case 0x450F:
+		case 0x4511:
+		case 0x4512:
+		{
+			u16 val = CBaddy_ReadOperand(this);
+			void *list = gsub_4E3880(*reinterpret_cast<u16*>(&this->field_2A8));
+			u16 *entries = reinterpret_cast<u16*>(list);
+			u16 n = entries[0];
+
+			for (i32 i = 0; i < n; i++)
+			{
+				u16 k = entries[1 + i];
+				for (CBaddy *node = BaddyList; node != 0; node = static_cast<CBaddy*>(node->mNextItem))
+				{
+					if (node->mNode != k)
+						continue;
+
+					if (cmd == 0x450F)
+					{
+						if (val != 0)
+							node->mFlags &= ~1;
+						else
+							node->mFlags |= 1;
+					}
+					else if (cmd == 0x4511)
+					{
+						*reinterpret_cast<u16*>(reinterpret_cast<char*>(node) + 256) = val;
+					}
+					else
+					{
+						*reinterpret_cast<u16*>(reinterpret_cast<char*>(node) + 258) = val;
+					}
+				}
+			}
+
+			return true;
+		}
+
+		case 0x4601:
+			this->field_218 |= 0x100000;
+			this->mFlags |= 1;
+			return true;
+
+		case 0x4602:
+			this->field_218 |= 0x200000;
+			return true;
+
+		case 0x4603:
+			this->field_218 |= 0x400000;
+			return true;
+
+		case 0x4702: // this is the real "a2==18178" special case, separate
+			         // from the 0x4601 switch case above despite the
+			         // similar-looking values -- confirmed field_2F0 |= 1,
+			         // not field_218, by re-checking the exact pseudocode
+			this->field_2F0 |= 1;
+			return true;
+
+		case 0x4703:
+			this->field_2F0 |= 2;
+			return true;
+
+		case 0x4704:
+		case 0x4706:
+			this->field_2F0 |= 8;
+			return true;
+
+		case 0x4705:
+			this->field_2F0 |= 0x10;
+			return true;
+
+		case 0x4707: // reads one u16 operand into field_2F4 (NOT a string
+			         // skip -- only shares the final "field_24C = p + 2"
+			         // shape with 0x4200/0x42B0's tail, the source value is
+			         // different: those scan past an embedded NUL string
+			         // first, this does not)
+		{
+			u16 *p = reinterpret_cast<u16*>(this->field_24C);
+			this->field_2F4 = *p;
+			this->field_24C = reinterpret_cast<i16*>(p + 1);
+			return true;
+		}
+
+		case 0x4708:
+			this->field_2F0 |= 0x20;
+			return true;
+
+		case 0x4709:
+			this->field_2F0 |= 0x40;
+			return true;
+
+		case 0x470B:
+			this->field_1A4 = CBaddy_ReadOperand(this);
+			return true;
+
+		case 0x470C:
+		{
+			u16 a2 = CBaddy_ReadOperand(this);
+			u16 a3 = CBaddy_ReadOperand(this);
+			this->SetParamByIndex(a2, a3);
+			return true;
+		}
+
+		case 0x470F:
+			this->field_2A8 |= 0x2000000;
+			return true;
+
+		default:
+			return true;
+	}
 }
 
 // @Ok
@@ -1727,6 +3199,7 @@ void validate_CBaddy(void){
 
 	VALIDATE(CBaddy, field_24C, 0x24C);
 
+	VALIDATE(CBaddy, labelArr, 0x250);
 
 	VALIDATE(CBaddy, attributeArr, 0x270);
 	VALIDATE(CBaddy, field_27C, 0x27C);
