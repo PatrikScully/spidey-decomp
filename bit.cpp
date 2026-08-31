@@ -1110,23 +1110,81 @@ void DisplayLinked2EndedBitListLeftover(void**)
 {
 }
 
-// @BIGTODO
-// Address 0x40f110 (found by tracing Bit_Init's RegisterSlot calls, see
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x40f110, found by tracing Bit_Init's RegisterSlot calls (see
 // DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Decompiled once this session for its
-// callee shape (no gte_ldlv0/gte_rtps here, unlike the rest of the
-// family): builds a raw fixed-to-float vector (pos / 4096.0f, no >>12),
-// runs it through Algebra_Transform4 (sub_402700) using the shared
-// gGfxMatrix, takes 1/w (fabs(w) > 1e-8 guard, else -1e12) as the depth,
-// and if depth > 0, blend mode from a flags nibble, then draws via
-// PCGfx_DrawQuad2D (sub_507470, already @Ok, 2D sprite/dot emit). NOT
-// figured out yet: the pseudocode never visibly computes the screen x/y
-// arguments passed to sub_507470 (they read as uninitialized locals in
-// Hex-Rays output), so the raw disassembly needs tracing to find where
-// they really come from before implementing this one - likely a missed
-// stack-slot alias Hex-Rays did not resolve.
-void DisplayPixelList(void**)
+// CSimpleTexturedRibbon::Display. No gte_ldlv0/gte_rtps here, unlike the
+// rest of the family: builds a raw fixed-to-float vector (pos / 4096.0f,
+// no >>12), runs it through Algebra_Transform4, and gets invZ = 1/w
+// (fabs(w) > 1e-8 guard, else -1e12).
+//
+// The old note here said the screen x/y arguments passed to
+// PCGfx_DrawQuad2D never visibly appeared in the Hex-Rays pseudocode.
+// Traced in the raw disassembly this session: they are the x*invZ and
+// y*invZ stack slots written by the vector3d-ctor call right before the
+// depth check (the same call that produces the depth value itself) -
+// Hex-Rays just failed to alias them back to named locals. Confirmed
+// against PCGfx_DrawQuad2D's real 11-argument signature (PCGfx.h): x, y,
+// width, height, 0, 0, 1, 1, color, z, bool. Width/height are
+// (mWidthHeight & 0xF) scaled into pixels via gGameResolutionX/Y over
+// Xres/Yres, same scaling idiom as DisplayQuadBitList and
+// DisplayTextBoxList, but note it scales the SPRITE SIZE here, not the
+// already-projected screen position. The z argument is invZ offset by a
+// constant (~7.071, likely a fixed near-plane bias for 2D sprite sorting,
+// not otherwise identified). Color is r0/g0/b0 direct with alpha 0xFF, or
+// 0x80 plus blend mode 2 if CPixel::code has bit 2 set (semi-transparent).
+void DisplayPixelList(void** a1)
 {
+	RefreshGfxMatrix();
+
+	CPixel* pPixel = reinterpret_cast<CPixel*>(*a1);
+	while (pPixel)
+	{
+		f32 rawPos[3];
+		rawPos[0] = (f32)pPixel->mPos.vx / 4096.0f;
+		rawPos[1] = (f32)pPixel->mPos.vy / 4096.0f;
+		rawPos[2] = (f32)pPixel->mPos.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZ;
+		if (fabsf(xf[3]) > 0.00000001f)
+			invZ = 1.0f / xf[3];
+		else
+			invZ = -1.0e12f;
+
+		f32 screenX = xf[0] * invZ;
+		f32 screenY = xf[1] * invZ;
+
+		if (invZ > 0.0f)
+		{
+			i32 blendMode = 0;
+			u32 alpha = 0xFF;
+			if (pPixel->code & 2)
+			{
+				blendMode = 2;
+				alpha = 0x80;
+			}
+
+			u32 color = (alpha << 24) | (pPixel->r0 << 16) | (pPixel->g0 << 8) | pPixel->b0;
+
+			PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+			f32 width = (f32)(pPixel->mWidthHeight & 0xF);
+			f32 scaleX = gGameResolutionX / (f32)Xres;
+			f32 scaleY = gGameResolutionY / (f32)Yres;
+
+			PCGfx_DrawQuad2D(
+					screenX, screenY,
+					scaleX * width, scaleY * width,
+					0.0f, 0.0f, 1.0f, 1.0f,
+					color, invZ - 7.0710726f, false);
+		}
+
+		pPixel = reinterpret_cast<CPixel*>(pPixel->mNext);
+	}
 }
 
 // @BIGTODO
