@@ -357,8 +357,12 @@ INLINE i32 CCop::TryAddingCollidePointToPath(CVector *a2)
 	return this->AddPointToPath(&v6, 0);
 }
 
-// @NotOk
-// does baddy not have 324???
+// @Ok
+// field_324 is CCop-specific (declared in cop.h, confirmed by
+// RunToWhereTheActionIs), not a CBaddy field, so the nearest cop's field_324
+// is checked directly here. Verified against the IDA decompile of 0x42b270:
+// GetClosest(306,0) then GetClosest(320,0) fallback, then the nearest
+// pointer's offset 0x324 gated the CMessage(this, nearest, 7, 0) construct.
 void CCop::WarnOtherCops(void)
 {
 	CCop *nearest = reinterpret_cast<CCop*>(this->GetClosest(306, 0));
