@@ -19,6 +19,7 @@
 #include "algebra.h"
 #include "shatter.h"
 #include "screen.h"
+#include "ps2m3d.h"
 
 // @Ok
 EXPORT bool SparkSemiTrans = true;
@@ -410,103 +411,6 @@ static INLINE void RefreshGfxMatrix(void)
 // stru_56F1B4; duplicated here per the repo's file-local-static convention.
 static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
 
-// @BIGTODO
-// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Re-verified this session
-// (2026-08-31, THIRD pass, full fresh decompile + partial raw disasm cross-check of sub_4E7090
-// and every gte_* callee). The overall algorithm shape is now FULLY understood (see below) -
-// this is a billboarded ribbon quad-strip, structurally the same "two scratch buffers + a flat
-// invZ array + an overlapping-quad draw loop" idiom DisplayQuadBitList already uses, just with a
-// per-segment perpendicular "width" vector computed fresh each iteration instead of 4 fixed
-// corners. Left @BIGTODO rather than @Ok because the FINAL draw loop's exact per-face colour
-// source (field_48 indexing) is not confirmed and guessing it wrong would silently mis-render
-// every ribbon (spider webs etc) - see "still open" at the bottom.
-//
-// sub_4E7090(a1: i32* prevPointSlot, a2: i32* nextPointSlot, a3: i32* out) - OUTPUT ONLY (never
-// reads a3 as input, contrary to the previous pass's guess), computes a per-segment perpendicular
-// offset vector into a3, magnitude 16 (unit-length in that fixed scale), zeroed if degenerate:
-//   delta = (a2 - a1) >> 12, further >>4 if any axis magnitude exceeds 500 (overflow guard)
-//   toCamera = (gCameraViewPos - a1) >> 12
-//   cross = delta x toCamera, via gte_ldopv1(&delta)/gte_ldopv2(&toCamera)/sub_46D6A0() - the
-//     latter is STILL unnamed, but it is confirmed to behave exactly like the already-@Ok
-//     gte_op12 (ps2funcs.cpp, `cross = op1 x op2, >>12` - same inputs, same shape), just at a
-//     different address (0x46D6A0 vs gte_op12's 0x46D700) - a genuinely separate function, not
-//     a names.json mismatch, so do not rename/merge them without more evidence.
-//   cross written to a3 via gte_stlvnl(a3) (sub_46D790, already @Ok)
-//   magnitude: (a3>>8 per axis) -> gte_ldlvl -> gte_sqr0 (sub_46DD00, already @Ok, squares each
-//     axis) -> gte_stlvnl -> M3dMaths_SquareRoot0(sum of the 3 squares) (sub_46D430, already @Ok)
-//   if magnitude < 5: a3 = {0,0,0}; else a3[i] = 16 * (a3[i] / magnitude) per axis
-// Call site passes a1 = field_44-as-int-ptr + 7 (the NEXT spine point) and a2 = the CURRENT spine
-// point, i.e. delta is (current - next), reversed from a "prev->next" reading of the params.
-// The a3 output slot passed by the caller is itself borrowed scratch memory inside the NEXT
-// point's own SSimpleRibbonParams record (offset 0x18-0x23, i.e. the middle PADDING(0xC) bytes
-// bit.h's SSimpleRibbonParams currently declares before field_18) - safe to replace with a local
-// temporary instead of reproducing that memory reuse, since nothing else reads it back.
-//
-// this->field_44 (SSimpleRibbonParams*, cast to a flat i32* by the original) is the ribbon's
-// spine point array, 7 ints (0x1C bytes, matches SSimpleRibbonParams's already-VALIDATEd size)
-// per point: [0..2] = raw fixed-point CVector position (needs adding to bit.h - currently inside
-// PADDING(0x18)), [3..5] = still PADDING/unused by this function, [6] = field_18 = per-point
-// "width" scalar (VALIDATEd already, just needs a real name once confirmed elsewhere).
-//
-// Per segment (field_3E = mNumFacesToDisplay iterations), reusing ONE gte_SetRotMatrix(&stru_
-// 56F224, same fixed matrix as spidey.cpp/panel.cpp's stru_56F224)+m3d_ZeroTransVector() call for
-// BOTH edges (confirmed: no second SetRotMatrix call between them, only two ldlv0/rtps calls):
-//   width = spine[i].field_18 (the per-point width scalar)
-//   crossVec = sub_4E7090(spine[i+1], spine[i], out) * width   (per-axis scale, NOT a dot)
-//   edgeA = spine[i].pos - crossVec
-//   edgeB = spine[i].pos + crossVec
-//   for each of edgeA, edgeB (SAME order, one gte_ldlv0/gte_rtps call per edge, sharing the one
-//   SetRotMatrix/ZeroTransVector call above):
-//     relPos = (edge >> 12) - gCameraViewPos; gte_ldlv0(&relPos); gte_rtps()
-//     invZ via the SAME Algebra_Transform4-equivalent idiom as the rest of this file (confirmed:
-//       sub_402700 here is another instance of the family's "vector4d ctor + gGfxMatrix dot,
-//       read w at +12" idiom weapons.cpp's notes already documented for sub_402540/402600/402620
-//       - use Algebra_Transform4(xf, rawEdge) directly per that established shortcut, do not
-//       chase sub_402700 itself) - append invZ to a flat float array at 0x5498fc (this file's
-//       `String` extern, 2 floats per segment: edgeA then edgeB)
-//     gte_stlvnl(&stlv) + gte_stsxy(&sxy) read back the JUST-COMPLETED transform (edgeA's after
-//       edgeA's own ldlv0/rtps, edgeB's after edgeB's) into an 8-byte record appended to
-//       gRevisitInitOne (dword_628618): {sxy_packed(4 bytes), stlv.vz as i16, -256 as i16} -
-//       CONFIRMED same 8-byte shape DisplayQuadBitList already uses for the same buffer. If
-//       stlv.vz < 100 (near-clip), the invZ value just appended is overridden to -1.0f.
-// After the loop, ONE more "tail" cross-section is built the exact same way (edgeA/edgeB again,
-// reusing the LAST iteration's still-in-scope crossVec/width - no new sub_4E7090 call) from
-// spine[field_3E] (the point one past the loop, i.e. field_3E+1 spine points must exist for a
-// field_3E-face ribbon - matches a quad strip needing N+1 cross-sections for N quads). This tail
-// section is also the ONLY place gRevisitInitTwo (dword_654F54) gets written, one 8-byte record
-// per edge: {stlv.vx as i16, stlv.vy as i16, 0, 0} - unclear why only the tail needs this second
-// buffer; do not guess, re-trace if picked up.
-//
-// Total gRevisitInitOne records after all this: 2*(field_3E+1) (2 per cross-section, field_3E+1
-// cross-sections). The final draw loop (field_3E iterations) reads FOUR consecutive records per
-// quad via a backwards-indexed i16* cursor starting at gRevisitInitOne+24 (record index 3) and
-// advancing +8 shorts (2 records) per iteration: quad k uses records [2k, 2k+1, 2k+2, 2k+3] (the
-// old note's "-3/-4/-7/-8/-11/-12 on a +8-shorts pointer" fully resolved: those are record indices
-// cursor-1, cursor-2, cursor-3 relative to the current position, each a {sx,sy} pair) - i.e. a
-// classic overlapping quad-strip identical in spirit to DisplayQuadBitList's corner list, just
-// built incrementally instead of read from 4 fixed fields. invZ per quad corner comes from the
-// SAME flat 0x5498fc array, 2 floats advanced per quad iteration (matches "2 entries per
-// segment"). PCGfx_UseTexture is called ONCE before this loop, clut = pTextures[9] (a u16 9
-// elements into SRibbonTexture - NOT pTextures[0], re-traced this pass), blend mode from
-// pTextures[0]'s low byte bits 0x40/0x80 (SetOpaque/SetSemiTransparent shape, already @Ok
-// elsewhere), alpha 255 or (0x80-bit ? 0x81-masked-negated : 255) - same "set once for the whole
-// list" pattern as DisplayGlassList/DisplayGlowList.
-//
-// STILL OPEN, do not guess: the draw loop's per-quad colour comes from
-// `*(DWORD*)(this->field_48 + 4*faceIndex)`, i.e. field_48[faceIndex] (already VALIDATEd as
-// `u32* field_48`, tentatively named "widths" by an earlier pass) unpacked as R,G,B bytes with
-// alpha from the pTextures[0]-derived value above - this directly contradicts field_48's current
-// "widths" name/comment (a colour array and a widths array are not the same thing). Before
-// writing this function for real: check every OTHER caller/reader of field_48 in this file
-// (CSimpleTexturedRibbon has no other functions touching field_48 currently) and re-verify via
-// the raw disasm at 0x40b2f1-0x40b3a0 which field this really is, then rename field_48
-// accordingly (it may need splitting into two arrays, or the "widths" name may simply be wrong).
-// Getting this backwards would make every ribbon render with garbage or width-as-colour data.
-void CSimpleTexturedRibbon::Display(void)
-{
-    printf("CSimpleTexturedRibbon::Display(void)");
-}
-
 // @Ok
 // @Matching
 void CSimpleTexturedRibbon::SetNumFaces(i32 a1)
@@ -559,7 +463,7 @@ void CSimpleTexturedRibbon::SetNumFaces(i32 a1)
 			DCMem_New(ffSize, 0, 1, 0, 1));
 
 	i32 feSize = sizeof(u32) * (a1+1);
-	this->field_48 = static_cast<u32*>(
+	this->pColours = static_cast<u32*>(
 			DCMem_New(feSize, 0, 1, 0, 1));
 }
 
@@ -660,7 +564,7 @@ void CSimpleTexturedRibbon::SetWidth(u16 a2)
 	SSimpleRibbonParams *pParam = this->field_44;
 	for (i32 i = 0; i < this->field_3C + 1; i++)
 	{
-		pParam->field_18 = a2;
+		pParam->mWidth = a2;
 		++pParam;
 	}
 }
@@ -670,7 +574,7 @@ void CSimpleTexturedRibbon::SetWidth(u16 a2)
 void CSimpleTexturedRibbon::SetWidthi(i32 a2, u16 a3)
 {
 	DoAssert(a2 < this->field_3C + 1, "Bad i in call to CSimpleTexturedRibbon::SetWidthi");
-	this->field_44[a2].field_18 = a3;
+	this->field_44[a2].mWidth = a3;
 }
 
 // @Ok
@@ -678,7 +582,7 @@ CSimpleTexturedRibbon::~CSimpleTexturedRibbon(void)
 {
 	Mem_Delete(this->pTextures);
 	Mem_Delete(this->field_44);
-	Mem_Delete(this->field_48);
+	Mem_Delete(this->pColours);
 }
 
 // @Ok
@@ -1744,6 +1648,246 @@ void DisplayQuadBitList(void** a1)
 
 	G_QUADBIT_RENDER_STATE = savedRenderState;
 }
+
+// field_48 CONTRADICTION RESOLVED (2026-08-31, 4th pass): it is a per-point packed RGB colour
+// array, not "widths". Proof: CSimpleTexturedRibbon::SetRGB (below) already packs
+// `value = r | (g<<8) | (b<<16)` into every entry of this->field_48 (field_3C+1 of them). The raw
+// disasm of Display's final draw loop (0x40b2f1-0x40b3a0) reads `field_48[faceIndex]` and unpacks
+// it BYTE-FOR-BYTE the same way (byte0->R, byte1->G, byte2->B), then combines it with an alpha
+// byte derived from pTextures[0]'s blend flags into a 0xAARRGGBB colour passed straight to
+// PCGfx_DrawQPoly3D. Renamed field_48 -> pColours across the class (bit.h) to match; also renamed
+// SSimpleRibbonParams::field_18 -> mWidth and added its mPos field (was inside PADDING(0x18)),
+// both confirmed by this same trace.
+//
+// sub_4E7090, the helper this function calls to get the per-segment perpendicular "width axis"
+// vector, turns out to be the ALREADY-@Ok Utils_CalcUnitFacingCamera (utils.cpp): same address
+// (0x4e7090, confirmed in names.json) and its body is an exact algorithm match against the raw
+// disasm here (delta = (a2-a1)>>12, further >>4 past a 500 overflow guard; toCamera =
+// gMikeCamera[0].Position - a1; cross = delta x toCamera via gte_ldopv1/ldopv2/gte_op0 - gte_op0
+// is 0x46D6A0, a genuinely separate address from gte_op12's 0x46D700 but the same shape; magnitude
+// via gte_sqr0+M3dMaths_SquareRoot0; zeroed if magnitude<5, else scaled to magnitude 16). So this
+// function just calls Utils_CalcUnitFacingCamera directly instead of reimplementing it.
+
+// @Ok
+// Functional. Shared per-edge projection step factored out of CSimpleTexturedRibbon::Display
+// below (both the main loop and the tail cross-section repeat this exact sequence): project one
+// ribbon-strip corner through the GTE (relPos = (edge>>12) - gCameraViewPos, gte_ldlv0/gte_rtps),
+// compute its invZ via Algebra_Transform4 (with the near-clip override to -1.0f when the GTE
+// depth is below 100), append invZ to the flat scratch array and a screen x/y + depth record to
+// gRevisitInitOne. outStlv optionally returns the raw gte_stlvnl result for the tail section's
+// extra gRevisitInitTwo write (the original reads back the SAME gte_stlvnl call for both writes,
+// not two separate calls).
+static void ProjectRibbonEdge(const CVector& edge, f32* invZArray, i32& invZIndex, u8*& recCursor, VECTOR* outStlv)
+{
+	VECTOR relPos;
+	relPos.vx = (edge.vx >> 12) - gCameraViewPos->vx;
+	relPos.vy = (edge.vy >> 12) - gCameraViewPos->vy;
+	relPos.vz = (edge.vz >> 12) - gCameraViewPos->vz;
+
+	gte_ldlv0(&relPos);
+	gte_rtps();
+
+	f32 rawPos[4];
+	rawPos[0] = (f32)edge.vx / 4096.0f;
+	rawPos[1] = (f32)edge.vy / 4096.0f;
+	rawPos[2] = (f32)edge.vz / 4096.0f;
+	rawPos[3] = 1.0f;
+
+	f32 xf[4];
+	Algebra_Transform4(xf, rawPos);
+
+	f32 iz;
+	if (fabsf(xf[3]) > 0.00000001f)
+		iz = 1.0f / xf[3];
+	else
+		iz = -1.0e12f;
+
+	VECTOR stlv;
+	gte_stlvnl(&stlv);
+
+	i32 sxy;
+	gte_stsxy(&sxy);
+
+	*(i16*)(recCursor + 0) = (i16)sxy;
+	*(i16*)(recCursor + 2) = (i16)(sxy >> 16);
+	*(i16*)(recCursor + 4) = (i16)stlv.vz;
+	*(i16*)(recCursor + 6) = -256;
+	recCursor += 8;
+
+	if (stlv.vz < 100)
+		iz = -1.0f;
+
+	invZArray[invZIndex++] = iz;
+
+	if (outStlv)
+		*outStlv = stlv;
+}
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address 0x40aa00. This is a
+// billboarded ("camera-facing") textured ribbon quad-strip over mNumFacesToDisplay+1 spine points
+// (this->field_44), verified against the full decompile plus a raw-disasm cross-check of the tail
+// section (0x40b060-0x40b3a0, where Hex-Rays reuses/relabels stack slots across unrelated values).
+//   1. RefreshGfxMatrix() (see above), unconditionally, once - matches DisplayQuadBitList's shape,
+//      not DisplayTextBoxList's "already refreshed by an earlier call this frame" shortcut.
+//   2. For each spine index i in [0, field_3E): crossVec = Utils_CalcUnitFacingCamera(
+//      &spine[i+1].mPos, &spine[i].mPos, &crossVec) (args are NEXT point, CURRENT point - reversed
+//      from a naive prev/next reading, confirmed at the call site), delta = spine[i].mWidth *
+//      crossVec (per axis), edgeA = spine[i].mPos - delta, edgeB = spine[i].mPos + delta. Both
+//      edges are projected through the shared GTE pipeline: gte_SetRotMatrix(&gBitDisplayMatrix)
+//      (same 0x56F224 address as spidey.cpp/panel.cpp's stru_56F224 - reusing bit.cpp's own
+//      Bit_Display-owned gBitDisplayMatrix instead of adding a second alias) + m3d_ZeroTransVector()
+//      ONCE per segment (confirmed: no second SetRotMatrix call between edgeA and edgeB, only two
+//      ldlv0/rtps pairs), then gte_ldlv0/gte_rtps per edge. Each edge appends its invZ (via
+//      Algebra_Transform4, same idiom as the rest of this file - the original inlines this call at
+//      one call site via a manual vector4d_ctor dot-product, confirmed functionally identical, not
+//      chased separately) to a flat float scratch array, and appends its screen x/y (via
+//      gte_stsxy) plus GTE depth to an 8-byte record in gRevisitInitOne (near-clip: invZ forced to
+//      -1.0f when depth<100).
+//   3. ONE more "tail" cross-section is built the exact same way from spine[field_3E] (the point
+//      one past the loop - needs field_3E+1 spine points for a field_3E-face ribbon, matching a
+//      quad strip needing N+1 cross-sections for N quads), reusing the LAST iteration's crossVec/
+//      mWidth (no new Utils_CalcUnitFacingCamera call) AND the GTE rotation matrix still set by
+//      that iteration's edgeA (confirmed via raw disasm: no gte_SetRotMatrix call anywhere after
+//      the main loop). This tail section is also the only place gRevisitInitTwo gets written, one
+//      8-byte {stlv.vx, stlv.vy, 0, 0} record per edge - nothing in this function reads it back,
+//      reproduced anyway since it is a real global other code may consume.
+//   4. PCGfx_UseTexture is called once for the whole ribbon: clut = pTextures[0].mClut, blend
+//      mode/alpha from pTextures[0].field_0's 0x40/0x80 bits (opaque unless the semi-transparent
+//      bits are set - same shape as SetOpaque/SetSemiTransparent above).
+//   5. Draw loop, field_3E iterations: quad k connects cross-section k (edgeA_k, edgeB_k) to
+//      cross-section k+1 (edgeA_{k+1}, edgeB_{k+1}) - a classic overlapping quad strip, screen x/y
+//      read back from gRevisitInitOne (scaled by gGameResolutionX/Y over Xres/Yres, same idiom as
+//      DisplayQuadBitList) and invZ from the flat scratch array. Colour is flat per quad,
+//      pColours[k] unpacked to RGB with the alpha from step 4. UV is (0.01,0.01)/(0.01,0.99)/
+//      (0.99,0.01)/(0.99,0.99) per corner (u = which cross-section, v = which edge), the same
+//      texture-bleed-inset pattern PCGfx_DrawQPoly3D's other callers use.
+//   6. G_COLOUR_TABLE (ps2m3d.h, 0x64F5D0 - a scratch pointer several unrelated subsystems reuse,
+//      e.g. ps2m3d.cpp's colour-pulse code reads it back) is set to this->pColours at the end,
+//      unconditionally once mNumFacesToDisplay != 0 - a real side effect on shared game state,
+//      reproduced for correctness even though nothing in this function reads it back itself.
+void CSimpleTexturedRibbon::Display(void)
+{
+	if (this->field_3E == 0)
+		return;
+
+	i32 savedRenderState = G_QUADBIT_RENDER_STATE;
+	G_QUADBIT_RENDER_STATE = (i32)0xFFFF0000;
+
+	print_if_false(this->field_3E <= this->field_3C, "Bad mNumFacesToDisplay");
+	print_if_false(2 * this->field_3E + 2 <= 1000, "CSimpleTexturedRibbon::mNumFacesToDisplay too big to display");
+
+	RefreshGfxMatrix();
+
+	SSimpleRibbonParams* spine = this->field_44;
+
+	// Confirmed name (maintainer's IDB): a large, general-purpose scratch buffer shared by
+	// several unrelated subsystems (see dcmodel.cpp/spool.cpp for other users). Display borrows
+	// it here as the flat invZ scratch array, 2 floats per cross-section.
+	f32* invZArray = reinterpret_cast<f32*>((u8*)0x5498FC);
+	i32 invZIndex = 0;
+
+	u8* recCursor = gRevisitInitOne;
+
+	CVector crossVec(0, 0, 0);
+	i32 width = 0;
+
+	for (i32 i = 0; i < this->field_3E; i++)
+	{
+		Utils_CalcUnitFacingCamera(&spine[i + 1].mPos, &spine[i].mPos, &crossVec);
+		width = (i32)spine[i].mWidth;
+
+		i32 dx = width * crossVec.vx;
+		i32 dy = width * crossVec.vy;
+		i32 dz = width * crossVec.vz;
+
+		CVector edgeA(spine[i].mPos.vx - dx, spine[i].mPos.vy - dy, spine[i].mPos.vz - dz);
+		CVector edgeB(spine[i].mPos.vx + dx, spine[i].mPos.vy + dy, spine[i].mPos.vz + dz);
+
+		gte_SetRotMatrix(&gBitDisplayMatrix);
+		m3d_ZeroTransVector();
+		ProjectRibbonEdge(edgeA, invZArray, invZIndex, recCursor, 0);
+
+		ProjectRibbonEdge(edgeB, invZArray, invZIndex, recCursor, 0);
+	}
+
+	// Tail cross-section: one past the last segment, reusing the last iteration's crossVec/width
+	// and GTE rotation matrix (see the function comment above).
+	{
+		i32 dx = width * crossVec.vx;
+		i32 dy = width * crossVec.vy;
+		i32 dz = width * crossVec.vz;
+
+		SSimpleRibbonParams* tail = &spine[this->field_3E];
+		CVector edgeA(tail->mPos.vx - dx, tail->mPos.vy - dy, tail->mPos.vz - dz);
+		CVector edgeB(tail->mPos.vx + dx, tail->mPos.vy + dy, tail->mPos.vz + dz);
+
+		VECTOR stlvA, stlvB;
+		ProjectRibbonEdge(edgeA, invZArray, invZIndex, recCursor, &stlvA);
+		ProjectRibbonEdge(edgeB, invZArray, invZIndex, recCursor, &stlvB);
+
+		u8* rec2 = gRevisitInitTwo;
+		*(i16*)(rec2 + 0) = (i16)stlvA.vx;
+		*(i16*)(rec2 + 2) = (i16)stlvA.vy;
+		*(i16*)(rec2 + 4) = 0;
+		*(i16*)(rec2 + 6) = 0;
+
+		*(i16*)(rec2 + 8 + 0) = (i16)stlvB.vx;
+		*(i16*)(rec2 + 8 + 2) = (i16)stlvB.vy;
+		*(i16*)(rec2 + 8 + 4) = 0;
+		*(i16*)(rec2 + 8 + 6) = 0;
+	}
+
+	i32 blendMode = 0;
+	u32 alpha = 0xFF000000;
+	if (this->pTextures[0].field_0 & 0x40)
+	{
+		blendMode = (this->pTextures[0].field_0 & 0x80) ? 2 : 1;
+		alpha = (this->pTextures[0].field_0 & 0x80) ? 0x80000000 : 0xFF000000;
+	}
+
+	PCGfx_UseTexture(this->pTextures[0].mClut, (DCGfx_BlendingMode)blendMode);
+
+	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleY = gGameResolutionY / (f32)Yres;
+
+	i16* sxyBase = reinterpret_cast<i16*>(gRevisitInitOne);
+
+	for (i32 k = 0; k < this->field_3E; k++)
+	{
+		i16* rec0 = sxyBase + 4 * (2 * k + 0);
+		i16* rec1 = sxyBase + 4 * (2 * k + 1);
+		i16* rec2 = sxyBase + 4 * (2 * k + 2);
+		i16* rec3 = sxyBase + 4 * (2 * k + 3);
+
+		f32 x0 = (f32)rec0[0] * scaleX, y0 = (f32)rec0[1] * scaleY;
+		f32 x1 = (f32)rec1[0] * scaleX, y1 = (f32)rec1[1] * scaleY;
+		f32 x2 = (f32)rec2[0] * scaleX, y2 = (f32)rec2[1] * scaleY;
+		f32 x3 = (f32)rec3[0] * scaleX, y3 = (f32)rec3[1] * scaleY;
+
+		u32 packedColour = this->pColours[k];
+		u32 r = packedColour & 0xFF;
+		u32 g = (packedColour >> 8) & 0xFF;
+		u32 b = (packedColour >> 16) & 0xFF;
+		u32 color = alpha | (r << 16) | (g << 8) | b;
+
+		f32 iz0 = invZArray[2 * k + 0];
+		f32 iz1 = invZArray[2 * k + 1];
+		f32 iz2 = invZArray[2 * k + 2];
+		f32 iz3 = invZArray[2 * k + 3];
+
+		PCGfx_DrawQPoly3D(
+			x0, y0, iz0, 0.01f, 0.01f, color,
+			x1, y1, iz1, 0.01f, 0.99f, color,
+			x2, y2, iz2, 0.99f, 0.01f, color,
+			x3, y3, iz3, 0.99f, 0.99f, color);
+	}
+
+	G_COLOUR_TABLE = reinterpret_cast<u32*>(this->pColours);
+
+	G_QUADBIT_RENDER_STATE = savedRenderState;
+}
+
 
 // @Ok
 // Functional (session-wide functional-only bar, 2026-08-30). Address 0x40d7c0,
@@ -4476,7 +4620,7 @@ void CGlow::SetRadius(int radius)
 void CSimpleTexturedRibbon::SetRGB(unsigned char r, unsigned char g, unsigned char b)
 {
 	int value = (r | (((b << 8) | g) << 8));
-	u32 *ptr = this->field_48;
+	u32 *ptr = this->pColours;
 
 	int i = 0;
 	for (i = 0; i < this->field_3C + 1; i++)
@@ -4842,7 +4986,7 @@ void validate_CSimpleTexturedRibbon(void)
 
 	VALIDATE(CSimpleTexturedRibbon, pTextures, 0x40);
 	VALIDATE(CSimpleTexturedRibbon, field_44, 0x44);
-	VALIDATE(CSimpleTexturedRibbon, field_48, 0x48);
+	VALIDATE(CSimpleTexturedRibbon, pColours, 0x48);
 }
 
 void validate_CSimpleAnim(void)
@@ -5101,7 +5245,8 @@ void validate_SSimpleRibbonParams(void)
 {
 	VALIDATE_SIZE(SSimpleRibbonParams, 0x1C);
 
-	VALIDATE(SSimpleRibbonParams, field_18, 0x18);
+	VALIDATE(SSimpleRibbonParams, mPos, 0x0);
+	VALIDATE(SSimpleRibbonParams, mWidth, 0x18);
 }
 
 void validate_CSpark(void)
