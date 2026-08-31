@@ -3943,21 +3943,168 @@ finished:
 	Front_ClearScreen();
 }
 
-// forward to original, slider drawing helper (0x498060, 472B), not yet decompiled
-// @MEDIUMTODO
+// Real translation (0x498060, 472B). Draws a horizontal slider bar (used by
+// Shell_SFXMusic for the music/voice/movie level bars): a1/a2 are the
+// screen x/y of the bar, a3 is the value (0..256-ish range, clamped), a4 is
+// a "highlighted" flag that picks a lighter (0x40) vs darker (0x80)
+// grey tint for every piece.
+//
+// Gets its four pieces from a single Spool_FindAnim("slider", 1) call: the
+// disassembly indexes off that one SAnimFrame* with byte offsets +0/+8/
+// +16/+24 (sizeof(SAnimFrame) == 8), i.e. 4 consecutive frames in the
+// "slider" anim starting at index 1. Draw order and geometry (not any
+// string evidence) suggest: +24 is the moving knob (its x tracks `value`,
+// 14x14), +0 is the left end cap (fixed x = a1+5, 10x10), +8 is the track
+// background (stretched to a fixed 180x10 bar), +16 is the right end cap
+// (fixed x = a1+195, 10x10). Kept as raw byte-offset pointers (not array
+// indexing through a named base) to stay directly traceable to the
+// disassembly's `ebp+N` shape (MSVC6 "shifted pointer into inner
+// struct/array" idiom, see CLAUDE.md tips.txt).
+//
+// Each piece: get a POLY_FT4* via one of the two Panel_DrawTexturedPoly
+// overloads, tint it grey (no null check before the field writes, matching
+// the original -- a full poly buffer would already crash here in the real
+// game), then stretch/position it with DCPanel_DrawTexturedPoly. The track
+// piece skips Panel_DrawTexturedPoly's own quad setup (the 2-arg overload
+// only builds the poly, not its geometry) and instead pokes the POLY_FT4
+// fields directly: a 180x10 bar from (a1+15,a2) to (a1+195,a2+10), with
+// u1/u3 (the right-edge U texcoords) each decremented by one texel (avoids
+// sampling the next frame's texture in the tiled sheet at the exact right
+// edge).
+// @Ok
 EXPORT void DrawSlider(i32 a1, i32 a2, i32 a3, i32 a4)
 {
-	typedef void (*func_ptr)(i32, i32, i32, i32);
-	func_ptr func = (func_ptr)0x00498060;
-	func(a1, a2, a3, a4);
+	SAnimFrame *pFrames = Spool_FindAnim("slider", 1);
+	SAnimFrame *pLeftEnd = pFrames;
+	SAnimFrame *pTrack = (SAnimFrame*)((u8*)pFrames + 8);
+	SAnimFrame *pRightEnd = (SAnimFrame*)((u8*)pFrames + 16);
+	SAnimFrame *pKnob = (SAnimFrame*)((u8*)pFrames + 24);
+
+	i32 value = a3;
+	if (value < 0)
+		value = 0;
+	else if (value > 256 || value == 255)
+		value = 256;
+
+	i32 leftEndX = a1 + 5;
+	i32 knobX = ((180 * value) >> 8) + a1 + 5 + 4;
+
+	POLY_FT4 *pKnobPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pKnob, knobX, a2 - 2, 0);
+	if (a4 != 0 && pKnobPoly != 0)
+	{
+		pKnobPoly->r0 = 0x40;
+		pKnobPoly->g0 = 0x40;
+		pKnobPoly->b0 = 0x40;
+	}
+	else
+	{
+		pKnobPoly->r0 = 0x80;
+		pKnobPoly->g0 = 0x80;
+		pKnobPoly->b0 = 0x80;
+	}
+	DCPanel_DrawTexturedPoly(1.0f, pKnobPoly, pKnob, knobX, a2 - 2, 14, 14, 0, 0);
+
+	POLY_FT4 *pLeftEndPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pLeftEnd, leftEndX, a2, 0);
+	if (a4 != 0 && pLeftEndPoly != 0)
+	{
+		pLeftEndPoly->r0 = 0x40;
+		pLeftEndPoly->g0 = 0x40;
+		pLeftEndPoly->b0 = 0x40;
+	}
+	else
+	{
+		pLeftEndPoly->r0 = 0x80;
+		pLeftEndPoly->g0 = 0x80;
+		pLeftEndPoly->b0 = 0x80;
+	}
+	DCPanel_DrawTexturedPoly(2.0f, pLeftEndPoly, pLeftEnd, leftEndX, a2, 10, 10, 0, 0);
+
+	POLY_FT4 *pTrackPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pTrack, 0);
+	if (a4 != 0)
+	{
+		pTrackPoly->r0 = 0x40;
+		pTrackPoly->g0 = 0x40;
+		pTrackPoly->b0 = 0x40;
+	}
+	else
+	{
+		pTrackPoly->r0 = 0x80;
+		pTrackPoly->g0 = 0x80;
+		pTrackPoly->b0 = 0x80;
+	}
+	pTrackPoly->u1--;
+	pTrackPoly->u3--;
+	pTrackPoly->y2 = (i16)(a2 + 10);
+	pTrackPoly->y3 = (i16)(a2 + 10);
+	pTrackPoly->x0 = (i16)(a1 + 15);
+	pTrackPoly->x1 = (i16)(a1 + 195);
+	pTrackPoly->x2 = (i16)(a1 + 15);
+	pTrackPoly->x3 = (i16)(a1 + 195);
+	pTrackPoly->y0 = (i16)a2;
+	pTrackPoly->y1 = (i16)a2;
+	DCPanel_DrawTexturedPoly(2.0f, pTrackPoly, pTrack, a1 + 15, a2, 180, 10, 0, 0);
+
+	POLY_FT4 *pRightEndPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pRightEnd, a1 + 195, a2, 0);
+	u8 color = (a4 != 0 && pRightEndPoly != 0) ? 0x40 : 0x80;
+	pRightEndPoly->r0 = color;
+	pRightEndPoly->g0 = color;
+	pRightEndPoly->b0 = color;
+	DCPanel_DrawTexturedPoly(2.0f, pRightEndPoly, pRightEnd, a1 + 195, a2, 10, 10, 0, 0);
 }
-// forward to original, slider drag helper (0x497F80, 219B), not yet decompiled
-// @MEDIUMTODO
+// Real translation (0x497F80, 219B). Mouse-drag helper for the same slider
+// drawn by DrawSlider: a1/a2 are the bar's screen x/y (same as DrawSlider),
+// a3 is the current value. Recomputes the knob's [left,right) hit box the
+// same way DrawSlider positions the knob (left = ((180*value)>>8)+a1+9,
+// right = left+14), then:
+//  - if the mouse is over that box and the left button was just pressed,
+//    latches the drag flag at *(u8*)0x006A7784 (same raw address already
+//    dereferenced this way in this file, see the mouse-over-slider check
+//    a few lines below in Shell_SFXMusic, so keeping the same style here);
+//  - if the drag flag isn't latched, returns 0 (not dragging);
+//  - if the left mouse button was released, clears the drag flag and
+//    returns 0;
+//  - otherwise, if the mouse actually moved this frame, reads its
+//    position and converts it from PC screen space to the 512x240 "DC"
+//    space DrawSlider's geometry is in, then returns -1/1/0 depending on
+//    whether that position is left of, right of, or inside the knob box
+//    (the caller uses this to nudge the value left/right or leave it).
+// @Ok
 EXPORT i32 SliderDrag(i32 a1, i32 a2, i32 a3)
 {
-	typedef i32 (*func_ptr)(i32, i32, i32);
-	func_ptr func = (func_ptr)0x00497F80;
-	return func(a1, a2, a3);
+	i32 value = a3;
+	if (value < 0)
+		value = 0;
+	else if (value > 256 || value == 255)
+		value = 256;
+
+	i32 left = ((180 * value) >> 8) + a1 + 9;
+	i32 right = left + 14;
+
+	if (PCSHELL_IsMouseOver(left, a2 - 2, right, a2 - 2 + 14) != 0 && PCINPUT_IsMouseButtonPressed(0, 1) != 0)
+	{
+		*(u8*)0x006A7784 = 1;
+	}
+	else if (*(u8*)0x006A7784 == 0)
+	{
+		return 0;
+	}
+
+	if (PCINPUT_IsMouseButtonReleased(0) != 0)
+	{
+		*(u8*)0x006A7784 = 0;
+		return 0;
+	}
+
+	if (*(u8*)0x006A7784 == 0 || PCSHELL_MouseMoved() == 0)
+		return 0;
+
+	i32 mouseX, mouseY;
+	PCINPUT_GetMouseHotspotPosition(&mouseX, &mouseY);
+	PCSHELL_CoordsPCtoDC(&mouseX, &mouseY);
+
+	if (mouseX < left)
+		return -1;
+	return mouseX > right;
 }
 
 // @Ok
@@ -5138,7 +5285,30 @@ void CRecordBox::Update(void)
 	}
 }
 
-// @SMALLTODO
+// 2026-08-31 re-re-attempt, confirmed dead on PC (not just "unlocated").
+// Re-checked the byte range with idalib on the real exe: CRecordBox::Display
+// is 0x47B240..0x47B550 (784 bytes), CRecordBox::Update is 0x47B560..0x47B712
+// (434 bytes, confirmed by xrefs_to on the "Bad mLetterIndex" string), then
+// 14 bytes of 0-alignment padding, then PShell_EndTrainingInit starts cold
+// at 0x47B720 (confirmed by xrefs_to on the "Bad row sent to NameEntryOn()"
+// string at 0x551AA4: both its xrefs resolve inside PShell_EndTrainingInit,
+// size 0x32C, exact match against tools/functions/4699936.bin -- so that
+// string is just reused debug text inside PShell_EndTrainingInit, not
+// evidence of a NameEntryOn function). There is no gap anywhere in this
+// cluster big enough for an 80-byte function (Mac size, prototypes.json).
+// Also re-confirmed NameEntryOn has no call site anywhere on PC (not from
+// CRecordBox::CRecordBox, not from Shell_ShowRecord, not from
+// PShell_EndTrainingUpdate -- the only three places a CRecordBox is used).
+// It is not virtual (CRecordBox's vtable has one real slot, the scalar
+// deleting destructor), so nothing forces it to exist for the vtable
+// either. Most likely explanation: Release builds use per-function COMDATs
+// (/Gy) plus linker dead-code stripping (/OPT:REF), and a non-virtual,
+// never-called member function like this one gets stripped out of the
+// final binary entirely -- there is no PC address to decompile because the
+// function was never linked in, not because it is merely hard to find.
+// Left as an honest stub rather than guessing an implementation from the
+// Mac-only prototype and the sibling Update/Display field usage.
+// @NotOk
 void CRecordBox::NameEntryOn(u8)
 {
 	printf("CRecordBox::NameEntryOn(u8)");
