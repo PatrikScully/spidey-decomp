@@ -427,6 +427,13 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 // forward-to-original stub (functionally correct at runtime, already used by
 // the @Ok M3dColij_LineToItem/LineToItemZoned) rather than guessing the
 // bodies of ~1600 bytes of undecompiled leaf code; not touched further.
+//
+// Re-checked 2026-08-31, same session as M3dColij_LineToSphere above: verified via IDA
+// xrefs that sub_46F1F0 and sub_46F6B0 (the two big blockers) are still unnamed and are
+// used only by this function, so no shortcut appeared elsewhere in the repo. sub_46D810
+// is also called from two unrelated, large, still-unnamed functions (sub_4739A0, 0xdf2
+// bytes; sub_474C10, 0x1290 bytes) outside this file, so decompiling it here would need
+// checking those too. Still genuinely blocked; not attempted.
 void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 {
 	typedef void (*func_ptr)(CItem*, SLineInfo*);
