@@ -13,6 +13,7 @@
 #include "panel.h"
 #include "ps2funcs.h"
 #include "PCGfx.h"
+#include "PCTex.h"
 #include "m3dinit.h"
 #include "SpideyDX.h"
 #include "algebra.h"
@@ -2541,24 +2542,25 @@ void CChunkBit::SetRGB(u8 r, u8 g, u8 b)
 	this->mColorD = ((rnd3 * r) >> 12) | (16 * ((rnd3 * b) & 0xFFFFF000)) | (((rnd3 * g) >> 4) & 0xFFFFFF00);
 }
 
-// @MEDIUMTODO
-// CChunkBit::SetUVs (0x40B910, 254 bytes). Computes 3 (u,v) float pairs (per-vertex texture
-// coordinates from the 6 uchar params, scaled by float multipliers derived from the first ushort
-// param) plus stores that same ushort into CChunkBit's own undeclared field at 0xB4; the second
-// ushort param is a confirmed-dead parameter in the original disasm (see shatter.h's
-// G_SHATTER_UV_UNUSED comment). Same status as SetRGB above: stubbed, needs CChunkBit's own
-// missing fields, out of scope this session.
+// Stores the texture/clut id (zero-extended u16) in mClut, then scales the
+// six uchar UV params by the texture's inverse size into the three mUV0/1/2
+// pairs. The second u16 param is a confirmed-dead parameter in the original
+// disasm (see shatter.h's G_SHATTER_UV_UNUSED comment).
+// @Ok
 void CChunkBit::SetUVs(u16 texId, u16 unused, u8 u0, u8 v0, u8 u1, u8 v1, u8 u2, u8 v2)
 {
-	(void)texId;
-	(void)unused;
-	(void)u0;
-	(void)v0;
-	(void)u1;
-	(void)v1;
-	(void)u2;
-	(void)v2;
-	printf("CChunkBit::SetUVs(u16,u16,u8,u8,u8,u8,u8,u8)");
+	this->mClut = texId;
+
+	f32 invW;
+	f32 invH;
+	PCTex_GetInvTextureSize(texId, &invW, &invH);
+
+	this->mUV0[0] = (f32)u0 * invW;
+	this->mUV0[1] = (f32)v0 * invH;
+	this->mUV1[0] = (f32)u1 * invW;
+	this->mUV1[1] = (f32)v1 * invH;
+	this->mUV2[0] = (f32)u2 * invW;
+	this->mUV2[1] = (f32)v2 * invH;
 }
 
 // gsub_40BA20: CChunkBit::CalculateWorldCoords (0x40BA20, name and void signature confirmed by
