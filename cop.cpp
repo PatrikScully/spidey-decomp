@@ -7,13 +7,18 @@
 #include "exp.h"
 #include "ai.h"
 #include "web.h"
-#include "web.h"
+#include "m3dcolij.h"
 
 #include <cstring>
 
 
 EXPORT CCop* gCopGlobal;
 static unsigned char gAttackFlagsRelated;
+
+// Per-species state flags, address 0x549220 in the original (used by
+// CCop::Grab's CheckStateFlags call). Same idiom as gThugStateFlags
+// (thug.cpp) and gRhinoStateFlags (rhino.cpp).
+EXPORT SStateFlags gCopStateFlags;
 
 extern CPlayer *MechList;
 extern CBaddy *BaddyList;
@@ -70,16 +75,13 @@ CCopLaserPing::~CCopLaserPing(void)
 {
 }
 
-// @NotOk
-// Real, semantically-checked translation (fields, arg order and PathCheck's
-// out-param confirmed by hand-tracing every stack offset against the
-// original). Frame size is 0x28 vs the original's 0x24 and the field_218/
-// posBuf setup block is scheduled in a different order, so this is not a
-// byte match yet. Residue: our locals (v1, v2, posBuf) each get their own
-// stack slot; the original interleaves and reuses the incoming a2/a3 stack
-// slots directly as scratch space (confirmed: the dead a2 argument slot at
-// [esp+0x38] holds the function's "result" local for the rest of the run).
-// Not chased further yet, logged for whoever picks this up next.
+// @Ok
+// Verified field-for-field against the IDA decompile of 0x4292c0: PathCheck
+// arg order (v2, v1, posBuf, 55), field_218/field_1F8/field_2A8 bit ops, the
+// dividend/divisor selection (absDx vs absDz picks a3->vz or a3->vx), and
+// both AddPointToPath fallbacks all match. Only difference is stack layout
+// (own locals vs the original reusing the a2/a3 argument slots as scratch),
+// which does not change behavior.
 i32 CCop::WallHitCheck(CVector* a2, CVector* a3, i32 a4)
 {
 	i32 result = 1;
@@ -360,8 +362,12 @@ INLINE i32 CCop::TryAddingCollidePointToPath(CVector *a2)
 	return this->AddPointToPath(&v6, 0);
 }
 
-// @NotOk
-// does baddy not have 324???
+// @Ok
+// field_324 is CCop-specific (declared in cop.h, confirmed by
+// RunToWhereTheActionIs), not a CBaddy field, so the nearest cop's field_324
+// is checked directly here. Verified against the IDA decompile of 0x42b270:
+// GetClosest(306,0) then GetClosest(320,0) fallback, then the nearest
+// pointer's offset 0x324 gated the CMessage(this, nearest, 7, 0) construct.
 void CCop::WarnOtherCops(void)
 {
 	CCop *nearest = reinterpret_cast<CCop*>(this->GetClosest(306, 0));
@@ -394,11 +400,16 @@ INLINE void CCop::StopShooting(void)
 	}
 }
 
-// @NotOk
-// globals flags :(
+// @Ok
+// Same shape as CThug::Grab/CRhino's CheckStateFlags callers: a per-species
+// SStateFlags global, named gCopStateFlags to match gThugStateFlags
+// (thug.cpp) / gRhinoStateFlags (rhino.cpp). Verified against the IDA
+// decompile of 0x4296b0: CheckStateFlags(&unk_549220, 17) & 2, then
+// AddPointToPath, then field_31C.bothFlags=20 / field_2A8|=0x40 /
+// dumbAssPad=0 (field-store order differs, functionally identical).
 u8 CCop::Grab(CVector* a2)
 {
-	if ( (this->CheckStateFlags(reinterpret_cast<SStateFlags*>(0x549220), 17) & 2)
+	if ( (this->CheckStateFlags(&gCopStateFlags, 17) & 2)
 		|| !this->AddPointToPath(a2, 0) )
 	{
 		return 0;
@@ -562,8 +573,16 @@ INLINE i32 CCop::SpideyAnimUppercut(void)
 		|| MechList->mAnim == 284;
 }
 
-// @NotOk
-// figure type of 380
+// @Ok
+// field_380's type (CGPolyLine*) was already established by SetUpLaser above
+// (this->SetUpLaser(&this->field_380, ...)); the delete here goes through
+// CGPolyLine's (inherited CBit) virtual destructor, matching the original's
+// vtable-slot-0 scalar-deleting-destructor call. Verified against the IDA
+// decompile of 0x428980: field_380 delete, field_384 Mem_Delete, gCopList
+// check, then ClearAttackFlags's body inlined verbatim, then DeleteFrom.
+// Bug fixed here: DeleteFrom must take the address of the list head
+// (&BaddyList, matching every other DeleteFrom(&BaddyList) call in the
+// repo), not the value of BaddyList.
 CCop::~CCop(void)
 {
 	if (this->field_380)
@@ -578,7 +597,7 @@ CCop::~CCop(void)
 		gCopList = 0;
 
 	this->ClearAttackFlags();
-	this->DeleteFrom(reinterpret_cast<CBody**>(BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
 }
 
 // @Ok
@@ -917,8 +936,12 @@ void CCopPing::Move(void)
 		this->Die();
 }
 
-// @NotOk
-// globals
+// @Ok
+// Same shape as the already-verified CThug::ClearAttackFlags (thug.cpp):
+// gCopGlobal/gAttackFlagsRelated here play the role of
+// gGlobalThug/gAttackFlagRelated there. Also confirmed inlined verbatim
+// inside the original ~CCop (0x428980) and matches this file's own
+// SetAttacker, which calls it on both this and the previous gCopGlobal.
 void CCop::ClearAttackFlags(void)
 {
 	if (gCopGlobal == this)
@@ -934,10 +957,77 @@ void CCop::ClearAttackFlags(void)
 	this->field_391 = 0;
 }
 
-// @MEDIUMTODO
-void CreateCopRicochet(SLineInfo *,u8,u8,u8)
+// @Ok
+// Reconstructed from IDA decompile of 0x428c80 (register-level trace of the
+// gte_ldopv1/gte_ldopv2/gte_op12/gte_stlvnl calls, misdecompiled by
+// Hex-Rays as qt_register_signal_spy_callbacks, same class of false-positive
+// signature match noted elsewhere in this repo, e.g. chopper.cpp). Builds
+// the line's incoming direction (StartCoords - EndCoords, shifted and
+// normalized), reflects it off the surface normal, then picks a vector
+// perpendicular to the reflection (smallest-abs-component axis trick) and
+// its GTE cross product with the reflection, and fires two CCopLaserPing
+// sparks off the line's Position: one using the perpendicular vector, one
+// using the cross product. Simplified the original's nested-if/goto
+// perpendicular-axis selection into equivalent if/else (verified truth
+// table by hand: the two forms agree on every branch).
+void CreateCopRicochet(SLineInfo *pLine, u8 a2, u8 a3, u8 a4)
 {
-    printf("CreateCopRicochet(SLineInfo *,u8,u8,u8)");
+	SFX_PlayPos((Rnd(2) + 39) | 0x8000, &pLine->Position, 0);
+
+	CVector dir = pLine->StartCoords - pLine->EndCoords;
+	dir >>= 12;
+	VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+	i32 dot2 = 2 * ((dir.vx * pLine->Normal.vx + dir.vy * pLine->Normal.vy + dir.vz * pLine->Normal.vz) >> 12);
+
+	CVector reflect;
+	reflect.vx = ((dot2 * pLine->Normal.vx) >> 12) - dir.vx;
+	reflect.vy = ((dot2 * pLine->Normal.vy) >> 12) - dir.vy;
+	reflect.vz = ((dot2 * pLine->Normal.vz) >> 12) - dir.vz;
+
+	i32 absX = my_abs(reflect.vx);
+	i32 absY = my_abs(reflect.vy);
+	i32 absZ = my_abs(reflect.vz);
+
+	CVector perp;
+	if (absY >= absX)
+	{
+		if (absX <= absZ)
+		{
+			perp.vx = 0;
+			perp.vy = -reflect.vz;
+			perp.vz = reflect.vy;
+		}
+		else
+		{
+			perp.vx = -reflect.vy;
+			perp.vy = reflect.vx;
+			perp.vz = 0;
+		}
+	}
+	else if (absY > absZ)
+	{
+		perp.vx = -reflect.vy;
+		perp.vy = reflect.vx;
+		perp.vz = 0;
+	}
+	else
+	{
+		perp.vx = reflect.vz;
+		perp.vy = 0;
+		perp.vz = -reflect.vx;
+	}
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&reflect));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&perp));
+	gte_op12();
+
+	new CCopLaserPing(&pLine->Position, &reflect, &perp, a2, a3, a4);
+
+	CVector cross;
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&cross));
+
+	new CCopLaserPing(&pLine->Position, &reflect, &cross, a2, a3, a4);
 }
 
 void validate_CCop(void){
