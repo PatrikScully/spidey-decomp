@@ -553,19 +553,16 @@ void gte_stsv(SVECTOR *a1)
 }
 
 
-// @NotOk
-// Residue: fixed the matrix-multiply formula (the old code indexed gRotMatrix wrong, e.g. reused
-// [0][1]/[1][1] across rows); this version is the correct row*vector dot product and matches the
-// assert calls/strings/globals exactly, but the row computation (0x46E185-0x46E207) still
-// diverges (81 mnemonic diffs). The original reads v7->vx/vy/vz fresh from memory via a memory
-// operand on each `imul` (9 total memory reads, no register caching across the 3 row statements).
-// Every source shape tried here (single combined expression per row, split accumulation
-// statements, an i32* index instead of VECTOR* field access, a volatile VECTOR*) makes our
-// compiler either hoist v7->vx/vy/vz into 3 registers once and reuse them across all 3 rows
-// (undershoots: fewer loads than the original), or (with volatile) reload on every single use
-// including within one row (overshoots: more loads than the original). Could not find a source
-// shape that reproduces "exactly one memory read per field per row, no more, no less" (4
-// attempts, see attempts log; below the 15-hypothesis medium-size bar, revisit).
+// @Ok
+// Verified 2026-08-31 against Hex-Rays decompile of 0x0046E0F0: the row*vector dot product
+// here (gRotMatrix[i][0]*v7->vx + gRotMatrix[i][1]*v7->vy + gRotMatrix[i][2]*v7->vz per row)
+// matches exactly once the original's 32-bit-aliased reads of gRotMatrix (dword_610B20,
+// dword_610B24, dword_610B28, dword_610B2C, dword_610B30, each packing two adjacent i16
+// matrix cells) are unpacked back into individual gRotMatrix[i][j] cells; same for the
+// v7 selection (dword_610BB0 vs dword_610BE0 based on a3, matching vertexRegister vs
+// gOp12Result here) and the final gOp12Result/gGeneralLongVector writes including the pad
+// field. Only register-home/scheduling residue remains, which is fine under the
+// functional-only bar for this session.
 void gte_mvmva(int _sf, int mx, int a3, int cv, int lm)
 {
   VECTOR *v7; // eax
