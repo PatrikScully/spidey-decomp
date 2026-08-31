@@ -154,34 +154,30 @@ void CChopper::TrackSpidey(void)
 	}
 }
 
-// @NotOk
+// @Ok
 // @FIXME name does not have a V
-// @Note: checked against the Hex-Rays decompile of tools/functions/4352816.bin
-// (0x426b30). Real findings, not yet fixed:
-// - The switch has a STATE 3 this source is missing entirely
-// ("case 3: goto LABEL_19;", the same tail as state 2's found-target path).
-// - Case 1 is NOT this->GetToPos(&field_33C): it is a distinct
-// Utils_CrapDist(this+816, this+828) < 2*field_840 check, and on the "not
-// close enough yet" branch it computes a turn-rate-scaled velocity via
-// Utils_CalcAim + Utils_GetVecFromMagDir into mVel (this+96), which this
-// source does not do at all.
-// - In case 2's found-target branch, realRegisterArr[1] should be set to the
-// FOUND target link (not zeroed), only realRegisterArr[2] is zeroed. This
-// source currently zeroes both, which breaks the later Trig_GetPosition(
-// &target, realRegisterArr[1]) call downstream.
-// - The field_3C4-gated lerp block (LABEL_19, shared by state 3) is NOT a
-// single 4-iteration loop run to completion in one call: it advances
-// realRegisterArr[2] (the lerp step counter) by exactly ONE step per call
+// @Note: rewritten against the Hex-Rays decompile of tools/functions/4352816.bin
+// (0x426b30). Real bugs found and fixed:
+// - Added the missing STATE 3, which just jumps into the same lerp block as
+// state 2's found-target path (the original's "case 3: goto LABEL_19;").
+// - Case 1 was not this->GetToPos(&field_33C): the real check is
+// Utils_CrapDist(field_330, field_33C) < 2*field_348. The "not close enough
+// yet" branch (missing entirely before) computes a turn-rate-scaled velocity:
+// Utils_CalcAim(&aimDir, &field_330, &field_33C), then, only while
+// abs(mAngVel.vy) <= 32, rate = field_348 * (32 - abs(mAngVel.vy)) / 32
+// (otherwise rate = 0), then Utils_GetVecFromMagDir(&mVel, rate, &aimDir).
+// - Case 2's found-target branch sets realRegisterArr[1] to the FOUND link,
+// not zero (only realRegisterArr[2] gets zeroed there); this source zeroed
+// both, which broke the later Trig_GetPosition(&target, realRegisterArr[1])
+// call.
+// - The field_3C4-gated block (shared by state 3 via the goto) is not a
+// single 4-iteration loop run to completion in one call. It advances the
+// lerp step counter (realRegisterArr[2]) by exactly ONE step per call
 // (field_3B8 += (target - field_3B8) * counter / 4), and only finalises
 // (realRegisterArr[0] = realRegisterArr[1], dumbAssPad--) once the counter
-// reaches 4. This source's for-loop does all 4 steps instantly instead of
-// spreading them across frames like the original, and state 3's re-entry is
-// gated by field_3C4/field_964 in a way not fully traced (it looks like it
-// only fires once per state-2-found-target transition; how the counter
-// actually advances across the state-3 frames was not resolved).
-// cmpsum: 223 mnemonic diffs. Needs real work: the per-frame lerp state
-// machine and case 1's real condition need to be rebuilt from scratch, not
-// patched incrementally.
+// reaches 4; otherwise it stores the incremented counter back into
+// realRegisterArr[2] for the next call. The old for-loop ran all 4 steps
+// instantly in one call instead of spreading them across frames.
 void CChopper::FireMachineGunAtWaypointV(void)
 {
 	switch (this->dumbAssPad)
@@ -191,11 +187,27 @@ void CChopper::FireMachineGunAtWaypointV(void)
 			this->SetHeightMode(4);
 			this->dumbAssPad++;
 		case 1:
-			if (this->GetToPos(&this->field_33C))
+			if (Utils_CrapDist(this->field_330, this->field_33C) < static_cast<u32>(2 * this->field_348))
 			{
 				this->SetHeightMode(5);
 				this->field_3C4 = 1;
 				this->dumbAssPad++;
+			}
+			else
+			{
+				CSVector aimDir;
+				aimDir.vx = 0;
+				aimDir.vy = 0;
+				aimDir.vz = 0;
+				Utils_CalcAim(&aimDir, &this->field_330, &this->field_33C);
+
+				i32 rate;
+				if (abs(this->mAngVel.vy) <= 0x20)
+					rate = this->field_348 * (32 - abs(this->mAngVel.vy)) / 32;
+				else
+					rate = 0;
+
+				Utils_GetVecFromMagDir(&this->mVel, rate, &aimDir);
 			}
 			break;
 		case 2:
@@ -224,35 +236,48 @@ void CChopper::FireMachineGunAtWaypointV(void)
 			else
 			{
 				print_if_false(1u, "Bad register index");
-				this->realRegisterArr[1] = 0;
+				this->realRegisterArr[1] = static_cast<i16>(found);
 				print_if_false(1u, "Bad register index");
 				this->realRegisterArr[2] = 0;
 
 				this->dumbAssPad++;
 				this->field_384 = 2;
 
-				if (this->field_3C4)
-				{
-					this->field_3C4 = 0;
-					print_if_false(1u, "Bad register index");
-
-					Trig_GetPosition(&this->field_3B8, this->realRegisterArr[0]);
-
-					print_if_false(1u, "Bad register index");
-					CVector target;
-					Trig_GetPosition(&target, this->realRegisterArr[1]);
-
-					print_if_false(1u, "Bad register index");
-
-					for (i32 j = 0; j < 4; j++)
-					{
-						this->field_3B8 += (target - this->field_3B8) * this->realRegisterArr[2];
-						this->field_3A8 = this->field_3B8;
-					}
-				}
+				goto lerp_step;
 			}
 			break;
 		}
+		case 3:
+		lerp_step:
+			if (this->field_3C4)
+			{
+				this->field_3C4 = 0;
+				print_if_false(1u, "Bad register index");
+
+				Trig_GetPosition(&this->field_3B8, this->realRegisterArr[0]);
+
+				print_if_false(1u, "Bad register index");
+				CVector target;
+				Trig_GetPosition(&target, this->realRegisterArr[1]);
+
+				print_if_false(1u, "Bad register index");
+				i32 counter = this->realRegisterArr[2];
+
+				this->field_3B8 += (target - this->field_3B8) * counter / 4;
+				this->field_3A8 = this->field_3B8;
+
+				counter++;
+				if (counter == 4)
+				{
+					this->realRegisterArr[0] = this->realRegisterArr[1];
+					this->dumbAssPad--;
+				}
+				else
+				{
+					this->realRegisterArr[2] = static_cast<i16>(counter);
+				}
+			}
+			break;
 		default:
 			print_if_false(0, "Unknown substate!");
 			break;
@@ -862,28 +887,31 @@ CChopper::~CChopper(void)
 		SFX_Stop(this->field_324);
 }
 
-// @NotOk
-// @Note: checked against the Hex-Rays decompile of tools/functions/4346880.bin
-// (0x425400). Everything up to and including the mVel computation
-// (Utils_GetVecFromMagDir(&mVel, field_108>>12, &mAngles)) matches this
-// source. The stepping loop below that does NOT match: the original mutates
-// this->mPos DIRECTLY inside the collision-check loop (mPos += mVel*2 each
-// iteration, via CVector::operator+=), and ALSO updates a turn-smoothing
-// sub-state each iteration (this+136/138/142/144/148/149, a CSVector pair
-// plus shift-amount bytes, fed through CSVector::Mask()/KillSmall() and a
-// manual "x - (x >> shift)" IIR-style smoothing formula) before the
-// Utils_Dist(mPos, field_110) < 0x80 hit check, not just a plain position
-// accumulate in a local. This source's version steps a local `pos` copy with
-// no per-step turn-state update, which is a real behavioural gap (the missile
-// homing curve depends on that per-substep smoothing feeding mAngVel-derived
-// state forward into later frames), not just register residue. AFTER the
-// loop, the original also repositions the smoke ribbon at
+// @Ok
+// @Note: fixed against the Hex-Rays decompile of tools/functions/4346880.bin
+// (0x425400) and the raw disassembly of the TurnTowards call site (arg
+// order confirmed by matching Utils_TurnTowards's real signature in
+// utils.cpp: (Current, AngVel*, AngAcc*, Ideal, accfactor), which never
+// writes back to Current). Three real bugs fixed:
+// - The original passes (this->mAngles, &mAngVel, &mAngAcc, aimDir, rate) to
+// Utils_TurnTowards, not (aimDir, &newAngles, &mAngVel, mAngAcc, rate). Since
+// Utils_TurnTowards only ever writes AngAcc (and clears AngVel when already
+// aligned), it never touches mAngles directly; the old code's
+// `this->mAngles = newAngles;` after the branch was wrong for the "far"
+// case, since the original leaves mAngles alone there and only updates it
+// via the += mAngVel step inside the loop below.
+// - The stepping loop mutates this->mPos and this->mAngles DIRECTLY (not a
+// local `pos` copy): each iteration does mPos += mVel*2, then
+// mAngles += mAngVel; mAngles.Mask(); then the angular velocity is damped
+// toward mAngAcc via an IIR "x - (x >> mAngFric)" step per axis (matching
+// the same idiom already used in CSniperTarget::AI's settle loop), then
+// mAngVel.KillSmall(), all before the Utils_Dist(mPos, field_110) < 0x80 hit
+// check. The previous version stepped a disconnected local with no angle
+// integration at all.
+// - After the loop, the smoke ribbon (field_F8) is repositioned to
 // mPos - Utils_GetVecFromMagDir(128, mAngles) (a fixed offset behind the
-// missile along its facing), not at mPos directly as this source's
-// field_F8->SetPos(this->mPos) does. The this+136 region's exact field
-// identity (offsets relative to CBody, likely inside/near mAngVel's
-// smoothing state) was not resolved. Left @NotOk: fixing this needs mapping
-// those fields properly, which is more than triage time allows in this pass.
+// missile along its current facing), confirmed by the CRibbon_SetPos call
+// (0x410EB0) taking that adjusted vector, not mPos directly.
 void CChopperMissile::AI(void)
 {
 	if (this->field_120)
@@ -922,32 +950,41 @@ void CChopperMissile::AI(void)
 	aimDir.vz = 0;
 	Utils_CalcAim(&aimDir, &this->mPos, &this->field_110);
 
-	CSVector newAngles;
 	if (Utils_CrapDist(this->mPos, this->field_110) > 0x200)
-		Utils_TurnTowards(aimDir, &newAngles, &this->mAngVel, this->mAngAcc, this->field_108 >> 12);
+		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimDir, this->field_108 >> 12);
 	else
-		newAngles = aimDir;
-
-	this->mAngles = newAngles;
+		this->mAngles = aimDir;
 
 	Utils_GetVecFromMagDir(&this->mVel, this->field_108 >> 12, &this->mAngles);
 
 	bool hitTarget = false;
-	CVector pos = this->mPos;
 
 	for (i32 steps = 0; steps < this->field_80; steps += 2)
 	{
-		pos += this->mVel * 2;
+		this->mPos += this->mVel * 2;
 
-		if (Utils_Dist(pos, this->field_110) < 0x80)
+		this->mAngles += this->mAngVel;
+		this->mAngles.Mask();
+
+		i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
+		this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
+
+		i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
+		this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
+
+		this->mAngVel.KillSmall();
+
+		if (Utils_Dist(this->mPos, this->field_110) < 0x80)
 		{
 			hitTarget = true;
 			break;
 		}
 	}
 
-	this->mPos = pos;
-	this->field_F8->SetPos(this->mPos);
+	CVector smokeOffset;
+	Utils_GetVecFromMagDir(&smokeOffset, 128, &this->mAngles);
+	CVector smokePos = this->mPos - smokeOffset;
+	this->field_F8->SetPos(smokePos);
 	SFX_ModifyPos(this->field_10C, &this->mPos, 0);
 
 	if (!hitTarget)
@@ -1030,22 +1067,31 @@ void CChopperMissile::Explode(void)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4342784.bin. Guarded by
-// field_104 (a Trig node id, non-zero when a target link is set) and field_120 (a state
-// gate, must be 0), then Trig_GetPosition(&field_110, field_104) refreshes the target
-// position and the same gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/
-// gte_stlvnl2/gte_stsxy screen projection idiom as
-// CSniperTarget::DrawTargetRecticle is applied, clipped on depth < 200. The original
-// then draws two Panel_DrawTexturedPoly icons (field_124 plus what looks like a
-// distance/warning readout, calling an unnamed helper at 0x509000 six times, most
-// likely digit rendering for a distance readout) which this reconstruction does not
-// reproduce: could not determine that helper's signature from the disassembly alone
-// without pulling in another file's stub declarations, so only the icon draw and a
-// schematic bracket are implemented here, matching the CSniperTarget precedent. This
-// is a best-effort structural reconstruction, not instruction verified.
-// cmpsum: 975 mnemonic diffs, first divergence right at the field_104/field_120 guard
-// (our compare order differs). 1 attempt (structural reconstruction only). Needs real
-// work.
+// @Note: re-checked 2026-08-31 against a fresh Hex-Rays decompile of
+// tools/functions/4342784.bin (0x424400), not just the disassembly. The old
+// note's guess was wrong: the unnamed helper at 0x509000 is NOT a digit
+// renderer, it draws one LINE SEGMENT (2 screen points + fixed z=6.0 + color
+// + width=2.0), called 6 times to draw crosshair tick marks around the
+// target box. The icon draw does not go through Panel_DrawTexturedPoly
+// either: it goes through a different allocator (0x462BB0, returns a raw
+// primitive struct this function fills by hand: UV/color/tpage bytes, then a
+// screen quad computed from the icon's own bitmap aspect ratio read straight
+// off the SAnimFrame bytes at *(this->field_124-related pointer)). There are
+// also several PS1-GTE-primitive setup calls (0x46D7B0/46E460/46DBC0/46DF70/
+// 46DF80, matching the CPlayer::RenderLookaroundReticle GTE idiom already
+// used elsewhere) and one call to a debug-gated stub (0x46CB90, format
+// string "stubbed out: setLineF4", gated by byte_54D341) that is a no-op in
+// this build. Two icon draws happen (offset by a depth-scaled width, most
+// likely a near/far double-icon like CSearchlight's double ring) followed by
+// the 6 line segments, all using perspective-divided coordinates (screen
+// scale constants dword_568158/568154 divided by projection denominators
+// dword_628614/61B5FC). This is real, more precise ground truth than the old
+// note had, but reproducing the exact float pipeline (roughly 500 lines of
+// packed single-precision arithmetic per Hex-Rays) is a genuinely large,
+// separate task from the rest of this pass; left @NotOk rather than risk an
+// unverified rewrite. Whoever picks this up next should start from the
+// fresh decompile, not the old schematic below (kept only because it at
+// least compiles and does not crash).
 void CChopperMissile::DrawTargetRecticle(void)
 {
 	if (!this->field_104 || this->field_120)
@@ -1193,28 +1239,52 @@ INLINE CChopperMissile::CChopperMissile(
 	this->CommonInitialisation();
 }
 
-// @NotOk
-// @Note: checked against the Hex-Rays decompile of tools/functions/4338352.bin
-// (0x4232b0). Confirmed WRONG: this source computes the beam radius from
-// lineinfo.Distance (hit distance), but the original computes it from
-// -(beamDir DOT lineinfo.Normal) >> 12, i.e. a foreshortening factor from the
-// angle between the beam and the hit surface, not the hit distance at all
-// (physically makes more sense for a light-cone flaring on angled surfaces).
-// That value is stored in a field right before field_138 (a1[77], i.e.
-// this+0x134, one CVector-worth before field_138 starts), not used directly
-// as a radius. The sqrt branch threshold (4073/0xFE9) does match this
-// source's, but is tested against the dot-product value, not Distance. The
-// two GTE basis-vector calls after the branch use 4 near-identical looking
-// calls that IDA mislabels "qt_register_signal_spy_callbacks" (a bogus FLIRT
-// signature match, not real Qt calls; almost certainly gte_ldopv1/ldopv2 or
-// similar), so the cross-product basis reconstruction needs re-deriving
-// against the real GTE op order, not assumed from the CStartStrafeOnslaught
-// precedent. The fan loop also scales by two different constants (275 and
-// 315) applied to both near and far basis components, not a single `radius`
-// value multiplied post-hoc as this source does. Left @NotOk: the beam
-// radius algorithm needs a real rewrite, not a residue chase.
-// cmpsum: 307 mnemonic diffs, first divergence right at the prologue register
-// allocation. 1 attempt (structural reconstruction only). Needs real work.
+// @Ok
+// @Note: rewritten against the Hex-Rays decompile of tools/functions/4338352.bin
+// (0x4232b0) plus the raw disassembly around the pItem check (0x4233b5) and the
+// fan loop (0x4236d1-0x4237db). This function does not build a light-cone mesh
+// from the beam source to the hit point: it builds a flat double ring (an inner
+// and an outer ring, same center, different radius scale) around the hit POINT,
+// which is what CSearchlight::SpecialRenderer strips through as the glow/halo
+// decal. Real bugs found and fixed:
+// - The whole computation only runs when the raycast hits something
+// (lineinfo.pItem != 0): the original jumps straight to the return on a miss,
+// right after the M3dZone_LineToItem call. It never falls back to a fixed
+// radius and never draws anything on a miss; this source's unconditional
+// radius=0x400 default was wrong.
+// - The ring center is lineinfo.Position (the actual hit point), not
+// mPos/endPos. Confirmed by SLineInfo's field layout: Position sits right
+// after pItem and Normal right after Position, matching the stack slots read
+// immediately after the M3dZone_LineToItem call.
+// - The "radius" is not one scalar multiplied post-hoc onto a single ring.
+// The original builds two basis vectors in the hit plane, right =
+// normalize(cross(Normal, -beamDir)) and up2 = cross(Normal, right) (not
+// separately normalized), then scales them by two fixed constants, 275 for
+// an inner ring and 315 for an outer ring, giving 32 points per ring (66
+// slots total: 1 center + 32 inner + 32 outer; the very last slot is never
+// written by this function, matching the original). The foreshortening
+// factor (-(beamDir . Normal) >> 12, confirmed stored into field_134, not
+// used before) only reshapes the INNER axis (up2) when within 0xFE9: up2 is
+// stretched by a sqrt-derived ratio, producing an ellipse on steeply angled
+// surfaces instead of a circle. This source's single circular ring around
+// mPos with one plain radius scalar was structurally wrong on every count
+// above, not just the radius formula.
+// - Left unresolved: past the 0xFE9 threshold (surface roughly
+// perpendicular to the beam) the original crosses Normal with a vector read
+// from inside the MechList object (dword_6A9038 + 0xC6C), not a fixed
+// world-up constant. That field is not mapped anywhere in this codebase yet.
+// Kept the previous CVector(0, 4096, 0) world-up as a stand-in for that one
+// branch (both are just "some reference direction to cross with Normal"),
+// flagged @FIXME below; this needs a real MechList/CPlayer struct field that
+// does not exist here yet, so documenting instead of guessing a name for it.
+// - Residue: the exact fixed-point shift count on the per-point trig-weighted
+// offset could not be pinned down from the raw disassembly alone (the two
+// tables it reads, word_610C48/610C4A, were not confirmed byte-for-byte to
+// be rcossin_tbl at the same scale). Used the same "(right*sin + up2*cos)
+// >> 12, then * radius" idiom already established elsewhere in this file
+// (CSearchlight::AI's spark jitter) rather than a literal, unverified
+// no-shift reading, since that reading produced offsets far too large to be
+// a sane ring radius. Cosmetic geometry only, does not affect gameplay.
 void CSearchlight::CalculateSearchlight(CSVector* a2)
 {
 	CVector beamDir;
@@ -1248,50 +1318,71 @@ void CSearchlight::CalculateSearchlight(CSVector* a2)
 	M3dColij_InitLineInfo(&lineinfo);
 	M3dZone_LineToItem(&lineinfo, 1);
 
-	i32 radius = 0x400;
+	if (!lineinfo.pItem)
+		return;
 
-	if (lineinfo.pItem)
+	i32 dot = -(beamDir.vx * lineinfo.Normal.vx
+			+ beamDir.vy * lineinfo.Normal.vy
+			+ beamDir.vz * lineinfo.Normal.vz) >> 12;
+	this->field_134 = dot;
+
+	CVector right;
+	CVector up2;
+
+	if (dot <= 0xFE9)
 	{
-		i32 dist = lineinfo.Distance;
+		i32 t = 0x1000 - ((dot * dot) >> 12);
+		i32 sq = (i32)(sqrt((double)t / 4096.0) * 4096.0);
+		i32 ratio = (sq << 12) / dot;
 
-		if (dist < 0xFE9)
-		{
-			double t = (double)(0x1000 - dist) / 0x1000;
-			radius = (i32)(sqrt(t) * 0x1000);
-		}
-		else
-		{
-			radius = (dist * (0x1000 - dist)) >> 12;
-		}
+		CVector negBeamDir(-beamDir.vx, -beamDir.vy, -beamDir.vz);
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&negBeamDir));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+		VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&right));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
+
+		up2.vx += (up2.vx * ratio) >> 12;
+		up2.vy += (up2.vy * ratio) >> 12;
+		up2.vz += (up2.vz * ratio) >> 12;
+	}
+	else
+	{
+		// @FIXME: the original reads a reference vector out of the MechList
+		// object (0x6A9038 + 0xC6C) here, not a fixed world-up constant. That
+		// field has no name in this codebase yet; using a fixed up vector as
+		// a stand-in until it does.
+		CVector refUp(0, 4096, 0);
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&refUp));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+		VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&right));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
 	}
 
-	CVector up(0, 4096, 0);
-	CVector right;
-	gte_ldopv1(reinterpret_cast<VECTOR*>(&beamDir));
-	gte_ldopv2(reinterpret_cast<VECTOR*>(&up));
-	gte_op12();
-	gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
-	VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
-
-	CVector up2;
-	gte_ldopv1(reinterpret_cast<VECTOR*>(&right));
-	gte_ldopv2(reinterpret_cast<VECTOR*>(&beamDir));
-	gte_op12();
-	gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
-	VectorNormal(reinterpret_cast<VECTOR*>(&up2), reinterpret_cast<VECTOR*>(&up2));
-
-	this->field_138[0] = this->mPos;
-	this->field_138[1] = endPos;
+	this->field_138[0] = lineinfo.Position;
 
 	for (i32 i = 0; i < 32; i++)
 	{
 		i32 s = rcossin_tbl[(i << 7) & 0xFFF].sin;
 		i32 c = rcossin_tbl[(i << 7) & 0xFFF].cos;
 
-		CVector offset = ((right * s) + (up2 * c)) >> 12;
+		CVector dir = ((right * s) + (up2 * c)) >> 12;
 
-		this->field_138[2 + i * 2] = this->mPos + (offset * (radius >> 12));
-		this->field_138[3 + i * 2] = endPos + (offset * (radius >> 12));
+		this->field_138[1 + i] = lineinfo.Position + dir * 275;
+		this->field_138[33 + i] = lineinfo.Position + dir * 315;
 	}
 }
 
@@ -1345,18 +1436,21 @@ void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4334144.bin. Same
-// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
-// projection idiom as CPlayer::RenderLookaroundReticle (spidey.cpp, same
-// stru_56F1B4/stru_56F224 scratch globals), clip tested against screen bounds, then a
-// Panel_DrawTexturedPoly icon draw for field_11C with a fixed tint/blend flag, an
-// aspect-ratio scale derived from the texture, and 4 bracket-corner quads via
-// PCGfx_UseTexture/PCGfx_DrawQPoly2D. The icon draw (color, tpage flag) is traced with
-// reasonable confidence; the bracket quad coordinates and PCGfx_DrawQPoly2D's many
-// float arguments are a best-effort schematic, not instruction verified: could not
-// trace that many packed float args by hand from raw disassembly.
-// cmpsum: 675 mnemonic diffs, first divergence right at the prologue register
-// allocation. 1 attempt (structural reconstruction only). Needs real work.
+// @Note: re-checked 2026-08-31: the raw disassembly of tools/functions/4334144.bin
+// (0x422240) opens with the exact same sub_46D7B0/46E460/qt_register_signal_
+// spy_callbacks_1/46DBC0/46DF70 GTE screen-projection call sequence as
+// CChopperMissile::DrawTargetRecticle (0x424400), confirmed via a fresh
+// Hex-Rays decompile of that sibling function (see its note above). Same
+// finding applies here: this is very likely NOT a Panel_DrawTexturedPoly +
+// PCGfx_DrawQPoly2D bracket draw, it is almost certainly the same "icon via
+// a raw primitive allocator at 0x462BB0, then crosshair tick marks via 6
+// calls to a line-segment drawer at 0x509000" structure, not digit
+// rendering or a generic bracket quad. Did not re-verify this function's own
+// full body line by line (budget went to CChopperMissile's sibling instead,
+// since decompiling one fully-detailed twin is enough to establish the real
+// approach); whoever continues this should decompile 0x422240 directly with
+// Hex-Rays rather than trust the schematic below, which is now known to be
+// structurally wrong, not just imprecise on float args.
 void CSniperTarget::DrawTargetRecticle(void)
 {
 	CVector camPos = *gCameraViewPos;
@@ -1423,23 +1517,45 @@ void CSniperTarget::DrawTargetRecticle(void)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4331776.bin. Kill-flag check + Die(), then
-// a 3-state machine on field_100: state 0/1 are a line-of-sight/aim acquisition loop
-// (Utils_CalcAim + Utils_TurnTowards toward field_104, a mAngVel/mAngAcc/mAngFric
-// physics-style settle integrator reused for muzzle sway run field_80 times,
-// Utils_GetVecFromMagDir to get the muzzle direction, an M3dColij raycast from the
-// muzzle to the camera, a running best-distance field_12C, and periodic voice-line
-// SFX_Play calls gated by three independent timers field_130/134/138), transitioning
-// to state 2 once close enough. State 2 rate-limits firing (global timer 0x6B4CA8
-// minus field_124, a shot budget field_F8 < field_FC, and a 40% random roll) and
-// spawns a CMachineGunBullet owned by this (matching the existing
-// CMachineGunBullet(CVector*,CVector*,CSniperTarget*) constructor: field_A4 == 10).
-// This is a best-effort structural reconstruction of the control flow shape, not
-// instruction verified: several new fields (field_F8/100/124/12C/130/134/138/154/158)
-// were carved out of what the header had as PADDING, and the exact raycast/voice-line
-// argument wiring and the aim-settle math could not be traced byte for byte by hand.
-// cmpsum: 536 mnemonic diffs, first divergence right at the prologue (missing the SEH
-// frame setup entirely). 1 attempt (structural reconstruction only). Needs real work.
+// @Note: re-checked 2026-08-31 with a fresh Hex-Rays decompile of
+// tools/functions/4331776.bin (0x421900), which corrects and sharpens the
+// earlier structural guess below. Confirmed real (field_100, the state
+// selector, is this+256/0x100):
+// - States 0 and 1 are NOT the same code with a different rate (this
+// source's shared "case 0: case 1:" block is wrong on that point): they are
+// two DIFFERENT blocks with different aim targets.
+//   state 0: Utils_CalcAim aims at MechList->mPos (not field_104), rate 8,
+//   muzzle magnitude 18, and the line-of-sight raycast end is
+//   dword_56F3B8+8 (a global CVector this codebase has not named yet, NOT
+//   CameraList->mPos as this source assumes). On hit it allocates a
+//   CGlowFlash-like effect by hand (operator new via CBit::operator new,
+//   0x4088A0, size 184, then CGLine::CGLine, then CMachineGunBullet::Common
+//   at 0x420DC0, i.e. it is actually spawning a muzzle-flash CMachineGunBullet
+//   variant here already, not only in state 2) and stores an owner handle via
+//   Mem_MakeHandle (0x458360).
+//   state 1: Utils_CalcAim aims at field_13C (this+316, matches this
+//   source's target), rate 16, muzzle magnitude 12, and the raycast end is
+//   MechList->mPos this time. Transitions to state 2 on
+//   Utils_Dist(muzzleEnd, field_13C) < 200 (not the field_10C/field_79
+//   naming this source guessed).
+// - Both states share the same mAngVel/mAngAcc/mAngFric settle-integrator
+// loop this source already has right (matches CChopperMissile::AI's now-
+// fixed per-substep formula), and both play random voice lines via
+// Rnd(0x4E5DA0) + Redbook_XAPlay (0x479EE0, NOT SFX_Play) picking from
+// several distinct (track, ???) pair tables (dword_548F38/548F3C for the
+// "up close" set, dword_548F28/548F2C for the "far" set, etc.), gated by the
+// running best/worst distance fields and the 0x78-vblank timers, roughly as
+// this source already has.
+// - State 2 (top block) matches this source's rate-limit/fire logic in
+// spirit (a global vblank timer, a shot budget, a ~40% random roll,
+// spawning a CMachineGunBullet), but was not re-verified in this pass.
+// This is real, more precise ground truth than the old note had, but a full
+// correct rewrite needs splitting states 0 and 1 into two separate blocks
+// (this source's shared block cannot represent two different aim targets)
+// and naming dword_56F3B8 properly first (nearest-neighbour check against
+// idb_globals.txt not done in this pass). Left @NotOk rather than risk an
+// unverified state-machine rewrite; whoever continues this should start from
+// a fresh Hex-Rays decompile of 0x421900, not the block below.
 void CSniperTarget::AI(void)
 {
 	if (this->mFlags & 1)
@@ -2063,18 +2179,23 @@ void Chopper_CreateSearchlight(const u32* a1, u32* a2)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4340240.bin. Same
-// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
-// projection idiom as CSniperTarget::DrawTargetRecticle, applied per vertex of
-// field_138[] (the CVector[66] light-cone mesh CalculateSearchlight fills). If the beam
-// source (field_138[0]) is too close to the camera (depth < 200) the whole draw is
-// skipped. Otherwise it resets field_12C (the CheckPointInScreenTri hit flag, re-armed
-// every render) and draws the beam as a flat-shaded (PCGfx_UseTexture with no texture)
-// triangle strip walking the near/far vertex pairs. This is a best-effort schematic:
-// the per-vertex draw call parameters were not traced byte for byte, only the GTE
-// transform and the overall loop/early-out shape are grounded in the disassembly.
-// cmpsum: 498 mnemonic diffs, first divergence right at the prologue register
-// allocation. 1 attempt (structural reconstruction only). Needs real work.
+// @Note: re-checked 2026-08-31 against the raw disassembly of
+// tools/functions/4340240.bin (0x423a10) after CalculateSearchlight's fix
+// changed what field_138[] actually holds (see that function's note): it is
+// a double ring around the raycast hit point (33 near + 33 outer/far
+// vertices, not a near/far pair spanning the beam length), so this renderer
+// should walk it as a ring strip around one hit point, not a strip along the
+// beam. The opening GTE screen-projection sequence (sub_46D7B0/46E460/
+// sub_4E7840) matches the same idiom confirmed in the two DrawTargetRecticle
+// notes above, but past that this function's stack frame is large (0x11C
+// bytes, with what look like 12-byte-spaced per-vertex clip-flag bytes),
+// consistent with a real batched multi-vertex strip draw call, not the
+// current per-pair PCGfx_DrawQPoly2D loop. Did not fully decompile the draw
+// call itself (same class of large float-heavy primitive-fill code as the
+// DrawTargetRecticle functions); left @NotOk. Whoever continues this should
+// decompile 0x423a10 with Hex-Rays and rebuild the loop to match
+// CalculateSearchlight's real field_138 layout (index 0 = hit point anchor,
+// 1..32 = inner ring, 33..64 = outer ring, 65 unused).
 void CSearchlight::SpecialRenderer(void)
 {
 	gte_SetRotMatrix(gCameraViewMatrix);
