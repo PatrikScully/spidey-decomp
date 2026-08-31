@@ -598,8 +598,7 @@ void CScorpion::Gloat(void)
 }
 
 
-// @NotOk
-// globals
+// @Ok
 void CScorpion::TakeHit(void)
 {
 	switch( this->dumbAssPad)
@@ -623,7 +622,7 @@ void CScorpion::TakeHit(void)
 			break;
 		case 4:
 			this->RunTimer(&this->field_230);
-			if (this->field_230)
+			if (!this->field_230)
 			{
 				this->field_31C.bothFlags = 2;
 				this->dumbAssPad = 0;
