@@ -603,9 +603,135 @@ CPunchOb::CPunchOb(
 	this->ParseScript(v6);
 }
 
-// @BIGTODO
-CSimbyShot::CSimbyShot(CVector*)
-{}
+// guess: pointer to a table of Texture* entries used by simby "shot"/
+// "splat" effects. Same double-deref access pattern as G_TEXTURE_RELATED
+// in effects.cpp (dereference the global once to get a table base, then
+// index+dereference again), just a different table 0x20 bytes earlier in
+// the binary. Evidence: every xref to 0x56EA7C is one of CSimbyShot::
+// CSimbyShot (sub_4A5FD0), CSimbyShotSplat::CSimbyShotSplat (sub_4A5C70),
+// CSimbyEmergeSplat::CSimbyEmergeSplat (sub_4A2BA0) and CSimbyMeltSplat::
+// CSimbyMeltSplat (sub_4A32E0), all reading *(Texture**)(table + 4).
+static i32 * const gSimbyShotTextureTable = reinterpret_cast<i32*>(0x56EA7C);
+
+// @Ok
+// verified against IDA decompile+disasm of sub_4A5FD0 (0x4A5FD0): every
+// field offset, the raycast-toward-MechList setup (identical gLineInfo/
+// LineOfSightCheck idiom to CFlamingImpactWeb::CFlamingImpactWeb above),
+// and the mPos/mPosB/mPosC/mPosD quad construction. CSimbyShot::Move
+// (sub_4A6520, not yet in this repo) independently confirms every field
+// offset used here (it re-derives mPos/mPosC from field_94/field_A0/
+// field_AC/field_B0/field_B4 the same way every frame).
+CSimbyShot::CSimbyShot(CVector *a2)
+{
+	this->field_88.vx = 0;
+	this->field_88.vy = 0;
+	this->field_88.vz = 0;
+
+	this->field_94.vx = 0;
+	this->field_94.vy = 0;
+	this->field_94.vz = 0;
+
+	this->field_A0.vx = 0;
+	this->field_A0.vy = 0;
+	this->field_A0.vz = 0;
+
+	if (!MechList)
+	{
+		this->Die();
+		return;
+	}
+
+	this->SetTexture(*reinterpret_cast<Texture**>(*gSimbyShotTextureTable + 4));
+	this->SetSemiTransparent();
+	this->SetTint(0x64, 0, 100);
+
+	CVector toMech = MechList->mPos - *a2;
+	i32 length = toMech.Length();
+	this->field_B4 = length;
+
+	if (length == 0)
+	{
+		this->Die();
+		return;
+	}
+
+	CVector unitDir = toMech / length;
+	this->field_A0 = unitDir;
+
+	CVector hitPoint = *a2 + unitDir * 5000;
+
+	gLineInfo.StartCoords = *a2;
+	gLineInfo.EndCoords = hitPoint;
+
+	M3dColij_InitLineInfo(&gLineInfo);
+
+	LineOfSightCheck = 1;
+	M3dZone_LineToItem(&gLineInfo, 0);
+	LineOfSightCheck = 0;
+
+	if (gLineInfo.pItem)
+	{
+		print_if_false((gLineInfo.pItem->mFlags & 0x10) == 0, "Hit env obj!");
+
+		CItem *pEnviro;
+		for (pEnviro = EnviroList; pEnviro; pEnviro = pEnviro->mNextItem)
+		{
+			if (pEnviro == gLineInfo.pItem)
+				break;
+		}
+		print_if_false(pEnviro != 0, "Not in list");
+
+		this->field_84 = 1;
+		this->field_88.vx = gLineInfo.Normal.vx;
+		this->field_88.vy = gLineInfo.Normal.vy;
+		this->field_88.vz = gLineInfo.Normal.vz;
+
+		hitPoint = gLineInfo.Position;
+	}
+
+	CVector toHit = hitPoint - *a2;
+	length = toHit.Length();
+	this->field_B4 = length;
+
+	if (length == 0)
+	{
+		this->Die();
+		return;
+	}
+
+	this->field_B0 = -Rnd(200);
+	this->field_AC = this->field_B0 - 250;
+
+	this->field_94 = *a2;
+
+	if (this->field_AC >= 0)
+	{
+		i32 dist = (this->field_AC <= this->field_B4) ? this->field_AC : this->field_B4;
+		this->mPos = this->field_94 + this->field_A0 * dist;
+	}
+	else
+	{
+		this->mPos = *a2;
+	}
+
+	if (this->field_B0 >= 0)
+	{
+		i32 dist = (this->field_B0 <= this->field_B4) ? this->field_B0 : this->field_B4;
+		this->mPosC = this->field_94 + this->field_A0 * dist;
+	}
+	else
+	{
+		this->mPosC = this->field_94;
+	}
+
+	CVector facing;
+	Utils_CalcUnitFacingCamera(&this->mPos, &this->mPosC, &facing);
+
+	this->mPosB = this->mPos + facing * 20;
+	this->mPosD = this->mPosC + facing * 20;
+
+	this->mType = 22;
+}
 
 // @Ok
 void CSimby::SetUpHandPos(void)
@@ -1280,6 +1406,14 @@ void validate_CEmber(void)
 void validate_CSimbyShot(void)
 {
 	VALIDATE_SIZE(CSimbyShot, 0xB8);
+
+	VALIDATE(CSimbyShot, field_84, 0x84);
+	VALIDATE(CSimbyShot, field_88, 0x88);
+	VALIDATE(CSimbyShot, field_94, 0x94);
+	VALIDATE(CSimbyShot, field_A0, 0xA0);
+	VALIDATE(CSimbyShot, field_AC, 0xAC);
+	VALIDATE(CSimbyShot, field_B0, 0xB0);
+	VALIDATE(CSimbyShot, field_B4, 0xB4);
 }
 
 void validate_CSkidMark(void)

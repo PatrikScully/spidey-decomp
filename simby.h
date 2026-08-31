@@ -157,7 +157,34 @@ class CSimbyShot : public CQuadBit
 	public:
 		EXPORT CSimbyShot(CVector*);
 
-		PADDING(0x34);
+		// set to 1 when the spawn-to-target raycast (in the constructor) hits
+		// an item; gates the splat-spawning branch in CSimbyShot::Move
+		// (sub_4A6520, not yet in this repo).
+		i32 field_84;
+
+		// sign-extended copy of the raycast hit's SLineInfo::Normal, only
+		// meaningful when field_84 != 0.
+		CVector field_88;
+
+		// spawn position, kept around as the interpolation base used every
+		// frame by CSimbyShot::Move to recompute mPos/mPosC.
+		CVector field_94;
+
+		// unit vector from the spawn position toward MechList (or, if the
+		// raycast hit something first, still the direction of the original
+		// aim; the ray always points at MechList).
+		CVector field_A0;
+
+		// two lagged "distance travelled along field_A0" markers (field_AC
+		// trails field_B0 by 250) that drive mPos/mPosC every frame in
+		// CSimbyShot::Move, clamped to field_B4.
+		i32 field_AC;
+		i32 field_B0;
+
+		// distance from the spawn position to the raycast hit point (or to
+		// the 5000-unit-ahead point if nothing was hit); clamp bound for
+		// field_AC/field_B0.
+		i32 field_B4;
 };
 
 class CSkidMark : public CQuadBit
