@@ -5110,9 +5110,165 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 void CPlayer::PriorToVenomDistanceAttack(CVector)
 {}
 
-// @BIGTODO
+// Transitions back to the stand (idle) animation from a finishing move.
+// Picks the stand anim + SFX entry to play based on the current mAnim (and
+// mAnimDir/mFrame/mHeldObject/field_AD4 for the ambiguous cases), resets the
+// associated SFX entry, and sets field_E1C.
+// @Ok
 void CPlayer::SwitchToStandMode(void)
-{}
+{
+	u16 mAnim = this->mAnim;
+
+	if (mAnim == 50 || mAnim == 51 || mAnim == 60 || mAnim == 63 || mAnim == 72 || mAnim == 75)
+	{
+		this->field_350 = gSpideySFXEntry[55];
+		if (this->field_350 != 0)
+			this->ResetSFXArrayEntry(55);
+		this->RunAnim(0x37, 0, -1);
+		this->field_E1C = 1;
+		return;
+	}
+
+	if (mAnim == 52 || mAnim == 66 || mAnim == 69 || mAnim == 78 || mAnim == 81)
+	{
+		this->field_350 = gSpideySFXEntry[56];
+		if (this->field_350 != 0)
+			this->ResetSFXArrayEntry(56);
+		this->RunAnim(0x38, 0, -1);
+		this->field_E1C = 1;
+		return;
+	}
+
+	if (mAnim == 57 && this->mAnimDir == 1)
+	{
+		i32 frame = this->mFrame;
+		this->field_350 = gSpideySFXEntry[57];
+		if (this->field_350 != 0)
+			this->ResetSFXArrayEntry(57);
+		this->RunAnim(0x39, frame, 0);
+		this->field_E1C = 1;
+		return;
+	}
+
+	if (mAnim == 58 && this->mAnimDir == 1)
+	{
+		i32 frame = this->mFrame;
+		this->field_350 = gSpideySFXEntry[58];
+		if (this->field_350 != 0)
+			this->ResetSFXArrayEntry(58);
+		this->RunAnim(0x3A, frame, 0);
+		this->field_E1C = 1;
+		return;
+	}
+
+	switch (mAnim)
+	{
+		case 0x81:
+			this->field_350 = gSpideySFXEntry[130];
+			if (this->field_350 != 0)
+				this->ResetSFXArrayEntry(130);
+			this->RunAnim(0x82, 0, -1);
+			this->field_E1C = 1;
+			return;
+		case 0x85:
+			this->field_350 = gSpideySFXEntry[134];
+			if (this->field_350 != 0)
+				this->ResetSFXArrayEntry(134);
+			this->RunAnim(0x86, 0, -1);
+			this->field_E1C = 1;
+			return;
+		case 0xE:
+			this->field_350 = gSpideySFXEntry[55];
+			if (this->field_350 != 0)
+				this->ResetSFXArrayEntry(55);
+			this->RunAnim(0x37, 0, -1);
+			this->field_E1C = 1;
+			return;
+		case 0xC4:
+			this->field_350 = gSpideySFXEntry[200];
+			if (this->field_350 != 0)
+				this->ResetSFXArrayEntry(200);
+			this->RunAnim(0xC8, 0, -1);
+			this->field_E1C = 1;
+			return;
+		case 0xBE:
+			this->field_350 = gSpideySFXEntry[194];
+			if (this->field_350 != 0)
+				this->ResetSFXArrayEntry(194);
+			this->RunAnim(0xC2, 0, -1);
+			this->field_E1C = 1;
+			return;
+		case 0x15:
+		{
+			i16 frame = this->mFrame;
+			if (frame >= 18 || frame <= 3)
+			{
+				this->field_350 = gSpideySFXEntry[11];
+				if (this->field_350 != 0)
+					this->ResetSFXArrayEntry(11);
+				this->RunAnim(0xB, 0, -1);
+			}
+			else if (frame < 10 || frame > 14)
+			{
+				this->field_350 = gSpideySFXEntry[13];
+				if (this->field_350 != 0)
+					this->ResetSFXArrayEntry(13);
+				this->RunAnim(0xD, 0, -1);
+			}
+			else
+			{
+				this->field_350 = gSpideySFXEntry[12];
+				if (this->field_350 != 0)
+					this->ResetSFXArrayEntry(12);
+				this->RunAnim(0xC, 0, -1);
+			}
+			this->field_E1C = 1;
+			return;
+		}
+		case 0x14:
+		case 0x82:
+		case 0x86:
+			this->field_E1C = 1;
+			return;
+		default:
+			break;
+	}
+
+	if (this->field_AD4 != 0)
+	{
+		this->field_350 = gSpideySFXEntry[19];
+		if (this->field_350 != 0)
+			this->ResetSFXArrayEntry(19);
+		this->RunAnim(0x13, 0, -1);
+		this->field_E1C = 1;
+	}
+	else if (this->mHeldObject != 0)
+	{
+		if ((this->mHeldObject->field_10C & 8) == 0)
+		{
+			this->field_350 = gSpideySFXEntry[194];
+			if (this->field_350 != 0)
+				this->ResetSFXArrayEntry(194);
+			this->RunAnim(0xC2, 0, -1);
+		}
+		else
+		{
+			this->field_350 = gSpideySFXEntry[200];
+			if (this->field_350 != 0)
+				this->ResetSFXArrayEntry(200);
+			this->RunAnim(0xC8, 0, -1);
+		}
+		this->field_E1C = 1;
+	}
+	else
+	{
+		this->field_350 = gSpideySFXEntry[0];
+		if (this->field_350 != 0)
+			this->ResetSFXArrayEntry(0);
+		this->RunAnim(0, 0, -1);
+		this->field_E1C = 1;
+	}
+}
 
 // duplicate of the byte right before gWhatIf (0x60CFC4, ob.cpp). Name from
 // baddy.cpp's gSubmarinerDieRelated. Tentative, static per file per repo
