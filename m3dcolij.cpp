@@ -434,6 +434,51 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 // is also called from two unrelated, large, still-unnamed functions (sub_4739A0, 0xdf2
 // bytes; sub_474C10, 0x1290 bytes) outside this file, so decompiling it here would need
 // checking those too. Still genuinely blocked; not attempted.
+//
+// Re-re-checked 2026-08-31, later same session (after the GTE helper family in
+// ps2funcs.cpp/.h grew: gsub_46E990/gsub_46EA20/gsub_46EB30, gLineToSphereDirMatrix,
+// gTranslationVector at 0x00610B34, gRotMatrix at 0x00610B20). Confirmed via
+// names.json + tools/names.json grep + fresh IDA decompile that sub_46F1F0 and
+// sub_46F6B0 are STILL unnamed/unimplemented anywhere in the repo, so no shortcut has
+// appeared. Fresh decompile also shows the blocker is deeper than previously scoped:
+// 0x00610B60 is a SECOND, distinct 3x3 i16 rotation matrix (not gRotMatrix at
+// 0x00610B20), fed by its own small parallel "coarse GTE" pipeline used only by this
+// collision path:
+//   - sub_46D810 (0x0046D810, 47 bytes): copies a caller-supplied 3x3 matrix into the
+//     0x00610B60 matrix (a gte_SetRotMatrix analogue for the coarse matrix). Trivial,
+//     but has no purpose without the rest of the chain.
+//   - sub_46D620 (0x0046D620, 31 bytes): copies 3 dwords from a caller struct into
+//     dword_00610B34/38/3C (== gTranslationVector, already named in ps2funcs.cpp).
+//     Trivial.
+//   - sub_46DD40 (0x0046DD40, 168 bytes): dot-products a translation-like vector at
+//     dword_00610BB0/BB4/BB8 (NOT gTranslationVector, a third unnamed vector) against
+//     the 0x00610B60 coarse matrix, >>12, into dword_00610BA0/A4/A8 (+ a 4th field at
+//     0x00610BAC). This is the coarse-matrix equivalent of FixedXForm.
+//   - sub_46E4D0 (0x0046E4D0, 24 bytes): thin wrapper that calls sub_46CD90(&word_610B60,
+//     a1, a2) - sub_46CD90 is a NEW, previously unlisted unnamed function, not yet
+//     decompiled at all. Its size/behavior is unknown, so the true remaining leaf work
+//     is at least 5 functions deep (sub_46CD90, sub_46F1F0, sub_46F6B0, plus the three
+//     above), not the 4 previously scoped.
+//   - sub_46F1F0 (1176 bytes) itself does a per-face plane/cross-product test (uses the
+//     0x00610B60 matrix and a 3rd scratch vector region at 0x00610B40..0x00610B58,
+//     which physically overlaps gLineToSphereDirMatrix's memory - a different reuse of
+//     the same address range for this unrelated call path, same pattern as gRotMatrix's
+//     diagonal reuse in gsub_46E990/gsub_46EB30) to find the nearest hit face, writing
+//     results through dword_5FBD1C/5FBD20/5FBD38 (no idb_globals.txt entries) and a
+//     final small perspective-divide block at the end operating on fields of the CItem
+//     passed in (offsets +64/+68/+104/+108/+112/+116, none validated in validate.h yet).
+//   - sub_46F6B0 (359 bytes) transforms a small vertex array by the SAME 0x00610B60
+//     coarse matrix + gTranslationVector, computes PS1-GTE-style clip outcode flags
+//     (near/far/left/right/top/bottom against 0 and a caller-supplied bound), and
+//     returns the AND-reduce of all outcodes (classic trivial-reject test).
+// This is a genuine, self-contained "coarse GTE" subsystem (its own rotation matrix,
+// its own translation vector, its own transform+clip helpers) that nobody has started
+// decompiling yet, not a couple of simple leaves. Correctly naming/implementing it needs
+// several more IDA sessions (starting with sub_46CD90, which is not even sized yet) and
+// verified struct-field guesses for the CItem offsets sub_46F1F0 touches. Guessing any
+// of this would risk a silently-wrong collision system (no crash, no compile error, just
+// wrong hit results), which the task's "do not guess" rule forbids. Left as the
+// forward-to-original stub; still genuinely blocked, not attempted further this session.
 void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 {
 	typedef void (*func_ptr)(CItem*, SLineInfo*);
