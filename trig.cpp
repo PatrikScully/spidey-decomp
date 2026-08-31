@@ -317,6 +317,23 @@ void KillInList(i32 Node, CBody* pList, i32 How)
 }
 
 // @BIGTODO
+// Investigated 2026-08-31 (IDA Hex-Rays), not attempted further. Original
+// at 0x4DEE70, 3504 bytes. This is the trigger-node object factory: it
+// reads a per-node type word from dword_6B466C[NodeIndex] and switches on
+// it to construct one of roughly 35 different game entity classes (each
+// case calls a distinct, currently unnamed constructor: sub_420AA0,
+// sub_4075B0, sub_459290, sub_4D2490, sub_442460, sub_4280D0, sub_47DD40,
+// sub_4344B0, sub_4CBDD0, sub_4831A0, sub_459F20, sub_4E7D90, sub_419950,
+// sub_444280, sub_44A5F0, sub_420A20, sub_413900, sub_420B10, sub_4A24A0,
+// sub_4E3B50, sub_44A1F0, sub_4AFCC0, sub_4DC450, sub_456920, sub_4CB9E0,
+// sub_446E70, sub_468EF0, sub_4FB1E0, sub_4FB630, sub_4D14E0, sub_439CC0,
+// sub_4A25E0, sub_4A2560, plus a couple of size-only "new" calls with no
+// named constructor visible). None of these classes exist in this repo
+// yet, none are in tools/names.json, and each almost certainly lives in
+// its own not-yet-created .cpp (per-monster-type files elsewhere in the
+// codebase). Decompiling this function for real means decompiling ~35
+// unrelated entity constructors first, well outside baddy.cpp/web.cpp/
+// trig.cpp scope. Left as the forward-to-original stub.
 CBody* Trig_CreateObject(i32 NodeIndex)
 {
 	typedef CBody* (*func_ptr)(i32);
@@ -703,6 +720,24 @@ void Trig_DeleteTrigFile(void)
 }
 
 // @BIGTODO
+// Investigated 2026-08-31 (IDA Hex-Rays), not attempted further. Original
+// at 0x4E0210, 12160 bytes (next symbol SendKillFromNode at 0x4E3190) -
+// the single biggest function found in this pass, decompiles to about
+// 59000 characters of pseudocode. This is the trigger-script bytecode
+// interpreter itself: it walks pCommands and dispatches on the u16
+// opcode/tag stream (the same 0x4100/0x4112-0x4119/0x2000/0x4000-bit
+// encoding CBaddy::ExecuteCommand and CBaddy::SetVariable use), handling
+// node-level commands (spawn objects via Trig_CreateObject/sub_4DEE70,
+// already a forward stub above; kill/suspend/activate nodes; wait-for-
+// spooling; branching/looping tags) plus a long tail of unnamed helpers
+// (sub_453280 seen so far, more before the dump truncated). It shares
+// Trig_CreateObject's blocker (needs that decompiled first) and adds its
+// own: several more per-node global tables (dword_6B466C, dword_6B4664,
+// dword_6B4708, dword_6B468C, dword_6B470C, word_6B4688, dword_6B4614)
+// whose layouts are not documented anywhere in this repo. Given the size
+// and the transitive dependency on the equally-blocked Trig_CreateObject,
+// this needs its own dedicated multi-session pass, not something to
+// attempt inside a three-file task. Left as the forward-to-original stub.
 void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 {
 
