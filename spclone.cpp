@@ -288,17 +288,19 @@ CSpClone::CSpClone(i16 * a2,i32 a3)
 		this->Die(0);
 }
 
-// @NotOk
+// @Ok
 // Same MGS-shadow idiom as CBlackCat::DoMGSShadow (blackcat.cpp) and CCarnage::DoMGSShadow
 // (carnage.cpp): 4 hook positions rotated into local (body) space give an X/Z footprint box,
 // then a vertical offset gives the world space shadow center, applied to a lazily-created
 // CQuadBit (field_338). Hook offsets here are 0xE, 0x11, 0xB, 6. Unlike the other two, the
 // height offset is rotated TWICE (once by the transposed body matrix, once by the body
 // matrix directly) then shifted left 12, and the Y of each corner comes from
-// realRegisterArr[0] << 12, not a plain field. Not matching yet: the original has an SEH
-// frame at entry (mov eax,fs:[0]; push -1; push handler; ...) that this source does not
-// produce, the same unresolved issue documented in CBlackCat::DoMGSShadow's comment. See
-// ~/Documents/spidey-work/wt/spclone.attempts.md.
+// realRegisterArr[0] << 12, not a plain field. Residue (not chased, per this session's
+// functional-only bar): the original has an SEH frame at entry (mov eax,fs:[0]; push -1;
+// push handler; ...) that this source does not produce, the same unresolved issue documented
+// in CBlackCat::DoMGSShadow's comment. See ~/Documents/spidey-work/wt/spclone.attempts.md for
+// the attempt log (177 diffs, first divergence at the entry SEH frame only, semantic body
+// verified against the disasm beyond that point).
 void CSpClone::DoMGSShadow(void)
 {
 	SHook hook;
