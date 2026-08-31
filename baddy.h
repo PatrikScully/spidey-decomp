@@ -120,8 +120,14 @@ public:
 	CVector field_240;
 	i16 *field_24C;
 
-
-	PADDING(0x84 - 0x14 - 4 - 0x10 - 0x30 - 0xC);
+	// script GOTO/label table: found while decompiling ExecuteCommand
+	// (0x4050B0). C_SET_SCRIPT_LABEL ("Label exceeds MAX_BADDY_LABELS",
+	// bounds-checked against 8) stores the current field_24C into
+	// labelArr[index]; C_GOTO/C_GOTO_AND_something read it back. Fully
+	// fills what used to be a 32-byte PADDING block here (0x250, right
+	// after field_24C, ending exactly at attributeArr's validated 0x270),
+	// so this is a real field, not a guess about the gap's existence.
+	i16 *labelArr[8];
 
 	i16 attributeArr[6];
 	CVector field_27C;

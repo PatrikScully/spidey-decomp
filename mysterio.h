@@ -33,17 +33,52 @@ class CSoftSpot : public CBaddy
 };
 
 class CMysterio;
+class CGoldFish;
+class CMysterioHeadCircle;
 
-// used only as a field_324-owned sub-object of CMysterio (the head glow
-// effect). Not decompiled; stubbed just enough (size 0xBC, ctor address
-// 0x45AAA0) so CMysterio::CMysterio(i16*, i32) can call it. mProtected is
-// inherited from CBit (bit.h/bit.cpp, offset 0x3A).
-class CMysterioHeadGlow : public CQuadBit
+// field_324-owned sub-object of CMysterio (the head glow effect), ctor at
+// 0x45AAA0 (188 bytes, matches operator new(188) at the call site in
+// CMysterio::CMysterio). Real base class is CGlow, not CQuadBit: the ctor's
+// disasm never calls CQuadBit::CQuadBit/CBit::CBit or AttachTo(&QuadBitList)
+// for "this", but it DOES call the CVector*+ints+6xu8 CGlow ctor overload
+// (ecx stays == incoming "this" across the "mov edi,ecx" spill, so the
+// thiscall receiver is "this", not the CVector* arg) and later calls the
+// inherited CGlow::SetRGB(128,0,255) on "this" too. CGlow's own size (0x5C,
+// validate_CGlow) lines up exactly with where this class's own fields start
+// (this+23 DWORD index == 0x5C). mProtected/mFrigDeltaZ writes on "this"
+// land at CBit's real offsets (0x3A/0x38) via the CBit->CGlow chain.
+class CMysterioHeadGlow : public CGlow
 {
 	public:
 		EXPORT CMysterioHeadGlow(CMysterio*);
 
-		PADDING(0xBC-0x84);
+		// two parallel 8-entry arrays, randomized in the ctor once per
+		// CGlow section (this->mNumSections, always 8 for the CVector-arg
+		// CGlow overload used here): Rnd(4096) is the same 0x1000 angle-
+		// table modulus used elsewhere in bit.cpp (rcossin_tbl), so this is
+		// read as a per-section random flicker phase; the second array
+		// (Rnd(50)+200) is read as a per-section timer/period. Guesses, not
+		// confirmed against any reader elsewhere.
+		i32 mSectionPhase[8]; // 0x5C
+		i32 mSectionPeriod[8]; // 0x7C
+
+		// unclear purpose; always zeroed in the ctor, no other reader/writer
+		// found.
+		i32 field_A4;
+
+		// Mem_MakeHandle(owner) result, stored so the head glow can find its
+		// parent CMysterio back.
+		SHandle mOwnerHandle; // 0xA8
+
+		// mutually exclusive with field_B8: populated (both) only when
+		// gWhatIf is false, left null (both, zeroed by CBit::operator new)
+		// otherwise.
+		CMysterioHeadCircle *field_B0;
+		CMysterioHeadCircle *field_B4;
+
+		// mutually exclusive with field_B0/field_B4: populated only when
+		// gWhatIf is true.
+		CGoldFish *field_B8;
 };
 
 class CMysterio : public CBaddy {
@@ -131,6 +166,11 @@ class CMysterioLaser : public CNonRenderedBit
 class CGoldFish : public CBody
 {
 	public:
+		// no standalone address in names.json: inlined into
+		// CMysterioHeadGlow::CMysterioHeadGlow (baddy.cpp), the only call
+		// site (0x45AB3B). Read straight off that inlined block.
+		EXPORT CGoldFish(void);
+
 		EXPORT void AngryMode(void);
 		EXPORT void NormalMode(void);
 
@@ -145,6 +185,13 @@ class CGoldFish : public CBody
 class CMysterioHeadCircle : public CQuadBit
 {
 	public:
+		// no standalone address in names.json: inlined into
+		// CMysterioHeadGlow::CMysterioHeadGlow (baddy.cpp), the only two call
+		// sites (0x45ABCF, 0x45AC6C). Read straight off those inlined blocks;
+		// same gShellMysterioRelated-driven field_88 idiom as the menu-preview
+		// twin CShellMysterioHeadCircle::CShellMysterioHeadCircle (shell.cpp).
+		EXPORT CMysterioHeadCircle(void);
+
 		EXPORT void NormalMode(void);
 		EXPORT void AngryMode(void);
 
