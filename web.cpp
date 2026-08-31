@@ -475,3 +475,13 @@ void validate_CWebFrag(void)
 	VALIDATE(CWebFrag, field_84, 0x84);
 	VALIDATE(CWebFrag, field_88, 0x88);
 }
+
+// @NotOk
+// Forward to original (0x4F7550); not yet decompiled. Called by
+// CPlayer::CheckJumpingSmashKick to release the held web-swinging object.
+void CSwinger_SwingBack(CSwinger *a1)
+{
+	typedef void (*func_ptr)(CSwinger*);
+	func_ptr func = (func_ptr)0x004F7550;
+	func(a1);
+}

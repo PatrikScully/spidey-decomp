@@ -99,8 +99,9 @@ class CPlayer : public CSuper
 		i32 field_548;
 
 		u8 field_54C;
+		u8 field_54D;
 
-		PADDING(0x568-0x54C-4);
+		PADDING(0x568-0x54C-4-1);
 
 		i32 field_568;
 		i32 field_56C;
@@ -415,7 +416,11 @@ class CPlayer : public CSuper
 
 		u16 field_EA8;
 
-		PADDING(0xEC0-0xEAA);
+		// held web-swinging object (CSwinger*); swung back and cleared by
+		// CheckJumpingSmashKick when a smash kick is initiated.
+		CBody *field_EAC;
+
+		PADDING(0xEC0-0xEAA-4);
 
 		// set to 1 in BuildOffscreenSpideySenseIndicatorList when at least
 		// one qualifying baddy was found this pass
@@ -481,7 +486,7 @@ class CPlayer : public CSuper
 		EXPORT void CheckJump(void);
 		EXPORT void CheckJumpingR1ZipWeb(void);
 		EXPORT void CheckJumpingR2ZipWeb(void);
-		EXPORT void CheckJumpingSmashKick(void);
+		EXPORT u8 CheckJumpingSmashKick(void);
 		EXPORT void CheckJumpingSwingWeb(void);
 		EXPORT void CheckKick(void);
 		EXPORT void CheckLanded(void);

@@ -629,10 +629,85 @@ void CPlayer::CheckJumpingR2ZipWeb(void)
     printf("CPlayer::CheckJumpingR2ZipWeb(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJumpingSmashKick(void)
+// @Ok
+u8 CPlayer::CheckJumpingSmashKick(void)
 {
-    printf("CPlayer::CheckJumpingSmashKick(void)");
+	CBody *held = this->field_DCC;
+	if (!held)
+		return 0;
+	u8 *pad = reinterpret_cast<u8*>(this->field_E0C);
+	if (!pad[305] && !pad[289])
+		return 0;
+	if (this->field_8EA)
+		return 0;
+	i16 mType = held->mType;
+	if (mType == 412)
+		return 0;
+	if (mType == 329)
+		return 0;
+	int shift = 12;
+	CVector diff = held->mPos - this->mPos;
+	CVector scaled = diff >> shift;
+	VECTOR v;
+	v.vx = scaled.vx;
+	v.vy = scaled.vy;
+	v.vz = scaled.vz;
+	VectorNormal(&v, &v);
+	if (v.vy <= 1024)
+		return 0;
+	CSwinger *swinger = (CSwinger*)this->field_EAC;
+	this->field_54C = 0;
+	CameraList->field_12C = -1;
+	this->field_54D = 0;
+	if (swinger)
+	{
+		CSwinger_SwingBack(swinger);
+		i32 *v8 = (i32*)swinger;
+		(*(void(**)(i32*, i32))*v8)(v8, 1);
+		this->field_EAC = 0;
+	}
+	this->field_8DC = 0;
+	this->field_8CC = held->mPos;
+	this->SetTargetTorsoAngleToThisPoint(&this->field_8CC);
+	i32 saved = this->field_8C4;
+	this->field_E1C = 0x1000000;
+	this->field_8C8 = saved;
+	this->field_8C4 = gTimerRelated;
+	this->field_8D8 = 0;
+	if (pad[289])
+	{
+		i32 *entry = gSpideySFXEntry[133];
+		this->field_350 = entry;
+		if (entry)
+		{
+			i32 i = *entry;
+			while (i != -1)
+			{
+				*entry = (u16)i;
+				i = entry[1];
+				entry++;
+			}
+		}
+		this->RunAnim(0x85, 0, -1);
+	}
+	else
+	{
+		i32 *entry = gSpideySFXEntry[129];
+		this->field_350 = entry;
+		if (entry)
+		{
+			i32 i = *entry;
+			while (i != -1)
+			{
+				*entry = (u16)i;
+				i = entry[1];
+				entry++;
+			}
+		}
+		this->RunAnim(0x81, 0, -1);
+	}
+	this->CreateJumpingSmashKickTrail();
+	return 1;
 }
 
 // @MEDIUMTODO

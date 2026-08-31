@@ -106,6 +106,10 @@ class CSwinger : public CBody
 		PADDING(0x190-0x180-4);
 };
 
+// Called by CPlayer::CheckJumpingSmashKick to release the held web-swinging
+// object before the smash kick animation starts.
+EXPORT void CSwinger_SwingBack(CSwinger *a1);
+
 class CSplat : public CQuadBit
 {
 	public:
