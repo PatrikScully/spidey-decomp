@@ -93,13 +93,33 @@ class CWeb : public CBody
 		i32 field_138;
 };
 
-class CSwinger : public CBody 
+// Fields at 0xF8/0xFC/0x17C reverse engineered 2026-08-31 while decompiling
+// CSwinger_SwingBack (0x4F7550, web.cpp): that function reads all three
+// through `this`, confirmed instruction-by-instruction against the disasm
+// (field_F8 and field_FC feed a CVector subtraction and a copied-out i32;
+// mpLine is asserted non-null ("No line?") and its CGPolyLine fields
+// mNumSegs/mSegs/mStart are read through it at the offsets CGPolyLine
+// already validates in bit2.cpp). field_F8's exact purpose is not
+// confirmed (a plain i32 copied verbatim into a spawned effect object's
+// own field_74, see bit2.h's CKnottedWeb); field_FC is a CVector, likely
+// some kind of "last known hook/anchor offset" given how it is subtracted
+// from the swing line's last segment endpoint, but that reading is our own
+// guess, not confirmed.
+class CSwinger : public CBody
 {
 	public:
 		EXPORT i32 IsOneTimeToDie(void);
 		EXPORT void SetSpideyAnimFrame(i32);
 
-		PADDING(0x180-0xF4);
+		PADDING(0xF8-0xF4);
+
+		i32 field_F8;
+
+		CVector field_FC;
+
+		PADDING(0x17C-0x108);
+
+		CGPolyLine *mpLine;
 
 		i32 field_180;
 

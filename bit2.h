@@ -44,9 +44,14 @@ public:
 // array). Field names are placeholders: the values are confirmed byte-for-byte from the
 // disasm (0x4F8E20), but which of field_D/field_10/field_11 is really "r"/"g"/"b" (they are
 // filled with three different Rnd() ranges) is not confirmed against source.
+// mPos (offset 0, was blanket PADDING(0xC)): CKnottedWeb's own constructor (0x4F8E20) never
+// writes here, so it looked like pure padding when this struct was first reverse engineered.
+// CSwinger_SwingBack (0x4F7550, web.cpp) proves it is a real CVector: it copies each base
+// segment's mSegs[i].End straight into mpExtraSegs[i]'s first 12 bytes (three i32 stores at
+// offsets 0/4/8, stride 0x1C between elements, matching this struct's own 28-byte size).
 struct SKnottedWebSeg
 {
-	PADDING(0xC);
+	CVector mPos;
 
 	u8 field_C;
 	u8 field_D;
@@ -84,7 +89,14 @@ public:
 	SKnottedWebSeg *mpExtraSegs;
 	CGPolyLine *mpInnerLine;
 
-	PADDING(0x2);
+	PADDING(0x1);
+
+	// Was the tail of a blanket PADDING(0x2). CSwinger_SwingBack (0x4F7550, web.cpp) writes
+	// byte 1 here (`mov byte ptr [esi+6Dh], 1`) on a CKnottedWeb-shaped object it built and
+	// then reclassified via a manual vtable poke (see that function's own comment); this
+	// constructor (0x4F8E20) never touches 0x6D itself. Declared on CKnottedWeb directly
+	// since the byte sits inside CKnottedWeb's own already-validated layout either way.
+	u8 field_6D;
 
 	// touched by CDropDownController::AI (0x48E930) once the drop finishes; exact meaning
 	// (a "settled"/"snapped" flag on the inner line, guessed) not confirmed.
@@ -97,7 +109,14 @@ public:
 	// fields, so it must be CKnottedWeb's own flag, not the inherited mProtected.
 	u8 field_70;
 
-	PADDING(0x78 - 0x70 - 1);
+	PADDING(0x3);
+
+	// Was the tail of a blanket PADDING(7). CSwinger_SwingBack (0x4F7550, web.cpp) is the
+	// only place found writing here (`mov [esi+74h], ecx`, a plain i32 copied verbatim from
+	// the calling CSwinger's own field_F8, see web.h); this constructor never initializes
+	// it. Still inside CKnottedWeb's own already-validated 0x78-byte size, so declared here
+	// rather than inventing a separate subclass just for this one field.
+	i32 field_74;
 };
 
 class CGLine : public CBit

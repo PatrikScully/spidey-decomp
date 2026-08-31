@@ -442,6 +442,9 @@ void validate_CWeb(void){
 void validate_CSwinger(void){
 	VALIDATE_SIZE(CSwinger, 0x190);
 
+	VALIDATE(CSwinger, field_F8, 0xF8);
+	VALIDATE(CSwinger, field_FC, 0xFC);
+	VALIDATE(CSwinger, mpLine, 0x17C);
 	VALIDATE(CSwinger, field_180, 0x180);
 }
 
@@ -476,12 +479,92 @@ void validate_CWebFrag(void)
 	VALIDATE(CWebFrag, field_88, 0x88);
 }
 
-// @NotOk
-// Forward to original (0x4F7550); not yet decompiled. Called by
-// CPlayer::CheckJumpingSmashKick to release the held web-swinging object.
+// Global flag CSwinger_SwingBack only READS, never writes. Evidence: the exact same
+// "test eax,eax; jnz <skip>" guard idiom, reading this SAME address (0x60D224), also appears
+// verbatim (checked via IDA xrefs) in several other, apparently unrelated SEH-wrapped
+// functions elsewhere in the binary (0x42FFC0, 0x43C150, 0x43C330, 0x43C3E0, 0x43C430,
+// 0x457E00, 0x457EE0, 0x458050, 0x458210, 0x4582D0, 0x48C0D0, 0x48C730, 0x4F9BD0, 0x4FAF40),
+// none of which write to it in the code inspected either. Whatever writes it to nonzero is
+// outside every function traced this session. Named for its observed role in THIS function
+// only (a "run the block below once" gate); its true system-wide purpose is not confirmed.
+static volatile i32 * const gWebSwingBackOnceFlag = (i32*)0x0060D224;
+
+// Vtable of an unidentified CKnottedWeb-derived class. CSwinger_SwingBack (0x4F7550) builds a
+// plain CKnottedWeb in freshly allocated memory, then overwrites its vtable pointer with this
+// address right after construction returns -- the same "construct as base, then poke the
+// vtable to the real derived type" idiom already used for box->vtable in
+// PShell_EndTrainingInit (pshell.cpp). No name found in idb_globals.txt, spideypc_names.txt,
+// or spiderman_names.txt (Mac build). The two extra bytes of state this subclass reads/writes
+// beyond a plain CKnottedWeb (field_6D, field_74) are declared directly on CKnottedWeb itself
+// in bit2.h, since they sit inside CKnottedWeb's own already-validated 0x78-byte footprint,
+// in bytes CKnottedWeb's own constructor never initializes.
+static void * const gSwingBackWebVtable = (void*)0x0053C750;
+
+// Plain non-throwing placement new, same convention as front.cpp's copy (the original builds
+// this object via a raw CBit::operator new call plus a manual constructor call, not a plain
+// `new CKnottedWeb(...)` expression, which would allocate sizeof(CKnottedWeb)=0x78 bytes
+// instead of the 0x7C the disasm actually pushes -- see CSwinger_SwingBack below).
+// @Bogus
+inline void* operator new(size_t, void* location)
+{
+	return location;
+}
+
+// @Ok
+// 2026-08-31: functional decompile (session bar). Address 0x4F7550; Mac mangled name
+// (idbs/spiderman_names.txt) confirms "CSwinger::SwingBack". Despite the name this is not a
+// simple detach/reset: gated by gWebSwingBackOnceFlag (see its own comment), it builds one
+// CKnottedWeb-shaped "snapping web" visual effect object spanning from the swing line's start
+// point to a point derived from the line's last segment end minus a1->field_FC, then
+// reclassifies it (manual vtable poke to gSwingBackWebVtable, see its own comment) and copies
+// a1->field_F8 into the resulting object's field_74 (CKnottedWeb, bit2.h). Every field access
+// and call argument order below was cross-checked instruction-by-instruction against the
+// 0x4F7550 disasm (operator- and Utils_CalcUnitFacingCamera's argument orders in particular,
+// since both return/write through a hidden pointer).
+// Called by CPlayer::CheckJumpingSmashKick to release the held web-swinging object.
 void CSwinger_SwingBack(CSwinger *a1)
 {
-	typedef void (*func_ptr)(CSwinger*);
-	func_ptr func = (func_ptr)0x004F7550;
-	func(a1);
+	// Original: nullsub_1(a1->mpLine != 0, "No line?"). nullsub_1 (0x4015B0) is the
+	// confirmed-empty print_if_false stub this whole repo already omits at call sites (e.g.
+	// ps2m3d.cpp), so only the semantic assertion is preserved here as a comment.
+
+	if (*gWebSwingBackOnceFlag == 0)
+	{
+		CKnottedWeb *pWeb = (CKnottedWeb*)CBit::operator new(0x7C);
+
+		if (pWeb)
+		{
+			CGPolyLine *pLine = a1->mpLine;
+			SLineSeg *pLastSeg = &pLine->mSegs[pLine->mNumSegs - 1];
+
+			CVector relEnd = pLastSeg->End - a1->field_FC;
+
+			::new (pWeb) CKnottedWeb(pLine->mStart, relEnd);
+
+			*reinterpret_cast<void**>(pWeb) = gSwingBackWebVtable;
+
+			pWeb->SetStartAndEnd(&pLine->mStart, &relEnd);
+
+			Utils_CalcUnitFacingCamera(
+					&pLine->mStart,
+					&relEnd,
+					reinterpret_cast<CVector*>(&pWeb->field_58));
+
+			for (i32 i = 0; i < pWeb->mNumSegs; i++)
+			{
+				pWeb->mpExtraSegs[i].mPos = pWeb->mSegs[i].End;
+			}
+
+			pWeb->field_6D = 1;
+
+			pWeb->SetSemiTransparent();
+			pWeb->mpInnerLine->SetSemiTransparent();
+		}
+
+		// Original writes this unconditionally, even down the "operator new returned null"
+		// path (where it would null-deref) -- a genuine defect in the original if
+		// CBit::operator new ever really returns 0 here; reproduced as-is per this repo's
+		// "reproduce the source-level bug, don't fix it" convention (CLAUDE.md).
+		pWeb->field_74 = a1->field_F8;
+	}
 }
