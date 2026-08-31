@@ -292,7 +292,13 @@ class CShellSimbyFireDeath : public CNonRenderedBit
 {
 	public:
 		EXPORT CShellSimbyFireDeath(CDummy*);
-		u8 fullPad[0x15];
+
+		SHandle field_3C;
+		CVector *field_44;
+
+		// tail unknown, ctor at 0x4908E0 never touches it. total size
+		// (0x54) confirmed by VALIDATE_SIZE below.
+		PADDING(0xC);
 };
 
 class CShellGoldFish : public CBody
@@ -430,6 +436,25 @@ struct STrainingMission
 // own byte range. Left ~CRecordBox and NameEntryOn as todo stubs rather than
 // decompiling against the wrong bytes; their real PC addresses are still
 // unconfirmed as of this note.
+// 2026-08-31 re-attempt (~CRecordBox is now done, only NameEntryOn left):
+// ruled out several more candidate locations. IDA's own function-boundary
+// detection confirms 0x47B560 (Update, 434 bytes per tools/functions) runs
+// right up to 0x47B712, then 16 bytes of alignment, then 0x47B720 starts
+// straight into PShell_EndTrainingInit's real prologue (push ebx/ebp/esi/
+// edi) with no room for an 80-byte function (Mac size, prototypes.json,
+// "CRecordBox::NameEntryOn((uchar))": 80) in between. The string "Bad row
+// sent to NameEntryOn()" (0x551AA4) that IDA's function-boundary detector
+// attributes to sub_47B720 is misleading: that address is confirmed
+// PShell_EndTrainingInit (exact 812-byte size match against tools/
+// functions/4699936.bin), so the string is just reused debug text inside
+// that function, not evidence of NameEntryOn's own location. Also checked
+// whether NameEntryOn is actually called anywhere on PC: it is not, not
+// from CRecordBox::CRecordBox (pshell.cpp, plain field-store ctor, no
+// calls), not from Shell_ShowRecord (shell.cpp, only calls ->Display()),
+// not from PShell_EndTrainingUpdate (pshell.cpp, only calls ->Update()).
+// Likely dead code the PC port dropped (matches the Shell_ChooseItem
+// Collection/ChooseSpeedTraining/ChooseTrainingMission pattern above:
+// Mac-only symbols with no live PC call site). Left as a stub.
 // field_30..3B layout (2026-08-27, read off Update/Display): field_30 is read
 // as a plain 4-byte int (both functions test it non-zero before doing
 // anything, most likely a CExpandingBox-style "active/visible" flag rather
@@ -520,7 +545,6 @@ EXPORT void Shell_SFXMusic(void);
 // helpers used by Shell_SFXMusic (forwarded to original)
 EXPORT void DrawSlider(i32, i32, i32, i32);
 EXPORT i32 SliderDrag(i32, i32, i32);
-EXPORT void sub_515850(void);
 EXPORT void Shell_SaveGame(const u32 *,u32 *);
 EXPORT void Shell_ScreenAdjust(void);
 EXPORT void Shell_ShowRecord(char const *,char const *,STrainingMission *);
