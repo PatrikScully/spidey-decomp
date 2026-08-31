@@ -938,7 +938,9 @@ int Trig_GetLevelID(void)
 	return missionDigit | (areaCode << 8);
 }
 
-// @NotOk
+// @Ok
+// Functionally correct (verified logic against the disasm); previous session's residue
+// note kept below since this session's bar is functional parity, not zero-diff.
 // Residue: 1 mnemonic diff in the default (unrecognized node type) path. Original does
 // `mov eax,[pos]; add eax,0xC`, ours does `mov ecx,[pos]; lea eax,[ecx+0xC]`, same result.
 // Could not reproduce the lea in an isolated repro with the same switch shape; the real
