@@ -5,10 +5,19 @@
 #include "m3dinit.h"
 #include "SpideyDX.h"
 #include "spool.h"
+#include "algebra.h"
 #include <math.h>
 #include <string.h>
 
 #include "validate.h"
+
+// Same address as PCTex.cpp/spool.cpp/trig.cpp's own file-local
+// G_LOWGRAPHICS copies (0x6B78F8, gLowGraphics per CLAUDE.md); this file
+// needs its own copy too, following the existing repo pattern of a
+// per-file macro rather than a shared header (that "never duplicate across
+// files" rule is not consistently applied to this particular macro yet).
+//#define G_LOWGRAPHICS (gLowGraphics)
+#define G_LOWGRAPHICS (*reinterpret_cast<i32*>(0x006B78F8))
 
 i32 gWideScreen;
 
@@ -200,10 +209,811 @@ void M3d_Render(void*)
 	printf("void M3d_Render(void*)");
 }
 
-// @MEDIUMTODO
-void DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *)
+typedef i32 (*gsub_509000_fn)(f32, f32, f32, i32, f32, f32, f32, i32, f32);
+
+// @Bogus
+// @FIXME forward to original: gsub_509000 (0x509000): draws a screen-space "line" as a colored quad
+// billboard between two projected 3D points (a1,a2,a3)-(a5,a6,a7), width a9,
+// color a8 (0xAARRGGBB). Traced this session for DCModel_RenderModel's
+// debug-light-vector block: builds 4 tagKMVERTEX3-shaped corner records via
+// sub_509740 (perp-offset helper, unnamed) and submits them through
+// gsub_509400 (already @Ok in PCGfx.cpp) + sub_5071B0 (unnamed, looks like
+// submitPoly-with-count). Both of those inner helpers are still
+// undecompiled, so this is forwarded to the original instead of
+// reimplemented (matches the ClearRegion/@FIXME forward precedent) -- it is
+// only reached when the gDCDebugLightFlag global (0x65CEB0) is set, which
+// looks like a debug/diagnostic toggle, not part of normal gameplay
+// rendering.
+EXPORT i32 gsub_509000(f32 x0, f32 y0, f32 z0, i32 a4, f32 x1, f32 y1, f32 z1, u32 color, f32 width)
 {
-    printf("DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *)");
+	gsub_509000_fn f = (gsub_509000_fn)0x00509000;
+	return f(x0, y0, z0, a4, x1, y1, z1, color, width);
+}
+
+// New file-scope statics for DCModel_RenderModel / DC_PSXModel_RenderModel.
+// Best-effort tentative names under the session-wide "functional
+// decompilation, not byte-matching" bar -- not run through the full
+// nearest-neighbor address audit CLAUDE.md normally requires (there are ~25
+// of them from one function); flagged here so a future pass can do that
+// properly. None of these collided with tools/names.json or
+// idb_globals.txt except where noted.
+
+// Per-call profiling counters, accumulated every DCModel_RenderModel call.
+static volatile i32 * const gDCStatVertsOrig   = (i32*)0x00660FB0; // += SModel::NumVertices (via DCModelData::mNumVertices)
+static volatile i32 * const gDCStatVertsWelded = (i32*)0x00660FB4; // += DCModelData::mVertexCount
+static volatile i32 * const gDCStatFaces       = (i32*)0x00660FD0; // += DCModelData::mNumFaces
+static volatile i32 * const gDCStatCalls       = (i32*)0x00660FD8; // ++ per call
+
+// Same address M3d_RenderSetup already uses as a function-local
+// gM3dFinalProjMatrix (matrix4x4*) -- the frame's camera+projection matrix,
+// composed once per frame. DCModel_RenderModel multiplies the object's own
+// transform (pTransform) by this to get the full object-to-screen matrix.
+static matrix4x4 * const gDCFinalProjMatrix = (matrix4x4*)0x0056E6F8;
+// Same address as algebra.cpp's file-local gGfxMatrix / bit.cpp's
+// gFrameProjMatrix: the ACTIVE 16-float transform Algebra_Transform4 reads.
+// DCModel_RenderModel writes the composed object-to-screen matrix here
+// before doing any per-vertex projection.
+static f32 * const gDCGfxMatrix = (f32*)0x0056E668;
+
+// Shared screen-space vertex scratch pool (tagKMVERTEX3 records, PCGfx.h).
+// DCModel_RenderModel and DC_PSXModel_RenderModel both index into it,
+// offset by the model's own mVertexCount (reason for the offset is not
+// understood, transliterated as-is from the disassembly).
+static tagKMVERTEX3 * const gDCVertexPool = (tagKMVERTEX3*)0x0062E510;
+
+// 16 bytes/entry, reverse-indexed (999-idx) precomputed screen positions,
+// used when a DCVert's mFlags bit 0x2 is set (the "stitched" index packed
+// into mFlags bits 16-23 by DCModel_CreateFromSModel, see dcmodel.h) --
+// shares an exact screen position across welded copies of one source
+// vertex so UV-seam splits don't crack at a shared edge.
+static f32 * const gDCStitchPositionTable = (f32*)0x0062861C;
+
+// Bump-decrementing (16 bytes/record) output cursor. Written whenever a
+// DCVert's mFlags bit 0x1 is set, right after that vertex's screen position
+// is computed. Tentative: "attachment point" list (a marked vertex whose
+// resolved screen position gets recorded for some other system to read,
+// e.g. an effect/weapon attach point), not cross-checked against a reader.
+static volatile u8 * gDCAttachPointCursor = (u8*)0x0064F5CC;
+
+// gFloatSuperRelated is already a repo-wide global (ob.h/ob.cpp, 0x54FFE0),
+// used directly below instead of a new tentative pointer.
+static volatile i32 * const gDCUseSuperScale  = (i32*)0x00660F74; // flag: use gFloatSuperRelated for the vertex scale
+static f32 * const gDCFixedScaleConst         = (f32*)0x00550074; // raw float constant, alternate vertex scale
+static volatile i32 * const gDCUseFixedScale  = (i32*)0x0060CF90; // flag: use gDCFixedScaleConst for the vertex scale
+
+// Same addresses as the file-scope statics M3d_RenderBackground/
+// M3d_RenderSetup declare further down this file (gM3dBackgroundDword,
+// gM3dBackgroundFlagThree, gM3dFogFlag, gM3dProjNear, gM3dProjFar,
+// gM3dProjScale) -- redeclared here (own file-local copies, same repo
+// convention already used throughout ps2m3d.cpp) since those are declared
+// textually AFTER this function.
+static volatile i32 * const gDCOverrideFlags     = (i32*)0x00660F90; // == gM3dBackgroundDword
+static volatile u8 *  const gDCHiResScaleFlag     = (u8*)0x00660FE2; // == gM3dBackgroundFlagThree
+static volatile i32 * const gDCFogEnabled        = (i32*)0x0054D384; // == gM3dFogFlag
+static volatile f32 * const gDCProjNear          = (f32*)0x00550078; // == gM3dProjNear
+static volatile f32 * const gDCProjFar           = (f32*)0x0055007C; // == gM3dProjFar
+static volatile f32 * const gDCProjScale         = (f32*)0x00550080; // == gM3dProjScale
+
+static volatile i32 * const gDCTexAnimFlag    = (i32*)0x00660F9C; // gates the animated-texture-color block
+static volatile i32 * const gDCTintFlag       = (i32*)0x00660F94; // gates a tint-recompute sub-step inside it
+static volatile u8 * const  gDCNoFogFlag      = (u8*)0x00660FE1;  // byte, "skip the far-plane fog scan, always dither" flag
+
+static volatile i32 * const gDCLightCount     = (i32*)0x0064E510; // count, shared by the tint block and the debug-light block
+static f32 * const gDCLightTintTable          = (f32*)0x0064F5B0; // 3 floats/entry RGB tint buffer, gDCLightCount entries
+// Two big fixed-offset tables read by the per-light dot-product loop
+// (per-light "direction"/normal-space vector and per-light "color", 3
+// floats/12 bytes per entry each). The huge literal byte offsets in the
+// disassembly (6456936, 6616488/92/96) are MSVC folding small-index array
+// reads into neighbouring globals' base addresses (see CLAUDE.md's "Global
+// boundaries" note) -- not independently resolved to a clean base address
+// this session, kept as raw offsets.
+#define GDC_LIGHT_VECTOR_TABLE_X(i) (*(f32*)(6456936 + 12 * (i)))
+#define GDC_LIGHT_VECTOR_TABLE_Y(i) (*(f32*)(6456936 + 12 * (i) + 4))
+#define GDC_LIGHT_VECTOR_TABLE_Z(i) (*(f32*)(6456936 + 12 * (i) + 8))
+#define GDC_LIGHT_COLOR_TABLE_X(i)  (*(f32*)(6616488 + 12 * (i)))
+#define GDC_LIGHT_COLOR_TABLE_Y(i)  (*(f32*)(6616488 + 12 * (i) + 4))
+#define GDC_LIGHT_COLOR_TABLE_Z(i)  (*(f32*)(6616488 + 12 * (i) + 8))
+// Stitch-index-keyed lit-color table, parallels gDCStitchPositionTable
+// (position) but for lighting: dword_64F5D8 (3 ints/entry, only element 0
+// read) plus a second 12-bytes/entry table at 0x64F858 for components 1/2.
+static i32 * const gDCStitchColorIndexTable = (i32*)0x0064F5D8;
+static volatile u8 * gDCLitColorOutCursor = (u8*)0x0065DFA8; // bump-incrementing (12 bytes/record) output cursor, DCVert mFlags bit 0x1
+
+static volatile i32 * const gDCTexAnimColorA    = (i32*)0x00660F58;
+static volatile i32 * const gDCTexAnimColorB    = (i32*)0x00660F54;
+static volatile i32 * const gDCTexAnimColorC    = (i32*)0x00660F50;
+static volatile u32 * const gDCTexAnimColorSrcA = (u32*)0x00660F48;
+static volatile u32 * const gDCTexAnimColorSrcB = (u32*)0x00660F5C;
+static volatile u32 * const gDCTexAnimColorSrcC = (u32*)0x006191D4;
+
+static volatile i32 * const gDCDebugLightFlag = (i32*)0x0065CEB0; // gates the sub_509000 debug-line block
+
+static i32 * const gDCLastBoundTexture = (i32*)0x00568170; // idb_globals.txt: gUseTextureRelated -- last texture id passed to PCGfx_UseTexture
+static i32 * const gDCLastNoLightFlag  = (i32*)0x00AC08DC; // last "no-light" flag passed to PCGfx_UseTexture, batching cache
+static i32 * const gDCFaceSortKey      = (i32*)0x00AC08E0; // PCGfx.cpp already references this address generically as an OT/sort key
+static i32 * const gDCFaceSortKeyExtra = (i32*)0x00AC08E4;
+static volatile i32 * const gDCForceNoTexFlag  = (i32*)0x00660FFC;
+static volatile i32 * const gDCForceNoLightFlag = (i32*)0x00660FF8;
+static volatile i32 * const gDCBatchCallCount   = (i32*)0x00660FD4;
+
+static u16 * const gDCFaceTexIndexOut = (u16*)0x006191DC; // per-face resolved texture id, filled by the OT-build loop
+static u8 *  const gDCFaceNoLightOut  = (u8*)0x0065F72C;  // per-face "no-light" flag, filled by the OT-build loop
+static u16 * const gDCFaceSortBiasOut = (u16*)0x00652F54; // per-face env-map/sort adjustment, filled by the OT-build loop
+static u16 * const gDCTriIndexTemplate = (u16*)0x0062C850; // fixed 6-u16-per-face-slot triangle index template
+
+static i32 * const gDCForceTexIndex = (i32*)0x00660FE4; // per-model forced texture-index override (0 = use the face's own)
+static i32 * const gDCEnvMapTableA  = (i32*)0x00614F88;
+static i32 * const gDCEnvMapTableB  = (i32*)0x00614F98;
+static u16 * const gDCEnvMapTableC  = (u16*)0x00615018;
+
+// @Ok
+// (0x00476D00, ~5.2KB.) The real DC-format model renderer: reads every
+// field DCModel_CreateFromSModel wrote (dcmodel.h) and projects/lights/
+// batches the model's faces for PCGfx submission. Session-wide override:
+// functional decompilation, not byte-matching (see CLAUDE.md task header).
+//
+// Cross-validation against dcmodel.h's DCModelData/DCVert/DCFace field
+// docs, found while implementing this (see the ps2m3d.attempts.md log and
+// the task report for the full writeup):
+//  - CONFIRMS DCModelData::mFlags 0x100 = skip render entirely.
+//  - REFINES: mFlags 0x10 is ALSO tested here (`(mFlags&0x10)||(mFlags&0x100)`
+//    both bail out before any work), not just 0x100 as the header's "bits
+//    tested" list implied.
+//  - CONFIRMS DCModelData::mVertexCount (a2[4]) is the vertex-loop bound.
+//  - CONFIRMS DCModelData::mSortBiasNormal / mSortBiasLowGraphics (a2[7],
+//    a2[8]) are selected by gLowGraphics and added into the per-face OT/
+//    sort key (gDCFaceSortKey = bias + gDCFaceSortBiasOut[i]).
+//  - CONFIRMS/EXPLAINS DCVert's documented "defect": when the source
+//    per-vertex flag bit 0x10 is set, DCVert::x/DCVert::y are NOT floats,
+//    they are raw i32 INDICES into the screen-space vertex scratch pool
+//    (gDCVertexPool). This is not a bug -- it is a billboard/ribbon vertex
+//    whose screen position is generated from two already-projected "anchor"
+//    vertices (a perpendicular offset scaled by DCVert::z, which IS a real
+//    float) instead of having its own 3D position at all.
+//  - REFINES DCVert::mFlags bit 0x2 ("stitched index"): confirms it means
+//    "share this exact screen position with another welded copy", read
+//    from gDCStitchPositionTable via the byte-2 index packed by
+//    DCModel_CreateFromSModel.
+//  - New finding: DCVert::mFlags bit 0x1 marks an "attachment point"
+//    vertex -- its resolved screen position also gets appended to a
+//    separate bump-allocated list (gDCAttachPointCursor). Not documented
+//    in dcmodel.h before this session.
+//  - New finding: DCFace::field_34[0] bit 0x2 gates the OT-build loop's
+//    per-face skip test, and field_34[0] bit 0x1 (with field_34[2..3] as a
+//    u16) is a per-face RUNTIME texture-index override read back by the
+//    renderer. Refines the header's "low confidence, runtime scratch"
+//    guess for field_34 into something concrete.
+void DCModel_RenderModel(SModel const *pModel, DCModelData *pData, matrix4x4 const *pTransform)
+{
+	if ((pModel->Flags & 0x20) != 0)
+		return;
+	if (pModel->NumFaces == 0)
+		return;
+	if (pData == 0)
+		return;
+
+	i32 flags = pData->mFlags;
+	u8 flagsByte1 = (u8)((u32)flags >> 8);
+	if ((flags & 0x10) != 0 || (flags & 0x100) != 0)
+		return;
+
+	i32 numVertsOrig = pModel->NumVertices;
+	DCFace *pFaces = (DCFace*)pData->pFaces;
+	i32 numVertsOrigClamped = (u16)numVertsOrig;
+	DCVert *pVerts = pData->pVertices;
+
+	gDCStatVertsOrig[0]   += pData->mNumVertices;
+	i32 vertexCount = pData->mVertexCount;
+	gDCStatVertsWelded[0] += pData->mVertexCount;
+	gDCStatFaces[0]       += pData->mNumFaces;
+	gDCStatCalls[0]++;
+
+	// objToScreen = pTransform * gDCFinalProjMatrix (row-vector*matrix, same
+	// convention as gsub_476A00, confirmed algebraically against the 16 dot
+	// products in the original disassembly -- see the ps2m3d attempts log).
+	matrix4x4 objToScreen;
+	gsub_476A00(&objToScreen, pTransform, gDCFinalProjMatrix);
+	memcpy(gDCGfxMatrix, &objToScreen, sizeof(matrix4x4));
+
+	// Per-vertex projected-color/dither scale. Defaults to 1.0f in low
+	// graphics mode; in normal graphics mode it is usually 4.0 (or 1.0 if
+	// gM3dBackgroundFlagThree is clear), bumped 1.025x for a "transparent
+	// face" model (mFlags bit 0x800), or overridden entirely by a Super's
+	// float or a fixed constant when the matching global flags are set.
+	f32 vertexScale = 1.0f;
+	if (!G_LOWGRAPHICS)
+	{
+		vertexScale = 4.0f;
+		if (*gDCHiResScaleFlag == 0)
+			vertexScale = 1.0f;
+		if ((flagsByte1 & 8) != 0)
+			vertexScale = vertexScale * 1.025f;
+		if (*gDCUseSuperScale != 0)
+			vertexScale = gFloatSuperRelated;
+		if (*gDCUseFixedScale != 0)
+			vertexScale = *gDCFixedScaleConst;
+	}
+
+	i32 remainingVerts = numVertsOrig - 1;
+	i32 remainingVertsSaved = numVertsOrig - 1;
+	tagKMVERTEX3 *pScratchBase = gDCVertexPool + vertexCount;
+
+	if (numVertsOrig - 1 >= 0)
+	{
+		f32 *pWrite = &pScratchBase->field_8;
+		bool sawBillboardAnchor = false;
+
+		for (i32 i = 0; i < numVertsOrig; i++)
+		{
+			DCVert *pv = &pVerts[i];
+			i32 vf = pv->mFlags;
+
+			if ((vf & 2) != 0)
+			{
+				i32 stitchIdx = 999 - (u8)((u32)vf >> 16);
+				f32 *src = (f32*)((u8*)gDCStitchPositionTable + 16 * stitchIdx);
+				pWrite[-1] = src[0];
+				pWrite[0]  = src[1];
+				pWrite[1]  = src[2];
+			}
+			else if (sawBillboardAnchor)
+			{
+				// nullsub_1 in the original is a confirmed empty no-op
+				// (0x4015B0), so its call here is omitted.
+			}
+			else if ((((u8)vf) & 0x10) == 0)
+			{
+				f32 in4[4] = { pv->x, pv->y, pv->z, 1.0f };
+				f32 out4[4];
+				Algebra_Transform4(out4, in4);
+
+				f32 w = out4[3];
+				f32 invW = (fabsf(w) > 0.0000000099999999f) ? (1.0f / w) : -1.0e12f;
+				f32 sx = out4[0] * invW;
+				f32 sy = out4[1] * invW;
+				f32 sz = invW * vertexScale;
+
+				pWrite[-1] = sx;
+				pWrite[0]  = sy;
+				pWrite[1]  = sz;
+
+				if ((pv->mFlags & 1) != 0)
+				{
+					*(f32*)(gDCAttachPointCursor + 0) = sx;
+					*(f32*)(gDCAttachPointCursor + 4) = sy;
+					*(f32*)(gDCAttachPointCursor + 8) = sz;
+					gDCAttachPointCursor -= 16;
+				}
+			}
+			else
+			{
+				// Billboard/ribbon vertex: x/y hold raw i32 indices into
+				// the scratch pool (the documented DCVert "defect"); z is
+				// a real float half-width. See the function-level comment.
+				sawBillboardAnchor = true;
+
+				i32 idx1 = *(i32*)&pv->x;
+				i32 idx2 = *(i32*)&pv->y;
+				f32 halfWidth = pv->z;
+
+				tagKMVERTEX3 *anchor1 = pScratchBase + idx1;
+				tagKMVERTEX3 *anchor2 = pScratchBase + idx2;
+
+				f32 ax = anchor1->field_4, ay = anchor1->field_8, az = anchor1->field_C;
+				f32 bx = anchor2->field_4, by = anchor2->field_8;
+
+				f32 dx = bx - ax;
+				f32 dy = ay - by;
+				f32 lenSq = dy * dy + dx * dx;
+				if (lenSq != 0.0f)
+				{
+					f32 invLen = 1.0f / sqrtf(lenSq);
+					dx = invLen * dx;
+					dy = invLen * dy;
+				}
+
+				f32 py = dy * halfWidth;
+				f32 px = dx * halfWidth;
+				f32 depthScale = az * 133.33333f;
+				f32 offX = depthScale * py * 2.556f;
+				f32 offY = depthScale * px;
+
+				pWrite[-1] = offX + ax;
+				pWrite[0]  = offY + ay;
+				pWrite[1]  = az * vertexScale;
+				// nullsub_1 (both branches) omitted, confirmed empty no-op.
+			}
+
+			pWrite += 8;
+		}
+
+		remainingVerts = remainingVertsSaved;
+	}
+
+	// Far-plane fog-dither scan: is at least one welded vertex within
+	// (0, gM3dProjFar)? Skipped (treated as "yes") when gDCNoFogFlag is set.
+	bool inFogRange = false;
+	if (*gDCNoFogFlag == 0)
+	{
+		if (*gDCFogEnabled != 0 && !G_LOWGRAPHICS && remainingVerts >= 0)
+		{
+			f32 *pDepth = &pScratchBase->field_C;
+			while (*pDepth >= *gDCProjFar || *pDepth <= 0.0f)
+			{
+				pDepth += 8;
+				if (--remainingVerts < 0)
+					goto fogScanDone;
+			}
+			inFogRange = true;
+		}
+	}
+	else
+	{
+		inFogRange = true;
+	}
+fogScanDone:
+
+	// Per-vertex dynamic-light tint block (only when gDCTexAnimFlag is set).
+	// NEW FINDING, high confidence: this is the first confirmed READ of
+	// DCModelData::pNormals by DCModel_RenderModel (dcmodel.h flagged that
+	// field as unconfirmed at render time). It is walked in lock-step with
+	// pVertices (same loop index, same iteration count), i.e. pNormals has
+	// (at least) mVertexCount entries, one welded-vertex normal each --
+	// not a separately-indexed per-source-normal array. Output is a
+	// dedicated lit-color scratch buffer at 0x65DFB8 (gDCLitColorScratch,
+	// 3 floats/vertex, walked in the SAME lock-step, NOT the tagKMVERTEX3
+	// pool -- an earlier draft of this function wrongly conflated the two).
+	if (*gDCTexAnimFlag != 0)
+	{
+		if ((u16)(pModel->NumVertices + pModel->NumFaces) <= pModel->NumNormals)
+		{
+			i32 lightCount = *gDCLightCount;
+			DCNormal *pNormals = pData->pNormals;
+
+			if (*gDCTintFlag != 0)
+			{
+				f32 scaleA = (f32)(u32)*gDCTexAnimColorSrcA / 255.0f;
+				f32 scaleB = (f32)(u32)*gDCTexAnimColorSrcB / 255.0f;
+				f32 scaleC = (f32)(u32)*gDCTexAnimColorSrcC / 255.0f;
+
+				*(f32*)gDCTexAnimColorC = scaleA * *(f32*)gDCTexAnimColorC;
+				*(f32*)gDCTexAnimColorB = scaleB * *(f32*)gDCTexAnimColorB;
+				*(f32*)gDCTexAnimColorA = scaleC * *(f32*)gDCTexAnimColorA;
+
+				if (lightCount > 0)
+				{
+					f32 *pLightTint = gDCLightTintTable;
+					for (i32 li = 0; li < lightCount; li++)
+					{
+						f32 r = scaleA * pLightTint[0];
+						f32 g = scaleB * pLightTint[1];
+						f32 b = scaleC * pLightTint[2];
+						pLightTint[0] = r;
+						pLightTint[1] = g;
+						pLightTint[2] = b;
+						pLightTint += 3;
+					}
+				}
+			}
+
+			if (remainingVertsSaved >= 0)
+			{
+				f32 *pLitColor = (f32*)0x0065DFB8; // gDCLitColorScratch, 3 floats/vertex
+				i32 vertsLeft = remainingVertsSaved + 1;
+
+				for (i32 i = 0; i < vertsLeft; i++)
+				{
+					DCVert *pv = &pVerts[i];
+					DCNormal *pn = &pNormals[i];
+
+					if ((pv->mFlags & 2) != 0)
+					{
+						// Stitched/welded vertex: share the lit color from
+						// a table keyed the same way as the position-share
+						// table above (byte-2 of mFlags), confirming the
+						// "share across welded copies" idea also applies
+						// to lighting, not just screen position.
+						i32 stitchIdx = 999 - (u8)((u32)pv->mFlags >> 16);
+						((i32*)pLitColor)[-2] = gDCStitchColorIndexTable[3 * stitchIdx];
+						pLitColor[-1] = *(f32*)(0x0064F858 + 12 * stitchIdx + 4);
+						pLitColor[0]  = *(f32*)(0x0064F858 + 12 * stitchIdx + 8);
+					}
+					else
+					{
+						pLitColor[-2] = *(f32*)gDCTexAnimColorA;
+						pLitColor[-1] = *(f32*)gDCTexAnimColorB;
+						pLitColor[0]  = *(f32*)gDCTexAnimColorC;
+
+						for (i32 li = 0; li < lightCount; li++)
+						{
+							f32 dot = GDC_LIGHT_VECTOR_TABLE_X(li) * pn->x
+									+ GDC_LIGHT_VECTOR_TABLE_Z(li) * pn->z
+									+ GDC_LIGHT_VECTOR_TABLE_Y(li) * pn->y;
+							if (dot >= 0.0f)
+							{
+								pLitColor[-2] += dot * GDC_LIGHT_COLOR_TABLE_X(li);
+								pLitColor[-1] += dot * GDC_LIGHT_COLOR_TABLE_Y(li);
+								pLitColor[0]  += dot * GDC_LIGHT_COLOR_TABLE_Z(li);
+							}
+						}
+
+						if ((pv->mFlags & 1) != 0)
+						{
+							// Same "attachment point" bit as the position
+							// loop above: also records this vertex's lit
+							// color into a companion bump-allocated list.
+							*(f32*)gDCLitColorOutCursor = pLitColor[-2];
+							*(f32*)(gDCLitColorOutCursor + 4) = pLitColor[-1];
+							*(f32*)(gDCLitColorOutCursor + 8) = pLitColor[0];
+							gDCLitColorOutCursor += 12;
+						}
+					}
+					pLitColor += 3;
+				}
+			}
+		}
+		else
+		{
+			*gDCTexAnimFlag = 0;
+		}
+	}
+
+	// Main per-face OT-build/texture-batching loop.
+	// mSortBiasNormal (index 7) / mSortBiasLowGraphics (index 8), selected
+	// with the ORIGINAL's raw (not boolified) `a2[dword_6B78F8 + 7]`
+	// indexing -- reproduced as-is per CLAUDE.md (don't "fix" a source
+	// idiom that happens to rely on the flag being exactly 0 or 1).
+	i32 sortBias = ((i32*)pData)[7 + G_LOWGRAPHICS];
+	i32 batchCount = 0;
+
+	if (numVertsOrig > 0) // numFacesOrig (SModel::NumFaces) guards the whole block below
+	{
+		i32 facesLeft = pModel->NumFaces;
+		u8 *pFaceCursor = (u8*)&pFaces->mVertSlot[0]; // "v46": pFaces + 12
+		i32 overrideMask = *gDCOverrideFlags;
+
+		i32 packedFaceFlags = 0;
+		u32 alphaMask = 0xFF000000u;
+		i32 alphaMode = 0; // 0/1/2, from mFlags bits 0x40/0x80
+
+		for (;;)
+		{
+			u16 faceFlags = *(u16*)(pFaceCursor - 12); // DCFace::mFlags
+			packedFaceFlags = (u16)overrideMask | (faceFlags & ((u16)(overrideMask >> 16)));
+			alphaMask = 0xFF000000u;
+			alphaMode = 0;
+
+			u8 lowCombined = (u8)overrideMask | (u8)(faceFlags & (u8)(overrideMask >> 8));
+			u8 fieldByte0 = *(pFaceCursor + 40); // DCFace::field_34[0]
+			if ((lowCombined & 0xC0) != 0 && (fieldByte0 & 2) == 0)
+				break;
+
+			pFaceCursor += 56;
+			facesLeft--;
+			if (facesLeft == 0)
+				goto afterFaceLoop;
+		}
+
+		if ((packedFaceFlags & 0x40) != 0)
+		{
+			alphaMode = ((packedFaceFlags & 0x80) != 0) ? 2 : 1;
+			alphaMask = ((packedFaceFlags & 0x80) != 0) ? 0x80000000u : 0xFF000000u;
+		}
+		if ((overrideMask & 0x40) != 0)
+		{
+			alphaMode = 2;
+			alphaMask = 0xFF000000u;
+		}
+
+		for (;;)
+		{
+			// Resolve this face's 4 corner slots (DCFace::mVertSlot), lazily
+			// filling any not-yet-touched welded slot (index >= NumVertices)
+			// from the corresponding corner's already-resolved neighbour.
+			u16 cornerSlots[4];
+			u16 *pSrcSlots = (u16*)pFaceCursor; // DCFace::mVertSlot[0..3]
+
+			for (i32 c = 0; c < 4; c++)
+			{
+				i16 rawSlot = (i16)pSrcSlots[c];
+				cornerSlots[c] = pSrcSlots[c];
+				if (rawSlot < 0)
+				{
+					cornerSlots[c] = (u16)(pSrcSlots[c] & 0x7FFF);
+				}
+				else
+				{
+					i32 slot = cornerSlots[c];
+					if (slot >= numVertsOrigClamped)
+					{
+						tagKMVERTEX3 *pDst = pScratchBase + slot;
+						tagKMVERTEX3 *pSrc = pScratchBase + (u8)pFaceCursor[c - 8]; // DCFace::mVertIndex[c]
+						pDst->field_4 = pSrc->field_4;
+						pDst->field_8 = pSrc->field_8;
+						pDst->field_C = pSrc->field_C;
+					}
+				}
+			}
+
+			// NOTE: the original also writes this loop's per-corner values
+			// into a second scratch buffer at 0x62C512 (growing 12
+			// bytes/face) with a different corner reorder ([2]=old[0]
+			// etc). Confirmed via xref search this session that NOTHING,
+			// in this function or any other, ever reads 0x62C512 back --
+			// it is dead write-only scratch with no observable effect, so
+			// it is not reproduced here (cornerSlots below is the only
+			// copy of the resolved corner data that is actually consumed,
+			// by the texture/color-resolve code right after).
+
+			// Resolve this face's texture index.
+			u16 texIndex;
+			if ((packedFaceFlags & 1) != 0)
+			{
+				u16 override;
+				if (*gDCForceTexIndex != 0)
+					override = (u16)*gDCForceTexIndex;
+				else if ((*(pFaceCursor + 40) & 1) != 0) // DCFace::field_34[0] bit 0
+					override = *(u16*)(pFaceCursor + 42); // DCFace::field_34[2..3]
+				else
+					override = *(u16*)(pFaceCursor - 10); // DCFace::mTexIndex
+
+				// print_if_false("Non ARB Texture", ...) omitted (debug-only assert).
+
+				for (i32 c = 0; c < 4; c++)
+				{
+					u16 slot = (u16)(cornerSlots[c] & 0x7FFF);
+					pScratchBase[slot].field_10 = *(f32*)(pFaceCursor + 24 + 4 * c - 16); // DCFace::mU[c]
+					pScratchBase[slot].field_14 = *(f32*)(pFaceCursor + 24 + 4 * c);      // DCFace::mV[c]
+				}
+				texIndex = override;
+			}
+			else
+			{
+				texIndex = 1;
+			}
+
+			gDCFaceTexIndexOut[batchCount] = texIndex;
+			gDCFaceNoLightOut[batchCount] = (u8)alphaMode;
+			batchCount++;
+
+			// Per-face sort-bias output: 0 by default, overridden by an
+			// environment-map-mode lookup only in low-graphics mode
+			// (matches gDCEnvMapTableA/B/C's case values against the
+			// original switch exactly -- 0x2000->A, 0x4000->B, 0x6000->C).
+			u16 sortBiasOut = 0;
+			if (G_LOWGRAPHICS)
+			{
+				switch (packedFaceFlags & 0x6000)
+				{
+					case 0x2000: sortBiasOut = (u16)*gDCEnvMapTableA; break;
+					case 0x4000: sortBiasOut = (u16)*gDCEnvMapTableB; break;
+					case 0x6000: sortBiasOut = *gDCEnvMapTableC; break;
+					default: break;
+				}
+			}
+			gDCFaceSortBiasOut[batchCount - 1] = sortBiasOut;
+
+			// Vertex-color resolve for this face's 4 corners. Always runs
+			// (NOT gated by G_LOWGRAPHICS -- only the sort-bias lookup
+			// above is). Three paths: (1) the tex-anim block's per-vertex
+			// lit output (gDCLitColorScratch, indexed by the ORIGINAL
+			// mVertIndex, not the welded slot); (2) mFlags bit 0x800 --
+			// NEW FINDING, refines dcmodel.h's "medium confidence:
+			// transparent/blended face" guess into something concrete:
+			// this path reads DCFace::mColor[c] as a PALETTE INDEX into
+			// G_COLOUR_TABLE (pColourTable), not a direct RGB value, i.e.
+			// 0x800 means "this face's color is a colour-table index", not
+			// a blend flag; (3) the face's own baked mColor/mColorExtra
+			// (already gamma-corrected by DCModel_CreateFromSModel per
+			// dcmodel.h).
+			if (*gDCTexAnimFlag != 0)
+			{
+				f32 *pLitColor = (f32*)0x0065DFB8; // gDCLitColorScratch, same buffer as the tint block above
+				for (i32 c = 0; c < 4; c++)
+				{
+					u16 slot = (u16)(cornerSlots[c] & 0x7FFF);
+					u8 origVertIdx = pFaceCursor[c - 8]; // DCFace::mVertIndex[c]
+					i32 ri = (i32)(pLitColor[origVertIdx * 3 + 0] * 255.0f);
+					i32 gi = (i32)(pLitColor[origVertIdx * 3 + 1] * 255.0f);
+					i32 bi = (i32)(pLitColor[origVertIdx * 3 + 2] * 255.0f);
+					i32 orAll = ri | gi | bi;
+					if ((orAll & (i32)0xFFFFFF00) != 0)
+					{
+						if (orAll < 0)
+						{
+							if (ri < 0) ri = 0;
+							if (gi < 0) gi = 0;
+							if (bi < 0) bi = 0;
+						}
+						if (((ri | gi | bi) & 0x7FFFFF00) != 0)
+						{
+							if (ri > 255) ri = 255;
+							if (gi > 255) gi = 255;
+							if (bi > 255) bi = 255;
+						}
+					}
+					pScratchBase[slot].field_18 = alphaMask | (u32)bi | (((u32)gi | ((u32)ri << 8)) << 8);
+					*(i32*)((u8*)&pScratchBase[slot] + 28) = 0; // untyped tail padding, offset 0x1C (no named field)
+				}
+			}
+			else if ((packedFaceFlags & 0x800) != 0)
+			{
+				for (i32 c = 0; c < 4; c++)
+				{
+					u16 slot = (u16)(cornerSlots[c] & 0x7FFF);
+					u8 colorIdx = pFaceCursor[c - 4]; // DCFace::mColor[0..2] / mColorExtra, raw 4-byte walk
+					u32 entry = alphaMask | ((u32*)G_COLOUR_TABLE)[colorIdx];
+					u32 packed = (entry & 0xFF00FF00u) | ((u8)entry << 16) | (u8)(entry >> 16);
+					pScratchBase[slot].field_18 = packed;
+					*(i32*)((u8*)&pScratchBase[slot] + 28) = 0; // untyped tail padding, offset 0x1C (no named field)
+				}
+			}
+			else
+			{
+				u32 baseColor = alphaMask | *(u32*)(pFaceCursor - 4); // DCFace::mColor[0..2]+mColorExtra
+				u32 bc = (baseColor & 0xFF00FF00u) | ((u8)baseColor << 16) | (u8)(baseColor >> 16);
+				for (i32 c = 0; c < 4; c++)
+				{
+					u16 slot = (u16)(cornerSlots[c] & 0x7FFF);
+					pScratchBase[slot].field_18 = bc;
+					*(i32*)((u8*)&pScratchBase[slot] + 28) = 0; // untyped tail padding, offset 0x1C (no named field)
+				}
+			}
+
+			pFaceCursor += 56;
+			facesLeft--;
+			if (facesLeft == 0)
+				goto afterFaceLoop;
+
+			// find the next qualifying face (same gate as the search above)
+			for (;;)
+			{
+				u16 nextFlags = *(u16*)(pFaceCursor - 12);
+				packedFaceFlags = (u16)overrideMask | (nextFlags & (u16)(overrideMask >> 16));
+				u8 nextLowCombined = (u8)overrideMask | (u8)(nextFlags & (u8)(overrideMask >> 8));
+				if ((nextLowCombined & 0xC0) != 0 && (*(pFaceCursor + 40) & 2) == 0)
+					break;
+				pFaceCursor += 56;
+				facesLeft--;
+				if (facesLeft == 0)
+					goto afterFaceLoop;
+			}
+
+			if ((packedFaceFlags & 0x40) != 0)
+			{
+				alphaMode = ((packedFaceFlags & 0x80) != 0) ? 2 : 1;
+				alphaMask = ((packedFaceFlags & 0x80) != 0) ? 0x80000000u : 0xFF000000u;
+			}
+			if ((overrideMask & 0x40) != 0)
+			{
+				alphaMode = 2;
+				alphaMask = 0xFF000000u;
+			}
+		}
+	}
+afterFaceLoop:
+
+	// Debug light-vector visualization (only when gDCDebugLightFlag is set).
+	if (*gDCDebugLightFlag != 0)
+	{
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+		f32 origin[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+		f32 originOut[4];
+		Algebra_Transform4(originOut, origin);
+		f32 originInvW = (fabsf(originOut[3]) > 0.0000000099999999f) ? (1.0f / originOut[3]) : -1.0e12f;
+		f32 originX = originOut[0] * originInvW;
+		f32 originY = originOut[1] * originInvW;
+
+		i32 lightCount = *gDCLightCount;
+		if (lightCount > 0)
+		{
+			f32 *pLightTint = gDCLightTintTable;
+			for (i32 li = 0; li < lightCount; li++)
+			{
+				f32 lx = *(f32*)0x00550068 * pLightTint[2];
+				f32 ly = *(f32*)0x00550068 * pLightTint[1];
+				f32 lz = *(f32*)0x00550068 * pLightTint[0];
+
+				f32 in4[4] = { lz, ly, lx, 1.0f };
+				f32 out4[4];
+				Algebra_Transform4(out4, in4);
+				f32 invW = (fabsf(out4[3]) > 0.0000000099999999f) ? (1.0f / out4[3]) : -1.0e12f;
+				f32 px = out4[0] * invW;
+				f32 py = out4[1] * invW;
+
+				u32 color = 0xFFFFFF00u
+					| (u8)(pLightTint[2] * 255.0)
+					| (((u8)(pLightTint[1] * 255.0) | (((u8)(pLightTint[0] * 255.0)) << 8)) << 8);
+
+				gsub_509000(originX, originY, invW, -1, px, py, invW, color, 2.0f);
+				pLightTint += 3;
+			}
+		}
+	}
+
+	// Fog-distance / no-fog color remap pass over the whole scratch pool
+	// range this call touched (pScratchBase[0..pData->mVertexCount)).
+	if (*gDCLastNoLightFlag == 0)
+	{
+		if (*gDCNoFogFlag != 0)
+		{
+			for (i32 i = 0; i < vertexCount; i++)
+			{
+				u32 c = pScratchBase[i].field_18;
+				u32 blended = (*(u32*)0x00550060 * (c >> 8));
+				pScratchBase[i].field_18 = blended ^ (0xFFFFFFu & (c ^ blended));
+			}
+		}
+		else if (inFogRange)
+		{
+			for (i32 i = 0; i < vertexCount; i++)
+			{
+				f32 depth = pScratchBase[i].field_C;
+				if (depth < *gDCProjFar && depth > 0.0f)
+				{
+					i32 remap = 0;
+					if (depth > *gDCProjNear)
+						remap = (i32)((depth - *gDCProjNear) * *gDCProjScale);
+					u32 c = pScratchBase[i].field_18;
+					u32 blended = (u32)remap * (c >> 8);
+					pScratchBase[i].field_18 = blended ^ (0xFFFFFFu & (c ^ blended));
+				}
+			}
+		}
+
+		// Texture-batch submission: group consecutive OT-build faces that
+		// share (texture id, no-light flag, sort-bias), call PCGfx_UseTexture
+		// once per batch (skipping the call when nothing changed), then
+		// submit the batch's triangle indices from the fixed template.
+		i32 idx = 0;
+		if (batchCount > 0)
+		{
+			do
+			{
+				i32 noLight = inFogRange ? 1 : gDCFaceNoLightOut[idx];
+				i32 lastTex = *gDCLastBoundTexture;
+				u16 tex = gDCFaceTexIndexOut[idx];
+
+				if (*gDCLastBoundTexture != tex || *gDCLastNoLightFlag != noLight)
+				{
+					if (*gDCForceNoTexFlag != 0)
+					{
+						PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+					}
+					else
+					{
+						i32 noLightArg = (*gDCForceNoLightFlag != 0) ? 0 : noLight;
+						PCGfx_UseTexture(tex, (DCGfx_BlendingMode)noLightArg);
+					}
+					lastTex = *gDCLastBoundTexture;
+					(*gDCBatchCallCount)++;
+				}
+
+				u16 bias = gDCFaceSortBiasOut[idx];
+				i32 j = idx;
+				*gDCFaceSortKey = sortBias + bias;
+				do
+				{
+					j++;
+				} while (j < batchCount
+					&& lastTex == (i32)(u16)gDCFaceTexIndexOut[j]
+					&& *gDCLastNoLightFlag == (i32)(u8)gDCFaceNoLightOut[j]
+					&& bias == gDCFaceSortBiasOut[j]);
+
+				PCGfx_ClipSendIndexedVertList(
+					pScratchBase,
+					4 * batchCount,
+					gDCTriIndexTemplate + 6 * idx,
+					6 * (j - idx));
+
+				idx = j;
+			} while (idx < batchCount);
+		}
+
+		*gDCFaceSortKey = 0;
+		*gDCFaceSortKeyExtra = 0;
+	}
 }
 
 // @MEDIUMTODO
