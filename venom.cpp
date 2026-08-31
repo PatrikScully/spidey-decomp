@@ -677,8 +677,15 @@ void CVenom::PlayNextFootstepSFX(void)
 	SFX_PlayPos(i | 0x8000, &this->mPos, 0);
 }
 
-// @NotOk
-// @Validate: when inlined
+// @Ok
+// Verified against IDA decompile+disasm of the inlined body in CVenom::ScanNodesForJumpTarget
+// (0x4ECC60, around 0x4ECCDB-0x4ECD07): Trig_GetPosition into a zeroed CVector, then
+// Utils_GetGroundHeight(pVector, 0, 0x2000, 0); on success (result != -1) it writes
+// result - (this->field_21E << 12) into pVector->vy and returns 1, otherwise leaves the vector
+// alone and returns 0. field_21E is CBaddy's i16 at 0x21E (baddy.h), matches the disasm's
+// *(__int16*)(this+542)<<12. ScanNodesForJumpTarget itself is not decompiled in this file yet
+// (separate function), this only validates GetTargetPosFromNode's own body, which the original
+// also compiles as a real out-of-line function on the Mac build (124 bytes per prototypes.json).
 i32 CVenom::GetTargetPosFromNode(CVector *pVector, i32 a3)
 {
 	Trig_GetPosition(pVector, a3);
