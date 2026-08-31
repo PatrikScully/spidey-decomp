@@ -2,6 +2,7 @@
 #include "validate.h"
 
 #include "spool.h"
+#include "decomp.h"
 
 #include "my_assert.h"
 
@@ -86,16 +87,147 @@ void M3dUtils_InterpolateVectors(i32 NumVectors, i32 Interval, u32* pAnimFile, C
 	func(NumVectors, Interval, pAnimFile, pItem, Part, NumParts);
 }
 
-// @BIGTODO
-void M3dUtils_GetHookPosition(VECTOR*, CSuper*, i32)
+// Scratch buffer the animation system tweens part-local pose matrices into
+// when the current anim frame does not land exactly on a keyframe (see the
+// "Too many parts for TweenBuffer" ASSERT in M3dUtils_InBetween and the
+// M3dUtils_InterpolateVectors write target). Fixed game address, confirmed
+// from the original disassembly of M3dUtils_InterpolateVectors,
+// M3dUtils_GetHookPosition and M3dUtils_GetDynamicHookPosition, all of
+// which reference 0x5FC250 directly. Sized for up to 30 parts (SMatrix, 24
+// bytes each).
+static SMatrix* const gTweenBuffer = reinterpret_cast<SMatrix*>(0x5FC250);
+
+// @Ok
+void M3dUtils_GetHookPosition(VECTOR* pOut, CSuper* pSuper, i32 hookIndex)
 {
-	printf("void M3dUtils_GetHookPosition(VECTOR*, CSuper*, int)");
+	SHook* pHook = &G_PSXREGION[pSuper->mRegion].pHooks[hookIndex];
+	u16 PartIndex = pHook->Offset;
+	u16 Anim = pSuper->mAnim;
+
+	// mirror the part-0 column of the world transform while this hook is
+	// resolved, then flip it back at the end (see the matching block below)
+	if (pSuper->mExtraFlags & 2)
+	{
+		pSuper->mTransform.m[0][0] = -pSuper->mTransform.m[0][0];
+		pSuper->mTransform.m[1][0] = -pSuper->mTransform.m[1][0];
+		pSuper->mTransform.m[2][0] = -pSuper->mTransform.m[2][0];
+	}
+
+	SMatrix* pPoseFrame;
+
+	if (pSuper->mFlags & 4)
+	{
+		if (pSuper->mpPoseBuffer == NULL)
+		{
+			pOut->vx = 0;
+			pOut->vy = 0;
+			pOut->vz = 0;
+			return;
+		}
+
+		pPoseFrame = pSuper->mpPoseBuffer + PartIndex;
+	}
+	else
+	{
+		u32* pAnimFile = G_PSXREGION[pSuper->mRegion].pAnimFile;
+		u32 IntervalWord = pAnimFile[2 * Anim + 2];
+
+		if (IntervalWord & 0xFFFF0000)
+		{
+			M3dUtils_InterpolateVectors(
+					4,
+					(IntervalWord >> 16) + 1,
+					pAnimFile,
+					pSuper,
+					PartIndex,
+					G_PSXREGION[pSuper->mRegion].NumParts);
+
+			pPoseFrame = gTweenBuffer + PartIndex;
+		}
+		else
+		{
+			pPoseFrame = Decomp_GetAnimTransform(pSuper) + PartIndex;
+		}
+	}
+
+	gsub_46F820(pHook, pPoseFrame, &pSuper->mTransform);
+	gte_stlvnl(pOut);
+
+	pOut->vx <<= 12;
+	pOut->vy <<= 12;
+	pOut->vz <<= 12;
+
+	pOut->vx = pSuper->mPos.vx + ((pOut->vx - pSuper->mPos.vx) >> 4);
+	pOut->vy = pSuper->mPos.vy + ((pOut->vy - pSuper->mPos.vy) >> 4);
+	pOut->vz = pSuper->mPos.vz + ((pOut->vz - pSuper->mPos.vz) >> 4);
+
+	if (pSuper->mExtraFlags & 2)
+	{
+		pSuper->mTransform.m[0][0] = -pSuper->mTransform.m[0][0];
+		pSuper->mTransform.m[1][0] = -pSuper->mTransform.m[1][0];
+		pSuper->mTransform.m[2][0] = -pSuper->mTransform.m[2][0];
+	}
 }
 
-// @BIGTODO
-void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*)
+// @Ok
+void M3dUtils_GetDynamicHookPosition(VECTOR* pOut, CSuper* pSuper, SHook* pHook)
 {
-	printf("void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*)");
+	u16 PartIndex = pHook->Offset;
+	u16 Anim = pSuper->mAnim;
+
+	print_if_false(G_PSXREGION[pSuper->mRegion].ppModels != NULL,
+			"Tried to get hook position with no model table");
+
+	print_if_false(PartIndex < G_PSXREGION[pSuper->mRegion].NumParts,
+			"Bad part number sent to M3dUtils_GetDynamicHookPosition");
+
+	SMatrix* pPoseFrame;
+
+	if (pSuper->mFlags & 4)
+	{
+		if (pSuper->mpPoseBuffer == NULL)
+		{
+			pOut->vx = 0;
+			pOut->vy = 0;
+			pOut->vz = 0;
+			return;
+		}
+
+		pPoseFrame = pSuper->mpPoseBuffer + PartIndex;
+	}
+	else
+	{
+		u32* pAnimFile = G_PSXREGION[pSuper->mRegion].pAnimFile;
+		u32 IntervalWord = pAnimFile[2 * Anim + 2];
+
+		if (IntervalWord & 0xFFFF0000)
+		{
+			M3dUtils_InterpolateVectors(
+					4,
+					(IntervalWord >> 16) + 1,
+					pAnimFile,
+					pSuper,
+					PartIndex,
+					G_PSXREGION[pSuper->mRegion].NumParts);
+
+			pPoseFrame = gTweenBuffer + PartIndex;
+		}
+		else
+		{
+			pPoseFrame = Decomp_GetAnimTransform(pSuper) + PartIndex;
+		}
+	}
+
+	gsub_46F820(pHook, pPoseFrame, &pSuper->mTransform);
+	gte_stlvnl(pOut);
+
+	pOut->vx <<= 12;
+	pOut->vy <<= 12;
+	pOut->vz <<= 12;
+
+	pOut->vx = pSuper->mPos.vx + ((pOut->vx - pSuper->mPos.vx) >> 4);
+	pOut->vy = pSuper->mPos.vy + ((pOut->vy - pSuper->mPos.vy) >> 4);
+	pOut->vz = pSuper->mPos.vz + ((pOut->vz - pSuper->mPos.vz) >> 4);
 }
 
 // @Ok

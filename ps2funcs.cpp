@@ -673,6 +673,51 @@ void gsub_46D9B0(VECTOR *a1)
 }
 
 // @Ok
+// @Matching
+// unnamed in the IDB, address 0x0046E090. Multiplies gOp12Result by
+// gScalar (fixed point, >>12) and accumulates into gGeneralLongVector.
+// One of the two small GTE accumulator helpers M3dUtils_InterpolateVectors
+// (m3dutils.cpp, still @BIGTODO/forwarded) calls; decompiled while tracing
+// that function's callees.
+void gsub_46E090(void)
+{
+	gGeneralLongVector.vx += (gOp12Result.vx * gScalar) >> 12;
+	gGeneralLongVector.vy += (gOp12Result.vy * gScalar) >> 12;
+	gGeneralLongVector.vz += (gOp12Result.vz * gScalar) >> 12;
+}
+
+// @Ok
+// @Matching
+// unnamed in the IDB, address 0x0046E430. Stores gGeneralLongVector into
+// a1, truncated to 16 bits per component (the original does 16-bit
+// "mov [x], cx" stores, not 32-bit). The other of the two small GTE
+// accumulator helpers M3dUtils_InterpolateVectors calls.
+i16* gsub_46E430(i16 *a1)
+{
+	a1[0] = static_cast<i16>(gGeneralLongVector.vx);
+	a1[1] = static_cast<i16>(gGeneralLongVector.vy);
+	a1[2] = static_cast<i16>(gGeneralLongVector.vz);
+	return a1;
+}
+
+// @BIGTODO
+// forward to original. Unnamed in the IDB. Applies a hook's part-local
+// offset (pOffset, a CSVector-shaped 6-byte vector: SHook::Part in
+// m3dutils.h) through pPoseFrame (the part's pose matrix, SMatrix) and then
+// through pTransform (the item's world transform, MATRIX), leaving the
+// result in the software GTE "long vector" accumulator (dword_610BA0/A4/A8,
+// same globals gte_stlvnl reads) for a following gte_stlvnl call to pick
+// up. Uses chained 32x32->64 bit fixed point multiplies (>>12) not yet
+// reproduced from source. Used by M3dUtils_GetHookPosition and
+// M3dUtils_GetDynamicHookPosition (m3dutils.cpp).
+void gsub_46F820(void *pOffset, SMatrix *pPoseFrame, MATRIX *pTransform)
+{
+	typedef void (*func_ptr)(void*, SMatrix*, MATRIX*);
+	func_ptr func = (func_ptr)0x0046F820;
+	func(pOffset, pPoseFrame, pTransform);
+}
+
+// @Ok
 void M3dMaths_SetIdentityRotation(MATRIX *a1)
 {
   a1->m[2][2] = 4096;
