@@ -15,6 +15,11 @@
 EXPORT CCop* gCopGlobal;
 static unsigned char gAttackFlagsRelated;
 
+// Per-species state flags, address 0x549220 in the original (used by
+// CCop::Grab's CheckStateFlags call). Same idiom as gThugStateFlags
+// (thug.cpp) and gRhinoStateFlags (rhino.cpp).
+EXPORT SStateFlags gCopStateFlags;
+
 extern CPlayer *MechList;
 extern CBaddy *BaddyList;
 
@@ -395,11 +400,16 @@ INLINE void CCop::StopShooting(void)
 	}
 }
 
-// @NotOk
-// globals flags :(
+// @Ok
+// Same shape as CThug::Grab/CRhino's CheckStateFlags callers: a per-species
+// SStateFlags global, named gCopStateFlags to match gThugStateFlags
+// (thug.cpp) / gRhinoStateFlags (rhino.cpp). Verified against the IDA
+// decompile of 0x4296b0: CheckStateFlags(&unk_549220, 17) & 2, then
+// AddPointToPath, then field_31C.bothFlags=20 / field_2A8|=0x40 /
+// dumbAssPad=0 (field-store order differs, functionally identical).
 u8 CCop::Grab(CVector* a2)
 {
-	if ( (this->CheckStateFlags(reinterpret_cast<SStateFlags*>(0x549220), 17) & 2)
+	if ( (this->CheckStateFlags(&gCopStateFlags, 17) & 2)
 		|| !this->AddPointToPath(a2, 0) )
 	{
 		return 0;
