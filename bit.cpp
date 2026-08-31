@@ -1684,19 +1684,141 @@ void DisplayPixelList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x411ef0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Iterates a poly-line's inner vertex
-// array (shifted pointer over CBit-like sub-entries), per-segment
-// Algebra_Transform4 (sub_402700) transform and a clip test through
-// sub_505B90 (tools/names.json labels this "syRtcInit", almost certainly a
-// link-time duplicate-body merge with the real clip helper here, not
-// actually an RTC init call - see the shared notes), then a textured/flat
-// POLY_FT4 or POLY_F4 emit via the still-unnamed sub_509000 (same emitter
-// as DisplayGLineList and DisplayGPolyLineList, not PCGfx_DrawQPoly3D).
-void DisplayPolyLineList(void**)
+// Tentative structs for PolyLineList's bit type and its inner vertex array
+// (not in bit.h; no confirmed names). Traced from the raw disassembly of
+// DisplayPolyLineList (0x411ef0) this session. field_3C is an unidentified
+// 4-byte gap between CBit (confirmed size 0x3C, VALIDATE_SIZE below) and
+// the fields this function actually reads (0x40/0x44/0x48) - not guessed.
+struct SPolyLineVert
 {
+	CVector mPos;
+	u32 mColorFlags;
+};
+
+struct SPolyLineBit : public CBit
+{
+	u32 field_3C;
+	i32 mNumVerts;          // 0x40
+	SPolyLineVert* mVerts;  // 0x44
+	CVector mStartPos;      // 0x48
+};
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x411ef0. Fully traced against the raw disassembly, which corrects two
+// things the shared family notes and this function's own old note guessed
+// wrong:
+//
+// 1) sub_505B90 ("syRtcInit" in names.json) is a REAL, literal `xor eax,eax
+//    ; retn` no-op (confirmed via raw disasm at the actual address, no
+//    hidden logic) - it really is a stubbed init call, exactly what its
+//    name says, not a mislabeled clip helper. Its return value (always 0)
+//    makes the `if (result >= 0)` that gates each segment's draw always
+//    true, so this function performs NO clip test of any kind - every
+//    segment always draws. This is a real, reproducible property of the
+//    shipped game for this bit type, not something to "fix".
+// 2) The pPoly-queue record it builds (tag 0x3000000, 24 bytes) genuinely
+//    IS fully dead/inert here: every field written into it (the
+//    dword_56E9D0/56E9D4 pair, and two globals doing double duty as a
+//    would-be "point 1 screen position" - dword_614CEC/614CF0, which
+//    other, unrelated, not-yet-decompiled functions also write - see
+//    xrefs) gets read back for color only (record+12..14, i.e. this
+//    segment's own SPolyLineVert::mColorFlags low 3 bytes); the position
+//    data is never read from the record at all. This function's actual
+//    on-screen positions come entirely from a second, separate
+//    Algebra_Transform4/gGfxMatrix pass per point (same idiom
+//    DisplayPixelList uses: screenX/Y = xf[0..1]*invZ, no gte_ldlv0/rtps
+//    GTE path at all, and no gGameResolutionX/Y scaling - the values are
+//    already in pixel space).
+//
+// Per bit: mStartPos is the strip's first point; mVerts[0..mNumVerts-1]
+// are the following points, each also carrying its own colour/blend-flag
+// dword (SPolyLineVert::mColorFlags, bit 0x2000000 selects a semi
+// -transparent blend the same way the rest of this family's mCodeBGR-style
+// flags do). One PCGfx_DrawLine segment (already-@Ok, PCGfx.cpp) is drawn
+// per consecutive point pair, both endpoints sharing THIS segment's own
+// colour (the vertex being walked TO, not a per-endpoint blend), flat
+// width 1.0f; the walk then advances (this point becomes the next
+// segment's start), matching the "shifted pointer over CBit-like sub
+// -entries" description in the old note.
+void DisplayPolyLineList(void** a1)
+{
+	RefreshGfxMatrix();
+
+	SPolyLineBit* pBit = reinterpret_cast<SPolyLineBit*>(*a1);
+	while (pBit)
+	{
+		CVector pt1 = pBit->mStartPos;
+
+		for (i32 i = 0; i < pBit->mNumVerts; i++)
+		{
+			SPolyLineVert& vert = pBit->mVerts[i];
+			CVector pt2 = vert.mPos;
+
+			if ((u8*)pPoly + 24 > PolyBufferEnd)
+				return;
+			pPoly = (u32*)((u8*)pPoly + 24);
+
+			i32 blendMode = 0;
+			u32 alpha = 0xFF;
+			if (vert.mColorFlags & 0x2000000)
+			{
+				blendMode = 2;
+				alpha = 0x80;
+			}
+
+			PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+			u32 color = (alpha << 24) | ((vert.mColorFlags & 0xFF) << 16) |
+					(((vert.mColorFlags >> 8) & 0xFF) << 8) | ((vert.mColorFlags >> 16) & 0xFF);
+
+			f32 rawPos1[3];
+			rawPos1[0] = (f32)pt1.vx / 4096.0f;
+			rawPos1[1] = (f32)pt1.vy / 4096.0f;
+			rawPos1[2] = (f32)pt1.vz / 4096.0f;
+
+			f32 xf1[4];
+			Algebra_Transform4(xf1, rawPos1);
+
+			f32 invZ1;
+			if (fabsf(xf1[3]) > 0.00000001f)
+				invZ1 = 1.0f / xf1[3];
+			else
+				invZ1 = -1.0e12f;
+
+			f32 screen1X = xf1[0] * invZ1;
+			f32 screen1Y = xf1[1] * invZ1;
+
+			f32 rawPos2[3];
+			rawPos2[0] = (f32)pt2.vx / 4096.0f;
+			rawPos2[1] = (f32)pt2.vy / 4096.0f;
+			rawPos2[2] = (f32)pt2.vz / 4096.0f;
+
+			f32 xf2[4];
+			Algebra_Transform4(xf2, rawPos2);
+
+			f32 invZ2;
+			if (fabsf(xf2[3]) > 0.00000001f)
+				invZ2 = 1.0f / xf2[3];
+			else
+				invZ2 = -1.0e12f;
+
+			f32 screen2X = xf2[0] * invZ2;
+			f32 screen2Y = xf2[1] * invZ2;
+
+			if (invZ1 > 0.0f && invZ2 > 0.0f)
+			{
+				PCGfx_DrawLine(
+						screen1X, screen1Y, invZ1, color,
+						screen2X, screen2Y, invZ2, color,
+						1.0f);
+			}
+
+			pt1 = pt2;
+		}
+
+		pBit = reinterpret_cast<SPolyLineBit*>(pBit->mNext);
+	}
 }
 
 // @BIGTODO
