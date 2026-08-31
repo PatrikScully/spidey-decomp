@@ -366,6 +366,49 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 // offset), so they stay @BIGTODO. The next attempt should be able to move
 // much faster starting from this map instead of raw disassembly.
 
+// Shared camera-matrix refresh for the Display*List family (see the family
+// notes above). Every function that reads the invZ pass through
+// Algebra_Transform4 opens with the same instruction sequence: a 16-float
+// copy that IDA renders as 4 interleaved "arrays"
+// (dword_56E6F8/56E6FC/56E700/flt_56E674) because of array-boundary folding
+// (CLAUDE.md: "MSVC folds array indexing into neighboring globals' base
+// addresses"). Traced instruction-by-instruction against the raw disasm of
+// 0x4097e0 (0x4097f6..0x409895): dword_56E6FC is just dword_56E6F8+4 bytes
+// and dword_56E700 is dword_56E6F8+8 bytes (one contiguous 16-float array,
+// not three), and flt_56E674 is literally &gGfxMatrix[3] (an alias into the
+// SAME destination array algebra.cpp already declares as gGfxMatrix at
+// 0x56E668). Once the folding is undone the whole loop is exactly
+// `memcpy(gGfxMatrix, gCameraBasisMatrix, 16 * sizeof(f32))`. gGfxMatrix is
+// `static` in algebra.cpp (file-local pointer, shared address per repo
+// convention), so this file gets its own pointer to the same 0x56E668
+// address rather than reaching into algebra.cpp.
+static f32 * const gFrameProjMatrix = (f32*)0x56E668;   // == algebra.cpp's gGfxMatrix
+// Tentative name; source basis matrix the family copies into gFrameProjMatrix
+// once per Display call, address confirmed via the byte-offset trace above.
+// Not in idb_globals.txt. Likely the camera's un-composed view/rotation
+// matrix (refreshed once per frame elsewhere), but that is not confirmed.
+static f32 * const gCameraBasisMatrix = (f32*)0x56E6F8;
+
+// @Ok
+// Functional. Factored out of DisplayQuadBitList's opening instructions
+// (see the comment above gFrameProjMatrix); every Display*List function
+// that projects through Algebra_Transform4 repeats this exact copy inline
+// in the original, so this helper is reused across the family as more of
+// it gets implemented.
+static INLINE void RefreshGfxMatrix(void)
+{
+	for (i32 i = 0; i < 16; i++)
+	{
+		gFrameProjMatrix[i] = gCameraBasisMatrix[i];
+	}
+}
+
+// Camera position used by the per-corner relPos = (rawPos>>12) - camPos
+// idiom (see the family notes and Screen_DrawArrow). Same address as
+// chopper.cpp's gCameraViewPos / mysterio.cpp's and spidey.cpp's
+// stru_56F1B4; duplicated here per the repo's file-local-static convention.
+static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
+
 // @BIGTODO
 // Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). See the
 // shared family notes above. Per-segment camera-space transform through a
@@ -804,18 +847,166 @@ void Bit_DeleteAll(void)
 	DoAssert(G_BITCOUNT == 0, "Still some bits left");
 }
 
-// @BIGTODO
-// Address 0x412f10, real name DisplayGLineList_0 in tools/names.json
-// (found by tracing Bit_Init's RegisterSlot calls, see DisplayTextBoxList).
-// See the shared family notes above CSimpleTexturedRibbon::Display. Camera
-// -space transform of the two line endpoints via the gte_ldlv0/gte_rtps/
-// gte_stlvnl2 idiom, clip test against G_VIEW_CLIP_INFO (0x64E514), a
-// separate invZ pass through Algebra_Transform4/gGfxMatrix for line width
-// scaling by distance, an unidentified 28-byte record queued into pPoly
-// (tag 0x4000000, see the shared notes), then the line draw itself via the
-// still-unnamed sub_509000.
-void DisplayGLineList(void**)
+// Tentative struct for GLineList's bit type (not in bit.h; no confirmed
+// name in names.json/idb_globals.txt). Traced from the raw disassembly of
+// DisplayGLineList (0x412f10) this session: two ARGB-ish colours (u32
+// each) followed by two endpoint CVectors, laid out directly after CBit
+// (whose own size is the confirmed 0x3C, VALIDATE_SIZE below).
+struct SGLineBit : public CBit
 {
+	u32 mColor1;
+	u32 mColor2;
+	CVector mPos1;
+	CVector mPos2;
+};
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x412f10 (names.json: DisplayGLineList_0). Fully traced against the raw
+// disassembly, which corrects the shared family notes above for this one
+// function specifically: the 28-byte pPoly-queue record it builds (tag
+// 0x4000000) is NOT dead/inert here (unlike DisplayGlassList's matching
+// -shaped record, still unconfirmed) - it IS read back to build the real
+// PCGfx_DrawLine call, confirmed byte-offset by byte-offset. Only the two
+// dword_56E9D0/56E9D4 globals copied into the record's last 8 bytes go
+// unread, matching the family's "always written, never read" note for
+// those two globals specifically. sub_509000 (family notes: "still
+// unnamed") is also resolved: it is the already-@Ok PCGfx_DrawLine
+// (PCGfx.cpp, PCGfx.h - 9-param signature matches exactly).
+//
+// Per bit: both endpoints (mPos1, mPos2) go through the standard
+// gte_ldlv0/gte_rtps/gte_stlvnl2 camera transform and are clip tested
+// against G_VIEW_CLIP_INFO's depth range (screen.cpp/screen.h); either
+// endpoint failing skips the whole bit with no draw. CBit::mFrigDeltaZ
+// (0x38, VALIDATEd below) is then subtracted from the nearer of the two
+// depths as a second, combined near-clip fudge test.
+//
+// Screen position comes from gte_stsxy per endpoint. invZ per endpoint
+// comes from the separate Algebra_Transform4/gGfxMatrix pass (see
+// RefreshGfxMatrix above); raw disasm confirms the "vector3d ctor" call
+// the family notes flagged as producing dead output for DisplayQuadBitList
+// corner 0 is NOT dead here - its 3rd float (stack offset traced directly)
+// IS invZ1, Hex-Rays' pseudocode just failed to alias the stack slot back
+// to a named local. Both invZ values get PCGfx_DrawLine's own documented
+// -7.0710726 z bias before being passed in; both must be positive
+// (endpoint in front of camera) or the whole bit is skipped.
+//
+// Colour is each endpoint's own mColor1/mColor2 dword's low 3 bytes
+// (byte0->R, byte1->G, byte2->B, same ARGB pack the rest of this family
+// uses), with a SHARED alpha/blend mode for both endpoints taken only from
+// mColor1's byte 3 bit 0x02 (semi-transparent) - mColor2's own top byte is
+// never read for this. Texture slot 1 (the flat/line texture constant
+// DisplayTextBoxList and DisplayPixelList also use), line width flat 2.0f.
+void DisplayGLineList(void** a1)
+{
+	RefreshGfxMatrix();
+
+	u8* clip = G_VIEW_CLIP_INFO;
+	u16 clipMin = *(u16*)(clip + 8);
+	u16 clipMax = *(u16*)(clip + 0xA);
+
+	SGLineBit* pBit = reinterpret_cast<SGLineBit*>(*a1);
+	while (pBit)
+	{
+		VECTOR relPos1;
+		relPos1.vx = (pBit->mPos1.vx >> 12) - gCameraViewPos->vx;
+		relPos1.vy = (pBit->mPos1.vy >> 12) - gCameraViewPos->vy;
+		relPos1.vz = (pBit->mPos1.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relPos1);
+		gte_rtps();
+
+		i32 depth1;
+		gte_stlvnl2(&depth1);
+
+		if (depth1 >= clipMin && depth1 <= clipMax)
+		{
+			i32 sxy1;
+			gte_stsxy(&sxy1);
+
+			VECTOR relPos2;
+			relPos2.vx = (pBit->mPos2.vx >> 12) - gCameraViewPos->vx;
+			relPos2.vy = (pBit->mPos2.vy >> 12) - gCameraViewPos->vy;
+			relPos2.vz = (pBit->mPos2.vz >> 12) - gCameraViewPos->vz;
+
+			gte_ldlv0(&relPos2);
+			gte_rtps();
+
+			i32 depth2;
+			gte_stlvnl2(&depth2);
+
+			if (depth2 >= clipMin && depth2 <= clipMax)
+			{
+				i32 sxy2;
+				gte_stsxy(&sxy2);
+
+				i32 nearDepth = (depth1 < depth2 ? depth1 : depth2) - pBit->mFrigDeltaZ;
+				if (nearDepth >= clipMin)
+				{
+					i16 x1 = (i16)sxy1;
+					i16 y1 = (i16)(sxy1 >> 16);
+					i16 x2 = (i16)sxy2;
+					i16 y2 = (i16)(sxy2 >> 16);
+
+					f32 rawPos1[3];
+					rawPos1[0] = (f32)pBit->mPos1.vx / 4096.0f;
+					rawPos1[1] = (f32)pBit->mPos1.vy / 4096.0f;
+					rawPos1[2] = (f32)pBit->mPos1.vz / 4096.0f;
+
+					f32 xf1[4];
+					Algebra_Transform4(xf1, rawPos1);
+
+					f32 invZ1;
+					if (fabsf(xf1[3]) > 0.00000001f)
+						invZ1 = 1.0f / xf1[3];
+					else
+						invZ1 = -1.0e12f;
+
+					f32 rawPos2[3];
+					rawPos2[0] = (f32)pBit->mPos2.vx / 4096.0f;
+					rawPos2[1] = (f32)pBit->mPos2.vy / 4096.0f;
+					rawPos2[2] = (f32)pBit->mPos2.vz / 4096.0f;
+
+					f32 xf2[4];
+					Algebra_Transform4(xf2, rawPos2);
+
+					f32 invZ2;
+					if (fabsf(xf2[3]) > 0.00000001f)
+						invZ2 = 1.0f / xf2[3];
+					else
+						invZ2 = -1.0e12f;
+
+					if (invZ1 > 0.0f && invZ2 > 0.0f)
+					{
+						i32 blendMode = 0;
+						u32 alpha = 0xFF;
+						if ((pBit->mColor1 >> 24) & 2)
+						{
+							blendMode = 2;
+							alpha = 0x80;
+						}
+
+						PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+						u32 color1 = (alpha << 24) | ((pBit->mColor1 & 0xFF) << 16) |
+								(((pBit->mColor1 >> 8) & 0xFF) << 8) | ((pBit->mColor1 >> 16) & 0xFF);
+						u32 color2 = (alpha << 24) | ((pBit->mColor2 & 0xFF) << 16) |
+								(((pBit->mColor2 >> 8) & 0xFF) << 8) | ((pBit->mColor2 >> 16) & 0xFF);
+
+						f32 scaleX = gGameResolutionX / (f32)Xres;
+						f32 scaleY = gGameResolutionY / (f32)Yres;
+
+						PCGfx_DrawLine(
+								x1 * scaleX, y1 * scaleY, invZ1 - 7.0710726f, color1,
+								x2 * scaleX, y2 * scaleY, invZ2 - 7.0710726f, color2,
+								2.0f);
+					}
+				}
+			}
+		}
+
+		pBit = reinterpret_cast<SGLineBit*>(pBit->mNext);
+	}
 }
 
 // @Ok
@@ -869,55 +1060,12 @@ void DisplayChunkBitList(void**)
 {
 }
 
-// Shared camera-matrix refresh for the Display*List family (see the family
-// notes above CSimpleTexturedRibbon::Display). Every function that reads the
-// invZ pass through Algebra_Transform4 opens with the same instruction
-// sequence: a 16-float copy that IDA renders as 4 interleaved "arrays"
-// (dword_56E6F8/56E6FC/56E700/flt_56E674) because of array-boundary folding
-// (CLAUDE.md: "MSVC folds array indexing into neighboring globals' base
-// addresses"). Traced instruction-by-instruction against the raw disasm of
-// 0x4097e0 (0x4097f6..0x409895): dword_56E6FC is just dword_56E6F8+4 bytes
-// and dword_56E700 is dword_56E6F8+8 bytes (one contiguous 16-float array,
-// not three), and flt_56E674 is literally &gGfxMatrix[3] (an alias into the
-// SAME destination array algebra.cpp already declares as gGfxMatrix at
-// 0x56E668). Once the folding is undone the whole loop is exactly
-// `memcpy(gGfxMatrix, gCameraBasisMatrix, 16 * sizeof(f32))`. gGfxMatrix is
-// `static` in algebra.cpp (file-local pointer, shared address per repo
-// convention), so this file gets its own pointer to the same 0x56E668
-// address rather than reaching into algebra.cpp.
-static f32 * const gFrameProjMatrix = (f32*)0x56E668;   // == algebra.cpp's gGfxMatrix
-// Tentative name; source basis matrix the family copies into gFrameProjMatrix
-// once per Display call, address confirmed via the byte-offset trace above.
-// Not in idb_globals.txt. Likely the camera's un-composed view/rotation
-// matrix (refreshed once per frame elsewhere), but that is not confirmed.
-static f32 * const gCameraBasisMatrix = (f32*)0x56E6F8;
-
 // Two small per-corner scratch buffers the family stages screen coords
 // through before drawing (see the family notes and DisplayQuadBitList
 // below). Names from idb_globals.txt (gRevisitInitOne/Two); no known field
 // layout beyond "8 bytes per corner, up to 4 corners".
 static u8 * const gRevisitInitOne = (u8*)0x628618;
 static u8 * const gRevisitInitTwo = (u8*)0x654F54;
-
-// @Ok
-// Functional. Factored out of DisplayQuadBitList's opening instructions
-// (see the comment above gFrameProjMatrix); every Display*List function
-// that projects through Algebra_Transform4 repeats this exact copy inline
-// in the original, so this helper will get reused as more of the family
-// gets implemented.
-static INLINE void RefreshGfxMatrix(void)
-{
-	for (i32 i = 0; i < 16; i++)
-	{
-		gFrameProjMatrix[i] = gCameraBasisMatrix[i];
-	}
-}
-
-// Camera position used by the per-corner relPos = (rawPos>>12) - camPos
-// idiom (see the family notes and Screen_DrawArrow). Same address as
-// chopper.cpp's gCameraViewPos / mysterio.cpp's and spidey.cpp's
-// stru_56F1B4; duplicated here per the repo's file-local-static convention.
-static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
 
 // Tentative name, address 0x6150C8, not in idb_globals.txt. DisplayQuadBitList
 // saves this dword, forces it to 0xFFFF0000 for the whole list walk, then
