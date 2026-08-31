@@ -146,6 +146,7 @@ EXPORT void gte_rtv0(void);
 EXPORT void gte_stlvnl0(i32 *a1);
 EXPORT void gte_stlvnl2(i32 *a1);
 EXPORT void gte_gpf0(void);
+EXPORT void gte_ldlzc(i32 a1);
 EXPORT void gte_stlzc(i32 *a1);
 EXPORT void gte_stsv(SVECTOR *a1);
 EXPORT void gte_mvmva(i32 _sf, i32 mx, i32 a3, i32 cv, i32 lm);
