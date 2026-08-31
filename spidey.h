@@ -524,7 +524,7 @@ class CPlayer : public CSuper
 		EXPORT i32 ProcessSFXArray(void);
 		EXPORT void ReadAnalogueInput(void);
 		EXPORT void SelectAutoAimTarget(void);
-		EXPORT void SelectTargetBaddy(i32,i32,i32,i32);
+		EXPORT CBody *SelectTargetBaddy(i32,i32,i32,i32);
 		EXPORT void SelectTargetSwitch(i32,i32,SHandle *,i32,i32);
 		EXPORT u8 SetArmor(bool);
 		EXPORT void SetCeilingCamera(i32);

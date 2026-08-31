@@ -2037,10 +2037,51 @@ void CPlayer::SelectAutoAimTarget(void)
     printf("CPlayer::SelectAutoAimTarget(void)");
 }
 
-// @SMALLTODO
-void CPlayer::SelectTargetBaddy(i32,i32,i32,i32)
+// @Ok
+// 0x4C8410. Scores every baddy on BaddyList by proximity (distWeight) plus a
+// view-cone bonus (coneWeight) for baddies in front of the camera matrix at
+// field_89C, and returns the highest-scoring one that has clear line of
+// sight. mRMinor (0xDC) == 0, the 0x40 flag set, or the 0x10 flag clear
+// disqualify a baddy; mPlayerDist >= maxDist does too.
+CBody *CPlayer::SelectTargetBaddy(i32 maxDist, i32 coneThreshold, i32 distWeight, i32 coneWeight)
 {
-    printf("CPlayer::SelectTargetBaddy(i32,i32,i32,i32)");
+	CBody *best = 0;
+	i32 bestScore = 0;
+
+	for (CBody *baddy = BaddyList; baddy; baddy = (CBody*)baddy->mNextItem)
+	{
+		if (baddy->mRMinor == 0 || (baddy->mCBodyFlags & 0x40) || !(baddy->mCBodyFlags & 0x10))
+			continue;
+		if (baddy->mPlayerDist >= maxDist)
+			continue;
+
+		i32 score = (distWeight * (((maxDist - baddy->mPlayerDist) << 12) / maxDist)) >> 12;
+
+		if (coneWeight != 0)
+		{
+			VECTOR dir;
+
+			dir.vx = (baddy->mPos.vx - this->mPos.vx) >> 12;
+			dir.vy = (baddy->mPos.vy - this->mPos.vy) >> 12;
+			dir.vz = (baddy->mPos.vz - this->mPos.vz) >> 12;
+			gte_SetRotMatrix(&this->field_89C);
+			gte_ldlvl(&dir);
+			gte_rtir();
+			gte_stlvnl(&dir);
+			dir.vy = 0;
+			VectorNormal(&dir, &dir);
+			if (-dir.vz >= coneThreshold)
+				score += (coneWeight * ((4096 - dir.vz) / 2)) >> 12;
+		}
+
+		if (score > bestScore && Utils_LineOfSight(&this->mPos, &baddy->mPos, 0, 0) != 0)
+		{
+			bestScore = score;
+			best = baddy;
+		}
+	}
+
+	return best;
 }
 
 // @Ok
