@@ -346,8 +346,12 @@ void CHostage::BegMotherfucker(void)
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// Confirmed against the inlined call site in CHostage::BegMotherfucker
+// (0x442B10, disasm around 0x442C1E-0x442C5B): Rnd(3) result added to 9 for
+// a3, args pushed for Redbook_XAPlayPos(7, a3, &mPos, 50) in the right cdecl
+// order, then AttachXA(7, a3) called only on success. No standalone address
+// in names.json, this gets inlined into every caller same as the original.
 void INLINE CHostage::HostageXAPlay(i32 a2, i32 a3, i32 a4)
 {
 	if (Redbook_XAPlayPos(a2, a3, &this->mPos, a4))
