@@ -700,21 +700,41 @@ i16* gsub_46E430(i16 *a1)
 	return a1;
 }
 
-// @BIGTODO
-// forward to original. Unnamed in the IDB. Applies a hook's part-local
-// offset (pOffset, a CSVector-shaped 6-byte vector: SHook::Part in
-// m3dutils.h) through pPoseFrame (the part's pose matrix, SMatrix) and then
-// through pTransform (the item's world transform, MATRIX), leaving the
-// result in the software GTE "long vector" accumulator (dword_610BA0/A4/A8,
-// same globals gte_stlvnl reads) for a following gte_stlvnl call to pick
-// up. Uses chained 32x32->64 bit fixed point multiplies (>>12) not yet
-// reproduced from source. Used by M3dUtils_GetHookPosition and
-// M3dUtils_GetDynamicHookPosition (m3dutils.cpp).
+// @Ok
+// Decompiled 2026-08-31 from Hex-Rays at 0x0046F820. Unnamed in the IDB.
+// Applies a hook's part-local offset (pOffset, a CSVector-shaped 6-byte
+// vector: SHook::Part in m3dutils.h) through pPoseFrame (the part's pose
+// matrix, SMatrix, i16 rotation + i16 translation) to get a local result,
+// then applies pTransform (the item's world transform, MATRIX, i16
+// rotation + i32 translation) to that result, leaving it in the software
+// GTE "long vector" accumulator (gGeneralLongVector, same global
+// gte_stlvnl reads) for a following gte_stlvnl call to pick up. Both
+// stages are the same fixed-point rotate-then-translate shape as
+// FixedXForm plus a translation add; the "64 bit multiply" the decompiler
+// showed is IDA's mixed i16/i32 type inference, not a real 64 bit op (the
+// original hardware does this as ordinary 32 bit multiplies). Used by
+// M3dUtils_GetHookPosition and M3dUtils_GetDynamicHookPosition
+// (m3dutils.cpp).
 void gsub_46F820(void *pOffset, SMatrix *pPoseFrame, MATRIX *pTransform)
 {
-	typedef void (*func_ptr)(void*, SMatrix*, MATRIX*);
-	func_ptr func = (func_ptr)0x0046F820;
-	func(pOffset, pPoseFrame, pTransform);
+	i16 *pOff = reinterpret_cast<i16*>(pOffset);
+	i16 offX = pOff[0];
+	i16 offY = pOff[1];
+	i16 offZ = pOff[2];
+
+	i16 localX = static_cast<i16>(pPoseFrame->t[0]
+		+ ((pPoseFrame->m[0][0] * offX + pPoseFrame->m[0][1] * offY + pPoseFrame->m[0][2] * offZ) >> 12));
+	i16 localY = static_cast<i16>(pPoseFrame->t[1]
+		+ ((pPoseFrame->m[1][0] * offX + pPoseFrame->m[1][1] * offY + pPoseFrame->m[1][2] * offZ) >> 12));
+	i16 localZ = static_cast<i16>(pPoseFrame->t[2]
+		+ ((pPoseFrame->m[2][0] * offX + pPoseFrame->m[2][1] * offY + pPoseFrame->m[2][2] * offZ) >> 12));
+
+	gGeneralLongVector.vx = pTransform->t[0]
+		+ ((pTransform->m[0][0] * localX + pTransform->m[0][1] * localY + pTransform->m[0][2] * localZ) >> 12);
+	gGeneralLongVector.vy = pTransform->t[1]
+		+ ((pTransform->m[1][0] * localX + pTransform->m[1][1] * localY + pTransform->m[1][2] * localZ) >> 12);
+	gGeneralLongVector.vz = pTransform->t[2]
+		+ ((pTransform->m[2][0] * localX + pTransform->m[2][1] * localY + pTransform->m[2][2] * localZ) >> 12);
 }
 
 // @Ok
