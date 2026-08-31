@@ -236,8 +236,9 @@ class CPlayer : public CSuper
 		PADDING(0xB74-0xAE6-1);
 
 		i32 field_B74;
-
-		PADDING(0xB84-0xB74-4);
+		i32 field_B78;
+		i32 field_B7C;
+		i32 field_B80;
 
 		CSVector field_B84;
 
@@ -550,6 +551,7 @@ class CPlayer : public CSuper
 		EXPORT void CreateCombatImpactEffect(CVector *,i32);
 		EXPORT void CreateWebDrips(bool,bool);
 		EXPORT void DoMGSShadow(void);
+		EXPORT i32 DoPhysics(void);
 		EXPORT void DoShadowCheck(void);
 		EXPORT void DrawOffscreenSpideySenseIndicatorList(void);
 		EXPORT void DrawReticle(u16,u16,u32);

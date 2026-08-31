@@ -1118,6 +1118,83 @@ void CPlayer::DoMGSShadow(void)
     printf("CPlayer::DoMGSShadow(void)");
 }
 
+// @Ok
+i32 CPlayer::DoPhysics(void)
+{
+	if (!(this->field_E1C & 4))
+		return 0;
+	if (!(*((u8*)((char*)this + 0xE0)) & 1))
+		return 0;
+	if (!this->field_B74)
+		return 0;
+
+	i16 vy = this->field_B84.vy;
+	if (vy > 0xD48 || vy < 0xF5D8)
+		return 0;
+
+	if (this->field_B8C && (this->field_B8C[3] & 0x40000))
+		return 0;
+
+	if (Utils_GetGroundHeight(&this->mPos, 0, 0xB4, 0) != -1)
+		return 0;
+
+	i16 nx = this->field_B84.vx;
+	i16 ny = this->field_B84.vy;
+	i16 nz = this->field_B84.vz;
+
+	print_if_false(!((nx | ny | nz) & 0xFFFF), "Bad normal");
+
+	this->field_A8.vx = nx;
+	this->field_A8.vy = ny;
+	this->field_A8.vz = nz;
+	this->field_AD4 = 1;
+
+	CVector normal;
+	normal.vx = 0;
+	normal.vy = 4096;
+	normal.vz = 0;
+	this->OrientToNormal(true, &normal);
+
+	this->mVel.vx = 0;
+	this->mVel.vy = 0;
+	this->mVel.vz = 0;
+	this->field_DF8 = 0;
+
+	this->mPos.vx = this->field_A8.vx * this->field_EA8 + this->field_B78;
+	this->mPos.vy = this->field_A8.vy * this->field_EA8 + this->field_B7C;
+	this->mPos.vz = this->field_A8.vz * this->field_EA8 + this->field_B80;
+
+	i32 **sfxEntry;
+	i32 anim;
+	if (this->mAnim == 0xE8)
+	{
+		sfxEntry = &gSpideySFXEntry[0xEA];
+		anim = 0xEA;
+	}
+	else
+	{
+		sfxEntry = &gSpideySFXEntry[0xE3];
+		anim = 0xE3;
+	}
+
+	this->field_350 = (i32*)sfxEntry;
+
+	i32 **p = sfxEntry;
+	while ((i32)*p != -1)
+	{
+		*p = (i32*)((i32)*p & 0xFFFF);
+		p++;
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	SFX_Play(9, 0x2000, 0);
+
+	this->field_E1C = 1;
+
+	return 1;
+}
+
 // @MEDIUMTODO
 void CPlayer::DoShadowCheck(void)
 {
