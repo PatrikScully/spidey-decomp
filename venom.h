@@ -46,7 +46,23 @@ class CVenom : public CBaddy
 		EXPORT virtual void EnterWaitState(void);
 		EXPORT virtual void ExitWaitState(u32, u32);
 
-		PADDING(0x18-0xC);
+		PADDING(4);
+
+		// Chase-bar animation frame index (0-5), selects one of the six
+		// "VenomChase_Bar_0X" textures. Read (never written) by
+		// Venom_DisplayProgressBar (0x4E7E10: *(_DWORD*)(venom+0x328) used
+		// to index the loaded texture array). Nothing in the decompiled
+		// code so far writes it; presumably some other, not yet
+		// decompiled, per-frame update advances it using field_32C below.
+		i32 field_328;
+
+		// Chase-bar animation time accumulator. Written by
+		// Venom_DisplayProgressBar (0x4E7E10: venom->field_32C +=
+		// venom->field_80, gated on gPostWaterEffect == 0); field_80 is
+		// CBody's existing per-frame delta field. Never read back in that
+		// function, so its consumer (presumably whatever advances
+		// field_328) is elsewhere, not yet decompiled.
+		i32 field_32C;
 
 		i32 field_330;
 

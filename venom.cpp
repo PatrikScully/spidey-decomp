@@ -11,9 +11,16 @@
 #include "camera.h"
 #include "ps2funcs.h"
 #include "my_assert.h"
+#include "PCGfx.h"
+#include "SpideyDX.h"
+#include "m3dinit.h"
+#include "spidey.h"
 
 
 extern CBody* EnvironmentalObjectList;
+
+// Real repo global, no header extern (post.cpp: "EXPORT i32 gPostWaterEffect;").
+extern i32 gPostWaterEffect;
 
 #define LEN_VENOM_TEXS 10
 EXPORT Texture* gVenomTexs[LEN_VENOM_TEXS];
@@ -203,60 +210,154 @@ void CVenom::CreateCombatImpactEffect(CVector *a2,i32)
 	}
 }
 
-// @BIGTODO
-// Analysis (2026-08-31, IDA decompile+disasm of 0x4E7E10, ~3200 bytes): draws the Venom "chase"
-// HUD bar. Not blocked by unresolved callees (all real functions, all already @Ok elsewhere):
-// Spool_FindTextureEntry (spool.cpp), FindBaddyOfType (baddy.cpp), Utils_XZDist (utils.cpp),
-// Panel_DrawTexturedPoly / Panel_SetStretchedScreenCoords (panel.cpp), PCGfx_UseTexture /
-// PCGfx_DrawQPoly2D (PCGfx.cpp), print_if_false (export.h, inlined). Left as BIGTODO anyway:
+// Screen Y-offset added to several HUD bar draws. Same address panel.cpp
+// already names gPanelScreenY (0x60F76C); duplicated here file-locally per
+// repo convention (CLAUDE.md: static address globals may be duplicated
+// across files).
+static i32 * const gPanelScreenY = (i32*)0x0060F76C;
+
+// @Bogus
+// Not a separate function in the original (sub_4E7E10 repeats this whole
+// sequence inline 5 times); factored out here purely for readability, one
+// draw of a screen-space textured quad for the Venom chase bar. Common
+// tail shared by all 5 draw call sites in Venom_DisplayProgressBar below:
+// alloc a POLY_FT4 from renderTex, size/UV it against sizeTex (usually the
+// same texture as renderTex; the animated-frame loop is the one exception,
+// see the comment there), bind renderTex's clut, then draw the resulting
+// quad scaled from native to screen resolution. `tag` is the original's
+// trailing PCGfx_DrawQPoly2D float argument (1.0/2.0/3.0/4.0 per call
+// site in the disassembly; meaning unknown, reproduced as-is).
+static void Venom_DrawBarPiece(Texture *renderTex, Texture *sizeTex, i32 x, i32 y, i32 w, i32 h, f32 tag)
+{
+	POLY_FT4 *poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(renderTex, 0));
+	Panel_SetStretchedScreenCoords(x, y, poly, sizeTex, w, h);
+	PCGfx_UseTexture(renderTex->clut, DCGfx_BlendingMode_1);
+
+	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
+	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+	u32 color = 0xFF000000u | (static_cast<u32>(poly->r0) << 16) | (static_cast<u32>(poly->g0) << 8) | poly->b0;
+
+	PCGfx_DrawQPoly2D(
+		poly->x0 * scaleX, poly->y0 * scaleY, 0.0f, 0.0f, color,
+		poly->x1 * scaleX, poly->y1 * scaleY, 1.0f, 0.0f, color,
+		poly->x2 * scaleX, poly->y2 * scaleY, 0.0f, 1.0f, color,
+		poly->x3 * scaleX, poly->y3 * scaleY, 1.0f, 1.0f, color,
+		tag);
+}
+
+// @Ok
+// Translated from IDA decompile+disasm of sub_4E7E10 (0x4E7E10, 2935 bytes), the Venom "chase"
+// HUD bar. Confirmed against the disassembly, not just Hex-Rays output.
 //
-// Follow-up pass (2026-08-31, same session, before touching rhino/thug's similar padding-carve
-// blockers): re-checked point 1 below against precedent set later this session (CThug::
-// DetermineFightState carved field_32C/field_348/field_36C out of thug.h padding blocks, and
-// CBaddy got field_1A4 out of baddy.h padding, both by splitting a PADDING() into an equal-size
-// named field plus a smaller PADDING(), same technique this file would need). That part is NOT
-// actually risky: as long as the split covers the identical byte range, no other field's offset
-// moves and class size is unchanged. Point 2's globals were also nearest-neighbor audited against
-// idb_globals.txt just now: dword_54D474 IS in his IDB as DifficultyLevel (not just "difficulty
-// level"), dword_5FAE98 IS in his IDB as gPostWaterEffect (NOT a pause/lowgraphics flag, that
-// guess was wrong), dword_568158/dword_568154 are gGameResolutionY/gGameResolutionX and
-// dword_628614/dword_61B5FC are Yres/Xres (all four confirmed, used here as
-// gGameResolutionY/Yres and gGameResolutionX/Xres scale ratios for texture-space to screen-space
-// coordinate conversion). Still unaudited (genuinely absent from idb_globals.txt, not just
-// unchecked): the dword_559E48..dword_559E94 layout table (20 dwords, 5 groups of 4, mapped to
-// draw calls in a non-sequential order: group0->icon-ish v135[6], group1->v135[7],
-// group2->the 19-frame loop, group3->v135[8] (always drawn), group4->v135[9] (conditional)) and
-// dword_6B4DA8/unk_6B4EE4 (the gVenomTexs binding). Also newly found: the real function at
-// 0x4E7E10 takes ZERO parameters (plain `int sub_4E7E10()`, no `this`, no args, everything
-// through globals and FindBaddyOfType(313)), which does not match this stub's declared signature
-// `(const u32*, u32*)` (from prototypes.json/the Mac build); the PC and Mac signatures genuinely
-// disagree here, not just an inlining artifact.
-// Still left as BIGTODO: even with the struct concern resolved, this needs ~20 new tentative
-// global names for a layout table with zero IDB backing, for a purely cosmetic HUD element with
-// no runtime test available this session to catch a wrong screen coordinate. Given the "prefer a
-// matched small function over an almost-matched big one" rule and no way to visually verify this
-// one, better to leave it accurately documented than rush 3200 bytes of magic-number arithmetic.
+// Real signature: the original takes ZERO parameters (does not match this stub's declared
+// `(const u32*, u32*)`, which comes from the Mac build's prototype/how it's stored in
+// reloc_mod::field_C - a generic callback slot cast at each use site). Left the C++ signature
+// as-is (matches venom.h/reloc_mod usage); the body ignores both parameters, matching the real
+// function.
 //
-// 1) needs a new CVenom member at 0x32C (venom->field_32C += venom->field_80, a time accumulator
-//    on the FOUND venom baddy, not "this" - see the signature note above), which currently falls
-//    inside the PADDING(0x18-0xC) block in venom.h ahead of field_330. Low risk per the precedent
-//    above: split into PADDING(0x8) + i32 field_32C + PADDING(0x0), same byte range.
-// 2) about 20 unnamed globals (dword_559E48..dword_559E94, a 5-entry x 4-dword screen layout
-//    table; dword_6B4DA8 scratch texture pointer) still need tentative names; DifficultyLevel,
-//    gPostWaterEffect, gGameResolutionX/Y and Xres/Yres are now IDB-confirmed (see above).
-// 3) unk_6B4EE4 (10 dwords, zeroed by Venom_RelocatableModuleClear) is almost certainly the real
-//    address of gVenomTexs (same size, same file, same zero-on-clear pattern), but gVenomTexs is
-//    currently a plain repo array; binding it to 0x6B4EE4 would need the same audit.
-// Known logic shape for whoever picks this up: FindBaddyOfType(313) finds the venom baddy, player
-// is dword_6A9038; if both exist, distance = Utils_XZDist(player->mPos, venom->mPos), clamped to
-// a per-difficulty (DifficultyLevel) max (hard=7500, easy/normal=9000, other=6000), scaled to a
-// 0..307 bar width, then draws an icon (gVenomTexs[8]) plus up to 3 more textured segments
-// (gVenomTexs[6], [7], conditionally [9]) and a per-i loop over 342/18=19 chase-bar frames using
-// gVenomTexs[venom->field_something] via PCGfx_DrawQPoly2D, all using the dword_559Ex layout
-// table for screen coords and the gGameResolutionX/Y over Xres/Yres ratios for scaling.
+// Globals confirmed by nearest-neighbor audit against idb_globals.txt: dword_54D474 =
+// DifficultyLevel, dword_5FAE98 = gPostWaterEffect, dword_568158/dword_568154 =
+// gGameResolutionY/gGameResolutionX, dword_628614/dword_61B5FC = Yres/Xres (matches the existing
+// gGameResolutionX/Y over Xres/Yres screen-scale idiom already used in chopper.cpp), dword_60F76C
+// = the same screen Y-offset panel.cpp already names gPanelScreenY, dword_6A9038 = MechList
+// (G_MECHLIST in ob.h; used here as the player position, per idb_globals.txt and the existing
+// comment in panel.cpp/chopper.cpp/hostage.cpp about this address).
+//
+// unk_6B4EE4 (10 dwords, zeroed by Venom_RelocatableModuleClear, same size/pattern as gVenomTexs)
+// is very likely the real fixed address of gVenomTexs, but this function is not being hooked (no
+// patch_*() added), so there is no runtime hazard in just using the existing repo array directly
+// instead of binding a new fixed-address alias - same conceptual data either way.
+//
+// dword_6B4DA8 (a scratch texture-pointer slot) is written and read ONLY inside this one function
+// (verified via xrefs_to in IDA: all 9 references are inside 0x4E7E10), so it is implemented as a
+// local instead of a new persistent global.
+//
+// The dword_559E48..dword_559E94 block (20 dwords, 5 groups of 4) is a small per-draw-call
+// screen-position/size nudge table. Read its actual bytes straight out of the binary via IDA
+// (get_bytes at 0x559E48, 80 bytes) instead of guessing: {-1,-5,0,0, 1,-5,0,0, 0,-7,0,0, 0,-5,0,0,
+// 0,-5,0,0} (int32 each). Folded directly into the arithmetic below as the confirmed literal
+// results (e.g. "446 - barLen" for the Spidey icon's sliding X) rather than kept as an unnamed
+// global array, since we now have their real values, not a guess.
+//
+// The texture-name table at 0x559D08 (10 x 32-byte slots, walked by the original's texture-load
+// loop) was also read directly from the binary (get_bytes): "VenomChase_Bar_01".."_06",
+// "VenomChase_Bar_LeftEnd", "VenomChase_Bar_RightEnd", "Spidey_Chase", "Venom_Chase" - the same
+// order as gVenomTexs's 10 slots (confirmed by Venom_RelocatableModuleClear zeroing all 10).
+//
+// Logic: find the venom baddy (FindBaddyOfType(313)) and the player (MechList); if either is
+// missing, do nothing (matches the original's early-return). Otherwise: XZ distance from player to
+// venom, clamped to a per-difficulty max (hard=7500, easy/normal=9000, other=6000, exact original
+// if/else-if chain reproduced even though the difficulty==0 and ==1 cases both land on 9000),
+// scaled to a 0..307 bar length. If gPostWaterEffect is off, advance the venom's chase-bar
+// animation accumulator (field_32C += field_80, CBody's existing per-frame delta field) - nothing
+// in this function reads field_32C back, so whatever advances field_328 from it is elsewhere, not
+// yet decompiled. Then draw, in original order: the Spidey icon (always, slides along the bar via
+// barLen), the Venom icon (only if its texture loaded, fixed position), 19 repeated chase-bar frame
+// segments 18px apart (confirmed from the disassembly: every iteration allocates its POLY_FT4 from
+// texs[0] and binds texs[0]'s clut, but sizes/UVs it against texs[field_328] - texs[0] is reused as
+// the shared texture page/clut for what is presumably one shared texture atlas, while field_328
+// only selects which sub-rect of it to show; reproduced literally, not "fixed" to use texs[field_328]
+// throughout), then the left and right end caps.
 void Venom_DisplayProgressBar(const u32*, u32*)
 {
-	printf("void Venom_DisplayProgressBar(const u32*, u32*)");
+	static const char* const kBarTexNames[LEN_VENOM_TEXS] =
+	{
+		"VenomChase_Bar_01", "VenomChase_Bar_02", "VenomChase_Bar_03",
+		"VenomChase_Bar_04", "VenomChase_Bar_05", "VenomChase_Bar_06",
+		"VenomChase_Bar_LeftEnd", "VenomChase_Bar_RightEnd",
+		"Spidey_Chase", "Venom_Chase",
+	};
+
+	// Local copy of gVenomTexs; any missing entry is loaded here but (matching the original) not
+	// written back to gVenomTexs itself.
+	Texture *texs[LEN_VENOM_TEXS];
+	i32 i;
+	for (i = 0; i < LEN_VENOM_TEXS; i++)
+	{
+		texs[i] = gVenomTexs[i];
+		if (!texs[i])
+			texs[i] = Spool_FindTextureEntry(const_cast<char*>(kBarTexNames[i]));
+		print_if_false(texs[i] != 0, "No texture");
+	}
+
+	CVenom *pVenom = reinterpret_cast<CVenom*>(FindBaddyOfType(313));
+	if (!MechList || !pVenom)
+		return;
+
+	i32 dist = Utils_XZDist(&MechList->mPos, &pVenom->mPos);
+
+	i32 maxDist;
+	if (DifficultyLevel == 2)
+		maxDist = 7500;
+	else if (DifficultyLevel == 1)
+		maxDist = 9000;
+	else if (DifficultyLevel == 0)
+		maxDist = 9000;
+	else
+		maxDist = 6000;
+
+	if (dist > maxDist)
+		dist = maxDist;
+
+	i32 barLen = 307 * dist / maxDist;
+
+	if (!gPostWaterEffect)
+		pVenom->field_32C += pVenom->field_80;
+
+	// Spidey icon: slides toward Venom's fixed icon as the distance closes.
+	Venom_DrawBarPiece(texs[8], texs[8], 446 - barLen, *gPanelScreenY + 11, 20, 26, 1.0f);
+
+	// Venom icon: fixed position, only drawn if its texture actually loaded.
+	if (texs[9])
+		Venom_DrawBarPiece(texs[9], texs[9], 446, *gPanelScreenY + 11, 20, 26, 2.0f);
+
+	// 19 chase-bar frame segments, 18px apart, spanning the bar's 342px width.
+	for (i = 0; i < 342; i += 18)
+		Venom_DrawBarPiece(texs[0], texs[pVenom->field_328], i + 138, *gPanelScreenY + 21, 12, 10, 4.0f);
+
+	// Left/right end caps.
+	Venom_DrawBarPiece(texs[6], texs[6], 132, *gPanelScreenY + 23, 4, 8, 3.0f);
+	Venom_DrawBarPiece(texs[7], texs[7], 481, *gPanelScreenY + 23, 4, 8, 3.0f);
 }
 
 // @Ok
@@ -923,6 +1024,9 @@ void CVenom::VenomDie(void)
 
 void validate_CVenom(void){
 	VALIDATE_SIZE(CVenom, 0x468);
+
+	VALIDATE(CVenom, field_328, 0x328);
+	VALIDATE(CVenom, field_32C, 0x32C);
 
 	VALIDATE(CVenom, field_330, 0x330);
 	VALIDATE(CVenom, field_334, 0x334);
