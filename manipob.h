@@ -59,7 +59,14 @@ class CManipObChunk : public CBody
 		EXPORT void AI(void) OVERRIDE;
 		EXPORT void CManipObChunk::DoPhysics(void);
 
-		PADDING(8);
+		PADDING(4);
+
+		// Bounce/hit counter. 0 when spawned. DoPhysics increments it on the
+		// first line-of-sight hit found each frame; while it stays below 1
+		// the chunk bounces off the hit normal, once it reaches 1 the chunk
+		// dies instead. Confirmed real (read/written as this+0xF8) by
+		// disassembly of 0x4567d5-0x4567ed, not padding.
+		i32 field_F8;
 
 		i32 field_FC;
 

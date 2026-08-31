@@ -5,6 +5,7 @@
 #include "mem.h"
 #include "spool.h"
 #include "baddy.h"
+#include "m3dzone.h"
 
 static i16 * const word_610C48 = (i16*)0x610C48;
 extern const char *gObjFile;
@@ -56,10 +57,85 @@ CManipObChunk::CManipObChunk(u32 a1, CVector *a2, CVector *a3)
 	this->field_FC = Rnd(30) + 60;
 }
 
-// @MEDIUMTODO
+// @Ok
+// Address 0x456630 (0x4574d0 in names.json is a different, unrelated
+// function; the real CManipObChunk::DoPhysics starts right after
+// CManipObChunk::AI's tail jump at 0x456630 and runs to 0x456918, in the
+// gap names.json leaves between CManipObChunk_AI and the CManipOb
+// constructor). Substeps mVel/mPos/mAngles field_80 times, casts a probe
+// line 64 units past the new position along the normalized movement
+// direction, and on the first frame that line hits something, reflects
+// mVel off the hit normal and teleports mPos back to the hit point; on any
+// later hit it just dies.
 void CManipObChunk::DoPhysics(void)
 {
-    printf("CManipObChunk::DoPhysics(void)");
+	CVector oldPos = this->mPos;
+
+	for (i32 i = this->field_80; i > 0; i--)
+	{
+		this->mVel += this->mAcc;
+		this->mVel %= this->mFric;
+		this->mPos += this->mVel;
+		this->mAngles += this->mAngVel;
+	}
+
+	CVector delta = this->mPos - oldPos;
+	CVector dir = delta >> 12;
+
+	VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+	CVector offset = CVector(64) * dir;
+
+	SLineInfo lineInfo;
+	lineInfo.StartCoords = oldPos;
+	lineInfo.EndCoords = this->mPos + offset;
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (!lineInfo.pItem)
+	{
+		return;
+	}
+
+	i32 hitCount = ++this->field_F8;
+
+	if (hitCount < 1)
+	{
+		this->mAngVel.vx = Rnd(128) - 64;
+		this->mAngVel.vy = Rnd(2 * this->mAngVel.vy) - this->mAngVel.vy;
+
+		this->mPos = lineInfo.Position;
+		this->mPos -= offset;
+
+		i32 length = this->mVel.Length();
+		this->mVel /= length;
+
+		i32 dot = -(lineInfo.Normal.vx * this->mVel.vx
+		           + lineInfo.Normal.vy * this->mVel.vy
+		           + lineInfo.Normal.vz * this->mVel.vz) >> 12;
+		i32 scale = dot * 2;
+
+		this->mVel.vx = (((lineInfo.Normal.vx * scale) >> 12) + this->mVel.vx) * length;
+		this->mVel.vy = (((lineInfo.Normal.vy * scale) >> 12) + this->mVel.vy) * length;
+		this->mVel.vz = (((lineInfo.Normal.vz * scale) >> 12) + this->mVel.vz) * length;
+	}
+	else
+	{
+		this->Die();
+	}
 }
 
 // @Ok
@@ -336,5 +412,6 @@ void validate_CManipObChunk(void)
 {
 	VALIDATE_SIZE(CManipObChunk, 0x100);
 
+	VALIDATE(CManipObChunk, field_F8, 0xF8);
 	VALIDATE(CManipObChunk, field_FC, 0xFC);
 }
