@@ -472,8 +472,11 @@ void Exp_BigExplosion(CVector *a1)
 	}
 }
 
-// @NotOk
-// @FIXME guess type of field_40
+// @Ok
+// field_40 holds 20 heap pointers to CItem-derived objects. The original
+// deletes each one through the virtual destructor (vtable slot 0, called
+// with flag 1), which is exactly what a plain `delete` on a CItem* emits
+// since CItem has a virtual destructor. Confirmed against 0x43C2C0.
 CFlameExplosion::~CFlameExplosion(void)
 {
 	for (i32 i = 0; i < 20; i++)
