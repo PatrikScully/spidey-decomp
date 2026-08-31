@@ -7,7 +7,7 @@
 #include "exp.h"
 #include "ai.h"
 #include "web.h"
-#include "web.h"
+#include "m3dcolij.h"
 
 #include <cstring>
 
@@ -957,10 +957,77 @@ void CCop::ClearAttackFlags(void)
 	this->field_391 = 0;
 }
 
-// @MEDIUMTODO
-void CreateCopRicochet(SLineInfo *,u8,u8,u8)
+// @Ok
+// Reconstructed from IDA decompile of 0x428c80 (register-level trace of the
+// gte_ldopv1/gte_ldopv2/gte_op12/gte_stlvnl calls, misdecompiled by
+// Hex-Rays as qt_register_signal_spy_callbacks, same class of false-positive
+// signature match noted elsewhere in this repo, e.g. chopper.cpp). Builds
+// the line's incoming direction (StartCoords - EndCoords, shifted and
+// normalized), reflects it off the surface normal, then picks a vector
+// perpendicular to the reflection (smallest-abs-component axis trick) and
+// its GTE cross product with the reflection, and fires two CCopLaserPing
+// sparks off the line's Position: one using the perpendicular vector, one
+// using the cross product. Simplified the original's nested-if/goto
+// perpendicular-axis selection into equivalent if/else (verified truth
+// table by hand: the two forms agree on every branch).
+void CreateCopRicochet(SLineInfo *pLine, u8 a2, u8 a3, u8 a4)
 {
-    printf("CreateCopRicochet(SLineInfo *,u8,u8,u8)");
+	SFX_PlayPos((Rnd(2) + 39) | 0x8000, &pLine->Position, 0);
+
+	CVector dir = pLine->StartCoords - pLine->EndCoords;
+	dir >>= 12;
+	VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+	i32 dot2 = 2 * ((dir.vx * pLine->Normal.vx + dir.vy * pLine->Normal.vy + dir.vz * pLine->Normal.vz) >> 12);
+
+	CVector reflect;
+	reflect.vx = ((dot2 * pLine->Normal.vx) >> 12) - dir.vx;
+	reflect.vy = ((dot2 * pLine->Normal.vy) >> 12) - dir.vy;
+	reflect.vz = ((dot2 * pLine->Normal.vz) >> 12) - dir.vz;
+
+	i32 absX = my_abs(reflect.vx);
+	i32 absY = my_abs(reflect.vy);
+	i32 absZ = my_abs(reflect.vz);
+
+	CVector perp;
+	if (absY >= absX)
+	{
+		if (absX <= absZ)
+		{
+			perp.vx = 0;
+			perp.vy = -reflect.vz;
+			perp.vz = reflect.vy;
+		}
+		else
+		{
+			perp.vx = -reflect.vy;
+			perp.vy = reflect.vx;
+			perp.vz = 0;
+		}
+	}
+	else if (absY > absZ)
+	{
+		perp.vx = -reflect.vy;
+		perp.vy = reflect.vx;
+		perp.vz = 0;
+	}
+	else
+	{
+		perp.vx = reflect.vz;
+		perp.vy = 0;
+		perp.vz = -reflect.vx;
+	}
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&reflect));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&perp));
+	gte_op12();
+
+	new CCopLaserPing(&pLine->Position, &reflect, &perp, a2, a3, a4);
+
+	CVector cross;
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&cross));
+
+	new CCopLaserPing(&pLine->Position, &reflect, &cross, a2, a3, a4);
 }
 
 void validate_CCop(void){
