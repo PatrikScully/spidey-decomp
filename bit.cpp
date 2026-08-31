@@ -927,10 +927,64 @@ CWibbly::CWibbly(
 	this->SetCore(v15, v21, v20, a8 / 80);
 }
 
-// @MEDIUMTODO
+// TTime, per the maintainer's IDB (idb_globals.txt: 0x0060CFA8 TTime). A
+// global game clock/counter, read directly from game memory. Nothing else
+// in this repo touches it yet (only read, never written, here), so it
+// stays file-local for now.
+volatile i32 TTime = 0;
+//#define G_TTIME (TTime)
+#define G_TTIME (*reinterpret_cast<volatile i32*>(0x0060CFA8))
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Address
+// 0x4105f0 (found via CWibbly's own vtable, off_53B3E4+4; the 0x29a=666
+// byte body matches prototypes.json's Mac size for CWibbly::Move, 660
+// bytes). Rebuilds the wobble points between the two fixed ends of the
+// ribbon: point 0 is pinned to field_4C (the start), the last point is
+// pinned to field_4C + (mNumPoints-1)*field_58 (the end, using the
+// CVector(int)*CVector "only reads lhs.vx" idiom already documented in
+// vector.h, since field_58 is the (end-start)/(numPoints-1) step set by
+// SetEndPoints). Every interior point i gets two sine-table "wave" offsets
+// summed: field_70 modulated by (field_8C, field_90) and field_64
+// modulated by (field_80, field_84), both driven by the global clock
+// TTime and the shared random phase field_94 (rerolled about 1 time in 15
+// per point). The original first stores prevPoint + ((field_58>>6) *
+// Sine(angle))/64 into mpPoints[i], then immediately overwrites the same
+// slot with the wave sum before that first value is ever read anywhere;
+// that first store is dead (CLAUDE.md: reproduce source-level oddities,
+// but a provably unread store has no functional effect) and is not
+// reproduced here. Finally, if field_48 (the inner "core" ribbon set up by
+// SetCore) exists, every point's position (not its color/width) is copied
+// into field_48's own point array, so the core ribbon follows the same
+// wobble path as the outer one.
 void CWibbly::Move(void)
 {
-    printf("CWibbly::Move(void)");
+	i32 numPoints = this->mNumPoints;
+
+	this->mpPoints[0].Pos = this->field_4C;
+	this->mpPoints[numPoints - 1].Pos = this->field_4C + CVector(numPoints - 1) * this->field_58;
+
+	for (i32 i = 1; i < numPoints - 1; i++)
+	{
+		if (Rnd(15) == 0)
+			this->field_94 = Rnd(4096);
+
+		i32 angleA = i * this->field_8C + this->field_94 + 2 * this->field_90 * G_TTIME;
+		i32 angleB = i * this->field_80 + this->field_94 + 2 * this->field_84 * G_TTIME;
+
+		CVector waveA = (this->field_70 * Sine(angleA)) / 4096;
+		CVector waveB = (this->field_64 * Sine(angleB)) / 4096;
+
+		this->mpPoints[i].Pos = waveA + waveB;
+	}
+
+	if (this->field_48)
+	{
+		for (i32 i = 0; i < numPoints; i++)
+		{
+			this->field_48->mpPoints[i].Pos = this->mpPoints[i].Pos;
+		}
+	}
 }
 
 // @Ok
