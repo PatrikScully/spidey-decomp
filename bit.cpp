@@ -2563,20 +2563,31 @@ void CChunkBit::SetUVs(u16 texId, u16 unused, u8 u0, u8 v0, u8 u1, u8 v1, u8 u2,
 	this->mUV2[1] = (f32)v2 * invH;
 }
 
-// gsub_40BA20: CChunkBit::CalculateWorldCoords (0x40BA20, name and void signature confirmed by
-// the Mac build prototype in tools/prototypes.json, 148 bytes there). Needed here because
-// CShatterBit's constructor and Move() (below) both call it on themselves right after changing
-// mPos/mAngles, to refresh mWorldPosA-D. Not implemented: it operates entirely on CChunkBit's
-// own fields and belongs to CChunkBit's own decompilation (out of scope for this
-// CShatterBit-focused session; see the class comment on CShatterBit in bit.h and the @FIXME on
-// validate_CChunkBit's VALIDATE_SIZE above). Printf placeholder stub, CLAUDE.md convention.
-// Nothing calls Split/CShatterBit at runtime this session (leaf-first chain still incomplete:
-// Shatter_Face/Shatter_Item are not hooked), so this never actually executes.
-// @MEDIUMTODO
+// Rotates the four corner positions (mPosA-D) by mAngles and translates them
+// by the CBit base mPos, storing the world-space results in mWorldPosA-D.
+// @Ok
 static void CChunkBit_CalculateWorldCoords(CChunkBit *self)
 {
-	(void)self;
-	printf("CChunkBit::CalculateWorldCoords(void)");
+	MATRIX matrix;
+	M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR *>(&self->mAngles), &matrix);
+	gte_SetRotMatrix(&matrix);
+	M3dAsm_SetTransVector(reinterpret_cast<VECTOR *>(&self->mPos));
+
+	gte_ldv0(&self->mPosA);
+	gte_rtv0tr();
+	gte_stlvnl(reinterpret_cast<VECTOR *>(&self->mWorldPosA));
+
+	gte_ldv0(&self->mPosB);
+	gte_rtv0tr();
+	gte_stlvnl(reinterpret_cast<VECTOR *>(&self->mWorldPosB));
+
+	gte_ldv0(&self->mPosC);
+	gte_rtv0tr();
+	gte_stlvnl(reinterpret_cast<VECTOR *>(&self->mWorldPosC));
+
+	gte_ldv0(&self->mPosD);
+	gte_rtv0tr();
+	gte_stlvnl(reinterpret_cast<VECTOR *>(&self->mWorldPosD));
 }
 
 // @Ok
