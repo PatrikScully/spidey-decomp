@@ -1380,24 +1380,81 @@ static void Shell_CopyMatrixRows(f32 *pDst, const f32 *pSrc)
 	}
 }
 
+// @Ok
+// Real translation, 0x0049B1F0, 138 bytes (names.json). Draws the
+// expanding highlight box around one Comic Collection grid cell: gets a
+// POLY_FT4 via Panel_DrawTexturedPoly(pFrame->pTexture, 0) (0x462BB0,
+// already @Ok in panel.cpp), then sizes the quad around a 40x32-pixel
+// cell centred at (x+20, y+16): half-width is (20*amount)>>8, half-height
+// is (i8)(amount>>4), so the box grows from a point to the full cell size
+// as amount goes 0..255 (amount < 0 means "not shown", matching the
+// leading guard). Finishes with DCPanel_DrawTexturedPoly(1.0f, poly,
+// pFrame, 0) (0x4624a0, already @Ok in panel.cpp) to scale/texture/submit
+// it. Only caller is the not-yet-decompiled Shell_ComicCollection
+// (0x49B270); functional only, no null check on the Panel_DrawTexturedPoly
+// return before writing the quad fields, matching the original.
+void Shell_DrawComicHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amount)
+{
+	if (amount >= 0)
+	{
+		POLY_FT4 *poly = (POLY_FT4*)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+
+		i16 halfW = (i16)((20 * amount) >> 8);
+		i16 x0 = (i16)(x - halfW + 20);
+		i16 x1 = (i16)(x + halfW + 20);
+		poly->x1 = x1;
+		poly->x0 = x0;
+		poly->x2 = x0;
+		poly->x3 = x1;
+
+		i16 halfH = (i16)(i8)(amount >> 4);
+		i16 y0 = (i16)(y - halfH + 16);
+		i16 y1 = (i16)(y + halfH + 16);
+		poly->y0 = y0;
+		poly->y1 = y0;
+		poly->y2 = y1;
+		poly->y3 = y1;
+
+		DCPanel_DrawTexturedPoly(1.0f, poly, pFrame, 0);
+	}
+}
+
 // Address confirmed real this session: 0x49B270, 3882 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
-// sub_49CCB0's menu-code loop, code 10). Same situation as
-// Shell_CharacterViewer above: left as a stub, own callees mostly
-// unnamed, and the only caller (Shell_DoShell) needs ~15 more
-// undecompiled functions before it is itself attemptable.
-// Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
-// directly (see its comment above for the sub_460080 base-class blocker).
-// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
-// shell.h/CDropDownController). Re-ran callees(): this one does NOT use
-// CDummy_ctor (sub_490DF0) at all, unlike CharacterViewer/CostumeViewer/
-// MainMenu/RollCredits -- it uses CExpandingBox instead (already declared
-// in the repo: CExpandingBox_Display, ??0CExpandingBox@@... all named).
-// The only real callees still missing are two small local helpers,
-// sub_478140 and sub_49B1F0 (not yet sized/investigated). This is
-// probably the most tractable of the six menu screens now, alongside
-// Shell_GameCovers below (same situation, no CDummy_ctor dependency).
-// @MEDIUMTODO
+// sub_49CCB0's menu-code loop, code 10). Re-checked 2026-08-31 with a full
+// Hex-Rays decompile: the "one or two small local helpers" estimate from
+// earlier this session was WRONG. Shell_DrawComicHighlightBox (0x49B1F0)
+// and Shell_CopyMatrixRows (0x478140) above are now real and @Ok, but the
+// main body constructs a previously undiscovered class: `sub_455390(420)`
+// (== CClass::operator new(420), and 420 == sizeof(CSuper) per
+// VALIDATE_SIZE(CSuper, 0x1A4) in ob.cpp) then CSuper::CSuper(this)
+// (0x460720, sets vtable to CSuper's own off_53BBE8), then the caller
+// OVERWRITES the vtable pointer to a different, never-named vtable at
+// off_53BFC0 before calling CItem::InitItem(this, "items") (already @Ok
+// in ob.cpp). So this is a same-size (no added fields) CSuper subclass
+// with a swapped-in vtable, not CItem and not CDummy (CDummy/sub_490DF0
+// is a separate, 2584-byte object, confirmed unused by this function).
+// off_53BFC0's slot 0 (scalar deleting destructor) chains to 0x460780,
+// which names.json calls "CBaddy::~CBaddy" -- almost certainly a
+// link-time duplicate-body fold (CLAUDE.md: "identical function bodies
+// across TUs are merged into one address"), not a real CBaddy relationship
+// (CBaddy is 0x324 bytes per VALIDATE_SIZE in baddy.cpp, so this object
+// cannot literally be a CBaddy). off_53BFC0's other slots mix entries
+// that match CSuper's own vtable (off_53BBE8) exactly (slots 1, 3) with
+// entries that differ (slot 2, and everything past slot 4 points into a
+// different address range, 0x4A2xxx-0x4A3xxx). The SAME 420-byte
+// off_53BFC0 object is also constructed in Shell_MainMenu (sub_493990,
+// confirmed via xrefs_to on off_53BFC0), where it exists alongside a
+// separate, real CDummy_ctor (sub_490DF0) object -- so this class is
+// reused across at least MainMenu/ComicCollection/GameCovers, not
+// something invented just for comics. Next session: name this class,
+// give it a header declaration + VALIDATE_SIZE(<name>, 0x1A4), diff its
+// vtable slot-by-slot against off_53BBE8 to find which virtual(s) it
+// really overrides (ignore the CBaddy-address coincidence), then this
+// function's own body (mostly the per-cell grid loop, pad input, and the
+// M3d_Render calls building the spinning-item preview matrix that
+// Shell_CopyMatrixRows feeds) is comparatively mechanical.
+// @BIGTODO
 void Shell_ComicCollection(void)
 {
     printf("Shell_ComicCollection(void)");

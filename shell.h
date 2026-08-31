@@ -573,6 +573,7 @@ EXPORT void Shell_ChooseSurvivalArena(i32);
 EXPORT void Shell_ChooseTime(i32,i32);
 EXPORT i32 Shell_ChooseTrainingControlType(void);
 EXPORT void Shell_ChooseTrainingMission(i32);
+EXPORT void Shell_DrawComicHighlightBox(i16,i16,SAnimFrame*,i32);
 EXPORT void Shell_ComicCollection(void);
 EXPORT void Shell_CostumeViewer(void);
 EXPORT i32 Shell_Difficulty(i32);
