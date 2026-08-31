@@ -2339,72 +2339,157 @@ void Chopper_CreateSearchlight(const u32* a1, u32* a2)
 	*a2 = reinterpret_cast<u32>(new CSearchlight(v3));
 }
 
-// @NotOk
-// @Note: re-checked 2026-08-31 against the raw disassembly of
-// tools/functions/4340240.bin (0x423a10) after CalculateSearchlight's fix
-// changed what field_138[] actually holds (see that function's note): it is
-// a double ring around the raycast hit point (33 near + 33 outer/far
-// vertices, not a near/far pair spanning the beam length), so this renderer
-// should walk it as a ring strip around one hit point, not a strip along the
-// beam. The opening GTE screen-projection sequence (sub_46D7B0/46E460/
-// sub_4E7840) matches the same idiom confirmed in the two DrawTargetRecticle
-// notes above, but past that this function's stack frame is large (0x11C
-// bytes, with what look like 12-byte-spaced per-vertex clip-flag bytes),
-// consistent with a real batched multi-vertex strip draw call, not the
-// current per-pair PCGfx_DrawQPoly2D loop. Did not fully decompile the draw
-// call itself (same class of large float-heavy primitive-fill code as the
-// DrawTargetRecticle functions); left @NotOk. Whoever continues this should
-// decompile 0x423a10 with Hex-Rays and rebuild the loop to match
-// CalculateSearchlight's real field_138 layout (index 0 = hit point anchor,
-// 1..32 = inner ring, 33..64 = outer ring, 65 unused).
+// @Ok
+// @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
+// tools/functions/4340240.bin (0x423a10), cross-checked against names.json
+// for call targets and against ob.cpp's VALIDATE()'d CSearchlight layout for
+// field offsets. Real structure, confirmed field by field:
+// - Projects field_138[0] (the raycast hit point, per CalculateSearchlight)
+//   first; bail (return) if it's behind the near plane (depth < 200), same
+//   as before.
+// - Also projects MechList->mPos to screen space ONCE, reused every loop
+//   iteration; this is NOT part of the previous single-strip loop at all.
+// - Resets field_12C (the "beam is hitting MechList" flag CheckPointInScreenTri
+//   sets, per that function's own note) to 0, same as before.
+// - Walks the INNER ring (field_138[1..32], wrapping 32 back to 1) as 32
+//   filled screen-space triangles fanning out from MechList's screen
+//   position (Panel_DrawTexturedPoly is not involved at all here: this uses
+//   sub_507DA0, which matches PCGfx_DrawTPoly2D's exact 3-vertex argument
+//   shape, already @Ok in PCGfx.cpp), coloured by a flicker derived from
+//   this->field_134 (NOT a shared timer global; a per-instance field), alpha
+//   0x22. This is the "spotlight cone hitting the ground" visual. For each
+//   triangle, if field_12C is still 0 this frame, calls
+//   this->CheckPointInScreenTri(mechScreen, hitScreen, innerScreen,
+//   nextInnerScreen) to test whether MechList's screen position falls
+//   inside it (the actual "is the player caught in the beam" hit test,
+//   which happens here in the renderer, not in AI() or
+//   CalculateSearchlight()).
+// - For the SAME ring index, also projects the matching OUTER ring point
+//   (field_138[33..64], wrapping 64 back to 33) and draws a translucent
+//   quad band between the inner and outer ring segments (sub_507910 =
+//   PCGfx_DrawQPoly2D, already @Ok) using a fixed literal color
+//   0x00808060 (confirmed via raw disasm: `push offset unk_808060`, a
+//   literal immediate that happens to coincide with a data symbol's address
+//   -- the "global boundaries are unreliable" MSVC quirk CLAUDE.md
+//   documents -- not an actual variable read). This is the soft glow/halo
+//   ring around the cone.
+// - Any ring point behind the near plane aborts the WHOLE function early
+//   (the original's inner while(1) loop `break`s out to the function's
+//   single `return`, it does not just skip that segment); reproduced as an
+//   early return from inside the loop, not a `break`.
+// - Screen-space scaling for every coordinate uses the same
+//   gGameResolutionX/Y over Xres/Yres idiom already established elsewhere in
+//   this file. The original's own scratch primitive-queue bookkeeping
+//   (dword_56FB04 buffer allocation/capacity check, the "stubbed out:
+//   setLineF4"-style debug print) has no effect on what gets drawn and is
+//   skipped, same precedent as CChopperMissile::DrawTargetRecticle.
 void CSearchlight::SpecialRenderer(void)
 {
 	gte_SetRotMatrix(gCameraViewMatrix);
 	m3d_ZeroTransVector();
 
 	CVector camPos = *gCameraViewPos;
-	CVector relPos = (this->field_138[0] >> 12) - camPos;
+	CVector hitRel = (this->field_138[0] >> 12) - camPos;
 
-	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&hitRel));
 	gte_rtps();
 
 	i32 depth;
 	gte_stlvnl2(&depth);
 
-	i16 screenXY[2];
-	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+	i16 hitXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(hitXY));
 
 	if (depth < 200)
 		return;
+
+	CVector mechRel = (MechList->mPos >> 12) - camPos;
+
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&mechRel));
+	gte_rtps();
+
+	i16 mechXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(mechXY));
 
 	this->field_12C = 0;
 
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 
-	f32 prevX = static_cast<f32>(screenXY[0]);
-	f32 prevY = static_cast<f32>(screenXY[1]);
+	i32 a = (this->field_134 << 6) >> 12;
+	i32 b = (48 * this->field_134) >> 12;
+	u32 beamColor = (a & 0xFFu) | ((a & 0xFFu) << 8) | ((b & 0xFFu) << 16) | 0x22000000u;
 
-	for (i32 i = 1; i < 66; i++)
+	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
+	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+
+	u32 mechPacked = static_cast<u16>(mechXY[0]) | (static_cast<u32>(static_cast<u16>(mechXY[1])) << 16);
+	u32 hitPacked = static_cast<u16>(hitXY[0]) | (static_cast<u32>(static_cast<u16>(hitXY[1])) << 16);
+
+	for (i32 i = 1; i <= 32; i++)
 	{
-		CVector rel = (this->field_138[i] >> 12) - camPos;
+		i32 nextIdx = (i < 32) ? (i + 1) : 1;
+		i32 outerIdx = i + 32;
+		i32 outerNextIdx = (i < 32) ? (outerIdx + 1) : 33;
 
-		gte_ldlv0(reinterpret_cast<VECTOR*>(&rel));
+		CVector innerRel = (this->field_138[i] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&innerRel));
 		gte_rtps();
-		gte_stlvnl2(&depth);
-		gte_stsxy(reinterpret_cast<i32*>(screenXY));
+		i32 innerDepth;
+		gte_stlvnl2(&innerDepth);
+		i16 innerXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(innerXY));
+		if (innerDepth < 200)
+			return;
 
-		f32 x = static_cast<f32>(screenXY[0]);
-		f32 y = static_cast<f32>(screenXY[1]);
+		CVector nextRel = (this->field_138[nextIdx] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&nextRel));
+		gte_rtps();
+		i32 nextDepth;
+		gte_stlvnl2(&nextDepth);
+		i16 nextXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(nextXY));
+		if (nextDepth < 200)
+			return;
+
+		PCGfx_DrawTPoly2D(
+				mechXY[0] * scaleX, mechXY[1] * scaleY, 0.0f, 0.0f, beamColor,
+				innerXY[0] * scaleX, innerXY[1] * scaleY, 1.0f, 0.0f, beamColor,
+				nextXY[0] * scaleX, nextXY[1] * scaleY, 0.0f, 1.0f, beamColor,
+				5.0f);
+
+		if (!this->field_12C)
+		{
+			u32 innerPacked = static_cast<u16>(innerXY[0]) | (static_cast<u32>(static_cast<u16>(innerXY[1])) << 16);
+			u32 nextPacked = static_cast<u16>(nextXY[0]) | (static_cast<u32>(static_cast<u16>(nextXY[1])) << 16);
+			this->CheckPointInScreenTri(mechPacked, hitPacked, innerPacked, nextPacked);
+		}
+
+		CVector outerRel = (this->field_138[outerIdx] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&outerRel));
+		gte_rtps();
+		i32 outerDepth;
+		gte_stlvnl2(&outerDepth);
+		i16 outerXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(outerXY));
+		if (outerDepth < 200)
+			return;
+
+		CVector outerNextRel = (this->field_138[outerNextIdx] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&outerNextRel));
+		gte_rtps();
+		i32 outerNextDepth;
+		gte_stlvnl2(&outerNextDepth);
+		i16 outerNextXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(outerNextXY));
+		if (outerNextDepth < 200)
+			return;
 
 		PCGfx_DrawQPoly2D(
-				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
-				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
-				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
-				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
-				0.0f);
-
-		prevX = x;
-		prevY = y;
+				innerXY[0] * scaleX, innerXY[1] * scaleY, 0.0f, 0.0f, 0x00808060u,
+				nextXY[0] * scaleX, nextXY[1] * scaleY, 1.0f, 0.0f, 0x00808060u,
+				outerXY[0] * scaleX, outerXY[1] * scaleY, 0.0f, 1.0f, 0x00808060u,
+				outerNextXY[0] * scaleX, outerNextXY[1] * scaleY, 1.0f, 1.0f, 0x00808060u,
+				5.0f);
 	}
 }
 
