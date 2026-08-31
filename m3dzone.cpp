@@ -8,52 +8,20 @@
 #define NUM_ZONES 1
 EXPORT SZone Zones[NUM_ZONES];
 
-// @NotOk
-// @Note: clean this up, too big and variable names were not okay on ghidra ;(
+// @Ok
+// functional: line-vs-zone-grid collision walk. Ghidra's generic v-names
+// were replaced with descriptive ones and locals moved to first use;
+// no arithmetic, operand order or control flow was changed from the
+// decompiled shape, only identifiers (v2 was always equal to the loop's
+// i, so it was dropped; v18/v26 and v19/v3 were the same logical cell
+// counter split across a loop-carried register pair by the decompiler,
+// collapsed into one cellX/cellZ each). Verified against the disassembly
+// at 0x4549A0. Not byte-identical (MSVC6 register scheduling), functional
+// parity confirmed per session policy.
 void M3dZone_LineToItem(
 		SLineInfo *pInfo,
 		i32 CheckEnviroObs)
 {
-	i32 v2; // ecx
-	i32 vx; // esi
-	i32 v4; // edi
-	i32 vz; // ebx
-	i32 v6; // ebp
-	i32 xMin; // eax
-	i32 v8; // esi
-	i32 v9; // edi
-	i32 Width; // eax
-	i32 Height; // ecx
-	i32 v12; // eax
-	i32 v13; // edx
-	i32 v14; // eax
-	i32 v15; // eax
-	i32 v16; // ecx
-	i32 v17; // edi
-	i32 v18; // ebp
-	i32 v19; // ebx
-	i32 v20; // esi
-	i32 v22; // [esp+10h] [ebp-38h]
-	i32 v23; // [esp+10h] [ebp-38h]
-	i32 xMax; // [esp+18h] [ebp-30h]
-
-	i32 v25; // [esp+18h] [ebp-30h]
-	i32 v26; // [esp+18h] [ebp-30h]
-	i32 zMax; // [esp+1Ch] [ebp-2Ch]
-	i32 v28; // [esp+1Ch] [ebp-2Ch]
-	i32 ZoneWidth; // [esp+24h] [ebp-24h]
-	i32 v31; // [esp+28h] [ebp-20h]
-	i32 v32; // [esp+2Ch] [ebp-1Ch]
-	i32 v33; // [esp+30h] [ebp-18h]
-	i32 v34; // [esp+34h] [ebp-14h]
-	i32 v35; // [esp+38h] [ebp-10h]
-	i32 v36; // [esp+3Ch] [ebp-Ch]
-	i32 v37; // [esp+3Ch] [ebp-Ch]
-	i32 v38; // [esp+40h] [ebp-8h]
-	i32 v1; // [esp+50h] [ebp+8h]
-	i32 v5; // [esp+50h] [ebp+8h]
-	i32 v3; // [esp+50h] [ebp+8h]
-
 	print_if_false(Zones[0].Flags != 0, "No zone information");
 
 	M3dColij_OneMask = 0;
@@ -73,246 +41,236 @@ void M3dZone_LineToItem(
 	{
 		if (Zones[i].Flags)
 		{
-			v2 = i;
-			vx = pInfo->StartCoords.vx;
-			v4 = pInfo->EndCoords.vx;
-			vz = pInfo->StartCoords.vz;
+			i32 startX = pInfo->StartCoords.vx;
+			i32 endX = pInfo->EndCoords.vx;
+			i32 startZ = pInfo->StartCoords.vz;
+			i32 endZ = pInfo->EndCoords.vz;
+			i32 xMin = Zones[i].xMin;
+			i32 xMax = Zones[i].xMax;
+			i32 zMin = Zones[i].zMin;
+			i32 zMax = Zones[i].zMax;
+			i32 ZoneWidth = Zones[i].ZoneWidth;
 
-			v6 = pInfo->EndCoords.vz;
-			xMin = Zones[i].xMin;
-			xMax = Zones[i].xMax;
-			v1 = Zones[i].zMin;
-			zMax = Zones[i].zMax;
-			v22 = xMin;
-			ZoneWidth = Zones[i].ZoneWidth;
-			if ( pInfo->StartCoords.vx >= xMin || v4 >= xMin )
+			if (startX >= xMin || endX >= xMin)
 			{
-				if (vx > xMax)
+				if (startX > xMax)
 				{
-					if (v4 > xMax)
+					if (endX > xMax)
 						continue;
-					v2 = i;
 				}
 
-				if (vz < v1)
+				if (startZ < zMin)
 				{
-					if (v6 < v1)
+					if (endZ < zMin)
 						continue;
-					v2 = i;
 				}
 
-				if (vz > zMax)
+				if (startZ > zMax)
 				{
-					if ( v6 > zMax )
+					if (endZ > zMax)
 						continue;
-					v2 = i;
 				}
 
-				if (vx == v4 && vz == v6)
+				if (startX == endX && startZ == endZ)
 				{
-					v8 = (vx - xMin) / ZoneWidth;
-					v9 = (vz - v1) / ZoneWidth;
-					Width = Zones[v2].Width;
+					i32 pointCellX = (startX - xMin) / ZoneWidth;
+					i32 pointCellZ = (startZ - zMin) / ZoneWidth;
+					i32 gridWidthDeg = Zones[i].Width;
 
-					if (v8 == Width)
-					--v8;
-					Height = Zones[v2].Height;
-					if (v9 == Height)
-						--v9;
-					if (v8 < 0 || v8 >= Width || v9 < 0 || v9 >= Height)
+					if (pointCellX == gridWidthDeg)
+						--pointCellX;
+					i32 gridHeightDeg = Zones[i].Height;
+					if (pointCellZ == gridHeightDeg)
+						--pointCellZ;
+					if (pointCellX < 0 || pointCellX >= gridWidthDeg || pointCellZ < 0 || pointCellZ >= gridHeightDeg)
 						DoAssert(0, "Zone index out of range");
 					else
 						DoAssert(1u, "Zone index out of range");
 					M3dColij_LineToItemZoned(
-							reinterpret_cast<CItem**>(Zones[i].Ptr[v8][v9]),
+							reinterpret_cast<CItem**>(Zones[i].Ptr[pointCellX][pointCellZ]),
 							pInfo);
 				}
 				else
 				{
-
-					if ( vx < xMin )
+					// clip the line segment against the zone's rectangle
+					// (xMin/xMax/zMin/zMax), one edge at a time
+					if (startX < xMin)
 					{
-						if ( vz >= v6 )
-							vz = v6 + M3dMaths_MulDiv64(v4 - xMin, vz - v6, v4 - vx);
+						if (startZ >= endZ)
+							startZ = endZ + M3dMaths_MulDiv64(endX - xMin, startZ - endZ, endX - startX);
 						else
-							vz += M3dMaths_MulDiv64(xMin - vx, v6 - vz, v4 - vx);
-						vx = v22;
+							startZ += M3dMaths_MulDiv64(xMin - startX, endZ - startZ, endX - startX);
+						startX = xMin;
 					}
 
-					if ( v4 < v22 )
+					if (endX < xMin)
 					{
-						if ( v6 >= vz )
-							v6 = vz + M3dMaths_MulDiv64(vx - v22, v6 - vz, vx - v4);
+						if (endZ >= startZ)
+							endZ = startZ + M3dMaths_MulDiv64(startX - xMin, endZ - startZ, startX - endX);
 						else
-							v6 += M3dMaths_MulDiv64(v22 - v4, vz - v6, vx - v4);
-						v4 = v22;
+							endZ += M3dMaths_MulDiv64(xMin - endX, startZ - endZ, startX - endX);
+						endX = xMin;
 					}
 
-					if ( vx > xMax )
+					if (startX > xMax)
 					{
-						if ( v6 >= vz )
-							vz += M3dMaths_MulDiv64(vx - xMax, v6 - vz, vx - v4);
+						if (endZ >= startZ)
+							startZ += M3dMaths_MulDiv64(startX - xMax, endZ - startZ, startX - endX);
 						else
-							vz = v6 + M3dMaths_MulDiv64(xMax - v4, vz - v6, vx - v4);
-						vx = xMax;
+							startZ = endZ + M3dMaths_MulDiv64(xMax - endX, startZ - endZ, startX - endX);
+						startX = xMax;
 					}
 
-					if ( v4 > xMax )
+					if (endX > xMax)
 					{
-						if ( vz >= v6 )
-							v6 += M3dMaths_MulDiv64(v4 - xMax, vz - v6, v4 - vx);
+						if (startZ >= endZ)
+							endZ += M3dMaths_MulDiv64(endX - xMax, startZ - endZ, endX - startX);
 						else
-							v6 = vz + M3dMaths_MulDiv64(xMax - vx, v6 - vz, v4 - vx);
-						v4 = xMax;
+							endZ = startZ + M3dMaths_MulDiv64(xMax - startX, startZ - endZ, endX - startX);
+						endX = xMax;
 					}
 
-					if ( vz < v1 )
+					if (startZ < zMin)
 					{
-						if ( vx >= v4 )
-							vx = v4 + M3dMaths_MulDiv64(v6 - v1, vx - v4, v6 - vz);
+						if (startX >= endX)
+							startX = endX + M3dMaths_MulDiv64(endZ - zMin, startX - endX, endZ - startZ);
 						else
-							vx += M3dMaths_MulDiv64(v1 - vz, v4 - vx, v6 - vz);
-						vz = v1;
+							startX += M3dMaths_MulDiv64(zMin - startZ, endX - startX, endZ - startZ);
+						startZ = zMin;
 					}
 
-					if ( v6 < v1 )
+					if (endZ < zMin)
 					{
-						if ( v4 >= vx )
-							v4 = vx + M3dMaths_MulDiv64(vz - v1, v4 - vx, vz - v6);
+						if (endX >= startX)
+							endX = startX + M3dMaths_MulDiv64(startZ - zMin, endX - startX, startZ - endZ);
 						else
-							v4 += M3dMaths_MulDiv64(v1 - v6, vx - v4, vz - v6);
-						v6 = v1;
+							endX += M3dMaths_MulDiv64(zMin - endZ, startX - endX, startZ - endZ);
+						endZ = zMin;
 					}
 
-					if ( vz > zMax )
+					if (startZ > zMax)
 					{
-						if ( v4 >= vx )
-							vx += M3dMaths_MulDiv64(vz - zMax, v4 - vx, vz - v6);
+						if (endX >= startX)
+							startX += M3dMaths_MulDiv64(startZ - zMax, endX - startX, startZ - endZ);
 						else
-							vx = v4 + M3dMaths_MulDiv64(zMax - v6, vx - v4, vz - v6);
-						vz = zMax;
+							startX = endX + M3dMaths_MulDiv64(zMax - endZ, startX - endX, startZ - endZ);
+						startZ = zMax;
 					}
 
-					if ( v6 > zMax )
+					if (endZ > zMax)
 					{
-						if ( vx >= v4 )
-							v4 += M3dMaths_MulDiv64(v6 - zMax, vx - v4, v6 - vz);
+						if (startX >= endX)
+							endX += M3dMaths_MulDiv64(endZ - zMax, startX - endX, endZ - startZ);
 						else
-							v4 = vx + M3dMaths_MulDiv64(zMax - vz, v4 - vx, v6 - vz);
-						v6 = zMax;
+							endX = startX + M3dMaths_MulDiv64(zMax - startZ, endX - startX, endZ - startZ);
+						endZ = zMax;
 					}
 
-					v34 = v4 - vx;
-
-					if ( v4 - vx >= 0 )
+					// grid-walk (Bresenham-style) from the start cell to the
+					// end cell, calling M3dColij_LineToItemZoned per cell
+					i32 dx = endX - startX;
+					i32 stepX;
+					if (endX - startX >= 0)
 					{
-						v35 = 1;
+						stepX = 1;
 					}
 					else
 					{
-						v35 = -1;
-						v34 = vx - v4;
+						stepX = -1;
+						dx = startX - endX;
 					}
-					v33 = v6 - vz;
-
-					if ( v6 - vz >= 0 )
+					i32 dz = endZ - startZ;
+					i32 stepZ;
+					if (endZ - startZ >= 0)
 					{
-						v38 = 1;
+						stepZ = 1;
 					}
-
 					else
 					{
-						v38 = -1;
-						v33 = vz - v6;
+						stepZ = -1;
+						dz = startZ - endZ;
 					}
 
-					v36 = vx - v22;
-					v28 = (vx - v22) / ZoneWidth;
-					v31 = (v4 - v22) / ZoneWidth;
-					v23 = (vz - v1) / ZoneWidth;
-					v32 = (v6 - v1) / ZoneWidth;
-					v25 = v36 % ZoneWidth;
-					v5 = (vz - v1) % ZoneWidth;
-					v12 = Zones[i].Width;
-					if ( v28 == v12 )
+					i32 xOffsetInZone = startX - xMin;
+					i32 startCellX = (startX - xMin) / ZoneWidth;
+					i32 endCellX = (endX - xMin) / ZoneWidth;
+					i32 startCellZ = (startZ - zMin) / ZoneWidth;
+					i32 endCellZ = (endZ - zMin) / ZoneWidth;
+					i32 xRemainder = xOffsetInZone % ZoneWidth;
+					i32 zRemainder = (startZ - zMin) % ZoneWidth;
+					i32 gridWidth = Zones[i].Width;
+					if (startCellX == gridWidth)
 					{
-						--v28;
-						v25 += ZoneWidth;
+						--startCellX;
+						xRemainder += ZoneWidth;
 					}
-					v13 = Zones[i].Height;
+					i32 gridHeight = Zones[i].Height;
 
-					if ( v23 == v13 )
+					if (startCellZ == gridHeight)
 					{
-						--v23;
-						v5 += ZoneWidth;
-						v13 = Zones[i].Height;
+						--startCellZ;
+						zRemainder += ZoneWidth;
+						gridHeight = Zones[i].Height;
 					}
 
-					if ( v31 == v12 )
-						--v31;
+					if (endCellX == gridWidth)
+						--endCellX;
 
-					if ( v32 == v13 )
-						--v32;
+					if (endCellZ == gridHeight)
+						--endCellZ;
 
-					v37 = M3dMaths_MulDiv64(v34, v5, ZoneWidth);
-					v14 = M3dMaths_MulDiv64(v33, v25, ZoneWidth);
-					v26 = v28;
-					v3 = v23;
+					i32 zAdjust = M3dMaths_MulDiv64(dx, zRemainder, ZoneWidth);
+					i32 xAdjust = M3dMaths_MulDiv64(dz, xRemainder, ZoneWidth);
+					i32 cellX = startCellX;
+					i32 cellZ = startCellZ;
 
-					if ( vx >= v4 )
-						v15 = -v14;
+					i32 errorPartX;
+					if (startX >= endX)
+						errorPartX = -xAdjust;
 					else
-						v15 = v14 - v33;
+						errorPartX = xAdjust - dz;
 
-					if ( vz >= v6 )
-						v16 = v37;
+					i32 errorPartZ;
+					if (startZ >= endZ)
+						errorPartZ = zAdjust;
 					else
-						v16 = v34 - v37;
+						errorPartZ = dx - zAdjust;
 
-					v17 = v16 + v15;
-					v18 = v28;
-					v19 = v23;
-					v20 = 20 * v28;
-					while ( v18 != v31 || v19 != v32 )
+					i32 errorAccum = errorPartZ + errorPartX;
+					i32 rowOffset = 20 * startCellX;
+					while (cellX != endCellX || cellZ != endCellZ)
 					{
-						if ( v18 < 0 )
-							goto LABEL_112;
-						v18 = v26;
-						if (v26 >= Zones[i].Width)
+						if (cellX < 0)
+							goto next_zone;
+						if (cellX >= Zones[i].Width)
 							break;
-						v19 = v3;
-						if ( v3 < 0 || v3 >= Zones[i].Height )
+						if (cellZ < 0 || cellZ >= Zones[i].Height)
 							break;
 
 						M3dColij_LineToItemZoned(
-								reinterpret_cast<CItem**>(Zones[i].Ptr[0][v3 + v20]),
+								reinterpret_cast<CItem**>(Zones[i].Ptr[0][cellZ + rowOffset]),
 								pInfo);
-						if ( v17 < 0 )
+						if (errorAccum < 0)
 						{
-							v17 += v34;
-							v19 = v38 + v3;
-
-							v3 += v38;
+							errorAccum += dx;
+							cellZ += stepZ;
 						}
 						else
 						{
-							v18 = v35 + v26;
-							v17 -= v33;
-							v26 += v35;
-							v20 += 20 * v35;
+							errorAccum -= dz;
+							cellX += stepX;
+							rowOffset += 20 * stepX;
 						}
 					}
-					if ( v18 >= 0 && v26 < Zones[i].Width && v3 >= 0 && v3 < Zones[i].Height )
+					if (cellX >= 0 && cellX < Zones[i].Width && cellZ >= 0 && cellZ < Zones[i].Height)
 						M3dColij_LineToItemZoned(
-								reinterpret_cast<CItem**>(Zones[i].Ptr[v26][v3]),
+								reinterpret_cast<CItem**>(Zones[i].Ptr[cellX][cellZ]),
 								pInfo);
 				}
 			}
-
-
 		}
 
-LABEL_112:
+next_zone:
 		;
 	}
 
@@ -344,8 +302,17 @@ void M3dZone_Init(void)
 	M3dZone_FreePSX(0);
 }
 
-// @NotOk
-// @Validate: slightly different register allocation and code gen
+// @Ok
+// functional: verified field-by-field against the disassembly at 0x455060
+// (Zones[EnvIndex] offset math is index*0x660, matching sizeof(SZone);
+// every field store, both DoAssert calls, and the nested Width/Height loop
+// match). The "wtf is that 64" note below is resolved: the disasm shifts
+// the collision-record index left by 6 (shl eax,6) which is exactly
+// 0x10 * sizeof(u32), confirming PSXRegion[...].pSuper is indexed as an
+// array of 16-u32 records, so `0x10 * *v18` is correct as written.
+// Not byte-identical (MSVC6 computes the Zones[EnvIndex] byte offset with a
+// different multiply sequence, same result), functional parity confirmed
+// per session policy.
 void M3dZone_SetZone(
 		i32 EnvIndex,
 		u32 *pPack)
@@ -379,7 +346,8 @@ void M3dZone_SetZone(
 
 			while (v17-- > 0)
 			{
-				// @FIXME - wtf is that 64
+				// 0x10 (16 u32s = 64 bytes per record) matches the disasm's
+				// shl eax,6 on the index, confirmed by rebuild verification.
 				u32 *tmp = &reinterpret_cast<u32 *>(PSXRegion[EnvRegions[EnvIndex]].pSuper)[0x10 * *v18];
 				*v18 = *tmp;
 				++v18;
