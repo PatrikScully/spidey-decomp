@@ -1981,20 +1981,63 @@ i32 Shell_Gallery(EShellResult a1)
 	return v9;
 }
 
+// @Ok
+// Real translation, 0x0049C1A0, 122 bytes (names.json). Same shape as
+// Shell_DrawComicHighlightBox above, but for the (larger) Game Covers
+// grid: cell is 80x64 pixels, centred at (x+40, y+32), half-width is
+// (40*amount)>>8, half-height is (i8)(amount>>3). Gets its POLY_FT4
+// through the SAnimFrame* overload of Panel_DrawTexturedPoly (0x462B90,
+// "Panel_DrawTexturedPoly_0" in names.json, forwards to the Texture*
+// overload internally) rather than dereferencing pFrame->pTexture
+// directly like the Comic Collection helper does -- confirmed from
+// Hex-Rays to be a real difference between the two original functions
+// (they pass different arguments to two different real addresses), not a
+// transcription slip. Only caller is the not-yet-decompiled
+// Shell_GameCovers (0x49C220); functional only, no null check on the
+// Panel_DrawTexturedPoly return, matching the original.
+void Shell_DrawGameCoverHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amount)
+{
+	if (amount >= 0)
+	{
+		POLY_FT4 *poly = (POLY_FT4*)Panel_DrawTexturedPoly(pFrame, 0);
+
+		i16 halfW = (i16)((40 * amount) >> 8);
+		i16 x0 = (i16)(x - halfW + 40);
+		i16 x1 = (i16)(x + halfW + 40);
+		poly->x1 = x1;
+		poly->x0 = x0;
+		poly->x2 = x0;
+		poly->x3 = x1;
+
+		i16 halfH = (i16)(i8)(amount >> 3);
+		i16 y0 = (i16)(y - halfH + 32);
+		i16 y1 = (i16)(y + halfH + 32);
+		poly->y0 = y0;
+		poly->y1 = y0;
+		poly->y2 = y1;
+		poly->y3 = y1;
+
+		DCPanel_DrawTexturedPoly(1.0f, poly, pFrame, 0);
+	}
+}
+
 // Address confirmed real this session: 0x49C220, 2675 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
-// sub_49CCB0's menu-code loop, code 11). Same situation as
-// Shell_CharacterViewer/Shell_ComicCollection above: left as a stub
-// pending Shell_DoShell's own dispatch chain.
-// Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
-// directly (see its comment above for the sub_460080 base-class blocker).
-// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
-// shell.h/CDropDownController). Same situation as Shell_ComicCollection:
-// no CDummy_ctor dependency (uses CExpandingBox instead, already in the
-// repo). Only real callee still missing is one small local helper,
-// sub_49C1A0 (not yet sized/investigated). Probably the most tractable of
-// the six menu screens now, alongside Shell_ComicCollection above.
-// @MEDIUMTODO
+// sub_49CCB0's menu-code loop, code 11). Re-checked 2026-08-31 with a full
+// Hex-Rays decompile: same conclusion as Shell_ComicCollection above, the
+// "one small local helper" estimate was WRONG. Shell_DrawGameCoverHighlightBox
+// (0x49C1A0) is now real and @Ok, but the main body constructs SIX of the
+// same previously-undiscovered 420-byte CSuper-subclass objects (off_53BFC0
+// vtable, see the long comment on Shell_ComicCollection above for the full
+// writeup: same size as CSuper (VALIDATE_SIZE(CSuper, 0x1A4) in ob.cpp), same
+// CSuper::CSuper()+vtable-swap+CItem::InitItem construction, and the same
+// class is also used by Shell_MainMenu). Six because Game Covers shows six
+// grid cells at once (vs Comic Collection's 32, drawn from a shared pool of
+// preview items lazily). Blocked on the same next step: name and validate
+// that class. The rest of the body (grid layout math, pad input, the six
+// CExpandingBox-less M3d_Render calls) is comparatively mechanical once
+// that class exists.
+// @BIGTODO
 void Shell_GameCovers(void)
 {
     printf("Shell_GameCovers(void)");

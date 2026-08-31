@@ -582,6 +582,7 @@ EXPORT void Shell_DoShell(const u32 *,u32 *);
 EXPORT void Shell_DrawBackground(void);
 EXPORT void Shell_DrawTitleBar(i32,i32,const char *,i32,i32,i32,i32,i32);
 EXPORT i32 Shell_Gallery(EShellResult);
+EXPORT void Shell_DrawGameCoverHighlightBox(i16,i16,SAnimFrame*,i32);
 EXPORT void Shell_GameCovers(void);
 EXPORT i32 Shell_InputName(char *,i32,i32, const char *);
 EXPORT void Shell_LegalScreen(void);
