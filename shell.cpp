@@ -4051,13 +4051,60 @@ EXPORT void DrawSlider(i32 a1, i32 a2, i32 a3, i32 a4)
 	pRightEndPoly->b0 = color;
 	DCPanel_DrawTexturedPoly(2.0f, pRightEndPoly, pRightEnd, a1 + 195, a2, 10, 10, 0, 0);
 }
-// forward to original, slider drag helper (0x497F80, 219B), not yet decompiled
-// @MEDIUMTODO
+// Real translation (0x497F80, 219B). Mouse-drag helper for the same slider
+// drawn by DrawSlider: a1/a2 are the bar's screen x/y (same as DrawSlider),
+// a3 is the current value. Recomputes the knob's [left,right) hit box the
+// same way DrawSlider positions the knob (left = ((180*value)>>8)+a1+9,
+// right = left+14), then:
+//  - if the mouse is over that box and the left button was just pressed,
+//    latches the drag flag at *(u8*)0x006A7784 (same raw address already
+//    dereferenced this way in this file, see the mouse-over-slider check
+//    a few lines below in Shell_SFXMusic, so keeping the same style here);
+//  - if the drag flag isn't latched, returns 0 (not dragging);
+//  - if the left mouse button was released, clears the drag flag and
+//    returns 0;
+//  - otherwise, if the mouse actually moved this frame, reads its
+//    position and converts it from PC screen space to the 512x240 "DC"
+//    space DrawSlider's geometry is in, then returns -1/1/0 depending on
+//    whether that position is left of, right of, or inside the knob box
+//    (the caller uses this to nudge the value left/right or leave it).
+// @Ok
 EXPORT i32 SliderDrag(i32 a1, i32 a2, i32 a3)
 {
-	typedef i32 (*func_ptr)(i32, i32, i32);
-	func_ptr func = (func_ptr)0x00497F80;
-	return func(a1, a2, a3);
+	i32 value = a3;
+	if (value < 0)
+		value = 0;
+	else if (value > 256 || value == 255)
+		value = 256;
+
+	i32 left = ((180 * value) >> 8) + a1 + 9;
+	i32 right = left + 14;
+
+	if (PCSHELL_IsMouseOver(left, a2 - 2, right, a2 - 2 + 14) != 0 && PCINPUT_IsMouseButtonPressed(0, 1) != 0)
+	{
+		*(u8*)0x006A7784 = 1;
+	}
+	else if (*(u8*)0x006A7784 == 0)
+	{
+		return 0;
+	}
+
+	if (PCINPUT_IsMouseButtonReleased(0) != 0)
+	{
+		*(u8*)0x006A7784 = 0;
+		return 0;
+	}
+
+	if (*(u8*)0x006A7784 == 0 || PCSHELL_MouseMoved() == 0)
+		return 0;
+
+	i32 mouseX, mouseY;
+	PCINPUT_GetMouseHotspotPosition(&mouseX, &mouseY);
+	PCSHELL_CoordsPCtoDC(&mouseX, &mouseY);
+
+	if (mouseX < left)
+		return -1;
+	return mouseX > right;
 }
 
 // @Ok
