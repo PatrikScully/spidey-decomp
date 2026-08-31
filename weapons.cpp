@@ -169,7 +169,15 @@ static void CopySmokeRingTemplate(SSmokeRingGT4* pDst, const SSmokeRingGT4* pSrc
 	pDst->pad5 = pSrc->pad5;
 }
 
-// @NotOk
+// unnamed pair of dwords written into the PS2 GS "texture window" tag built once per
+// visible wall segment in CSmokeRing::Display (see the "stubbed out: setTexWindow"
+// debug string next to them in the original). Not in idb_globals.txt; they sit in the
+// unlabeled gap between GLineList (0x56E9CC) and PixelList (0x56E9E0), so this is a
+// guess based on that neighbourhood, not a confirmed struct member.
+static u32 * const gGsTexWindowTagLo = reinterpret_cast<u32*>(0x56E9D0);
+static u32 * const gGsTexWindowTagHi = reinterpret_cast<u32*>(0x56E9D4);
+
+// @Ok
 void CSmokeRing::Display(void)
 {
 	for (i32 i = 0; i < this->mNumSectors; i++)
@@ -228,17 +236,36 @@ void CSmokeRing::Display(void)
 	{
 		SSmokeRingScreenPoint* pCur = (j == this->mNumSectors) ? &gSmokeRingScreenPoints[0] : &gSmokeRingScreenPoints[j];
 
-		i16 depth = pCur->minDepth;
-		if (depth < prev.minDepth)
-			depth = prev.minDepth;
+		// running minimum of cur/prev minDepth (0x4F509D: cmp+jge+mov, keeps the smaller
+		// of the two), not the maximum
+		i16 depth = prev.minDepth;
+		if (pCur->minDepth < depth)
+			depth = pCur->minDepth;
 
 		SSmokeRingGT4* pBuiltPoly1 = 0;
 		SSmokeRingGT4* pBuiltPoly2 = 0;
 
-		if (!this->field_66 || depth != 0)
+		// original tests field_66 != 0 (jnz skips the depth check entirely), not !field_66
+		if (this->field_66 || depth != 0)
 		{
 			if (this->field_60 & (1 << j))
 			{
+				// unconditional per-segment PS2 GS "texture window" tag, built once
+				// regardless of which (if any) of the two wall quads below turn out visible
+				if ((u8*)pPoly + 0x20 > PolyBufferEnd)
+					return;
+
+				u8* pTagBuf = (u8*)pPoly;
+				pPoly = (u32*)(pTagBuf + 0x20);
+
+				gsub_46CB90((void*)"stubbed out: setTexWindow");
+				gsub_46CB90((void*)"stubbed out: setTexWindow");
+
+				*(u32*)(pTagBuf + 0x18) = *gGsTexWindowTagLo;
+				*(u32*)(pTagBuf + 0x1C) = *gGsTexWindowTagHi;
+
+				gsub_46CB90((void*)0x0056EB54);
+
 				if (prev.visibleA && prev.visibleB && pCur->visibleA && pCur->visibleB)
 				{
 					if ((u8*)pPoly + sizeof(SSmokeRingGT4) > PolyBufferEnd)
@@ -247,8 +274,6 @@ void CSmokeRing::Display(void)
 					SSmokeRingGT4* pNewPoly = (SSmokeRingGT4*)pPoly;
 					pPoly = (u32*)((u8*)pPoly + sizeof(SSmokeRingGT4));
 
-					gsub_46CB90((void*)"stubbed out: setTexWindow");
-					gsub_46CB90((void*)"stubbed out: setTexWindow");
 					CopySmokeRingTemplate(pNewPoly, pTemplate1);
 
 					pNewPoly->xy0 = prev.xyA;
@@ -276,17 +301,17 @@ void CSmokeRing::Display(void)
 
 					pBuiltPoly2 = pNewPoly;
 				}
+
+				if (pBuiltPoly1)
+					gsub_46CB90((void*)0x0056EB54);
+
+				if (pBuiltPoly2)
+					gsub_46CB90((void*)0x0056EB54);
+
+				gsub_46CB90((void*)0x0056EB54);
+				gsub_46CB90((void*)0x0056EB54);
 			}
 		}
-
-		if (pBuiltPoly1)
-			gsub_46CB90((void*)gRenderBuf);
-
-		if (pBuiltPoly2)
-			gsub_46CB90((void*)gRenderBuf);
-
-		gsub_46CB90((void*)gRenderBuf);
-		gsub_46CB90((void*)gRenderBuf);
 
 		prev = *pCur;
 	}
