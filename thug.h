@@ -60,7 +60,12 @@ public:
 	EXPORT virtual void SetThugType(i32);
 
 
-	PADDING(0x330-0x324);
+	PADDING(0x32C-0x324);
+
+	// Read (never written) by CThug::DetermineFightState (0x4d9cbd) as a
+	// gate flag ("this->mType != 304 && field_32C == 0 && ..."). Carved
+	// out of what was PADDING(0x330-0x324); same byte range.
+	i32 field_32C;
 
 	i32 field_330;
 
@@ -68,12 +73,26 @@ public:
 
 	i32 field_33C;
 
-	PADDING(0x354-0x33C-4);
+	PADDING(0x348-0x33C-4);
+
+	// Written by CThug::DetermineFightState (0x4d9af2): a "just got close
+	// to the player" timer, set to 60 once when field_330==0 and the
+	// distance to the player is under 300 and this is 0 and the y delta
+	// to the player is under 819200. Carved out of what was
+	// PADDING(0x354-0x33C-4); same byte range.
+	i32 field_348;
+
+	PADDING(0x354-0x348-4);
 
 	SHandle mHandle;
 	SHandle mHandleTwo;
 
-	PADDING(0x370-0x35C-sizeof(SHandle));
+	PADDING(0x36C-0x35C-sizeof(SHandle));
+
+	// Written by CThug::DetermineFightState (0x4d9ab1): a poll interval,
+	// set to 3/15/31 depending on distance to the player. Carved out of
+	// what was PADDING(0x370-0x35C-sizeof(SHandle)); same byte range.
+	i32 field_36C;
 
 	i32 field_370;
 	i32 field_374;

@@ -64,7 +64,11 @@ public:
 	EXPORT virtual void SetVariable(u16);
 	EXPORT virtual i16 GetVariable(u16);
 
-	PADDING(4);
+	// Read (never written) by CThug::DetermineFightState (0x4d9b02) as a
+	// live gate flag ("if (field_1A4 != 0) return false"). Carved out of
+	// what was previously a blind 4 byte PADDING right before field_1A8;
+	// same byte range, so no other field shifts.
+	i32 field_1A4;
 
 	CVector field_1A8[6];
 
