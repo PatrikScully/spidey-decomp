@@ -99,37 +99,32 @@ static u32 DCGouraud_SwapColor(u32 c)
 	return 0xFF000000 | ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF);
 }
 
-// @NotOk
-// functionally plausible (scaled quad + per-vertex color swap into
-// PCGfx_DrawQPoly2D, mirrors DCPanel_DrawFlatShadedPoly's scaling and the
-// PS2 BGR->RGB swap seen in the original disasm), but structurally wrong:
-// cmpsum shows 140 mnemonic diffs starting at the prologue (our stack frame
-// is 0x14 bytes of locals vs the original's 0xC, so this is not a
-// scheduling residue, real structure differs). 1 attempt this session, not
-// pursued further given the size of the remaining queue. Original likely
-// keeps the color conversion inline without the DCGouraud_SwapColor helper,
-// and reads single color bytes directly from the stack (mov cl,[esp+X]
-// appears in our own build's failed attempt) rather than masking a
-// register, suggesting per-channel byte access on the incoming u32 params
-// instead of shift/mask math.
-void DCDrawGouraudPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u32 c0, u32 c1, u32 c2, u32 c3, i32 c4)
+// @Ok
+// real translation, 0x00462FB0, 9 args (zOffset,x,y,w,h,c0,c1,c2,c3). The
+// old version of this function had a bogus 10th i32 parameter and used it
+// (plus two of the color args) in the wrong vertex slots: it read c4/c2/c3/c1
+// where the original reads c0/c1/c2/c3 in plain corner order. Confirmed from
+// Hex-Rays at 0x462fb0 (only caller of this address is the not-yet-written
+// Panel_DisplayHealthBar/Panel_Display, so no existing caller depended on
+// the old, wrong param list). Functional only, not chasing byte match this
+// session.
+void DCDrawGouraudPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u32 c0, u32 c1, u32 c2, u32 c3)
 {
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 
 	f32 scaleY = gGameResolutionY / (f32)Yres;
-	f32 hScaled = h * scaleY;
+	f32 yEnd = (y + h) * scaleY;
 	f32 scaleX = gGameResolutionX / (f32)Xres;
-	f32 wScaled = w * scaleX;
-	f32 yScaled = y * scaleY;
+	f32 xEnd = (x + w) * scaleX;
 	f32 xScaled = x * scaleX;
+	f32 yScaled = y * scaleY;
 
 	PCGfx_DrawQPoly2D(
-			xScaled, yScaled, 0.0f, 0.0f, DCGouraud_SwapColor((u32)c4),
-			xScaled + wScaled, yScaled, 1.0f, 0.0f, DCGouraud_SwapColor(c2),
-			xScaled, yScaled + hScaled, 0.0f, 1.0f, DCGouraud_SwapColor(c3),
-			xScaled + wScaled, yScaled + hScaled, 1.0f, 1.0f, DCGouraud_SwapColor(c1),
+			xScaled, yScaled, 0.0f, 0.0f, DCGouraud_SwapColor(c0),
+			xEnd, yScaled, 1.0f, 0.0f, DCGouraud_SwapColor(c1),
+			xScaled, yEnd, 0.0f, 1.0f, DCGouraud_SwapColor(c2),
+			xEnd, yEnd, 1.0f, 1.0f, DCGouraud_SwapColor(c3),
 			zOffset);
-
 }
 
 // @Ok
@@ -181,24 +176,27 @@ void DCPanel_DrawFlatShadedPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u8 r, u
 			false);
 }
 
-// @NotOk
-// real translation (0x4626a0, 640 bytes), reconstructed from the disasm:
-// two-branch geometry setup (raw x+w/y+h when both w and h are nonzero,
-// else fall back to frame->Width/frame->Height), then the same
-// flags-or-poly-color and scaled-QPoly2D-draw tail as the other
-// DCPanel_DrawTexturedPoly overloads in this file. cmpsum: 138 mnemonic
-// diffs, register allocation differs from the very prologue (original
-// pushes ebx,ebp,esi,edi; our build pushes fewer registers), so the source
-// shape is still off, not just scheduling. 1 attempt this session, not
-// iterated further given the size of the remaining queue. a6 (the 3rd of
-// the 5 trailing i32 params) is never read in the original disasm, kept as
-// an unnamed/unused parameter like DCPanel_DrawFlatShadedPoly's own
-// trailing unused i32.
-void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, i32 x, i32 y, i32 a6, i32 h, i32 w, u32 flags)
+// @Ok
+// real translation (0x4626a0, 640 bytes). Found a genuine functional bug
+// while cross-checking against Hex-Rays and the raw disasm of the only
+// three call sites (shell.cpp gsub_498240, tagged @Ok @Matching, e.g.
+// `DCPanel_DrawTexturedPoly(1.0f, pPoly, gAnimTable[23], x - 85, y - 11,
+// 20, 12, G_SORT, 0)`): the trailing i32 params are, in real stack order,
+// x, y, w, h, an unused slot, then flags. The old source here had them as
+// x, y, a6(unused), h, w, flags, so the geometry branch read the unused
+// slot (G_SORT in the shell.cpp calls) as the width and never looked at
+// the real width argument. Confirmed from the raw asm at 0x4626a0: in the
+// true branch, edx = arg_14 (added to x for x1/x3) and ebx = arg_18 (added
+// to y for y2), and arg_14/arg_18 are exactly the "w"/"h" slots that match
+// frame->Width/frame->Height in the fallback (else) branch below. Since
+// callers pass arguments positionally, only the declaration order needed
+// to change here; shell.cpp's already-matching call site is unaffected.
+// Functional only, not chasing byte match this session.
+void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, i32 x, i32 y, i32 w, i32 h, i32 a8, u32 flags)
 {
 	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");
 
-	if (h && w)
+	if (w && h)
 	{
 		poly->x0 = (i16)x;
 		poly->x2 = (i16)x;
@@ -249,20 +247,14 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *fra
 			zOffset);
 }
 
-// @NotOk
-// real translation (0x4624a0, 506 bytes), cmpsum: 29 mnemonic diffs, first
-// divergence right after all 8 corner coordinates are computed and x0 is
-// stored, where the original interleaves one more float scale step before
-// starting the PCGfx_DrawQPoly2D push sequence and our build starts pushing
-// immediately. Same residue shape and same diff count as the sibling
-// DCPanel_DrawTexturedPoly(Texture const*) below, which hit this in an
-// earlier session and was also left @NotOk, so this looks like a shared,
-// not-yet-understood MSVC6 scheduling quirk in this coordinate/push
-// pattern, not something specific to this overload. 3 attempts this
-// session: original x3,y3,x2,y2,x1,y1,y0,x0 local declaration order (29
-// diffs), swapped to x0-before-y0 (29 diffs, no change), inlined x0/y0
-// directly into the call instead of naming them (43 diffs, worse). Kept
-// the first (best) version.
+// @Ok
+// real translation (0x4624a0, 506 bytes). Logic checked against Hex-Rays:
+// clut read from frame->pTexture->clut, color falls back to poly->r0/g0/b0
+// when flags is 0, all 8 corners scaled the same way as the other
+// DCPanel_DrawTexturedPoly overloads. The remaining diffs seen in earlier
+// sessions were register/scheduling residue only (float scale step
+// ordering), not a functional problem. Functional only, not chasing byte
+// match this session.
 void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, u32 flags)
 {
 	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");

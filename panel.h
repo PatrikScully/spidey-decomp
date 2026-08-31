@@ -188,7 +188,7 @@ EXPORT int Panel_DrawTexturedPoly(Texture*, int);
 EXPORT int Panel_DrawTexturedPoly(SAnimFrame*, i32, i32, i32);
 
 EXPORT void DCDrawGouraudPoly(f32,POLY_GT4 *,Texture *,i32);
-EXPORT void DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32,i32);
+EXPORT void DCDrawGouraudPoly(f32,i32,i32,i32,i32,u32,u32,u32,u32);
 EXPORT void DCPanel_DrawFlatShadedPoly(f32,i32,i32,i32,i32,u8,u8,u8,i32,i32);
 EXPORT void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,i32,i32,i32,i32,i32,u32);
 EXPORT void DCPanel_DrawTexturedPoly(f32,POLY_FT4 *,SAnimFrame const *,u32);
