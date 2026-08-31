@@ -576,8 +576,10 @@ i32* CBlackCat::KillCommandBlock(i32* a1)
 	return res;
 }
 
-// @NotOk
-// Revisit
+// @Ok
+// verified: this exact loop shape (walk field_350, KillCommandBlock each
+// node, then field_350 = 0 at the end) is inlined into the destructor at
+// 0x413aa0, in that order, confirming this is the original body.
 void CBlackCat::KillAllCommandBlocks(void)
 {
 	for (i32* cur = this->field_350; cur; cur = this->KillCommandBlock(cur));
