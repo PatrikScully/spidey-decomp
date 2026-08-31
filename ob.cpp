@@ -576,17 +576,12 @@ void CSuper::RunAnim(
 	this->mAnimFinished = static_cast<u16>(from) == static_cast<u16>(to);
 }
 
-// @SMALLTODO
-// @AlmostMatching: add esp, 8 happens 2 instructions later after DoAssert dunno why
+// @Ok
+// Functional only, checked against the Hex-Rays decompile of 0x460ED0.
+// Not byte matched: add esp, 8 happens 2 instructions later after DoAssert,
+// not chased further per session policy (functional decomp is the bar).
 void CBody::EveryFrame(void)
 {
-
-	typedef void (FASTCALL *func_ptr)(CBody*, void*);
-	func_ptr func = (func_ptr)0x00460ED0;
-
-	func(this, 0);
-
-	return;
 	if (this->mCBodyFlags & 4)
 	{
 		this->field_80 = 2;
