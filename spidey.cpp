@@ -3880,10 +3880,156 @@ INLINE void CPlayer::PlaySingleAnim(i32 a2, i32 a3, i32 a4)
 	CSuper::RunAnim(a2, a3, a4);
 }
 
-// @BIGTODO
-void CPlayer::OrientToNormal(bool, CVector*)
+// -field_A8 (negated surface normal) that CPlayer::OrientToNormal saw the
+// last time it rebuilt this->mTransform; used to skip the rebuild when the
+// normal has barely moved since. Falls in the same unnamed CPlayer scratch
+// area as gKillTauntLastVariant (0x6A9070) / gSpideySenseListLastUpdateTime
+// (0x6A9084) above.
+static CVector * const gOrientToNormalLastNormal = (CVector*)0x006A9074;
+
+// @Ok
+// Builds this->mTransform (the player's local rotation matrix) so its
+// column 1 (m[*][1]) is -field_A8 (the current surface normal) and columns
+// 0/2 are an orthonormal right/forward pair derived from it via GTE cross
+// products. When useTarget is true, target supplies the reference
+// direction for the cross product; otherwise the previous forward axis
+// (this->mTransform's old column 2, staged through field_C6C) is reused so
+// the basis doesn't visibly twist, and the rebuild is skipped entirely
+// unless field_A8 moved more than a small threshold or field_548 (a
+// pending twist correction) is set.
+void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 {
-	printf("CPlayer::OrientToNormal");
+	VECTOR negNormal;
+	negNormal.vx = -(i32)this->field_A8.vx;
+	negNormal.vy = -(i32)this->field_A8.vy;
+	negNormal.vz = -(i32)this->field_A8.vz;
+
+	if (useTarget)
+	{
+		VECTOR rightAxis;
+		gte_ldopv1(&negNormal);
+		gte_ldopv2(reinterpret_cast<VECTOR*>(target));
+		gte_op12();
+		gte_stlvnl(&rightAxis);
+		VectorNormal(&rightAxis, &rightAxis);
+
+		VECTOR upAxis;
+		gte_ldopv1(&rightAxis);
+		gte_ldopv2(&negNormal);
+		gte_op12();
+		gte_stlvnl(&upAxis);
+
+		this->mTransform.m[0][0] = (i16)rightAxis.vx;
+		this->mTransform.m[1][0] = (i16)rightAxis.vy;
+		this->mTransform.m[2][0] = (i16)rightAxis.vz;
+
+		this->mTransform.m[0][1] = (i16)negNormal.vx;
+		this->mTransform.m[1][1] = (i16)negNormal.vy;
+		this->mTransform.m[2][1] = (i16)negNormal.vz;
+
+		this->mTransform.m[0][2] = (i16)upAxis.vx;
+		this->mTransform.m[1][2] = (i16)upAxis.vy;
+		this->mTransform.m[2][2] = (i16)upAxis.vz;
+	}
+	else
+	{
+		i32 dx = (i32)this->field_A8.vx - gOrientToNormalLastNormal->vx;
+		i32 dy = (i32)this->field_A8.vy - gOrientToNormalLastNormal->vy;
+		i32 dz = (i32)this->field_A8.vz - gOrientToNormalLastNormal->vz;
+
+		if (abs(dx) + abs(dy) + abs(dz) > 16 || this->field_548 != 0)
+		{
+			gOrientToNormalLastNormal->vx = this->field_A8.vx;
+			gOrientToNormalLastNormal->vy = this->field_A8.vy;
+			gOrientToNormalLastNormal->vz = this->field_A8.vz;
+
+			// stage the OLD forward axis (matrix column 2) as the cross
+			// product's reference direction, so the new basis keeps
+			// continuity with the previous one instead of snapping.
+			this->field_C6C.vx = this->mTransform.m[0][2];
+			this->field_C6C.vy = this->mTransform.m[1][2];
+			this->field_C6C.vz = this->mTransform.m[2][2];
+
+			VECTOR rightAxis;
+			gte_ldopv1(&negNormal);
+			gte_ldopv2(reinterpret_cast<VECTOR*>(&this->field_C6C));
+			gte_op12();
+			gte_stlvnl(&rightAxis);
+			VectorNormal(&rightAxis, &rightAxis);
+
+			VECTOR upAxis;
+			gte_ldopv1(&rightAxis);
+			gte_ldopv2(&negNormal);
+			gte_op12();
+			gte_stlvnl(&upAxis);
+
+			this->mTransform.m[0][0] = (i16)rightAxis.vx;
+			this->mTransform.m[1][0] = (i16)rightAxis.vy;
+			this->mTransform.m[2][0] = (i16)rightAxis.vz;
+
+			this->mTransform.m[0][1] = (i16)negNormal.vx;
+			this->mTransform.m[1][1] = (i16)negNormal.vy;
+			this->mTransform.m[2][1] = (i16)negNormal.vz;
+
+			this->mTransform.m[0][2] = (i16)upAxis.vx;
+			this->mTransform.m[1][2] = (i16)upAxis.vy;
+			this->mTransform.m[2][2] = (i16)upAxis.vz;
+
+			if (this->field_548 != 0)
+			{
+				SVECTOR twistRot;
+				twistRot.vx = 0;
+				twistRot.vy = (i16)this->field_548;
+				twistRot.vz = 0;
+
+				MATRIX twistMat;
+				M3dMaths_RotMatrixYXZ(&twistRot, &twistMat);
+				MulMatrix(&this->mTransform, &twistMat);
+			}
+		}
+	}
+
+	// cache -field_A8 (long-vector width, including its uninitialized pad
+	// word -- the original does a plain struct copy here too).
+	this->field_D18 = negNormal;
+
+	this->field_C6C.vx = this->mTransform.m[0][2];
+	this->field_C6C.vy = this->mTransform.m[1][2];
+	this->field_C6C.vz = this->mTransform.m[2][2];
+
+	this->field_C78 = this->mTransform.m[0][0];
+	this->field_C7C = this->mTransform.m[1][0];
+	this->field_C80 = this->mTransform.m[2][0];
+
+	this->field_C84.vx = -(i32)this->mTransform.m[0][1];
+	this->field_C84.vy = -(i32)this->mTransform.m[1][1];
+	this->field_C84.vz = -(i32)this->mTransform.m[2][1];
+
+	M3dMaths_TransposeMatrix1(&this->mTransform, &this->field_89C);
+
+	i32 rightMag = abs(this->mTransform.m[0][0]) + abs(this->mTransform.m[1][0]) + abs(this->mTransform.m[2][0]);
+	i32 normalMag = abs(this->mTransform.m[0][1]) + abs(this->mTransform.m[1][1]) + abs(this->mTransform.m[2][1]);
+	i32 upMag = abs(this->mTransform.m[0][2]) + abs(this->mTransform.m[1][2]) + abs(this->mTransform.m[2][2]);
+
+	// degenerate basis (e.g. target ended up parallel to the normal):
+	// fall back to a fixed mirrored-identity matrix and force a stand-mode
+	// reset instead of running with a near-zero axis.
+	if (rightMag < 2048 || normalMag < 2048 || upMag < 2048)
+	{
+		this->mTransform.m[0][0] = -4096;
+		this->mTransform.m[1][0] = 0;
+		this->mTransform.m[2][0] = 0;
+
+		this->mTransform.m[0][1] = 0;
+		this->mTransform.m[1][1] = 4096;
+		this->mTransform.m[2][1] = 0;
+
+		this->mTransform.m[0][2] = 0;
+		this->mTransform.m[1][2] = 0;
+		this->mTransform.m[2][2] = -4096;
+
+		this->SwitchToStandMode();
+	}
 }
 
 // @BIGTODO
@@ -4208,6 +4354,8 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_540, 0x540);
 
+	VALIDATE(CPlayer, field_548, 0x548);
+
 	VALIDATE(CPlayer, field_54C, 0x54C);
 
 	VALIDATE(CPlayer, field_568, 0x568);
@@ -4295,6 +4443,7 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_CE4, 0xCE4);
 	VALIDATE(CPlayer, field_D00, 0xD00);
 	VALIDATE(CPlayer, field_D0C, 0xD0C);
+	VALIDATE(CPlayer, field_D18, 0xD18);
 
 	VALIDATE(CPlayer, field_D3C, 0xD3C);
 	VALIDATE(CPlayer, field_D4E, 0xD4E);
