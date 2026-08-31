@@ -10,6 +10,36 @@
 #include "my_assert.h"
 #include "dcfileio.h"
 
+// Object classes Trig_CreateObject below can spawn. Only headers, no
+// other .cpp in these files is touched by this change.
+#include "chopper.h"
+#include "mj.h"
+#include "hostage.h"
+#include "cop.h"
+#include "thug.h"
+#include "rhino.h"
+#include "docock.h"
+#include "superock.h"
+#include "scorpion.h"
+#include "mysterio.h"
+#include "venom.h"
+#include "carnage.h"
+#include "jonah.h"
+#include "lizman.h"
+#include "blackcat.h"
+#include "simby.h"
+#include "turret.h"
+#include "lizard.h"
+#include "spclone.h"
+#include "torch.h"
+#include "submarin.h"
+#include "manipob.h"
+#include "l1a3bomb.h"
+#include "platform.h"
+#include "wire.h"
+#include "switch.h"
+#include "powerup.h"
+
 #include <cstdarg>
 #include <cstdio>
 #include <string.h>
@@ -316,30 +346,450 @@ void KillInList(i32 Node, CBody* pList, i32 How)
 
 }
 
-// @BIGTODO
-// Investigated 2026-08-31 (IDA Hex-Rays), not attempted further. Original
-// at 0x4DEE70, 3504 bytes. This is the trigger-node object factory: it
-// reads a per-node type word from dword_6B466C[NodeIndex] and switches on
-// it to construct one of roughly 35 different game entity classes (each
-// case calls a distinct, currently unnamed constructor: sub_420AA0,
-// sub_4075B0, sub_459290, sub_4D2490, sub_442460, sub_4280D0, sub_47DD40,
-// sub_4344B0, sub_4CBDD0, sub_4831A0, sub_459F20, sub_4E7D90, sub_419950,
-// sub_444280, sub_44A5F0, sub_420A20, sub_413900, sub_420B10, sub_4A24A0,
-// sub_4E3B50, sub_44A1F0, sub_4AFCC0, sub_4DC450, sub_456920, sub_4CB9E0,
-// sub_446E70, sub_468EF0, sub_4FB1E0, sub_4FB630, sub_4D14E0, sub_439CC0,
-// sub_4A25E0, sub_4A2560, plus a couple of size-only "new" calls with no
-// named constructor visible). None of these classes exist in this repo
-// yet, none are in tools/names.json, and each almost certainly lives in
-// its own not-yet-created .cpp (per-monster-type files elsewhere in the
-// codebase). Decompiling this function for real means decompiling ~35
-// unrelated entity constructors first, well outside baddy.cpp/web.cpp/
-// trig.cpp scope. Left as the forward-to-original stub.
+// dword_60D9D0: read-only BSS constant referenced by ~50 unrelated
+// functions across the binary as a CVector* input (the powerup
+// constructor's "velocity" argument here). Never observed written
+// anywhere; our own guess (not from an IDB) is that it is a shared,
+// permanently-zero vector constant. Flagged as a guess, not a fact.
+static CVector* const gZeroVectorConst = reinterpret_cast<CVector*>(0x0060D9D0);
+
+// Guards a spawn-in-progress window around CLaserFence/CTripWire
+// construction from a trigger node (see the case 404/405/408 block in
+// Trig_CreateObject below): set to 0 right before the constructor call,
+// back to 1 right after. No idb_globals.txt entry nearby; tentative
+// name, evidence is only this exact toggle-around-ctor shape at 0x4DF7A2
+// etc.
+static i32 gWireBeingCreated = 1;
+
+// Mirrors sub_46BD80, the powerup/light "resolve difficulty-remapped
+// type, then allocate+construct" helper Trig_CreateObject calls for
+// trigger meta-types 5/20. names.json's guess "PowerUp_Create" for this
+// address is really this wrapper, not the constructor itself (that is
+// the already-decompiled CPowerUp::CPowerUp in powerup.cpp). The
+// DifficultyLevel-based type substitution table below was read directly
+// off the disasm at 0x46BD9E (not guessed): on DifficultyLevel==3, type
+// 14 is dropped entirely (no powerup spawns), 15 downgrades to 14, 16
+// downgrades to 15; on DifficultyLevel<=1, type 14 upgrades to 15;
+// DifficultyLevel==2 never remaps.
+// @Ok
+static CBody* Trig_CreatePowerUp(i32 type, CVector* pos, i32 flags, i32 param1, i32 param2)
+{
+	i32 remappedType = type;
+
+	if (DifficultyLevel == 3)
+	{
+		if (type == 14)
+			return 0;
+		if (type == 15)
+			remappedType = 14;
+		else if (type == 16)
+			remappedType = 15;
+	}
+	else if (DifficultyLevel <= 1)
+	{
+		if (type == 14)
+			remappedType = 15;
+	}
+
+	return new CPowerUp(static_cast<u16>(remappedType), pos, gZeroVectorConst, flags, param1, param2);
+}
+
+// A handful of the classes Trig_CreateObject below can spawn (CThug,
+// CCop, CHostage) each add ONE new virtual beyond CBaddy's 17 declared
+// vtable slots (0..16) purely so this function can stamp a
+// subtype/variant code onto the freshly built object (the original does
+// a raw "call [vtable+0x44]" with that code as the one argument, e.g.
+// CThug's is named SetThugType in thug.h, but CCop/CHostage have no
+// equivalent declared anywhere and adding one means editing
+// cop.h/hostage.h, out of scope for this change). This struct reproduces
+// the exact "read vtable, call slot 17 with one i32 arg" shape without
+// touching those headers, the same way spidey.cpp's
+// SVTableSlot0Deletable reproduces a slot-0 call -- __thiscall itself is
+// rejected by this build (error C4234), so a same-shaped virtual class
+// is the only portable way to get the compiler to emit a thiscall here.
+struct SVTableSlot17Setter
+{
+	virtual void Unused00() {}
+	virtual void Unused01() {}
+	virtual void Unused02() {}
+	virtual void Unused03() {}
+	virtual void Unused04() {}
+	virtual void Unused05() {}
+	virtual void Unused06() {}
+	virtual void Unused07() {}
+	virtual void Unused08() {}
+	virtual void Unused09() {}
+	virtual void Unused10() {}
+	virtual void Unused11() {}
+	virtual void Unused12() {}
+	virtual void Unused13() {}
+	virtual void Unused14() {}
+	virtual void Unused15() {}
+	virtual void Unused16() {}
+	virtual void SetSubType(i32) {}
+};
+
+// @Ok
+static void Trig_SetCreatedObjectSubType(CBody* obj, i32 subType)
+{
+	reinterpret_cast<SVTableSlot17Setter*>(obj)->SetSubType(subType);
+}
+
+// @Ok
+// Rewritten 2026-08-31 from a fresh IDA decompile + disassembly
+// cross-check of 0x4DEE70 (3504 bytes, the trigger-node object factory).
+// Session bar is functional parity, not byte match. Every field offset
+// and byte-scan below was verified against the raw disasm, not just
+// Hex-Rays: the marker-byte walk at 0x4DEEF2..0x4DEFD2 and the
+// post-creation mNode/mCBodyFlags/Suspend-list epilogue at
+// 0x4DF120..0x4DF19B were both read instruction-for-instruction. The
+// per-node "marker byte" list (values 1/2/4, terminated by 0xFF, right
+// after an embedded name string) is the same walk-until-terminator idiom
+// documented in CLAUDE.md for other trigger/PSX record formats; here it
+// gates two booleans (hasMarker2 disables the Suspend-list registration
+// below, hasMarker4 clears CBODY flag 2) and locates where the spawned
+// object's own embedded command list starts (pData). Debug-only
+// print/log calls the original makes at nearly every step (nullsub_1 in
+// this build, same as trigLog elsewhere in this file) are omitted, they
+// have no observable effect.
+//
+// Every "normal" case below calls the game's own already-decompiled
+// Xxx_CreateYyy(const u32*, u32*) factory wrapper (or, for the few
+// classes with no such wrapper -- CManipOb, CPlatform, CLaserFence,
+// CTripWire, CSwitch, CL1A3Bomb -- their public (i16*, i32)-style
+// constructor directly; MSVC6 wraps that in the same operator-new + SEH
+// cleanup-frame shape as the original since operator new is inherited
+// from CBody/CItem, see CLAUDE.md's SEH-frame note).
+//
+// Two node subtypes are intentionally left calling into the ORIGINAL
+// game code for exactly that one subtype, not guessed:
+//   - subtype 203 (CScriptOnlyBaddy, meta-type 1/7 branch): its
+//     constructor at 0x4075B0 is a real ~0xF0-byte body (base CBaddy
+//     ctor, vtable swap, then an inlined copy of CBaddy::ParseScript)
+//     and CScriptOnlyBaddy has no public constructor declared anywhere
+//     in this repo; adding one means editing baddy.h, out of scope here
+//     (trig.cpp/trig.h only).
+//   - subtype 409 ("electro lines" chain, sub_439CC0): builds a chain of
+//     unnamed ~108-byte link objects across the node's linked list using
+//     three texture handles ("Bolt"/"Bolt2"/"Bolt3") and a helper
+//     (sub_4398B0) with no repo class, struct or declared signature at
+//     all -- a whole new subsystem, not a one-function fix.
 CBody* Trig_CreateObject(i32 NodeIndex)
 {
-	typedef CBody* (*func_ptr)(i32);
-	func_ptr func = (func_ptr)0x004DEE70;
+	print_if_false(NodeIndex >= 0 && NodeIndex < G_NUMNODES, "Bad node sent to Trig_CreateObject");
 
-	return func(NodeIndex);
+	u16* v1 = reinterpret_cast<u16*>(G_OFFSETLIST[NodeIndex]);
+	i16 metaType = static_cast<i16>(*v1);
+	u16* v3 = v1 + 1;
+
+	CBody* result = 0;
+	i32 hasMarker2 = 0; // if set, skip the Suspend-list registration below
+	i32 hasMarker4 = 0; // if set, clear CBODY flag 2 below
+
+	if (metaType == 5 || metaType == 20)
+	{
+		// Powerup / light node: {type:u16} right at v3, then
+		// {extraFlag:u16, param1:u16, param2:u16 (metaType 20 only)}
+		// packed right after whatever Trig_GetPosition itself consumes.
+		i32 type = static_cast<i16>(*v3);
+
+		CVector pos;
+		u8* posEnd = reinterpret_cast<u8*>(Trig_GetPosition(&pos, NodeIndex));
+
+		i16 extraFlag = *reinterpret_cast<i16*>(posEnd + 2);
+		u16* pExtra = reinterpret_cast<u16*>(posEnd + 4);
+
+		i32 flags = (extraFlag != 0) ? 0 : 4;
+		i32 param1 = *pExtra;
+		i32 param2 = (metaType == 20) ? pExtra[1] : -1;
+
+		result = Trig_CreatePowerUp(type, &pos, flags, param1, param2);
+
+		if (result != 0)
+			reinterpret_cast<CPowerUp*>(result)->SetNode(NodeIndex);
+
+		hasMarker2 = 1;
+	}
+	else
+	{
+		switch (metaType)
+		{
+			case 1:
+			case 7:
+				break;
+			default:
+				return 0;
+		}
+
+		i32 objType = static_cast<i16>(v3[0]);
+		i32 count = static_cast<i16>(v3[2]);
+		u16* v6 = v3 + 2;
+
+		u8* markerStart = reinterpret_cast<u8*>(v6) + count * 2 + 2;
+
+		{
+			u8* scan = markerStart;
+			while (*scan != 0xFF)
+			{
+				if (*scan == 2)
+				{
+					hasMarker2 = 1;
+					break;
+				}
+				scan++;
+			}
+		}
+		{
+			u8* scan = markerStart;
+			while (*scan != 0xFF)
+			{
+				if (*scan == 4)
+				{
+					hasMarker4 = 1;
+					break;
+				}
+				scan++;
+			}
+		}
+
+		u8* terminator = markerStart;
+		while (*terminator != 0xFF)
+			terminator++;
+
+		i16* pData = reinterpret_cast<i16*>((reinterpret_cast<u32>(terminator) + 4) & ~3u);
+
+		u32 stack2[2];
+		stack2[0] = reinterpret_cast<u32>(pData);
+		stack2[1] = static_cast<u32>(NodeIndex);
+
+		u32 stack1[1];
+		stack1[0] = static_cast<u32>(NodeIndex);
+
+		u32 outPtr;
+
+		switch (objType)
+		{
+			case 322:
+				Chopper_CreateSearchlight(stack1, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 203:
+			{
+				typedef CBody* (*func_ptr)(i32);
+				func_ptr func = reinterpret_cast<func_ptr>(0x004DEE70);
+				return func(NodeIndex);
+			}
+
+			case 303:
+				MJ_CreateMJ(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 304:
+				Thug_CreateThug(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				if (result)
+					Trig_SetCreatedObjectSubType(result, 304);
+				break;
+
+			case 305:
+			case 315:
+				Hostage_CreateHostage(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				if (result)
+					Trig_SetCreatedObjectSubType(result, objType);
+				break;
+
+			case 306:
+				Cop_CreateCop(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				if (result)
+					Trig_SetCreatedObjectSubType(result, 306);
+				break;
+
+			case 307:
+				Rhino_CreateRhino(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 308:
+				DocOck_CreateDocOck(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 309:
+				SuperDocOck_CreateSuperDocOck(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 310:
+				Scorpion_CreateScorpion(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 311:
+				Mysterio_CreateMysterio(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 312:
+				Thug_CreateThug(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				if (result)
+					Trig_SetCreatedObjectSubType(result, 312);
+				break;
+
+			case 313:
+				Venom_CreateVenom(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 314:
+				Carnage_CreateCarnage(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 316:
+				Jonah_CreateJonah(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 317:
+				LizMan_CreateLizMan(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 318:
+				Chopper_CreateChopper(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 319:
+				BlackCat_CreateBlackCat(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 320:
+				Cop_CreateCop(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				if (result)
+					Trig_SetCreatedObjectSubType(result, 320);
+				break;
+
+			case 323:
+				Chopper_CreateSniper(stack1, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 324:
+				Simby_CreateSimby(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 325:
+				Turret_CreateTurret(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 326:
+				Lizard_CreateLizard(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 327:
+				SpClone_CreateSpClone(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 328:
+				Torch_CreateTorch(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 401:
+				result = new CManipOb(pData, NodeIndex);
+				break;
+
+			case 402:
+				result = new CPlatform(pData, NodeIndex);
+				break;
+
+			case 404:
+				gWireBeingCreated = 0;
+				result = new CLaserFence(pData, NodeIndex, true);
+				gWireBeingCreated = 1;
+				break;
+
+			case 405:
+				gWireBeingCreated = 0;
+				result = new CTripWire(pData, static_cast<u16>(NodeIndex));
+				gWireBeingCreated = 1;
+				break;
+
+			case 407:
+				result = new CSwitch(pData, NodeIndex);
+				break;
+
+			case 408:
+				gWireBeingCreated = 0;
+				result = new CLaserFence(pData, NodeIndex, false);
+				gWireBeingCreated = 1;
+				break;
+
+			case 409:
+			{
+				typedef void (*func_ptr)(i32);
+				func_ptr func = reinterpret_cast<func_ptr>(0x00439CC0);
+				func(NodeIndex);
+				return 0;
+			}
+
+			case 411:
+				Simby_CreateSimbyDroplet(stack2, &outPtr);
+				return 0;
+
+			case 412:
+				Simby_CreatePunchOb(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			case 600:
+				result = new CL1A3Bomb(pData, NodeIndex);
+				break;
+
+			case 719:
+				Submariner_CreateSubmariner(stack2, &outPtr);
+				result = reinterpret_cast<CBody*>(outPtr);
+				break;
+
+			default:
+				return 0;
+		}
+	}
+
+	if (result == 0)
+		return 0;
+
+	result->mNode = static_cast<u16>(NodeIndex);
+
+	if (hasMarker4)
+		result->mCBodyFlags &= 0xFFFD;
+
+	if (!hasMarker2)
+	{
+		CBody** listHead = 0;
+		if (result == BaddyList) listHead = reinterpret_cast<CBody**>(&BaddyList);
+		if (result == ControlBaddyList) listHead = &ControlBaddyList;
+		if (result == EnvironmentalObjectList) listHead = &EnvironmentalObjectList;
+		if (result == PowerUpList) listHead = &PowerUpList;
+
+		print_if_false(listHead != 0, "NewObject not in baddy,env obj or powerup list");
+
+		result->Suspend(listHead);
+	}
+
+	return result;
 }
 
 // @Ok
