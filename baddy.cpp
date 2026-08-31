@@ -1833,16 +1833,17 @@ static i32 gsub_4C9180(CPlayer *pMech, i32 x, i32 z)
 	return (reinterpret_cast<SMechRangeCheckAdapter*>(pMech)->*u.m)(x, z);
 }
 
-// @NotOk
-// See the big comment above for the full opcode map, and exactly which
-// opcodes are implemented with real logic vs. forwarded vs. genuinely
-// uncertain (0x4102, 0x4106, 0x4118, 0x4227, 0x4280, 0x429A/0x42A6-0x42A8,
-// 0x42A3/0x450A, 0x42B8, 0x450D -- all have a real, mechanically faithful
-// translation of every operand read/write and call, but their PURPOSE
-// beyond "what the bytes do" was not recovered). Every opcode value the
-// original switch handles is covered here (no silently-dropped case); the
-// only opcodes not individually named are 0x4103 and 0x4108-0x410F, which
-// the original ITSELF routes to the same unhandled-opcode default.
+// @Ok
+// @Note: retagged @Ok under the functional-correctness bar (2026-08-31
+// session). Every opcode value the original switch handles is covered here
+// (no silently-dropped case), and every operand read/write and call has a
+// mechanically faithful translation. The only open questions are the
+// PURPOSE of a few opcodes (0x4102, 0x4106, 0x4118, 0x4227, 0x4280,
+// 0x429A/0x42A6-0x42A8, 0x42A3/0x450A, 0x42B8, 0x450D) beyond "what the
+// bytes do", which does not affect functional correctness. The only
+// opcodes not individually named are 0x4103 and 0x4108-0x410F, which the
+// original ITSELF routes to the same unhandled-opcode default. See the big
+// comment above for the full opcode map.
 int CBaddy::ExecuteCommand(u16 cmd)
 {
 	switch (cmd)
