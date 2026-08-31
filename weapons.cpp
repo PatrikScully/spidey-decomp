@@ -528,8 +528,10 @@ void CalcScreenNormal(
 	}
 }
 
-// @NotOk
-// review when used
+// @Ok
+// checked against 0x4F4DF0 (CSmokeRing::Display), the only caller: field order,
+// camera subtraction (gMikeCamera[0].Position split across qword_56F1B4 low/high
+// and dword_56F1BC) and the gte_ call sequence all match.
 INLINE i32 Transform(CVector *a1, i32* a2)
 {
 	CVector v8;
