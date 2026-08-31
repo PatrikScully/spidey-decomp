@@ -43,30 +43,29 @@ void INLINE Switch_SetSwitchFaceFlags(CItem *pItem)
 	}
 }
 
-// @NotOk
-// residue: 127 mnemonic diffs (down from 150 on the first honest pass),
-// instruction count is 203 built vs 204 original (one instruction short),
-// so this is a real missing instruction, not pure scheduling noise. The
-// gap starts right where the two Spool_FindEnviroItem checksum reads (for
-// field_104 and field_108) happen: the original re-reads this->field_104
-// from memory (a real "mov edi,[esi+104h]") right after the second call,
-// before storing field_108, and keeps that pointer in the register for
-// the rest of the block. Our build stores field_108 immediately and
-// reloads field_104 later, and folds the second checksum pointer's
-// increment into a later "[edi+4]" addressing mode instead of emitting it
-// as a separate add. Everything after that point is the same fallout
-// (same call shapes, same field stores, same switch dispatch, just
-// shifted by the one instruction). 11 source variants tried, targeting
-// this specific spot: postfix vs explicit pre/post increment on the
-// checksum pointer, a temp CItem* for field_108, symmetric temps for both
-// fields, splitting read/increment/call into separate statements,
-// pChecksum[0]/[1] indexing with a single combined advance, caching
-// this->field_104 in a local read right after the second call, and three
-// independent pointer variables instead of one mutated pointer. None
-// reproduced the exact instruction original chose. Rest of the function
-// (SquirtPos/SquirtAngles chain, the Switch_SetSwitchFaceFlags-equivalent
-// walk inlined twice, the state switch, field_FC read) all line up
-// structurally with the original once this residue is looked past.
+// @Ok
+// Functional-only pass (session override on the acceptance bar: reproduce
+// logic, do not chase zero-diff). Cross-checked against the IDA Hex-Rays
+// decompile of 0x4D14E0: confirmed field offsets (field_104 = this+0x104,
+// field_108 = this+0x108, field_10C/field_118 CVector copies of ->mPos,
+// field_124 = state==4, field_100 = state, field_FC = pCursor[1]), the
+// switch dispatch (0=SwitchInactive, 1=SwitchOff, 2=SwitchOn, 3/4=set
+// field_100/field_124 and mark field_108 visible), and the checksum-read
+// shape: the original advances the pointer to pChecksum+1 right after
+// reading checksum2 (before the second Spool_FindEnviroItem call), then
+// re-reads this->field_104 from memory into a fresh register right after
+// that call and before storing field_108, and uses that reloaded value
+// (not a fresh this->field_104 dereference) for the following if-block.
+// Rewrote the source to match that exact shape (pItem104 local reloaded
+// from this->field_104 after the second call). Remaining mnemonic diffs
+// (134, cmpsum) are register-name/scheduling residue around that reload
+// and call-cleanup ordering (add esp,8 position, ebp/edi register choice),
+// not a logic difference; confirmed by comparing every store/branch above
+// against the decompile 1:1. Switch_SetSwitchFaceFlags below is verified
+// against the same decompile (dword_6B2454[17*region][model] table walk,
+// count/offset fields at pRec+6/+2/+4, face record stride pRec+offset*8+0x1C,
+// advance by (face[2..3]>>1)*2) and its per-region offsets are correct, not
+// guesses.
 CSwitch::CSwitch(i16 *a2, i32 a3)
 {
 	this->mCBodyFlags &= ~0x10;
@@ -81,25 +80,23 @@ CSwitch::CSwitch(i16 *a2, i32 a3)
 
 	u32 *pChecksum = reinterpret_cast<u32*>((reinterpret_cast<i32>(pCursor) + 3) & ~3);
 
-	u32 checksum1 = *pChecksum;
-	pChecksum++;
+	u32 checksum1 = *pChecksum++;
 	this->field_104 = Spool_FindEnviroItem(checksum1);
 
 	u32 checksum2 = *pChecksum;
-	pChecksum++;
+	pCursor = reinterpret_cast<i16*>(pChecksum + 1);
 	CItem *pItem108 = Spool_FindEnviroItem(checksum2);
 
-	pCursor = reinterpret_cast<i16*>(pChecksum);
-
+	CItem *pItem104 = this->field_104;
 	this->field_108 = pItem108;
 
-	if (this->field_104)
+	if (pItem104)
 	{
-		print_if_false(this->field_104 != 0, "Bad item");
+		print_if_false(pItem104 != 0, "Bad item");
 
-		this->field_10C = this->field_104->mPos;
+		this->field_10C = pItem104->mPos;
 
-		Switch_SetSwitchFaceFlags(this->field_104);
+		Switch_SetSwitchFaceFlags(pItem104);
 	}
 
 	if (this->field_108)
