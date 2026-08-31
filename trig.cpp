@@ -127,9 +127,18 @@ void trigLog(const char* fmt, ...)
 #endif
 }
 
-// @NotOk
-// SpecialDisplayList shitty ass polymorphism
-// need to understand what's type 9
+// @Ok
+// Verified against original disasm at 0x4E3190 (IDA sub_4E3190, string
+// "Bad node sent to SendKillFromNode" pins the address). Two bugs found
+// and fixed versus the previous draft: (1) case 2/9 must call
+// Spool_FindEnviroItem with the checksum VALUE at the computed pointer
+// (*(u32*)v20), not the pointer itself; the original does
+// sub_4C9230(*(DWORD*)v20). (2) the PowerUpList case is node type 5 or
+// 20, not 4 or 20 (original switch has case 5: case 0x14:). Trig_GetLinksPointer
+// is inlined into this function in the original (its own print_if_false
+// string appears back to back with this function's), consistent with it
+// being INLINE in this TU; kept as a real call here since it stays
+// functionally identical either way.
 void SendKillFromNode(i32 Node, i32 How)
 {
 	print_if_false(Node >= 0 && Node < NumNodes, "Bad node sent to SendKillFromNode");
@@ -180,7 +189,7 @@ void SendKillFromNode(i32 Node, i32 How)
 				if (v20 & 2)
 					v20 += 2;
 
-				EnviroItem = Spool_FindEnviroItem(v20);
+				EnviroItem = Spool_FindEnviroItem(*reinterpret_cast<u32*>(v20));
 				if (EnviroItem)
 				{
 					if (How == 1)
@@ -193,7 +202,7 @@ void SendKillFromNode(i32 Node, i32 How)
 					}
 				}
 				break;
-			case 4:
+			case 5:
 			case 20:
 				KillInList(nodeIndex, PowerUpList, How);
 				break;
