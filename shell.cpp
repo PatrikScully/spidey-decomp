@@ -5285,7 +5285,30 @@ void CRecordBox::Update(void)
 	}
 }
 
-// @SMALLTODO
+// 2026-08-31 re-re-attempt, confirmed dead on PC (not just "unlocated").
+// Re-checked the byte range with idalib on the real exe: CRecordBox::Display
+// is 0x47B240..0x47B550 (784 bytes), CRecordBox::Update is 0x47B560..0x47B712
+// (434 bytes, confirmed by xrefs_to on the "Bad mLetterIndex" string), then
+// 14 bytes of 0-alignment padding, then PShell_EndTrainingInit starts cold
+// at 0x47B720 (confirmed by xrefs_to on the "Bad row sent to NameEntryOn()"
+// string at 0x551AA4: both its xrefs resolve inside PShell_EndTrainingInit,
+// size 0x32C, exact match against tools/functions/4699936.bin -- so that
+// string is just reused debug text inside PShell_EndTrainingInit, not
+// evidence of a NameEntryOn function). There is no gap anywhere in this
+// cluster big enough for an 80-byte function (Mac size, prototypes.json).
+// Also re-confirmed NameEntryOn has no call site anywhere on PC (not from
+// CRecordBox::CRecordBox, not from Shell_ShowRecord, not from
+// PShell_EndTrainingUpdate -- the only three places a CRecordBox is used).
+// It is not virtual (CRecordBox's vtable has one real slot, the scalar
+// deleting destructor), so nothing forces it to exist for the vtable
+// either. Most likely explanation: Release builds use per-function COMDATs
+// (/Gy) plus linker dead-code stripping (/OPT:REF), and a non-virtual,
+// never-called member function like this one gets stripped out of the
+// final binary entirely -- there is no PC address to decompile because the
+// function was never linked in, not because it is merely hard to find.
+// Left as an honest stub rather than guessing an implementation from the
+// Mac-only prototype and the sibling Update/Display field usage.
+// @NotOk
 void CRecordBox::NameEntryOn(u8)
 {
 	printf("CRecordBox::NameEntryOn(u8)");
