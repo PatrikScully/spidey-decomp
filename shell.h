@@ -259,6 +259,45 @@ class Spidey_CIcon : public CSuper
 		EXPORT void SetIcon(i32);
 };
 
+// Reverse engineered 2026-08-31 (functional decompile session). Constructed via a shared
+// idiom in Shell_ComicCollection (0x49B270), Shell_GameCovers (0x49C220, six instances) and
+// Shell_MainMenu (sub_493990, confirmed via xrefs_to on off_53BFC0): operator new(420) ->
+// CSuper::CSuper() -> vtable pointer overwritten from CSuper's own vtable (off_53BBE8) to a
+// separate vtable (off_53BFC0) -> CItem::InitItem(this, "items") -> caller-supplied mPos
+// (each coordinate pre-shifted <<12) plus hardcoded mModel=5, mFlags=(mFlags&0xFB7D)|0x200,
+// mpLight=0, mScale=(2048,2048,2048). This is byte-for-byte the same field-assignment
+// sequence as Spidey_CIcon::Spidey_CIcon(i32,i32,i32) above (same base fields, same constant
+// values), but it is a distinct C++ type: off_53BFC0 is a different vtable from Spidey_CIcon's
+// own, confirmed by diffing off_53BFC0 against CSuper's own vtable (off_53BBE8) slot by slot.
+// CSuper/CBody/CItem only contribute 5 virtual slots (~CItem, Die, AI, Hit, DeleteStuff, in
+// that vtable order); off_53BFC0 matches off_53BBE8 in the Die/Hit/DeleteStuff slots (all
+// inherited unchanged) and differs only in the destructor and AI slots:
+//  - destructor (0x493830, thunk; real body 0x493850): trivial compiler-generated derived
+//    dtor, just resets the vtable pointer back to off_53BFC0 (standard MSVC pattern for a
+//    derived class whose own destructor body is empty -- no added fields means no cleanup of
+//    its own) then tail-calls the inherited CSuper::~CSuper (0x460780; names.json's
+//    "CBaddy::~CBaddy" label on that same address is a link-time identical-body fold per
+//    CLAUDE.md, not a real relationship -- CBaddy is a different, larger, unrelated class).
+//  - AI (0x493970): this->mAngles.vy += 50 every frame (a constant spin, matching this
+//    class's use as an on-screen rotating 3D preview icon for comic/game-cover art and the
+//    main menu item), and only if mFlags&2 is set, this->UpdateFrame() then
+//    M3d_BuildTransform(this). mFlags bit 2 is explicitly cleared by the constructor's
+//    mFlags=(mFlags&0xFB7D)|0x200 (0xFB7D excludes bit 2, and 0x200 doesn't set it either), so
+//    that branch is dead for every instance seen in the three known call sites -- reproduced
+//    for fidelity to the original anyway, since some other unseen call site could plausibly
+//    set the bit before AI() runs.
+// No new fields: same size as CSuper (VALIDATE_SIZE(CSuper, 0x1A4) in ob.cpp). Name is our own
+// guess (no matching class name found in idbs/spiderman_names.txt near the comic/cover/menu
+// preview functions there -- DrawSmallComic/DrawSmallGameCover/Shell_ComicCollection/
+// Shell_GameCovers all appear, but not a wrapping class name for this icon object).
+class CShellPreviewIcon : public CSuper
+{
+	public:
+		EXPORT CShellPreviewIcon(i32, i32, i32);
+		EXPORT virtual ~CShellPreviewIcon(void) OVERRIDE;
+		EXPORT virtual void AI(void) OVERRIDE;
+};
+
 class CShellSymBurn : public CSuper
 {
 	public:
@@ -623,6 +662,7 @@ void validate_CDropDownController(void);
 void validate_CWobblyGlow(void);
 void validate_CShellMysterioHeadGlow(void);
 void validate_Spidey_CIcon(void);
+void validate_CShellPreviewIcon(void);
 void validate_CShellSymBurn(void);
 void validate_CShellVenomElectrified(void);
 void validate_CShellCarnageElectrified(void);

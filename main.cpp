@@ -369,6 +369,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CCopPing();
 	validate_SHook();
 	validate_Spidey_CIcon();
+	validate_CShellPreviewIcon();
 	validate_CEmber();
 	validate_CThugPing();
 	validate_CAIProc();
