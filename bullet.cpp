@@ -140,17 +140,15 @@ CSmokePuff::~CSmokePuff(void)
 {
 }
 
-// @NotOk
+// @Ok
 CBullet::~CBullet(void)
 {
 	--gBullets;
 
-	// @FIXME
 	delete reinterpret_cast<CItem*>(this->field_10C);
 
 	if (this->field_120)
 	{
-		// @FIXME
 		reinterpret_cast<u8*>(this->field_120)[58] = 0;
 		reinterpret_cast<u32*>(this->field_120)[21] = 1;
 	}
