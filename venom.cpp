@@ -204,6 +204,29 @@ void CVenom::CreateCombatImpactEffect(CVector *a2,i32)
 }
 
 // @BIGTODO
+// Analysis (2026-08-31, IDA decompile+disasm of 0x4E7E10, ~3200 bytes): draws the Venom "chase"
+// HUD bar. Not blocked by unresolved callees (all real functions, all already @Ok elsewhere):
+// Spool_FindTextureEntry (spool.cpp), FindBaddyOfType (baddy.cpp), Utils_XZDist (utils.cpp),
+// Panel_DrawTexturedPoly / Panel_SetStretchedScreenCoords (panel.cpp), PCGfx_UseTexture /
+// PCGfx_DrawQPoly2D (PCGfx.cpp), print_if_false (export.h, inlined). Left as BIGTODO anyway:
+// 1) needs a new CVenom member at 0x32C (this->field_32C += this->field_80, time accumulator),
+//    which currently falls inside the PADDING(0x18-0xC) block in venom.h ahead of field_330;
+//    splitting that padding risks shifting every other already-@Ok field in this class if the
+//    boundary math is off, and there is no runtime HUD test available this session to catch a
+//    subtle mistake.
+// 2) about 20 unnamed globals (dword_559E48..dword_559E94, a 5-entry x 4-dword screen layout
+//    table; dword_54D474 difficulty level; dword_5FAE98 pause/lowgraphics flag; dword_6B4DA8
+//    scratch texture pointer; dword_568158/dword_628614/dword_568154/dword_61B5FC screen-space
+//    scale factors) each need the maintainer's nearest-neighbor address audit before naming.
+// 3) unk_6B4EE4 (10 dwords, zeroed by Venom_RelocatableModuleClear) is almost certainly the real
+//    address of gVenomTexs (same size, same file, same zero-on-clear pattern), but gVenomTexs is
+//    currently a plain repo array; binding it to 0x6B4EE4 would need the same audit.
+// Known logic shape for whoever picks this up: FindBaddyOfType(313) finds the venom baddy, player
+// is dword_6A9038; if both exist, distance = Utils_XZDist(player->mPos, venom->mPos), clamped to
+// a per-difficulty max (hard=7500, easy/normal=9000, other=6000), scaled to a 0..307 bar width,
+// then draws an icon (gVenomTexs[8]) plus 4 more textured segments (gVenomTexs[6], [7], [9], and
+// a per-i loop over 342/18=19 chase-bar frames using gVenomTexs[venom->field_something]) via
+// PCGfx_DrawQPoly2D, all using the dword_559Ex layout table for screen coords.
 void Venom_DisplayProgressBar(const u32*, u32*)
 {
 	printf("void Venom_DisplayProgressBar(const u32*, u32*)");
