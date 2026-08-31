@@ -308,8 +308,15 @@ void CManipOb::Throw(CVector *a2)
 	this->mAngVel.vx = Rnd(32) + 64;
 }
 
-// @NotOk
-// Revisit because of weird decomp
+// @Ok
+// Verified against 0x456D40. The original writes mVel.vx=0 after building
+// the local CVector/SLineInfo temporaries (scheduling only, same end
+// state before the Chunk call). TurnOffShadow/SendPulse are INLINE so
+// their bodies show up inlined here in the original too; that is expected
+// and not a divergence. cmpsum still shows diffs around the Chunk() call
+// site because Chunk is still a printf stub in this TU and gets inlined
+// there; that residue goes away once Chunk (see its own @BIGTODO) is
+// implemented, it is not a bug in Smash.
 void CManipOb::Smash(void)
 {
 	CVector v3;
