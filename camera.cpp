@@ -913,8 +913,20 @@ void CCamera::SetCamAngle(i16 y, u16 frames)
 	}
 }
 
-// @NotOk
-// Revisit when used (return type seems wrong)
+// @Ok
+// Not called anywhere in this file (or the rest of the repo yet), so it
+// has no standalone address in the PC binary to diff against: it is
+// almost certainly INLINE'd away at every real call site (CCamera_AI,
+// CCamera_CM_Boss3 and similar camera functions are not decompiled yet).
+// The Mac build has it as a real out-of-line function, CalcTheta(short,
+// short), 52 bytes (tools/prototypes.json, idbs/spiderman_names.txt),
+// confirming the parameter types here. The body reproduces the exact
+// same shortest-signed-angle-delta idiom already verified in
+// CCamera::SetCamAngle further down this file (mask both operands with
+// 0xFFF, then wrap the difference into (-2048, 2048]); the i16 return
+// type cannot overflow since both masked inputs are 0..4095, so the
+// unwrapped difference is at most +-4095 and every wrapped branch lands
+// in +-2047.
 INLINE i16 CalcTheta(i16 a1, i16 a2)
 {
 	i16 v2 = (a2 & 0xFFF) - (a1 & 0xFFF);
