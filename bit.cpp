@@ -3,6 +3,7 @@
 #include "mem.h"
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
 #include "validate.h"
 #include "spool.h"
 #include "utils.h"
@@ -14,6 +15,7 @@
 #include "PCGfx.h"
 #include "m3dinit.h"
 #include "SpideyDX.h"
+#include "algebra.h"
 
 // @Ok
 EXPORT bool SparkSemiTrans = true;
@@ -245,7 +247,8 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 // DisplayGlassList, DisplayGlowList, DisplayChunkBitList, DisplayQuadBitList,
 // DisplayFlatBitList, DisplayLinked2EndedBitListLeftover, DisplayPixelList,
 // DisplayPolyLineList, DisplayGPolyLineList), found this session (2026-08-31)
-// while trying to implement them. None of these are done yet, but a lot of
+// while trying to implement them. DisplayQuadBitList and DisplayPixelList
+// are now done (@Ok, see below); the rest are not done yet, but a lot of
 // the pipeline they all share is already built and @Ok elsewhere in the
 // repo, which should make a real attempt much faster than starting cold:
 //
@@ -304,18 +307,39 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 //     each of its 4 faces, built from WPlane objects (sub_40C190 =
 //     WPlane::WPlane(WVector&, f32), already named in names.json).
 //   - DisplayPixelList calls sub_507470 = PCGfx_DrawQuad2D (already @Ok,
-//     PCGfx.h) instead, i.e. it is a 2D sprite/dot draw, not a 3D quad; its
-//     screen x/y arguments (v32/v33 in the raw decompile) did not resolve
-//     cleanly from Hex-Rays pseudocode alone and need the raw disassembly
-//     to pin down before implementing this one.
-//   - DisplayGLineList ALSO appends a 28-byte record (tag 0x4000000) to the
-//     pPoly queue (0x56FB04, already declared in this file and in
-//     screen.cpp, bounds-checked against PolyBufferEnd at 0x5FCD1C) before
-//     its sub_509000 draw call. The record layout and whoever reads it back
-//     are not identified yet; it is not a POLY_F3/POLY_F4 (psx_types.h,
-//     panel.h) and no other decompiled function in the repo writes this
-//     tag. Possibly an unrelated debug-line log, not part of the draw path
-//     itself - unconfirmed.
+//     PCGfx.h) instead, i.e. it is a 2D sprite/dot draw, not a 3D quad.
+//     DONE this session (2026-08-31): its screen x/y args do NOT come from
+//     the GTE pipeline at all (this function never calls gte_ldlv0/rtps),
+//     they are the x*invZ/y*invZ stack slots written by the same
+//     sub_402540 vector3d-ctor call that produces the depth value - traced
+//     in the raw disassembly (Hex-Rays lost the alias and printed them as
+//     uninitialized locals). See DisplayPixelList's implementation below.
+//   - DisplayGLineList and DisplayGlassList (0x411560, also traced this
+//     session) BOTH append a 28-byte record (tag 0x4000000) to the pPoly
+//     queue (0x56FB04, bounds-checked against PolyBufferEnd at 0x5FCD1C)
+//     before their real draw calls: tag(u32), r/g/b/0x22 (4 bytes, from
+//     the bit's current color), 3x packed-sxy (12 bytes), then the two
+//     globals dword_56E9D0/56E9D4 (also referenced the same way by
+//     DisplayGlowList, DisplayPolyLineList, DisplayGPolyLineList and
+//     DisplayGLineList - xref-confirmed, meaning still unknown). The
+//     3x-sxy fill is sub_46DFA0, which IS already decompiled and @Ok in
+//     this repo: it is gte_stsxy3 (ps2funcs.cpp), and the original PC
+//     port's own gte_stsxy3 body calls stubbed_printf("stubbed out:
+//     gte_stsxy3") - i.e. the original binary itself treats this whole
+//     28-byte queue as an unfinished/inert debug path, not the real
+//     render output (DisplayGlassList's actual PCGfx_DrawQPoly3D calls
+//     read positions from a completely separate Algebra_Transform4/invZ
+//     pipeline, not from this record). Safe to skip reproducing this
+//     queue write for a functional decomp; note it if picking this back
+//     up so the skip is a documented choice, not an oversight.
+//   - DisplayGlassList's actual draw geometry is NOT just its 3 stored
+//     corners (mPosA/B/C): the disassembly derives a 4th and further
+//     offset corners via scaled vector differences (a "grow" scale field
+//     read from the bit, exact field not pinned down yet) before running
+//     each through its own Algebra_Transform4/invZ pass - closer to a
+//     tessellated glass-shard fan than a single static quad. Needs more
+//     work to identify the scale field before this can be implemented
+//     correctly; do not guess the geometry.
 // - DisplayPolyLineList/DisplayGPolyLineList's clip helper, sub_505B90, is
 //   labelled "syRtcInit" in tools/names.json; that is almost certainly a
 //   link-time duplicate-body merge (CLAUDE.md: identical bodies across TUs
@@ -330,9 +354,13 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 //   Utils_CalcUnitFacingCamera (utils.cpp) which strongly suggests this is
 //   a camera-facing ("billboarded") ribbon, consistent with its name.
 //
-// None of the above was enough to responsibly finish any of these within
-// this session's budget (dense float/fixed-point pipelines, several still
-// -unnamed helpers, and no runtime test available to catch a wrong sign or
+// DisplayQuadBitList and DisplayPixelList got finished this session (see
+// RefreshGfxMatrix and their implementations below) using exactly this
+// map. The rest were not enough to responsibly finish within this
+// session's budget (dense float/fixed-point pipelines, several still
+// -unnamed helpers - sub_509000, sub_5081F0 - or, for DisplayGlassList,
+// derived geometry beyond the bit's stored corners that is not pinned
+// down yet, and no runtime test available to catch a wrong sign or
 // offset), so they stay @BIGTODO. The next attempt should be able to move
 // much faster starting from this map instead of raw disassembly.
 
@@ -777,36 +805,219 @@ void DisplayChunkBitList(void**)
 {
 }
 
-// @BIGTODO
-// Address 0x4097e0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display; this is the function that made those
-// notes concrete, so more detail than the rest of the family. Full
-// camera-space transform of the 4 corners: for each corner,
-// gte_ldlv0(relPos)/gte_rtps() then gte_stlvnl(sub_46D790, stores the raw
-// vx/vy/vz result) and gte_stsxy(sub_46DF80, packs vx/vy into one int) are
-// both called (the second looks redundant with the first, not confirmed
-// why both are needed), and a separate Algebra_Transform4 (sub_402700)
-// pass over the *un-shifted* corner (divided by 4096.0f directly, not
-// >>12 first) gives the per-corner invZ used as PCGfx_DrawQPoly3D's z
-// argument, with a 1.03x fudge factor and a "if depth < 100 use invZ = -1"
-// override. Screen coordinates get scaled from GTE fixed-point into
-// pixels via gGameResolutionX/gGameResolutionY (0x568154/0x568158,
-// already used in DisplayTextBoxList) over Xres/Yres (0x61B5FC/0x628614,
-// ditto), staged through two small scratch buffers before the draw:
-// gRevisitInitOne (0x628618) and gRevisitInitTwo (0x654F54), both
-// tentative names from idb_globals.txt with no known field semantics
-// beyond "8-16 bytes of raw screen coords per corner, written here and
-// read back a few lines later in the same function" - do not invent
-// struct fields for them beyond that. Two PCGfx_DrawQPoly3D (sub_508550)
-// calls draw front and back face, each with the 4 corners in the same
-// order but the front/back-only args (u,v pair, i.e. field_14/field_18)
-// using the standard 0.01/0.99 texture-bleed-inset UV pattern per corner
-// (0,0)/(1,0)/(0,1)/(1,1). Vertex color is built from CQuadBit::mCodeBGR
-// plus an alpha byte chosen by a semi-transparency flag test
-// (PCGfx_UseTexture, sub_506440, called with blend mode 0 or 2 first).
-void DisplayQuadBitList(void**)
+// Shared camera-matrix refresh for the Display*List family (see the family
+// notes above CSimpleTexturedRibbon::Display). Every function that reads the
+// invZ pass through Algebra_Transform4 opens with the same instruction
+// sequence: a 16-float copy that IDA renders as 4 interleaved "arrays"
+// (dword_56E6F8/56E6FC/56E700/flt_56E674) because of array-boundary folding
+// (CLAUDE.md: "MSVC folds array indexing into neighboring globals' base
+// addresses"). Traced instruction-by-instruction against the raw disasm of
+// 0x4097e0 (0x4097f6..0x409895): dword_56E6FC is just dword_56E6F8+4 bytes
+// and dword_56E700 is dword_56E6F8+8 bytes (one contiguous 16-float array,
+// not three), and flt_56E674 is literally &gGfxMatrix[3] (an alias into the
+// SAME destination array algebra.cpp already declares as gGfxMatrix at
+// 0x56E668). Once the folding is undone the whole loop is exactly
+// `memcpy(gGfxMatrix, gCameraBasisMatrix, 16 * sizeof(f32))`. gGfxMatrix is
+// `static` in algebra.cpp (file-local pointer, shared address per repo
+// convention), so this file gets its own pointer to the same 0x56E668
+// address rather than reaching into algebra.cpp.
+static f32 * const gFrameProjMatrix = (f32*)0x56E668;   // == algebra.cpp's gGfxMatrix
+// Tentative name; source basis matrix the family copies into gFrameProjMatrix
+// once per Display call, address confirmed via the byte-offset trace above.
+// Not in idb_globals.txt. Likely the camera's un-composed view/rotation
+// matrix (refreshed once per frame elsewhere), but that is not confirmed.
+static f32 * const gCameraBasisMatrix = (f32*)0x56E6F8;
+
+// Two small per-corner scratch buffers the family stages screen coords
+// through before drawing (see the family notes and DisplayQuadBitList
+// below). Names from idb_globals.txt (gRevisitInitOne/Two); no known field
+// layout beyond "8 bytes per corner, up to 4 corners".
+static u8 * const gRevisitInitOne = (u8*)0x628618;
+static u8 * const gRevisitInitTwo = (u8*)0x654F54;
+
+// @Ok
+// Functional. Factored out of DisplayQuadBitList's opening instructions
+// (see the comment above gFrameProjMatrix); every Display*List function
+// that projects through Algebra_Transform4 repeats this exact copy inline
+// in the original, so this helper will get reused as more of the family
+// gets implemented.
+static INLINE void RefreshGfxMatrix(void)
 {
+	for (i32 i = 0; i < 16; i++)
+	{
+		gFrameProjMatrix[i] = gCameraBasisMatrix[i];
+	}
+}
+
+// Camera position used by the per-corner relPos = (rawPos>>12) - camPos
+// idiom (see the family notes and Screen_DrawArrow). Same address as
+// chopper.cpp's gCameraViewPos / mysterio.cpp's and spidey.cpp's
+// stru_56F1B4; duplicated here per the repo's file-local-static convention.
+static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
+
+// Tentative name, address 0x6150C8, not in idb_globals.txt. DisplayQuadBitList
+// saves this dword, forces it to 0xFFFF0000 for the whole list walk, then
+// restores it before returning; no other decompiled function in the repo
+// reads or writes this address yet, so the real purpose is unconfirmed
+// (possibly a render-state sentinel some other still-undecompiled function
+// reads while quads are being queued).
+#define G_QUADBIT_RENDER_STATE (*reinterpret_cast<i32*>(0x006150C8))
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x4097e0, found by tracing Bit_Init's RegisterSlot calls (see
+// DisplayTextBoxList). Traced fully against Hex-Rays pseudocode plus the
+// raw disasm of the opening matrix-refresh loop; see the family notes above
+// CSimpleTexturedRibbon::Display and RefreshGfxMatrix above.
+//
+// Per corner (mPos, mPosB, mPosC, mPosD, in that order): the usual
+// gte_ldlv0/gte_rtps camera-space projection (relPos = (raw>>12) -
+// gCameraViewPos), then BOTH gte_stlvnl and gte_stsxy are called on the
+// projected point. gte_stsxy's packed x/y is written into a scratch record
+// in gRevisitInitOne (screenX, screenY, gte_stlvnl's raw vz as a "depth",
+// then a constant -256) that nothing else in this function reads back - kept
+// here only because it is a real global other code may consume, not because
+// the source needs it. gte_stlvnl's full-width vx/vy (screen space, same
+// value as gte_stsxy's halves before 16-bit packing) is the pair actually
+// used later, staged through gRevisitInitTwo.
+//
+// Separately, Algebra_Transform4 over the corner divided by 4096.0f (not
+// shifted first) gives invZ = 1/w (or -1e12 if |w| is ~0), overridden to
+// -1.0 if gte_stlvnl's raw vz for that corner is below 100 (near-clip), then
+// always scaled by 1.03. (The disassembly shows corner 0 routing this same
+// 1/w value through an extra dead x*invZ/y*invZ temporary and a 3-float
+// copy-ctor call before reading it back; corners 1-3 read w directly. Both
+// paths produce the same invZ, so this function does not reproduce the
+// redundant corner-0 detour - it has no observable effect, only matters for
+// byte-for-byte matching which is out of scope this session.)
+//
+// The screen x/y actually drawn come from gRevisitInitTwo, scaled from GTE
+// space into pixels the same way as DisplayTextBoxList
+// (gGameResolutionX/Y over Xres/Yres). Vertex color is CQuadBit::mTint's
+// low 3 bytes (R,G,B) reassembled into 0xAARRGGBB, with alpha and blend mode
+// chosen from CQuadBit::mCodeBGR's 0x40/0x80 bits via PCGfx_UseTexture.
+// Two PCGfx_DrawQPoly3D calls draw the quad twice: the first in corner order
+// 0,1,2,3 with the standard 0.01/0.99 texture-bleed-inset UVs
+// (0,0)/(1,0)/(0,1)/(1,1), the second in order 0,2,1,3 (middle two corners
+// swapped) with the SAME position/UV pairing per corner, which only flips
+// the triangle winding - i.e. front face then back face of the same quad.
+void DisplayQuadBitList(void** a1)
+{
+	RefreshGfxMatrix();
+
+	i32 savedRenderState = G_QUADBIT_RENDER_STATE;
+	G_QUADBIT_RENDER_STATE = (i32)0xFFFF0000;
+
+	CQuadBit* pBit = reinterpret_cast<CQuadBit*>(*a1);
+	while (pBit)
+	{
+		CVector corners[4];
+		corners[0] = pBit->mPos;
+		corners[1] = pBit->mPosB;
+		corners[2] = pBit->mPosC;
+		corners[3] = pBit->mPosD;
+
+		f32 screenX[4];
+		f32 screenY[4];
+		f32 invZ[4];
+		i32 i;
+
+		for (i = 0; i < 4; i++)
+		{
+			VECTOR relPos;
+			relPos.vx = (corners[i].vx >> 12) - gCameraViewPos->vx;
+			relPos.vy = (corners[i].vy >> 12) - gCameraViewPos->vy;
+			relPos.vz = (corners[i].vz >> 12) - gCameraViewPos->vz;
+
+			gte_ldlv0(&relPos);
+			gte_rtps();
+
+			VECTOR stlv;
+			gte_stlvnl(&stlv);
+
+			i32 sxy;
+			gte_stsxy(&sxy);
+			i16 sx = (i16)sxy;
+			i16 sy = (i16)(sxy >> 16);
+
+			u8* rec1 = gRevisitInitOne + i * 8;
+			*(i16*)(rec1 + 0) = sx;
+			*(i16*)(rec1 + 2) = sy;
+			*(i16*)(rec1 + 4) = (i16)stlv.vz;
+			*(i16*)(rec1 + 6) = -256;
+
+			u8* rec2 = gRevisitInitTwo + i * 8;
+			*(i16*)(rec2 + 0) = (i16)stlv.vx;
+			*(i16*)(rec2 + 2) = (i16)stlv.vy;
+
+			screenX[i] = (f32)(i16)stlv.vx;
+			screenY[i] = (f32)(i16)stlv.vy;
+
+			f32 rawPos[3];
+			rawPos[0] = (f32)corners[i].vx / 4096.0f;
+			rawPos[1] = (f32)corners[i].vy / 4096.0f;
+			rawPos[2] = (f32)corners[i].vz / 4096.0f;
+
+			f32 xf[4];
+			Algebra_Transform4(xf, rawPos);
+
+			f32 iz;
+			if (fabsf(xf[3]) > 0.00000001f)
+				iz = 1.0f / xf[3];
+			else
+				iz = -1.0e12f;
+
+			if (stlv.vz < 100)
+				iz = -1.0f;
+
+			invZ[i] = iz * 1.03f;
+		}
+
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+
+		i32 clut = pBit->mpTexture ? pBit->mpTexture->clut : 1;
+
+		i32 blendMode = 0;
+		u32 alpha = 0xFF000000;
+		if (pBit->mCodeBGR & 0x40)
+		{
+			blendMode = (pBit->mCodeBGR & 0x80) ? 2 : 1;
+			alpha = (pBit->mCodeBGR & 0x80) ? 0x80000000 : 0xFF000000;
+		}
+
+		PCGfx_UseTexture(clut, (DCGfx_BlendingMode)blendMode);
+
+		u32 r = pBit->mTint & 0xFF;
+		u32 g = (pBit->mTint >> 8) & 0xFF;
+		u32 b = (pBit->mTint >> 16) & 0xFF;
+		u32 color = alpha | (r << 16) | (g << 8) | b;
+
+		f32 x[4], y[4];
+		for (i = 0; i < 4; i++)
+		{
+			x[i] = screenX[i] * scaleX;
+			y[i] = screenY[i] * scaleY;
+		}
+
+		// Front face: corners in order 0,1,2,3.
+		PCGfx_DrawQPoly3D(
+			x[0], y[0], invZ[0], 0.01f, 0.01f, color,
+			x[1], y[1], invZ[1], 0.99f, 0.01f, color,
+			x[2], y[2], invZ[2], 0.01f, 0.99f, color,
+			x[3], y[3], invZ[3], 0.99f, 0.99f, color);
+
+		// Back face: corners in order 0,2,1,3 (winding flipped).
+		PCGfx_DrawQPoly3D(
+			x[0], y[0], invZ[0], 0.01f, 0.01f, color,
+			x[2], y[2], invZ[2], 0.01f, 0.99f, color,
+			x[1], y[1], invZ[1], 0.99f, 0.01f, color,
+			x[3], y[3], invZ[3], 0.99f, 0.99f, color);
+
+		pBit = reinterpret_cast<CQuadBit*>(pBit->mNext);
+	}
+
+	G_QUADBIT_RENDER_STATE = savedRenderState;
 }
 
 // @Ok
@@ -925,23 +1136,81 @@ void DisplayLinked2EndedBitListLeftover(void**)
 {
 }
 
-// @BIGTODO
-// Address 0x40f110 (found by tracing Bit_Init's RegisterSlot calls, see
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x40f110, found by tracing Bit_Init's RegisterSlot calls (see
 // DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Decompiled once this session for its
-// callee shape (no gte_ldlv0/gte_rtps here, unlike the rest of the
-// family): builds a raw fixed-to-float vector (pos / 4096.0f, no >>12),
-// runs it through Algebra_Transform4 (sub_402700) using the shared
-// gGfxMatrix, takes 1/w (fabs(w) > 1e-8 guard, else -1e12) as the depth,
-// and if depth > 0, blend mode from a flags nibble, then draws via
-// PCGfx_DrawQuad2D (sub_507470, already @Ok, 2D sprite/dot emit). NOT
-// figured out yet: the pseudocode never visibly computes the screen x/y
-// arguments passed to sub_507470 (they read as uninitialized locals in
-// Hex-Rays output), so the raw disassembly needs tracing to find where
-// they really come from before implementing this one - likely a missed
-// stack-slot alias Hex-Rays did not resolve.
-void DisplayPixelList(void**)
+// CSimpleTexturedRibbon::Display. No gte_ldlv0/gte_rtps here, unlike the
+// rest of the family: builds a raw fixed-to-float vector (pos / 4096.0f,
+// no >>12), runs it through Algebra_Transform4, and gets invZ = 1/w
+// (fabs(w) > 1e-8 guard, else -1e12).
+//
+// The old note here said the screen x/y arguments passed to
+// PCGfx_DrawQuad2D never visibly appeared in the Hex-Rays pseudocode.
+// Traced in the raw disassembly this session: they are the x*invZ and
+// y*invZ stack slots written by the vector3d-ctor call right before the
+// depth check (the same call that produces the depth value itself) -
+// Hex-Rays just failed to alias them back to named locals. Confirmed
+// against PCGfx_DrawQuad2D's real 11-argument signature (PCGfx.h): x, y,
+// width, height, 0, 0, 1, 1, color, z, bool. Width/height are
+// (mWidthHeight & 0xF) scaled into pixels via gGameResolutionX/Y over
+// Xres/Yres, same scaling idiom as DisplayQuadBitList and
+// DisplayTextBoxList, but note it scales the SPRITE SIZE here, not the
+// already-projected screen position. The z argument is invZ offset by a
+// constant (~7.071, likely a fixed near-plane bias for 2D sprite sorting,
+// not otherwise identified). Color is r0/g0/b0 direct with alpha 0xFF, or
+// 0x80 plus blend mode 2 if CPixel::code has bit 2 set (semi-transparent).
+void DisplayPixelList(void** a1)
 {
+	RefreshGfxMatrix();
+
+	CPixel* pPixel = reinterpret_cast<CPixel*>(*a1);
+	while (pPixel)
+	{
+		f32 rawPos[3];
+		rawPos[0] = (f32)pPixel->mPos.vx / 4096.0f;
+		rawPos[1] = (f32)pPixel->mPos.vy / 4096.0f;
+		rawPos[2] = (f32)pPixel->mPos.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZ;
+		if (fabsf(xf[3]) > 0.00000001f)
+			invZ = 1.0f / xf[3];
+		else
+			invZ = -1.0e12f;
+
+		f32 screenX = xf[0] * invZ;
+		f32 screenY = xf[1] * invZ;
+
+		if (invZ > 0.0f)
+		{
+			i32 blendMode = 0;
+			u32 alpha = 0xFF;
+			if (pPixel->code & 2)
+			{
+				blendMode = 2;
+				alpha = 0x80;
+			}
+
+			u32 color = (alpha << 24) | (pPixel->r0 << 16) | (pPixel->g0 << 8) | pPixel->b0;
+
+			PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+			f32 width = (f32)(pPixel->mWidthHeight & 0xF);
+			f32 scaleX = gGameResolutionX / (f32)Xres;
+			f32 scaleY = gGameResolutionY / (f32)Yres;
+
+			PCGfx_DrawQuad2D(
+					screenX, screenY,
+					scaleX * width, scaleY * width,
+					0.0f, 0.0f, 1.0f, 1.0f,
+					color, invZ - 7.0710726f, false);
+		}
+
+		pPixel = reinterpret_cast<CPixel*>(pPixel->mNext);
+	}
 }
 
 // @BIGTODO
