@@ -495,7 +495,6 @@ class CPlayer : public CSuper
 		EXPORT void SetTargetTorsoAngleToThisPoint(CVector *a2);
 
 		EXPORT i16 GetEffectiveHeading(void);
-		EXPORT void SetTargetTorsoAngle(i16, i32);
 		EXPORT char DecreaseWebbing(i32);
 		EXPORT void RenderLookaroundReticle(void);
 		EXPORT void SetTargetTorsoAngle(i16, bool);

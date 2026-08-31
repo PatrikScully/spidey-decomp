@@ -5415,13 +5415,6 @@ i16 CPlayer::GetEffectiveHeading(void)
 	return (ratan2(third.vz, third.vx) + 1024) & 0xFFF;
 }
 
-// @MEDIUMTODO
-void CPlayer::SetTargetTorsoAngle(i16, int)
-{
-	printf("void CPlayer::SetTargetTorsoAngle(i16, int)");
-}
-
-
 // gWebbingDecreaseDisabled (0x60CFE8): no idb_globals.txt entry, tentative
 // name from usage (gates DecreaseWebbing below alongside field_1AC and the
 // CurrentSuit checks).
