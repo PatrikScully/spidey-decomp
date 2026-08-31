@@ -17,6 +17,7 @@
 #include "SpideyDX.h"
 #include "algebra.h"
 #include "shatter.h"
+#include "screen.h"
 
 // @Ok
 EXPORT bool SparkSemiTrans = true;
@@ -1187,16 +1188,275 @@ void DisplayFlatBitList(void**)
 {
 }
 
-// @BIGTODO
-// Address 0x40e840 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Ribbon segment renderer: walks CBit
-// pairs building a quad strip between consecutive positions (perpendicular
-// offset via sub_46D430 = M3dMaths_SquareRoot0, already named), the
-// gte_ldlv0/gte_rtps camera transform per vertex, then a
-// PCGfx_DrawQPoly3D (sub_508550) gouraud emit.
-void DisplayLinked2EndedBitListLeftover(void**)
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x40e840, found by tracing Bit_Init's RegisterSlot calls (see
+// DisplayTextBoxList). Fully traced against the raw disassembly this
+// session (previous note's "CBit pairs" framing was a guess; the real
+// operand is CLinked2EndedBit, bit.h).
+//
+// CLinked2EndedBit::field_58/field_64 (both CVector, VALIDATEd above) are
+// one segment's two world-space endpoints. Consecutive nodes in the
+// registered list form a connected quad-strip ribbon: CRibbon::CRibbon
+// (above) sets mBits[0]->mBitFlags |= 0x10 to mark a chain's first bit.
+//
+// Per node: unless mBitFlags & 0x10 (chain start) or the previous node's
+// segment failed (clipped or zero-length), the start point and its
+// perpendicular half-width corners are simply reused from the previous
+// node's end point/corners (screen-space strip continuity, no GTE work).
+// Otherwise the start point is freshly projected from this node's own
+// field_58 via the gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy idiom (same as
+// Screen_DrawArrow, screen.cpp), clip-tested against G_VIEW_CLIP_INFO's
+// depth range, with its own perspective-scaled half width from
+// CFT4Bit::mScale and the current frame's Height (CFT4Bit::mpPSXFrame->
+// pTexture, SAnimFrame::Height, bit.h).
+//
+// The end point is always freshly projected from field_64 the same way.
+// The segment direction (end - start) feeds M3dMaths_SquareRoot0 for the
+// length, then a perpendicular offset (scaled by each end's own half
+// width) gives a left/right corner pair at both ends. mBitFlags & 3 selects
+// which of the 4 resulting points lands in which quad slot (screen
+// winding/orientation variant - all 4 combinations traced and reproduced
+// below via the switch). mBitFlags & 0x20 (no in-repo setter found yet)
+// skips recomputing the end corners and reuses whatever was last cached as
+// the "chain start" corners (set only when 0x10 fires) instead.
+//
+// A single invZ (from the separate Algebra_Transform4/gGfxMatrix pass, see
+// RefreshGfxMatrix above) over the CURRENT/end point only is shared by all
+// 4 corners - unlike DisplayQuadBitList there is no per-corner invZ and no
+// 1.03 fudge factor here. Colour is CFT4Bit::mCodeBGR's low 3 bytes
+// (byte0->R, byte1->G, byte2->B, same ARGB pack DisplayQuadBitList uses for
+// CQuadBit::mTint), alpha/blend mode from mCodeBGR's byte 3 bit 0x02
+// (semi-transparent). UVs are the fixed 0/1 corner constants, like
+// DisplayQuadBitList. A 40-byte scratch record is carved out of the pPoly
+// queue per node (tag 0x9000000) and its texture-corner/UV bytes are built
+// but never read back for the draw call - same confirmed dead/inert queue
+// pattern the family notes describe for DisplayGLineList/DisplayGlassList's
+// 28-byte record - but the pointer advance and PolyBufferEnd bounds check
+// ARE kept here (unlike those two) because on overflow the original does a
+// bare `return`, abandoning the rest of the list, which is an observable
+// effect even though the record's contents are not.
+void DisplayLinked2EndedBitListLeftover(void** a1)
 {
+	RefreshGfxMatrix();
+
+	CLinked2EndedBit* pBit = reinterpret_cast<CLinked2EndedBit*>(*a1);
+
+	bool prevFailed = false;
+	i32 prevEndX = 0, prevEndY = 0;
+	i32 prevEndLeftX = 0, prevEndLeftY = 0, prevEndRightX = 0, prevEndRightY = 0;
+	i32 historyLeftX = 0, historyLeftY = 0, historyRightX = 0, historyRightY = 0;
+
+	while (pBit)
+	{
+		u8* clip = G_VIEW_CLIP_INFO;
+		u16 clipMin = *(u16*)(clip + 8);
+		u16 clipMax = *(u16*)(clip + 0xA);
+
+		bool freshStart = (pBit->mBitFlags & 0x10) || prevFailed;
+
+		i32 startX, startY;
+		i32 halfWidthStart = 0;
+
+		if (freshStart)
+		{
+			VECTOR relPos;
+			relPos.vx = (pBit->field_58.vx >> 12) - gCameraViewPos->vx;
+			relPos.vy = (pBit->field_58.vy >> 12) - gCameraViewPos->vy;
+			relPos.vz = (pBit->field_58.vz >> 12) - gCameraViewPos->vz;
+
+			gte_ldlv0(&relPos);
+			gte_rtps();
+
+			i32 depth;
+			gte_stlvnl2(&depth);
+			if ((u32)depth < clipMin || (u32)depth > clipMax)
+			{
+				prevFailed = true;
+				pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+				continue;
+			}
+
+			i32 sxy;
+			gte_stsxy(&sxy);
+			startX = (i16)sxy;
+			startY = (i16)(sxy >> 16);
+
+			u8 height = pBit->mpPSXFrame->Height;
+			halfWidthStart = (i32)(((u32)height * (u16)pBit->mScale) / (u32)depth) >> 1;
+			if (halfWidthStart < 2)
+				halfWidthStart = 2;
+		}
+		else
+		{
+			startX = prevEndX;
+			startY = prevEndY;
+		}
+
+		if ((u8*)pPoly + 40 > PolyBufferEnd)
+			return;
+		pPoly = (u32*)((u8*)pPoly + 40);
+
+		VECTOR relEnd;
+		relEnd.vx = (pBit->field_64.vx >> 12) - gCameraViewPos->vx;
+		relEnd.vy = (pBit->field_64.vy >> 12) - gCameraViewPos->vy;
+		relEnd.vz = (pBit->field_64.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relEnd);
+		gte_rtps();
+
+		i32 endDepth;
+		gte_stlvnl2(&endDepth);
+		if ((u32)endDepth < clipMin || (u32)endDepth > clipMax)
+		{
+			prevFailed = true;
+			pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+			continue;
+		}
+
+		i32 endSxy;
+		gte_stsxy(&endSxy);
+		i32 endX = (i16)endSxy;
+		i32 endY = (i16)(endSxy >> 16);
+
+		u8 height = pBit->mpPSXFrame->Height;
+		i32 halfWidthEnd = (i32)(((u32)height * (u16)pBit->mScale) / (u32)endDepth) >> 1;
+		if (halfWidthEnd < 2)
+			halfWidthEnd = 2;
+
+		i32 dx = endX - startX;
+		i32 dy = endY - startY;
+		i32 len = M3dMaths_SquareRoot0(dx * dx + dy * dy);
+
+		if (len == 0)
+		{
+			prevFailed = true;
+			pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+			continue;
+		}
+
+		i32 startLeftX, startLeftY, startRightX, startRightY;
+		if (freshStart)
+		{
+			i32 offY = (halfWidthStart * dy) / len;
+			i32 offX = (halfWidthStart * dx) / len;
+			startLeftX = startX + offY;
+			startLeftY = startY - offX;
+			startRightX = startX - offY;
+			startRightY = startY + offX;
+		}
+		else
+		{
+			startLeftX = prevEndLeftX;
+			startLeftY = prevEndLeftY;
+			startRightX = prevEndRightX;
+			startRightY = prevEndRightY;
+		}
+
+		if (pBit->mBitFlags & 0x10)
+		{
+			historyLeftX = startLeftX;
+			historyLeftY = startLeftY;
+			historyRightX = startRightX;
+			historyRightY = startRightY;
+		}
+
+		i32 endLeftX, endLeftY, endRightX, endRightY;
+		if (pBit->mBitFlags & 0x20)
+		{
+			endLeftX = historyLeftX;
+			endLeftY = historyLeftY;
+			endRightX = historyRightX;
+			endRightY = historyRightY;
+		}
+		else
+		{
+			i32 offY = (halfWidthEnd * dy) / len;
+			i32 offX = (halfWidthEnd * dx) / len;
+			endLeftX = endX + offY;
+			endLeftY = endY - offX;
+			endRightX = endX - offY;
+			endRightY = endY + offX;
+		}
+
+		prevEndX = endX;
+		prevEndY = endY;
+		prevEndLeftX = endLeftX;
+		prevEndLeftY = endLeftY;
+		prevEndRightX = endRightX;
+		prevEndRightY = endRightY;
+		prevFailed = false;
+
+		i32 ax, ay, bx, by, cx, cy, dcx, dcy;
+		switch (pBit->mBitFlags & 3)
+		{
+			case 2:
+				ax = endRightX; ay = endRightY;
+				bx = endLeftX;  by = endLeftY;
+				cx = startRightX; cy = startRightY;
+				dcx = startLeftX; dcy = startLeftY;
+				break;
+			case 3:
+				ax = endLeftX;  ay = endLeftY;
+				bx = endRightX; by = endRightY;
+				cx = startLeftX; cy = startLeftY;
+				dcx = startRightX; dcy = startRightY;
+				break;
+			case 1:
+				ax = startRightX; ay = startRightY;
+				bx = endRightX;   by = endRightY;
+				cx = startLeftX;  cy = startLeftY;
+				dcx = endLeftX;   dcy = endLeftY;
+				break;
+			default:
+				ax = startLeftX; ay = startLeftY;
+				bx = endLeftX;   by = endLeftY;
+				cx = startRightX; cy = startRightY;
+				dcx = endRightX;  dcy = endRightY;
+				break;
+		}
+
+		f32 rawPos[3];
+		rawPos[0] = (f32)pBit->field_64.vx / 4096.0f;
+		rawPos[1] = (f32)pBit->field_64.vy / 4096.0f;
+		rawPos[2] = (f32)pBit->field_64.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZ;
+		if (fabsf(xf[3]) > 0.00000001f)
+			invZ = 1.0f / xf[3];
+		else
+			invZ = -1.0e12f;
+
+		i32 blendMode = 0;
+		u32 alpha = 0xFF;
+		if ((pBit->mCodeBGR >> 24) & 2)
+		{
+			blendMode = 2;
+			alpha = 0x80;
+		}
+
+		Texture* pTexture = pBit->mpPSXFrame->pTexture;
+		PCGfx_UseTexture(pTexture->clut, (DCGfx_BlendingMode)blendMode);
+
+		u32 colorR = pBit->mCodeBGR & 0xFF;
+		u32 colorG = (pBit->mCodeBGR >> 8) & 0xFF;
+		u32 colorB = (pBit->mCodeBGR >> 16) & 0xFF;
+		u32 color = (alpha << 24) | (colorR << 16) | (colorG << 8) | colorB;
+
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+
+		PCGfx_DrawQPoly3D(
+				ax * scaleX, ay * scaleY, invZ, 0.0f, 0.0f, color,
+				bx * scaleX, by * scaleY, invZ, 1.0f, 0.0f, color,
+				cx * scaleX, cy * scaleY, invZ, 0.0f, 1.0f, color,
+				dcx * scaleX, dcy * scaleY, invZ, 1.0f, 1.0f, color);
+
+		pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+	}
 }
 
 // @Ok
