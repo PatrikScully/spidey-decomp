@@ -5,6 +5,7 @@
 #include "utils.h"
 #include "ps2redbook.h"
 #include "m3dcolij.h"
+#include "ps2m3d.h"
 
 extern CBaddy* BaddyList;
 extern u8 submarinerDieRelated;
@@ -28,10 +29,228 @@ void SpClone_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = SpClone_CreateSpClone;
 }
 
-// @MEDIUMTODO
+// @Ok
+// Same overall shape as CBlackCat::AI (blackcat.cpp), reverse engineered
+// from IDA decompile+disasm of 0x4AFF30 (1056 bytes). field_31C.bothFlags
+// picks the outer phase (1 = fall/land on a ledge below, 2 = walk the
+// SynthesizeAnalogueInput script), dumbAssPad is the sub state inside each
+// phase. field_324 is a trig link id to look at (same role as CBlackCat's
+// own field_324), field_33C is the "script driving me" outer flag
+// SynthesizeAnalogueInput clears when it runs out of work.
+//
+// The look-at-trig block (M3dUtils_GetDynamicHookPosition with
+// SHook{Part=0,Offset=7} + M3dMaths_TransposeMatrix1 + gte_ldlvl/rtir/stlvnl
+// + CVector::operator<<=) was verified instruction by instruction against
+// the raw disasm, not just the Hex-Rays pseudocode: Hex-Rays mislabels the
+// gte_ldlvl/gte_rtir/gte_stlvnl triplet as
+// qt_register_signal_spy_callbacks/sub_46DA40/sub_46D790 (same decompiler
+// symbol-matching artifact already documented in CBlackCat::AI's comment),
+// and mislabels CVector::operator<<=(const int&) (0x4E7680) as a plain
+// function taking &local instead of a thiscall on &delta; the disasm shows
+// ecx = &delta is still live at the call, matching the CVector member call.
+//
+// Known original defect kept for fidelity (per CLAUDE.md: reproduce the
+// source-level bug, don't fix it): the pan/tilt block that steers
+// mpJoints+0x24/+0x26 runs unconditionally even when mpJoints is null (the
+// disasm only guards the ApplyPose(gUnkPose) call with the mpJoints==0
+// check, not the pan/tilt math after it), unlike CBlackCat::AI which wraps
+// the whole block in "if (this->mpJoints)".
+//
+// Functional-only per this session's bar: field offsets, opcode/constant
+// values (RunAnim ids, magnitude 8, CycleAnim(21,1), landing anim 203) and
+// call targets all checked against the disasm; not expected to byte-match.
 void CSpClone::AI(void)
 {
-    printf("CSpClone::AI(void)");
+	if (this->pMessage)
+	{
+		this->CleanUpMessages(1, 0);
+	}
+
+	if (submarinerDieRelated)
+	{
+		this->Die(0);
+		return;
+	}
+
+	this->field_334 = 1365 * (this->field_80 + this->field_330 + this->field_32C);
+	this->DoPhysics();
+
+	switch (this->field_31C.bothFlags)
+	{
+		case 1:
+			switch (this->dumbAssPad)
+			{
+				case 0:
+				{
+					CVector aimTarget;
+					aimTarget.vx = G_MECHLIST->mPos.vx;
+					aimTarget.vy = this->mPos.vy;
+					aimTarget.vz = G_MECHLIST->mPos.vz;
+					Utils_CalcAim(&this->mAngles, &this->mPos, &aimTarget);
+
+					i32 groundHeight = Utils_GetGroundHeight(&this->mPos, 0, 0x800, 0);
+					if (groundHeight != -1)
+					{
+						this->field_328 = 0x2000;
+						print_if_false(1, "Bad register index");
+						this->realRegisterArr[0] = groundHeight >> 12;
+						this->dumbAssPad++;
+					}
+					break;
+				}
+
+				case 1:
+				{
+					print_if_false(1, "Bad register index");
+					i32 landingY = (this->realRegisterArr[0] - this->field_21E) << 12;
+					if (this->mPos.vy > landingY)
+					{
+						this->RunAnim(203, 0, -1);
+						this->mPos.vy = landingY;
+						this->field_328 = 0;
+						this->mVel.vx = 0;
+						this->mVel.vy = 0;
+						this->mVel.vz = 0;
+						this->dumbAssPad++;
+					}
+					break;
+				}
+
+				case 2:
+					if (this->mAnimFinished)
+					{
+						this->field_31C.bothFlags = 2;
+						this->dumbAssPad = 0;
+					}
+					break;
+
+				default:
+					print_if_false(0, "Unknown substate");
+					break;
+			}
+			break;
+
+		case 2:
+			switch (this->dumbAssPad)
+			{
+				case 0:
+					this->field_33C = 1;
+					this->field_344 = 1;
+					this->dumbAssPad = 1;
+					// fall through
+
+				case 1:
+					if (this->field_33C)
+					{
+						this->SynthesizeAnalogueInput();
+					}
+					else
+					{
+						this->Die(0);
+					}
+					break;
+
+				default:
+					print_if_false(0, "Unknown substate");
+					break;
+			}
+			break;
+
+		default:
+			print_if_false(0, "Unknown state");
+			break;
+	}
+
+	this->field_330 = this->field_32C;
+	this->field_32C = this->field_80;
+
+	CSVector lookAngle;
+	lookAngle.vx = 0;
+	lookAngle.vy = 0;
+	lookAngle.vz = 0;
+
+	if (this->field_324)
+	{
+		SHook hook;
+		hook.Part.vx = 0;
+		hook.Part.vy = 0;
+		hook.Part.vz = 0;
+		hook.Offset = 7;
+		VECTOR hookPos;
+		M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
+
+		CVector trigPos;
+		trigPos.vx = 0;
+		trigPos.vy = 0;
+		trigPos.vz = 0;
+		Trig_GetPosition(&trigPos, this->field_324);
+
+		MATRIX localMat;
+		M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+		gte_SetRotMatrix(&localMat);
+
+		CVector delta;
+		delta.vx = (trigPos.vx - hookPos.vx) >> 12;
+		delta.vy = (trigPos.vy - hookPos.vy) >> 12;
+		delta.vz = (trigPos.vz - hookPos.vz) >> 12;
+
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&delta));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&delta));
+
+		delta <<= 12;
+
+		CVector zero;
+		zero.vx = 0;
+		zero.vy = 0;
+		zero.vz = 0;
+		Utils_CalcAim(&lookAngle, &zero, &delta);
+	}
+
+	if (!this->mpJoints)
+	{
+		this->ApplyPose(gUnkPose);
+	}
+
+	i16* panTilt = reinterpret_cast<i16*>(this->mpJoints) + 0x12;
+
+	i32 dx = lookAngle.vx - panTilt[0];
+	if (dx > 0x800) dx -= 0x1000;
+	else if (dx < -0x800) dx += 0x1000;
+
+	if (dx != 0)
+	{
+		if (dx > 0x30) dx = 0x30;
+		else if (dx < -0x30) dx = -0x30;
+		panTilt[0] = static_cast<i16>(panTilt[0] + dx);
+	}
+
+	i32 dy = lookAngle.vy - panTilt[1];
+	if (dy > 0x800) dy -= 0x1000;
+	else if (dy < -0x800) dy += 0x1000;
+
+	if (dy != 0)
+	{
+		if (dy > 0x30) dy = 0x30;
+		else if (dy < -0x30) dy = -0x30;
+		panTilt[1] = static_cast<i16>(panTilt[1] + dy);
+	}
+
+	if ((this->mFlags & 4) && this->field_33C && (panTilt[0] | panTilt[1]) == 0)
+	{
+		this->mFlags &= ~4;
+	}
+
+	if (this->mFlags & 4)
+	{
+		this->ApplyPose(gUnkPose);
+	}
+	else
+	{
+		M3d_BuildTransform(this);
+	}
+
+	this->DoMGSShadow();
 }
 
 // @Ok
