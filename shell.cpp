@@ -210,6 +210,9 @@ INLINE u32 Shell_CalculateGameChecksum(SSaveGame* pSave)
 // DoShell stub below), so decompiling this in isolation would not be
 // runtime-verifiable or even really leaf-first yet. Bigger than one
 // session's budget alongside the rest of this file's TODOs.
+// Confirmed 2026-08-31 via IDA callees(): this calls CheckForPadUnplugged
+// directly, so it is also blocked on that function's sub_460080 base-class
+// finding (see the long comment above CheckForPadUnplugged).
 // @MEDIUMTODO
 void Shell_CharacterViewer(void)
 {
@@ -288,6 +291,42 @@ void Shell_Cheats(void)
 // remaining work (a new class decompile plus a cross-file stub addition)
 // is bigger than a single-session leaf task, but the mapping above should
 // save the next session the address-hunting.
+//
+// Re-investigated 2026-08-31 with IDA Hex-Rays decompile (not just disasm)
+// of sub_48E4B0 and its callees, to see how close the widget really is.
+// Findings:
+// - Confirmed via callees(): ALL SIX of the menu screens this session was
+//   asked to unblock (Shell_MainMenu, Shell_RollCredits, Shell_CharacterViewer,
+//   Shell_ComicCollection, Shell_CostumeViewer, Shell_GameCovers) call this
+//   function directly. None of them is reachable until this one is done.
+// - sub_48E4B0's own first call is sub_460720(this), which itself just
+//   flips 2 bytes/words then calls sub_460080(this), a ~349 byte object
+//   initializer that writes TWO different vtables (&off_53BBD0 then
+//   &off_53BBD4) over the same fields. This is NOT a shell.cpp-local
+//   problem: a parallel session working carnage.cpp hit the SAME function
+//   (same addresses, 0x460080/0x53BBD0/0x53BBD4) today from
+//   CSymbioteBlade::CSymbioteBlade (0x41AE40, in carnage.cpp) and reached
+//   the same conclusion independently: it is a whole base class with no
+//   repo precedent, BIGTODO on its own. See carnage.cpp's comment above
+//   CSymbioteBlade::CSymbioteBlade for that session's notes on it (the
+//   two-stage vtable, the CVector array layout). Cracking sub_460080 once
+//   would unblock CSymbioteBlade, this widget, AND Shell_MainMenu's own
+//   CDummy-model-preview ctor (sub_490DF0, see the comment on
+//   Shell_MainMenu below) at the same time, since sub_490DF0 also calls
+//   sub_460720/sub_460080 as its first step.
+// - sub_48E4B0 itself (past the base-class call) builds 2 CQuadBit
+//   objects for a "cweb" sprite (frames 0 and 1, via CQuadBit::SetTexture
+//   already implemented in bit.cpp) plus a 3rd object via sub_4F8E20
+//   (unexplored, takes a 3-CVector-ish block built from this+113/114/115)
+//   -- this part alone looks tractable once the base class exists, it is
+//   only the base class that blocks it.
+// - Separately, sub_490DF0 (the CDummy ctor used for the 3D preview icon
+//   in Shell_MainMenu/Shell_RollCredits/Shell_CharacterViewer/
+//   Shell_CostumeViewer) was also decompiled this session: it is its own
+//   ~1840 byte BIGTODO with a long per-costume if-chain (special cases for
+//   Carnage, Mysterio, Scorpion, SuperOck, goldfish-bubble spawning), fully
+//   separate from this function's widget. Both need solving before any of
+//   the six menu screens can be attempted.
 // Kept out-of-line (same trick as PCShell.cpp's
 // gsub_430680/gsub_430880, needed because this stub lives in the same
 // TU as its callers).
@@ -1072,6 +1111,8 @@ void Shell_ChooseTrainingMission(i32)
 // Shell_CharacterViewer above: left as a stub, own callees mostly
 // unnamed, and the only caller (Shell_DoShell) needs ~15 more
 // undecompiled functions before it is itself attemptable.
+// Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
+// directly (see its comment above for the sub_460080 base-class blocker).
 // @MEDIUMTODO
 void Shell_ComicCollection(void)
 {
@@ -1082,6 +1123,10 @@ void Shell_ComicCollection(void)
 // Called from Shell_DoShell's (0x4A1A80) main switch, case 22 (v64 == 22).
 // Same situation as Shell_CharacterViewer/Shell_ComicCollection above:
 // left as a stub pending Shell_DoShell's own dispatch chain.
+// Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
+// directly (see its comment above for the sub_460080 base-class blocker),
+// and calls sub_490DF0 (the CDummy preview-model ctor, its own separate
+// ~1840 byte BIGTODO, also documented on CheckForPadUnplugged's comment).
 // @MEDIUMTODO
 void Shell_CostumeViewer(void)
 {
@@ -1597,6 +1642,8 @@ i32 Shell_Gallery(EShellResult a1)
 // sub_49CCB0's menu-code loop, code 11). Same situation as
 // Shell_CharacterViewer/Shell_ComicCollection above: left as a stub
 // pending Shell_DoShell's own dispatch chain.
+// Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
+// directly (see its comment above for the sub_460080 base-class blocker).
 // @MEDIUMTODO
 void Shell_GameCovers(void)
 {
@@ -2394,6 +2441,14 @@ i32 Shell_LoadGame(void)
 // entry and no struct declared, would need its own investigation. Left as
 // a stub: CheckForPadUnplugged (a direct same-TU dependency) is also still
 // a stub (see above), so this cannot even be leaf-first attempted yet.
+// Re-checked 2026-08-31: CDummy_ctor (sub_490DF0) was decompiled this
+// session (IDA Hex-Rays) and is confirmed genuinely large, ~1840 bytes with
+// a long per-costume special-case chain (Carnage/Mysterio/Scorpion/
+// SuperOck/goldfish-bubble spawning), its own BIGTODO. Also, CheckForPad
+// Unplugged's remaining blocker is now narrowed down to one shared base
+// class (sub_460080/sub_460720, same function a parallel carnage.cpp
+// session hit independently the same day from CSymbioteBlade); see the
+// long comment above CheckForPadUnplugged for details.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
@@ -2818,6 +2873,10 @@ done:
 // tokenizer plus the scroll math would need its own careful pass. Smaller
 // and more self-contained than Shell_MainMenu/Shell_DoShell though, a
 // reasonable next target once CheckForPadUnplugged is done.
+// Re-checked 2026-08-31: CheckForPadUnplugged's blocker is now narrowed to
+// one shared base class (sub_460080), see its comment above. Once that
+// lands, this is likely the most tractable of the six menu screens (it
+// only needs sub_490DF0, the CDummy preview-model ctor, on top of that).
 // @MEDIUMTODO
 void Shell_RollCredits(void)
 {
