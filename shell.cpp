@@ -257,96 +257,6 @@ void Shell_Cheats(void)
 	}
 }
 
-// address 0x48EA90, name from names.json. Called once per frame by several
-// Shell_ menu loops (ScreenAdjust, ShowRecord, ChooseSurvivalArena, ...).
-// RETAGGED from @SMALLTODO to @BIGTODO this session: this is not a small
-// helper, it is 747 bytes and a full "pad unplugged" modal draw loop (checks
-// dword_66126C, and if set, allocates a widget via sub_48E4B0(size 472,
-// not yet named/decompiled anywhere) and runs a real per-frame render loop
-// until dword_54D38C or the widget closes).
-// Callee research done this session (all confirmed via names.json, most
-// already implemented elsewhere in the repo, so this is more tractable than
-// it looks, just large): Utils_VblankProcessing-style tick boilerplate is
-// shared verbatim with Shell_MainMenu/Shell_RollCredits (same pattern:
-// nullsub_3=0x430880, Db_FlipClear=0x430630, CalcPolyBufferEnd=0x4553E0,
-// PCGfx_BeginScene=0x505E00 (guarded by byte_AC08C4), M3dMaths_RotMatrixYXZ
-// =0x46E730, TransMatrix=0x46CFA0, M3d_RenderSetup=0x472DC0, M3d_Render
-// =0x4739A0, M3d_RenderCleanup=0x4737F0, PCGfx_EndScene=0x506160 (also
-// guarded by byte_AC08C4), Pad_Update=0x505720, Utils_VblankProcessing
-// =0x4E5C10, PCSHELL_Relax=0x50DF80, Pause=0x4E5D60). Menu-specific: Spool_
-// AnimAccess=0x4CB5B0 (gMenubg lazy-load, same idiom as Shell_ChooseSurvival
-// Arena's menubg load), PCPanel_DrawTexturedPoly=0x509D20 (background
-// blit), Bit_Display=0x411CF0 and Bit_Move=0x411B30 (real names in
-// names.json but NOT YET DECLARED ANYWHERE in the repo, not even as
-// printf stubs; they belong to bit.cpp/bit.h, a different file, so adding
-// them is out of scope for a shell.cpp-only session), Bit_RemoveDeadBits
-// =0x408610 (already real, bit.cpp), Pad_ClearTriggers=0x479470 (already
-// real). Still unresolved: sub_48E4B0 (the widget's own ctor/setup
-// function, 0x48E4B0, no name in names.json, needs its own decompile pass
-// before this function can be attempted) and the ~8 M3d render-context
-// globals (dword_56FB2C, off_54D490, unk_56F1E4, qword_56F1B4,
-// dword_56F1BC, dword_56F1DC, word_56F1E0, dword_56F1B0) that this shares
-// with Shell_MainMenu/Shell_RollCredits and would need a real struct
-// layout, not raw addresses, to write cleanly. Left as a stub: the
-// remaining work (a new class decompile plus a cross-file stub addition)
-// is bigger than a single-session leaf task, but the mapping above should
-// save the next session the address-hunting.
-//
-// Re-investigated 2026-08-31 with IDA Hex-Rays decompile (not just disasm)
-// of sub_48E4B0 and its callees, to see how close the widget really is.
-// Findings:
-// - Confirmed via callees(): ALL SIX of the menu screens this session was
-//   asked to unblock (Shell_MainMenu, Shell_RollCredits, Shell_CharacterViewer,
-//   Shell_ComicCollection, Shell_CostumeViewer, Shell_GameCovers) call this
-//   function directly. None of them is reachable until this one is done.
-// - sub_48E4B0's own first call is sub_460720(this), which itself just
-//   flips 2 bytes/words then calls sub_460080(this), a ~349 byte object
-//   initializer that writes TWO different vtables (&off_53BBD0 then
-//   &off_53BBD4) over the same fields. This is NOT a shell.cpp-local
-//   problem: a parallel session working carnage.cpp hit the SAME function
-//   (same addresses, 0x460080/0x53BBD0/0x53BBD4) today from
-//   CSymbioteBlade::CSymbioteBlade (0x41AE40, in carnage.cpp) and reached
-//   the same conclusion independently: it is a whole base class with no
-//   repo precedent, BIGTODO on its own. IDA xrefs_to shows sub_460080 has
-//   30+ direct callers spread across the whole binary (villains, items,
-//   this widget, CDummy), not just these two files, so it is one of the
-//   highest-leverage single functions left to crack in the whole repo,
-//   worth a dedicated session of its own rather than a shell.cpp side
-//   quest. See carnage.cpp's comment above
-//   CSymbioteBlade::CSymbioteBlade for that session's notes on it (the
-//   two-stage vtable, the CVector array layout). Cracking sub_460080 once
-//   would unblock CSymbioteBlade, this widget, AND Shell_MainMenu's own
-//   CDummy-model-preview ctor (sub_490DF0, see the comment on
-//   Shell_MainMenu below) at the same time, since sub_490DF0 also calls
-//   sub_460720/sub_460080 as its first step.
-// - sub_48E4B0 itself (past the base-class call) builds 2 CQuadBit
-//   objects for a "cweb" sprite (frames 0 and 1, via CQuadBit::SetTexture
-//   already implemented in bit.cpp) plus a 3rd object via sub_4F8E20
-//   (unexplored, takes a 3-CVector-ish block built from this+113/114/115)
-//   -- this part alone looks tractable once the base class exists, it is
-//   only the base class that blocks it.
-// - Separately, sub_490DF0 (the CDummy ctor used for the 3D preview icon
-//   in Shell_MainMenu/Shell_RollCredits/Shell_CharacterViewer/
-//   Shell_CostumeViewer) was also decompiled this session: it is its own
-//   ~1840 byte BIGTODO with a long per-costume if-chain (special cases for
-//   Carnage, Mysterio, Scorpion, SuperOck, goldfish-bubble spawning), fully
-//   separate from this function's widget. Both need solving before any of
-//   the six menu screens can be attempted.
-// Kept out-of-line (same trick as PCShell.cpp's
-// gsub_430680/gsub_430880, needed because this stub lives in the same
-// TU as its callers).
-#ifdef _MSC_VER
-#pragma auto_inline(off)
-#endif
-// @BIGTODO
-EXPORT void CheckForPadUnplugged(void)
-{
-	printf("CheckForPadUnplugged(void)");
-}
-#ifdef _MSC_VER
-#pragma auto_inline(on)
-#endif
-
 // shared per-frame ease value for the title bar shake on some Shell_ menu screens
 // (ScreenAdjust, ShowRecord, ChooseSurvivalArena all use it). tentative name, no idb
 // match (0x5512EC). distinct from PCShell.cpp's PCSHELL_DoDisplayOptions/
@@ -361,6 +271,326 @@ EXPORT i32 gShellMenuEase = 0x200;
 // Shell_ menu loops; guessed to gate an early abort, e.g. game shutting down. nearest
 // idb_globals.txt neighbour is SymBurnRegion at 0x54D388).
 static u8 * const gShellMenuAbort = (u8*)0x54D38C;
+
+// tentative name, no idb match (0x0054B764). A short table of status-line strings read by
+// pointer (const char*), confirmed by reading each entry with IDA get_string against the
+// original binary. Index 0/1 are the two lines CheckForPadUnplugged shows; xrefs show this
+// same table is also read (at different indices) by two other, not yet decompiled, screens
+// (0x440AF0, 0x441D40), which is why it holds unrelated-looking strings past index 1.
+EXPORT const char *gShellStatusStrings[5] =
+{
+	"A controller has been removed",
+	"or a VMU is being detected.",
+	"Demo Play",
+	"enter cheat",
+	"skip to restart",
+};
+
+// Reverse engineered 2026-08-31 (CheckForPadUnplugged chain, functional decompile session).
+// Address 0x48E4B0 (439 bytes, unnamed in names.json; class declared in shell.h). Builds the
+// two "cweb" CQuadBit sprites and the CKnottedWeb strand joining them, then places them via
+// SetWebPositions.
+// @Ok
+CDropDownController::CDropDownController(void)
+{
+	this->mTopAnchor.vx = 0;
+	this->mTopAnchor.vy = 0;
+	this->mTopAnchor.vz = 0;
+
+	// raw fixed-point constants from the disasm (mPos.vy=-380.0, mPos.vz=768.0 in Q12): the
+	// widget's initial spawn position, established before M3d_BuildTransform below and never
+	// touched again except by AI()'s own drop animation on mPos.vy.
+	this->mPos.vy = -1556480;
+	this->mPos.vz = 3145728;
+
+	this->mAngles.vz = 80;
+
+	this->InitItem("control");
+
+	this->mFlags |= 0x482;
+	this->mpLight = &M3d_SpideyCIconLight;
+
+	this->RunAnim(0, 0, -1);
+
+	this->mState = 0;
+
+	M3d_BuildTransform(this);
+
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = -1600;
+	hook.Part.vz = -600;
+	hook.Offset = 0;
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mTopAnchor), this, &hook);
+
+	this->mpFrame0 = new CQuadBit();
+	this->mpFrame0->SetTexture("cweb", 0);
+	this->mpFrame0->SetSemiTransparent();
+	this->mpFrame0->mProtected = 1;
+
+	this->mpFrame1 = new CQuadBit();
+	this->mpFrame1->SetTexture("cweb", 1);
+	this->mpFrame1->SetSemiTransparent();
+	this->mpFrame1->mProtected = 1;
+
+	CVector bottomAnchor;
+	bottomAnchor.vx = this->mTopAnchor.vx;
+	bottomAnchor.vy = this->mTopAnchor.vy + 3297280;
+	bottomAnchor.vz = this->mTopAnchor.vz;
+
+	this->mpWeb = new CKnottedWeb(this->mTopAnchor, bottomAnchor);
+	this->mpWeb->mProtected = 1;
+
+	this->SetWebPositions();
+}
+
+// @Ok
+CDropDownController::~CDropDownController(void)
+{
+	if (this->mpFrame0)
+		delete this->mpFrame0;
+
+	if (this->mpFrame1)
+		delete this->mpFrame1;
+
+	if (this->mpWeb)
+		delete this->mpWeb;
+}
+
+// address 0x48E710, name from names.json is missing; found while investigating
+// CDropDownController's constructor (0x48E4B0) call graph. Places the two CQuadBit sprite
+// corners on the hooked bone (offsets {-1000,-1600,-600} and {0,-1600,-600} for frame 0,
+// {1100,-1600,-600} for frame 1), derives the remaining corners from CVector arithmetic
+// (confirmed operator names via names.json: 0x4E7760=operator-, 0x4E77A0=operator*(int),
+// 0x4E7840=operator>>(int), 0x4E7720=operator+), and re-anchors the web strand between the
+// top anchor and frame 0's B corner.
+// @Ok
+void CDropDownController::SetWebPositions(void)
+{
+	M3d_BuildTransform(this);
+
+	this->mpFrame0->SetTint(64, 64, 64);
+	this->mpFrame1->SetTint(64, 64, 64);
+
+	SHook hook;
+	hook.Part.vx = -1000;
+	hook.Part.vy = -1600;
+	hook.Part.vz = -600;
+	hook.Offset = 0;
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mpFrame0->mPosC), this, &hook);
+
+	hook.Part.vx = 0;
+	hook.Part.vy = -1600;
+	hook.Part.vz = -600;
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mpFrame0->mPosD), this, &hook);
+
+	CVector fromAnchor = (this->mpFrame0->mPosD - this->mTopAnchor) * 220;
+	fromAnchor = fromAnchor >> 8;
+	this->mpFrame0->mPosB = fromAnchor + this->mTopAnchor;
+
+	this->mpFrame0->mPos = (this->mpFrame0->mPosC - this->mpFrame0->mPosD) + this->mpFrame0->mPosB;
+
+	this->mpFrame1->mPos = this->mpFrame0->mPosB;
+	this->mpFrame1->mPosC = this->mpFrame0->mPosD;
+
+	hook.Part.vx = 1100;
+	hook.Part.vy = -1600;
+	hook.Part.vz = -600;
+	M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&this->mpFrame1->mPosD), this, &hook);
+
+	this->mpFrame1->mPosB = (this->mpFrame1->mPosD - this->mpFrame1->mPosC) + this->mpFrame1->mPos;
+
+	this->mpWeb->SetStartAndEnd(&this->mTopAnchor, &this->mpFrame0->mPosB);
+}
+
+// address 0x48E930, name from names.json is missing; found the same way as SetWebPositions.
+// Three-phase drop animation: mState 0 falls (mVel.vy/mPos.vy, gravity-like accel of 80000
+// per frame) until mPos.vy passes -300, then mState 1/2 run a damped sine wobble (mPhase/
+// mSpeed, via rcossin_tbl, the same table shell.cpp already uses elsewhere in this file) on
+// mPos.vy, settling once mSpeed decays under 13000. mAngles.vy/vz get a continuous small
+// wobble/shake independent of mState. Ends by re-placing the sprites (SetWebPositions).
+// @Ok
+void CDropDownController::AI(void)
+{
+	if (this->mState != 0)
+	{
+		if (this->mState > 0 && this->mState <= 2)
+		{
+			i32 speed = this->mSpeed;
+
+			this->mPhase += 300;
+			this->mPos.vy = ((speed * rcossin_tbl[this->mPhase & 0xFFF].sin + 30) >> 12) - 150000;
+
+			speed = (3100 * speed) >> 12;
+			this->mSpeed = speed;
+
+			if (speed < 13000)
+				this->mState = 2;
+		}
+	}
+	else
+	{
+		i32 fallSpeed = this->mVel.vy;
+		i32 newPos = fallSpeed + this->mPos.vy;
+
+		this->mVel.vy = fallSpeed + 80000;
+		this->mPos.vy = newPos;
+
+		if (newPos > -300)
+		{
+			this->mPos.vy = -300;
+			this->mSpeed = 163840;
+			this->mState = 1;
+			this->mpWeb->field_6E = 1;
+		}
+	}
+
+	this->mWobblePhase += 20;
+	this->mAngles.vy = static_cast<i16>((75 * rcossin_tbl[this->mWobblePhase & 0xFFF].sin) >> 12);
+
+	if (this->mShakeFlag != 0)
+	{
+		this->mShakeAmp = 10;
+	}
+	else if (this->mShakeAmp != 0)
+	{
+		this->mShakeAmp -= 1;
+	}
+
+	i32 shake = this->mShakeAmp * rcossin_tbl[this->mShakePhase & 0xFFF].sin;
+	this->mShakePhase += 800;
+	this->mAngles.vz = static_cast<i16>(shake / 4096 + 80);
+
+	this->SetWebPositions();
+}
+
+// address 0x48EA90, name from names.json. Called once per frame by several Shell_ menu
+// loops (ScreenAdjust, ShowRecord, ChooseSurvivalArena, ...). 747 bytes: a full "pad
+// unplugged" modal draw loop that owns a CDropDownController widget and runs a real
+// per-frame render loop until gShellMenuAbort or the pad reconnects. The guard/exit
+// condition is G_SCONTROL[0].Type (address-audited against idb_globals.txt: 0x0066126C is
+// gSControl (0x661100) + 0x16C, and SControl::Type is VALIDATEd at offset 0x16C in
+// ps2pad.cpp, so this is that field, not a standalone global) -- 0 means no controller type
+// recognised (unplugged), matching the function's own name and behaviour exactly.
+// Callees confirmed via names.json, all already implemented elsewhere in the repo: Db_
+// FlipClear, CalcPolyBufferEnd, PCGfx_BeginScene/EndScene (guarded by gSceneRelated),
+// M3dMaths_RotMatrixYXZ, TransMatrix, M3d_RenderSetup/Render/RenderCleanup, Pad_Update,
+// Utils_VblankProcessing, PCSHELL_Relax, Pause, Spool_AnimAccess (gMenubg lazy-load, same
+// idiom as Shell_ChooseSurvivalArena's menubg load), PCPanel_DrawTexturedPoly, Mess_DrawText,
+// Bit_Display/Bit_Move/Bit_RemoveDeadBits (bit.cpp), Pad_ClearTriggers.
+// Kept out-of-line (same trick as PCShell.cpp's gsub_430680/gsub_430880, needed because this
+// stub lives in the same TU as its callers).
+#ifdef _MSC_VER
+#pragma auto_inline(off)
+#endif
+// @Ok
+EXPORT void CheckForPadUnplugged(void)
+{
+	if (G_SCONTROL[0].Type != 0)
+		return;
+
+	print_if_false(gShellInitialized != 0, "Called CheckForPadUnplugged() without shell initialised");
+
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	CDropDownController *pWidget = new CDropDownController();
+
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	PShell_DefaultText();
+
+	i32 frameCount = 0;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 startVblanks = Vblanks;
+
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+
+		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+		M3d_Render(pWidget);
+		M3d_RenderCleanup();
+
+		if (((frameCount / 12) & 1) == 0)
+		{
+			Mess_DrawText(256, 184, gShellStatusStrings[0], 0, 0x1000);
+			Mess_DrawText(256, 199, gShellStatusStrings[1], 0, 0x1000);
+		}
+		frameCount++;
+
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+
+		Bit_Display();
+
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+
+		Pad_Update();
+
+		if (*gShellMenuAbort != 0)
+			break;
+
+		if (G_SCONTROL[0].Type != 0)
+		{
+			delete pWidget;
+
+			Pause(1);
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			gsub_430680();
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+
+			Pad_ClearTriggers(G_SCONTROL);
+			Pad_IdleTime = 0;
+			return;
+		}
+
+		pWidget->AI();
+
+		Bit_Move();
+		Bit_RemoveDeadBits();
+
+		if (Vblanks == startVblanks)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
+}
+#ifdef _MSC_VER
+#pragma auto_inline(on)
+#endif
 
 // @Ok
 i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
@@ -5936,6 +6166,24 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_2D4, 0x2D4);
 	VALIDATE(CDummy, field_304, 0x304);
 	VALIDATE(CDummy, field_418, 0x418);
+}
+
+void validate_CDropDownController(void)
+{
+	VALIDATE_SIZE(CDropDownController, 0x1D8);
+
+	VALIDATE(CDropDownController, mPhase, 0x1A4);
+	VALIDATE(CDropDownController, mSpeed, 0x1A8);
+	VALIDATE(CDropDownController, mWobblePhase, 0x1AC);
+	VALIDATE(CDropDownController, mShakeAmp, 0x1B0);
+	VALIDATE(CDropDownController, mShakePhase, 0x1B4);
+	VALIDATE(CDropDownController, mShakeFlag, 0x1B8);
+
+	VALIDATE(CDropDownController, mpFrame0, 0x1BC);
+	VALIDATE(CDropDownController, mpFrame1, 0x1C0);
+	VALIDATE(CDropDownController, mTopAnchor, 0x1C4);
+	VALIDATE(CDropDownController, mpWeb, 0x1D0);
+	VALIDATE(CDropDownController, mState, 0x1D4);
 }
 
 void validate_CShellMysterioHeadGlow(void)

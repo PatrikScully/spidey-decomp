@@ -309,6 +309,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CSwinger();
 	validate_CTurretBase();
 	validate_CDummy();
+	validate_CDropDownController();
 	validate_CSniperSplat();
 	validate_SStateFlags();
 	validate_CGPolyLine();

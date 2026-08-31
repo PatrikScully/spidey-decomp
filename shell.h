@@ -7,6 +7,7 @@
 #include "export.h"
 #include "reloc.h"
 #include "main.h"
+#include "bit2.h"
 
 EXPORT extern CBody *MiscList;
 
@@ -198,6 +199,55 @@ public:
 	CVector field_2D4[4];
 	CVector field_304[23];
 	CVector field_418[128];
+};
+
+// Reverse engineered 2026-08-31 (CheckForPadUnplugged chain, functional decompile session).
+// Address of the constructor is 0x48E4B0 (439 bytes, unnamed in names.json); the class name
+// comes from the Mac build symbol table (idbs/spiderman_names.txt,
+// ".__ct__19CDropDownControllerFv", right before ".CheckForPadUnplugged__Fv" and
+// prototypes.json's "CDropDownController::CDropDownController((void)): 540"). This is the
+// little UI widget CheckForPadUnplugged (shell.cpp) shows on screen: two "cweb" CQuadBit
+// sprites joined by a CKnottedWeb strand, dropped down from the top of the screen with a
+// damped bounce (CDropDownController::AI) whenever a controller gets unplugged mid-game.
+// This class derives from CSuper (base ctor confirmed via ??0CSuper@@QAE@XZ at 0x460720),
+// and reuses several inherited CItem/CBody fields as scratch animation counters instead of
+// declaring new ones (mPos.vy/vz for the drop height, mAngles.vy/vz for the wobble angle,
+// mVel.vy for the fall speed) -- same idiom already seen elsewhere in this codebase
+// (CBody::field_98/9C/A0 for XA sound timers).
+class CDropDownController : public CSuper
+{
+public:
+
+	EXPORT CDropDownController(void);
+	EXPORT virtual ~CDropDownController(void) OVERRIDE;
+	EXPORT virtual void AI(void) OVERRIDE;
+	EXPORT void SetWebPositions(void);
+
+	// drop-wobble accumulator/speed (CDropDownController::AI, mState 1/2)
+	i32 mPhase;
+	i32 mSpeed;
+
+	// mAngles.vy oscillation accumulator (CDropDownController::AI, runs every state)
+	i32 mWobblePhase;
+
+	// continuous small shake amplitude/phase; mShakeFlag is read but never written by any
+	// function in this chain, so its setter is out of scope (probably a rumble/vibration
+	// check elsewhere in the binary)
+	i32 mShakeAmp;
+	i32 mShakePhase;
+	i32 mShakeFlag;
+
+	CQuadBit *mpFrame0;
+	CQuadBit *mpFrame1;
+
+	// top attach point for the web, computed once in the constructor via
+	// M3dUtils_GetDynamicHookPosition
+	CVector mTopAnchor;
+
+	CKnottedWeb *mpWeb;
+
+	// 0 = dropping, 1 = just landed (starts the wobble), 2 = wobble settled
+	i32 mState;
 };
 
 class Spidey_CIcon : public CSuper
@@ -567,6 +617,7 @@ EXPORT extern SAnimFrame* gBackgroundAnimFrame;
 
 void validate_CRudeWordHitterSpidey(void);
 void validate_CDummy(void);
+void validate_CDropDownController(void);
 void validate_CWobblyGlow(void);
 void validate_CShellMysterioHeadGlow(void);
 void validate_Spidey_CIcon(void);
