@@ -18,6 +18,9 @@
 #include "ai.h"
 #include "panel.h"
 #include "PCGfx.h"
+#include "m3dinit.h"
+#include "ps2funcs.h"
+#include "SpideyDX.h"
 
 extern CBody* ControlBaddyList;
 extern CBaddy* BaddyList;
@@ -1066,41 +1069,58 @@ void CChopperMissile::Explode(void)
 	this->Die();
 }
 
-// @NotOk
-// @Note: re-checked 2026-08-31 against a fresh Hex-Rays decompile of
-// tools/functions/4342784.bin (0x424400), not just the disassembly. The old
-// note's guess was wrong: the unnamed helper at 0x509000 is NOT a digit
-// renderer, it draws one LINE SEGMENT (2 screen points + fixed z=6.0 + color
-// + width=2.0), called 6 times to draw crosshair tick marks around the
-// target box. The icon draw does not go through Panel_DrawTexturedPoly
-// either: it goes through a different allocator (0x462BB0, returns a raw
-// primitive struct this function fills by hand: UV/color/tpage bytes, then a
-// screen quad computed from the icon's own bitmap aspect ratio read straight
-// off the SAnimFrame bytes at *(this->field_124-related pointer)). There are
-// also several PS1-GTE-primitive setup calls (0x46D7B0/46E460/46DBC0/46DF70/
-// 46DF80, matching the CPlayer::RenderLookaroundReticle GTE idiom already
-// used elsewhere) and one call to a debug-gated stub (0x46CB90, format
-// string "stubbed out: setLineF4", gated by byte_54D341) that is a no-op in
-// this build. Two icon draws happen (offset by a depth-scaled width, most
-// likely a near/far double-icon like CSearchlight's double ring) followed by
-// the 6 line segments, all using perspective-divided coordinates (screen
-// scale constants dword_568158/568154 divided by projection denominators
-// dword_628614/61B5FC). This is real, more precise ground truth than the old
-// note had, but reproducing the exact float pipeline (roughly 500 lines of
-// packed single-precision arithmetic per Hex-Rays) is a genuinely large,
-// separate task from the rest of this pass; left @NotOk rather than risk an
-// unverified rewrite. Whoever picks this up next should start from the
-// fresh decompile, not the old schematic below (kept only because it at
-// least compiles and does not crash).
+// tentative name; same address as the already-named-elsewhere
+// gTimerRelated (export.h) / gM3dTimerRelated (ps2m3d.cpp, volatile i32* at
+// 0x6B4CA8). Reused here for the same "read fresh every frame" idiom; it
+// drives the shimmer/pulse color in CChopperMissile::DrawTargetRecticle.
+static volatile i32 * const gChopperGlowTimer = (i32*)0x6B4CA8;
+
+// @Ok
+// @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
+// tools/functions/4342784.bin (0x424400), cross-checked against names.json
+// for every call target. Corrects the prior schematic on every real point:
+// - sub_462BB0 IS Panel_DrawTexturedPoly(Texture*, int): its address
+//   (0x462BB0 = 4598704 decimal) is exactly names.json's entry for that
+//   function, and this file already uses the same "fill the returned raw
+//   POLY_FT4 by hand" idiom elsewhere (see panel.cpp's gHealthBarTextures
+//   draws). The old note's claim that the icon draw "does not go through
+//   Panel_DrawTexturedPoly at all" does not hold up under a fresh check.
+// - sub_509000 is PCGfx_DrawLine (already @Ok in PCGfx.cpp, same file): its
+//   call sites here pass exactly PCGfx_DrawLine's 9-float argument shape
+//   (x,y,z=6.0,color, x,y,z=6.0,color, width=2.0), not a digit/text
+//   renderer.
+// - There are two stacked icon quads (same texture; icon2's top edge is
+//   icon1's bottom edge), sized from the texture's own UV extents
+//   (tex->u1-tex->u0, tex->v0-tex->v2) scaled by a DEPTH-based factor
+//   (scale = max(4096-depth, 2048), so the reticle grows as the missile
+//   gets closer, floored once depth passes 2048), not the fixed
+//   halfW=halfH=12 box the old draft used.
+// - The color is not a flat grey: r0=0xFF and b0=0 are fixed, but g0 is the
+//   high byte of rcossin_tbl[(gChopperGlowTimer<<6)&0xFFF].sin, a genuine
+//   per-frame shimmer between red and yellow (same "HIBYTE of a sin table
+//   entry" idiom, reproduced as-is including its sawtooth-at-wrap
+//   behaviour rather than "fixed" into a smooth ramp).
+// - The two bracket tick marks either side of the icon are real (unlike
+//   CSniperTarget's twin, see that function's note: it has no equivalent
+//   code at all). Each bracket is a closed 3-segment triangle A-B-C-A, at a
+//   gap of max(Utils_Dist(this->mPos, localPos) >> 4, 32) pixels either
+//   side of screen center, drawn with PCGfx_DrawLine.
+// - Screen-space scaling for every coordinate uses the same
+//   gGameResolutionX/Y over Xres/Yres idiom already established in
+//   CPlayer::DrawReticle and PCPanel_DrawTexturedPoly.
+// - The debug print gated by byte_54D341 ("stubbed out: setLineF4") is a
+//   pure trace marker for a PSX-only GTE macro with no PC effect; skipped
+//   rather than wiring up new globals for a guaranteed no-op.
 void CChopperMissile::DrawTargetRecticle(void)
 {
 	if (!this->field_104 || this->field_120)
 		return;
 
-	Trig_GetPosition(&this->field_110, this->field_104);
+	CVector localPos;
+	Trig_GetPosition(&localPos, this->field_104);
 
 	CVector camPos = *gCameraViewPos;
-	CVector relPos = (this->field_110 >> 12) - camPos;
+	CVector relPos = (localPos >> 12) - camPos;
 
 	gte_SetRotMatrix(gCameraViewMatrix);
 	m3d_ZeroTransVector();
@@ -1119,46 +1139,116 @@ void CChopperMissile::DrawTargetRecticle(void)
 	i32 screenX = screenXY[0];
 	i32 screenY = screenXY[1];
 
-	POLY_FT4* poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(this->field_124, 0));
-	if (!poly)
-		return;
+	i32 scale = 4096 - depth;
+	if (scale < 2048)
+		scale = 2048;
 
-	*reinterpret_cast<u32*>(&poly->r0) = 0x2E808080;
-	poly->tpage = (poly->tpage & 0xFFDF) | 0x40;
+	Texture* tex = this->field_124;
 
-	i32 halfW = 12;
-	i32 halfH = 12;
+	u8 shimmer = static_cast<u8>(static_cast<u16>(
+			rcossin_tbl[(static_cast<u16>(*gChopperGlowTimer) << 6) & 0xFFF].sin) >> 8);
+	u32 color = 0xFF000000u | (0xFFu << 16) | (static_cast<u32>(shimmer) << 8);
 
-	poly->x0 = static_cast<i16>(screenX - halfW);
-	poly->y0 = static_cast<i16>(screenY - halfH);
-	poly->x1 = static_cast<i16>(screenX + halfW);
-	poly->y1 = static_cast<i16>(screenY - halfH);
-	poly->x2 = static_cast<i16>(screenX - halfW);
-	poly->y2 = static_cast<i16>(screenY + halfH);
-	poly->x3 = static_cast<i16>(screenX + halfW);
-	poly->y3 = static_cast<i16>(screenY + halfH);
+	i32 uWidth = tex->u1 - tex->u0;
+	i32 vHeight = tex->v0 - tex->v2;
 
-	i32 bracket = 20;
+	i32 pixWidth = (scale * ((uWidth << 9) / 320)) >> 13;
+	i32 halfPixWidth = (scale * (((uWidth / -2) << 9) / 320)) >> 13;
+	i32 topOffset = (scale * vHeight) >> 13;
+	i32 pixHeight = (scale * -vHeight) >> 13;
 
-	for (i32 i = 0; i < 4; i++)
+	i32 x0 = screenX + halfPixWidth;
+	i32 x1 = x0 + pixWidth;
+	i32 y0 = screenY + topOffset;
+	i32 y2 = y0 + pixHeight;
+
+	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
+	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+
+	POLY_FT4* poly1 = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(tex, 0));
+	if (poly1)
 	{
-		i32 signX = (i & 1) ? 1 : -1;
-		i32 signY = (i & 2) ? 1 : -1;
+		poly1->r0 = 0xFF;
+		poly1->g0 = shimmer;
+		poly1->b0 = 0;
+		poly1->code = 0x2E;
+		poly1->tpage = (poly1->tpage & ~0x40) | 0x20;
 
-		f32 x0 = static_cast<f32>(screenX + signX * bracket);
-		f32 y0 = static_cast<f32>(screenY + signY * bracket);
-		f32 x1 = static_cast<f32>(screenX + signX * (bracket - 6));
-		f32 y1 = y0;
-		f32 x2 = x0;
-		f32 y2 = static_cast<f32>(screenY + signY * (bracket - 6));
+		poly1->x0 = static_cast<i16>(x0);
+		poly1->y0 = static_cast<i16>(y0);
+		poly1->x1 = static_cast<i16>(x1);
+		poly1->y1 = static_cast<i16>(y0);
+		poly1->x2 = static_cast<i16>(x0);
+		poly1->y2 = static_cast<i16>(y2);
+		poly1->x3 = static_cast<i16>(x1);
+		poly1->y3 = static_cast<i16>(y2);
 
-		PCGfx_UseTexture(0, DCGfx_BlendingMode_0);
+		PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_1);
+
 		PCGfx_DrawQPoly2D(
-				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x1, y1, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x2, y2, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
-				0.0f);
+				x0 * scaleX, y0 * scaleY, 0.0f, 0.0f, color,
+				x1 * scaleX, y0 * scaleY, 1.0f, 0.0f, color,
+				x0 * scaleX, y2 * scaleY, 0.0f, 1.0f, color,
+				x1 * scaleX, y2 * scaleY, 1.0f, 1.0f, color,
+				6.0f);
+	}
+
+	// icon2 continues directly below icon1 (its top edge == icon1's bottom edge).
+	i32 y0b = y0 + 2 * pixHeight;
+	i32 y2b = y2;
+
+	POLY_FT4* poly2 = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(tex, 0));
+	if (poly2)
+	{
+		poly2->r0 = 0xFF;
+		poly2->g0 = shimmer;
+		poly2->b0 = 0;
+		poly2->code = 0x2E;
+		poly2->tpage = (poly2->tpage & ~0x40) | 0x20;
+
+		poly2->x0 = static_cast<i16>(x0);
+		poly2->y0 = static_cast<i16>(y0b);
+		poly2->x1 = static_cast<i16>(x1);
+		poly2->y1 = static_cast<i16>(y0b);
+		poly2->x2 = static_cast<i16>(x0);
+		poly2->y2 = static_cast<i16>(y2b);
+		poly2->x3 = static_cast<i16>(x1);
+		poly2->y3 = static_cast<i16>(y2b);
+
+		PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_1);
+
+		PCGfx_DrawQPoly2D(
+				x0 * scaleX, y0b * scaleY, 0.0f, 0.0f, color,
+				x1 * scaleX, y0b * scaleY, 1.0f, 0.0f, color,
+				x0 * scaleX, y2b * scaleY, 0.0f, 1.0f, color,
+				x1 * scaleX, y2b * scaleY, 1.0f, 1.0f, color,
+				6.0f);
+	}
+
+	u32 gap = Utils_Dist(this->mPos, localPos) >> 4;
+	if (gap < 32u)
+		gap = 32u;
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+	for (i32 side = 0; side < 2; side++)
+	{
+		i32 sign = side ? 1 : -1;
+
+		i32 ax = screenX + sign * static_cast<i32>(gap);
+		i32 ay = screenY;
+		i32 bx = ax + sign * 32;
+		i32 by = screenY - 16;
+		i32 cx = bx;
+		i32 cy = screenY + 16;
+
+		f32 fax = ax * scaleX, fay = ay * scaleY;
+		f32 fbx = bx * scaleX, fby = by * scaleY;
+		f32 fcx = cx * scaleX, fcy = cy * scaleY;
+
+		PCGfx_DrawLine(fax, fay, 6.0f, color, fbx, fby, 6.0f, color, 2.0f);
+		PCGfx_DrawLine(fbx, fby, 6.0f, color, fcx, fcy, 6.0f, color, 2.0f);
+		PCGfx_DrawLine(fcx, fcy, 6.0f, color, fax, fay, 6.0f, color, 2.0f);
 	}
 }
 
