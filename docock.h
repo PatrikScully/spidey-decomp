@@ -41,7 +41,12 @@ public:
 
 	i32 field_4B8;
 
-	PADDING(0x4C4-0x4B8-4);
+	// read (!= 0 check) by Panel_DisplayHealthBar (panel.cpp, offset 0x4BC
+	// relative to a CBody* boss pointer) to pick between the default and
+	// an alternate health-bar icon texture; meaning otherwise unknown.
+	i32 field_4BC;
+
+	PADDING(4);
 
 	i32 field_4C4;
 

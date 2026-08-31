@@ -771,6 +771,7 @@ void validate_CScorpion(void){
 	VALIDATE_SIZE(CScorpion, 0xC28);
 
 	VALIDATE(CScorpion, field_324, 0x324);
+	VALIDATE(CScorpion, field_3EC, 0x3EC);
 
 	VALIDATE(CScorpion, field_3F8, 0x3F8);
 	VALIDATE(CScorpion, field_440, 0x440);

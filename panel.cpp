@@ -1,3 +1,6 @@
+#include <cstdlib>
+
+#include "psx_types.h"
 #include "panel.h"
 #include "spool.h"
 #include "l1a3bomb.h"
@@ -13,6 +16,12 @@
 #include "utils.h"
 #include "ps2lowsfx.h"
 #include "mess.h"
+#include "rhino.h"
+#include "venom.h"
+#include "carnage.h"
+#include "docock.h"
+#include "scorpion.h"
+#include "mysterio.h"
 
 #include "validate.h"
 
@@ -370,79 +379,527 @@ void Panel_CreateCompass(CVector * pVec)
 	gCompassStatus = 1;
 }
 
-// Investigated 2026-08-31 via Hex-Rays. Real address is unclear (names.json
-// has no entry and it was never confirmed against the binary), but
-// prototypes.json (Mac sizes) lists Panel_Display(void) at 4744 bytes,
-// similar in shape to Panel_DisplayCompass/Panel_DisplayHealthBar below:
-// heavy float texture-coordinate math per HUD icon and calls into the same
-// undecompiled draw-primitive family (sub_462BB0/462C30/462CD0/462D60/
-// 462FB0/506440/507910, none named or decompiled anywhere in the repo yet).
-// Retagged @MEDIUMTODO -> @BIGTODO: this is not a size a single session
-// should attempt blind, see Panel_DisplayCompass's comment for the shared
-// blocking dependencies.
+// screen Y offset for the HUD (runtime value, 0 at boot). Moved up from its
+// original spot right before Panel_DisplayTimer so Panel_DisplayHealthBar
+// (defined earlier in the file) can use it too.
+static i32 * const gPanelScreenY = (i32*)0x0060F76C;
+
+// Investigated further 2026-08-31 (second pass, after Panel_DisplayCompass/
+// Panel_DisplayHealthBar were solved below): its real address IS now known,
+// names.json still has no entry but it is sub_4658C0 (0x4658C0, 4555 bytes),
+// found via xrefs_to on Panel_DisplayCompass/Panel_DisplayHealthBar - this
+// function is their only caller, calling Panel_DisplayCompass unconditionally
+// near the top and Panel_DisplayHealthBar at the very end, exactly matching
+// a "top-level HUD dispatcher" shape. All of its OTHER callees turned out to
+// already be decompiled too, same story as the other two: sub_462BB0/462C30/
+// 462D60/462FB0/506440/507910 are Panel_DrawTexturedPoly/
+// Panel_SetStretchedScreenCoords(SAnimFrame overload)/DCPanel_DrawFlatShadedPoly/
+// DCDrawGouraudPoly(9-arg)/PCGfx_UseTexture/PCGfx_DrawQPoly2D (all in this
+// file or PCGfx.cpp, already @Ok - see Panel_DisplayHealthBar's comment for
+// how each was confirmed). sub_461D00 = Panel_DisplayTimer (already @Ok,
+// right below in this file). sub_458620/458610/458640/458670/458630/458700 =
+// Mess_SetScale/Mess_SetTextJustify/Mess_SetRGB/Mess_SetRGBBottom/
+// Mess_SetSort/Mess_DrawText (mess.h, already used the same way by
+// Panel_DisplayTimer above for its bomb-timer digit readout - this function
+// draws a similar 1-2 digit web-cartridge count next to the webcart icon).
+// dword_6A9038 = MechList (idb_globals.txt: 0x6A9038 MechList - the same
+// CPlayer* already used by Panel_DisplayTimer above, so despite the name
+// this whole function is about the PLAYER's own HUD, not a boss). Its field
+// offsets used here are all already-named CPlayer fields (spidey.h):
+// +0x1AC=field_1AC and +0xE18=field_E18 (both already read by
+// Panel_DisplayTimer's `MechList->field_E18==0 && field_1AC==0` gate - same
+// "player piloting a special mech" suppression check, reused here to hide
+// the normal panel while it is active), +0x5D4=mWebbing, +0x5D8=field_5D8
+// (looks like the actual web-cartridge ammo count, formatted into the 1-2
+// digit byte_54EA90/54EA91 text buffer exactly like Panel_DisplayTimer's
+// bomb-timer digits), +0x5DC/+0x5E0=field_5DC/field_5E0 (each compared
+// against gTimerRelated with a <32 threshold - "frames since this changed"
+// timers driving a shrink/brighten animation on the webcart icon and a
+// fade on a health-adjacent bar), +0x5E8=field_5E8 (char, a state flag
+// gating the webcart icon's color pulse and the final bar's color choice),
+// +0x5E9=field_5E9 (bool, gates one of the small gouraud bars),
+// +0x5EC=field_5EC and +0xEF0=mMaxHealth (used together as a
+// current/max pair the same shape as Panel_DisplayHealthBar's health-percent
+// math, but +0x5EC is compared against mMaxHealth rather than mHealth -
+// read as a second, animated/lagging health value rather than mWebbing
+// despite the offset's proximity to mWebbing; a SEPARATE calc right after
+// uses the real +0x226=mHealth against the same mMaxHealth for the
+// background bar, i.e. this looks like a two-layer "real health bar +
+// smoothed pulse overlay" the same way Panel_DisplayHealthBar draws a solid
+// background bar plus a gouraud highlight). None of these CPlayer field
+// guesses are confirmed beyond "the byte width/comparison shape fits";
+// left unconfirmed rather than committed to spidey.h.
+//
+// Not yet resolved, still genuinely blocking a safe implementation:
+// dword_5FCD1C (compared against pPoly for a "Poly buffer overflowed
+// before Panel_Display" debug check - likely PolyBufferEnd or a second
+// buffer-end marker, not yet confirmed which), dword_54D47C and
+// byte_60F772/byte_60F770 (gate the top-level early-return/branch shape
+// together with the MechList check above - unclear semantics),
+// dword_60F774/60F778/dword_54E8D4 (a decaying counter block right at the
+// top, structurally identical to the bomb-timer decay pattern in
+// Panel_DisplayTimer but for an unidentified HUD element), dword_60F754/
+// 60F750/60F760 (a 3-deep fallback chain "v18 = field_60F754, else
+// field_60F750, else gAnimSp/60F758" feeding the main webcart icon draw -
+// looks like gAnimWebcart's frame-selection state but not confirmed against
+// gAnimWebcart's real address), and the v9<32 icon-resize block (raw
+// POLY_FT4 field reshuffling under a fixed-point interpolation, same shape
+// as the two already-decompiled Panel_DisplayCompass needle-half blocks but
+// with different math not yet worked out). Given the callee tree is now
+// fully resolved, this is a good next target - the remaining unknowns are
+// about a dozen new globals/fields, not missing functions.
 // @BIGTODO
 void Panel_Display(void)
 {
     printf("Panel_Display(void)");
 }
 
-// Investigated 2026-08-31 via Hex-Rays decompile of 0x00463860 (2444 bytes
-// on Mac). Retagged @MEDIUMTODO -> @BIGTODO: this draws the HUD compass
-// needle, and every draw call in it goes through undecompiled helpers:
-// sub_46D7B0/46DA40/46D430/46D790/470430/46D130 (angle/vector math feeding
-// a compass-heading calculation, unclear which are GTE-style helpers this
-// file might already own vs. trig.cpp's), then sub_506440 and sub_507910
-// (the actual textured-quad draw call, called with a 21-float-and-int
-// argument list, i.e. per-vertex UV/color/depth - this looks like the
-// real "draw one screen-space poly" primitive every panel.cpp draw routine
-// bottoms out in) plus sub_462BB0/462C30 (icon lookup + placement, shared
-// with DisplayHealthBar below). None of these are named or decompiled
-// anywhere in the repo. It also reads about a dozen unnamed globals with
-// no idb_globals.txt entry (byte_60F77C, dword_60F708/70C/710,
-// qword_56F1B4, dword_56F1BC, dword_60F76C, dword_6B4CA8, dword_56FB04,
-// dword_568158/568154, dword_628614/61B5FC, dword_60F75C/60F768) that look
-// like a mix of HUD layout state and a 3D-to-compass-angle conversion
-// (possibly player heading vs. some fixed landmark) - guessing names for
-// these without knowing the real subsystem would just be inventing fields.
-// Left stubbed: needs sub_507910 (the shared draw primitive) decompiled
-// first as the actual leaf, then the angle-math chain, before this is
-// safely attemptable.
-// @BIGTODO
+// player-relative reference point (CVector) and rotation matrix (MATRIX)
+// used to turn world positions into a local-space direction - same
+// addresses and same precedent comment as spidey.cpp's stru_56F1B4/
+// stru_56F224 (CPlayer::UpdateSpideySenseList and others); repo convention
+// allows duplicating static address globals across files.
+static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
+static MATRIX * const stru_56F224 = (MATRIX*)0x56F224;
+
+// compass "flash" countdown: nonzero right after Panel_CreateCompass makes
+// the needle pulse brighter for a few frames, decaying by 2 per call here,
+// clamped to 0. Also touched by two other not-yet-decompiled functions
+// (0x00407840, 0x004E9B00) elsewhere in the binary; tentative name from
+// this function's own usage only.
+static i32 * const gCompassFlashTimer = (i32*)0x0060F768;
+
+// Shared draw sequence for the two needle-half POLY_FT4 quads in
+// Panel_DisplayCompass below (originally repeated inline at 0x463f00ish and
+// 0x464200ish: PCGfx_UseTexture then a manual scale+color-pack
+// PCGfx_DrawQPoly2D, same idiom as PanelHB_DrawIconOverlay above, but with
+// the needle's inset 0.05..0.95 UV range instead of a full 0..1 quad and a
+// fixed zOffset of 0.0).
+// @Ok
+static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
+{
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
+
+	f32 yScale = gGameResolutionY / (f32)Yres;
+	f32 xScale = gGameResolutionX / (f32)Xres;
+	u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFFFF00) << 8)) << 8);
+
+	PCGfx_DrawQPoly2D(
+			p->x0 * xScale, p->y0 * yScale, 0.05f, 0.0f, col,
+			p->x1 * xScale, p->y1 * yScale, 0.95f, 0.0f, col,
+			p->x2 * xScale, p->y2 * yScale, 0.05f, 1.0f, col,
+			p->x3 * xScale, p->y3 * yScale, 0.95f, 1.0f, col,
+			0.0f);
+}
+
+// Real translation, 0x00463860. Decompiled via Hex-Rays and cross-checked
+// against the raw disasm. As with Panel_DisplayHealthBar, the previous
+// session's blocking-callee list was wrong: every one of sub_46D7B0/
+// 46DA40/46D430/46D790/470430/46D130/(the call Hex-Rays mislabels
+// "qt_register_signal_spy_callbacks" at 0x46D870, a decompiler symbol mixup
+// - names.json and its declared VECTOR* signature both confirm it is really
+// gte_ldlvl) is already decompiled and named: gte_SetRotMatrix, gte_rtir,
+// M3dMaths_SquareRoot0, gte_stlvnl, VectorNormal, ratan2, gte_ldlvl (all in
+// ps2funcs.cpp, already @Ok). sub_506440/507910 = PCGfx_UseTexture/
+// PCGfx_DrawQPoly2D (see Panel_DisplayHealthBar's comment above for how
+// that was confirmed). sub_462BB0/462C30 = Panel_DrawTexturedPoly(Texture*,
+// int) / Panel_SetStretchedScreenCoords(...,SAnimFrame*,...), both already
+// in this file.
+//
+// Globals: byte_60F77C = gCompassStatus (already declared, set by
+// Panel_CreateCompass/cleared by Panel_DestroyCompass). dword_60F708/70C/
+//710 = gCompassPosition's vx/vy/vz (confirmed via Panel_CreateCompass's own
+// disasm at 0x463800, which writes exactly these three dwords - matches
+// this file's existing `gCompassPosition = *pVec >> 12;`). qword_56F1B4/
+// dword_56F1BC = gMikeCamera[0].Position (idb_globals.txt: 0x56F1B0
+// gMikeCamera; weapons.cpp's Transform() already documents "gMikeCamera[0]
+// .Position split across qword_56F1B4 low/high"); unk_56F224 = the camera
+// view matrix at gMikeCamera[1]'s tail (utils.cpp's gCameraViewMatrix,
+// spidey.cpp's stru_56F224 - same address, reused name here). dword_60F76C
+// = gPanelScreenY (already declared above). dword_6B4CA8 = gTimerRelated
+// (bit.h). dword_56FB04 = pPoly (idb_globals.txt), the same growing poly
+// buffer Panel_DrawFlatShadedPoly/Panel_DrawTexturedPoly already use, here
+// advanced by sizeof(POLY_F3) per triangle with NO PolyBufferEnd check -
+// matches the original disasm exactly (a genuine missing bounds check,
+// reproduced not fixed). dword_568158/568154/628614/61B5FC = gGameResolutionY
+// /gGameResolutionX/Yres/Xres (PCGfx.cpp's own naming comment). word_610C48/
+// 610C4A = rcossin_tbl's .sin/.cos fields read as a raw u16 array (confirmed
+// by address: 610C4A is 610C48+2, i.e. rcossin_tbl[i].cos read via the same
+// "2*i" stride already used for .sin - the same struct, no new global).
+// dword_60F75C = gAnimCompass (already declared). byte_54D341 = gPrintStubbed
+// (ps2funcs.h); its debug-print calls (gsub_46CB90/nullsub_1) are no-ops in
+// this build (see Panel_DisplayHealthBar's comment above) and are omitted.
+//
+// Two faithfully-reproduced original dead stores: in each needle-half block,
+// `poly->code |= 2` is computed and stored, then immediately overwritten by
+// the very next `*(u32*)&poly->r0 = tintColor` full-dword store (confirmed
+// from the disasm store order) - the |2 never actually takes effect. Kept
+// exactly as ordered in the original rather than dropped as "dead code".
+//
+// The math: builds a camera-relative direction vector from the player/
+// camera position to gCompassPosition, GTE-rotates and normalises it,
+// turns it into a heading angle via ratan2, then builds a 2-triangle flat
+// dial background (pPoly, POLY_F3) plus a 2-quad needle sprite (gAnimCompass,
+// split left/right down the middle via a U-coordinate swap on the second
+// half) pointing along that heading. The needle brightens (gCompassFlashTimer)
+// right after Panel_CreateCompass and always has a small time-based pulse
+// (rcossin_tbl indexed by gTimerRelated) baked into the dial's alpha.
+// @Ok
 void Panel_DisplayCompass(void)
 {
-    printf("Panel_DisplayCompass(void)");
+	if (!gCompassStatus)
+		return;
+
+	gte_SetRotMatrix(stru_56F224);
+
+	CVector dir;
+	dir.vx = (gCompassPosition.vx - stru_56F1B4->vx) >> 6;
+	dir.vy = (gCompassPosition.vy - stru_56F1B4->vy) >> 6;
+	dir.vz = (gCompassPosition.vz - stru_56F1B4->vz) >> 6;
+
+	gte_ldlvl(reinterpret_cast<VECTOR *>(&dir));
+	gte_rtir();
+
+	i32 dist = M3dMaths_SquareRoot0(dir.vx * dir.vx + dir.vy * dir.vy + dir.vz * dir.vz) << 6;
+
+	gte_stlvnl(reinterpret_cast<VECTOR *>(&dir));
+
+	dir.vy = 0;
+
+	VectorNormal(reinterpret_cast<VECTOR *>(&dir), reinterpret_cast<VECTOR *>(&dir));
+
+	i16 angle = (i16)ratan2(dir.vz, dir.vx);
+
+	i32 xOff1 = (25 * dir.vx) >> 12;
+	i32 idxA = (angle - 1024) & 0xFFF;
+	i32 sideA = (9 * rcossin_tbl[idxA].cos) >> 12;
+	i32 idxB = (angle + 1024) & 0xFFF;
+	i32 sideB = (9 * rcossin_tbl[idxB].cos) >> 12;
+	i32 xOff2 = (6 * dir.vx) >> 12;
+
+	i32 tipY = *gPanelScreenY + 3604 * (320 * ((25 * dir.vz) >> 12) / 512) / 4096;
+	i32 tailA = *gPanelScreenY + (((320 * ((9 * rcossin_tbl[idxA].sin) >> 12)) >> 9));
+	i32 tailB = *gPanelScreenY + 320 * ((9 * rcossin_tbl[idxB].sin) >> 12) / 512;
+	i32 tipY2 = *gPanelScreenY + 320 * ((6 * dir.vz) >> 12) / 512;
+
+	i32 pulseHalfWidth = (dist <= 0x4000) ? (((0x4000 - dist) >> 8) + 8) : 8;
+
+	i32 pulseSin = rcossin_tbl[(pulseHalfWidth * (i16)gTimerRelated) & 0xFFF].sin;
+	i32 pulseBrightness = (255 * abs(pulseSin)) >> 12;
+	u32 dialColor = (pulseBrightness << 8) | 0xFF;
+
+	for (i32 tri = 0; tri < 2; tri++)
+	{
+		i32 sideOffset = (tri == 0) ? sideA : sideB;
+		i32 tailOffset = (tri == 0) ? tailA : tailB;
+
+		POLY_F3 *p = (POLY_F3 *)pPoly;
+		pPoly = (u32 *)((u8 *)pPoly + sizeof(POLY_F3));
+
+		*(u32 *)&p->r0 = dialColor;
+		p->y0 = (i16)(199 - tipY);
+		p->x0 = (i16)(xOff1 + 432);
+		p->x1 = (i16)(sideOffset + 432);
+		p->y1 = (i16)(199 - tailOffset);
+		p->y2 = (i16)(199 - tipY2);
+		p->x2 = (i16)(xOff2 + 432);
+	}
+
+	POLY_FT4 *pNeedle = (POLY_FT4 *)Panel_DrawTexturedPoly(gAnimCompass->pTexture, 0);
+	if (pNeedle)
+	{
+		u32 tintColor = (*(u32 *)&pNeedle->r0 & 0xFF000000) | 0x323280;
+
+		if (*gCompassFlashTimer != 0)
+		{
+			i32 sinT = rcossin_tbl[(gTimerRelated << 6) & 0xFFF].sin;
+			i32 signMask = (205 * sinT) >> 31;
+			tintColor = (abs((127 * sinT) >> 12) + 128)
+					| (((signMask ^ ((205 * sinT) >> 12)) + 0xFFFFFF * signMask + 50) << 8)
+					| (*(u32 *)&pNeedle->r0 & 0xFF000000);
+			*gCompassFlashTimer -= 2;
+			if (*gCompassFlashTimer < 0)
+				*gCompassFlashTimer = 0;
+		}
+
+		Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle, gAnimCompass, 32, 40);
+
+		i16 x0 = pNeedle->x0;
+		u8 codeOr2 = pNeedle->code | 2;
+		pNeedle->tpage &= 0xFF9F;
+		pNeedle->code = codeOr2;
+		i16 x1 = pNeedle->x1;
+		*(u32 *)&pNeedle->r0 = tintColor;
+		i16 halfWidth = (i16)((x1 - x0) / 2);
+		pNeedle->x2 += halfWidth;
+		pNeedle->x3 += halfWidth;
+		i16 newX1 = x1 + halfWidth;
+		pNeedle->x0 = x0 + halfWidth;
+		pNeedle->x1 = newX1;
+
+		PanelCompass_DrawNeedleHalf(pNeedle, gAnimCompass->pTexture);
+
+		POLY_FT4 *pNeedle2 = (POLY_FT4 *)Panel_DrawTexturedPoly(gAnimCompass->pTexture, 0);
+		if (pNeedle2)
+		{
+			Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle2, gAnimCompass, 32, 40);
+
+			pNeedle2->tpage &= 0xFF9F;
+			pNeedle2->x0 -= halfWidth;
+			pNeedle2->x1 -= halfWidth;
+			pNeedle2->x2 -= halfWidth;
+			pNeedle2->code |= 2;
+			u8 u1minus1 = pNeedle2->u1 - 1;
+			u8 origU0 = pNeedle2->u0;
+			pNeedle2->x3 -= halfWidth;
+			pNeedle2->u2 = u1minus1;
+			pNeedle2->u0 = u1minus1;
+			pNeedle2->u3 = origU0;
+			pNeedle2->u1 = origU0;
+			*(u32 *)&pNeedle2->r0 = tintColor;
+
+			PanelCompass_DrawNeedleHalf(pNeedle2, gAnimCompass->pTexture);
+		}
+	}
 }
 
-// Investigated 2026-08-31 via Hex-Rays decompile of 0x00464270 (5804 bytes
-// on Mac, the biggest of the three). Retagged @MEDIUMTODO -> @BIGTODO: a
-// boss-specific health-bar dispatcher, `switch (dword_60F654)` on what
-// looks like a boss/mech type id (case values 307/308/310/311/313/314,
-// plus a default no-op), each case reading fields at large, boss-specific
-// offsets (+226, +808, +824, +828, +829, +832, +904, +976, +1004, +1212)
-// off a "current mech" pointer (dword_60F788) that were not obviously
-// matchable to any single boss header (rhino.h/carnage.h/venom.h/
-// scorpion.h/docock.h/mysterio.h) in the time available - these read like
-// a shared "mech status" struct distinct from any one boss's CItem
-// subclass, not yet identified in the repo. Every draw call bottoms out in
-// the same undecompiled sub_507910 primitive as Panel_DisplayCompass
-// above, via sub_462BB0/462C30/462CD0/462D60/462FB0 (icon lookup, glyph
-// placement, and what look like bar-graph/number-drawing helpers given the
-// repeated width/threshold arguments), plus sub_506440. None of these six
-// helpers are named or decompiled anywhere in the repo, and the case
-// values suggest around 6 different boss layouts each with their own
-// field offsets to identify - too large and too underspecified to
-// implement blind this session. Good next candidate once sub_507910 and
-// the sub_462* draw family are decompiled and the dword_60F788 "current
-// mech" struct is identified against a real boss header.
-// @BIGTODO
+// Shared inline draw sequence used at every icon-overlay site in
+// Panel_DisplayHealthBar below (originally repeated inline 7 times in the
+// disassembly at 0x464270: PCGfx_UseTexture(tex->clut, blend) then a
+// manual scale+color-pack PCGfx_DrawQPoly2D call reading straight from the
+// poly's own r0/g0/b0 and x0..y3 fields). Same shape as the icon-overlay
+// block already established in Panel_DisplayTimer above (lines ~516-543).
+// Factored into one static helper here since the original inlines it
+// verbatim with only the poly/texture/blend/zOffset varying; not chasing a
+// byte match this session (see PLAN.md acceptance bar), so factoring does
+// not hurt correctness and avoids seven near-identical copies.
+// @Ok
+static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMode blend, f32 zOffset)
+{
+	PCGfx_UseTexture(tex->clut, blend);
+
+	f32 yScale = gGameResolutionY / (f32)Yres;
+	f32 xScale = gGameResolutionX / (f32)Xres;
+	u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFFFF00) << 8)) << 8);
+
+	PCGfx_DrawQPoly2D(
+			p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
+			p->x1 * xScale, p->y1 * yScale, 1.0f, 0.0f, col,
+			p->x2 * xScale, p->y2 * yScale, 0.0f, 1.0f, col,
+			p->x3 * xScale, p->y3 * yScale, 1.0f, 1.0f, col,
+			zOffset);
+}
+
+// Real translation, 0x00464270. Decompiled via Hex-Rays and cross-checked
+// against the raw disasm. The previous session's investigation undercounted
+// this: every "undecompiled helper" it listed (sub_462BB0/462C30/462CD0/
+// 462D60/462FB0/506440/507910) turned out to already be decompiled and
+// named in this repo (tools/names.json), just not recognised as such:
+// sub_462BB0 = Panel_DrawTexturedPoly(Texture*,int) (this file, line
+// ~852), sub_462C30/462CD0 = the two Panel_SetStretchedScreenCoords
+// overloads (line ~653/~699), sub_462D60 = DCPanel_DrawFlatShadedPoly
+// (line ~132), sub_462FB0 = the 9-arg DCDrawGouraudPoly (line ~111),
+// sub_506440 = PCGfx_UseTexture (PCGfx.cpp, already @Ok), sub_507910 =
+// PCGfx_DrawQPoly2D (PCGfx.h/.cpp, already @Ok, confirmed via its own
+// naming comment in PCGfx.cpp mapping 0x568158/0x628614/0x568154/0x61B5FC
+// to gGameResolutionY/Yres/gGameResolutionX/Xres, the exact same globals
+// this function scales its icon coordinates with).
+//
+// dword_60F788/60F78C = gHealthBarOne/gHealthBarTwo, dword_60F744/60F748 =
+// gHealthBarRelated/gHealthBarRelatedTwo, dword_60F654 = gHealthBarItemType,
+// dword_60F658.."660.."668 = gHealthBarTextures[0..4] (all already declared
+// at the top of this file, confirmed 1:1 against Panel_CreateHealthBar's
+// own disasm at 0x463610 which writes exactly these five slots per boss
+// case, matching gHealthBarTextures' assignment order in the existing
+// Panel_CreateHealthBar source above). dword_60F758 = gAnimSp (idb_globals
+// confirms 0x60F758 = gAnimSp; SAnimFrame is 8 bytes/VALIDATE_SIZE 0x8, so
+// "dword_60F758 + 8/16/24" are &gAnimSp[1]/[2]/[3]).
+//
+// The boss-specific "extra icon" gate fields at absolute offsets 828/829
+// (0x33C/0x33D, Venom-only) were already named fields (CVenom::field_33C/
+// field_33D, both u8, matching the byte-sized compares in the disasm).
+// Fields at 976/832 (CRhino::field_3D0, CCarnage::field_340) were also
+// already named. Fields at 904/1212/1004/808 fell inside as-yet-unexplored
+// PADDING() gaps in CVenom/CDocOc/CScorpion/CMysterio; confirmed via disasm
+// they are read as plain dword != 0 checks, so this session split those
+// PADDING regions and added CVenom::field_388, CDocOc::field_4BC,
+// CScorpion::field_3EC, CMysterio::field_328 (all i32, VALIDATE added,
+// total struct size unchanged) - see those headers/.cpp files for the
+// exact split. Their real meaning (what makes a boss "wounded") is not
+// known, only that a nonzero value there swaps in the boss's *_wounded (or
+// equivalent) texture instead of the default one; same honest-placeholder
+// convention already used throughout the repo for field_XXX members.
+//
+// CBody::mCBodyFlags bit 0x40 (already-named field, VALIDATE'd at 0x46) is
+// tested as a "boss destroyed" flag that tears the health bar down.
+// CBody::mHealth (i16 @ 0xE2/226, already named) supplies current health;
+// gHealthBarRelated/RelatedTwo hold the health captured when the bar was
+// created (used as the 100% baseline for the percentage-width bar math).
+//
+// The many small per-call x/y/w/h adjustments (0x54E910..0x54E99C) are
+// read-only .data ints referenced exactly once each, only from this
+// function (confirmed via xrefs_to) - not runtime state, so they are
+// folded into literal constants below (values read directly off the
+// binary via IDA, not guessed) rather than modelled as unnamed globals.
+// byte_54E8D0 (also read-only, xref'd only from here) is a baked constant
+// equal to 1 in the shipped binary, i.e. its "if" is always taken; kept as
+// a literal `true` rather than invented as a live global.
+//
+// nullsub_1 (0x4015B0, this file's gsub_4015B0) is called at a few spots
+// in the original with a (bool, const char*) debug-print argument pair
+// that does not match gsub_4015B0's declared (void*) signature here; since
+// gsub_4015B0's real body is a single `ret` (confirmed elsewhere in this
+// file, tools/functions/4199856.bin), the call is a provable no-op and is
+// omitted below rather than fought into a mismatched declaration.
+//
+// The final block (only reached when gHealthBarItemType == 310 and
+// gHealthBarTextures[2] is set) draws a second, smaller health bar for
+// gHealthBarTwo/gHealthBarRelatedTwo - almost certainly the Jonah Jameson
+// hostage bar shown during the Scorpion fight (gHealthBarTextures[2] for
+// case 310 is the "jonah" texture, set in Panel_CreateHealthBar above).
+// @Ok
 void Panel_DisplayHealthBar(void)
 {
-    printf("Panel_DisplayHealthBar(void)");
+	if (gHealthBarOne == 0)
+		return;
+
+	if (gHealthBarOne->mCBodyFlags & 0x40)
+	{
+		gHealthBarOne = 0;
+		gHealthBarTwo = 0;
+		return;
+	}
+
+	switch (gHealthBarItemType)
+	{
+	case 307:
+	case 308:
+	case 310:
+	case 311:
+	case 313:
+	case 314:
+		break;
+	default:
+		return;
+	}
+
+	if (gHealthBarItemType == 313)
+	{
+		if (((CVenom *)gHealthBarOne)->field_33C != 0)
+		{
+			POLY_FT4 *pMJ = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[2], 0);
+			if (pMJ)
+				Panel_SetStretchedScreenCoords(445, *gPanelScreenY + 71, pMJ, gHealthBarTextures[2], 31, 30);
+			PanelHB_DrawIconOverlay(pMJ, gHealthBarTextures[2], DCGfx_BlendingMode_1, 2.9999001f);
+
+			for (i32 y = 0; y < 48; y += 16)
+			{
+				SAnimFrame *pFrame = &gAnimSp[1];
+				POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+				if (p)
+					Panel_SetStretchedScreenCoords(486, y + *gPanelScreenY + 115, p, pFrame, 15, 16);
+				PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_0, 3.0f);
+			}
+
+			{
+				SAnimFrame *pFrame = &gAnimSp[2];
+				POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+				if (p)
+					Panel_SetStretchedScreenCoords(486, *gPanelScreenY + 161, p, pFrame, 15, 14);
+				PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_0, 3.0f);
+			}
+
+			DCPanel_DrawFlatShadedPoly(3.0f, 467, *gPanelScreenY - ((CVenom *)gHealthBarOne)->field_338 / 4096 + 155, 12, ((CVenom *)gHealthBarOne)->field_338 / 4096, 64, 64, 160, 0, 0);
+			DCPanel_DrawFlatShadedPoly(4.0f, 467, *gPanelScreenY + 99, 12, 56, 0, 0, 0, 0, 0);
+		}
+
+		if (((CVenom *)gHealthBarOne)->field_33D == 0)
+			return;
+	}
+
+	i32 healthWidth = 163 * (((gHealthBarRelated - gHealthBarOne->mHealth) << 7) / gHealthBarRelated) / 128;
+
+	Texture *pBossTex;
+	switch (gHealthBarItemType)
+	{
+	case 310:
+		pBossTex = (((CScorpion *)gHealthBarOne)->field_3EC != 0) ? gHealthBarTextures[3] : gHealthBarTextures[0];
+		break;
+	case 307:
+		pBossTex = (((CRhino *)gHealthBarOne)->field_3D0 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	case 313:
+		pBossTex = (((CVenom *)gHealthBarOne)->field_388 != 0) ? gHealthBarTextures[4] : gHealthBarTextures[0];
+		break;
+	case 314:
+		pBossTex = (((CCarnage *)gHealthBarOne)->field_340 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	case 308:
+		pBossTex = (((CDocOc *)gHealthBarOne)->field_4BC != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	case 311:
+		pBossTex = (((CMysterio *)gHealthBarOne)->field_328 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	default:
+		pBossTex = gHealthBarTextures[0];
+		break;
+	}
+
+	POLY_FT4 *pBoss = (POLY_FT4 *)Panel_DrawTexturedPoly(pBossTex, 0);
+	if (pBoss)
+		Panel_SetStretchedScreenCoords(448, *gPanelScreenY + 16, pBoss, pBossTex, 28, 31);
+	PanelHB_DrawIconOverlay(pBoss, pBossTex, DCGfx_BlendingMode_1, 1.0f);
+
+	POLY_FT4 *pLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[1], 0);
+	if (pLabel)
+		Panel_SetStretchedScreenCoords(283, *gPanelScreenY + 24, pLabel, gHealthBarTextures[1], 12, 16);
+	PanelHB_DrawIconOverlay(pLabel, gHealthBarTextures[1], DCGfx_BlendingMode_1, 1.0f);
+
+	for (i32 x = 0; x < 150; x += 25)
+	{
+		SAnimFrame *pFrame = &gAnimSp[3];
+		POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+		if (p)
+			Panel_SetStretchedScreenCoords(x + 325, *gPanelScreenY + 40, p, pFrame, 16, 16);
+		PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_1, 1.0f);
+	}
+
+	if (healthWidth != 0)
+		DCPanel_DrawFlatShadedPoly(3.0f, 288, *gPanelScreenY + 29, healthWidth, 8, 0, 0, 0, 0, 0);
+	if (healthWidth <= gHealthBarRelated / 2)
+		DCDrawGouraudPoly(4.0f, 288, *gPanelScreenY + 29, 81, 8, 0x0000FF00, 0x0000FFFF, 0x0000FF00, 0x0000FFFF);
+	DCDrawGouraudPoly(4.0f, 369, *gPanelScreenY + 29, 82, 8, 0x0000FFFF, 0x000000FF, 0x0000FFFF, 0x000000FF);
+
+	if (gHealthBarItemType == 310 && gHealthBarTextures[2] != 0)
+	{
+		POLY_FT4 *pJonah = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[2], 0);
+		if (pJonah)
+			Panel_SetStretchedScreenCoords(448, *gPanelScreenY + 45, pJonah, gHealthBarTextures[0], 28, 30);
+		PanelHB_DrawIconOverlay(pJonah, gHealthBarTextures[2], DCGfx_BlendingMode_1, 1.0f);
+
+		POLY_FT4 *pJonahLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[1], 0);
+		if (pJonahLabel)
+			Panel_SetStretchedScreenCoords(407, *gPanelScreenY + 53, pJonahLabel, gHealthBarTextures[1], 12, 15);
+		PanelHB_DrawIconOverlay(pJonahLabel, gHealthBarTextures[1], DCGfx_BlendingMode_1, 1.0f);
+
+		{
+			SAnimFrame *pFrame = &gAnimSp[3];
+			POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+			if (p)
+				Panel_SetStretchedScreenCoords(450, *gPanelScreenY + 69, p, pFrame, 16, 15);
+			PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_1, 1.0f);
+		}
+
+		i32 jonahWidth = 38 * (((gHealthBarRelatedTwo - gHealthBarTwo->mHealth) << 7) / gHealthBarRelatedTwo) / 128;
+
+		if (jonahWidth != 0)
+			DCPanel_DrawFlatShadedPoly(3.0f, 413, *gPanelScreenY + 57, jonahWidth, 8, 0, 0, 0, 0, 0);
+		if (jonahWidth <= gHealthBarRelatedTwo / 2)
+			DCDrawGouraudPoly(4.0f, 413, *gPanelScreenY + 57, 19, 8, 0x0000FF00, 0x0000FFFF, 0x0000FF00, 0x0000FFFF);
+		DCDrawGouraudPoly(4.0f, 432, *gPanelScreenY + 57, 19, 8, 0x0000FFFF, 0x000000FF, 0x0000FFFF, 0x000000FF);
+	}
 }
 
-// @Ok
-// screen Y offset for the HUD (runtime value, 0 at boot)
-static i32 * const gPanelScreenY = (i32*)0x0060F76C;
 // bomb-timer animation state (l1a3bomb level)
 static u8 * const gBombTimerAnimOne = (u8*)0x0060F784;
 static u8 * const gBombTimerAnimTwo = (u8*)0x0060F785;
