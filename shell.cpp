@@ -5107,6 +5107,53 @@ Spidey_CIcon::Spidey_CIcon(i32 a2, i32 a3, i32 a4)
 }
 
 // @Ok
+// See the long writeup on CShellPreviewIcon in shell.h for how this class and its three
+// members were reverse engineered. Constructor body confirmed identical (field for field,
+// value for value) across all seven call sites checked: Shell_ComicCollection's one instance
+// (0x49B270, mPos = (0,0,2048000)<<-shifted-already/12) and Shell_GameCovers's six instances
+// (0x49C220, mPos varies per grid cell, mPos.vz always 2048000).
+CShellPreviewIcon::CShellPreviewIcon(i32 x, i32 y, i32 z)
+{
+	this->mPos.vx = x << 12;
+	this->mPos.vy = y << 12;
+	this->mPos.vz = z << 12;
+
+	this->InitItem("items");
+
+	this->mModel = 5;
+	this->mFlags &= 0xFB7D;
+
+	this->mpLight = 0;
+
+	this->mFlags |= 0x200;
+	this->mScale.vx = 2048;
+	this->mScale.vy = 2048;
+	this->mScale.vz = 2048;
+}
+
+// @Ok
+// 0x493830 (thunk) / 0x493850 (real body): no added fields, so nothing to clean up beyond
+// what the compiler already does for us (reset vfptr, chain to CSuper::~CSuper). Empty body.
+CShellPreviewIcon::~CShellPreviewIcon(void)
+{
+}
+
+// @Ok
+// 0x493970. mAngles.vy += 50 is an unconditional constant spin; the mFlags&2 branch
+// (UpdateFrame + M3d_BuildTransform) is dead at every known call site (the constructor above
+// always clears bit 2), but is reproduced for fidelity in case some other call site sets it.
+void CShellPreviewIcon::AI(void)
+{
+	this->mAngles.vy += 50;
+
+	if (this->mFlags & 2)
+	{
+		this->UpdateFrame();
+		M3d_BuildTransform(this);
+	}
+}
+
+// @Ok
 INLINE void CallAI(CBody *pList)
 {
 	CBody* pCur = pList;
@@ -6391,6 +6438,11 @@ void validate_CWobblyGlow(void)
 void validate_Spidey_CIcon(void)
 {
 	VALIDATE_SIZE(Spidey_CIcon, 0x1A4);
+}
+
+void validate_CShellPreviewIcon(void)
+{
+	VALIDATE_SIZE(CShellPreviewIcon, 0x1A4);
 }
 
 void validate_CShellSymBurn(void)
