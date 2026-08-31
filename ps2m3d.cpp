@@ -203,10 +203,60 @@ void M3d_BuildTransform(CSuper* pSuper)
 	pSuper->mTransform.t[2] = pSuper->mPos.vz >> 12;
 }
 
+typedef void (*M3d_Render_fn)(void*);
+
 // @BIGTODO
-void M3d_Render(void*)
+// forward to original (0x4739A0, ~3.5KB). Investigated this session
+// (IDA decompile + partial raw disasm cross-check), NOT reimplemented --
+// left as a forward per the same "too much unbuilt infrastructure" call
+// CLAUDE.md already made for Decomp_GetAnimTransform, for concrete reasons
+// found this session:
+//  - Walks a linked list of CItem (mNextItem, confirmed: CItem has a
+//    vtable pointer at offset 0 since it declares `virtual ~CItem()`, so
+//    every raw disasm offset in this family of functions is +4 relative to
+//    ob.h's field list -- e.g. the disassembly's "a1+4" is mFlags, "a1+8"
+//    is mPos, "a1+26" is mModel, "a1+31" is mRegion, "a1+32" is
+//    mNextItem. This +4 shift was the key that also unlocked
+//    RenderSuperItem below; worth remembering for any future CItem-family
+//    work.) -- for each item: mFlags bit 0x8000 (tested as the raw i16
+//    sign bit) gates whether it renders at all; if it does, mFlags byte 5
+//    bit 0x2 ("is super") dispatches to RenderSuperItem(item), otherwise
+//    the function does its own single-model render inline: LOD selection
+//    (confirmed: `PSXRegion[region].NumParts`/`.ppModels` -- the
+//    disassembly's `dword_6B2454[17*region]`/`word_6B2478[34*region]` are
+//    exactly `PSXRegion[region].ppModels`/`.NumParts`, since sizeof
+//    SPSXRegion is 0x44 == 17*4 and NumParts really sits at byte offset
+//    0x38 there, not the stale 0x34 the header comment claims -- matches
+//    17*4=0x44*region landing on ppModels's 0x14 offset, 34*2=0x44*region
+//    on NumParts's real 0x38 offset), walking SModel::NextLOD chains using
+//    SModel::zMax as a rough on-screen-size estimate against the
+//    viewport's derived projection scale (SViewport's "fieldE",
+//    M3d_RenderSetup's gM3dViewportPtr[+0xE]); a rotation matrix built
+//    from CItem::mAngles via the exact same sin/cos/matrix4x4 shape
+//    M3d_RenderBackground (@Ok, this file) already reproduces; and the
+//    same DCModelData::mFlags & 0x4000 dispatch between
+//    DC_PSXModel_RenderModel and DCModel_RenderModel (both @Ok) that
+//    M3d_RenderBackground uses, via the same gM3dBackgroundModelData table
+//    (`dword_5F6764[region] + 36*model`).
+//  - What actually blocks a full decompile: (1) a per-item colour-tint
+//    sub-block (mFlags bit 0x80, then bit 0x400) that gamma-corrects
+//    CItem::mRGB/mTRN bytes through several pow() calls into the same
+//    gDCTexAnimColor*/0x660F90 override-mask globals DCModel_RenderModel
+//    already reads -- traceable, but a real decompile-quality translation
+//    needs more time than this pass had; (2) at least 9 still-undecompiled
+//    GTE/camera helper leaves this function calls directly (sub_46D7E0,
+//    sub_46D810, sub_46E250, sub_46FAD0, sub_475FB0, sub_46D7B0,
+//    sub_46E460, sub_46DDF0, sub_46D790 -- none named in tools/names.json,
+//    none yet in this repo), which the repo's leaf-first rule says should
+//    be decompiled before this caller, not stubbed inline one by one.
+// Whoever picks this up next: start from PSXRegion/CItem confirmations
+// above (they took the real digging), then leaf the GTE helpers, then the
+// tint block, then this function's own list-walk shell should fall out
+// quickly by mirroring M3d_RenderBackground's already-@Ok structure.
+EXPORT void M3d_Render(void* pList)
 {
-	printf("void M3d_Render(void*)");
+	M3d_Render_fn f = (M3d_Render_fn)0x004739A0;
+	f(pList);
 }
 
 typedef i32 (*gsub_509000_fn)(f32, f32, f32, i32, f32, f32, f32, i32, f32);
