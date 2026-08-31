@@ -99,37 +99,32 @@ static u32 DCGouraud_SwapColor(u32 c)
 	return 0xFF000000 | ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF);
 }
 
-// @NotOk
-// functionally plausible (scaled quad + per-vertex color swap into
-// PCGfx_DrawQPoly2D, mirrors DCPanel_DrawFlatShadedPoly's scaling and the
-// PS2 BGR->RGB swap seen in the original disasm), but structurally wrong:
-// cmpsum shows 140 mnemonic diffs starting at the prologue (our stack frame
-// is 0x14 bytes of locals vs the original's 0xC, so this is not a
-// scheduling residue, real structure differs). 1 attempt this session, not
-// pursued further given the size of the remaining queue. Original likely
-// keeps the color conversion inline without the DCGouraud_SwapColor helper,
-// and reads single color bytes directly from the stack (mov cl,[esp+X]
-// appears in our own build's failed attempt) rather than masking a
-// register, suggesting per-channel byte access on the incoming u32 params
-// instead of shift/mask math.
-void DCDrawGouraudPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u32 c0, u32 c1, u32 c2, u32 c3, i32 c4)
+// @Ok
+// real translation, 0x00462FB0, 9 args (zOffset,x,y,w,h,c0,c1,c2,c3). The
+// old version of this function had a bogus 10th i32 parameter and used it
+// (plus two of the color args) in the wrong vertex slots: it read c4/c2/c3/c1
+// where the original reads c0/c1/c2/c3 in plain corner order. Confirmed from
+// Hex-Rays at 0x462fb0 (only caller of this address is the not-yet-written
+// Panel_DisplayHealthBar/Panel_Display, so no existing caller depended on
+// the old, wrong param list). Functional only, not chasing byte match this
+// session.
+void DCDrawGouraudPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u32 c0, u32 c1, u32 c2, u32 c3)
 {
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 
 	f32 scaleY = gGameResolutionY / (f32)Yres;
-	f32 hScaled = h * scaleY;
+	f32 yEnd = (y + h) * scaleY;
 	f32 scaleX = gGameResolutionX / (f32)Xres;
-	f32 wScaled = w * scaleX;
-	f32 yScaled = y * scaleY;
+	f32 xEnd = (x + w) * scaleX;
 	f32 xScaled = x * scaleX;
+	f32 yScaled = y * scaleY;
 
 	PCGfx_DrawQPoly2D(
-			xScaled, yScaled, 0.0f, 0.0f, DCGouraud_SwapColor((u32)c4),
-			xScaled + wScaled, yScaled, 1.0f, 0.0f, DCGouraud_SwapColor(c2),
-			xScaled, yScaled + hScaled, 0.0f, 1.0f, DCGouraud_SwapColor(c3),
-			xScaled + wScaled, yScaled + hScaled, 1.0f, 1.0f, DCGouraud_SwapColor(c1),
+			xScaled, yScaled, 0.0f, 0.0f, DCGouraud_SwapColor(c0),
+			xEnd, yScaled, 1.0f, 0.0f, DCGouraud_SwapColor(c1),
+			xScaled, yEnd, 0.0f, 1.0f, DCGouraud_SwapColor(c2),
+			xEnd, yEnd, 1.0f, 1.0f, DCGouraud_SwapColor(c3),
 			zOffset);
-
 }
 
 // @Ok
