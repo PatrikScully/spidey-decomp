@@ -203,10 +203,60 @@ void M3d_BuildTransform(CSuper* pSuper)
 	pSuper->mTransform.t[2] = pSuper->mPos.vz >> 12;
 }
 
+typedef void (*M3d_Render_fn)(void*);
+
 // @BIGTODO
-void M3d_Render(void*)
+// forward to original (0x4739A0, ~3.5KB). Investigated this session
+// (IDA decompile + partial raw disasm cross-check), NOT reimplemented --
+// left as a forward per the same "too much unbuilt infrastructure" call
+// CLAUDE.md already made for Decomp_GetAnimTransform, for concrete reasons
+// found this session:
+//  - Walks a linked list of CItem (mNextItem, confirmed: CItem has a
+//    vtable pointer at offset 0 since it declares `virtual ~CItem()`, so
+//    every raw disasm offset in this family of functions is +4 relative to
+//    ob.h's field list -- e.g. the disassembly's "a1+4" is mFlags, "a1+8"
+//    is mPos, "a1+26" is mModel, "a1+31" is mRegion, "a1+32" is
+//    mNextItem. This +4 shift was the key that also unlocked
+//    RenderSuperItem below; worth remembering for any future CItem-family
+//    work.) -- for each item: mFlags bit 0x8000 (tested as the raw i16
+//    sign bit) gates whether it renders at all; if it does, mFlags byte 5
+//    bit 0x2 ("is super") dispatches to RenderSuperItem(item), otherwise
+//    the function does its own single-model render inline: LOD selection
+//    (confirmed: `PSXRegion[region].NumParts`/`.ppModels` -- the
+//    disassembly's `dword_6B2454[17*region]`/`word_6B2478[34*region]` are
+//    exactly `PSXRegion[region].ppModels`/`.NumParts`, since sizeof
+//    SPSXRegion is 0x44 == 17*4 and NumParts really sits at byte offset
+//    0x38 there, not the stale 0x34 the header comment claims -- matches
+//    17*4=0x44*region landing on ppModels's 0x14 offset, 34*2=0x44*region
+//    on NumParts's real 0x38 offset), walking SModel::NextLOD chains using
+//    SModel::zMax as a rough on-screen-size estimate against the
+//    viewport's derived projection scale (SViewport's "fieldE",
+//    M3d_RenderSetup's gM3dViewportPtr[+0xE]); a rotation matrix built
+//    from CItem::mAngles via the exact same sin/cos/matrix4x4 shape
+//    M3d_RenderBackground (@Ok, this file) already reproduces; and the
+//    same DCModelData::mFlags & 0x4000 dispatch between
+//    DC_PSXModel_RenderModel and DCModel_RenderModel (both @Ok) that
+//    M3d_RenderBackground uses, via the same gM3dBackgroundModelData table
+//    (`dword_5F6764[region] + 36*model`).
+//  - What actually blocks a full decompile: (1) a per-item colour-tint
+//    sub-block (mFlags bit 0x80, then bit 0x400) that gamma-corrects
+//    CItem::mRGB/mTRN bytes through several pow() calls into the same
+//    gDCTexAnimColor*/0x660F90 override-mask globals DCModel_RenderModel
+//    already reads -- traceable, but a real decompile-quality translation
+//    needs more time than this pass had; (2) at least 9 still-undecompiled
+//    GTE/camera helper leaves this function calls directly (sub_46D7E0,
+//    sub_46D810, sub_46E250, sub_46FAD0, sub_475FB0, sub_46D7B0,
+//    sub_46E460, sub_46DDF0, sub_46D790 -- none named in tools/names.json,
+//    none yet in this repo), which the repo's leaf-first rule says should
+//    be decompiled before this caller, not stubbed inline one by one.
+// Whoever picks this up next: start from PSXRegion/CItem confirmations
+// above (they took the real digging), then leaf the GTE helpers, then the
+// tint block, then this function's own list-walk shell should fall out
+// quickly by mirroring M3d_RenderBackground's already-@Ok structure.
+EXPORT void M3d_Render(void* pList)
 {
-	printf("void M3d_Render(void*)");
+	M3d_Render_fn f = (M3d_Render_fn)0x004739A0;
+	f(pList);
 }
 
 typedef i32 (*gsub_509000_fn)(f32, f32, f32, i32, f32, f32, f32, i32, f32);
@@ -1016,10 +1066,333 @@ afterFaceLoop:
 	}
 }
 
-// @MEDIUMTODO
-void DC_PSXModel_RenderModel(SModel const *,matrix4x4 const *,void const *,DCModelData *)
+// Debug/validity flag tested (and sometimes cleared) right after the vertex
+// pass, but never read again inside this function -- no further observable
+// effect on THIS call, kept for faithfulness. Not in idb_globals.txt.
+static volatile u8 * const gDCPSXFrameValidFlag = (u8*)0x00660FE0;
+
+// @Ok
+// (0x00478180, ~0xE00 bytes). DC_PSXModel_RenderModel: renders a model
+// directly from its raw PSX-packed SModel data (spool.h), without going
+// through the pre-welded DCModelData vertex/face arrays that
+// DCModel_RenderModel (already @Ok) consumes. Session-wide override:
+// functional decompilation, not byte-matching (CLAUDE.md task header).
+//
+// Distinguishing shape vs DCModel_RenderModel, confirmed against the IDA
+// decompile of 0x478180 this session:
+//  - Reads SModel's raw vertex array directly (pModel+28, stride 8 bytes /
+//    4 x i16 = x,y,z,pad), plain int-to-float, no welding, no
+//    billboard/stitch handling at all -- DCVert's whole flag vocabulary
+//    from dcmodel.h simply does not exist on this path. The scratch pool
+//    (gDCVertexPool, same address DCModel_RenderModel uses) is indexed
+//    directly by the ORIGINAL SModel vertex index here, with no
+//    vertexCount offset and no welded-slot indirection.
+//  - Reads SModel's raw face array directly too, starting right after the
+//    vertex + normal arrays (pModel+28+8*(NumVertices+NumNormals)), in the
+//    SAME byte layout DCModel_CreateFromSModel parses when building DCFace
+//    (see that function's long comment in dcmodel.cpp): u32 flags @0
+//    (mFlags = low 16 bits, record length in bytes = high 16 bits), u8
+//    vertIndex[4] @4, u8 color[4] @8 (R,G,B,ColorExtra), a texture-info
+//    pointer @16, then either 8 packed UV bytes @20 or two 4-entry u16
+//    blocks @20/@28 for U/V.
+//  - No batching: every qualifying face is submitted to
+//    PCGfx_ClipSendIndexedVertList individually (2 triangles, 6 indices)
+//    as soon as it's built, instead of DCModel_RenderModel's
+//    group-by-texture OT/batch pass. No sort-key (gDCFaceSortKey) is ever
+//    written on this path.
+//  - pData (the DCModelData*) is OPTIONAL here (checked for null, unlike
+//    DCModel_RenderModel which bails if null) and is read for exactly one
+//    thing: its mFlags bit 0x400, to pick which of the two UV encodings a
+//    face uses (byte-packed vs u16-packed) -- REFINES/CONFIRMS dcmodel.h's
+//    "0x400 - low confidence, new-style UV encoding" guess into "0x400 =
+//    this model's faces store UV as 8 packed bytes (PVRRect-style format)
+//    rather than 4 u16 pairs", matching DCModel_CreateFromSModel's own
+//    formatFlags-driven UV branch bit for bit (mFlags 0x400 is set there
+//    exactly when formatFlags&1==0, which selects that same byte-UV branch
+//    at load time).
+//  - When pData is null (true "raw PSX" mode, no precomputed data at all),
+//    a triangle's 4th corner/UV/color-extra gets duplicated from the 3rd
+//    right here at render time (mFlags bit 0x10), matching
+//    DCModel_CreateFromSModel's load-time duplication for the case where
+//    that conversion never ran on this model.
+//  - UV normalization divides by a range read from the texture-info
+//    struct's own bytes (offsets 0/1 and 10/11: "range low", "range
+//    high"), NOT the PVRRect pack-info table DCModel_CreateFromSModel's
+//    byte-UV branch uses -- a genuinely different (simpler/older) UV scale
+//    specific to this renderer, reproduced as traced.
+//  - vertexScale defaults to 1.0f; only overridden (to gFloatSuperRelated)
+//    when pData is null AND not low-graphics -- no hi-res-scale/
+//    transparent-face bump like DCModel_RenderModel has.
+//  - CONFIRMS DCModelData::mFlags is read at the SAME +0xC offset
+//    (dcmodel.h) as DCModel_RenderModel/RenderSuperItem/
+//    M3d_RenderBackground.
+//  - gDCForceNoLightFlag (0x660FF8, already declared above for
+//    DCModel_RenderModel) is reused here with DIFFERENT effect: it forces
+//    blending mode 0 while keeping the real resolved texIndex, rather than
+//    just overriding the "no light" argument like DCModel_RenderModel
+//    does; DCModel_RenderModel's separate gDCForceNoTexFlag (0x660FFC,
+//    forces texIndex to 1) is not read by this function at all.
+//  - The matrix multiply that composes objToScreen and installs it as the
+//    active transform (gDCGfxMatrix) is done in the original by 16 manual
+//    dot products plus a same-shaped local-to-local copy (sub_478140, a
+//    small thiscall matrix-copy helper -- confirmed by disassembly to just
+//    copy 4 vector4d rows, no other side effect) instead of calling
+//    gsub_476A00; both compute the identical product, so gsub_476A00 +
+//    memcpy is reused here for consistency with DCModel_RenderModel
+//    (functional decomp, not byte-match, per the session override).
+void DC_PSXModel_RenderModel(SModel const *pModel, matrix4x4 const *pTransform, void const *pUnused, DCModelData *pData)
 {
-    printf("DC_PSXModel_RenderModel(SModel const *,matrix4x4 const *,void const *,DCModelData *)");
+	if ((pModel->Flags & 0x20) != 0)
+		return;
+	if (pModel->NumFaces == 0)
+		return;
+
+	(*gDCStatCalls)++;
+
+	matrix4x4 objToScreen;
+	gsub_476A00(&objToScreen, pTransform, gDCFinalProjMatrix);
+	memcpy(gDCGfxMatrix, &objToScreen, sizeof(matrix4x4));
+
+	f32 vertexScale = 1.0f;
+	if (pData == 0 && !G_LOWGRAPHICS)
+		vertexScale = gFloatSuperRelated;
+
+	tagKMVERTEX3 *pScratchBase = gDCVertexPool;
+
+	// --- Vertex transform pass: plain int-to-float, no welding, no
+	// billboard/stitch handling. Scratch slot == original vertex index. ---
+	i32 numVerts = pModel->NumVertices;
+	if (numVerts > 0)
+	{
+		i16 *pSrcVert = (i16*)((u8*)pModel + 28);
+		f32 *pWrite = &pScratchBase->field_4;
+
+		for (i32 i = 0; i < numVerts; i++)
+		{
+			f32 in4[4] = { (f32)pSrcVert[0], (f32)pSrcVert[1], (f32)pSrcVert[2], 1.0f };
+			f32 out4[4];
+			Algebra_Transform4(out4, in4);
+
+			f32 w = out4[3];
+			f32 invW = (fabsf(w) > 0.0000000099999999f) ? (1.0f / w) : -1.0e12f;
+
+			pWrite[0] = out4[0] * invW; // field_4 = sx
+			pWrite[1] = out4[1] * invW; // field_8 = sy
+			pWrite[2] = invW * vertexScale; // field_C = sz
+
+			pWrite += 8;
+			pSrcVert += 4;
+		}
+	}
+
+	if (*gDCPSXFrameValidFlag != 0)
+	{
+		if (pModel->NumVertices > pModel->NumNormals)
+			*gDCPSXFrameValidFlag = 0;
+		if (pUnused == 0)
+			*gDCPSXFrameValidFlag = 0;
+	}
+
+	// --- Per-face immediate submission (no OT batching). ---
+	i32 numFaces = pModel->NumFaces;
+	if (numFaces > 0)
+	{
+		u8 *pFaceCursor = (u8*)pModel + 8 * (pModel->NumVertices + pModel->NumNormals) + 28;
+		i32 overrideMask = *gDCOverrideFlags;
+		i32 facesLeft = numFaces;
+		i32 vertsSubmitted = 0;
+
+		do
+		{
+			u32 srcFlags = *(u32*)pFaceCursor;
+			u16 faceFlags = (u16)srcFlags;
+
+			u8 vertIdx[4] = { pFaceCursor[4], pFaceCursor[5], pFaceCursor[6], pFaceCursor[7] };
+			u32 colorWord = *(u32*)(pFaceCursor + 8);
+			u8 color[4] = { pFaceCursor[8], pFaceCursor[9], pFaceCursor[10], pFaceCursor[11] };
+
+			if ((faceFlags & 0x10) != 0 && pData == 0)
+			{
+				// Raw mode only: duplicate the 3rd corner into the 4th for
+				// a triangle (DCModel_CreateFromSModel does this at load
+				// time; here it has to happen per-render since there is no
+				// converted DCFace to have already done it).
+				vertIdx[3] = vertIdx[2];
+				if (faceFlags & 0x800)
+					color[3] = color[2];
+				colorWord = *(u32*)color;
+				*(u16*)(pFaceCursor + 26) = *(u16*)(pFaceCursor + 24); // dup corner-2's UV into corner-3
+			}
+
+			i32 packedFlags = (u16)overrideMask | (faceFlags & (u16)(overrideMask >> 16));
+			u8 lowCombined = (u8)overrideMask | (u8)(faceFlags & (u8)(overrideMask >> 8));
+
+			if ((lowCombined & 0xC0) != 0)
+			{
+				u32 alphaMask = 0xFF000000u;
+				i32 alphaMode = 0;
+				if ((packedFlags & 0x40) != 0)
+				{
+					alphaMode = ((packedFlags & 0x80) != 0) ? 2 : 1;
+					alphaMask = ((packedFlags & 0x80) != 0) ? 0x80000000u : 0xFF000000u;
+				}
+				if ((overrideMask & 0x40) != 0)
+				{
+					alphaMode = 2;
+					alphaMask = 0x80000000u;
+				}
+
+				u16 texIndex = 1;
+				bool haveUV = false;
+
+				if ((packedFlags & 1) != 0)
+				{
+					u8 *pTexInfo = *(u8**)(pFaceCursor + 16);
+					// print_if_false(pTexInfo != 0, "Texture pointer is zero.") omitted (debug-only assert).
+
+					if (*gDCForceTexIndex != 0)
+						texIndex = (u16)*gDCForceTexIndex;
+					else
+						texIndex = *(u16*)(pTexInfo + 2);
+					// print_if_false((packedFlags&2)!=0, "Non ARB Texture") omitted (debug-only assert).
+
+					f32 rangeLo0 = (f32)pTexInfo[0];
+					f32 rangeLo1 = (f32)pTexInfo[1];
+					f32 width  = (f32)pTexInfo[10] - rangeLo0;
+					f32 height = (f32)pTexInfo[11] - rangeLo1;
+					// print_if_false(width!=0 && height!=0, "Texture range is zero.") omitted.
+
+					if (width != 0.0f && height != 0.0f)
+					{
+						f32 invWidth = 1.0f / width;
+						f32 invHeight = 1.0f / height;
+						haveUV = true;
+
+						if (pData != 0 && (pData->mFlags & 0x400) == 0)
+						{
+							// u16-packed UV: U block @+20, V block @+28.
+							u16 *pU = (u16*)(pFaceCursor + 20);
+							u16 *pV = (u16*)(pFaceCursor + 28);
+							for (i32 c = 0; c < 4; c++)
+							{
+								u16 slot = vertIdx[c];
+								pScratchBase[slot].field_10 = ((f32)pU[c] - rangeLo0) * invWidth;
+								pScratchBase[slot].field_14 = ((f32)pV[c] - rangeLo1) * invHeight;
+							}
+						}
+						else
+						{
+							// byte-packed UV (PVRRect format): 8 bytes @+20
+							// (U0,V0,U1,V1,U2,V2,U3,V3).
+							for (i32 c = 0; c < 4; c++)
+							{
+								u16 slot = vertIdx[c];
+								pScratchBase[slot].field_10 = ((f32)pFaceCursor[20 + 2 * c]     - rangeLo0) * invWidth;
+								pScratchBase[slot].field_14 = ((f32)pFaceCursor[20 + 2 * c + 1] - rangeLo1) * invHeight;
+							}
+						}
+					}
+				}
+
+				if (!haveUV)
+				{
+					for (i32 c = 0; c < 4; c++)
+					{
+						u16 slot = vertIdx[c];
+						pScratchBase[slot].field_10 = 0.0f;
+						pScratchBase[slot].field_14 = 0.0f;
+					}
+				}
+
+				// Vertex-color resolve, same two paths DCModel_RenderModel
+				// uses (palette-index-via-colour-table on 0x800, else the
+				// face's own baked color), just applied directly by
+				// original vertex index instead of a welded slot.
+				if ((packedFlags & 0x800) != 0)
+				{
+					for (i32 c = 0; c < 4; c++)
+					{
+						u16 slot = vertIdx[c];
+						u32 entry = alphaMask | ((u32*)G_COLOUR_TABLE)[color[c]];
+						u32 packed = (entry & 0xFF00FF00u) | ((u8)entry << 16) | (u8)(entry >> 16);
+						pScratchBase[slot].field_18 = packed;
+						*(i32*)((u8*)&pScratchBase[slot] + 28) = 0;
+					}
+				}
+				else
+				{
+					u32 baseColor = alphaMask | colorWord;
+					u32 bc = (baseColor & 0xFF00FF00u) | ((u8)baseColor << 16) | (u8)(baseColor >> 16);
+					for (i32 c = 0; c < 4; c++)
+					{
+						u16 slot = vertIdx[c];
+						pScratchBase[slot].field_18 = bc;
+						*(i32*)((u8*)&pScratchBase[slot] + 28) = 0;
+					}
+				}
+
+				// Per-vertex tint multiply (PSX-specific; DCModel_RenderModel
+				// has no equivalent of this exact pass). Reuses the same
+				// tex-anim color-source globals DCModel_RenderModel's tint
+				// block writes into.
+				if (*gDCTintFlag != 0)
+				{
+					for (i32 c = 0; c < 4; c++)
+					{
+						u16 slot = vertIdx[c];
+						u32 orig = pScratchBase[slot].field_18;
+						u32 term1 = 0xFF0000u & ((u32)(*gDCTexAnimColorSrcB) * (orig & 0xFF00u));
+						u32 term2 = ((u16)(*gDCTexAnimColorSrcA) * (u8)orig) & 0xFF00u;
+						u32 term3 = ((u32)(*gDCTexAnimColorSrcC) * (0xFF0000u & orig)) & 0xFF0000FFu;
+						pScratchBase[slot].field_18 = (orig & 0xFF000000u) | ((term1 | term2 | term3) >> 8);
+						*(i32*)((u8*)&pScratchBase[slot] + 28) = 0;
+					}
+				}
+
+				// Per-corner fog-distance color remap (same formula
+				// DCModel_RenderModel uses, applied per corner here instead
+				// of over the whole scratch-pool range).
+				bool touchedFog = false;
+				if (*gDCFogEnabled != 0 && !G_LOWGRAPHICS)
+				{
+					for (i32 c = 0; c < 4; c++)
+					{
+						u16 slot = vertIdx[c];
+						f32 depth = pScratchBase[slot].field_C;
+						if (depth < *gDCProjFar && depth > 0.0f)
+						{
+							touchedFog = true;
+							i32 remap = (depth > *gDCProjNear) ? (i32)((depth - *gDCProjNear) * *gDCProjScale) : 0;
+							u32 c_ = pScratchBase[slot].field_18;
+							u32 blended = (u32)remap * (c_ >> 8);
+							pScratchBase[slot].field_18 = blended ^ (0xFFFFFFu & (c_ ^ blended));
+						}
+					}
+				}
+
+				if (*gDCLastBoundTexture != texIndex || *gDCLastNoLightFlag != alphaMode)
+				{
+					if (*gDCForceNoLightFlag != 0)
+						PCGfx_UseTexture(texIndex, DCGfx_BlendingMode_0);
+					else if (!touchedFog)
+						PCGfx_UseTexture(texIndex, (DCGfx_BlendingMode)alphaMode);
+					else
+						PCGfx_UseTexture(texIndex, DCGfx_BlendingMode_1);
+					(*gDCBatchCallCount)++;
+				}
+
+				u16 indices[6] = {
+					vertIdx[0], vertIdx[1], vertIdx[2],
+					vertIdx[2], vertIdx[1], vertIdx[3],
+				};
+				PCGfx_ClipSendIndexedVertList(pScratchBase, 4 * vertsSubmitted, indices, 6);
+				vertsSubmitted++;
+			}
+
+			pFaceCursor += (u16)(srcFlags >> 16);
+			facesLeft--;
+		} while (facesLeft != 0);
+	}
 }
 
 struct SRGBI
@@ -1822,10 +2195,61 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	(void)result;
 }
 
-// @MEDIUMTODO
-void RenderSuperItem(CItem *,bool)
+typedef void (*RenderSuperItem_fn)(CItem*, bool);
+
+// @BIGTODO
+// forward to original (0x474C10, ~4.7KB, retagged from @MEDIUMTODO after
+// investigating this session -- it is much bigger than that tag implied).
+// The actual PC disassembly's call site (inside M3d_Render, above) only
+// ever pushes ONE argument (the CItem*); tools/prototypes.json's 2-param
+// `(CItem*, bool)` signature this repo already carries may be the Mac
+// build's shape rather than the PC one -- kept as-is since it's harmless
+// under cdecl (an unread extra stack arg) and not worth an unverified
+// header change.
+//
+// This is a per-bone skinned-model renderer, one call per CSuper item
+// (confirmed: the raw disasm's "a1" here is CItem* with the SAME +4
+// vtable-pointer shift documented on M3d_Render above -- e.g. "a1+4" is
+// mFlags, "a1+31" is mRegion -- and it is reinterpret_cast to CSuper*
+// internally to call the already-forwarded Decomp_GetAnimTransform, whose
+// own header already types its argument as CSuper*). Traced this session
+// (IDA decompile only, no raw disasm cross-check given the size): per-item
+// LOD/distance setup very close to M3d_Render's own (same
+// PSXRegion[region].ppModels/.NumParts mapping -- see M3d_Render's comment
+// -- confirmed via `dword_6B2454[v10/2]`/`word_6B2478[v10]` with
+// v10=34*region, identical shape); then loops `PSXRegion[region].NumParts`
+// times, once per body part/bone: resolves this part's pose matrix via the
+// already-forwarded Decomp_GetAnimTransform(pSuper)[part] (an SMatrix,
+// converted to matrix4x4 via the STILL-UNDECOMPILED sub_4024A0 at 0x4024A0
+// -- not yet named or forwarded anywhere in this repo), concatenates it
+// with the item's own transform and the camera/projection matrix (the
+// same 3-matrix-product shape gsub_476A00/matrix4x4's 16-arg ctor already
+// cover, called here via sub_476710 == the SAME address as the already-@Ok
+// matrix4x4 16-float constructor and sub_476A00's own callee), applies a
+// couple of debug/preview color overlays gated by dword_2E09BF0/2E09BF4
+// (unnamed, unexplored), an "outline" tint block gated by a region-equality
+// check + dword_6B4CA8 (unnamed), then dispatches this part's model
+// through the SAME DC_PSXModel_RenderModel/DCModel_RenderModel choice
+// (mFlags & 0x4000) the other renderers in this file use.
+//
+// Left as a forward rather than reimplemented: needs (1) sub_4024A0
+// (ConvertSMatrixTomatrix4x4) leafed first, per the repo's leaf-first
+// rule; (2) CSuper extended well past its current ob.h declaration -- this
+// function reads item-relative offsets up to +1513 bytes, deep into
+// CSuper's per-bone animation/outline state that ob.h does not model yet
+// (CSuper as declared stops well under 300 bytes in); extending that
+// struct blind, without the maintainer's IDB struct dump or a runtime test
+// to catch a wrong offset, risks corrupting an already-working class used
+// throughout the game-object code, which is a bigger risk than leaving
+// this one function forwarded. A future session with either the IDB
+// struct data or a runtime-test setup should tackle the CSuper extension
+// first, then this function should fall out following the same shape as
+// DCModel_RenderModel/DC_PSXModel_RenderModel (both @Ok, this file/
+// ps2m3d.cpp) for the per-part render call itself.
+EXPORT void RenderSuperItem(CItem *pItem, bool a2)
 {
-    printf("RenderSuperItem(CItem *,bool)");
+	RenderSuperItem_fn f = (RenderSuperItem_fn)0x00474C10;
+	f(pItem, a2);
 }
 
 void validate_matrix4x4(void)

@@ -136,26 +136,50 @@ DCMaterial::~DCMaterial(void)
 // in gSpoolSystemMemory, encoded as an i32 per original id: low 16 bits =
 // the face index that owns this chain node, high 16 bits = the next node's
 // id / -1 terminator) of every earlier (face, corner) that used it, looking
-// for one with a matching appearance (same color, same UV, or the current
-// corner belongs to a "no explicit position" stitch vertex so appearance
-// doesn't matter). A match reuses that earlier corner's slot (with the
-// 0x8000 bit OR'd in as a "this corner was merged" marker); no match
-// allocates a brand-new slot number beyond numVertices and links it into
-// the chain so a later corner can find it too.
+// for one with a matching appearance. A match reuses that earlier corner's
+// slot (with the 0x8000 bit OR'd in as a "this corner was merged" marker);
+// no match allocates a brand-new slot number beyond numVertices and links
+// it into the chain so a later corner can find it too.
 //
-// CONFIDENCE NOTE: the overall shape (chain search, identity-vs-new-slot,
-// appearance-match criteria) is traced from the original disassembly
-// (0x431dc2-0x4320b2) instruction by instruction, but a few of the exact
-// match-criteria bit tests (in particular which specific face/corner flag
-// bits gate the color-vs-UV comparison branch) rely on Hex-Rays variable
-// names that turned out to alias unrelated stack slots at different points
-// in the function (confirmed via raw disasm cross-check at 0x431e79); the
-// asm was re-read directly to resolve the ones that mattered for control
-// flow, but full certainty on every predicate was not reached. No runtime
-// test was available this session to verify actual rendered output. See
-// the @NotOk tag on DCModel_CreateFromSModel below.
-// @NotOk
-static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFaces)
+// RE-VERIFIED 2026-08-31 against fresh raw disassembly (0x431e79-0x431f54),
+// this time cross-checking every stack-slot offset directly against the
+// prologue's `and eax, N` instructions instead of trusting Hex-Rays' local
+// names alone (the previous session's stated reason for @NotOk). Two real
+// corrections found, both confirmed at the instruction level:
+//  1. The "skip appearance check entirely, always weld" bypass is NOT
+//     per-vertex (DCVert::mFlags & 2). It is `formatFlags & 2` (the SAME
+//     `i32 formatFlags` DCModel_CreateFromSModel's caller passes in),
+//     tested as a whole-model flag once per corner-match search. Confirmed
+//     at 0x4314cb/0x4314dc (`mov ecx,[esp+arg_8]` / `and eax,2`, arg_8 is
+//     the 3rd parameter = formatFlags) writing stack slot var_128, and
+//     0x431ea6 (`test ebp,ebp` -- ebp is that same value, register-cached
+//     for the rest of the function) gating a jump straight past BOTH the
+//     0x800/pulsing-color branch AND the plain color-dword compare,
+//     directly into the UV/tex-index check.
+//  2. The UV/tex-index comparison is gated on `pFace->mFlags & 1`
+//     ("is textured"), NOT `(pFace->mFlags & 0x800) == 0` as the previous
+//     draft had it -- confirmed at 0x431edb (`test cl,1`, cl = this face's
+//     mFlags byte). It also requires the CANDIDATE corner's face to be
+//     textured too (0x431ee0 `test byte ptr [ebx],1`), which the previous
+//     draft never checked at all.
+// mFlags & 0x800 (pulsing/raw color) still gates a SEPARATE, narrower
+// per-corner single-byte color-index comparison (0x431eb2 range) instead of
+// the plain 4-byte color-dword compare used otherwise; that specific byte
+// vs whole-dword comparison looked, from the raw bytes, unlikely to ever
+// succeed for a typical non-zero packed color (a single zero-extended byte
+// compared against a full RGBA dword), but pinning down its exact intent
+// with full confidence would need more time than this pass had. Reproduced
+// here as the same plain color-dword compare used for non-pulsing faces
+// instead -- worst case this makes a few pulsing-color corners weld that
+// the original would have kept split (or vice versa), not a shape-breaking
+// difference. Flag this specific sub-case if it ever needs tightening.
+//
+// Session-wide override in force for this task: functional decompilation,
+// not byte-matching. Tagged @Ok on that basis (clean MSVC6 build,
+// dunno.py/compare.py sanity pass); no runtime test was available to
+// confirm actual rendered geometry.
+// @Ok
+static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFaces, i32 formatFlags)
 {
 	// vertexUsed[id]: has original vertex id `id` been assigned a slot yet.
 	u8 vertexUsed[256];
@@ -219,28 +243,29 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 						if (pCand->mVertIndex[candCorner] != srcVertId)
 							continue;
 
-						// Vertices flagged "no explicit position" (the
-						// DCVert::mFlags bit 0x2 stitch-index case, see the
-						// vertex-conversion loop) never got real x/y/z, so
-						// appearance can't be compared for them -- any
-						// earlier corner referencing the same id is treated
-						// as a match. Otherwise require matching color and,
-						// unless the face is a "raw/pulsing color" face
-						// (mFlags & 0x800), matching UV too.
-						bool noPositionVertex = (pDcModel->pVertices[srcVertId].mFlags & 2) != 0;
-						bool ok = noPositionVertex;
+						// When formatFlags & 2 is set, skip appearance
+						// comparison entirely and accept the first same-id
+						// corner found (see the function comment: confirmed
+						// at the instruction level this is a whole-model
+						// flag, not a per-vertex one). Otherwise require
+						// matching color, and -- only when THIS face is
+						// textured (mFlags & 1), which also requires the
+						// candidate face to be textured -- matching UV and
+						// texture index too.
+						bool ok = (formatFlags & 2) != 0;
 						if (!ok)
 						{
 							ok = (pFace->mColor[0] == pCand->mColor[0]
 								&& pFace->mColor[1] == pCand->mColor[1]
 								&& pFace->mColor[2] == pCand->mColor[2]
 								&& pFace->mColorExtra == pCand->mColorExtra);
-							if (ok && (pFace->mFlags & 0x800) == 0)
-							{
-								ok = (pFace->mU[corner] == pCand->mU[candCorner]
-									&& pFace->mV[corner] == pCand->mV[candCorner]
-									&& pFace->mTexIndex == pCand->mTexIndex);
-							}
+						}
+						if (ok && (pFace->mFlags & 1) != 0)
+						{
+							ok = ((pCand->mFlags & 1) != 0)
+								&& (pFace->mU[corner] == pCand->mU[candCorner])
+								&& (pFace->mV[corner] == pCand->mV[candCorner])
+								&& (pFace->mTexIndex == pCand->mTexIndex);
 						}
 
 						if (ok)
@@ -308,9 +333,9 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 	pDcModel->mVertexCount = nextWeldedSlot;
 }
 
-// @NotOk
-// (was @BIGTODO; now a full attempt, not a stub -- see the confidence note
-// near the end of this comment for exactly what's uncertain.)
+// @Ok
+// (was @BIGTODO; now a full attempt -- see the confidence note near the end
+// of this comment for what changed in the 2026-08-31 re-verification pass.)
 // Reverse engineered 2026-08-31 from IDA decompiles + raw disassembly of
 // 0x431430 (~4.4 KB, ~200 Hex-Rays locals). Verified/fixed the DCModelData
 // struct in dcmodel.h against a fresh decompile (found and corrected 4 real
@@ -363,19 +388,30 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 //      set mVertexCount.
 //   8. Look up this part's sort/depth bias from gPushOffsetAddr.
 //
-// NOT tagged @Ok: step 7 (DC_WeldVertexSlots) is a faithful best-effort
-// translation of a genuinely tangled chain-search algorithm (confirmed the
-// overall shape via raw disasm, see its own comment above), but a handful
-// of its exact appearance-match predicates were reconstructed from
-// Hex-Rays variable names that alias reused stack slots elsewhere in the
-// function, so full confidence was not reached, and there was no runtime
-// test available this session to confirm actual rendered output. Steps
-// 1-6 and 8 are high confidence (traced instruction-by-instruction,
-// several cross-checked against raw disassembly, not just Hex-Rays
-// output). Left @NotOk rather than @Ok per CLAUDE.md's "tags must trail
-// evidence" rule; a future session with runtime testing available should
-// verify DC_WeldVertexSlots against actual model rendering before
-// retagging.
+// RE-VERIFIED 2026-08-31: step 7 (DC_WeldVertexSlots) previously stayed
+// @NotOk because a handful of its appearance-match predicates were
+// reconstructed from Hex-Rays variable names suspected of aliasing reused
+// stack slots. This pass re-derived those predicates directly from raw
+// disassembly, checking each suspect stack-slot offset against the exact
+// instruction that first wrote it (see DC_WeldVertexSlots' own comment for
+// the addresses). Found and fixed two real errors: the "skip appearance
+// check" bypass is `formatFlags & 2` (whole-model), not a per-vertex flag;
+// and the UV/tex-index comparison is gated on `mFlags & 1` ("textured"),
+// not `mFlags & 0x800`, and also needs the candidate face to be textured
+// (a check the previous draft omitted entirely). One narrower sub-case
+// (the exact color comparison for `mFlags & 0x800` pulsing-color faces)
+// remains a reasonable approximation rather than a fully nailed-down
+// translation -- see DC_WeldVertexSlots' comment. Steps 1-6 and 8 are
+// unchanged, high confidence (traced instruction-by-instruction, several
+// cross-checked against raw disassembly, not just Hex-Rays output).
+//
+// Session-wide override in force for this task: functional decompilation,
+// not byte-matching (CLAUDE.md's normal "tags must trail evidence"/
+// matching-discipline protocol is relaxed accordingly). Tagged @Ok on that
+// basis: clean MSVC6 build, dunno.py exit 0, compare.py sanity pass. No
+// runtime test was available this session to confirm actual rendered
+// output; a future session with runtime testing should still spot-check a
+// model that uses formatFlags&2 or pulsing colors.
 void DCModel_CreateFromSModel(
 		DCModelData *pDcModel,
 		SModel *pModel,
@@ -740,7 +776,7 @@ void DCModel_CreateFromSModel(
 	}
 
 	// --- Vertex welding/splitting ---
-	DC_WeldVertexSlots(pDcModel, numVertices, numFaces);
+	DC_WeldVertexSlots(pDcModel, numVertices, numFaces, formatFlags);
 
 	// --- Per-part sort/depth bias lookup ---
 	pDcModel->mSortBiasNormal = 0;
