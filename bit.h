@@ -462,6 +462,15 @@ class CChunkBit : public CBit
 		EXPORT CChunkBit(CSVector*, CSVector*, CSVector*);
 		EXPORT virtual ~CChunkBit(void);
 
+		// Declared here (Mac prototypes confirm both names/signatures, tools/prototypes.json
+		// group "bit") because CShatterBit's construction (Split, shatter.cpp) calls them
+		// directly and non-virtually. Not implemented yet: both write into a ~52 byte field
+		// range (0x94-0xC8) this class does not declare, see the @FIXME on
+		// validate_CChunkBit's VALIDATE_SIZE below and the CShatterBit class comment further
+		// down. Stubbed in bit.cpp, out of scope for this CShatterBit-focused session.
+		EXPORT void SetRGB(u8, u8, u8);
+		EXPORT void SetUVs(u16, u16, u8, u8, u8, u8, u8, u8);
+
 		SVECTOR mPosA;
 		SVECTOR mPosB;
 		SVECTOR mPosC;
@@ -473,6 +482,74 @@ class CChunkBit : public CBit
 		CVector mWorldPosD;
 
 		CSVector mAngles;
+};
+
+// CShatterBit : public CChunkBit. Found while decompiling Shatter_Face/Split (shatter.cpp),
+// the "shattered glass triangle fragment" object created by Split()'s base case (recursion
+// depth 0) via operator new(216) + CShatterBit::CShatterBit (0x48BDC0). Not present anywhere
+// in the repo before this session; grep confirmed zero prior references.
+//
+// Evidence (2026-08-31, IDA Hex-Rays decompile + raw disasm of 0x48BDC0 ctor, 0x48BEC0 dtor,
+// 0x48BF20 SetPos, 0x48C060 Move, and their call site in Split at 0x48C730):
+// - sizeof == 216 (0xD8), confirmed by the operator new(216) call size in Split.
+// - The ctor forwards its first 3 args straight into CChunkBit::CChunkBit(CSVector*,CSVector*,
+//   CSVector*) (0x40B570, already @Ok in this repo) via sub_40B570, then overwrites the vtable
+//   pointer set by that base call with CShatterBit's own vtable (off_53BE88) -- exactly the
+//   codegen a real `CShatterBit : public CChunkBit` with a ctor that base-inits CChunkBit(a,b,c)
+//   would produce. Confirms the inheritance.
+// - CChunkBit::SetRGB (0x40B830) and CChunkBit::SetUVs (0x40B910), called directly (not
+//   virtually) from Split right after construction, write into CChunkBit's OWN fields at
+//   0x94-0xC8 (six UV floats, a u16, four RGB-ish dwords). Those 0x94-0xC8 bytes are legitimate
+//   CChunkBit territory that the current repo's CChunkBit struct does not yet declare (see the
+//   `// @FIXME` on validate_CChunkBit's VALIDATE_SIZE(CChunkBit, 0x94) in bit.cpp -- confirmed
+//   here from the callee side, independent evidence). Fixing CChunkBit itself is out of scope
+//   for this CShatterBit-focused session (another agent works bit.cpp's Display*List functions
+//   in parallel); represented below as an explicit PADDING gap so CShatterBit's own new fields
+//   land at their real offsets without touching CChunkBit's declaration.
+// - Mac build prototypes (tools/prototypes.json, group "shatter") independently confirm the
+//   class name, the 5-arg ctor signature (CSVector const&,CSVector const&,CSVector const&,
+//   CVector const&,int), and that Move/SetPos/dtor are all real (non-inlined) member functions
+//   on Mac too.
+class CShatterBit : public CChunkBit
+{
+	public:
+		EXPORT CShatterBit(CSVector const&, CSVector const&, CSVector const&, CVector const&, i32);
+		EXPORT virtual ~CShatterBit(void) OVERRIDE;
+		EXPORT virtual void Move(void) OVERRIDE;
+		EXPORT void SetPos(const CVector& pos);
+
+		// 0x94-0xC7 (52 bytes): CChunkBit's own real-but-undeclared UV/color fields (written by
+		// CChunkBit::SetRGB/SetUVs, called on every CShatterBit from Split). Not CShatterBit's;
+		// left as padding here on purpose, see class comment above.
+		PADDING(0x34);
+
+		// 0xC8: confirmed by Split (0x48C730, `mov [esi+0C8h], ecx` right after the SetUVs call,
+		// ecx loaded from Split's own arg_24 = its 10th parameter, the u32 one). NOT written by
+		// the constructor itself (checked: the ctor's disasm never touches 0xC8). Every call site
+		// found (Split's single base-case construction) passes through a caller-supplied u32
+		// untouched, so this is very likely a packed face/glass color forwarded from
+		// Shatter_Face's CalcRGB output; name is our guess.
+		u32 mShardColor;
+
+		// 0xCC: CSVector, set once in the ctor to a random per-axis "spin rate" (one axis gets
+		// Rnd(160)+80, i.e. 80..239, the other two are 0, chosen by a coin flip between the first
+		// two axes; the third axis is always 0), then added onto the inherited CChunkBit::mAngles
+		// (0x8C) every Move() tick via CSVector::operator+= (confirmed: Move's disasm calls
+		// sub_4E7900, our known CSVector::operator+=, with this+0x8C as the implicit `this` and
+		// this+0xCC as the explicit argument). Name is our guess (never seen in idb_globals.txt,
+		// this is a member field not a global).
+		CSVector mSpinRate;
+
+		// 0xD4: confirmed CRibbon* by name resolution alone -- Move and SetPos both gate a call
+		// to sub_410EB0 on "this+0xD4 != 0", and sub_410EB0 resolves in tools/names.json to
+		// `?SetPos@CRibbon@@QAEXAAVCVector@@@Z` (CRibbon::SetPos(CVector&), already @Ok/declared
+		// in this file). The destructor (0x48BEC0) also checks this field and, if non-null, calls
+		// through its vtable slot 0 with arg 1 (the standard MSVC "scalar deleting destructor"
+		// pattern, i.e. `delete mTrailRibbon;`). Never written anywhere we found in this session's
+		// tracing (not by the ctor, not by Split, not by SetPos/Move) -- so nothing in the traced
+		// call graph ever actually attaches a ribbon; left as a real field for fidelity, always
+		// nullptr along every path we decompiled. Name is our guess.
+		CRibbon* mTrailRibbon;
 };
 
 class CTextBox : public CBit
@@ -632,6 +709,7 @@ void validate_CFrag(void);
 void validate_CPixel(void);
 void validate_CBitServer(void);
 void validate_CChunkBit(void);
+void validate_CShatterBit(void);
 void validate_CTextBox(void);
 void validate_CFireyExplosion(void);
 void validate_CWibbly(void);

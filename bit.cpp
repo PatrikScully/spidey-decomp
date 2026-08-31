@@ -16,6 +16,7 @@
 #include "m3dinit.h"
 #include "SpideyDX.h"
 #include "algebra.h"
+#include "shatter.h"
 
 // @Ok
 EXPORT bool SparkSemiTrans = true;
@@ -1585,6 +1586,190 @@ CChunkBit::CChunkBit(
 CChunkBit::~CChunkBit(void)
 {
 	this->DeleteFrom(reinterpret_cast<CBit**>(&ChunkBitList));
+}
+
+// @MEDIUMTODO
+// CChunkBit::SetRGB (0x40B830, 154 bytes). Computes a packed base color from (r,g,b) plus 3
+// independently Rnd(4096)-dithered variants, stored into CChunkBit's own undeclared field range
+// at 0xB8-0xC4 (see the @FIXME on validate_CChunkBit's VALIDATE_SIZE above, and the class
+// comment on CShatterBit further down). Declared and stubbed here (not implemented) because
+// Split (shatter.cpp) needs to call it directly on a freshly-built CShatterBit; a real
+// implementation needs CChunkBit's own missing fields added first, out of scope for this
+// CShatterBit-focused session. Printf placeholder, CLAUDE.md convention; harmless, nothing in
+// the leaf-first chain (Split/Shatter_Face/Shatter_Item) is hooked yet.
+void CChunkBit::SetRGB(u8 r, u8 g, u8 b)
+{
+	(void)r;
+	(void)g;
+	(void)b;
+	printf("CChunkBit::SetRGB(u8,u8,u8)");
+}
+
+// @MEDIUMTODO
+// CChunkBit::SetUVs (0x40B910, 254 bytes). Computes 3 (u,v) float pairs (per-vertex texture
+// coordinates from the 6 uchar params, scaled by float multipliers derived from the first ushort
+// param) plus stores that same ushort into CChunkBit's own undeclared field at 0xB4; the second
+// ushort param is a confirmed-dead parameter in the original disasm (see shatter.h's
+// G_SHATTER_UV_UNUSED comment). Same status as SetRGB above: stubbed, needs CChunkBit's own
+// missing fields, out of scope this session.
+void CChunkBit::SetUVs(u16 texId, u16 unused, u8 u0, u8 v0, u8 u1, u8 v1, u8 u2, u8 v2)
+{
+	(void)texId;
+	(void)unused;
+	(void)u0;
+	(void)v0;
+	(void)u1;
+	(void)v1;
+	(void)u2;
+	(void)v2;
+	printf("CChunkBit::SetUVs(u16,u16,u8,u8,u8,u8,u8,u8)");
+}
+
+// gsub_40BA20: CChunkBit::CalculateWorldCoords (0x40BA20, name and void signature confirmed by
+// the Mac build prototype in tools/prototypes.json, 148 bytes there). Needed here because
+// CShatterBit's constructor and Move() (below) both call it on themselves right after changing
+// mPos/mAngles, to refresh mWorldPosA-D. Not implemented: it operates entirely on CChunkBit's
+// own fields and belongs to CChunkBit's own decompilation (out of scope for this
+// CShatterBit-focused session; see the class comment on CShatterBit in bit.h and the @FIXME on
+// validate_CChunkBit's VALIDATE_SIZE above). Printf placeholder stub, CLAUDE.md convention.
+// Nothing calls Split/CShatterBit at runtime this session (leaf-first chain still incomplete:
+// Shatter_Face/Shatter_Item are not hooked), so this never actually executes.
+// @MEDIUMTODO
+static void CChunkBit_CalculateWorldCoords(CChunkBit *self)
+{
+	(void)self;
+	printf("CChunkBit::CalculateWorldCoords(void)");
+}
+
+// @Ok
+// 2026-08-31: session bar is functional decomp, not byte match (see task instructions). See the
+// CShatterBit class comment in bit.h for the full evidence trail from 0x48BDC0's disasm.
+// Forwards its first 3 args straight to CChunkBit's own (already @Ok) 3-CSVector-pointer
+// constructor via a base-init list; const_cast is safe here because CChunkBit::CChunkBit only
+// ever reads through those pointers. The vtable-set-then-overwrite codegen the original shows
+// (base ctor sets CChunkBit's vtable, then this ctor's own body sets CShatterBit's) falls out
+// automatically from normal C++ derived-class construction, no manual fixup needed.
+// The 5th parameter is genuinely unused in the original: checked every instruction in 0x48BDC0,
+// none of them read it, despite it being part of the Mac-confirmed 5-arg signature. Every known
+// call site (Split, in shatter.cpp) passes literal 0. Kept for signature fidelity, intentionally
+// unused, matching the original's own dead parameter.
+CShatterBit::CShatterBit(
+		CSVector const& deltaA,
+		CSVector const& deltaB,
+		CSVector const& deltaC,
+		CVector const& center,
+		i32 unused)
+	: CChunkBit(const_cast<CSVector*>(&deltaA), const_cast<CSVector*>(&deltaB), const_cast<CSVector*>(&deltaC))
+{
+	(void)unused;
+
+	// Coin flip: one of vx/vy gets a random 80..239 spin rate, the other (and vz, always) stay 0.
+	this->mSpinRate.vx = 0;
+	this->mSpinRate.vy = 0;
+	this->mSpinRate.vz = 0;
+
+	if (Rnd(2) != 0)
+	{
+		this->mSpinRate.vx = (i16)(Rnd(160) + 80);
+	}
+	else
+	{
+		this->mSpinRate.vy = (i16)(Rnd(160) + 80);
+	}
+
+	this->mLifetime = (u16)(Rnd(30) + 45);
+
+	this->SetPos(center);
+	CChunkBit_CalculateWorldCoords(this);
+}
+
+// @Ok
+// 2026-08-31: functional decomp (session bar). 0x48BEC0 disasm: sets its own vtable (automatic
+// here from normal C++ destructor semantics), then if mTrailRibbon is non-null, calls its
+// vtable slot 0 with arg 1 (MSVC's "scalar deleting destructor" convention, i.e. plain
+// `delete`), then chains to CChunkBit's own destructor (sub_40B7E0, automatic here too). No
+// call site in this session's tracing ever actually sets mTrailRibbon away from its
+// zero-initialized default (see the field's comment in bit.h), so this path is unverified at
+// runtime, only by hand-tracing the disasm.
+CShatterBit::~CShatterBit(void)
+{
+	if (this->mTrailRibbon != 0)
+		delete this->mTrailRibbon;
+}
+
+// @Ok
+// 2026-08-31: functional decomp (session bar). Derived from 0x48BF20 disasm + Hex-Rays
+// decompile. sub_408950 resolves in tools/names.json to CBit::SetPos(const CVector&) (base
+// class call, already @Ok); sub_408930 to CBit::Die(); the two CVector operator calls
+// (0x4E77D0, 0x4E7800) resolve to the already-declared operator*(CVector const&,CVector const&)
+// and operator/(CVector const&,int const&) overloads in vector.h. The (CVector,CVector)
+// overload's documented "only reads lhs.vx" quirk (see vector.h's comment on the explicit
+// CVector(i32) ctor) is exactly how Rnd(48) becomes a per-axis uniform scale here: a
+// CVector(randMag) built via that ctor has vx=randMag with vy/vz don't-care, multiplied against
+// delta, reading only vx from the left side.
+void CShatterBit::SetPos(const CVector& pos)
+{
+	this->CBit::SetPos(pos);
+
+	CVector delta = pos - G_SHATTER_FACE_CENTER;
+	i32 dist = delta.Length();
+
+	if (dist != 0)
+	{
+		i32 randMag = Rnd(48);
+		this->mVel = (CVector(randMag) * delta) / dist;
+	}
+	else
+	{
+		this->Die();
+	}
+
+	i32 randScale = Rnd(45);
+	this->mVel.vx += randScale * G_SHATTER_VELOCITY_SCALE[0];
+	this->mVel.vy += randScale * G_SHATTER_VELOCITY_SCALE[1];
+	this->mVel.vz += randScale * G_SHATTER_VELOCITY_SCALE[2];
+
+	this->mVel.vy -= Rnd(175) << 12;
+
+	if (Rnd(20) == 0)
+	{
+		this->mVel >>= 1;
+	}
+
+	if (this->mVel.vy > 0)
+		this->mVel.vy = 0;
+
+	if (this->mTrailRibbon != 0)
+		this->mTrailRibbon->SetPos(this->mPos);
+}
+
+// @Ok
+// 2026-08-31: functional decomp (session bar). Derived from 0x48C060 disasm + Hex-Rays
+// decompile. sub_4E7590 resolves to CVector::operator+= (mPos += mVel); sub_4E7900, called with
+// an implicit `this` of &mAngles and its one visible stack arg &mSpinRate, is
+// CSVector::operator+= (mAngles += mSpinRate); sub_410EB0 resolves in tools/names.json to
+// CRibbon::SetPos(CVector&), independently confirming mTrailRibbon's type (see bit.h); sub_40BA20
+// is CChunkBit::CalculateWorldCoords, forwarded via CChunkBit_CalculateWorldCoords above;
+// sub_408930 resolves to CBit::Die().
+void CShatterBit::Move(void)
+{
+	this->mPos += this->mVel;
+	this->mVel.vy += 20500;
+
+	this->mAngles += this->mSpinRate;
+
+	if (this->mTrailRibbon != 0)
+		this->mTrailRibbon->SetPos(this->mPos);
+
+	CChunkBit_CalculateWorldCoords(this);
+
+	if (this->mLifetime == 0)
+	{
+		this->Die();
+		return;
+	}
+
+	this->mLifetime--;
 }
 
 
@@ -3303,6 +3488,15 @@ void validate_CChunkBit(void)
 	VALIDATE(CChunkBit, mWorldPosD, 0x80);
 
 	VALIDATE(CChunkBit, mAngles, 0x8C);
+}
+
+void validate_CShatterBit(void)
+{
+	VALIDATE_SIZE(CShatterBit, 0xD8);
+
+	VALIDATE(CShatterBit, mShardColor, 0xC8);
+	VALIDATE(CShatterBit, mSpinRate, 0xCC);
+	VALIDATE(CShatterBit, mTrailRibbon, 0xD4);
 }
 
 void validate_CTextBox(void)

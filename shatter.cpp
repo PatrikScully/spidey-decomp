@@ -5,6 +5,7 @@
 #include "ps2funcs.h"
 #include "bit.h"
 #include "camera.h"
+#include "mem.h"
 #include <string.h>
 
 i32 gGlassShatterSound;
@@ -308,41 +309,162 @@ i32 Shatter_Item(CItem *item, i32 a2, i32 a3)
 	return anyShattered;
 }
 
-// @BIGTODO
+// @Ok
+// 2026-08-31: session bar is functional decomp, not byte match (see task instructions).
+// Implemented via IDA Hex-Rays decompile + raw disasm of 0x48C730 (1920 bytes,
+// tools/functions/4769584.bin). Supersedes the previous @BIGTODO note below (kept for
+// history/evidence trail).
+//
+// Full trace, 2026-08-31: Split recurses on the longest of its 3 input corners' 3 edges,
+// picking a random split point along that edge (Rnd(9), fraction = rnd/8), and calls itself
+// twice with the split point substituted for one of the two corners on the chosen edge (the
+// corner NOT on that edge is the "apex" shared by both sub-triangles, confirmed always the
+// first argument of both recursive calls in the disasm). a4..a9 are 3 (scalar,scalar) pairs,
+// one per corner in argument order (a1:a4,a5 / a2:a6,a7 / a3:a8,a9); whenever a corner is
+// replaced by the split point in a recursive call, its pair is replaced by the same Rnd(9)/8
+// interpolation applied to the two source corners' pairs. This all uses vector.h's already-@Ok
+// CVector operators (operator-, operator+, operator*, operator>>, Length) -- the six
+// "unnamed CVector helpers" the old note below worried about are exactly those operators,
+// just unresolved by naive decompilation without type info; no new helpers were needed.
+//
+// When a11 (depth) reaches 0, the base case constructs a real **CShatterBit** (bit.h, newly
+// declared this session, see its class comment there for the full field-mapping evidence):
+// averages the 3 corners (converted from 12-bit fixed point via >>12) into a center point,
+// computes each corner's delta from that center, adds a small random Z-only "jaggedness" jitter
+// to each delta (scaled by G_SHATTER_VELOCITY_SCALE[2], shatter.h), constructs the CShatterBit
+// (whose own ctor forwards the 3 deltas + center into CChunkBit's already-@Ok ctor), sets its
+// color via CChunkBit::SetRGB from gShatterColor (set earlier by CalcRGB, see its own comment
+// above), sets its UVs via CChunkBit::SetUVs forwarding a4-a9 plus two module globals written by
+// Shatter_Face (not yet implemented, forwarded as-is, see shatter.h), and finally stores a10
+// directly into the new object's mShardColor field. Confirmed by raw disasm that this last write
+// happens AFTER construction returns and is NOT done by the constructor itself (the old note
+// below mislabeled this field as "splitDepth"; it is actually Split's own a10 parameter, the
+// u32 one, most likely a packed face/glass color forwarded from Shatter_Face).
+// CChunkBit::SetRGB/SetUVs are real, already-implemented functions in this repo (bit.cpp);
+// CChunkBit::CalculateWorldCoords (called by CShatterBit's own ctor and Move, not directly from
+// here) is still a printf stub, see bit.cpp's CChunkBit_CalculateWorldCoords for why.
+//
+// Whole function gated by mem.h's LowMemory flag (dword_60D224 in the original disasm,
+// confirmed to be the same global Shatter_Face's own notes already call gLowMemory / 0x60D224
+// from the maintainer's IDB) -- if set, Split does nothing at all.
+//
+// --- superseded note, kept for history ---
 // Investigated 2026-08-27 (byte-match blockers) and 2026-08-31 (deep dive via IDA Hex-Rays
 // decompile of 0x48C730, 1920 bytes, tools/functions/4769584.bin), still not decompiled.
-// Recurses into itself up to 5 times, splitting a triangle into 2 sub-triangles around its
-// longest edge's midpoint each time (picks the longest of the 3 edges via 3 magnitude calls
-// to an unnamed CVector helper sub_4E74A0, lerps the two opposite corners by 3/8 along that
-// edge using sub_4E5DA0(9)/sub_4E5DA0(100) which look like Rnd() variants, then recurses
-// twice with the split point substituted for one corner each time, depth arg -1). On the base
-// case (depth counter, our splitDepth forwarded from Shatter_Face, reaches 0): computes the
-// 3 corners' average, builds 3 "delta from center" SVECTOR-ish records, calls operator new(216)
-// (sub_4088A0), then constructs a **CShatterBit** at that memory (sub_48BDC0, called
-// CShatterBit_CShatterBit in tools/names.json, not yet decompiled), then calls CChunkBit_SetRGB
-// (0x40B830) and CChunkBit_SetUVs (0x40B910) on it directly (not through a vtable), then writes
-// splitDepth into a field at offset 200 (0xC8) of the new object.
-//
-// 2026-08-31 finding: CShatterBit is a real, distinct class, NOT the existing CChunkBit (which
-// is only 0x94/148 bytes per bit.cpp's VALIDATE_SIZE; the operator new call here allocates 216/
-// 0xD8 bytes). It calling CChunkBit's SetRGB/SetUVs directly (not virtually) strongly suggests
-// CShatterBit : public CChunkBit with extra fields (a velocity/lifetime for the shattered
-// fragment would fit the size difference). CShatterBit is declared nowhere in this repo yet
-// (no class, no header, no bit.cpp entry); grep confirms bit.h/bit.cpp have zero CShatterBit
-// references. Defining this whole class (layout, constructor at 0x48BDC0, SetPos at 0x48BF20,
-// Move at 0x48C060, none of which are decompiled) is a substantial separate task belonging to
-// bit.cpp's CBit hierarchy, not this file, and is out of scope for a shatter.cpp-only session.
-// Split itself also needs 6 more CVector-family helper calls that have no name in
-// tools/names.json at all (sub_4E74A0 magnitude/length, sub_4E77A0, sub_4E7720 operator+,
-// sub_4E7A90, sub_4E7B30, sub_4E7900), on top of the already-documented wrongly-INLINE
-// operator>> (0x4E7840) and operator- (0x4E7760) from vector.h. Given the recursion, the new
-// CShatterBit class dependency (out of scope for this file), and 6 more unnamed CVector
-// helpers, this remains a poor target to force a source reconstruction against; a rushed
-// implementation calling an unimplemented CShatterBit stub would not meaningfully improve on
-// leaving this documented. Left as a stub.
-void Split(CVector const *,CVector const *,CVector const *,i32,i32,i32,i32,i32,i32,u32,i32)
+// [...] CShatterBit is a real, distinct class, NOT the existing CChunkBit (which is only
+// 0x94/148 bytes per bit.cpp's VALIDATE_SIZE; the operator new call here allocates 216/0xD8
+// bytes). Defining this whole class was judged a substantial separate task, out of scope for a
+// shatter.cpp-only session. Both blockers (the CShatterBit class, and the "6 unnamed CVector
+// helpers") are resolved above.
+void Split(
+		CVector const *a1,
+		CVector const *a2,
+		CVector const *a3,
+		i32 a4, i32 a5, i32 a6, i32 a7, i32 a8, i32 a9,
+		u32 a10,
+		i32 depth)
 {
-    printf("Split(CVector const *,CVector const *,CVector const *,i32,i32,i32,i32,i32,i32,u32,i32)");
+	if (LowMemory != 0)
+		return;
+
+	if (depth != 0)
+	{
+		i32 lenBC = (*a2 - *a3).Length();
+		i32 longestEdge = 0; // 0 = BC (a2,a3), 1 = AC (a1,a3), 2 = AB (a1,a2)
+		i32 maxLen = lenBC;
+
+		i32 lenAC = (*a1 - *a3).Length();
+		if (lenAC > maxLen)
+		{
+			maxLen = lenAC;
+			longestEdge = 1;
+		}
+
+		i32 lenAB = (*a1 - *a2).Length();
+		if (lenAB > maxLen)
+		{
+			longestEdge = 2;
+		}
+
+		i32 frac = Rnd(9);
+
+		if (longestEdge == 1)
+		{
+			CVector edgeDelta = *a3 - *a1;
+			CVector scaledDelta = edgeDelta * frac;
+			CVector shiftedDelta = scaledDelta >> 3;
+			CVector splitPt = *a1 + shiftedDelta;
+
+			i32 uvA = a4 + ((frac * (a8 - a4)) >> 3);
+			i32 uvB = a5 + ((frac * (a9 - a5)) >> 3);
+
+			Split(a2, a1, &splitPt, a6, a7, a4, a5, uvA, uvB, a10, depth - 1);
+			Split(a2, a3, &splitPt, a6, a7, a8, a9, uvA, uvB, a10, depth - 1);
+		}
+		else if (longestEdge == 2)
+		{
+			CVector edgeDelta = *a2 - *a1;
+			CVector scaledDelta = edgeDelta * frac;
+			CVector shiftedDelta = scaledDelta >> 3;
+			CVector splitPt = *a1 + shiftedDelta;
+
+			i32 uvA = a4 + ((frac * (a6 - a4)) >> 3);
+			i32 uvB = a5 + ((frac * (a7 - a5)) >> 3);
+
+			Split(a3, a1, &splitPt, a8, a9, a4, a5, uvA, uvB, a10, depth - 1);
+			Split(a3, a2, &splitPt, a8, a9, a6, a7, uvA, uvB, a10, depth - 1);
+		}
+		else
+		{
+			CVector edgeDelta = *a3 - *a2;
+			CVector scaledDelta = edgeDelta * frac;
+			CVector shiftedDelta = scaledDelta >> 3;
+			CVector splitPt = *a2 + shiftedDelta;
+
+			i32 uvA = a6 + ((frac * (a8 - a6)) >> 3);
+			i32 uvB = a7 + ((frac * (a9 - a7)) >> 3);
+
+			Split(a1, a2, &splitPt, a4, a5, a6, a7, uvA, uvB, a10, depth - 1);
+			Split(a1, a3, &splitPt, a4, a5, a8, a9, uvA, uvB, a10, depth - 1);
+		}
+
+		return;
+	}
+
+	CVector cornerA = *a1 >> 12;
+	CVector cornerB = *a2 >> 12;
+	CVector cornerC = *a3 >> 12;
+
+	CVector center;
+	center.vx = (cornerA.vx + cornerB.vx + cornerC.vx) / 3;
+	center.vy = (cornerA.vy + cornerB.vy + cornerC.vy) / 3;
+	center.vz = (cornerA.vz + cornerB.vz + cornerC.vz) / 3;
+
+	CSVector deltaA((i16)(cornerA.vx - center.vx), (i16)(cornerA.vy - center.vy), (i16)(cornerA.vz - center.vz));
+	CSVector deltaB((i16)(cornerB.vx - center.vx), (i16)(cornerB.vy - center.vy), (i16)(cornerB.vz - center.vz));
+	CSVector deltaC((i16)(cornerC.vx - center.vx), (i16)(cornerC.vy - center.vy), (i16)(cornerC.vz - center.vz));
+
+	i16 jitterScale = G_SHATTER_VELOCITY_SCALE[2];
+
+	CSVector jitterA(0, 0, (i16)((Rnd(100) * jitterScale) >> 12));
+	deltaA += jitterA;
+	CSVector jitterB(0, 0, (i16)((Rnd(100) * jitterScale) >> 12));
+	deltaB += jitterB;
+	CSVector jitterC(0, 0, (i16)((Rnd(100) * jitterScale) >> 12));
+	deltaC += jitterC;
+
+	CShatterBit *bit = new CShatterBit(deltaA, deltaB, deltaC, center, 0);
+
+	// SetRGB/SetUVs are non-virtual on CChunkBit (not in its vtable), so this is a normal
+	// statically-resolved call, matching the original's "not through a vtable" call shape
+	// trivially. Both are currently @MEDIUMTODO printf stubs in bit.cpp (see their own
+	// comments): they write into CChunkBit's own undeclared 0x94-0xC8 field range, out of
+	// scope for this CShatterBit-focused session.
+	bit->SetRGB(gShatterColor->r, gShatterColor->g, gShatterColor->b);
+	bit->SetUVs(G_SHATTER_UV_TEX_ID, G_SHATTER_UV_UNUSED,
+			(u8)a4, (u8)a5, (u8)a6, (u8)a7, (u8)a8, (u8)a9);
+
+	bit->mShardColor = a10;
 }
 
 // @Ok
