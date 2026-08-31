@@ -77,19 +77,50 @@ extern SCamera gMikeCamera[2];
 //   function now (RefreshGfxMatrix, bit.cpp), but it is `static INLINE`
 //   (file-local); would need duplicating here (repo convention allows this)
 //   or exporting.
-// - The real remaining blocker: the invZ pipeline's vector3d/vector4d helpers
-//   (sub_402620 = vector4d_ctor, sub_402600, sub_402540 = the vector3d ctor)
-//   are NAMED in tools/names.json and vector3d/vector4d already exist as real
-//   classes (bit.h) with some members implemented (ps2m3d.cpp has
-//   vector4d::operator=), but 0x402540's actual disassembly (this-in-ecx,
-//   ONE stack arg, retn 4, copies 3 dwords through a pointer deref) does NOT
-//   match its mangled name's signature (??0vector3d@@QAE@MMM@Z decodes to
-//   vector3d(float,float,float), which would need 3 stack args and retn 0Ch,
-//   not 1 arg and retn 4). This looks like a real names.json
-//   address/signature mismatch for this one entry, not just an unnamed
-//   function - needs sorting out (probably against the compiler-generated
-//   copy constructor) before it is safe to implement, so still not attempted
-//   here. Left as a stub for this reason alone now, not the long list above.
+// Re-checked again 2026-08-31 (separate session), the 0x402540 question above:
+// this is NOT actually a blocker, confirmed with IDA (idb_open on SpideyPC.exe,
+// disasm + xrefs_to on 0x402540). The raw disassembly is exactly what the note
+// above already said (mov eax,ecx; mov ecx,[esp+4]; three [ecx+n]->[eax+n] dword
+// copies; retn 4) - a this-in-ecx, one-pointer-arg, 12-byte memberwise copy. That
+// is a copy-constructor shape (vector3d(const vector3d&)), not the (f32,f32,f32)
+// overload names.json's mangled name claims. This IS a genuine names.json
+// address/signature mismatch, confirmed, not just a hunch.
+//
+// But it does not block writing this function, because it never needs fixing
+// here: bit.cpp already has a working, @Ok vector3d::vector3d(f32,f32,f32) (the
+// declared bit.h overload) that is functionally correct regardless of this
+// byte-match caveat (its own comment documents the same 0x402540 finding and
+// explicitly defers it as a byte-match-only concern). More importantly, the
+// established pattern this whole Display*List family actually uses at the
+// C++ source level (confirmed in DisplayGPolyLineList/DisplayPolyLineList,
+// both @Ok in bit.cpp) never constructs a vector3d/vector4d object at all: it
+// builds a plain f32[3]/f32[4] pair and calls Algebra_Transform4(out, in)
+// (algebra.cpp, @Ok) directly, which is the source-level equivalent of the
+// sub_402540/402600/402620 sequence Hex-Rays shows inlined in the original
+// binary. So a real attempt at this function should use Algebra_Transform4
+// like its siblings, not chase vector3d/vector4d ctors.
+//
+// With that cleared, every callee this function needs is now confirmed
+// already implemented and @Ok elsewhere: CalcScreenNormal (sub_4F2AB0, this
+// file), gte_ldlv0/gte_rtps/gte_stsxy/gte_stlvnl2 (ps2funcs.cpp),
+// Algebra_Transform4 (algebra.cpp), PCGfx_UseTexture (sub_506440, PCGfx.cpp,
+// confirmed via names.json - not the "unnamed" helper an earlier pass
+// suspected), PCGfx_DrawQPoly3D (PCGfx.cpp), stubbed_printf (assert helper).
+// RefreshGfxMatrix is `static INLINE` in bit.cpp so still needs duplicating
+// or exporting to use from this file, same note as before.
+//
+// So there is no longer an infrastructure blocker; what remains is purely the
+// size and density of the body itself (Hex-Rays decompile of 0x4F1860
+// checked this session: heavy scratch-register reuse across SIX
+// PCGfx_DrawQPoly3D call sites per ring segment, a still-unreconciled
+// dword_614CD4.. per-frame ring buffer whose exact per-point stride/layout
+// was not re-derived this pass, and one packaging call (the
+// vector4d(f32,f32,f32,f32)-shaped ctor into &v281, ~0x4f1a7c) whose second
+// operand Hex-Rays does not resolve cleanly, needing a raw-disasm trace to
+// pin down). That is a multi-hour reconstruction on its own merits, not one
+// blocked on any missing name or wrong signature anymore. Left @BIGTODO for
+// that reason; a future attempt can skip straight past the vector3d
+// question and the callee audit above.
 // @BIGTODO
 void CGouraudRibbon::Display(void)
 {
