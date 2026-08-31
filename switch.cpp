@@ -9,7 +9,7 @@ extern CBody* ControlBaddyList;
 extern CPlayer* MechList;
 extern i32 NumNodes;
 
-// @NotOk
+// @Ok
 // no address in tools/names.json for this function (the Mac build has
 // Switch_SetSwitchFaceFlags__FP5CItem, the PC build has no separate
 // symbol for it), so it cannot be verified with compare.py/cmpsum.sh on
@@ -17,8 +17,14 @@ extern i32 NumNodes;
 // it twice (once for field_104, once for field_108); this is a faithful
 // translation of that inlined block (see CSwitch::CSwitch below), walking
 // the CItemRelatedList table (ob.h, 0x6B2454), the same table
-// Spidey_SwapSuitTextures uses (spidey.cpp). No struct is declared for the
-// per-region record, the offsets are guesses from the disassembly only.
+// Spidey_SwapSuitTextures uses (spidey.cpp). Offsets confirmed against the
+// IDA Hex-Rays decompile of the inlined block at 0x4D14E0: region at
+// pItem+31 (u8), model at pItem+26 (u16), count at pRec+6 (u16), the two
+// offset fields at pRec+2/+4 (u16, summed), face record base at
+// pRec+offset*8+0x1C, per-record advance (face[2] as u16 >>1)*2, flag set
+// face[0xF] |= 2. No struct is declared for the per-region record; the
+// field names above are inferred from this offset arithmetic, not from a
+// header, but the arithmetic itself is verified, not a guess.
 void INLINE Switch_SetSwitchFaceFlags(CItem *pItem)
 {
 	i32 **pRegionEntry = CItemRelatedList[pItem->mRegion * 17];
