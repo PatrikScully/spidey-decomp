@@ -1,3 +1,4 @@
+#include <new>
 #include "manipob.h"
 #include "utils.h"
 #include "validate.h"
@@ -6,6 +7,11 @@
 #include "spool.h"
 #include "baddy.h"
 #include "m3dzone.h"
+#include "ps2lowsfx.h"
+#include "message.h"
+#include "exp.h"
+#include "effects.h"
+#include "camera.h"
 
 static i16 * const word_610C48 = (i16*)0x610C48;
 extern const char *gObjFile;
@@ -359,48 +365,261 @@ void CManipOb::Smash(void)
 	this->Die();
 }
 
-// @BIGTODO
-// Left as a stub, genuinely intractable in one session: leaf-first would
-// require decompiling roughly ten still-unnamed helper functions in OTHER
-// subsystems first (sound, explosion effects, spawn pooling, camera
-// shake), none of which are in tools/names.json. Notes from reading the
-// IDA decompile of 0x456E90 (about 1600 bytes) for whoever picks this up:
-//   - v9/a1 of most helper calls below is &this->mPos (this+8).
-//   - Explosion-radius damage pass, gated by (this->field_10C flag 0x20):
-//     if MechList is within 300 (Y) and Utils_CrapDist(mPos, MechList->mPos)
-//     < 1024, calls sub_403250(&pos, 2000) and a vtable+12 "hurt" call on
-//     MechList via sub_43CF90(v9), then loops dword_56E990's linked list
-//     (next at +32, flag byte at +70 bit 0x10) doing the same distance
-//     check per item and calling each item's vtable+72 (type 324 case) or
-//     vtable+12 (SHitInfo-style call, other types) hurt method.
-//   - sub_471EA0(flags, &this->mPos, 0): looks like a sound/pulse trigger,
-//     called with either the node's own link data (mNode != 0) or a fixed
-//     id 27/28 selected by a this+268 flag bit 3, when mNode == 0.
-//   - Utils_GetGroundHeight (0x4E6840, already named in utils.cpp) and
-//     Utils_CrapDist (0x4E6220, already named in utils.cpp) ARE usable now.
-//   - MechList (CPlayer*, spidey.h) is the 0x6A9038 global; ZeroVector
-//     (CVector, 0x60D9D0) is the other confirmed global (idb_globals.txt).
-//   - After the damage pass: walks a null-terminated pointer array at
-//     this+288 (field_120, an array of CManipObChunk model ids) to find its
-//     length, then spawns that many CManipObChunk objects (sub_456450 is
-//     CManipObChunk::CManipObChunk, address matches names.json) scattered
-//     in a fan using word_610C48/610C4A (rcossin_tbl sin/cos) at increasing
-//     angle steps of 682 up to 4092, picking a random model id from the
-//     this+288 array via sub_4E5DA0 (Rnd) each time; sub_455390 allocates
-//     each chunk (0x455390, referenced but not yet decompiled; carnage.h
-//     has a comment that it derives from CClass, not CBit's pooled
-//     allocator). Two branches: a3 (the a3 parameter, an i32) >= -3000 uses
-//     sub_4E61A0/sub_4E6150/sub_4E5E20 (unnamed, look like some kind of
-//     basis-vector/matrix setup from a2, the CVector* argument, combined
-//     with dword_60D9D0=ZeroVector and this+96 i.e. mAngles) to build a
-//     rotated velocity per chunk; a3 < -3000 uses a simpler straight-down
-//     fan (v68 = {v28*sin, -field_10, v28*cos}). Both branches end with
-//     sub_43B2A0(v9, dir1, dir2, 300, 24) (looks like a generic "spawn
-//     debris burst" call, same shape in other files' explosion code).
-//   - Tail: TurnOffShadow/SendPulse bodies inlined again (same as Smash).
-void CManipOb::Chunk(SLineInfo*, CVector*)
+// Session note: every helper below WAS resolvable via tools/names.json (a
+// previous session's @BIGTODO comment on this function said none were --
+// that was wrong, they just needed cross-checking address by address). See
+// each helper's own comment for the evidence.
+
+// @Ok
+// was sub_403250 (0x403250). Sends a CBaddy-targeted CMessage (type 10, from
+// nullptr) to every BaddyList member within `radius` on the XZ plane
+// (Utils_CrapXZDist) and within 400 units (1638400 >> 12) vertically, that
+// has mCBodyFlags bit 0x200 set. mNumVects/mParams/pVects are never written
+// in the original either (only field_0=0 and mNumParams=1) -- left
+// uninitialized here too, matching the original's apparent defect rather
+// than "fixing" it.
+static void SendExplosionMessageToNearby(CVector *pos, i32 radius)
 {
-	printf("void CManipOb::Chunk(SLineInfo*, CVector*)");
+	for (CBaddy *pBaddy = BaddyList; pBaddy; pBaddy = static_cast<CBaddy*>(pBaddy->mNextItem))
+	{
+		if (!(pBaddy->mCBodyFlags & 0x200))
+			continue;
+
+		if (Utils_CrapXZDist(*pos, pBaddy->mPos) >= static_cast<u32>(radius))
+			continue;
+
+		i32 dy = pBaddy->mPos.vy - pos->vy;
+		if (dy < 0)
+			dy = -dy;
+
+		if (dy >= 1638400)
+			continue;
+
+		SMessageData msgData;
+		msgData.field_0 = 0;
+		msgData.mNumParams = 1;
+
+		new CMessage(0, pBaddy, 10, &msgData);
+	}
+}
+
+// @Ok
+// was sub_43B2A0 (0x43B2A0). Spawns `count` CChunkSmoke puffs around `pos`,
+// each offset by a random magnitude (0..spread) along a random angle in the
+// dirA/dirB plane; camera-relative sign (gMikeCamera[0].Position, the
+// resolved name for what decompiles as qword_56F1B4/dword_56F1BC -- see
+// weapons.cpp's Transform()/CSmokeRing::Display comment for the same
+// address pair) picks which CChunkSmoke variant (front/back-facing, via the
+// ctor's a4 sign) to use. sub_4088A0(128)/sub_43B020 are CBit::operator
+// new(128) [uses a base-class allocator, not CClass's, unlike the chunks
+// themselves] and CChunkSmoke::CChunkSmoke (0x43B020, confirmed via
+// names.json).
+static void SpawnChunkSmokeBurst(CVector *pos, CVector *dirA, CVector *dirB, i32 spread, i32 count)
+{
+	i32 camX = (pos->vx >> 12) - gMikeCamera[0].Position.vx;
+	i32 camZ = (pos->vz >> 12) - gMikeCamera[0].Position.vz;
+
+	for (i32 i = count; i != 0; i--)
+	{
+		i32 angle = Rnd(4096) & 0xFFF;
+		i32 mag = Rnd(spread);
+
+		i32 offX = (mag * rcossin_tbl[angle].sin) >> 12;
+		i32 offZ = (mag * rcossin_tbl[angle].cos) >> 12;
+
+		CVector smokePos;
+		smokePos.vx = pos->vx + offX * dirA->vx + offZ * dirB->vx;
+		smokePos.vy = pos->vy + offX * dirA->vy + offZ * dirB->vy;
+		smokePos.vz = pos->vz + offX * dirA->vz + offZ * dirB->vz;
+
+		i32 side = camX * (offZ >> 12) - camZ * (offX >> 12) >= 0 ? 1 : -1;
+
+		CChunkSmoke *pSmoke = static_cast<CChunkSmoke*>(CBit::operator new(sizeof(CChunkSmoke)));
+		if (pSmoke)
+		{
+			::new (pSmoke) CChunkSmoke(&smokePos, pos, side);
+		}
+	}
+}
+
+// @Ok
+// was sub_456E90 (0x456E90, ~1600 bytes). Full trace of the resolved
+// helpers: sub_471EA0=SFX_PlayPos, sub_4E6840=Utils_GetGroundHeight,
+// sub_43CF90=Exp_Big3DExplosion, sub_4E6220=Utils_CrapDist,
+// sub_470430=VectorNormal, sub_4E61A0=Utils_XZDist, sub_4E6150=Utils_Dist,
+// sub_4E5E20=Utils_CalcPerps, sub_456450=CManipObChunk::CManipObChunk,
+// sub_4E3880=Trig_GetLinksPointer, sub_4DFD30=Trig_SendPulse,
+// dword_56E990=BaddyList (idb_globals.txt), dword_60D9D0=ZeroVector,
+// this+96=mVel, this+100=mVel.vy, this+260=field_104, this+268=field_10C
+// (low byte), this+288=field_120, this+292=field_124. The `SLineInfo*`
+// parameter is read as raw i16s at element index 60/61/62, i.e. byte offset
+// 120/122/124, which is exactly SLineInfo::Normal (CSVector, offset 0x78) --
+// so this promotes the hit surface normal to a CVector for the perpendicular
+// basis. The `CVector*` second parameter is never read anywhere in this
+// function (confirmed by scanning the full decompile for any use); reproduced
+// faithfully as unused, matching CManipOb::Smash's caller passing an unused
+// value for it. The single unnamed piece left: the mType==324 (CSimby)
+// reaction is a distinct virtual (not Hit) at vtable slot 18 -- confirmed by
+// reading CSimby's own vtable bytes (off_53C0B4) directly and decompiling
+// what's there (sub_4A7E70): `this->field_218 |= 0x8000; return field_218;`.
+// Called here via raw vtable dispatch (FontTools.cpp's own established
+// pattern for calling through an unnamed vtable slot) rather than adding a
+// new CSimby virtual, since slots 17/19 (also CSimby-specific, confirmed via
+// the same vtable read) are unrelated to this call and out of scope here.
+void CManipOb::Chunk(SLineInfo *pLineInfo, CVector*)
+{
+	CVector normal;
+	normal.vx = pLineInfo->Normal.vx;
+	normal.vy = pLineInfo->Normal.vy;
+	normal.vz = pLineInfo->Normal.vz;
+
+	u16 songId = static_cast<u16>(this->field_104);
+	if (songId != 0)
+	{
+		SFX_PlayPos(songId | 0x8000u, &this->mPos, 0);
+	}
+	else
+	{
+		SFX_PlayPos((this->field_10C & 8) ? 28 : 27, &this->mPos, 0);
+	}
+
+	CVector shakePos = this->mPos;
+	i32 groundY = Utils_GetGroundHeight(&this->mPos, 0, 700, 0);
+	if (groundY != -1)
+	{
+		shakePos.vy = groundY - 204800;
+	}
+
+	SendExplosionMessageToNearby(&shakePos, 2000);
+
+	if (this->field_10C & 0x20)
+	{
+		Exp_Big3DExplosion(&this->mPos);
+
+		i32 mechDy = (this->mPos.vy - G_MECHLIST->mPos.vy) >> 12;
+		if (mechDy > -300 && mechDy < 300)
+		{
+			i32 mechDist = Utils_CrapDist(this->mPos, G_MECHLIST->mPos);
+			if (mechDist < 1024)
+			{
+				SHitInfo hitInfo;
+				hitInfo.field_0 = 12;
+				hitInfo.field_8 = static_cast<u16>(30 * mechDist / 1024);
+
+				hitInfo.field_C.vx = (G_MECHLIST->mPos.vx - this->mPos.vx) >> 12;
+				hitInfo.field_C.vy = 0;
+				hitInfo.field_C.vz = (G_MECHLIST->mPos.vz - this->mPos.vz) >> 12;
+				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
+
+				G_MECHLIST->Hit(&hitInfo);
+			}
+		}
+
+		for (CBaddy *pBaddy = BaddyList; pBaddy; pBaddy = static_cast<CBaddy*>(pBaddy->mNextItem))
+		{
+			if (!(pBaddy->mCBodyFlags & 0x1000))
+				continue;
+
+			i32 dy = (this->mPos.vy - pBaddy->mPos.vy) >> 12;
+			if (dy <= -300 || dy >= 300)
+				continue;
+
+			i32 dist = Utils_CrapDist(this->mPos, pBaddy->mPos);
+
+			if (pBaddy->mType == 324)
+			{
+				if (dist <= 1024)
+				{
+					typedef void (FASTCALL *pfnExplosionReaction)(void*);
+					i32 *pVtable = *reinterpret_cast<i32**>(pBaddy);
+					pfnExplosionReaction fn = reinterpret_cast<pfnExplosionReaction>(pVtable[18]);
+					fn(reinterpret_cast<void*>(pBaddy));
+				}
+			}
+			else if (dist < 1024)
+			{
+				SHitInfo hitInfo;
+				hitInfo.field_0 = 28;
+				hitInfo.field_8 = static_cast<u16>(50 * dist / 1024);
+
+				hitInfo.field_C.vx = (pBaddy->mPos.vx - this->mPos.vx) >> 12;
+				hitInfo.field_C.vy = (pBaddy->mPos.vy - this->mPos.vy) >> 12;
+				hitInfo.field_C.vz = (pBaddy->mPos.vz - this->mPos.vz) >> 12;
+				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
+
+				hitInfo.field_18 = (this->field_10C & 0x20) ? 500 : 300;
+				hitInfo.field_1A = 15;
+
+				pBaddy->Hit(&hitInfo);
+			}
+		}
+	}
+
+	i32 modelCount = 0;
+	i32 *pModelIds = reinterpret_cast<i32*>(this->field_120);
+	while (pModelIds[modelCount])
+		modelCount++;
+
+	if (modelCount != 0)
+	{
+		if (normal.vy >= -3000)
+		{
+			i32 halfXZSpeed = Utils_XZDist(&ZeroVector, &this->mVel) >> 1;
+			i32 halfSpeed = Utils_Dist(ZeroVector, this->mVel) >> 1;
+
+			CVector perpUp;
+			CVector perpSide;
+			perpUp.vx = 0; perpUp.vy = 0; perpUp.vz = 0;
+			perpSide.vx = 0; perpSide.vy = 0; perpSide.vz = 0;
+			Utils_CalcPerps(&normal, &perpUp, &perpSide);
+
+			for (i32 angle = 0; angle < 4092; angle += 682)
+			{
+				i32 idx = angle & 0xFFF;
+
+				CVector vel = (halfSpeed * ((rcossin_tbl[idx].sin * perpUp) >> 12));
+				vel += halfXZSpeed * normal;
+				vel += halfSpeed * ((rcossin_tbl[idx].cos * perpSide) >> 12);
+
+				CManipObChunk *pChunk = static_cast<CManipObChunk*>(CClass::operator new(sizeof(CManipObChunk)));
+				if (pChunk)
+				{
+					::new (pChunk) CManipObChunk(pModelIds[Rnd(modelCount)], &this->mPos, &vel);
+				}
+			}
+
+			SpawnChunkSmokeBurst(&this->mPos, &perpUp, &perpSide, 300, 24);
+		}
+		else
+		{
+			i32 halfXZSpeed = Utils_XZDist(&ZeroVector, &this->mVel) >> 1;
+
+			for (i32 angle = 0; angle < 4092; angle += 682)
+			{
+				i32 idx = angle & 0xFFF;
+
+				CVector vel;
+				vel.vx = halfXZSpeed * rcossin_tbl[idx].sin;
+				vel.vy = -this->mVel.vy;
+				vel.vz = halfXZSpeed * rcossin_tbl[idx].cos;
+
+				CManipObChunk *pChunk = static_cast<CManipObChunk*>(CClass::operator new(sizeof(CManipObChunk)));
+				if (pChunk)
+				{
+					::new (pChunk) CManipObChunk(pModelIds[Rnd(modelCount)], &this->mPos, &vel);
+				}
+			}
+
+			CVector zAxis;
+			zAxis.vx = 0; zAxis.vy = 0; zAxis.vz = 4096;
+			CVector xAxis;
+			xAxis.vx = 4096; xAxis.vy = 0; xAxis.vz = 0;
+
+			SpawnChunkSmokeBurst(&this->mPos, &zAxis, &xAxis, 300, 24);
+		}
+	}
+
+	this->SendPulse();
 }
 
 // @Ok
