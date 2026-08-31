@@ -655,16 +655,19 @@ u8 CPlayer::CheckJumpingSmashKick(void)
 	VectorNormal(&v, &v);
 	if (v.vy <= 1024)
 		return 0;
-	CSwinger *swinger = (CSwinger*)this->field_EAC;
+	// field at 0x54D (byte) and 0xEAC (held CSwinger*) live in PADDING regions;
+	// access them by raw offset to keep the CPlayer layout unchanged.
+	CSwinger **swingerSlot = reinterpret_cast<CSwinger**>(reinterpret_cast<u8*>(this) + 0xEAC);
+	CSwinger *swinger = *swingerSlot;
 	this->field_54C = 0;
 	CameraList->field_12C = -1;
-	this->field_54D = 0;
+	reinterpret_cast<u8*>(this)[0x54D] = 0;
 	if (swinger)
 	{
 		CSwinger_SwingBack(swinger);
 		i32 *v8 = (i32*)swinger;
 		(*(void(**)(i32*, i32))*v8)(v8, 1);
-		this->field_EAC = 0;
+		*swingerSlot = 0;
 	}
 	this->field_8DC = 0;
 	this->field_8CC = held->mPos;
