@@ -440,8 +440,11 @@ void CBlackCat::SynthesizeAnalogueInput(void)
     printf("CBlackCat::SynthesizeAnalogueInput(void)");
 }
 
-// @NotOk
-// guess type of 33C
+// @Ok
+// verified against IDA disasm of 0x413aa0: DeleteFrom, then the polymorphic
+// delete on field_33C (call through vtbl[0] with flag 1, matches `delete`
+// on a pointer with a virtual destructor, so field_33C's real type has one),
+// then the KillAllCommandBlocks loop inlined here, in that exact order.
 CBlackCat::~CBlackCat(void)
 {
 	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
