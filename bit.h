@@ -11,8 +11,15 @@
 // @Note guessed the name
 struct SSimpleRibbonParams
 {
-	PADDING(0x18);
-	u32 field_18;
+	// Raw fixed-point spine point position (CSimpleTexturedRibbon::Display reads this at
+	// offset 0x0, confirmed against the raw disasm at 0x40aa00: v8[0..2], where v8 is
+	// this->field_44 cast to int*).
+	CVector mPos;
+	PADDING(0xC);
+	// Per-point ribbon half-width scale (confirmed by CSimpleTexturedRibbon::SetWidth/i,
+	// which write it, and Display, which multiplies it by the per-segment unit-length
+	// perpendicular vector from Utils_CalcUnitFacingCamera). Was field_18.
+	u32 mWidth;
 };
 
 // @Note: guessed name
@@ -301,7 +308,14 @@ class CSimpleTexturedRibbon : public CSpecialDisplay
 
 		SSimpleRibbonParams *field_44;
 
-		u32 *field_48;
+		// Per-point packed RGB colour (byte0=R, byte1=G, byte2=B), field_3C+1 entries. Was
+		// tentatively (and wrongly) called "widths" by an earlier pass; resolved 2026-08-31
+		// by cross-checking CSimpleTexturedRibbon::SetRGB (which packs r|(g<<8)|(b<<16) into
+		// every entry) against the raw disasm of Display's final draw loop (0x40b2f1-0x40b3a0),
+		// which reads this array per face and unpacks it byte-for-byte the same way into the
+		// quad's flat vertex colour. See CSimpleTexturedRibbon::Display's comment for the
+		// full trace.
+		u32 *pColours;
 };
 
 class CGlow : public CBit
