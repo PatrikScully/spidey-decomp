@@ -5,6 +5,7 @@
 #include "pcdcMem.h"
 #include "mem.h"
 #include "PCGfx.h"
+#include "spool.h"
 
 u32 M3d_FadeColour;
 
@@ -134,48 +135,379 @@ void M3dInit_InitAtStart(void)
 	M3d_FadeColour = 0x80000000;
 }
 
-// @MEDIUMTODO
-// Investigated 2026-08-31, left as a stub, not attempted. Findings for
-// whoever picks this up next:
-// - alloc_dc_models(i32,i32) and setup_pulsing_colors(i32), the other two
-//   TODOs in this file, are NOT separate functions in the PC binary. There
-//   is no address for them in tools/names.json or in the maintainer's IDB
-//   (idbs/spideypc_names.txt). Only the Mac build (spiderman_names.txt,
-//   0x8e530 and 0x8e650) has them as real symbols. On PC, M3dInit_ParsePSX
-//   (0x4534A0, ends at 0x453998, right before M3dInit_FlagZeroWibbles at
-//   0x4539A0) is one solid 1280-byte block: MSVC6 inlined both helpers into
-//   it because they are only ever called from here, in the same TU. This
-//   matches the repo's documented inlining rule (CLAUDE.md, MSVC6 codegen
-//   knowledge). Practical effect: these two stubs cannot be finished, tested
-//   or tagged on their own. They only make sense as part of one combined
-//   M3dInit_ParsePSX decompile.
-// - M3dInit_ParsePSX itself decompiles (Hex-Rays, ecx-based, single i32 arg,
-//   dword_6B2470[17*a1]/dword_6B2454[17*a1]/dword_6B2458[17*a1]/
-//   dword_6B246C[17*a1]/dword_6B2450[17*a1] indexing) but every one of those
-//   five arrays is an opaque, undocumented struct-of-pointers table. The
-//   dword_6B2454 one is the SAME table as ob.h's CItemRelatedList
-//   (0x6B2454, "region*17" stride, already used by platform.cpp, mysterio.cpp,
-//   shatter.cpp, spidey.cpp, shell.cpp, switch.cpp), so a1 here is a region
-//   index, not a model index, and this function reaches across all of those
-//   other files' data. The function body walks at least three more
-//   completely undocumented packed binary formats with no existing struct
-//   in the repo: a colour-pulse-list packet (header at v3-8/v3-4, then
-//   4+4*count byte entries), a PSX "SModel" part/bounding-box packet
-//   (dcmodel.h only forward-declares "struct SModel;", zero fields known;
-//   this function reads/writes raw offsets into it directly at +0, +1, +2,
-//   +4, +6, +24, +26, +28, and iterates variable-stride sub-arrays inside
-//   it), and a hook/item-offset list at dword_6B246C. Getting field offsets
-//   and signedness right here needs a full struct reverse-engineering pass
-//   across several files this agent's task did not own, which is a lot more
-//   risk than the @MEDIUMTODO size tag suggests (real Mac size is 1204
-//   bytes, comparable to a large @BIGTODO in complexity even if not in raw
-//   size). Left untouched rather than guessing at shared game-wide struct
-//   layouts. sub_431430 callee is already named DCModel_CreateFromSModel
-//   (dcmodel.cpp) and sub_505470 is syMalloc; both cross-TU, so leaf-first is
-//   not the blocker, the missing struct layouts are.
-void M3dInit_ParsePSX(i32)
+// alloc_dc_models(i32,i32) and setup_pulsing_colors(i32), the other two
+// TODOs in this file, are NOT separate functions in the PC binary (re-checked
+// 2026-08-31 with a fresh IDA decompile of 0x4534A0: no calls to any local
+// helper matching either shape). Only the Mac build has them as real symbols
+// (spiderman_names.txt, 0x8e530 and 0x8e650). MSVC6 inlined both into
+// M3dInit_ParsePSX below, matching the repo's documented inlining rule.
+// They stay separate @SMALLTODO stubs (same treatment as the SwapPSX* family
+// in spool.cpp: a real Mac function with no standalone PC address).
+
+// Scratch buffer for the colour-pulsing packet ids parsed at the top of
+// M3dInit_ParsePSX, passed straight through as DCModel_CreateFromSModel's
+// pPulseColorList (a4) parameter (dcmodel.h's DCModelData::mFlags bit 0x080
+// comment already named this exact array and its builder). -1-terminated.
+// Sized 128 to match the original's own bound check ("More 'Pulse' colors
+// than planned for" fires past index 127); xrefs confirm this is written
+// and read only inside M3dInit_ParsePSX, so it is file-local, not a G_ macro
+// target. No idb_globals.txt entry, no fixed original address needed since
+// nothing outside this function touches it.
+static i32 gPulseColorList[128];
+
+// Per-region byte flag, tentative name. Xref-checked (idalib, 2026-08-31):
+// referenced by name at 0x6B247A from several other not-yet-decompiled
+// functions (sub_489050, sub_453C50/D60/EE0, sub_454200/450, RenderSuperItem
+// at 0x474C10, sub_4836D0/908E0/90B70/91560/A3640/A38F0/B8D80) with a mix of
+// per-region and larger strides, so this is NOT folded into SPSXRegion (same
+// situation as word_6B2478 below, which the existing spidey.cpp/shell.cpp
+// code already treats as a flat table, not a PSXRegion field). Written once
+// per M3dInit_ParsePSX call as a "can this region render on the fast path"
+// summary flag (cleared once if a part's vertex/face-flag budget is
+// exceeded or a bad flag combination is seen; never set back).
+static u8 * const gPSXRegionFastFlag = (u8 *)0x6B247A;
+
+// word_6B2478 (export.h) is the same global, already used elsewhere in the
+// repo (spidey.cpp, shell.cpp) with the "34 * region" stride confirmed by
+// those call sites; M3dInit_ParsePSX writes it with the equivalent
+// "68*region bytes == 34*region u16s" indexing. Counts, per region, how many
+// parts had NextLOD == -1 (no further LOD) while scanning this PSX's model
+// list.
+
+// Write-only flag: xref-checked, both accesses (set to 0 at function start,
+// set to 1 inside the pre-scan below) are inside M3dInit_ParsePSX itself, no
+// other function in the binary reads it. Reproduced faithfully anyway (dead
+// state, same as several original debug counters already documented in
+// dcmodel.cpp), tentative name based on the "old-style bounding box" search
+// it participates in.
+static u8 * const gOldStyleBoundingBoxFound = (u8 *)0x5FC1EC;
+
+// Default zMax (SModel::zMax) substituted when a part's on-disk value is the
+// 0xFFFF sentinel. Xref-checked: only this one read site in the whole
+// binary, so its own writer was not chased down this session; tentative.
+static i16 * const gDefaultModelZMax = (i16 *)0x55001C;
+
+// @NotOk
+// Reverse engineered 2026-08-31 from a fresh IDA decompile + targeted raw
+// disassembly of 0x4534A0 (1272 bytes), specifically to re-check the
+// previous session's blocker claim before leaving this stubbed again. That
+// claim ("SModel: zero fields known", "CItem layout unknown") turned out to
+// be WRONG: spool.h's SModel already has every header field this function
+// touches (Flags/NumVertices/NumNormals/NumFaces/zMax/NextLOD/Vertices, all
+// at the exact byte offsets used here), ob.cpp's VALIDATE'd CItem (0x40
+// bytes: mModel@0x1A, mRegion@0x1F, mNextItem@0x20, mFlags@0x4) matches the
+// tail loop's byte-offset arithmetic exactly, and dcmodel.h/dcmodel.cpp's
+// already-reverse-engineered DCModelData (36 bytes: pVertices/pFaces/
+// pNormals/mFlags@0xC/...) matches the allocation size (36 * partCount) and
+// the mFlags writes here field-for-field. Every callee is already real:
+// DCClearRegion (0x453400, @Ok, this file), DCModel_CreateFromSModel
+// (0x431430, dcmodel.cpp, @NotOk but a genuine implementation), syMalloc
+// (0x505470, pcdcMem.cpp, @Ok, hooked). So leaf-first was never actually
+// blocked; the previous session's decompile just hadn't been cross-checked
+// against the struct work already sitting in dcmodel.h.
+//
+// Packet-id record cross-check: the colour-pulsing packet parsed here
+// (asserts header id == 7) and the texture-wibble packet walked near the
+// end (asserts header id == 6, walked as STexWibItemInfo -- same struct
+// M3dInit_FlagZeroWibbles above uses, confirmed by the matching 16-byte
+// stride and ItemOffset/field_C.Full field reads) both agree exactly with
+// ProcessNewPSX's own record-type switch in spool.cpp (case 7 stores into
+// pColourPulseData, case 6 stores into pTexWibData and also calls
+// M3dInit_FlagZeroWibbles once per packet), which is independent
+// confirmation this is genuinely the same subsystem, decoded consistently
+// from two different functions.
+//
+// Confidence notes (kept honest per CLAUDE.md's "tags must trail evidence"):
+// high confidence on every field mapped to an existing VALIDATE'd struct
+// (SModel header, CItem, DCModelData) and on the two packet ids (7, 6),
+// cross-checked two independent ways each. Medium confidence on the exact
+// *meaning* (not the mechanics) of: the SModel::Flags bit assignments
+// (0x4/0x10/0x20/0x40/0x100 -- mechanically faithful bit tests/sets, guessed
+// English names only), the per-vertex "offset+2 read, offset+0 write, *8"
+// repack (mirrors the same *8 scale seen on the vertex x-component in
+// DCModel_CreateFromSModel's own stitched-vertex handling, dcmodel.h), and
+// the "NumNormals == NumVertices + NumFaces" legacy-format vertex-data
+// duplication pass (mechanically faithful, exact intent unconfirmed). Low
+// confidence on the "16 < NumParts < 25" pre-scan's purpose (mechanically
+// faithful; the result, gOldStyleBoundingBoxFound, is dead -- nothing else
+// in the binary reads it) and on gDefaultModelZMax's own writer (not
+// chased). None of these open questions affect any struct layout already
+// VALIDATE'd elsewhere, so they were judged safe to translate mechanically
+// rather than another reason to leave the whole function stubbed.
+void M3dInit_ParsePSX(i32 a1)
 {
-    printf("M3dInit_ParsePSX(i32)");
+	if (a1 == -1)
+		return;
+
+	SPSXRegion *pRegion = &PSXRegion[a1];
+
+	// --- 1. Colour-pulsing packet (record id 7) -> gPulseColorList. ---
+	u32 psxHeader = *pRegion->pPSX;
+	// Tentative: PSX file "old vs new UV encoding" marker, becomes
+	// DCModel_CreateFromSModel's formatFlags bit 0 (dcmodel.h's DCModelData
+	// bit 0x400 comment already ties that bit to this exact flag).
+	bool isLegacyFormat = (psxHeader == 0x20006);
+
+	i32 pulseCount = 0;
+	gPulseColorList[0] = -1;
+
+	if (pRegion->pColourPulseData)
+	{
+		u8 *pPacket = (u8 *)pRegion->pColourPulseData;
+		print_if_false(
+			((u32 *)pPacket)[-2] == 7,
+			"Pointer doesn't point to a colour pulsing packet");
+
+		u8 *pEnd = pPacket + ((u32 *)pPacket)[-1];
+
+		while (pPacket < pEnd)
+		{
+			u32 *pEntry = (u32 *)pPacket;
+
+			print_if_false(pEntry[1] != 0, "Zero list length");
+			print_if_false(pulseCount < 127, "More 'Pulse' colors than planned for");
+
+			u32 id = pEntry[0];
+			u32 count = pEntry[1];
+			pPacket += 4 * count + 4;
+
+			gPulseColorList[pulseCount] = id;
+			pulseCount++;
+			gPulseColorList[pulseCount] = -1;
+		}
+	}
+
+	// --- 2. Model-part array setup. ---
+	i32 numParts = ((i32 *)pRegion->ppModels)[-1];
+
+	bool fastFlag = true;
+	i32 shortLodCount = 0;
+
+	DCClearRegion(a1);
+	*gOldStyleBoundingBoxFound = 0;
+
+	// Tentative-purpose pre-scan: stop at the first part (in a region whose
+	// part count is 16..24) that has any vertex with flag bit 0 or 1 set.
+	// Mechanically faithful; result is otherwise unread in the binary (see
+	// gOldStyleBoundingBoxFound above).
+	if (numParts > 15 && numParts < 25)
+	{
+		for (i32 p = 0; p < numParts; p++)
+		{
+			SModel *pScanPart = pRegion->ppModels[p];
+			if (pScanPart->NumVertices == 0)
+				continue;
+
+			u8 *pVertFlags = (u8 *)pScanPart + 34; // Vertices[0] flags byte (28 + 6)
+			bool found = false;
+			for (i32 v = 0; v < pScanPart->NumVertices; v++, pVertFlags += 8)
+			{
+				if (*pVertFlags & 3)
+				{
+					found = true;
+					break;
+				}
+			}
+
+			if (found)
+			{
+				*gOldStyleBoundingBoxFound = 1;
+				break;
+			}
+		}
+	}
+
+	DCModelData *pModelData = NULL;
+
+	if (numParts != 0)
+	{
+		pModelData = (DCModelData *)syMalloc(sizeof(DCModelData) * numParts);
+		print_if_false(pModelData != NULL, "Out of system memory.");
+	}
+
+	gDCRegionItems[a1] = (i32)pModelData;
+	gDCRegionItemCounts[a1] = numParts;
+
+	i32 minNextLod = 0xFFFF;
+	i32 stitchedVertexTotal = 0;
+
+	// --- 3. Per-part conversion: normalize the raw SModel data in place,
+	// then build this part's DCModelData via DCModel_CreateFromSModel. ---
+	for (i32 partIndex = 0; partIndex < numParts; partIndex++)
+	{
+		SModel *pPart = pRegion->ppModels[partIndex];
+
+		i32 numVerts = pPart->NumVertices;
+		i32 numNorms = pPart->NumNormals;
+		i32 numFaces = pPart->NumFaces;
+
+		bool beyondLod = false;
+
+		if (pPart->NextLOD == 0xFFFF)
+			shortLodCount++;
+
+		print_if_false((pPart->Flags & 8) == 0, "Old-style bounding box found");
+
+		if (pPart->zMax == -1)
+			pPart->zMax = *gDefaultModelZMax;
+
+		if (pPart->NextLOD < minNextLod)
+			minNextLod = pPart->NextLOD;
+
+		if (partIndex >= minNextLod)
+			beyondLod = true;
+
+		u8 *pVert = (u8 *)pPart + 28;
+
+		for (i32 v = 0; v < numVerts; v++, pVert += 8)
+		{
+			if (pVert[6] & 2)
+			{
+				i16 t = *(i16 *)(pVert + 2);
+				*(i16 *)(pVert + 2) = 0;
+				*(i16 *)(pVert + 0) = 8 * t;
+			}
+
+			if (pVert[6] & 0x10)
+				pPart->Flags |= 0x100;
+
+			if (pVert[6] & 1)
+				stitchedVertexTotal++;
+		}
+
+		if (numVerts + stitchedVertexTotal > 90)
+			fastFlag = false;
+
+		// Legacy-format files store NumNormals == NumVerts + NumFaces;
+		// duplicate the vertex flag/stitch data into the "normals" slot
+		// right after the vertex array for those files.
+		if (numNorms == numVerts + numFaces)
+		{
+			u8 *pDst = pVert;
+			u8 *pSrc = pVert - 8 * numVerts;
+
+			for (i32 v = 0; v < numVerts; v++, pSrc += 8, pDst += 8)
+			{
+				if (pSrc[6] & 1)
+					pDst[6] |= 1;
+
+				if (pSrc[6] & 2)
+				{
+					pDst[6] |= 2;
+					*(i16 *)pDst = *(i16 *)pSrc;
+					*(i16 *)(pDst + 2) = 0;
+				}
+			}
+		}
+
+		u8 *pFace = pVert + 8 * numNorms;
+		u32 faceFlagsOr = 0;
+		u16 lodMask = 0xFFFF;
+
+		for (i32 f = 0; f < numFaces; f++)
+		{
+			u8 flagsByte0 = pFace[0];
+
+			*(i16 *)(pFace + 0xC) *= 8;
+
+			if (!(flagsByte0 & 0x40))
+				*(u32 *)pFace ^= 0x80;
+
+			if (!(*(u32 *)pFace & 0x800))
+				*(u32 *)(pFace + 8) &= 0xFFFFFF;
+
+			faceFlagsOr |= *(u32 *)pFace;
+			lodMask &= (u16)(*(u32 *)(pFace + 0xC) >> 16);
+
+			if (*(u8 *)pFace & 0x10)
+				pFace[7] = pFace[6];
+
+			pFace += 4 * (*(u32 *)pFace >> 18);
+		}
+
+		if (lodMask & 1)
+			pPart->Flags |= 0x10;
+
+		if ((faceFlagsOr & 0xC0) == 0)
+			pPart->Flags |= 0x20;
+
+		if (faceFlagsOr & 0x1000)
+			pPart->Flags |= 0x40;
+
+		if (faceFlagsOr & 4)
+			pPart->Flags |= 4;
+
+		if (pPart->Flags & 5)
+			fastFlag = false;
+
+		i32 formatFlags = isLegacyFormat ? 1 : 0;
+		if (beyondLod)
+			formatFlags |= 8;
+
+		DCModel_CreateFromSModel(
+			&pModelData[partIndex],
+			pPart,
+			formatFlags,
+			gPulseColorList,
+			false,
+			partIndex);
+	}
+
+	// --- 4. Texture-wibble packet (record id 6): flag every DCModelData
+	// part it references with mFlags bit 0x200. Same STexWibItemInfo record
+	// format as M3dInit_FlagZeroWibbles (called separately, from
+	// ProcessNewPSX). ---
+	STexWibItemInfo *pWibItem = (STexWibItemInfo *)pRegion->pTexWibData;
+
+	if (pWibItem)
+	{
+		print_if_false(
+			*((u32 *)pWibItem - 2) == 6,
+			"Pointer doesn't point to a texture-wibble packet");
+
+		while (pWibItem->ItemOffset.Full != 0)
+		{
+			i32 itemOffset = pWibItem->ItemOffset.Full;
+
+			// Divisor is 36 (sizeof(DCModelData)) in the original, not
+			// sizeof(CItem) (0x40) -- reproduced as-is, not "fixed".
+			print_if_false((itemOffset - 12) % 36 == 0, "Invalid item offset in texture-wibble packet?");
+
+			i32 itemIndex = (itemOffset - 12) / 36;
+			CItem *pItem = &pRegion->pSuper[itemIndex];
+
+			pModelData[pItem->mModel].mFlags |= 0x200;
+
+			pWibItem += pWibItem->field_C.Full + 1;
+		}
+	}
+
+	gPSXRegionFastFlag[68 * a1] = fastFlag;
+	word_6B2478[34 * a1] = (u16)shortLodCount;
+
+	// --- 5. Build the region's CItem::mNextItem chain and propagate two
+	// SModel::Flags bits (low byte 0x10/0x20) into each item's mFlags. ---
+	i32 numItems = *((u32 *)pRegion->pPSX + 2);
+
+	if (numItems > 0)
+	{
+		CItem *pItems = pRegion->pSuper;
+
+		for (i32 i = 0; i < numItems; i++)
+		{
+			pItems[i].mNextItem = (i < numItems - 1) ? &pItems[i + 1] : NULL;
+			pItems[i].mRegion = (u8)a1;
+
+			SModel *pItemModel = pRegion->ppModels[pItems[i].mModel];
+			u8 modelFlagsByte0 = *(u8 *)pItemModel;
+
+			if (modelFlagsByte0 & 0x10)
+				pItems[i].mFlags |= 0x20;
+
+			if (modelFlagsByte0 & 0x20)
+				pItems[i].mFlags |= 0x1000;
+		}
+	}
 }
 
 // Fog transition state. Tentative names, no idb_globals.txt entries for these
