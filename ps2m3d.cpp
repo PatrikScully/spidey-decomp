@@ -2195,6 +2195,36 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	(void)result;
 }
 
+// @Ok
+// (0x004024A0, confirmed real name ConvertSMatrixTomatrix4x4 in the
+// maintainer's IDB.) Traced instruction-by-instruction this session as the
+// prerequisite leaf for RenderSuperItem below (see its comment for the
+// re-investigation that found this was the real remaining blocker, not a
+// CSuper layout gap). Output row r (r=0..2) = source rotation COLUMN r
+// (i.e. transposed) scaled by 1/4096 (fixed-point), with a 0 in column 3;
+// output row 3 = the raw (unscaled) translation with 1.0 in column 3. This
+// matches the row-vector*matrix convention gsub_476A00/matrix4x4 already
+// use elsewhere in this file. Traced concretely: for each source row index
+// i (0,1,2), out.field_0[i] = { m[0][i], m[1][i], m[2][i], 0 } / (4096 for
+// the first 3) and out.field_0[3] = { t[0], t[1], t[2], 1.0f } (not
+// per-row -- the translation is written once, row 3, in the same pass).
+void ConvertSMatrixTomatrix4x4(SMatrix const* pIn, matrix4x4* pOut)
+{
+	for (i32 row = 0; row < 3; row++)
+	{
+		pOut->field_0[row].field_0[0] = (f32)pIn->m[0][row] * 0.00024414062f;
+		pOut->field_0[row].field_0[1] = (f32)pIn->m[1][row] * 0.00024414062f;
+		pOut->field_0[row].field_0[2] = (f32)pIn->m[2][row] * 0.00024414062f;
+		pOut->field_0[row].field_0[3] = 0.0f;
+	}
+
+	pOut->field_0[3].field_0[0] = (f32)pIn->t[0];
+	pOut->field_0[3].field_0[1] = (f32)pIn->t[1];
+	pOut->field_0[3].field_0[2] = (f32)pIn->t[2];
+	pOut->field_0[3].field_0[3] = 1.0f;
+}
+
+
 typedef void (*RenderSuperItem_fn)(CItem*, bool);
 
 // @BIGTODO

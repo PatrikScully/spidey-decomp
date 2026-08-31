@@ -51,6 +51,16 @@ class matrix4x4
 // wrong arg count (2 instead of 3) and no dest/return.
 EXPORT matrix4x4* gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 const* b);
 
+// address 0x4024A0, named ConvertSMatrixTomatrix4x4 in the maintainer's IDB
+// (spideypc_names.txt). Converts an SMatrix (i16 3x3 rotation, fixed-point
+// /4096, + i16 translation) into a matrix4x4 (row-major, row-vector*matrix
+// convention matching gsub_476A00): rows 0-2 hold the TRANSPOSED rotation
+// (row r = source column r) scaled by 1/4096 with a 0 in column 3; row 3
+// holds the raw (unscaled) translation with 1.0 in column 3. Traced this
+// session as a prerequisite leaf for RenderSuperItem (per-bone pose ->
+// render matrix conversion).
+EXPORT void ConvertSMatrixTomatrix4x4(SMatrix const* pIn, matrix4x4* pOut);
+
 EXPORT void M3d_BuildTransform(CSuper*);
 EXPORT void M3d_Render(void*);
 EXPORT void DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *);
