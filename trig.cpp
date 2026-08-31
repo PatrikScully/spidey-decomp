@@ -1123,8 +1123,12 @@ void Trig_ResetCPCollisionFlags(void)
 	}
 }
 
-// @NotOk
-// check inline later
+// @Ok
+// Scans a flag byte list terminated by 0xFF (same terminator convention as
+// SkipFlags above). Bug fixed versus the previous draft: the loop never
+// advanced pFlags, so a flag not present at the very first byte caused an
+// infinite loop instead of scanning the rest of the list. Added the
+// missing pFlags++ so it walks the list like SkipFlags does.
 INLINE u8 GetFlag(unsigned char flag, unsigned char *pFlags)
 {
 	while (*pFlags != 0xFF)
@@ -1133,6 +1137,7 @@ INLINE u8 GetFlag(unsigned char flag, unsigned char *pFlags)
 		{
 			return 1;
 		}
+		pFlags++;
 	}
 
 	return 0;
