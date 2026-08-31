@@ -226,14 +226,19 @@ CVector operator*(const CVector& lhs, const CVector& other){
 	return res;
 }
 
+// fix 2026-08-31: vy/vz were both reading lhs.vx instead of lhs.vy/lhs.vz
+// (component-wise add came out wrong for every caller). Confirmed real bug
+// in our source, not a reproduction of original behavior: disasm at
+// 0x4E7720 does plain a1[i] = a2[i] + a3[i] for i in 0..2, standard
+// component-wise add. Introduced in upstream commit 840ff1bf.
 // @Ok
 CVector operator+(const CVector& lhs, const CVector& other){
 
 	CVector res;
 
 	res.vx = lhs.vx + other.vx;
-	res.vy = lhs.vx + other.vy;
-	res.vz = lhs.vx + other.vz;
+	res.vy = lhs.vy + other.vy;
+	res.vz = lhs.vz + other.vz;
 
 	return res;
 }
