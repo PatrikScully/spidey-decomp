@@ -1214,10 +1214,44 @@ INLINE i32* CPlayer::GetNewCommandBlock(u32 a1)
 	return res;
 }
 
-// @SMALLTODO
-void CPlayer::GetPerpendicularisationRadius(void)
+// @Ok
+// address 0x4B9390, 136 bytes, called directly from CPlayer::AI. Only
+// special-cases zone 1797 (Trig_GetLevelId(), scaling the radius by
+// this->mPos.vy while mCollision bit 2 is set) and zone 2052 (flat 1000);
+// everything else returns this->field_EF8, the per-instance default. The
+// two calls in the final else branch decompile as bare no-arg calls to
+// nullsub_1, which is print_if_false compiled to a bare retn in the
+// shipped binary (see CLAUDE.md / SetSpideyLookaroundCamValue above for
+// the same idiom); exact message strings are not recoverable from the
+// stripped binary, placeholders used here.
+i32 CPlayer::GetPerpendicularisationRadius(void)
 {
-    printf("CPlayer::GetPerpendicularisationRadius(void)");
+	i32 level = Trig_GetLevelId();
+
+	if (level == 1797)
+	{
+		if (this->mCollision & 2)
+		{
+			i32 heightY = this->mPos.vy;
+
+			if (heightY <= -2744320)
+			{
+				if (heightY <= -5324800)
+					return heightY <= -7782400 ? 1400 : 1024;
+
+				return 800;
+			}
+		}
+
+		return this->field_EF8;
+	}
+
+	if (level == 2052)
+		return 1000;
+
+	print_if_false(0, "Unknown level");
+	print_if_false(0, "Unknown level");
+	return 0;
 }
 
 // @Ok

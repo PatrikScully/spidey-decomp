@@ -356,7 +356,11 @@ class CPlayer : public CSuper
 
 		i32 mMaxHealth;
 
-		PADDING((0xEFC-0xEF0)-0x4);
+		PADDING(0xEF8-0xEF0-4);
+
+		// default perpendicularisation radius (fallback value used by
+		// GetPerpendicularisationRadius outside the special zone-1797 case).
+		i32 field_EF8;
 
 
 		EXPORT void SetCamAngleLock(u16);
@@ -434,7 +438,7 @@ class CPlayer : public CSuper
 		EXPORT void GetEnterExitFrameInfoPointer(u16);
 		EXPORT i32 GetFreeIndicatorListEntry(void);
 		EXPORT i32* GetNewCommandBlock(u32);
-		EXPORT void GetPerpendicularisationRadius(void);
+		EXPORT i32 GetPerpendicularisationRadius(void);
 		EXPORT u8 GrabUpdate(CVector *,i16 *);
 		EXPORT void HandleControlsForSurfaceTransition(bool);
 		EXPORT i32 Hit(SHitInfo *) OVERRIDE;
