@@ -1176,8 +1176,8 @@ void SFX_LevelStart(void)
 	SFXPaused = 0;
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// @Matching
 void INLINE SFX_SetReverbType(unsigned char reverb)
 {
 	gReverbType = reverb != 0;
