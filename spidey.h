@@ -66,7 +66,12 @@ class CPlayer : public CSuper
 
 		i32 field_540;
 
-		PADDING(8);
+		PADDING(0x548-0x540-4);
+
+		// twist-around-Y correction angle (PS1 GTE units), applied on top of
+		// the normal-aligned basis by CPlayer::OrientToNormal via
+		// M3dMaths_RotMatrixYXZ + MulMatrix when nonzero.
+		i32 field_548;
 
 		u8 field_54C;
 
@@ -220,7 +225,11 @@ class CPlayer : public CSuper
 		// field_C84*0x80, stashed by EnterLookaroundMode.
 		CVector field_D0C;
 
-		PADDING(0xD3C-0xD0C-0xC);
+		// -field_A8 (negated surface normal, long-vector/GTE-width, pad
+		// word included), cached by CPlayer::OrientToNormal every call.
+		VECTOR field_D18;
+
+		PADDING(0xD3C-0xD18-sizeof(VECTOR));
 
 		CVector field_D3C;
 
