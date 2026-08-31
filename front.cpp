@@ -462,6 +462,22 @@ INLINE SLevel* Front_FindLevel(char* pTRGName)
 }
 
 // @SMALLTODO
+// Investigated 2026-08-31, left stubbed: this function does not exist in
+// the PC binary. tools/names.json has no address for it, tools/functions/
+// has no matching .bin, and a full-text search of the maintainer's IDA
+// database (idalib, both name list and string list) for "GetButtons" finds
+// nothing. The only trace of it anywhere is the PSX THPS2 demo source
+// (thps2-stuff/decls.h: `Front_GetButtons__FRiN30(int *Activated, int
+// *GoBack, int *AnyButton, int *Start)`, body not included in that dump)
+// and the Mac prototype list (tools/prototypes.json: 240 bytes). Nothing
+// in the PC source calls it either (grepped the whole repo). Best guess:
+// this was a PS2/PSX-pad polling helper (matches the param names: which
+// face button did what) and the PC port replaced it outright with the
+// PCSHELL_CheckTriggers-based input system used everywhere else in this
+// file (see CMenu::Update), so the linker never pulled this function in.
+// Writing a body from the Mac param names alone, with zero PC bytes and
+// zero PC callers to check logic against, would be invention, not
+// decompilation - leaving it stubbed rather than guessing.
 void Front_GetButtons(i32 *,i32 *,i32 *,i32 *)
 {
     printf("Front_GetButtons(i32 *,i32 *,i32 *,i32 *)");
