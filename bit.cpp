@@ -69,9 +69,12 @@ EXPORT char *gAnimNames[29] =
 
 
 
-// @NotOk
-// @FIXME: must be zero initialized
-SAnimFrame* gAnimTable[0x1D];
+// @Ok
+// Static storage duration means C++ already zero-initializes this before
+// any dynamic init runs, and Bit_Init also memsets it explicitly, so the
+// old "must be zero initialized" worry does not apply. Writing the
+// initializer here makes that guarantee visible in the source too.
+SAnimFrame* gAnimTable[0x1D] = {0};
 
 EXPORT CChunkBit* ChunkBitList;
 EXPORT CGlow* GlowList;
@@ -237,12 +240,109 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 }
 
 
+// Shared infrastructure notes for the whole Display*List / ribbon-Display
+// family below (CSimpleTexturedRibbon::Display, DisplayGLineList,
+// DisplayGlassList, DisplayGlowList, DisplayChunkBitList, DisplayQuadBitList,
+// DisplayFlatBitList, DisplayLinked2EndedBitListLeftover, DisplayPixelList,
+// DisplayPolyLineList, DisplayGPolyLineList), found this session (2026-08-31)
+// while trying to implement them. None of these are done yet, but a lot of
+// the pipeline they all share is already built and @Ok elsewhere in the
+// repo, which should make a real attempt much faster than starting cold:
+//
+// - Per-point camera-space projection idiom (verified against the already
+//   @Ok Screen_DrawArrow in screen.cpp, which uses this exact shape):
+//     VECTOR relPos;
+//     relPos.vx = (rawPos.vx >> 12) - gMikeCamera[0].Position.vx; // same for vy, vz
+//     gte_ldlv0(&relPos);
+//     gte_rtps();
+//     i32 sxy; gte_stsxy(&sxy);
+//     i32 screenX = (i16)sxy, screenY = (i16)(sxy >> 16);
+//   gte_ldlv0/gte_rtps/gte_stsxy/gte_stlvnl/gte_stlvnl2/gte_ldv0 are all
+//   already implemented and @Ok in ps2funcs.cpp. IMPORTANT: IDA's decompiler
+//   mislabels the call to gte_ldlv0 (0x46D840) as
+//   "qt_register_signal_spy_callbacks" (a coincidental FLIRT signature hit
+//   on an unrelated Qt library function). Always cross-check call targets
+//   against tools/names.json, not the symbol name IDA prints.
+// - Clip test after the transform: G_VIEW_CLIP_INFO (screen.cpp, u8* at
+//   0x64E514, guessed layout: u16 min/max at +8/+0xA) already exists;
+//   Screen_DrawArrow clips relPos.vy against it, DisplayGLineList/
+//   DisplayFlatBitList/DisplayLinked2EndedBitListLeftover clip the
+//   gte_stlvnl2() depth value instead (same struct, different field of the
+//   transform result). ps2m3d.cpp also has a second, inconsistent alias for
+//   the same address (gM3dViewportPtr, typed i32*) - not reconciled here.
+// - A second, separate pipeline is used for a per-vertex inverse-depth
+//   ("invZ") value fed into the draw calls: it builds a raw fixed-to-float
+//   vector (rawPos.axis / 4096.0f, no >>12 first) and runs it through
+//   DCX_XformVector (already @Ok @AlmostMatching as Algebra_Transform4 in
+//   algebra.cpp/algebra.h, using the camera matrix gGfxMatrix at 0x56E668),
+//   then takes 1/result.w (with a fabs(w) > 1e-8 guard, else -1e12) and
+//   wraps it through a vector3d/vector4d ctor (sub_402540/402560/402620,
+//   still unnamed) before use. Every function in this family that uses this
+//   path opens with the SAME 16-float copy loop, copying dword_56E6F8 (x
+//   row?), dword_56E6FC, dword_56E700 and part of dword_56E668 itself into
+//   the contiguous gGfxMatrix layout; this copy loop is not implemented
+//   anywhere in the repo yet and needs its own name once someone writes it
+//   (it looks like "refresh the float camera matrix from its 4 source
+//   arrays before using Algebra_Transform4", once per Display call, not
+//   once per point).
+// - Output paths differ per function, identified via callee lists:
+//   - Immediate PCGfx_DrawQPoly3D (0x508550, already @Ok in PCGfx.cpp,
+//     signature is really (x,y,z, u,v, color) per vertex despite the
+//     w0/uv0 parameter names in PCGfx.h - confirmed against
+//     DisplayQuadBitList, which always passes the constants 0.01/0.99 in
+//     those two slots per corner, the classic texture-bleed-inset quad
+//     UVs): used directly by DisplayGlassList, DisplayGlowList,
+//     DisplayQuadBitList, DisplayFlatBitList,
+//     DisplayLinked2EndedBitListLeftover, CSimpleTexturedRibbon::Display
+//     (confirmed via each function's callee list).
+//   - A second quad/line emitter, sub_509000, still unnamed, is used by
+//     DisplayGLineList, DisplayPolyLineList and DisplayGPolyLineList
+//     instead of sub_508550 - all three are the "line" family, so this is
+//     likely a distinct 2-or-4-vertex line-shaped primitive rather than
+//     PCGfx_DrawQPoly3D's textured quad. Its signature is not decoded yet.
+//   - DisplayChunkBitList instead calls sub_5081F0 (still unnamed) to draw
+//     each of its 4 faces, built from WPlane objects (sub_40C190 =
+//     WPlane::WPlane(WVector&, f32), already named in names.json).
+//   - DisplayPixelList calls sub_507470 = PCGfx_DrawQuad2D (already @Ok,
+//     PCGfx.h) instead, i.e. it is a 2D sprite/dot draw, not a 3D quad; its
+//     screen x/y arguments (v32/v33 in the raw decompile) did not resolve
+//     cleanly from Hex-Rays pseudocode alone and need the raw disassembly
+//     to pin down before implementing this one.
+//   - DisplayGLineList ALSO appends a 28-byte record (tag 0x4000000) to the
+//     pPoly queue (0x56FB04, already declared in this file and in
+//     screen.cpp, bounds-checked against PolyBufferEnd at 0x5FCD1C) before
+//     its sub_509000 draw call. The record layout and whoever reads it back
+//     are not identified yet; it is not a POLY_F3/POLY_F4 (psx_types.h,
+//     panel.h) and no other decompiled function in the repo writes this
+//     tag. Possibly an unrelated debug-line log, not part of the draw path
+//     itself - unconfirmed.
+// - DisplayPolyLineList/DisplayGPolyLineList's clip helper, sub_505B90, is
+//   labelled "syRtcInit" in tools/names.json; that is almost certainly a
+//   link-time duplicate-body merge (CLAUDE.md: identical bodies across TUs
+//   share one address) with the real clip-test helper used here, not an
+//   actual real-time-clock init call - the context (called right after
+//   gte_stsxy, result used as a clip bound) does not fit "RTC init" at all.
+// - CSimpleTexturedRibbon::Display additionally calls gte_SetRotMatrix
+//   (0x46D7B0) and m3d_ZeroTransVector (0x46E460) before projecting, i.e.
+//   it sets up its own rotation matrix and zeroes translation first
+//   (billboard/camera-facing orientation, not the shared per-frame camera
+//   matrix the other functions read as-is); it also calls the already-@Ok
+//   Utils_CalcUnitFacingCamera (utils.cpp) which strongly suggests this is
+//   a camera-facing ("billboarded") ribbon, consistent with its name.
+//
+// None of the above was enough to responsibly finish any of these within
+// this session's budget (dense float/fixed-point pipelines, several still
+// -unnamed helpers, and no runtime test available to catch a wrong sign or
+// offset), so they stay @BIGTODO. The next attempt should be able to move
+// much faster starting from this map instead of raw disassembly.
+
 // @BIGTODO
-// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Full 3D
-// ribbon renderer: per-segment camera-space transform through the view
-// matrix (dword_56E668 block), perspective divide, and a strip of gouraud
-// POLY_GT4 quads via sub_508550, one per pair of ribbon points. Re-tagged
-// from @MEDIUMTODO: this is full 3D rendering work, not a stub-sized task.
+// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). See the
+// shared family notes above. Per-segment camera-space transform through a
+// self-set rotation matrix (gte_SetRotMatrix, m3d_ZeroTransVector), a
+// camera-facing calculation (Utils_CalcUnitFacingCamera), then a strip of
+// gouraud-textured POLY_GT4 quads via PCGfx_DrawQPoly3D (sub_508550), one
+// per pair of ribbon points.
 void CSimpleTexturedRibbon::Display(void)
 {
     printf("CSimpleTexturedRibbon::Display(void)");
@@ -613,12 +713,15 @@ void Bit_DeleteAll(void)
 }
 
 // @BIGTODO
-// Address 0x412f10 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Real 3D pipeline code: camera-space transform of the
-// two ribbon endpoints through the view matrix (dword_56E668 block), clip
-// test against dword_64E514, perspective divide, then a gouraud quad via
-// sub_509000. Re-tagged from @MEDIUMTODO: this is full 3D rendering work,
-// not a stub-sized task.
+// Address 0x412f10, real name DisplayGLineList_0 in tools/names.json
+// (found by tracing Bit_Init's RegisterSlot calls, see DisplayTextBoxList).
+// See the shared family notes above CSimpleTexturedRibbon::Display. Camera
+// -space transform of the two line endpoints via the gte_ldlv0/gte_rtps/
+// gte_stlvnl2 idiom, clip test against G_VIEW_CLIP_INFO (0x64E514), a
+// separate invZ pass through Algebra_Transform4/gGfxMatrix for line width
+// scaling by distance, an unidentified 28-byte record queued into pPoly
+// (tag 0x4000000, see the shared notes), then the line draw itself via the
+// still-unnamed sub_509000.
 void DisplayGLineList(void**)
 {
 }
@@ -636,41 +739,72 @@ void DisplaySpecialDisplayList(void** a1)
 }
 
 // @BIGTODO
-// Address 0x411560 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Full 3D pipeline: per-vertex camera-space transform
-// (sub_46D8A0/8D0/900), clip test, matrix/vector transform (DCX_XformVector,
-// sub_402700) and two gouraud POLY_GT4 emits via sub_508550. Re-tagged from
-// @MEDIUMTODO.
+// Address 0x411560, real name DisplayGlass in tools/names.json (found by
+// tracing Bit_Init's RegisterSlot calls, see DisplayTextBoxList). See the
+// shared family notes above CSimpleTexturedRibbon::Display. Full 3D
+// pipeline: per-vertex camera-space transform (gte_ldv0 = sub_46D8A0, plus
+// still-unnamed sub_46D8D0/sub_46D900 from the same GTE helper cluster),
+// clip test, the Algebra_Transform4/gGfxMatrix invZ pass, and two gouraud
+// POLY_GT4 emits via PCGfx_DrawQPoly3D (sub_508550).
 void DisplayGlassList(void**)
 {
 }
 
 // @BIGTODO
 // Address 0x40c6f0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Largest of the Display*List family: WPlane/CVector
-// math (0x4e7840/0x4e7760, the wrongly-INLINE CVector::operator>>/operator-
-// noted elsewhere in this file's history), a fringe/glow ring loop, and
-// several sub_508550 gouraud quad emits per fringe. Re-tagged from
-// @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display. Largest of the Display*List family:
+// WPlane/CVector math (operator>>/operator- at 0x4e7840/0x4e7760, the
+// wrongly-INLINE CVector operators noted elsewhere in this file's
+// history), the gte_ldlv0/gte_rtps camera transform, a fringe/glow ring
+// loop, and several PCGfx_DrawQPoly3D (sub_508550) gouraud quad emits per
+// fringe.
 void DisplayGlowList(void**)
 {
 }
 
 // @BIGTODO
 // Address 0x40bac0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Builds 4 WPlane objects from the chunk's 4 corner
-// verts, normalizes each with sub_402700/402600/402560/402540, then draws
-// the 4 chunk faces with sub_5081F0. Re-tagged from @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display. Builds 4 WPlane objects (WPlane::WPlane,
+// sub_40C190, already named in tools/names.json) from the chunk's 4 corner
+// verts, normalizes each with Algebra_Transform4 (sub_402700) plus the
+// still-unnamed vector ctors 0x402600/402560/402540, then draws the 4
+// chunk faces with the still-unnamed sub_5081F0 (not sub_508550, unlike
+// the rest of the family - this is the one function that does not use
+// PCGfx_DrawQPoly3D).
 void DisplayChunkBitList(void**)
 {
 }
 
 // @BIGTODO
 // Address 0x4097e0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Full camera-space quad transform (4 corners through
-// sub_46D790/sub_46DF80 and DCX_XformVector), perspective divide per corner,
-// two sub_508550 gouraud quad emits (front/back face). Re-tagged from
-// @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display; this is the function that made those
+// notes concrete, so more detail than the rest of the family. Full
+// camera-space transform of the 4 corners: for each corner,
+// gte_ldlv0(relPos)/gte_rtps() then gte_stlvnl(sub_46D790, stores the raw
+// vx/vy/vz result) and gte_stsxy(sub_46DF80, packs vx/vy into one int) are
+// both called (the second looks redundant with the first, not confirmed
+// why both are needed), and a separate Algebra_Transform4 (sub_402700)
+// pass over the *un-shifted* corner (divided by 4096.0f directly, not
+// >>12 first) gives the per-corner invZ used as PCGfx_DrawQPoly3D's z
+// argument, with a 1.03x fudge factor and a "if depth < 100 use invZ = -1"
+// override. Screen coordinates get scaled from GTE fixed-point into
+// pixels via gGameResolutionX/gGameResolutionY (0x568154/0x568158,
+// already used in DisplayTextBoxList) over Xres/Yres (0x61B5FC/0x628614,
+// ditto), staged through two small scratch buffers before the draw:
+// gRevisitInitOne (0x628618) and gRevisitInitTwo (0x654F54), both
+// tentative names from idb_globals.txt with no known field semantics
+// beyond "8-16 bytes of raw screen coords per corner, written here and
+// read back a few lines later in the same function" - do not invent
+// struct fields for them beyond that. Two PCGfx_DrawQPoly3D (sub_508550)
+// calls draw front and back face, each with the 4 corners in the same
+// order but the front/back-only args (u,v pair, i.e. field_14/field_18)
+// using the standard 0.01/0.99 texture-bleed-inset UV pattern per corner
+// (0,0)/(1,0)/(0,1)/(1,1). Vertex color is built from CQuadBit::mCodeBGR
+// plus an alpha byte chosen by a semi-transparency flag test
+// (PCGfx_UseTexture, sub_506440, called with blend mode 0 or 2 first).
 void DisplayQuadBitList(void**)
 {
 }
@@ -765,49 +899,74 @@ void DisplayTextBoxList(void** a1)
 
 // @BIGTODO
 // Address 0x40dbd0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Camera-space transform of the sprite quad, animation
-// frame UV lookup (word_610C48/4A tables), a rotated-vs-axis-aligned corner
-// path, then a textured POLY_FT4 emit via sub_508550. Re-tagged from
-// @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display. Camera-space transform of the sprite
+// quad via the gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy idiom, then a
+// rotated-vs-axis-aligned corner path and a textured POLY_FT4 emit via
+// PCGfx_DrawQPoly3D (sub_508550). Correction to the old note here:
+// "word_610C48" is rcossin_tbl (confirmed this session, see gTTime/Sine()
+// above CWibbly::Move) - a sin/cos table, not a UV table, so any lookup
+// through it in this function is rotation/angle math, not animation-frame
+// UVs; re-derive what it is actually used for from the disassembly rather
+// than trusting that old framing.
 void DisplayFlatBitList(void**)
 {
 }
 
 // @BIGTODO
 // Address 0x40e840 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Ribbon segment renderer: walks CBit pairs building a
-// quad strip between consecutive positions (perpendicular offset via
-// sub_46D430 distance + cross terms), camera-space transform per vertex,
-// sub_508550 gouraud emit. Re-tagged from @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display. Ribbon segment renderer: walks CBit
+// pairs building a quad strip between consecutive positions (perpendicular
+// offset via sub_46D430 = M3dMaths_SquareRoot0, already named), the
+// gte_ldlv0/gte_rtps camera transform per vertex, then a
+// PCGfx_DrawQPoly3D (sub_508550) gouraud emit.
 void DisplayLinked2EndedBitListLeftover(void**)
 {
 }
 
 // @BIGTODO
 // Address 0x40f110 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Camera-space transform + perspective divide per
-// pixel dot, blend mode from a flags nibble, then sub_507470 (2D sprite/dot
-// emit). Re-tagged from @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display. Decompiled once this session for its
+// callee shape (no gte_ldlv0/gte_rtps here, unlike the rest of the
+// family): builds a raw fixed-to-float vector (pos / 4096.0f, no >>12),
+// runs it through Algebra_Transform4 (sub_402700) using the shared
+// gGfxMatrix, takes 1/w (fabs(w) > 1e-8 guard, else -1e12) as the depth,
+// and if depth > 0, blend mode from a flags nibble, then draws via
+// PCGfx_DrawQuad2D (sub_507470, already @Ok, 2D sprite/dot emit). NOT
+// figured out yet: the pseudocode never visibly computes the screen x/y
+// arguments passed to sub_507470 (they read as uninitialized locals in
+// Hex-Rays output), so the raw disassembly needs tracing to find where
+// they really come from before implementing this one - likely a missed
+// stack-slot alias Hex-Rays did not resolve.
 void DisplayPixelList(void**)
 {
 }
 
 // @BIGTODO
 // Address 0x411ef0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Iterates a poly-line's inner vertex array (shifted
-// pointer over CBit-like sub-entries), per-segment camera-space transform
-// and clip test (sub_505B90), textured/flat POLY_FT4 or POLY_F4 emit via
-// sub_509000. Re-tagged from @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display. Iterates a poly-line's inner vertex
+// array (shifted pointer over CBit-like sub-entries), per-segment
+// Algebra_Transform4 (sub_402700) transform and a clip test through
+// sub_505B90 (tools/names.json labels this "syRtcInit", almost certainly a
+// link-time duplicate-body merge with the real clip helper here, not
+// actually an RTC init call - see the shared notes), then a textured/flat
+// POLY_FT4 or POLY_F4 emit via the still-unnamed sub_509000 (same emitter
+// as DisplayGLineList and DisplayGPolyLineList, not PCGfx_DrawQPoly3D).
 void DisplayPolyLineList(void**)
 {
 }
 
 // @BIGTODO
 // Address 0x4125c0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). Same shape as DisplayPolyLineList (0x411ef0) but a
-// different vertex stride/offset set and POLY_FT4 fill order; likely the
-// "gouraud" (colour-per-vertex) poly-line variant. Re-tagged from
-// @MEDIUMTODO.
+// DisplayTextBoxList). See the shared family notes above
+// CSimpleTexturedRibbon::Display. Same callee shape as DisplayPolyLineList
+// (0x411ef0, confirmed this session: sub_505B90 clip helper, sub_509000
+// emit, Algebra_Transform4/sub_402700 transform) but a different vertex
+// stride/offset set and POLY_FT4 fill order; likely the "gouraud"
+// (colour-per-vertex) poly-line variant.
 void DisplayGPolyLineList(void**)
 {
 }
@@ -927,10 +1086,64 @@ CWibbly::CWibbly(
 	this->SetCore(v15, v21, v20, a8 / 80);
 }
 
-// @MEDIUMTODO
+// TTime, per the maintainer's IDB (idb_globals.txt: 0x0060CFA8 TTime). A
+// global game clock/counter, read directly from game memory. Nothing else
+// in this repo touches it yet (only read, never written, here), so it
+// stays file-local for now.
+volatile i32 TTime = 0;
+//#define G_TTIME (TTime)
+#define G_TTIME (*reinterpret_cast<volatile i32*>(0x0060CFA8))
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-30). Address
+// 0x4105f0 (found via CWibbly's own vtable, off_53B3E4+4; the 0x29a=666
+// byte body matches prototypes.json's Mac size for CWibbly::Move, 660
+// bytes). Rebuilds the wobble points between the two fixed ends of the
+// ribbon: point 0 is pinned to field_4C (the start), the last point is
+// pinned to field_4C + (mNumPoints-1)*field_58 (the end, using the
+// CVector(int)*CVector "only reads lhs.vx" idiom already documented in
+// vector.h, since field_58 is the (end-start)/(numPoints-1) step set by
+// SetEndPoints). Every interior point i gets two sine-table "wave" offsets
+// summed: field_70 modulated by (field_8C, field_90) and field_64
+// modulated by (field_80, field_84), both driven by the global clock
+// TTime and the shared random phase field_94 (rerolled about 1 time in 15
+// per point). The original first stores prevPoint + ((field_58>>6) *
+// Sine(angle))/64 into mpPoints[i], then immediately overwrites the same
+// slot with the wave sum before that first value is ever read anywhere;
+// that first store is dead (CLAUDE.md: reproduce source-level oddities,
+// but a provably unread store has no functional effect) and is not
+// reproduced here. Finally, if field_48 (the inner "core" ribbon set up by
+// SetCore) exists, every point's position (not its color/width) is copied
+// into field_48's own point array, so the core ribbon follows the same
+// wobble path as the outer one.
 void CWibbly::Move(void)
 {
-    printf("CWibbly::Move(void)");
+	i32 numPoints = this->mNumPoints;
+
+	this->mpPoints[0].Pos = this->field_4C;
+	this->mpPoints[numPoints - 1].Pos = this->field_4C + CVector(numPoints - 1) * this->field_58;
+
+	for (i32 i = 1; i < numPoints - 1; i++)
+	{
+		if (Rnd(15) == 0)
+			this->field_94 = Rnd(4096);
+
+		i32 angleA = i * this->field_8C + this->field_94 + 2 * this->field_90 * G_TTIME;
+		i32 angleB = i * this->field_80 + this->field_94 + 2 * this->field_84 * G_TTIME;
+
+		CVector waveA = (this->field_70 * Sine(angleA)) / 4096;
+		CVector waveB = (this->field_64 * Sine(angleB)) / 4096;
+
+		this->mpPoints[i].Pos = waveA + waveB;
+	}
+
+	if (this->field_48)
+	{
+		for (i32 i = 0; i < numPoints; i++)
+		{
+			this->field_48->mpPoints[i].Pos = this->mpPoints[i].Pos;
+		}
+	}
 }
 
 // @Ok
