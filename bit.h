@@ -597,6 +597,9 @@ EXPORT void Bit_ClearTextBoxes(void);
 EXPORT void Bit_UpdateQuickAnimLookups(void);
 EXPORT void RemoveDeadBits(CBit *);
 EXPORT void Bit_RemoveDeadBits(void);
+EXPORT void MoveBits(CBit *);
+EXPORT void Bit_Move(void);
+EXPORT void Bit_Display(void);
 
 EXPORT void DeleteBitList(CBit*);
 

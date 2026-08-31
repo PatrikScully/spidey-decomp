@@ -614,6 +614,68 @@ INLINE void RemoveDeadBits(CBit *pBit)
  	}
 }
 
+// address 0x411B30. Functional decompile session (2026-08-31, CheckForPadUnplugged chain).
+// Same 14 lists, same order, as Bit_RemoveDeadBits (already @Ok @Matching), which strongly
+// suggests this is the real original order too, since these sibling functions walk the same
+// bit registry. Unlike RemoveDeadBits (which must cache pNext before a delete), the original
+// re-reads pBit->mNext after the Move() call, so a plain for loop matches its shape.
+// @Ok
+INLINE void MoveBits(CBit *pBit)
+{
+	for ( ; pBit != 0; pBit = pBit->mNext)
+	{
+		if (!pBit->mDead)
+			pBit->Move();
+	}
+}
+
+// address 0x411B30, name from names.json. Runs every live (non-dead) bit's Move() once per
+// frame, across every registered bit list.
+// @Ok
+void Bit_Move(void)
+{
+	MoveBits(NonRenderedBitList);
+	MoveBits(TextBoxList);
+	MoveBits(FlatBitList);
+	MoveBits(Linked2EndedBitListLeftover);
+
+	MoveBits(PixelList);
+	MoveBits(PolyLineList);
+
+	MoveBits(GPolyLineList);
+
+	MoveBits(QuadBitList);
+	MoveBits(GenPolyList);
+	MoveBits(ChunkBitList);
+
+	MoveBits(GlowList);
+	MoveBits(GlassList);
+	MoveBits(GLineList);
+	MoveBits(SpecialDisplayList);
+}
+
+// tentative name, no idb match (0x0056F224). Passed by address to gte_SetRotMatrix right
+// before Bit_Display's render pass, same idiom as screen.cpp's gte_SetRotMatrix(gTargetRotMatrix)
+// + m3d_ZeroTransVector() pair, so this is a MATRIX the display pass resets the GTE to before
+// projecting anything (an identity-ish rotation, shared by every DisplayXList callback).
+EXPORT MATRIX gBitDisplayMatrix;
+
+// address 0x411CF0, name from names.json. Runs every registered CBitServer display slot once
+// per frame (CBitServer::DisplayRegisteredSlots, already @Ok, is the exact same 32-slot loop
+// this inlines in the original), after resetting the GTE rotation/translation and asserting
+// the poly buffer write cursor has not run past its end.
+// @Ok
+void Bit_Display(void)
+{
+	print_if_false(reinterpret_cast<u8*>(pPoly) <= PolyBufferEnd, "Poly buffer overflowed before Bit_Display");
+
+	gte_SetRotMatrix(&gBitDisplayMatrix);
+	m3d_ZeroTransVector();
+
+	if (gBitServer)
+		gBitServer->DisplayRegisteredSlots();
+}
+
 // @Ok
 // @AlmostMatching: CFriction::Set was not inlined and attachto seems different too
 CQuadBit::CQuadBit(void)
