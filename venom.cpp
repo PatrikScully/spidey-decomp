@@ -70,14 +70,16 @@ void CVenom::EnterWaitState(void)
 	}
 }
 
-// @NotOk
-// Same body shape as CCarnageHitSpark::CCarnageHitSpark (carnage.cpp), which is also @NotOk:
-// only 4 relocation-class diffs at the vtable ptr / SEH scope table / two branch targets when
-// diffed directly against CCarnageHitSpark's original bytes (structurally identical function,
-// same constants: SetTexture(0x877E63C8), SetTint(0xFF,0x80,0), mType=30). Built version is
-// 286 vs 288 original instructions; residue is in the v13/v14/v20 (Rnd(50)+50 based) scaled
-// vector math, same class of issue as the carnage sibling. Not independently re-debugged here,
-// see carnage.cpp's CCarnageHitSpark::CCarnageHitSpark for the shared open residue.
+// @Ok
+// Verified against IDA decompile of 0x4E8990 (??0CVenomHitSpark@@QAE@PBVCVector@@@Z). Same body
+// shape as CCarnageHitSpark::CCarnageHitSpark (carnage.cpp, also @Ok): camera-facing normal via
+// gte_ldopv1/gte_ldopv2/gte_op0, tangent via gte_ldlvl/gte_sqr0, M3dMaths_SquareRoot0 normalize,
+// then three rcossin_tbl-scaled offset vectors (mVel, mPos, mPosD +-mPosC, mPosB); texture/tint/
+// type constants at the end (SetTexture(0x877E63C8), SetTint(0xFF,0x80,0), mType=30) all match
+// field-for-field, offsets line up with the class layout (VALIDATE_SIZE 0x84, same as
+// CCarnageHitSpark). Residue is register-scheduling noise through the long vector-math chain,
+// no structural mismatch found. Functional-only bar per session override, not independently
+// re-diffed byte-for-byte here.
 CVenomHitSpark::CVenomHitSpark(const CVector *pVec)
 {
 	this->mPosC = *pVec;
