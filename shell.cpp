@@ -213,6 +213,18 @@ INLINE u32 Shell_CalculateGameChecksum(SSaveGame* pSave)
 // Confirmed 2026-08-31 via IDA callees(): this calls CheckForPadUnplugged
 // directly, so it is also blocked on that function's sub_460080 base-class
 // finding (see the long comment above CheckForPadUnplugged).
+// Update 2026-08-31, later same day: CheckForPadUnplugged (and its
+// CDropDownController widget, and the sub_460080/sub_460720 base-class
+// mystery) are all done now (real code, functional decompile session,
+// see shell.h/CDropDownController and bit2.h/CKnottedWeb). Re-ran
+// callees() on this function: every callee is a real name now except one
+// still-unnamed local helper (sub_495970) and CDummy_ctor (sub_490DF0,
+// the 3D preview-model constructor also used by Shell_MainMenu/
+// Shell_RollCredits/Shell_CostumeViewer, ~1840 bytes, its own BIGTODO,
+// not attempted this session). This is genuinely tractable once
+// sub_490DF0 and sub_495970 are done; the Shell_DoShell dispatcher issue
+// noted above is a separate, later concern (this function itself does
+// not need Shell_DoShell to exist first).
 // @MEDIUMTODO
 void Shell_CharacterViewer(void)
 {
@@ -1348,6 +1360,15 @@ void Shell_ChooseTrainingMission(i32)
 // undecompiled functions before it is itself attemptable.
 // Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
 // directly (see its comment above for the sub_460080 base-class blocker).
+// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
+// shell.h/CDropDownController). Re-ran callees(): this one does NOT use
+// CDummy_ctor (sub_490DF0) at all, unlike CharacterViewer/CostumeViewer/
+// MainMenu/RollCredits -- it uses CExpandingBox instead (already declared
+// in the repo: CExpandingBox_Display, ??0CExpandingBox@@... all named).
+// The only real callees still missing are two small local helpers,
+// sub_478140 and sub_49B1F0 (not yet sized/investigated). This is
+// probably the most tractable of the six menu screens now, alongside
+// Shell_GameCovers below (same situation, no CDummy_ctor dependency).
 // @MEDIUMTODO
 void Shell_ComicCollection(void)
 {
@@ -1362,6 +1383,9 @@ void Shell_ComicCollection(void)
 // directly (see its comment above for the sub_460080 base-class blocker),
 // and calls sub_490DF0 (the CDummy preview-model ctor, its own separate
 // ~1840 byte BIGTODO, also documented on CheckForPadUnplugged's comment).
+// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
+// shell.h/CDropDownController). sub_490DF0 (CDummy_ctor) remains the real
+// blocker here, same as MainMenu/RollCredits/CharacterViewer.
 // @MEDIUMTODO
 void Shell_CostumeViewer(void)
 {
@@ -1879,6 +1903,12 @@ i32 Shell_Gallery(EShellResult a1)
 // pending Shell_DoShell's own dispatch chain.
 // Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
 // directly (see its comment above for the sub_460080 base-class blocker).
+// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
+// shell.h/CDropDownController). Same situation as Shell_ComicCollection:
+// no CDummy_ctor dependency (uses CExpandingBox instead, already in the
+// repo). Only real callee still missing is one small local helper,
+// sub_49C1A0 (not yet sized/investigated). Probably the most tractable of
+// the six menu screens now, alongside Shell_ComicCollection above.
 // @MEDIUMTODO
 void Shell_GameCovers(void)
 {
@@ -2684,6 +2714,13 @@ i32 Shell_LoadGame(void)
 // class (sub_460080/sub_460720, same function a parallel carnage.cpp
 // session hit independently the same day from CSymbioteBlade); see the
 // long comment above CheckForPadUnplugged for details.
+// Update 2026-08-31, later same day: CheckForPadUnplugged, its
+// CDropDownController widget, and Bit_Display/Bit_Move are all done now
+// (real code, functional decompile session; see shell.h/
+// CDropDownController, bit2.h/CKnottedWeb, bit.h/Bit_Move+Bit_Display).
+// The remaining real blocker for this function is CDummy_ctor
+// (sub_490DF0) and this file's own sub_493860, both still BIGTODO/
+// undecompiled.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
@@ -3112,6 +3149,9 @@ done:
 // one shared base class (sub_460080), see its comment above. Once that
 // lands, this is likely the most tractable of the six menu screens (it
 // only needs sub_490DF0, the CDummy preview-model ctor, on top of that).
+// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
+// shell.h/CDropDownController). Confirmed still true: sub_490DF0
+// (CDummy_ctor) is the only real remaining blocker for this one.
 // @MEDIUMTODO
 void Shell_RollCredits(void)
 {
