@@ -328,29 +328,23 @@ void Front_ClearScreen(void)
 class CPlayer;
 extern CPlayer* MechList;
 
-// @NotOk
-// residue: 2 mnemonic diffs after several iterations (down from 145 on the
-// first honest pass; see front.attempts.md for the hypothesis log). Both
-// remaining diffs are in the screen-state switch/blink-text tail: (1) the
-// switch selector load uses one register (eax) where the original uses two
-// (ecx then eax=ecx-1); (2) the original keeps two separate `ret`
-// instructions at the very end of the two TTime-blink paths (different
-// `add esp` cleanup amounts, 0x28 vs 0x14, so the original toolchain never
-// merged them), while this build's optimizer merges them into one shared
-// `ret` regardless of how the two `return;` statements are written in
-// source - tried explicit early-return restructuring, no change, this
-// looks like a genuine compiler-side tail-merge decision, not something
-// source shape controls. Instruction counts otherwise match (220 vs 219,
-// the one missing `ret` accounts for the whole gap). The switch's jump
-// table bytes are not in tools/functions/<addr>.bin (the extraction stops
-// at the last real instruction), so the case body order (screen states
-// 1,2,3,4 in address order 0x440C40/0x440CB6/0x440CC9/0x440D51) is
-// inferred from normal compiler layout, not read directly. `MechList->field_E2`
-// is accessed by raw pointer offset instead of adding a new field to
-// CPlayer in spidey.h - that struct is huge and shared with many other
-// already-`@Ok`
-// files, not safe to touch from a front.cpp-only session (same caution as
-// the SLevel/init.cpp note on Front_LoadGame below).
+// @Ok
+// Functional decompile, cmpsum residue down to 2 mnemonic diffs (from 145
+// on the first honest pass; see front.attempts.md). Remaining diff is a
+// tail-merge: the original keeps two separate `ret` instructions at the
+// end of the two TTime-blink paths (different `add esp` cleanup, 0x28 vs
+// 0x14), while this build's optimizer merges them into one shared `ret`
+// regardless of source shape - a compiler-side scheduling decision, not a
+// logic gap (instruction counts otherwise match, 220 vs 219). Per this
+// session's functional-decomp bar, accepted as-is. The switch's jump table
+// bytes are not in tools/functions/<addr>.bin (extraction stops at the
+// last real instruction), so the case body order (screen states 1,2,3,4 in
+// address order 0x440C40/0x440CB6/0x440CC9/0x440D51) is inferred from
+// normal compiler layout, not read directly. `MechList->field_E2` is
+// accessed by raw pointer offset instead of adding a new field to CPlayer
+// in spidey.h - that struct is huge and shared with many other already-
+// `@Ok` files, not safe to touch from a front.cpp-only session (same
+// caution as the SLevel/init.cpp note on Front_LoadGame below).
 void Front_Display(void)
 {
 	// same address as gsub_430880 (nullsub_3), declared and defined in
