@@ -663,6 +663,20 @@ void gsub_46D9B0(VECTOR *a1)
 	a1->vz = gOp12Result.vz;
 }
 
+// @Ok
+// @Matching
+// unnamed in the IDB, address 0x0046E090. Multiplies gOp12Result by
+// gScalar (fixed point, >>12) and accumulates into gGeneralLongVector.
+// One of the two small GTE accumulator helpers M3dUtils_InterpolateVectors
+// (m3dutils.cpp, still @BIGTODO/forwarded) calls; decompiled while tracing
+// that function's callees.
+void gsub_46E090(void)
+{
+	gGeneralLongVector.vx += (gOp12Result.vx * gScalar) >> 12;
+	gGeneralLongVector.vy += (gOp12Result.vy * gScalar) >> 12;
+	gGeneralLongVector.vz += (gOp12Result.vz * gScalar) >> 12;
+}
+
 // @BIGTODO
 // forward to original. Unnamed in the IDB. Applies a hook's part-local
 // offset (pOffset, a CSVector-shaped 6-byte vector: SHook::Part in

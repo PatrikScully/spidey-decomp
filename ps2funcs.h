@@ -164,6 +164,10 @@ EXPORT void gte_rtir(void);
 // store-long-vector variant next to gte_stlvnl/gte_stlvnl0/gte_stlvnl2.
 EXPORT void gsub_46D9B0(VECTOR *a1);
 
+// unnamed GTE accumulator helper, address 0x0046E090. See ps2funcs.cpp for
+// details; used by M3dUtils_InterpolateVectors (still forwarded, m3dutils.cpp).
+EXPORT void gsub_46E090(void);
+
 // unnamed GTE store+double-transform, address 0x0046F820. See ps2funcs.cpp
 // for details; used by M3dUtils_GetHookPosition/M3dUtils_GetDynamicHookPosition.
 EXPORT void gsub_46F820(void *pOffset, SMatrix *pPoseFrame, MATRIX *pTransform);
