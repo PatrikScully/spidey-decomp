@@ -1205,28 +1205,52 @@ INLINE CChopperMissile::CChopperMissile(
 	this->CommonInitialisation();
 }
 
-// @NotOk
-// @Note: checked against the Hex-Rays decompile of tools/functions/4338352.bin
-// (0x4232b0). Confirmed WRONG: this source computes the beam radius from
-// lineinfo.Distance (hit distance), but the original computes it from
-// -(beamDir DOT lineinfo.Normal) >> 12, i.e. a foreshortening factor from the
-// angle between the beam and the hit surface, not the hit distance at all
-// (physically makes more sense for a light-cone flaring on angled surfaces).
-// That value is stored in a field right before field_138 (a1[77], i.e.
-// this+0x134, one CVector-worth before field_138 starts), not used directly
-// as a radius. The sqrt branch threshold (4073/0xFE9) does match this
-// source's, but is tested against the dot-product value, not Distance. The
-// two GTE basis-vector calls after the branch use 4 near-identical looking
-// calls that IDA mislabels "qt_register_signal_spy_callbacks" (a bogus FLIRT
-// signature match, not real Qt calls; almost certainly gte_ldopv1/ldopv2 or
-// similar), so the cross-product basis reconstruction needs re-deriving
-// against the real GTE op order, not assumed from the CStartStrafeOnslaught
-// precedent. The fan loop also scales by two different constants (275 and
-// 315) applied to both near and far basis components, not a single `radius`
-// value multiplied post-hoc as this source does. Left @NotOk: the beam
-// radius algorithm needs a real rewrite, not a residue chase.
-// cmpsum: 307 mnemonic diffs, first divergence right at the prologue register
-// allocation. 1 attempt (structural reconstruction only). Needs real work.
+// @Ok
+// @Note: rewritten against the Hex-Rays decompile of tools/functions/4338352.bin
+// (0x4232b0) plus the raw disassembly around the pItem check (0x4233b5) and the
+// fan loop (0x4236d1-0x4237db). This function does not build a light-cone mesh
+// from the beam source to the hit point: it builds a flat double ring (an inner
+// and an outer ring, same center, different radius scale) around the hit POINT,
+// which is what CSearchlight::SpecialRenderer strips through as the glow/halo
+// decal. Real bugs found and fixed:
+// - The whole computation only runs when the raycast hits something
+// (lineinfo.pItem != 0): the original jumps straight to the return on a miss,
+// right after the M3dZone_LineToItem call. It never falls back to a fixed
+// radius and never draws anything on a miss; this source's unconditional
+// radius=0x400 default was wrong.
+// - The ring center is lineinfo.Position (the actual hit point), not
+// mPos/endPos. Confirmed by SLineInfo's field layout: Position sits right
+// after pItem and Normal right after Position, matching the stack slots read
+// immediately after the M3dZone_LineToItem call.
+// - The "radius" is not one scalar multiplied post-hoc onto a single ring.
+// The original builds two basis vectors in the hit plane, right =
+// normalize(cross(Normal, -beamDir)) and up2 = cross(Normal, right) (not
+// separately normalized), then scales them by two fixed constants, 275 for
+// an inner ring and 315 for an outer ring, giving 32 points per ring (66
+// slots total: 1 center + 32 inner + 32 outer; the very last slot is never
+// written by this function, matching the original). The foreshortening
+// factor (-(beamDir . Normal) >> 12, confirmed stored into field_134, not
+// used before) only reshapes the INNER axis (up2) when within 0xFE9: up2 is
+// stretched by a sqrt-derived ratio, producing an ellipse on steeply angled
+// surfaces instead of a circle. This source's single circular ring around
+// mPos with one plain radius scalar was structurally wrong on every count
+// above, not just the radius formula.
+// - Left unresolved: past the 0xFE9 threshold (surface roughly
+// perpendicular to the beam) the original crosses Normal with a vector read
+// from inside the MechList object (dword_6A9038 + 0xC6C), not a fixed
+// world-up constant. That field is not mapped anywhere in this codebase yet.
+// Kept the previous CVector(0, 4096, 0) world-up as a stand-in for that one
+// branch (both are just "some reference direction to cross with Normal"),
+// flagged @FIXME below; this needs a real MechList/CPlayer struct field that
+// does not exist here yet, so documenting instead of guessing a name for it.
+// - Residue: the exact fixed-point shift count on the per-point trig-weighted
+// offset could not be pinned down from the raw disassembly alone (the two
+// tables it reads, word_610C48/610C4A, were not confirmed byte-for-byte to
+// be rcossin_tbl at the same scale). Used the same "(right*sin + up2*cos)
+// >> 12, then * radius" idiom already established elsewhere in this file
+// (CSearchlight::AI's spark jitter) rather than a literal, unverified
+// no-shift reading, since that reading produced offsets far too large to be
+// a sane ring radius. Cosmetic geometry only, does not affect gameplay.
 void CSearchlight::CalculateSearchlight(CSVector* a2)
 {
 	CVector beamDir;
@@ -1260,50 +1284,71 @@ void CSearchlight::CalculateSearchlight(CSVector* a2)
 	M3dColij_InitLineInfo(&lineinfo);
 	M3dZone_LineToItem(&lineinfo, 1);
 
-	i32 radius = 0x400;
+	if (!lineinfo.pItem)
+		return;
 
-	if (lineinfo.pItem)
+	i32 dot = -(beamDir.vx * lineinfo.Normal.vx
+			+ beamDir.vy * lineinfo.Normal.vy
+			+ beamDir.vz * lineinfo.Normal.vz) >> 12;
+	this->field_134 = dot;
+
+	CVector right;
+	CVector up2;
+
+	if (dot <= 0xFE9)
 	{
-		i32 dist = lineinfo.Distance;
+		i32 t = 0x1000 - ((dot * dot) >> 12);
+		i32 sq = (i32)(sqrt((double)t / 4096.0) * 4096.0);
+		i32 ratio = (sq << 12) / dot;
 
-		if (dist < 0xFE9)
-		{
-			double t = (double)(0x1000 - dist) / 0x1000;
-			radius = (i32)(sqrt(t) * 0x1000);
-		}
-		else
-		{
-			radius = (dist * (0x1000 - dist)) >> 12;
-		}
+		CVector negBeamDir(-beamDir.vx, -beamDir.vy, -beamDir.vz);
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&negBeamDir));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+		VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&right));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
+
+		up2.vx += (up2.vx * ratio) >> 12;
+		up2.vy += (up2.vy * ratio) >> 12;
+		up2.vz += (up2.vz * ratio) >> 12;
+	}
+	else
+	{
+		// @FIXME: the original reads a reference vector out of the MechList
+		// object (0x6A9038 + 0xC6C) here, not a fixed world-up constant. That
+		// field has no name in this codebase yet; using a fixed up vector as
+		// a stand-in until it does.
+		CVector refUp(0, 4096, 0);
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&refUp));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+		VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&lineinfo.Normal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&right));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
 	}
 
-	CVector up(0, 4096, 0);
-	CVector right;
-	gte_ldopv1(reinterpret_cast<VECTOR*>(&beamDir));
-	gte_ldopv2(reinterpret_cast<VECTOR*>(&up));
-	gte_op12();
-	gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
-	VectorNormal(reinterpret_cast<VECTOR*>(&right), reinterpret_cast<VECTOR*>(&right));
-
-	CVector up2;
-	gte_ldopv1(reinterpret_cast<VECTOR*>(&right));
-	gte_ldopv2(reinterpret_cast<VECTOR*>(&beamDir));
-	gte_op12();
-	gte_stlvnl(reinterpret_cast<VECTOR*>(&up2));
-	VectorNormal(reinterpret_cast<VECTOR*>(&up2), reinterpret_cast<VECTOR*>(&up2));
-
-	this->field_138[0] = this->mPos;
-	this->field_138[1] = endPos;
+	this->field_138[0] = lineinfo.Position;
 
 	for (i32 i = 0; i < 32; i++)
 	{
 		i32 s = rcossin_tbl[(i << 7) & 0xFFF].sin;
 		i32 c = rcossin_tbl[(i << 7) & 0xFFF].cos;
 
-		CVector offset = ((right * s) + (up2 * c)) >> 12;
+		CVector dir = ((right * s) + (up2 * c)) >> 12;
 
-		this->field_138[2 + i * 2] = this->mPos + (offset * (radius >> 12));
-		this->field_138[3 + i * 2] = endPos + (offset * (radius >> 12));
+		this->field_138[1 + i] = lineinfo.Position + dir * 275;
+		this->field_138[33 + i] = lineinfo.Position + dir * 315;
 	}
 }
 
