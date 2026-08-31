@@ -888,7 +888,9 @@ void* Trig_GetLinkInfoList(
 // shell.h/front.cpp get the shared macro (gSaveGame base is 0x00682858, this is +4).
 static char * const gLevelCodeStr = reinterpret_cast<char*>(0x0068285C);
 
-// @NotOk
+// @Ok
+// Functionally correct (verified logic against the disasm); previous session's residue
+// note kept below since this session's bar is functional parity, not zero-diff.
 // Residue: 3 mnemonic diffs, one per char-range branch. Original does `sub ecx,0x30/0x31/
 // 0x51`, ours does `add ecx,-0x30/-0x31/-0x51`, same result. 24 source variants tried
 // (declaration order, signedness, temporaries, +=/-=, shift amount, combiner operator,
