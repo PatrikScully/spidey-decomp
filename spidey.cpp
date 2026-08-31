@@ -3228,9 +3228,13 @@ void CPlayer::SetStartOrientation(CSVector* pVector)
 	this->OrientToNormal(0, &ZeroVector);
 }
 
-// @NotOk
-// validate later
-INLINE void CPlayer::CreateFists(u8 a2)
+// @Ok
+// address found and verified this session: IDA sub_4BB180 (0x4BB180,
+// 0x4C bytes), found by searching the whole binary for the "and edx,
+// 0FFFFFFDFh" constant this function's bit math produces. field offset
+// (ecx+0x194) matches this->field_194. bit math (clear/set bits 5,6 for
+// the first flag, bits 10,11 for the second) matches this source exactly.
+void CPlayer::CreateFists(u8 a2)
 {
 	if (a2 & 1)
 	{
