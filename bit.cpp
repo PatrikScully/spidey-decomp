@@ -412,47 +412,96 @@ static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
 
 // @BIGTODO
 // Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Re-verified this session
-// (2026-08-31, second pass) against a fresh IDA decompile. Still NOT implemented - genuinely
-// needs a dedicated session (dense two-pass fixed/float pipeline, several fields still not
-// pinned down) - but sub_4E7090 (the one previously-unknown helper) is now FULLY decoded, which
-// should save real time for whoever picks this up next:
+// (2026-08-31, THIRD pass, full fresh decompile + partial raw disasm cross-check of sub_4E7090
+// and every gte_* callee). The overall algorithm shape is now FULLY understood (see below) -
+// this is a billboarded ribbon quad-strip, structurally the same "two scratch buffers + a flat
+// invZ array + an overlapping-quad draw loop" idiom DisplayQuadBitList already uses, just with a
+// per-segment perpendicular "width" vector computed fresh each iteration instead of 4 fixed
+// corners. Left @BIGTODO rather than @Ok because the FINAL draw loop's exact per-face colour
+// source (field_48 indexing) is not confirmed and guessing it wrong would silently mis-render
+// every ribbon (spider webs etc) - see "still open" at the bottom.
 //
-// sub_4E7090(a1: CVector* prevPoint, a2: CVector* nextPoint, a3: i32* widthInOut) computes a
-// per-segment perpendicular "width" vector, in place, from THREE inputs: the ribbon's previous
-// and next spine points (a1/a2, raw fixed-point CVectors) and a width record (a3, 3 raw
-// fixed-point i32s used as BOTH input and output). Body: delta = (a2-a1)>>12, clamped >>4
-// further if any axis magnitude exceeds 500 (an overflow guard, same style as other >>12/>>4
-// dual-precision paths in this file); toCamera = (gCameraViewPos - a1)>>12; cross = delta x
-// toCamera (sub_46D6A0, a real cross-product GTE-style helper, still unnamed elsewhere in the
-// repo); a3 (the width record) is then loaded via gte_ldv0-style sub_46D790, right-shifted >>8
-// per axis, magnitude computed via sub_46DD00 (dot-with-self?) then sub_46D430 (this is
-// unnamed and looks like an integer sqrt/normalize-divisor helper judging by its use: "if
-// result < 5, zero the vector and return 0; else scale a3 by 16/result per axis"). Net effect:
-// a3 becomes a camera-facing perpendicular offset vector scaled by the ribbon's per-segment
-// width, zeroed out if the width is degenerate (<5 in whatever fixed units sub_46D430 returns).
-// sub_46D6A0/sub_46DD00/sub_46D430 are still not decoded/named; do that first, this is the
-// critical-path blocker along with the backwards screen-buffer indexing below.
+// sub_4E7090(a1: i32* prevPointSlot, a2: i32* nextPointSlot, a3: i32* out) - OUTPUT ONLY (never
+// reads a3 as input, contrary to the previous pass's guess), computes a per-segment perpendicular
+// offset vector into a3, magnitude 16 (unit-length in that fixed scale), zeroed if degenerate:
+//   delta = (a2 - a1) >> 12, further >>4 if any axis magnitude exceeds 500 (overflow guard)
+//   toCamera = (gCameraViewPos - a1) >> 12
+//   cross = delta x toCamera, via gte_ldopv1(&delta)/gte_ldopv2(&toCamera)/sub_46D6A0() - the
+//     latter is STILL unnamed, but it is confirmed to behave exactly like the already-@Ok
+//     gte_op12 (ps2funcs.cpp, `cross = op1 x op2, >>12` - same inputs, same shape), just at a
+//     different address (0x46D6A0 vs gte_op12's 0x46D700) - a genuinely separate function, not
+//     a names.json mismatch, so do not rename/merge them without more evidence.
+//   cross written to a3 via gte_stlvnl(a3) (sub_46D790, already @Ok)
+//   magnitude: (a3>>8 per axis) -> gte_ldlvl -> gte_sqr0 (sub_46DD00, already @Ok, squares each
+//     axis) -> gte_stlvnl -> M3dMaths_SquareRoot0(sum of the 3 squares) (sub_46D430, already @Ok)
+//   if magnitude < 5: a3 = {0,0,0}; else a3[i] = 16 * (a3[i] / magnitude) per axis
+// Call site passes a1 = field_44-as-int-ptr + 7 (the NEXT spine point) and a2 = the CURRENT spine
+// point, i.e. delta is (current - next), reversed from a "prev->next" reading of the params.
+// The a3 output slot passed by the caller is itself borrowed scratch memory inside the NEXT
+// point's own SSimpleRibbonParams record (offset 0x18-0x23, i.e. the middle PADDING(0xC) bytes
+// bit.h's SSimpleRibbonParams currently declares before field_18) - safe to replace with a local
+// temporary instead of reproducing that memory reuse, since nothing else reads it back.
 //
-// Everything else confirmed in the previous pass still holds: `this` fields field_3C (NumFaces),
-// field_3E (mNumFacesToDisplay), pTextures, field_44 (SSimpleRibbonParams*), field_48 (u32*
-// widths); G_QUADBIT_RENDER_STATE save/force/restore, same sentinel as DisplayQuadBitList;
-// gte_SetRotMatrix(&gTargetRotMatrix)+m3d_ZeroTransVector camera-facing setup; per-point
-// relPos=(raw>>12)-gCameraViewPos through gte_ldlv0/gte_rtps AND a separate Algebra_Transform4
-// invZ pass (RefreshGfxMatrix's target matrix), near-clip override to -1.0 below raw depth 100;
-// two-pass structure (a first loop over field_3E points fills a flat invZ buffer at String/
-// 0x5498fc, 2 entries per segment - near/far edge - THEN a second loop walks the screen-coord
-// scratch arrays dword_628618/dword_654F54 - gRevisitInitOne/Two above - with strides that do
-// NOT match DisplayQuadBitList's plain 8-byte/corner layout; the backwards indexing there,
-// -3/-4/-7/-8/-11/-12 on a +8-shorts/iteration pointer, still needs careful reconstruction of
-// the per-point record shape used specifically by this function (looks like 16 shorts/point,
-// not DisplayQuadBitList's 4). Blend/colour: PCGfx_UseTexture keyed off pTextures[0].field_0's
-// 0x40/0x80 bits (SetOpaque/SetSemiTransparent, already @Ok), alpha 255 or a signed-extended
-// variant of the 0x80 bit - single call before the draw loop, same "set once for the whole
-// list" pattern DisplayGlassList/DisplayGlowList (this session) both confirmed independently.
+// this->field_44 (SSimpleRibbonParams*, cast to a flat i32* by the original) is the ribbon's
+// spine point array, 7 ints (0x1C bytes, matches SSimpleRibbonParams's already-VALIDATEd size)
+// per point: [0..2] = raw fixed-point CVector position (needs adding to bit.h - currently inside
+// PADDING(0x18)), [3..5] = still PADDING/unused by this function, [6] = field_18 = per-point
+// "width" scalar (VALIDATEd already, just needs a real name once confirmed elsewhere).
 //
-// Do not guess the gRevisitInitOne/Two per-point record layout or sub_46D6A0/46DD00/46D430's
-// exact semantics without re-tracing in the raw disasm; a wrong guess here would silently
-// mis-render every ribbon (spider webs, etc) rather than fail to compile.
+// Per segment (field_3E = mNumFacesToDisplay iterations), reusing ONE gte_SetRotMatrix(&stru_
+// 56F224, same fixed matrix as spidey.cpp/panel.cpp's stru_56F224)+m3d_ZeroTransVector() call for
+// BOTH edges (confirmed: no second SetRotMatrix call between them, only two ldlv0/rtps calls):
+//   width = spine[i].field_18 (the per-point width scalar)
+//   crossVec = sub_4E7090(spine[i+1], spine[i], out) * width   (per-axis scale, NOT a dot)
+//   edgeA = spine[i].pos - crossVec
+//   edgeB = spine[i].pos + crossVec
+//   for each of edgeA, edgeB (SAME order, one gte_ldlv0/gte_rtps call per edge, sharing the one
+//   SetRotMatrix/ZeroTransVector call above):
+//     relPos = (edge >> 12) - gCameraViewPos; gte_ldlv0(&relPos); gte_rtps()
+//     invZ via the SAME Algebra_Transform4-equivalent idiom as the rest of this file (confirmed:
+//       sub_402700 here is another instance of the family's "vector4d ctor + gGfxMatrix dot,
+//       read w at +12" idiom weapons.cpp's notes already documented for sub_402540/402600/402620
+//       - use Algebra_Transform4(xf, rawEdge) directly per that established shortcut, do not
+//       chase sub_402700 itself) - append invZ to a flat float array at 0x5498fc (this file's
+//       `String` extern, 2 floats per segment: edgeA then edgeB)
+//     gte_stlvnl(&stlv) + gte_stsxy(&sxy) read back the JUST-COMPLETED transform (edgeA's after
+//       edgeA's own ldlv0/rtps, edgeB's after edgeB's) into an 8-byte record appended to
+//       gRevisitInitOne (dword_628618): {sxy_packed(4 bytes), stlv.vz as i16, -256 as i16} -
+//       CONFIRMED same 8-byte shape DisplayQuadBitList already uses for the same buffer. If
+//       stlv.vz < 100 (near-clip), the invZ value just appended is overridden to -1.0f.
+// After the loop, ONE more "tail" cross-section is built the exact same way (edgeA/edgeB again,
+// reusing the LAST iteration's still-in-scope crossVec/width - no new sub_4E7090 call) from
+// spine[field_3E] (the point one past the loop, i.e. field_3E+1 spine points must exist for a
+// field_3E-face ribbon - matches a quad strip needing N+1 cross-sections for N quads). This tail
+// section is also the ONLY place gRevisitInitTwo (dword_654F54) gets written, one 8-byte record
+// per edge: {stlv.vx as i16, stlv.vy as i16, 0, 0} - unclear why only the tail needs this second
+// buffer; do not guess, re-trace if picked up.
+//
+// Total gRevisitInitOne records after all this: 2*(field_3E+1) (2 per cross-section, field_3E+1
+// cross-sections). The final draw loop (field_3E iterations) reads FOUR consecutive records per
+// quad via a backwards-indexed i16* cursor starting at gRevisitInitOne+24 (record index 3) and
+// advancing +8 shorts (2 records) per iteration: quad k uses records [2k, 2k+1, 2k+2, 2k+3] (the
+// old note's "-3/-4/-7/-8/-11/-12 on a +8-shorts pointer" fully resolved: those are record indices
+// cursor-1, cursor-2, cursor-3 relative to the current position, each a {sx,sy} pair) - i.e. a
+// classic overlapping quad-strip identical in spirit to DisplayQuadBitList's corner list, just
+// built incrementally instead of read from 4 fixed fields. invZ per quad corner comes from the
+// SAME flat 0x5498fc array, 2 floats advanced per quad iteration (matches "2 entries per
+// segment"). PCGfx_UseTexture is called ONCE before this loop, clut = pTextures[9] (a u16 9
+// elements into SRibbonTexture - NOT pTextures[0], re-traced this pass), blend mode from
+// pTextures[0]'s low byte bits 0x40/0x80 (SetOpaque/SetSemiTransparent shape, already @Ok
+// elsewhere), alpha 255 or (0x80-bit ? 0x81-masked-negated : 255) - same "set once for the whole
+// list" pattern as DisplayGlassList/DisplayGlowList.
+//
+// STILL OPEN, do not guess: the draw loop's per-quad colour comes from
+// `*(DWORD*)(this->field_48 + 4*faceIndex)`, i.e. field_48[faceIndex] (already VALIDATEd as
+// `u32* field_48`, tentatively named "widths" by an earlier pass) unpacked as R,G,B bytes with
+// alpha from the pTextures[0]-derived value above - this directly contradicts field_48's current
+// "widths" name/comment (a colour array and a widths array are not the same thing). Before
+// writing this function for real: check every OTHER caller/reader of field_48 in this file
+// (CSimpleTexturedRibbon has no other functions touching field_48 currently) and re-verify via
+// the raw disasm at 0x40b2f1-0x40b3a0 which field this really is, then rename field_48
+// accordingly (it may need splitting into two arrays, or the "widths" name may simply be wrong).
+// Getting this backwards would make every ribbon render with garbage or width-as-colour data.
 void CSimpleTexturedRibbon::Display(void)
 {
     printf("CSimpleTexturedRibbon::Display(void)");
@@ -1132,44 +1181,300 @@ void DisplayGlassList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x40c6f0. Re-verified this session (2026-08-31, second pass) against a fresh IDA
-// decompile. Still NOT implemented - genuinely dense (contour/fringe renderer with two nested
-// nested nested loops, a double-buffered screen-coordinate array swapped via XOR each ring
-// step, and several still-unresolved helpers/structs) - but several parts of the OLD note are
-// corrected here:
-// - The fog-LUT claim was WRONG: there is no byte_6FC6DC/6BC6C0/6DC6C0/71C75C table anywhere in
-//   this function's actual disasm. Colour is the SAME plain fixed-alpha-0xA0 RGB repack
-//   DisplayGlassList uses (`v.. | 0xFFFFA000` idiom, see DisplayGlassList's comment above),
-//   optionally pre-scaled by a per-section fade-in ramp (`255*n/700+1` while n<700, confirmed);
-//   no LUT read anywhere. Do not reintroduce the LUT theory without re-finding it in the disasm.
-// - Two previously-unnamed helpers, sub_4E7840(a1,a2,a3) and sub_4E7760(a1,a2,a3), are actually
-//   CVector::operator>>(const CVector&, int) and CVector::operator-(const CVector&, const
-//   CVector&) respectively - the SAME two operators CLAUDE.md's "vector.h wrongly-INLINE"
-//   entries already flag as repo-wide problems (confirmed independently here: this function
-//   calls them as real out-of-line calls in the original, exactly like bit2.cpp/shatter.cpp's
-//   already-documented cases). This function is ANOTHER data point for that fix, not a new bug;
-//   whoever de-inlines those operators repo-wide should re-check this function's shape too.
-// - The 0x56FB04/0x5FCD1C scratch buffer (see DisplayGlassList's comment - same shared
-//   bump-allocated buffer as flash.cpp's gEffectRecordBufPos/End) is used for REAL here, not
-//   dead: the per-fringe-segment screen coords and colour ARE read back from it for the actual
-//   PCGfx_DrawQPoly3D (sub_508550, already @Ok) calls. An overflow check on this buffer does a
-//   bare `return` - it silently bails the WHOLE function, not just the current bit/fringe, if
-//   the buffer fills; this matters for functional fidelity (unlike DisplayGlassList/GLineList
-//   where the buffer write was provably dead).
-// - dword_64E514 (external struct, offsets +10/+14/+16/+18 read here) looks like a viewport/FOV
-//   descriptor (half-width-ish and centre-ish values) shared with other rendering code; not
-//   identified yet - check spool.cpp/DXinit.cpp/screen.cpp for something already named at this
-//   address before inventing a new one.
-// - dword_614CD4/614CD8 (a small double-buffered screen-space contour array, swapped via an
-//   XOR-swap idiom each fringe step) and the per-section mask/visibility test against CGlow's
-//   already-VALIDATEd mMask (0x58) are as the old note described; mpSections (0x3C)/mpFringes
-//   (0x40)/mNumSections (0x44)/mNumFringes (0x48) offsets are confirmed correct.
-// This still needs a dedicated session: sub_4E7840/sub_4E7760 need the repo-wide de-inline fix
-// (or a faithful local reproduction) before this can be written and tested with confidence, and
-// the exact per-entry stride/layout of mpSections' contour delta array is not pinned down yet.
-void DisplayGlowList(void**)
+// File-local copy of the shared scratch-buffer macros (see the identical definition above
+// DisplayFlatBitList further down this file; duplicated here because this function needs it
+// earlier in the file and an identical macro redefinition is well-defined in C++).
+#define gGlowScratchBufPos (*reinterpret_cast<u8**>(0x0056FB04))
+#define gGlowScratchBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+
+// Ring-point double buffer (dword_614CD4/614CD8 in the old notes): CLAUDE.md's array-boundary-
+// folding warning applies exactly here - raw disasm (`mov [esp+..], 614CDAh`) proves this is ONE
+// flat i16[2]-per-point array starting at 0x614CD4 (point i's x/y at +4*i/+4*i+2), not two
+// separate globals. Two rings share this one region back to back: ringA (the "previous" ring,
+// starts at 0x614CD4) and ringB (the "current" ring being built, starts right after ringA's
+// (mNumFringes+1) points) - confirmed because the original computes ringB's base as
+// `4*mNumFringes + 0x614CD8` which is algebraically identical to
+// `0x614CD4 + 4*(mNumFringes+1)`, i.e. exactly where ringA's own points end.
+static u8 * const gGlowRingBase = (u8*)0x614CD4;
+
+// sin/cos table, same address/idiom as camera.cpp's CCamera::CM_Normal (word_610C48[idx]=sin,
+// word_610C48[idx+1]=cos, idx = 2*(angle&0xFFF)); file-local copy per repo convention.
+static i16 * const word_610C48 = (i16*)0x610C48;
+#define GLOW_RING_X(buf, i) (*(i16*)((buf) + 4 * (i)))
+#define GLOW_RING_Y(buf, i) (*(i16*)((buf) + 4 * (i) + 2))
+
+// Tentative name/guess, not in idb_globals.txt. A 3-float point (0x56E768/6C/70, confirmed
+// float via the raw disasm's `*(float*)&dword_56E770` bit-reinterpretation, NOT a fixed-point
+// CVector) the glow's proximity-based "grow near camera" factor measures distance to (see
+// below); could be a secondary/near-plane reference position. Naming it a "focus point"
+// describes its use here, not a confirmed engine concept.
+static f32 * const gGlowFocusPoint = (f32*)0x56E768;
+
+// Tentative name/guess, not in idb_globals.txt. Single float at 0x547E3C used as a "near"
+// distance threshold: when the glow's centre is within 10 units beyond this threshold of
+// gGlowFocusPoint, invZ gets scaled up by (threshold/distance + 1) - a proximity-based grow-when-
+// close bloom effect.
+static f32 * const gGlowNearThreshold = (f32*)0x547E3C;
+
+// @Ok
+// Factored out of DisplayGlowList's ring-point clamp (-100..612 x range), reused per point.
+static INLINE i16 ClampGlowX(i32 v) { if (v > 612) return 612; if (v < -100) return -100; return (i16)v; }
+
+// @Ok
+// Factored out of DisplayGlowList's ring-point clamp (-100..340 y range), reused per point.
+static INLINE i16 ClampGlowY(i32 v) { if (v > 340) return 340; if (v < -100) return -100; return (i16)v; }
+
+// @Ok
+// Factored out of DisplayGlowList's depth-based fade-in colour scale (`(fade*c)>>8`, applied
+// only when fade != 0, i.e. depth < 700).
+static INLINE u8 GlowFade(u8 c, i32 fade) { return fade ? (u8)((fade * (i32)c) >> 8) : c; }
+
+// @Ok
+// Factored out of DisplayGlowList's fixed-alpha-0xA0 RGB colour pack, same idiom as
+// DisplayGlassList's inline `0xA0000000 | r<<16 | g<<8 | b`.
+static INLINE u32 GlowColor(u8 r, u8 g, u8 b) { return 0xA0000000u | ((u32)r << 16) | ((u32)g << 8) | b; }
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31, third pass). Address 0x40c6f0.
+// Fully retraced against a fresh IDA decompile AND raw disassembly (every offset, gate constant
+// and record layout below cross-checked against the actual bytes, not just Hex-Rays' rendering,
+// since Hex-Rays' typing badly mangles this function's ring-buffer pointer arithmetic). This is
+// a radial "starburst" glow/halo: mNumSections angular wedges sweep around by mStepAngle each
+// (closing back to the original mAngle on the last wedge), and within each wedge mNumFringes
+// concentric quads connect the previous wedge's ring points to the current wedge's ring points,
+// plus one triangle-as-quad "cap" per wedge connecting the glow's centre to the innermost ring
+// point of each wedge pair (skippable via CGlow::mSkipTriangles).
+//
+// - The two previously-unnamed helpers sub_4E7840/sub_4E7760 ARE CVector::operator>>/operator-,
+//   confirmed (same repo-wide wrongly-INLINE issue CLAUDE.md documents), but since this session's
+//   bar is functional correctness (not byte-matching), the relPos math below is written as plain
+//   field arithmetic like every other function in this family instead of chasing that operator
+//   fix.
+// - dword_64E514 (G_VIEW_CLIP_INFO, screen.h) offsets +0xA/+0xE are the same far-limit/half-limit
+//   fields the family already uses elsewhere (DisplayGLineList, DisplayFlatBitList); two more
+//   fields at +0x10/+0x12 are read here as signed screen-space X/Y origin constants for a
+//   close-up linear extrapolation fallback (see below) - still not named/pinned down beyond
+//   "clip/viewport descriptor", consistent with the family notes' existing caution.
+// - The ring buffer really is one flat region at 0x614CD4 (see gGlowRingBase above), not two
+//   separate globals - the old note's "dword_614CD4/614CD8" framing was an IDA fold artifact.
+// - The scratch buffer (0x56FB04/0x5FCD1C) really is used for real screen positions and colours
+//   here (unlike DisplayGlassList/DisplayFlatBitList's dead copies of the same buffer), so this
+//   version computes the same positions/colours directly into locals instead of round-tripping
+//   through a byte-packed record - the bump-allocation and its "abort entire function on
+//   overflow" bounds check are still reproduced faithfully (3 alloc sites: 8 bytes once per bit,
+//   28 bytes per wedge for the cap triangle, 36 bytes per fringe strip quad), since that gates
+//   whether later effects in the same frame have buffer room, but the two dead tag dwords each
+//   record opens with are not reproduced (never read back anywhere).
+// - Colour: CGlow::mCentreCodeBGR (0x4C) for the cap's centre vertex, CGlow::mMask (0x58) bit
+//   `sectionIndex` gates whether a wedge draws anything at all, SSection::PadBGR / SFringeQuad::
+//   CodeBGR for the ring/fringe colours, all packed as fixed-alpha-0xA0 RGB (GlowColor above,
+//   same idiom as DisplayGlassList) and optionally scaled by a depth-based fade-in ramp
+//   (255*depth/700+1 while depth<700, matches the family notes).
+// - mpFringes is indexed as a flat SSection-major grid: `fringes[row*mNumSections+col]`, where
+//   `col` is the wedge/section index and `row` is the fringe-ring index within that wedge -
+//   confirmed via the raw pointer strides (`+= 2*mNumSections` DWORDs = one full row per step).
+void DisplayGlowList(void** a1)
 {
+	u8* clip = G_VIEW_CLIP_INFO;
+	i32 halfLimit = *(u16*)(clip + 0xE) >> 1;
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_2);
+
+	CGlow* pBit = reinterpret_cast<CGlow*>(*a1);
+	while (pBit)
+	{
+		VECTOR relPos;
+		relPos.vx = (pBit->mPos.vx >> 12) - gCameraViewPos->vx;
+		relPos.vy = (pBit->mPos.vy >> 12) - gCameraViewPos->vy;
+		relPos.vz = (pBit->mPos.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relPos);
+		gte_rtps();
+
+		u8* rec8 = gGlowScratchBufPos;
+		if (rec8 + 8 > gGlowScratchBufEnd)
+			return;
+		gGlowScratchBufPos = rec8 + 8;
+
+		VECTOR stlv;
+		gte_stlvnl(&stlv);
+		i32 depth = stlv.vz;
+
+		f32 rawPos[3];
+		rawPos[0] = (f32)pBit->mPos.vx / 4096.0f;
+		rawPos[1] = (f32)pBit->mPos.vy / 4096.0f;
+		rawPos[2] = (f32)pBit->mPos.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZBase = (fabsf(xf[3]) > 0.00000001f) ? 1.0f / xf[3] : -1.0e12f;
+
+		f32 halfPos[3] = { rawPos[0] * 0.5f, rawPos[1] * 0.5f, rawPos[2] * 0.5f };
+		f32 dx = halfPos[0] - gGlowFocusPoint[0];
+		f32 dy = halfPos[1] - gGlowFocusPoint[1];
+		f32 dz = halfPos[2] - gGlowFocusPoint[2];
+		f32 dist = sqrtf(dx * dx + dy * dy + dz * dz);
+		f32 growFactor = ((dist - *gGlowNearThreshold) >= 10.0f) ? (*gGlowNearThreshold / dist + 1.0f) : 1.0f;
+		f32 invZ = invZBase * growFactor;
+
+		if (depth >= 5 && depth <= 20000)
+		{
+			i32 fadeScale = (depth < 700) ? (255 * depth / 700 + 1) : 0;
+
+			i32 numSections = (i32)pBit->mNumSections;
+			i32 numFringes = (i32)pBit->mNumFringes;
+			SSection* sections = pBit->mpSections;
+			SFringeQuad* fringes = pBit->mpFringes;
+
+			i32 centerX, centerY;
+			if (depth >= halfLimit)
+			{
+				i32 sxy;
+				gte_stsxy(&sxy);
+				centerX = (i16)sxy;
+				centerY = (i16)(sxy >> 16);
+			}
+			else
+			{
+				i32 halfLimitRaw = *(u16*)(clip + 0xE);
+				centerX = *(i16*)(clip + 0x10) + stlv.vx * halfLimitRaw / depth;
+				centerY = *(i16*)(clip + 0x12) + stlv.vy * halfLimitRaw / depth;
+				centerX = (centerX > 1023) ? 1023 : ((centerX < -1024) ? -1024 : centerX);
+				centerY = (centerY > 1023) ? 1023 : ((centerY < -1024) ? -1024 : centerY);
+			}
+
+			if (centerX != -1024 && centerX != 1023 && centerY != -1024 && centerY != 1023)
+			{
+				u8* ringA = gGlowRingBase;
+				u8* ringB = gGlowRingBase + 4 * (numFringes + 1);
+
+				i32 angle = pBit->mAngle;
+				i32 idx0 = 2 * (angle & 0xFFF);
+				i32 sin0 = 400 * word_610C48[idx0] / 256;
+				i32 cos0 = word_610C48[idx0 + 1];
+
+				i32 outerRadius = (i32)sections[numSections - 1].Radius;
+				i32 scaledOuter = 400 * outerRadius / depth;
+
+				i32 x0 = centerX + (scaledOuter * sin0) / 4096;
+				i32 y0 = centerY - (scaledOuter * cos0) / 4096;
+				GLOW_RING_X(ringA, 0) = ClampGlowX(x0);
+				GLOW_RING_Y(ringA, 0) = ClampGlowY(y0);
+
+				i32 seedAccum = outerRadius;
+				for (i32 row = 0; row < numFringes; row++)
+				{
+					seedAccum += (i32)fringes[row * numSections + (numSections - 1)].Width;
+					i32 xs = centerX + sin0 * (400 * seedAccum / depth) / 4096;
+					i32 ys = centerY - cos0 * (400 * seedAccum / depth) / 4096;
+					GLOW_RING_X(ringA, row + 1) = ClampGlowX(xs);
+					GLOW_RING_Y(ringA, row + 1) = ClampGlowY(ys);
+				}
+
+				i32 wedgeAngle = angle + pBit->mStepAngle;
+
+				for (i32 sectionIndex = 0; sectionIndex < numSections; sectionIndex++)
+				{
+					bool sectionVisible = ((pBit->mMask >> sectionIndex) & 1) != 0;
+
+					if (sectionIndex == numSections - 1)
+						wedgeAngle = pBit->mAngle;
+
+					i32 sectionRadius = (i32)sections[sectionIndex].Radius;
+					i32 scaledRadius = 400 * sectionRadius / depth;
+
+					i32 idx = 2 * (wedgeAngle & 0xFFF);
+					i32 cosW = word_610C48[idx + 1];
+					i32 sinW = 400 * word_610C48[idx] / 256;
+
+					i32 rx = centerX + (sinW * scaledRadius) / 4096;
+					i32 ry = centerY - (cosW * scaledRadius) / 4096;
+					GLOW_RING_X(ringB, 0) = ClampGlowX(rx);
+					GLOW_RING_Y(ringB, 0) = ClampGlowY(ry);
+
+					if (pBit->mSkipTriangles == 0 && sectionVisible)
+					{
+						u8* rec28 = gGlowScratchBufPos;
+						if (rec28 + 28 > gGlowScratchBufEnd)
+							return;
+						gGlowScratchBufPos = rec28 + 28;
+
+						u8 cr = (u8)(pBit->mCentreCodeBGR & 0xFF);
+						u8 cg = (u8)((pBit->mCentreCodeBGR >> 8) & 0xFF);
+						u8 cb = (u8)((pBit->mCentreCodeBGR >> 16) & 0xFF);
+						u32 centerColor = GlowColor(GlowFade(cr, fadeScale), GlowFade(cg, fadeScale), GlowFade(cb, fadeScale));
+
+						u32 pad = sections[sectionIndex].PadBGR;
+						u8 pr = (u8)(pad & 0xFF);
+						u8 pg = (u8)((pad >> 8) & 0xFF);
+						u8 pb = (u8)((pad >> 16) & 0xFF);
+						u32 ringColor = GlowColor(GlowFade(pr, fadeScale), GlowFade(pg, fadeScale), GlowFade(pb, fadeScale));
+
+						f32 scaleX = gGameResolutionX / (f32)Xres;
+						f32 scaleY = gGameResolutionY / (f32)Yres;
+						f32 z = invZ * 1.03f;
+
+						f32 cxs = centerX * scaleX, cys = centerY * scaleY;
+						f32 pxs = GLOW_RING_X(ringA, 0) * scaleX, pys = GLOW_RING_Y(ringA, 0) * scaleY;
+						f32 txs = GLOW_RING_X(ringB, 0) * scaleX, tys = GLOW_RING_Y(ringB, 0) * scaleY;
+
+						PCGfx_DrawQPoly3D(
+							cxs, cys, z, 0.0f, 0.0f, centerColor,
+							pxs, pys, z, 1.0f, 0.0f, ringColor,
+							txs, tys, z, 0.0f, 1.0f, ringColor,
+							txs, tys, z, 1.0f, 1.0f, ringColor);
+					}
+
+					for (i32 row = 0; row < numFringes; row++)
+					{
+						sectionRadius += (i32)fringes[row * numSections + sectionIndex].Width;
+						i32 fx = centerX + sinW * (400 * sectionRadius / depth) / 4096;
+						i32 fy = centerY - cosW * (400 * sectionRadius / depth) / 4096;
+						GLOW_RING_X(ringB, row + 1) = ClampGlowX(fx);
+						GLOW_RING_Y(ringB, row + 1) = ClampGlowY(fy);
+
+						if (sectionVisible)
+						{
+							u8* rec36 = gGlowScratchBufPos;
+							if (rec36 + 36 > gGlowScratchBufEnd)
+								return;
+							gGlowScratchBufPos = rec36 + 36;
+
+							u32 newCol = fringes[row * numSections + sectionIndex].CodeBGR;
+							u32 oldCol = (row != 0) ? fringes[(row - 1) * numSections + sectionIndex].CodeBGR : sections[sectionIndex].PadBGR;
+
+							u8 nr = (u8)(newCol & 0xFF), ng = (u8)((newCol >> 8) & 0xFF), nb = (u8)((newCol >> 16) & 0xFF);
+							u8 orr = (u8)(oldCol & 0xFF), og = (u8)((oldCol >> 8) & 0xFF), ob = (u8)((oldCol >> 16) & 0xFF);
+
+							u32 colorNew = GlowColor(GlowFade(nr, fadeScale), GlowFade(ng, fadeScale), GlowFade(nb, fadeScale));
+							u32 colorOld = GlowColor(GlowFade(orr, fadeScale), GlowFade(og, fadeScale), GlowFade(ob, fadeScale));
+
+							f32 scaleX = gGameResolutionX / (f32)Xres;
+							f32 scaleY = gGameResolutionY / (f32)Yres;
+							f32 z = invZ * 1.03f;
+
+							f32 pInnerX = GLOW_RING_X(ringA, row) * scaleX, pInnerY = GLOW_RING_Y(ringA, row) * scaleY;
+							f32 tInnerX = GLOW_RING_X(ringB, row) * scaleX, tInnerY = GLOW_RING_Y(ringB, row) * scaleY;
+							f32 pOuterX = GLOW_RING_X(ringA, row + 1) * scaleX, pOuterY = GLOW_RING_Y(ringA, row + 1) * scaleY;
+							f32 tOuterX = GLOW_RING_X(ringB, row + 1) * scaleX, tOuterY = GLOW_RING_Y(ringB, row + 1) * scaleY;
+
+							PCGfx_DrawQPoly3D(
+								pOuterX, pOuterY, z, 0.0f, 0.0f, colorNew,
+								tOuterX, tOuterY, z, 1.0f, 0.0f, colorNew,
+								pInnerX, pInnerY, z, 0.0f, 1.0f, colorOld,
+								tInnerX, tInnerY, z, 1.0f, 1.0f, colorOld);
+						}
+					}
+
+					u8* tmp = ringA; ringA = ringB; ringB = tmp;
+					wedgeAngle += pBit->mStepAngle;
+				}
+			}
+		}
+
+		pBit = reinterpret_cast<CGlow*>(pBit->mNext);
+	}
 }
 
 // @Ok
@@ -1528,47 +1833,245 @@ void DisplayTextBoxList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x40dbd0. Re-verified this session (2026-08-31, second pass) against a fresh IDA
-// decompile - still NOT implemented (dense fixed-point dual-precision corner packing, timer
-// decrements, several interacting flag bits), but one correction and several confirmations to
-// the previous pass's note:
+// Shared bump-allocated scratch buffer, same address/bounds as flash.cpp's
+// gEffectRecordBufPos/gEffectRecordBufEnd (0x56FB04/0x5FCD1C, see DisplayGlassList's comment
+// above). File-local copy of the same macros (plain address globals, not the G_* hook-sharing
+// form, so per-file duplication is fine per repo convention).
+#define gFlatBitScratchBufPos (*reinterpret_cast<u8**>(0x0056FB04))
+#define gFlatBitScratchBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31, third pass). Address 0x40dbd0.
+// Fully traced against a fresh IDA decompile AND the raw disassembly (both cross-checked
+// instruction by instruction for every field offset and mask constant below); this closes out
+// the previous two passes' open questions:
 //
-// CORRECTION: the previous note said the u16 at offset 0x66 (`*(WORD*)(v1+102)`) "gates whether
-// the texture-corner packing takes a 32-bit or 16-bit-wrapped path". That is wrong - re-traced
-// this session, the 32-vs-16-bit corner-packing split is gated by `*(BYTE*)(v1+80) & 1`
-// (CFT4Bit::mBitFlags bit 0x1, offset 0x50) alone, confirmed by both corner-computation
-// branches (rotated and axis-aligned) independently checking the exact same bit before choosing
-// between DWORD-packed (`*(DWORD*)(v5+16)=...`) and WORD-packed+clamped (`*(WORD*)(v5+8)=...;
-// ...&=0xFFFu`) stores. The 0x66 field (v6) does something else: when v6 != 0, it's OR'd in as
-// `(v6<<16)` on top of the low 16 bits of `*(DWORD*)mpPSXFrame->pTexture` when building the
-// clut/texture-page dword at the scratch record's +12 - i.e. it looks like a clut/page OVERRIDE
-// for the frame's texture, not a precision selector. Still not sure which CFlatBit-derived
-// class actually owns this field (CSimpleAnim/CMotionBlur/CCombatImpactRing/CFrag are the
-// candidates registered into FlatBitList) - don't guess without checking those classes' own
-// fields.
-//
-// Confirmed as the previous note described: camera-space transform of ONLY the sprite centre
-// (CBit::mPos) through gte_ldlv0-equivalent + Algebra_Transform4 invZ (no per-corner GTE);
-// CFlatBit::mAngle (0x58) selects a rotated-vs-axis-aligned corner path via word_610C48/610C4A
-// (rcossin_tbl); mBitFlags (0x50) bit 0x8 overrides an assert-like perspective-scale-range check
-// (the scale value, clamped to <=0x200, is skipped/bypassed when this bit is set instead of
-// gating a draw-skip); a POLY_FT4-shaped emit via PCGfx_DrawQPoly3D (sub_508550, already @Ok).
-// New this pass: the scratch record used for the real draw is the SAME shared 0x56FB04/0x5FCD1C
-// buffer DisplayGlassList/DisplayGlowList also use (see DisplayGlassList's comment) - used for
-// real here too, with the same "bare return bails the whole function on overflow" hazard
-// DisplayGlowList has. Four small `nullsub_1(flag, "Sub on zero")` calls guard four in-place
-// byte decrements on the scratch record (offsets +20/+29/+36/+37) - these read as a debug assert
-// for an animation/fade timer underflowing, only reachable when the perspective scale is
-// large (`v66>=0x100`) or the angle is nonzero; not otherwise load-bearing for the draw itself.
-// A screen-space range check (-256..768 x / -256..360 y, NOT gGameResolutionX/Y - looks like the
-// same kind of fixed reference viewport DisplayGlowList's -100..612/-100..340 rect used) sets a
-// skip flag that suppresses the actual draw call further down if any corner falls outside it.
-//
-// Still needs a dedicated session to write and test with confidence: the exact CFlatBit-derived
-// class(es) that populate FlatBitList and their field at 0x66 need pinning down first.
-void DisplayFlatBitList(void**)
+// - The u16 at offset 0x66 IS a real per-instance CFlatBit field (added to bit.h as
+//   mClutOverride): CMotionBlur/CFrag (plain CFlatBit, no extra fields of their own) both
+//   VALIDATE_SIZE at 0x68, which only works if CFlatBit itself is 0x68 bytes - i.e. this u16
+//   is real storage, not compiler tail padding. Confirmed by the raw disasm (`mov cx,[ebx+66h]`)
+//   independently of which CFlatBit subclass is actually walking the list; every subclass shares
+//   the same base-class field, so no need to know which concrete class populated FlatBitList.
+// - The 32-vs-16-bit corner-packing split really is CFT4Bit::mBitFlags bit 0x1 alone (previous
+//   pass's correction still holds).
+// - `dword_64E514+0xA`/`+0xE` (G_VIEW_CLIP_INFO, screen.h) are read here as a "far" limit and a
+//   half-limit respectively, gating a perspective-scale visibility test together with a hardcoded
+//   raw-depth floor of 200 - semantics beyond "visibility gate" not pinned down further, not
+//   needed to translate the code faithfully.
+// - The scratch buffer (0x56FB04/0x5FCD1C) bump-allocation and its overflow bail (abandons the
+//   REST of the list, not just the current bit - confirmed via the raw disasm jump target, which
+//   is the function's own return) is real and reproduced. Its content writes (texpage/clut/UV
+//   fields at rec+12/20/28/36, and four debug-assert byte decrements guarded by
+//   `nullsub_1(cond, "Sub on zero")` = print_if_false, at rec+20/29/36/37) are all confirmed dead
+//   for the actual draw call below (never read back anywhere in this function or elsewhere in the
+//   repo) and are skipped, same documented choice as DisplayGlassList's scratch record.
+// - When the visibility gate fails, the original rewinds the bump allocation
+//   (`gFlatBitScratchBufPos = rec`) instead of leaving it consumed - reproduced below.
+// - Colour is CFT4Bit::mCodeBGR's low 3 bytes as (R,G,B) with alpha forced to 0x80 (semi
+//   -transparent, blend mode 2) when CFlatBit::mSemiTransparencyRate == 32, else 0xFF (opaque,
+//   blend mode 0) - read straight from the bit instead of round-tripping through the dead scratch
+//   record. Clut for PCGfx_UseTexture is mpPSXFrame->pTexture->clut (Texture::clut, texture.h).
+// - Only the sprite centre (CBit::mPos) goes through the camera-space GTE transform
+//   (gte_ldlv0/gte_rtps) and the separate Algebra_Transform4/invZ pass (RefreshGfxMatrix already
+//   run for this frame by an earlier Display*List call, same as DisplayChunkBitList); all 4
+//   corners share that single invZ. The 4 corners' screen positions are built directly from
+//   SAnimFrame::OffX/OffY/Width/Height (mpPSXFrame->pTexture's owning frame), CFT4Bit::mScale
+//   (perspective falloff with raw depth), CFlatBit::mPostScale (packed lo/hi u16 X/Y scale) and,
+//   when CFlatBit::mAngle != 0, a rcossin_tbl (word_610C48/610C4A, same idiom as CCamera::CM_Normal
+//   in camera.cpp) rotation of the frame rectangle. This matches a billboarded, optionally
+//   rotated, 2D sprite quad - consistent with the class family name (CSimpleAnim/CMotionBlur/
+//   CCombatImpactRing/CFrag are all "flat" 2D effect sprites).
+// - Single PCGfx_DrawQPoly3D call per bit (no back-face pass, unlike DisplayQuadBitList/
+//   DisplayGlassList), standard 0.01/0.99 texture-bleed-inset UVs, gated on
+//   `mpPSXFrame->pTexture->clut != 0 && corners-all-in-range`.
+void DisplayFlatBitList(void** a1)
 {
+	u8* clip = G_VIEW_CLIP_INFO;
+	i32 farLimit = *(u16*)(clip + 0xA);
+	i32 halfLimit = *(u16*)(clip + 0xE) >> 1;
+
+	CFlatBit* pBit = reinterpret_cast<CFlatBit*>(*a1);
+	while (pBit)
+	{
+		VECTOR relPos;
+		relPos.vx = (pBit->mPos.vx >> 12) - gCameraViewPos->vx;
+		relPos.vy = (pBit->mPos.vy >> 12) - gCameraViewPos->vy;
+		relPos.vz = (pBit->mPos.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relPos);
+		gte_rtps();
+
+		f32 rawPos[3];
+		rawPos[0] = (f32)pBit->mPos.vx / 4096.0f;
+		rawPos[1] = (f32)pBit->mPos.vy / 4096.0f;
+		rawPos[2] = (f32)pBit->mPos.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZ = (fabsf(xf[3]) > 0.00000001f) ? 1.0f / xf[3] : -1.0e12f;
+
+		u8* rec = gFlatBitScratchBufPos;
+		if (rec + 40 > gFlatBitScratchBufEnd)
+			break;
+		gFlatBitScratchBufPos = rec + 40;
+
+		i32 depth;
+		gte_stlvnl2(&depth);
+
+		bool visible = false;
+		i32 scale = 0;
+		if (depth >= halfLimit && depth <= farLimit && depth >= 200)
+		{
+			scale = (i32)(((u32)(pBit->mScale << 7)) / (u32)depth);
+			visible = ((u32)scale <= 0x200) || (pBit->mBitFlags & 8);
+		}
+
+		if (!visible)
+		{
+			gFlatBitScratchBufPos = rec;
+			pBit = reinterpret_cast<CFlatBit*>(pBit->mNext);
+			continue;
+		}
+
+		i32 packedCenter;
+		gte_stsxy(&packedCenter);
+
+		SAnimFrame* frame = pBit->mpPSXFrame;
+		i32 offX = frame->OffX;
+		i32 offY = frame->OffY;
+		i32 width = frame->Width;
+		i32 height = frame->Height;
+		Texture* pTexture = frame->pTexture;
+
+		i32 halfW = (scale * (i32)(pBit->mPostScale & 0xFFFF)) >> 12;
+		i32 halfH = (scale * (i32)(pBit->mPostScale >> 16)) >> 12;
+
+		bool highPrecision = (pBit->mBitFlags & 1) != 0;
+		i32 outOfRange = 0;
+
+		i16 cx[4], cy[4];
+
+		if (pBit->mAngle != 0)
+		{
+			i32 idx = pBit->mAngle & 0xFFF;
+			i32 sinA = rcossin_tbl[idx].sin;
+			i32 cosA = rcossin_tbl[idx].cos;
+
+			i32 t54 = sinA * offX;
+			i32 t31 = cosA * offX;
+			i32 t53 = offY * sinA;
+			i32 t55 = offY * cosA;
+			i32 t32 = t54 + width * sinA;
+			i32 t63 = t53 + height * sinA;
+			i32 t34 = t31 + width * cosA;
+			i32 t60 = t55 + height * cosA;
+
+			if (highPrecision)
+			{
+				i32 dw16 = (((halfH * (t54 + t55)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t31 - t53)) >> 19);
+				i32 dw8  = (((halfH * (t55 + t32)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t34 - t53)) >> 19);
+				i32 dw32 = (((halfH * (t54 + t60)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t31 - t63)) >> 19);
+				i32 dw24 = (((halfH * (t32 + t60)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t34 - t63)) >> 19);
+
+				cx[0] = (i16)dw8;  cy[0] = (i16)(dw8 >> 16);
+				cx[1] = (i16)dw16; cy[1] = (i16)(dw16 >> 16);
+				cx[2] = (i16)dw24; cy[2] = (i16)(dw24 >> 16);
+				cx[3] = (i16)dw32; cy[3] = (i16)(dw32 >> 16);
+			}
+			else
+			{
+				i16 x0 = (i16)(packedCenter + (i32)((u16)((halfW * (t31 - t53)) >> 16) >> 3));
+				i16 y0 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t54 + t55)) >> 16) >> 3));
+				i16 x1 = (i16)(packedCenter + (i32)((u16)((halfW * (t34 - t53)) >> 16) >> 3));
+				i16 y1 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t55 + t32)) >> 16) >> 3));
+				i16 x2 = (i16)(packedCenter + (i32)((u16)((halfW * (t31 - t63)) >> 16) >> 3));
+				i16 y2 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t60 + t54)) >> 16) >> 3));
+				i16 x3 = (i16)(packedCenter + (i32)((u16)((halfW * (t34 - t63)) >> 16) >> 3));
+				i16 y3 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t32 + t60)) >> 16) >> 3));
+
+				i16 ccx = (i16)packedCenter;
+				i16 ccy = (i16)(packedCenter >> 16);
+				if (ccx < -256 || ccy < -256 || ccx > 768 || ccy > 360)
+					outOfRange = 1;
+
+				cx[0] = x0 & 0xFFF; cy[0] = y0 & 0xFFF;
+				cx[1] = x1 & 0xFFF; cy[1] = y1 & 0xFFF;
+				cx[2] = x2 & 0xFFF; cy[2] = y2 & 0xFFF;
+				cx[3] = x3 & 0xFFF; cy[3] = y3 & 0xFFF;
+			}
+		}
+		else
+		{
+			i16 v21 = (i16)((offX * halfW) >> 7);
+			i32 v23 = (height * halfH) & 0xFFFFFF80;
+			i32 v24 = (width * halfW) >> 7;
+			i32 v25 = packedCenter + ((0x7FFF80 & (offY * halfH)) << 9) + v21;
+			i32 v26 = v23 << 9;
+
+			if ((u32)v24 < 5)
+				v24 = 2;
+			if ((u32)v26 < 0x50000)
+				v26 = 0x10000;
+
+			if (highPrecision)
+			{
+				i32 dw16 = v25;
+				i32 dw8  = v24 + v25;
+				i32 dw32 = v26 + v25;
+				i32 dw24 = v25 + v24 + v26;
+
+				cx[0] = (i16)dw8;  cy[0] = (i16)(dw8 >> 16);
+				cx[1] = (i16)dw16; cy[1] = (i16)(dw16 >> 16);
+				cx[2] = (i16)dw24; cy[2] = (i16)(dw24 >> 16);
+				cx[3] = (i16)dw32; cy[3] = (i16)(dw32 >> 16);
+			}
+			else
+			{
+				i16 x0 = (i16)v25;
+				i16 y0 = (i16)(v25 >> 16);
+				i16 x1 = (i16)(v24 + v25);
+				i16 y1 = (i16)(v25 >> 16);
+				i16 x2 = (i16)v25;
+				i16 y2 = (i16)((v26 >> 16) + (v25 >> 16));
+				i16 x3 = (i16)(v24 + v25);
+				i16 y3 = (i16)((v26 >> 16) + (v25 >> 16));
+
+				i16 ccx = (i16)v25;
+				i16 ccy = (i16)(v25 >> 16);
+				if (ccx < -256 || ccy < -256 || ccx > 768 || ccy > 360)
+					outOfRange = 1;
+
+				cx[0] = x0 & 0xFFF; cy[0] = y0 & 0xFFF;
+				cx[1] = x1 & 0xFFF; cy[1] = y1 & 0xFFF;
+				cx[2] = x2 & 0xFFF; cy[2] = y2 & 0xFFF;
+				cx[3] = x3 & 0xFFF; cy[3] = y3 & 0xFFF;
+			}
+		}
+
+		u16 clut = pTexture->clut;
+		if (clut != 0 && outOfRange == 0)
+		{
+			i32 blendMode = (pBit->mSemiTransparencyRate == 32) ? 2 : 0;
+			u32 alpha = (pBit->mSemiTransparencyRate == 32) ? 0x80 : 0xFF;
+
+			PCGfx_UseTexture(clut, (DCGfx_BlendingMode)blendMode);
+
+			u32 color = (alpha << 24) | ((pBit->mCodeBGR & 0xFF) << 16) |
+					(((pBit->mCodeBGR >> 8) & 0xFF) << 8) | ((pBit->mCodeBGR >> 16) & 0xFF);
+
+			f32 scaleX = gGameResolutionX / (f32)Xres;
+			f32 scaleY = gGameResolutionY / (f32)Yres;
+
+			PCGfx_DrawQPoly3D(
+				cx[0] * scaleX, cy[0] * scaleY, invZ, 0.01f, 0.01f, color,
+				cx[1] * scaleX, cy[1] * scaleY, invZ, 0.99f, 0.01f, color,
+				cx[2] * scaleX, cy[2] * scaleY, invZ, 0.01f, 0.99f, color,
+				cx[3] * scaleX, cy[3] * scaleY, invZ, 0.99f, 0.99f, color);
+		}
+
+		pBit = reinterpret_cast<CFlatBit*>(pBit->mNext);
+	}
 }
 
 // @Ok
@@ -4199,11 +4702,14 @@ CGlassBit::~CGlassBit(void)
 }
 
 void validate_CFlatBit(void){
+	VALIDATE_SIZE(CFlatBit, 0x68);
+
 	VALIDATE(CFlatBit, mAngle, 0x58);
 	VALIDATE(CFlatBit, field_5A, 0x5A);
 	VALIDATE(CFlatBit, mAngFric, 0x5E);
 	VALIDATE(CFlatBit, mPostScale, 0x60);
 	VALIDATE(CFlatBit, mSemiTransparencyRate, 0x65);
+	VALIDATE(CFlatBit, mClutOverride, 0x66);
 }
 
 void validate_CFT4Bit(void){

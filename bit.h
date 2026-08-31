@@ -248,6 +248,16 @@ public:
 
 	PADDING(1);
 	u8 mSemiTransparencyRate;
+
+	// Confirmed via IDA disasm of DisplayFlatBitList (0x40dbd0): `mov cx,[ebx+66h]`
+	// reads this as a u16 right after mSemiTransparencyRate. When nonzero it replaces
+	// (not ORs into) the high 16 bits of mpPSXFrame->pTexture's first dword (which
+	// normally holds Texture::clut there), i.e. a per-bit clut override for the
+	// frame's baked-in texture. This also explains CFlatBit's real size: CMotionBlur/
+	// CFrag (both plain CFlatBit with no extra fields) validate at 0x68, which is
+	// exactly mSemiTransparencyRate (0x65, 1 byte) plus this u16 (0x66-0x67) with no
+	// further implicit padding.
+	u16 mClutOverride;
 };
 
 class CNonRenderedBit : public CBit {
