@@ -677,6 +677,20 @@ void gsub_46E090(void)
 	gGeneralLongVector.vz += (gOp12Result.vz * gScalar) >> 12;
 }
 
+// @Ok
+// @Matching
+// unnamed in the IDB, address 0x0046E430. Stores gGeneralLongVector into
+// a1, truncated to 16 bits per component (the original does 16-bit
+// "mov [x], cx" stores, not 32-bit). The other of the two small GTE
+// accumulator helpers M3dUtils_InterpolateVectors calls.
+i16* gsub_46E430(i16 *a1)
+{
+	a1[0] = static_cast<i16>(gGeneralLongVector.vx);
+	a1[1] = static_cast<i16>(gGeneralLongVector.vy);
+	a1[2] = static_cast<i16>(gGeneralLongVector.vz);
+	return a1;
+}
+
 // @BIGTODO
 // forward to original. Unnamed in the IDB. Applies a hook's part-local
 // offset (pOffset, a CSVector-shaped 6-byte vector: SHook::Part in
