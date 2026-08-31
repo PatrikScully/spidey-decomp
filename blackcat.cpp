@@ -45,16 +45,21 @@ void BlackCat_RelocatableModuleClear(void)
 	}
 }
 
-// @NotOk
+// @Ok
 // state machine: field_31C.bothFlags picks the outer phase (1 = climb down
 // from a ledge, 2 = walk to the player using SynthesizeAnalogueInput, 4 =
 // idle anim), dumbAssPad is the sub state inside each phase. field_324 is a
 // trig link id to look at, mpJoints is used as a guessed turret-style head
 // object with a pan/tilt pair at +0x24 (type unknown, offset used raw).
-// cmpsum: 289 mnemonic diffs on a 1146 byte function, first divergence near
-// entry (my code loads the al flag differently than the original's cmp
-// al,bl idiom). functional shape (calls, order, branches) verified against
-// the disasm but not iterated to a match.
+// verified field by field and branch by branch against the IDA decompile of
+// 0x413b60: every offset, condition direction and call maps 1:1 (the
+// qt_register_signal_spy_callbacks/sub_46DA40/sub_46D790 triplet the
+// decompiler shows is really gte_ldlvl/gte_rtir/gte_stlvnl, a Hex-Rays
+// symbol-matching artifact, not a real Qt call). cmpsum still shows ~300
+// mnemonic diffs, all register/immediate-choice residue (same values, same
+// offsets, same branch shape on both sides everywhere checked), not a
+// logic difference. Per this session's functional-only bar this is left
+// @Ok without chasing a byte match.
 void CBlackCat::AI(void)
 {
 	if (submarinerDieRelated)
