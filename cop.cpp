@@ -573,8 +573,16 @@ INLINE i32 CCop::SpideyAnimUppercut(void)
 		|| MechList->mAnim == 284;
 }
 
-// @NotOk
-// figure type of 380
+// @Ok
+// field_380's type (CGPolyLine*) was already established by SetUpLaser above
+// (this->SetUpLaser(&this->field_380, ...)); the delete here goes through
+// CGPolyLine's (inherited CBit) virtual destructor, matching the original's
+// vtable-slot-0 scalar-deleting-destructor call. Verified against the IDA
+// decompile of 0x428980: field_380 delete, field_384 Mem_Delete, gCopList
+// check, then ClearAttackFlags's body inlined verbatim, then DeleteFrom.
+// Bug fixed here: DeleteFrom must take the address of the list head
+// (&BaddyList, matching every other DeleteFrom(&BaddyList) call in the
+// repo), not the value of BaddyList.
 CCop::~CCop(void)
 {
 	if (this->field_380)
@@ -589,7 +597,7 @@ CCop::~CCop(void)
 		gCopList = 0;
 
 	this->ClearAttackFlags();
-	this->DeleteFrom(reinterpret_cast<CBody**>(BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
 }
 
 // @Ok

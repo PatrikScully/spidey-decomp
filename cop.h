@@ -67,7 +67,6 @@ public:
 	PADDING(0x37C - 0x374 - 4);
 	i32 field_37C;
 
-	// @FIXME - find type
 	CGPolyLine* field_380;
 	CVector* field_384;
 
