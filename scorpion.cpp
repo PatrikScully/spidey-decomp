@@ -8,39 +8,126 @@
 #include "reloc.h"
 #include "spidey.h"
 #include "camera.h"
+#include "panel.h"
+#include <cstring>
 
 extern CPlayer* MechList;
 extern CBaddy* BaddyList;
 extern CBody* EnvironmentalObjectList;
 
-// @MEDIUMTODO
-// checked against the disasm (0x483450, 924 bytes per prototypes.json).
-// Both this ctor and CScorpion::CScorpion(void) start with a real call to
-// sub_402C00 (present at the top of every other CBaddy-derived ctor too,
-// e.g. CThug::CThug at 0x4d2ab0, so it is shared base-class setup, not
-// scorpion specific) then set the vtable, do a huge run of direct field
-// writes: zero this+204..this+232 (byte 816..932), two calls to sub_45FD60
-// (looks like a list/handle init, this+254 and this+272), then three flat
-// zeroing loops over this+291 (4 x 3 dwords), this+303 (23 x 3 dwords) and
-// this+372 (128 x 3 dwords, byte 1488..3024). This last range is almost the
-// entire 0xBD4-0x324 gap our header currently marks as PADDING, and its
-// size (128 entries of 3 dwords) lines up with the scorpion's tail segment
-// array used by CScorpion::BuildTail/InitialiseTailPSX/TailRenderer/
-// UniformCurveTesselator (all still un-decompiled TODOs in this file, see
-// prototypes.json). Naming these fields correctly needs that tail struct
-// figured out first, which is out of scope for this pass. Left stubbed.
-CScorpion::CScorpion(i16 *,i32)
+// Fixed game address (no idb_globals.txt entry). Holds the compiled SLight
+// record the (0x483290/0x483450) constructors point mpLight at. Read
+// directly from the exe at 0x5523D0 and reproduced here as a repo-local
+// initializer, the same pattern as M3d_RhinoLight/M3d_JonahLight etc.
+// (LightMatrix/BackColor/ColorMatrix values are exactly rhino's divided by
+// 1.5, so the two creatures likely share a common base light scaled per
+// model, but we only have hard evidence for this one address.)
+EXPORT SLight M3d_ScorpionLight =
 {
-    printf("CScorpion::CScorpion(i16 *,i32)");
+  { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
+  0,
+  { { 3200, 1040, 2048 }, { 2720, 1600, 1920 }, { 2400, 2560, 2048 } },
+  0,
+  { 1200, 1200, 960 }
+};
+
+// Fixed game address (no idb_globals.txt entry). Two-element i32 array read
+// by the (i16*,i32) ctor into field_294.Int/field_298.Int (same pattern as
+// gRhinoStrangeInitData in rhino.cpp, gJonahSetup in jonah.cpp etc). Bytes
+// read from the exe: gScorpionSetup[0] packs {1,2,21,22} (field_294.Bytes),
+// gScorpionSetup[1] is 0 (field_298.Bytes all 0).
+static i32 * const gScorpionSetup = reinterpret_cast<i32*>(0x00552160);
+
+// @Ok
+// checked against the disasm (0x483450, 924 bytes per prototypes.json) and
+// the IDA Hex-Rays decompile. Both this ctor and CScorpion::CScorpion(void)
+// start with a real call to the CBaddy base constructor (matches the C++
+// base-class init, no explicit code needed) then default-construct two
+// embedded CItem sub-objects (field_3F8, field_440, see scorpion.h), zero
+// the rest of the 0x330-0xBD4 gap with raw memsets (no struct known for
+// that range, see scorpion.h), set the vtable (automatic), call
+// InitItem("scorpion"), OR in mFlags/0x480, point mpLight at
+// M3d_ScorpionLight, mark both embedded CItem sub-objects' mRegion as 0xFF,
+// then (this ctor only) attach to BaddyList, set field_1F4/mNode from a3,
+// mType=310, CycleAnim(2,1), field_2A8|=0x2022001, field_194=0xFE0000 (a
+// flag constant, not a real address, confirmed via raw disasm bytes: both
+// 0xFE0000 and 0x2022001 are below the module's imagebase so IDA's "offset
+// unk_XXX" rendering is just its immediate-vs-address heuristic guessing
+// wrong), field_21E=100, mRMinor=175, field_230=0, field_216=32,
+// mPushVal=64, field_31C.bothFlags=0, mHealth from
+// Utils_GetValueFromDifficultyLevel(900,900,900,900) (same value at every
+// difficulty), field_294/298 from gScorpionSetup, ParseScript(pCursor),
+// Panel_CreateHealthBar(this,310), field_C0C=0.
+CScorpion::CScorpion(i16 *a2, i32 a3)
+{
+	memset(reinterpret_cast<u8*>(this) + 0x330, 0, 0x54);
+	memset(reinterpret_cast<u8*>(this) + 0x38C, 0, 0x18);
+	memset(reinterpret_cast<u8*>(this) + 0x48C, 0, 0x744);
+
+	i16 *pCursor = this->SquirtAngles(this->SquirtPos(a2));
+
+	this->InitItem("scorpion");
+	this->mFlags |= 0x480;
+	this->mpLight = &M3d_ScorpionLight;
+
+	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+
+	this->field_1F4 = a3;
+	this->mNode = static_cast<u16>(a3);
+	this->mType = 310;
+
+	this->CycleAnim(2, 1);
+
+	this->field_3F8.mRegion = 0xFF;
+	this->field_440.mRegion = 0xFF;
+
+	this->field_2A8 |= 0x2022001;
+	this->field_194 = 0xFE0000;
+
+	this->field_21E = 100;
+	this->mRMinor = 175;
+	this->field_230 = 0;
+	this->field_216 = 32;
+	this->mPushVal = 64;
+	this->field_31C.bothFlags = 0;
+
+	this->mType = 310;
+
+	this->mHealth = static_cast<i16>(Utils_GetValueFromDifficultyLevel(900, 900, 900, 900));
+
+	this->field_294.Int = gScorpionSetup[0];
+	this->field_298.Int = gScorpionSetup[1];
+
+	this->ParseScript(reinterpret_cast<u16*>(pCursor));
+
+	Panel_CreateHealthBar(this, 310);
+
+	this->field_C0C = 0;
 }
 
-// @MEDIUMTODO
+// @Ok
 // same shape as the other ctor above (0x483290, 516 bytes), minus the
-// tail parts that depend on the (i16*, i32) args. Blocked on the same
-// tail segment struct.
+// parts that depend on the (i16*, i32) args (no AttachTo, no
+// field_1F4/mNode, no CycleAnim, no field_2A8/field_21E/mRMinor/field_230/
+// field_216/mPushVal/field_31C/mHealth/field_294/298/ParseScript/
+// Panel_CreateHealthBar/field_C0C). Checked against the disasm and decompile
+// the same way as the (i16*,i32) ctor above.
 CScorpion::CScorpion(void)
 {
-    printf("CScorpion::CScorpion(void)");
+	memset(reinterpret_cast<u8*>(this) + 0x330, 0, 0x54);
+	memset(reinterpret_cast<u8*>(this) + 0x38C, 0, 0x18);
+	memset(reinterpret_cast<u8*>(this) + 0x48C, 0, 0x744);
+
+	this->InitItem("scorpion");
+	this->mFlags |= 0x480;
+	this->mpLight = &M3d_ScorpionLight;
+
+	this->field_3F8.mRegion = 0xFF;
+	this->field_440.mRegion = 0xFF;
+
+	this->mType = 310;
+
+	this->field_194 = 0xFE0000;
 }
 
 
@@ -685,6 +772,9 @@ void validate_CScorpion(void){
 
 	VALIDATE(CScorpion, field_324, 0x324);
 
+	VALIDATE(CScorpion, field_3F8, 0x3F8);
+	VALIDATE(CScorpion, field_440, 0x440);
+
 	VALIDATE(CScorpion, field_BD4, 0xBD4);
 	VALIDATE(CScorpion, field_BD8, 0xBD8);
 
@@ -693,6 +783,9 @@ void validate_CScorpion(void){
 
 	VALIDATE(CScorpion, hCurrentTarget, 0xBF0);
 	VALIDATE(CScorpion, field_BF8, 0xBF8);
+
+	VALIDATE(CScorpion, field_C00, 0xC00);
+	VALIDATE(CScorpion, field_C0C, 0xC0C);
 
 	VALIDATE(CScorpion, field_C10, 0xC10);
 	VALIDATE(CScorpion, field_C14, 0xC14);
