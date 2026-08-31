@@ -1118,32 +1118,100 @@ void DisplayGlowList(void**)
 {
 }
 
-// @BIGTODO
-// Address 0x40bac0. Re-verified this session (2026-08-31) against a fresh
-// decompile - the old note's shape was CORRECT, and is now much more
-// precise: it builds 4 WPlane objects (WPlane::WPlane, sub_40C190,
-// already named) from CChunkBit::mWorldPosA/B/C/D (0x5C/0x68/0x74/0x80,
-// already VALIDATEd below - confirmed these are the exact 4 fields read),
-// each pushed through Algebra_Transform4 (sub_402700, already @Ok
-// elsewhere as Algebra_Transform4) and the same vector3d/vector4d copy
-// helpers (sub_402600/402560/402540) already identified and used above in
-// this file (DisplayGLineList/DisplayPolyLineList commits), giving one
-// screen (x,y) + invZ per corner. If all 4 invZ > 0, it draws the chunk as
-// 4 TRIANGLES via sub_5081F0 - which is NOT still-unnamed, it is the
-// already-@Ok PCGfx_DrawTPoly3D (PCGfx.cpp, confirmed by its own
-// documented decompile address 0x5081f0) - in rotating corner triples
-// (ABC, ACD, BCD, DBA by call order), each with its own per-corner UV pair
-// (offsets 0x94/0x98, 0x9C/0xA0, 0xA4/0xA8 relative to the bit - only 3
-// pairs confirmed independently, the 4th call reuses earlier corners'
-// pairs so a 4th UV slot may not exist) and per-corner ARGB colour
-// (0xB8/0xBC/0xC0/0xC4, alpha forced to 0xFF), textured via
-// PCGfx_UseTexture with a clut field at 0xB4. None of the 0x94+ fields are
-// VALIDATEd yet (CChunkBit's VALIDATE block below stops at mAngles,
-// 0x8C); add VALIDATE entries once the exact triangle corner order and
-// the 4th UV slot are confirmed, then this should be quick to implement -
-// almost everything it calls is already @Ok.
-void DisplayChunkBitList(void**)
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address 0x40bac0. Confirmed
+// against a fresh IDA decompile, instruction by instruction: builds one {x,y,z} float triple
+// per corner straight from CChunkBit::mWorldPosA/B/C/D (already VALIDATEd) via a plain
+// int-to-float CONVERSION with NO >>12 shift (unlike mPosA-D, mWorldPosA-D are already
+// world-space floats, presumably filled in by CalculateWorldCoords, still a stub above), then
+// runs each through Algebra_Transform4 (already @Ok) to get a homogeneous {x,y,z,w}. Per
+// corner: invZ = 1/w (or -1e12 if |w| is ~0, same eps as the rest of the family), then
+// screenX = x*invZ, screenY = y*invZ - the SAME triple DisplayQuadBitList's corner-0 builds
+// and then throws away (that family note called it "dead"); here it is the ONLY projection
+// pipeline used (no GTE calls anywhere in this function's disasm) and its output is what
+// actually gets drawn.
+//
+// No RefreshGfxMatrix call at the top of this function (confirmed against the raw disasm, the
+// loop starts immediately) - it relies on gFrameProjMatrix already being set by an earlier
+// Display*List call this frame (DisplayQuadBitList, registered before ChunkBitList in
+// Bit_Init's slot order, already refreshes it).
+//
+// If all 4 corners have invZ > 0, the bit draws as a tetrahedron: 4 PCGfx_DrawTPoly3D
+// (sub_5081F0, already @Ok) calls, one per face, each omitting exactly one corner (traced
+// every argument slot: ABC omits D, ADB omits C, BDC omits A, CDA omits B - every corner
+// appears in exactly 3 of the 4 faces, the classic tetrahedron face set). Every face's 3
+// triangle corners pull UV from the SAME 3 pairs (mUV0/mUV1/mUV2, offsets 0x94-0xA8) in slot
+// order, regardless of which world corner sits in that slot - i.e. UV is per-slot-position, not
+// per-corner-identity. Colour is the opposite: it IS tied to corner identity (mColorA follows
+// corner A into every face it appears in), repacked with the same byte-swap-to-BGR +
+// forced-alpha-0xFF idiom DisplayGLineList already uses. One PCGfx_UseTexture call (clut =
+// mClut, opaque blend) covers the whole bit before its faces draw, matching sub_506440's single
+// call outside the per-face draws in the disasm.
+void DisplayChunkBitList(void** a1)
 {
+	CChunkBit* pBit = reinterpret_cast<CChunkBit*>(*a1);
+	while (pBit)
+	{
+		const CVector* corners[4] = { &pBit->mWorldPosA, &pBit->mWorldPosB, &pBit->mWorldPosC, &pBit->mWorldPosD };
+
+		f32 sx[4], sy[4], iz[4];
+		for (i32 i = 0; i < 4; i++)
+		{
+			f32 worldPos[3];
+			worldPos[0] = (f32)corners[i]->vx;
+			worldPos[1] = (f32)corners[i]->vy;
+			worldPos[2] = (f32)corners[i]->vz;
+
+			f32 xf[4];
+			Algebra_Transform4(xf, worldPos);
+
+			f32 w;
+			if (fabsf(xf[3]) > 0.00000001f)
+				w = 1.0f / xf[3];
+			else
+				w = -1.0e12f;
+
+			sx[i] = xf[0] * w;
+			sy[i] = xf[1] * w;
+			iz[i] = w;
+		}
+
+		if (iz[0] > 0.0f && iz[1] > 0.0f && iz[2] > 0.0f && iz[3] > 0.0f)
+		{
+			PCGfx_UseTexture(pBit->mClut, DCGfx_BlendingMode_0);
+
+			u32 colorA = 0xFF000000 | ((pBit->mColorA & 0xFF) << 16) | (((pBit->mColorA >> 8) & 0xFF) << 8) | ((pBit->mColorA >> 16) & 0xFF);
+			u32 colorB = 0xFF000000 | ((pBit->mColorB & 0xFF) << 16) | (((pBit->mColorB >> 8) & 0xFF) << 8) | ((pBit->mColorB >> 16) & 0xFF);
+			u32 colorC = 0xFF000000 | ((pBit->mColorC & 0xFF) << 16) | (((pBit->mColorC >> 8) & 0xFF) << 8) | ((pBit->mColorC >> 16) & 0xFF);
+			u32 colorD = 0xFF000000 | ((pBit->mColorD & 0xFF) << 16) | (((pBit->mColorD >> 8) & 0xFF) << 8) | ((pBit->mColorD >> 16) & 0xFF);
+
+			// Face ABC (omits D).
+			PCGfx_DrawTPoly3D(
+				sx[0], sy[0], iz[0], pBit->mUV0[0], pBit->mUV0[1], colorA,
+				sx[1], sy[1], iz[1], pBit->mUV1[0], pBit->mUV1[1], colorB,
+				sx[2], sy[2], iz[2], pBit->mUV2[0], pBit->mUV2[1], colorC);
+
+			// Face ADB (omits C).
+			PCGfx_DrawTPoly3D(
+				sx[0], sy[0], iz[0], pBit->mUV0[0], pBit->mUV0[1], colorA,
+				sx[3], sy[3], iz[3], pBit->mUV1[0], pBit->mUV1[1], colorD,
+				sx[1], sy[1], iz[1], pBit->mUV2[0], pBit->mUV2[1], colorB);
+
+			// Face BDC (omits A).
+			PCGfx_DrawTPoly3D(
+				sx[1], sy[1], iz[1], pBit->mUV0[0], pBit->mUV0[1], colorB,
+				sx[3], sy[3], iz[3], pBit->mUV1[0], pBit->mUV1[1], colorD,
+				sx[2], sy[2], iz[2], pBit->mUV2[0], pBit->mUV2[1], colorC);
+
+			// Face CDA (omits B).
+			PCGfx_DrawTPoly3D(
+				sx[2], sy[2], iz[2], pBit->mUV0[0], pBit->mUV0[1], colorC,
+				sx[3], sy[3], iz[3], pBit->mUV1[0], pBit->mUV1[1], colorD,
+				sx[0], sy[0], iz[0], pBit->mUV2[0], pBit->mUV2[1], colorA);
+		}
+
+		pBit = reinterpret_cast<CChunkBit*>(pBit->mNext);
+	}
 }
 
 // Two small per-corner scratch buffers the family stages screen coords
@@ -4278,8 +4346,9 @@ void validate_CBitServer(void)
 
 void validate_CChunkBit(void)
 {
-	// @FIXME
-	VALIDATE_SIZE(CChunkBit, 0x94);
+	// Size and field offsets 0x94-0xC4 confirmed while decompiling DisplayChunkBitList
+	// (0x40bac0, 2026-08-31); see bit.h's CChunkBit and DisplayChunkBitList below.
+	VALIDATE_SIZE(CChunkBit, 0xC8);
 
 	VALIDATE(CChunkBit, mPosA, 0x3C);
 	VALIDATE(CChunkBit, mPosB, 0x44);
@@ -4292,6 +4361,17 @@ void validate_CChunkBit(void)
 	VALIDATE(CChunkBit, mWorldPosD, 0x80);
 
 	VALIDATE(CChunkBit, mAngles, 0x8C);
+
+	VALIDATE(CChunkBit, mUV0, 0x94);
+	VALIDATE(CChunkBit, mUV1, 0x9C);
+	VALIDATE(CChunkBit, mUV2, 0xA4);
+
+	VALIDATE(CChunkBit, mClut, 0xB4);
+
+	VALIDATE(CChunkBit, mColorA, 0xB8);
+	VALIDATE(CChunkBit, mColorB, 0xBC);
+	VALIDATE(CChunkBit, mColorC, 0xC0);
+	VALIDATE(CChunkBit, mColorD, 0xC4);
 }
 
 void validate_CShatterBit(void)
