@@ -246,9 +246,12 @@ CManipOb::CManipOb(
 
 }
 
-// @NotOk
-// @Test
-// Globals
+// @Ok
+// Verified against 0x456B60. word_610C48 is the shared rcossin_tbl fixed
+// point sin/cos table (repo-wide convention, see bit.cpp/camera.cpp/
+// quat.cpp/shell.cpp/spidey.cpp/mysterio.cpp, confirmed by the maintainer's
+// IDB). NumVectors<=1 divides by zero in v17's computation same as the
+// original; that is a preserved original defect, not a bug here.
 void CManipOb::CalculateThrowPositionArray(CVector* pVector, int NumVectors)
 {
 
