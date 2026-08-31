@@ -1665,54 +1665,40 @@ i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 	return 3;
 }
 
-static u8 gCheatRelatedOne;
-static i32 gCheatRelatedTwo;
-static i32 gCheatRelatedThree;
-static i32 gCheatRelatedFour;
-static i32 gCheatRelatedFive;
-static i32 gCheatRelatedSix;
-static u8 gCheatRelatedSeven;
-
-// @NotOk
-// Not in tools/names.json under this name, and not in idb_globals.txt or
-// new_in_idb_code.txt either. Tried hard to find the original address this
-// session (2026-08-30) and could not:
-// 1. Searched tools/names.json and idb_globals.txt for "BigCheat" (only a
-//    Mac hit: idbs/spiderman_names.txt has ".PShell_BigCheat__Fv" at
-//    0x000c69c0, 52 bytes, PowerPC address, no PC equivalent listed).
-// 2. Checked the PC functions immediately after PShell_ActivateCheat
-//    (0x47c440, this file's other neighbour): sub_47C430/47C4A0/47C4C0/
-//    47C4E0/47C500 all decompile to small straight-line global-init
-//    functions, but none write 5 dwords of -1 plus 2 bytes of 1 in this
-//    shape.
-// 3. Raw byte search of the whole exe for 4+ back-to-back
-//    "mov dword ptr [addr], -1" (C7 05 imm32 FFFFFFFFh) encodings: zero
-//    hits anywhere in the binary.
-// 4. IDA disassembly-text search for the same absolute-address -1 store
-//    shape (both immediate-encoded and register-then-store, "or reg,-1"
-//    followed by "mov [addr],reg" x4+): only one hit (0x49a3e4), which
-//    turned out to be an unrelated, much larger function (allocates a
-//    CMenu, references the string "time attack").
-// 5. func_query for unnamed subs sized 55-75 bytes (the PC equivalent of
-//    the Mac's 52 bytes) in the surrounding .text range: decompiled the
-//    closest candidates (0x479d30, 0x47a3f0, 0x478140, 0x4794d0, 0x4796a0,
-//    0x472890, 0x4721b0, 0x482d20); none match (0x47a3f0 turned out to
-//    already be PShell_InstructionalText under a sub_ name).
-// Also: this function is not called from anywhere else in the repo yet
-// (not wired into any patch_*() hook), and its 7 globals are still plain
-// file-local statics (no G_* fixed game address), so even the source
-// itself does not yet target real game memory. Left @NotOk rather than
-// guess at addresses; whoever revisits this should ask the maintainer for
-// the real address or check a newer IDB export.
+// Found this session (2026-08-31) with fresh IDA access. The function has
+// no standalone PC address: it is fully inlined into its only call site.
+// Proof: ActivateCheat (this file, 0x47c240, already @Ok) case CHEAT_LEANEST
+// (a1 == 1) writes exactly these 7 fields (gSaveGame.field_78/80/84/88/8C/90
+// and mCheatStoryboardFlag), then falls into the shared tail with case
+// CHEAT_MMEWEB (G_LEVEL_SELECT_FLAG = 1; the CLAUDE.md "redundant-code
+// elimination" pattern, MSVC folded the identical trailing statement shared
+// by both cases into one block reached by a jump). Confirmed against the
+// disassembly of sub_47C240 at 0x47c276: "or ecx,-1; mov byte ptr
+// [6828D0h],al; mov [6828D8h],ecx; mov [6828DC h],ecx; mov [6828E0h],ecx;
+// mov [6828E4h],ecx; mov [6828E8h],ecx; mov byte ptr [6828ADh],al" then
+// falls to the case-15 label "mov [60CFD8h],eax" (that last store is
+// ActivateCheat's own shared code, not part of this function). 0x6828D0 is
+// a byte store (al, not full ecx) matching field_78's u8 type; 0x6828AD is
+// also a byte store matching mCheatStoryboardFlag's u8 type; the other 5
+// are full dword stores of -1 matching field_80/84/88/8C/90 (i32). This is
+// the same field mapping shell.h already gives gSaveGame from ActivateCheat
+// itself, so no new struct knowledge is needed. The Mac build (CodeWarrior)
+// kept this as a real out-of-line function (idbs/spiderman_names.txt:
+// 0x000c69c0 ".PShell_BigCheat__Fv", 52 bytes) which is why searches for a
+// standalone PC address in the previous pass found nothing: there is none
+// to find. Source-level, ActivateCheat's CHEAT_LEANEST case is written with
+// the fields inline rather than calling this function (see its own @Ok
+// comment above), which is functionally equivalent either way.
+// @Ok
 void PShell_BigCheat(void)
 {
-      gCheatRelatedOne = 1;
-      gCheatRelatedTwo = -1;
-      gCheatRelatedThree = -1;
-      gCheatRelatedFour = -1;
-      gCheatRelatedFive = -1;
-      gCheatRelatedSix = -1;
-      gCheatRelatedSeven = 1;
+	gSaveGame.field_78 = 1;
+	gSaveGame.field_80 = -1;
+	gSaveGame.field_84 = -1;
+	gSaveGame.field_88 = -1;
+	gSaveGame.field_8C = -1;
+	gSaveGame.field_90 = -1;
+	gSaveGame.mCheatStoryboardFlag = 1;
 }
 
 // @Ok
