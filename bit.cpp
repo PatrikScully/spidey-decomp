@@ -69,9 +69,12 @@ EXPORT char *gAnimNames[29] =
 
 
 
-// @NotOk
-// @FIXME: must be zero initialized
-SAnimFrame* gAnimTable[0x1D];
+// @Ok
+// Static storage duration means C++ already zero-initializes this before
+// any dynamic init runs, and Bit_Init also memsets it explicitly, so the
+// old "must be zero initialized" worry does not apply. Writing the
+// initializer here makes that guarantee visible in the source too.
+SAnimFrame* gAnimTable[0x1D] = {0};
 
 EXPORT CChunkBit* ChunkBitList;
 EXPORT CGlow* GlowList;
