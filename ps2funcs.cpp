@@ -663,6 +663,23 @@ void gsub_46D9B0(VECTOR *a1)
 	a1->vz = gOp12Result.vz;
 }
 
+// @BIGTODO
+// forward to original. Unnamed in the IDB. Applies a hook's part-local
+// offset (pOffset, a CSVector-shaped 6-byte vector: SHook::Part in
+// m3dutils.h) through pPoseFrame (the part's pose matrix, SMatrix) and then
+// through pTransform (the item's world transform, MATRIX), leaving the
+// result in the software GTE "long vector" accumulator (dword_610BA0/A4/A8,
+// same globals gte_stlvnl reads) for a following gte_stlvnl call to pick
+// up. Uses chained 32x32->64 bit fixed point multiplies (>>12) not yet
+// reproduced from source. Used by M3dUtils_GetHookPosition and
+// M3dUtils_GetDynamicHookPosition (m3dutils.cpp).
+void gsub_46F820(void *pOffset, SMatrix *pPoseFrame, MATRIX *pTransform)
+{
+	typedef void (*func_ptr)(void*, SMatrix*, MATRIX*);
+	func_ptr func = (func_ptr)0x0046F820;
+	func(pOffset, pPoseFrame, pTransform);
+}
+
 // @Ok
 void M3dMaths_SetIdentityRotation(MATRIX *a1)
 {
