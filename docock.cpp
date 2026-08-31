@@ -424,6 +424,7 @@ void validate_CDocOc(void){
 	VALIDATE(CDocOc, field_4A8, 0x4A8);
 	VALIDATE(CDocOc, field_4B8, 0x4B8);
 	VALIDATE(CDocOc, field_4AC, 0x4AC);
+	VALIDATE(CDocOc, field_4BC, 0x4BC);
 
 	VALIDATE(CDocOc, field_4C4, 0x4C4);
 

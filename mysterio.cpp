@@ -1200,6 +1200,7 @@ void validate_CMysterio(void){
 	VALIDATE_SIZE(CMysterio, 0x3D0);
 
 	VALIDATE(CMysterio, field_324, 0x324);
+	VALIDATE(CMysterio, field_328, 0x328);
 	VALIDATE(CMysterio, field_32C, 0x32C);
 
 	VALIDATE(CMysterio, field_34C, 0x34C);

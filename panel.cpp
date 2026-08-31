@@ -13,6 +13,12 @@
 #include "utils.h"
 #include "ps2lowsfx.h"
 #include "mess.h"
+#include "rhino.h"
+#include "venom.h"
+#include "carnage.h"
+#include "docock.h"
+#include "scorpion.h"
+#include "mysterio.h"
 
 #include "validate.h"
 
@@ -370,6 +376,11 @@ void Panel_CreateCompass(CVector * pVec)
 	gCompassStatus = 1;
 }
 
+// screen Y offset for the HUD (runtime value, 0 at boot). Moved up from its
+// original spot right before Panel_DisplayTimer so Panel_DisplayHealthBar
+// (defined earlier in the file) can use it too.
+static i32 * const gPanelScreenY = (i32*)0x0060F76C;
+
 // Investigated 2026-08-31 via Hex-Rays. Real address is unclear (names.json
 // has no entry and it was never confirmed against the binary), but
 // prototypes.json (Mac sizes) lists Panel_Display(void) at 4744 bytes,
@@ -413,36 +424,243 @@ void Panel_DisplayCompass(void)
     printf("Panel_DisplayCompass(void)");
 }
 
-// Investigated 2026-08-31 via Hex-Rays decompile of 0x00464270 (5804 bytes
-// on Mac, the biggest of the three). Retagged @MEDIUMTODO -> @BIGTODO: a
-// boss-specific health-bar dispatcher, `switch (dword_60F654)` on what
-// looks like a boss/mech type id (case values 307/308/310/311/313/314,
-// plus a default no-op), each case reading fields at large, boss-specific
-// offsets (+226, +808, +824, +828, +829, +832, +904, +976, +1004, +1212)
-// off a "current mech" pointer (dword_60F788) that were not obviously
-// matchable to any single boss header (rhino.h/carnage.h/venom.h/
-// scorpion.h/docock.h/mysterio.h) in the time available - these read like
-// a shared "mech status" struct distinct from any one boss's CItem
-// subclass, not yet identified in the repo. Every draw call bottoms out in
-// the same undecompiled sub_507910 primitive as Panel_DisplayCompass
-// above, via sub_462BB0/462C30/462CD0/462D60/462FB0 (icon lookup, glyph
-// placement, and what look like bar-graph/number-drawing helpers given the
-// repeated width/threshold arguments), plus sub_506440. None of these six
-// helpers are named or decompiled anywhere in the repo, and the case
-// values suggest around 6 different boss layouts each with their own
-// field offsets to identify - too large and too underspecified to
-// implement blind this session. Good next candidate once sub_507910 and
-// the sub_462* draw family are decompiled and the dword_60F788 "current
-// mech" struct is identified against a real boss header.
-// @BIGTODO
-void Panel_DisplayHealthBar(void)
+// Shared inline draw sequence used at every icon-overlay site in
+// Panel_DisplayHealthBar below (originally repeated inline 7 times in the
+// disassembly at 0x464270: PCGfx_UseTexture(tex->clut, blend) then a
+// manual scale+color-pack PCGfx_DrawQPoly2D call reading straight from the
+// poly's own r0/g0/b0 and x0..y3 fields). Same shape as the icon-overlay
+// block already established in Panel_DisplayTimer above (lines ~516-543).
+// Factored into one static helper here since the original inlines it
+// verbatim with only the poly/texture/blend/zOffset varying; not chasing a
+// byte match this session (see PLAN.md acceptance bar), so factoring does
+// not hurt correctness and avoids seven near-identical copies.
+// @Ok
+static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMode blend, f32 zOffset)
 {
-    printf("Panel_DisplayHealthBar(void)");
+	PCGfx_UseTexture(tex->clut, blend);
+
+	f32 yScale = gGameResolutionY / (f32)Yres;
+	f32 xScale = gGameResolutionX / (f32)Xres;
+	u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFFFF00) << 8)) << 8);
+
+	PCGfx_DrawQPoly2D(
+			p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
+			p->x1 * xScale, p->y1 * yScale, 1.0f, 0.0f, col,
+			p->x2 * xScale, p->y2 * yScale, 0.0f, 1.0f, col,
+			p->x3 * xScale, p->y3 * yScale, 1.0f, 1.0f, col,
+			zOffset);
 }
 
+// Real translation, 0x00464270. Decompiled via Hex-Rays and cross-checked
+// against the raw disasm. The previous session's investigation undercounted
+// this: every "undecompiled helper" it listed (sub_462BB0/462C30/462CD0/
+// 462D60/462FB0/506440/507910) turned out to already be decompiled and
+// named in this repo (tools/names.json), just not recognised as such:
+// sub_462BB0 = Panel_DrawTexturedPoly(Texture*,int) (this file, line
+// ~852), sub_462C30/462CD0 = the two Panel_SetStretchedScreenCoords
+// overloads (line ~653/~699), sub_462D60 = DCPanel_DrawFlatShadedPoly
+// (line ~132), sub_462FB0 = the 9-arg DCDrawGouraudPoly (line ~111),
+// sub_506440 = PCGfx_UseTexture (PCGfx.cpp, already @Ok), sub_507910 =
+// PCGfx_DrawQPoly2D (PCGfx.h/.cpp, already @Ok, confirmed via its own
+// naming comment in PCGfx.cpp mapping 0x568158/0x628614/0x568154/0x61B5FC
+// to gGameResolutionY/Yres/gGameResolutionX/Xres, the exact same globals
+// this function scales its icon coordinates with).
+//
+// dword_60F788/60F78C = gHealthBarOne/gHealthBarTwo, dword_60F744/60F748 =
+// gHealthBarRelated/gHealthBarRelatedTwo, dword_60F654 = gHealthBarItemType,
+// dword_60F658.."660.."668 = gHealthBarTextures[0..4] (all already declared
+// at the top of this file, confirmed 1:1 against Panel_CreateHealthBar's
+// own disasm at 0x463610 which writes exactly these five slots per boss
+// case, matching gHealthBarTextures' assignment order in the existing
+// Panel_CreateHealthBar source above). dword_60F758 = gAnimSp (idb_globals
+// confirms 0x60F758 = gAnimSp; SAnimFrame is 8 bytes/VALIDATE_SIZE 0x8, so
+// "dword_60F758 + 8/16/24" are &gAnimSp[1]/[2]/[3]).
+//
+// The boss-specific "extra icon" gate fields at absolute offsets 828/829
+// (0x33C/0x33D, Venom-only) were already named fields (CVenom::field_33C/
+// field_33D, both u8, matching the byte-sized compares in the disasm).
+// Fields at 976/832 (CRhino::field_3D0, CCarnage::field_340) were also
+// already named. Fields at 904/1212/1004/808 fell inside as-yet-unexplored
+// PADDING() gaps in CVenom/CDocOc/CScorpion/CMysterio; confirmed via disasm
+// they are read as plain dword != 0 checks, so this session split those
+// PADDING regions and added CVenom::field_388, CDocOc::field_4BC,
+// CScorpion::field_3EC, CMysterio::field_328 (all i32, VALIDATE added,
+// total struct size unchanged) - see those headers/.cpp files for the
+// exact split. Their real meaning (what makes a boss "wounded") is not
+// known, only that a nonzero value there swaps in the boss's *_wounded (or
+// equivalent) texture instead of the default one; same honest-placeholder
+// convention already used throughout the repo for field_XXX members.
+//
+// CBody::mCBodyFlags bit 0x40 (already-named field, VALIDATE'd at 0x46) is
+// tested as a "boss destroyed" flag that tears the health bar down.
+// CBody::mHealth (i16 @ 0xE2/226, already named) supplies current health;
+// gHealthBarRelated/RelatedTwo hold the health captured when the bar was
+// created (used as the 100% baseline for the percentage-width bar math).
+//
+// The many small per-call x/y/w/h adjustments (0x54E910..0x54E99C) are
+// read-only .data ints referenced exactly once each, only from this
+// function (confirmed via xrefs_to) - not runtime state, so they are
+// folded into literal constants below (values read directly off the
+// binary via IDA, not guessed) rather than modelled as unnamed globals.
+// byte_54E8D0 (also read-only, xref'd only from here) is a baked constant
+// equal to 1 in the shipped binary, i.e. its "if" is always taken; kept as
+// a literal `true` rather than invented as a live global.
+//
+// nullsub_1 (0x4015B0, this file's gsub_4015B0) is called at a few spots
+// in the original with a (bool, const char*) debug-print argument pair
+// that does not match gsub_4015B0's declared (void*) signature here; since
+// gsub_4015B0's real body is a single `ret` (confirmed elsewhere in this
+// file, tools/functions/4199856.bin), the call is a provable no-op and is
+// omitted below rather than fought into a mismatched declaration.
+//
+// The final block (only reached when gHealthBarItemType == 310 and
+// gHealthBarTextures[2] is set) draws a second, smaller health bar for
+// gHealthBarTwo/gHealthBarRelatedTwo - almost certainly the Jonah Jameson
+// hostage bar shown during the Scorpion fight (gHealthBarTextures[2] for
+// case 310 is the "jonah" texture, set in Panel_CreateHealthBar above).
 // @Ok
-// screen Y offset for the HUD (runtime value, 0 at boot)
-static i32 * const gPanelScreenY = (i32*)0x0060F76C;
+void Panel_DisplayHealthBar(void)
+{
+	if (gHealthBarOne == 0)
+		return;
+
+	if (gHealthBarOne->mCBodyFlags & 0x40)
+	{
+		gHealthBarOne = 0;
+		gHealthBarTwo = 0;
+		return;
+	}
+
+	switch (gHealthBarItemType)
+	{
+	case 307:
+	case 308:
+	case 310:
+	case 311:
+	case 313:
+	case 314:
+		break;
+	default:
+		return;
+	}
+
+	if (gHealthBarItemType == 313)
+	{
+		if (((CVenom *)gHealthBarOne)->field_33C != 0)
+		{
+			POLY_FT4 *pMJ = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[2], 0);
+			if (pMJ)
+				Panel_SetStretchedScreenCoords(445, *gPanelScreenY + 71, pMJ, gHealthBarTextures[2], 31, 30);
+			PanelHB_DrawIconOverlay(pMJ, gHealthBarTextures[2], DCGfx_BlendingMode_1, 2.9999001f);
+
+			for (i32 y = 0; y < 48; y += 16)
+			{
+				SAnimFrame *pFrame = &gAnimSp[1];
+				POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+				if (p)
+					Panel_SetStretchedScreenCoords(486, y + *gPanelScreenY + 115, p, pFrame, 15, 16);
+				PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_0, 3.0f);
+			}
+
+			{
+				SAnimFrame *pFrame = &gAnimSp[2];
+				POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+				if (p)
+					Panel_SetStretchedScreenCoords(486, *gPanelScreenY + 161, p, pFrame, 15, 14);
+				PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_0, 3.0f);
+			}
+
+			DCPanel_DrawFlatShadedPoly(3.0f, 467, *gPanelScreenY - ((CVenom *)gHealthBarOne)->field_338 / 4096 + 155, 12, ((CVenom *)gHealthBarOne)->field_338 / 4096, 64, 64, 160, 0, 0);
+			DCPanel_DrawFlatShadedPoly(4.0f, 467, *gPanelScreenY + 99, 12, 56, 0, 0, 0, 0, 0);
+		}
+
+		if (((CVenom *)gHealthBarOne)->field_33D == 0)
+			return;
+	}
+
+	i32 healthWidth = 163 * (((gHealthBarRelated - gHealthBarOne->mHealth) << 7) / gHealthBarRelated) / 128;
+
+	Texture *pBossTex;
+	switch (gHealthBarItemType)
+	{
+	case 310:
+		pBossTex = (((CScorpion *)gHealthBarOne)->field_3EC != 0) ? gHealthBarTextures[3] : gHealthBarTextures[0];
+		break;
+	case 307:
+		pBossTex = (((CRhino *)gHealthBarOne)->field_3D0 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	case 313:
+		pBossTex = (((CVenom *)gHealthBarOne)->field_388 != 0) ? gHealthBarTextures[4] : gHealthBarTextures[0];
+		break;
+	case 314:
+		pBossTex = (((CCarnage *)gHealthBarOne)->field_340 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	case 308:
+		pBossTex = (((CDocOc *)gHealthBarOne)->field_4BC != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	case 311:
+		pBossTex = (((CMysterio *)gHealthBarOne)->field_328 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		break;
+	default:
+		pBossTex = gHealthBarTextures[0];
+		break;
+	}
+
+	POLY_FT4 *pBoss = (POLY_FT4 *)Panel_DrawTexturedPoly(pBossTex, 0);
+	if (pBoss)
+		Panel_SetStretchedScreenCoords(448, *gPanelScreenY + 16, pBoss, pBossTex, 28, 31);
+	PanelHB_DrawIconOverlay(pBoss, pBossTex, DCGfx_BlendingMode_1, 1.0f);
+
+	POLY_FT4 *pLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[1], 0);
+	if (pLabel)
+		Panel_SetStretchedScreenCoords(283, *gPanelScreenY + 24, pLabel, gHealthBarTextures[1], 12, 16);
+	PanelHB_DrawIconOverlay(pLabel, gHealthBarTextures[1], DCGfx_BlendingMode_1, 1.0f);
+
+	for (i32 x = 0; x < 150; x += 25)
+	{
+		SAnimFrame *pFrame = &gAnimSp[3];
+		POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+		if (p)
+			Panel_SetStretchedScreenCoords(x + 325, *gPanelScreenY + 40, p, pFrame, 16, 16);
+		PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_1, 1.0f);
+	}
+
+	if (healthWidth != 0)
+		DCPanel_DrawFlatShadedPoly(3.0f, 288, *gPanelScreenY + 29, healthWidth, 8, 0, 0, 0, 0, 0);
+	if (healthWidth <= gHealthBarRelated / 2)
+		DCDrawGouraudPoly(4.0f, 288, *gPanelScreenY + 29, 81, 8, 0x0000FF00, 0x0000FFFF, 0x0000FF00, 0x0000FFFF);
+	DCDrawGouraudPoly(4.0f, 369, *gPanelScreenY + 29, 82, 8, 0x0000FFFF, 0x000000FF, 0x0000FFFF, 0x000000FF);
+
+	if (gHealthBarItemType == 310 && gHealthBarTextures[2] != 0)
+	{
+		POLY_FT4 *pJonah = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[2], 0);
+		if (pJonah)
+			Panel_SetStretchedScreenCoords(448, *gPanelScreenY + 45, pJonah, gHealthBarTextures[0], 28, 30);
+		PanelHB_DrawIconOverlay(pJonah, gHealthBarTextures[2], DCGfx_BlendingMode_1, 1.0f);
+
+		POLY_FT4 *pJonahLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[1], 0);
+		if (pJonahLabel)
+			Panel_SetStretchedScreenCoords(407, *gPanelScreenY + 53, pJonahLabel, gHealthBarTextures[1], 12, 15);
+		PanelHB_DrawIconOverlay(pJonahLabel, gHealthBarTextures[1], DCGfx_BlendingMode_1, 1.0f);
+
+		{
+			SAnimFrame *pFrame = &gAnimSp[3];
+			POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+			if (p)
+				Panel_SetStretchedScreenCoords(450, *gPanelScreenY + 69, p, pFrame, 16, 15);
+			PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_1, 1.0f);
+		}
+
+		i32 jonahWidth = 38 * (((gHealthBarRelatedTwo - gHealthBarTwo->mHealth) << 7) / gHealthBarRelatedTwo) / 128;
+
+		if (jonahWidth != 0)
+			DCPanel_DrawFlatShadedPoly(3.0f, 413, *gPanelScreenY + 57, jonahWidth, 8, 0, 0, 0, 0, 0);
+		if (jonahWidth <= gHealthBarRelatedTwo / 2)
+			DCDrawGouraudPoly(4.0f, 413, *gPanelScreenY + 57, 19, 8, 0x0000FF00, 0x0000FFFF, 0x0000FF00, 0x0000FFFF);
+		DCDrawGouraudPoly(4.0f, 432, *gPanelScreenY + 57, 19, 8, 0x0000FFFF, 0x000000FF, 0x0000FFFF, 0x000000FF);
+	}
+}
+
 // bomb-timer animation state (l1a3bomb level)
 static u8 * const gBombTimerAnimOne = (u8*)0x0060F784;
 static u8 * const gBombTimerAnimTwo = (u8*)0x0060F785;

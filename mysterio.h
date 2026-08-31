@@ -64,7 +64,11 @@ class CMysterio : public CBaddy {
 	EXPORT i32 MonitorAttack(i32, VECTOR*, i32);
 
 	CItem* field_324;
-	PADDING(4);
+
+	// read (!= 0 check) by Panel_DisplayHealthBar (panel.cpp, offset 0x328
+	// relative to a CBody* boss pointer) to pick between the default and
+	// an alternate health-bar icon texture; meaning otherwise unknown.
+	i32 field_328;
 
 	// walked by loop index (not by the trigger-link field code) in the
 	// constructor's Trig_GetLinkInfoList loop; holds up to 8 CSoftSpot

@@ -75,7 +75,12 @@ class CVenom : public CBaddy
 		i32 field_380;
 		i32 field_384;
 
-		PADDING(8);
+		// read (!= 0 check) by Panel_DisplayHealthBar (panel.cpp, offset 0x388
+		// relative to a CBody* boss pointer) to pick between the default and
+		// an alternate health-bar icon texture; meaning otherwise unknown.
+		i32 field_388;
+
+		PADDING(4);
 
 		// @FIXME
 		void *field_390;

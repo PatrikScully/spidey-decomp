@@ -32,7 +32,14 @@ class CScorpion : public CBaddy {
 
 		i32 field_324;
 
-		PADDING(0x3F8-0x324-4);
+		PADDING(0x3EC-0x324-4);
+
+		// read (!= 0 check) by Panel_DisplayHealthBar (panel.cpp, offset 0x3EC
+		// relative to a CBody* boss pointer) to pick between the default and
+		// an alternate health-bar icon texture; meaning otherwise unknown.
+		i32 field_3EC;
+
+		PADDING(0x3F8-0x3EC-4);
 
 		// Two embedded CItem sub-objects (confirmed against the disasm of both
 		// constructors at 0x483290/0x483450: each is default-constructed with a

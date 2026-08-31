@@ -941,6 +941,7 @@ void validate_CVenom(void){
 	VALIDATE(CVenom, field_37C, 0x37C);
 	VALIDATE(CVenom, field_380, 0x380);
 	VALIDATE(CVenom, field_384, 0x384);
+	VALIDATE(CVenom, field_388, 0x388);
 
 	VALIDATE(CVenom, field_390, 0x390);
 
