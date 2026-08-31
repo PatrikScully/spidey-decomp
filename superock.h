@@ -32,7 +32,8 @@ public:
 	EXPORT virtual void Shouldnt_DoPhysics_Be_Virtual(void);
 	EXPORT virtual i32 Hit(SHitInfo*);
 
-	PADDING(0x32C-0x324);
+	i32 field_324;
+	i32 field_328;
 
 	CVector field_32C;
 
@@ -43,7 +44,9 @@ public:
 	i32 field_344;
 	i32* field_348;
 
-	PADDING(0x360-0x348-4);
+	PADDING(0x35C-0x348-4);
+
+	i32 field_35C;
 
 	void* field_360;
 	i32 field_364;
@@ -53,7 +56,9 @@ public:
 	i32 field_370;
 	i32 field_374;
 
-	PADDING(0x39C-0x374-4);
+	i32 field_378;
+
+	PADDING(0x39C-0x378-4);
 
 	i32 field_39C;
 

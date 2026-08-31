@@ -5,6 +5,8 @@
 #include "ps2lowsfx.h"
 #include "utils.h"
 #include "l1a3bomb.h"
+#include "spool.h"
+#include "panel.h"
 
 #include <cmath>
 
@@ -26,59 +28,197 @@ EXPORT SLight M3d_SuperOckLight =
 #define LEN_SUPER_OCK_TEXS 15
 EXPORT Texture *gSuperDocTexs[15];
 
-// @MEDIUMTODO
-// Investigated 2026-08-31, left as a stub, not attempted. Real Mac size is
-// 1424 bytes (tools/prototypes.json), almost identical to the PC size
-// (1408, address 0x4D0E70), so this is not an inlining-boundary problem
-// like the m3dinit.cpp ParsePSX case, it is genuinely this big: five near
-// duplicate HUD bar draws in one function. Findings for whoever picks this
-// up next:
-// - Every callee already exists and is @Ok in the repo, so this is NOT a
-//   leaf-first blocker in the usual sense: Spool_FindTextureEntry(char*)
-//   (spool.h, loads gSuperDocTexs[i] from the 15 name strings starting at
-//   0x5579BC, "VenomChase_Bar_04" etc, 32 bytes apart, ending at 0x557B9C),
-//   FindBaddyOfType(309) (baddy.h, gets the boss CBaddy*), Utils_XZDist
-//   (utils.h), Spool_FindAnim (spool.h, called with "Sp" + 1), and the
-//   whole Panel_DrawTexturedPoly / DCPanel_DrawTexturedPoly /
-//   Panel_SetStretchedScreenCoords / DCPanel_DrawTexturedPoly_1 /
-//   DCPanel_DrawFlatShadedPoly family (panel.h, all @Ok, PShell_DrawMenuBox
-//   in pshell.cpp is the closest existing precedent for how these combine).
-// - This function reads a byte flag at offset 0x1AC of a *different*,
-//   still-unidentified global object pointer at 0x6A9038 (not the boss
-//   CBaddy*, only ever null-checked and this one byte read, never anything
-//   else) to decide whether to bail out early. That address, its type, and
-//   what sets the flag are all unknown; only its use here is confirmed.
-// - CSuperDocOck (superock.h) needs new fields, all currently swallowed by
-//   existing PADDING() ranges: field_324 (i32, a 0-5 cycling index) and
-//   field_328 (i32, an accumulator: += this->field_80 [CBody's own
-//   per-frame delta, already named] each frame when
-//   !G_POST_WATER_EFFECT [utils.h, already has this macro for 0x5FAE98];
-//   every 4 whole units it consumes 4 and increments field_324, wrapping
-//   field_324 back to 0 after 5); field_35C (checked only for
-//   null/non-null, gates an alternate distance calc via Utils_XZDist(this
-//   + 8, otherObj + 2) when null); field_378 (i32, looks like a 0-4095ish
-//   damage/knockback fraction: drives a screen-shake offset via
-//   rcossin_tbl[...] when > 0xC00, and separately splits into three
-//   0-127-ish weighted sub-values via >>12 shifts of *128, *112/128-style
-//   ratios for the final two DCPanel_DrawFlatShadedPoly calls).
-// - The five bar draws each pull their screen x/y/w/h/color offsets from a
-//   dense table of anonymous i32 constants living in .rdata right after
-//   the texture name strings (0x557B9C through at least 0x557C38, read via
-//   IDA: mostly small values, some negative, e.g. 0, 0x17, 0x16, -7, 0x10,
-//   0xa, -1, -5, 4, 9, ...). Every one of these looks like the same kind
-//   of "field roles not consistent across entries" table CLAUDE.md already
-//   documents for gMenuBoxSlices in pshell.cpp, just five records instead
-//   of thirteen and with an inner 19-iteration sub-loop (esi 0 to 0x156
-//   step 0x12) for one of the bars, i.e. per-segment health pips. Getting
-//   every one of these ~40 constants' x-vs-y-vs-w-vs-h role right, for a
-//   function that draws a boss HUD element with no way to runtime-verify
-//   the visual result this session (per this session's runtime-testing
-//   note), is a lot more risk of a silently wrong but plausible-looking
-//   draw than the callee list alone suggests. Left as a stub rather than
-//   guess constant roles that cannot be checked.
+// The 15 bar texture name strings, 32 bytes each, in .rdata right before the
+// bar coordinate table. "VenomChase_Bar_04", "VenomChase_Bar_03" (x4),
+// "VenomChase_Bar_LeftEnd", "VenomChase_Bar_RightEnd", "spider_chase",
+// "SuperOc" (x6), "CoreTemp_01".
+static const char * const gSuperDocOckBarNames = (const char*)0x5579bc;
+
+// Dense table of i32 screen x/y/w/h/color offsets for the five boss HUD bar
+// draws, in .rdata right after the name strings. 40 entries (0x557B9C..
+// 0x557C3B), followed by the "doc_arms" string. Roles are per-draw, not
+// consistent across entries (same class of table as gMenuBoxSlices).
+static i32 * const gSuperDocOckBarCoords = (i32*)0x557b9c;
+
+// Screen y-offset added to several bar draws (0x60F76C, a global i32).
+static i32 * const gSuperDocOckBarScreenOffset = (i32*)0x60f76c;
+
+// @NotOk
+// Implemented from the 0x4D0E70 disassembly (1408 bytes). The logic is
+// faithful: 15-texture load loop, MechList->field_1AC bail, FindBaddyOfType
+// (0x135) null checks, progress = min(Utils_XZDist, 2048) * 307 / 2048 (0
+// when field_35C set), field_328 += field_80 when !G_POST_WATER_EFFECT then
+// the field_328 > 4 consume-4 / field_324++ / wrap-at-5 dance, the two
+// print_if_false field_324 range checks, and the field_378 > 0xC00
+// rcossin_tbl screen-shake. Added field_324/328/35C/378 to CSuperDocOck
+// (were PADDING). Residue: the ~15 bar/pip/anim/flat-poly draw calls are
+// transcribed from the disasm but Bar 3 pushes a 3rd dword (ebx=128) that
+// no Panel_DrawTexturedPoly overload in panel.h takes (I called it 2-arg),
+// and the Spool_FindAnim("Sp",1)+2 frame walk / var_4 0..112 step 16 loop
+// and the two DCPanel_DrawFlatShadedPoly coord roles are not runtime-
+// verifiable (boss HUD only, no way to reach the fight in a smoke test),
+// so the exact per-draw x/y/w/h/color roles may be off.
 void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 {
-	printf("void SuperDocOck_DisplayProgressBars(const u32*, u32*)");
+	Texture** tex = gSuperDocTexs;
+	const char* name = gSuperDocOckBarNames;
+	do {
+		if (*tex == 0)
+			*tex = Spool_FindTextureEntry((char*)name);
+		print_if_false(*tex != 0, "No texture");
+		name += 32;
+		tex++;
+	} while (name < (const char*)0x557b9c);
+
+	if (MechList->field_1AC != 0)
+		return;
+
+	CBaddy* baddy = FindBaddyOfType(0x135);
+	if (baddy == 0)
+		return;
+	if (MechList == 0)
+		return;
+
+	CSuperDocOck* doc = (CSuperDocOck*)baddy;
+	int progress;
+	if (doc->field_35C != 0) {
+		progress = 0;
+	} else {
+		int dist = Utils_XZDist(&MechList->mPos, &baddy->mPos);
+		if (dist > 2048)
+			dist = 2048;
+		progress = dist * 307 / 2048;
+	}
+
+	if (G_POST_WATER_EFFECT == 0)
+		doc->field_328 += baddy->field_80;
+	if (doc->field_328 > 4) {
+		doc->field_328 -= 4;
+		doc->field_324++;
+		if (doc->field_324 > 5)
+			doc->field_324 = 0;
+	}
+
+	// Bar 1 (gSuperDocTexs[9])
+	POLY_FT4* v7 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[9], 0);
+	Panel_SetStretchedScreenCoords(
+		gSuperDocOckBarCoords[0] - progress + 446,
+		gSuperDocOckBarCoords[1] + *gSuperDocOckBarScreenOffset + 16,
+		v7, gSuperDocTexs[9],
+		gSuperDocOckBarCoords[2], gSuperDocOckBarCoords[3]);
+	DCPanel_DrawTexturedPoly(1.0f, v7, gSuperDocTexs[9], 0);
+
+	// Bar 2 (gSuperDocTexs[8])
+	POLY_FT4* v8 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[8], 0);
+	Panel_SetStretchedScreenCoords(
+		gSuperDocOckBarCoords[4] + 446,
+		gSuperDocOckBarCoords[5] + *gSuperDocOckBarScreenOffset + 16,
+		v8, gSuperDocTexs[8],
+		gSuperDocOckBarCoords[6], gSuperDocOckBarCoords[7]);
+	DCPanel_DrawTexturedPoly(2.0f, v8, gSuperDocTexs[8], 0);
+
+	print_if_false(doc->field_324 >= 0, "Error");
+	print_if_false(doc->field_324 < 6, "Error");
+
+	// 19 health pips
+	for (int i = 0; i < 342; i += 18) {
+		POLY_FT4* v10 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[0], 0);
+		Panel_SetStretchedScreenCoords(
+			i + gSuperDocOckBarCoords[8] + 138,
+			gSuperDocOckBarCoords[9] + *gSuperDocOckBarScreenOffset + 28,
+			v10, gSuperDocTexs[doc->field_324],
+			gSuperDocOckBarCoords[10], gSuperDocOckBarCoords[11]);
+		DCPanel_DrawTexturedPoly(4.0f, v10, gSuperDocTexs[0], 0);
+	}
+
+	// Bar 3 (gSuperDocTexs[6])
+	POLY_FT4* v11 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[6], 0);
+	Panel_SetStretchedScreenCoords(
+		gSuperDocOckBarCoords[12] + 133,
+		gSuperDocOckBarCoords[13] + *gSuperDocOckBarScreenOffset + 28,
+		v11, gSuperDocTexs[6],
+		gSuperDocOckBarCoords[14], gSuperDocOckBarCoords[15]);
+	DCPanel_DrawTexturedPoly(2.0f, v11, gSuperDocTexs[6], 0);
+
+	// Bar 4 (gSuperDocTexs[7])
+	POLY_FT4* v12 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[7], 0);
+	Panel_SetStretchedScreenCoords(
+		gSuperDocOckBarCoords[16] + 480,
+		gSuperDocOckBarCoords[17] + *gSuperDocOckBarScreenOffset + 28,
+		v12, gSuperDocTexs[7],
+		gSuperDocOckBarCoords[18], gSuperDocOckBarCoords[19]);
+	DCPanel_DrawTexturedPoly(2.0f, v12, gSuperDocTexs[7], 0);
+
+	// Anim
+	SAnimFrame* anim = Spool_FindAnim("Sp", 1);
+	anim += 2;
+	i32 shake = 128;
+	if (doc->field_378 > 0xC00) {
+		i32 idx = (gTimerRelated << 4) & 0xFFF;
+		i32 sin = rcossin_tbl[idx].sin;
+		i32 abs_sin = sin ^ ((sin >> 31) & 0x7FFFFFFF);
+		shake = (abs_sin << 7) >> 12;
+	}
+
+	i32 var_4 = 0;
+	while (var_4 < 112) {
+		POLY_FT4* v13 = (POLY_FT4*)Panel_DrawTexturedPoly(anim, 0);
+		if (v13 != 0) {
+			Panel_SetStretchedScreenCoords(
+				gSuperDocOckBarCoords[20] + 470,
+				var_4 + gSuperDocOckBarCoords[21] + *gSuperDocOckBarScreenOffset + 90,
+				v13, anim,
+				gSuperDocOckBarCoords[22], gSuperDocOckBarCoords[23]);
+			((u8*)v13)[5] = (u8)shake;
+			((u8*)v13)[6] = (u8)shake;
+		}
+		DCPanel_DrawTexturedPoly(2.0f, v13, anim, 0);
+		var_4 += 16;
+	}
+
+	// Bar 5 (gSuperDocTexs[14])
+	POLY_FT4* v14 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[14], 0);
+	((u8*)v14)[5] = (u8)shake;
+	((u8*)v14)[6] = (u8)shake;
+	Panel_SetStretchedScreenCoords(
+		gSuperDocOckBarCoords[24] + 448,
+		gSuperDocOckBarCoords[25] + *gSuperDocOckBarScreenOffset + 55,
+		v14, gSuperDocTexs[14],
+		gSuperDocOckBarCoords[26], gSuperDocOckBarCoords[27]);
+	DCPanel_DrawTexturedPoly(0.49996948f, v14, gSuperDocTexs[14], 0);
+
+	// Anim 2 (anim+8)
+	anim += 2;
+	POLY_FT4* v15 = (POLY_FT4*)Panel_DrawTexturedPoly(anim, 0);
+	if (v15 != 0) {
+		Panel_SetStretchedScreenCoords(
+			gSuperDocOckBarCoords[28] + 470,
+			gSuperDocOckBarCoords[29] + *gSuperDocOckBarScreenOffset + 200,
+			v15, anim,
+			gSuperDocOckBarCoords[30], gSuperDocOckBarCoords[31]);
+	}
+	DCPanel_DrawTexturedPoly(2.0f, v15, anim, 0);
+
+	// Flat shaded polys (field_378 based)
+	i32 val = doc->field_378;
+	i32 c0 = ((val << 7) - val) >> 12 + 128;
+	i32 c1 = ((val << 8) - val) >> 12;
+	i32 c2 = ((val << 4) * 7) >> 12;
+	i32 h = (val >= 2048) ? ((val - 2048) << 7) >> 11 : 0;
+
+	DCPanel_DrawFlatShadedPoly(2.0f,
+		gSuperDocOckBarCoords[32] + 466,
+		gSuperDocOckBarCoords[33] - c2 + *gSuperDocOckBarScreenOffset + 202,
+		gSuperDocOckBarCoords[34] + 9,
+		gSuperDocOckBarCoords[35] + c2,
+		(u8)c0, (u8)c1, (u8)h, 0, 0);
+
+	DCPanel_DrawFlatShadedPoly(4.0f,
+		gSuperDocOckBarCoords[36] + 466,
+		gSuperDocOckBarCoords[37] + *gSuperDocOckBarScreenOffset + 82,
+		gSuperDocOckBarCoords[38] + 9,
+		gSuperDocOckBarCoords[39] + 120,
+		0, 0, 0, 0, 0);
 }
 
 // @Ok
