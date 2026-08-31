@@ -464,10 +464,13 @@ class CChunkBit : public CBit
 
 		// Declared here (Mac prototypes confirm both names/signatures, tools/prototypes.json
 		// group "bit") because CShatterBit's construction (Split, shatter.cpp) calls them
-		// directly and non-virtually. Not implemented yet: both write into a ~52 byte field
-		// range (0x94-0xC8) this class does not declare, see the @FIXME on
-		// validate_CChunkBit's VALIDATE_SIZE below and the CShatterBit class comment further
-		// down. Stubbed in bit.cpp, out of scope for this CShatterBit-focused session.
+		// directly and non-virtually. Still stubbed in bit.cpp (needs sub_4E5DA0/sub_50F180
+		// decoded first), but the fields they write (below) are now confirmed and declared,
+		// found while decompiling DisplayChunkBitList (0x40bac0, 2026-08-31): SetRGB
+		// (0x40B830) writes mColorA (undithered r|g<<8|b<<16) then mColorB/C/D (3 independently
+		// Rnd(4096)-dithered variants, `*(this+46..49)` i.e. dword offsets 46-49 = byte
+		// 0xB8-0xC4); SetUVs (0x40B910) writes mUV0/1/2 (six floats, `this+148..168` =
+		// 0x94-0xA8) and mClut (`this+180` = 0xB4, a zero-extended-u16 dword store).
 		EXPORT void SetRGB(u8, u8, u8);
 		EXPORT void SetUVs(u16, u16, u8, u8, u8, u8, u8, u8);
 
@@ -482,6 +485,35 @@ class CChunkBit : public CBit
 		CVector mWorldPosD;
 
 		CSVector mAngles;
+
+		// UV pairs used cyclically by DisplayChunkBitList's 4 tetrahedron-face draws: each
+		// face's 3 triangle corners always pull UVs from these 3 pairs in slot order
+		// (mUV0/mUV1/mUV2), regardless of which corner (A/B/C/D) sits in that slot. Confirmed
+		// via DisplayChunkBitList (0x40bac0) reading *(f32*)(this+0x94/0x98/0x9C/0xA0/0xA4/0xA8);
+		// SetUVs (0x40B910, still stubbed) writes them.
+		f32 mUV0[2];   // 0x94/0x98
+		f32 mUV1[2];   // 0x9C/0xA0
+		f32 mUV2[2];   // 0xA4/0xA8
+
+		// 0xAC-0xB3: unknown/unconfirmed, not read by DisplayChunkBitList or written by the
+		// (still stubbed) SetRGB/SetUVs slices decoded so far. Left as padding rather than
+		// guessed at.
+		PADDING(0x8);
+
+		// Texture/clut id. SetUVs (still stubbed) stores LOWORD(texId) as a full dword
+		// (`*(DWORD*)(this+180) = LOWORD(a2)`, i.e. always zero-extended); DisplayChunkBitList
+		// reads it back whole for PCGfx_UseTexture's clut argument.
+		u32 mClut;     // 0xB4
+
+		// Per-corner packed colors read by DisplayChunkBitList (0xB8/0xBC/0xC0/0xC4, dword
+		// offsets 46-49 from SetRGB's own `_DWORD*` indexing) and applied to mWorldPosA/B/C/D
+		// respectively (one color per tetrahedron corner, not per UV slot). mColorA is the
+		// plain r|g<<8|b<<16 pack; mColorB/C/D are SetRGB's 3 independently Rnd(4096)-dithered
+		// variants of the same base color (still stubbed, see SetRGB above).
+		u32 mColorA;   // 0xB8
+		u32 mColorB;   // 0xBC
+		u32 mColorC;   // 0xC0
+		u32 mColorD;   // 0xC4
 };
 
 // CShatterBit : public CChunkBit. Found while decompiling Shatter_Face/Split (shatter.cpp),
@@ -499,13 +531,10 @@ class CChunkBit : public CBit
 //   would produce. Confirms the inheritance.
 // - CChunkBit::SetRGB (0x40B830) and CChunkBit::SetUVs (0x40B910), called directly (not
 //   virtually) from Split right after construction, write into CChunkBit's OWN fields at
-//   0x94-0xC8 (six UV floats, a u16, four RGB-ish dwords). Those 0x94-0xC8 bytes are legitimate
-//   CChunkBit territory that the current repo's CChunkBit struct does not yet declare (see the
-//   `// @FIXME` on validate_CChunkBit's VALIDATE_SIZE(CChunkBit, 0x94) in bit.cpp -- confirmed
-//   here from the callee side, independent evidence). Fixing CChunkBit itself is out of scope
-//   for this CShatterBit-focused session (another agent works bit.cpp's Display*List functions
-//   in parallel); represented below as an explicit PADDING gap so CShatterBit's own new fields
-//   land at their real offsets without touching CChunkBit's declaration.
+//   0x94-0xC8 (six UV floats, a u16-as-dword clut id, four RGB-ish dwords). Those bytes are
+//   legitimate CChunkBit territory; confirmed independently while decompiling
+//   DisplayChunkBitList (bit.cpp, 2026-08-31) and now declared directly on CChunkBit
+//   (mUV0/mUV1/mUV2, mClut, mColorA-D, see bit.h above) instead of as padding here.
 // - Mac build prototypes (tools/prototypes.json, group "shatter") independently confirm the
 //   class name, the 5-arg ctor signature (CSVector const&,CSVector const&,CSVector const&,
 //   CVector const&,int), and that Move/SetPos/dtor are all real (non-inlined) member functions
@@ -518,11 +547,11 @@ class CShatterBit : public CChunkBit
 		EXPORT virtual void Move(void) OVERRIDE;
 		EXPORT void SetPos(const CVector& pos);
 
-		// 0x94-0xC7 (52 bytes): CChunkBit's own real-but-undeclared UV/color fields (written by
-		// CChunkBit::SetRGB/SetUVs, called on every CShatterBit from Split). Not CShatterBit's;
-		// left as padding here on purpose, see class comment above.
-		PADDING(0x34);
-
+		// 0x94-0xC7 (52 bytes): CChunkBit's own UV/color fields (mUV0/1/2, mClut, mColorA-D),
+		// written by CChunkBit::SetRGB/SetUVs on every CShatterBit from Split. Declared on
+		// CChunkBit itself now (found while decompiling DisplayChunkBitList, 2026-08-31, see
+		// bit.h's CChunkBit and bit.cpp's DisplayChunkBitList); no padding needed here anymore,
+		// CShatterBit's own new fields below land at 0xC8 automatically as CChunkBit's tail.
 		// 0xC8: confirmed by Split (0x48C730, `mov [esi+0C8h], ecx` right after the SetUVs call,
 		// ecx loaded from Split's own arg_24 = its 10th parameter, the u32 one). NOT written by
 		// the constructor itself (checked: the ctor's disasm never touches 0xC8). Every call site
