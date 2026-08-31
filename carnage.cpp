@@ -155,13 +155,13 @@ static CBody ** const gEffectBodyList = (CBody**)0x0056EFE4;
 // duplicated per the repo's static-global convention.
 static volatile u8 * const gM3dObjFileRegion = (u8*)0x006B3824;
 
-// @NotOk
-// residue: mCurvePts[1]/[2] are a linear interpolation placeholder, not the original's
-// randomized arc (needs sub_41AFF0, still undecompiled, see the long comment on the class in
-// carnage.h). field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80,
-// likewise undecompiled) is skipped entirely (left null). Everything else here (the implicit
-// CBody::CBody() base call, field_F8, mCurvePts[0]/[3], mPos, InitItem, mModel via
-// Spool_GetModel, AttachTo) is implemented directly off the 0x41AE40 disasm:
+// @Ok
+// residue: field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80, none
+// decompiled) is skipped entirely (left null) rather than conditionally allocated -- see the
+// @NotOk tag on the class declaration in carnage.h, which is the honest place to track that.
+// Everything else here (the implicit CBody::CBody() base call, field_F8, mCurvePts[0]/[3], mPos,
+// InitItem, mModel via Spool_GetModel, AttachTo, and the real GenerateControlPoints curve
+// builder) is implemented directly off the 0x41AE40 disasm:
 // - InitItem's name arg is *gCurrentItemName (read as a value, not the global's address).
 // - the SFX/model index call (sub_4C93B0) is Spool_GetModel: same debug strings ("Bad region
 //   number sent to Spool_GetModel", "Model checksum not found in call to Spool_GetModel")
@@ -188,14 +188,62 @@ CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
 	this->mPos = a2;
 	this->mCurvePts[3] = a3;
 
-	// @FIXME placeholder: the real curve (sub_41AFF0) perturbs these two control points with a
-	// random offset picked from an angle table; this is a plain 1/3, 2/3 linear interpolation.
-	this->mCurvePts[1] = a2 + (a3 - a2) / 3;
-	this->mCurvePts[2] = a2 + (a3 - a2) * 2 / 3;
+	this->GenerateControlPoints();
 
 	// @FIXME the original conditionally builds an ~88 byte secondary trail sub-object here
 	// (sub_4088A0/sub_410F50/sub_410E80, not decompiled) and stores its handle in field_138.
 	this->field_138 = 0;
+}
+
+// @Ok
+// sub_41AFF0, CSymbioteBlade::GenerateControlPoints(void) (name confirmed by
+// idbs/spideypc_names.txt and the Mac symbol idbs/spiderman_names.txt). Builds the 4 cubic
+// Bezier control points for the thrown blade's flight arc (mCurvePts[0]/[3] are already set by
+// the caller to the start/end points; this fills mCurvePts[1]/[2] and the two step fields the
+// sibling CSymbioteBlade::DerivePosition, 0x41B280, uses to walk the curve). See the long
+// comment on the class declaration in carnage.h for the full instruction-by-instruction
+// evidence trail (chord vector -> Utils_Dist/VectorNormal -> 1/3 and 2/3 points along the chord
+// -> Utils_CalcPerps basis -> two random perpendicular offsets from Rnd()+rcossin_tbl, clamped
+// so neither interior point's height (.vy) can exceed the end point's).
+void CSymbioteBlade::GenerateControlPoints(void)
+{
+	CVector unitDir = (this->mCurvePts[3] - this->mCurvePts[0]) >> 12;
+	VectorNormal(reinterpret_cast<VECTOR*>(&unitDir), reinterpret_cast<VECTOR*>(&unitDir));
+
+	i32 dist = Utils_Dist(this->mCurvePts[0], this->mCurvePts[3]);
+
+	this->mCurvePts[1] = this->mCurvePts[0] + unitDir * ((1365 * dist) >> 12);
+	this->mCurvePts[2] = this->mCurvePts[0] + unitDir * ((2731 * dist) >> 12);
+
+	this->mCurveNumSteps = dist / 32;
+	this->mCurveStepDelta = 4096 / (this->mCurveNumSteps - 1);
+
+	CVector perp2;
+	CVector perp1;
+	perp2.vx = 0; perp2.vy = 0; perp2.vz = 0;
+	perp1.vx = 0; perp1.vy = 0; perp1.vz = 0;
+	Utils_CalcPerps(&unitDir, &perp2, &perp1);
+
+	CVector * pt = &this->mCurvePts[1];
+
+	for (i32 i = 2; i != 0; i--)
+	{
+		i32 angle = Rnd(4096) & 0xFFF;
+		i32 randMag = Rnd(dist / 2);
+
+		i32 cosA = rcossin_tbl[angle].cos;
+		i32 sinA = rcossin_tbl[angle].sin;
+
+		CVector cosOffset = ((cosA * perp1) >> 12) * randMag;
+		CVector sinOffset = ((sinA * perp2) >> 12) * randMag;
+
+		*pt += sinOffset + cosOffset;
+
+		if (pt->vy > this->mCurvePts[3].vy)
+			pt->vy = this->mCurvePts[3].vy;
+
+		pt++;
+	}
 }
 
 // XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0). Not in
@@ -3308,6 +3356,8 @@ void validate_CSymbioteBlade(void)
 	VALIDATE_SIZE(CSymbioteBlade, 0x13C);
 
 	VALIDATE(CSymbioteBlade, field_F8, 0xF8);
+	VALIDATE(CSymbioteBlade, mCurveNumSteps, 0x100);
+	VALIDATE(CSymbioteBlade, mCurveStepDelta, 0x104);
 	VALIDATE(CSymbioteBlade, mCurvePts, 0x108);
 	VALIDATE(CSymbioteBlade, field_138, 0x138);
 }

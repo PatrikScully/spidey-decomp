@@ -32,34 +32,69 @@
 //
 // CSymbioteBlade's own fields (past CBody's 0xF4 bytes), from the 0x41AE40 disasm:
 // - field_F8 (1 byte, zeroed only).
+// - mCurveNumSteps (i32 at 0x100) / mCurveStepDelta (i32 at 0x104): filled in by
+//   GenerateControlPoints (see below), consumed by the sibling CSymbioteBlade::DerivePosition
+//   (0x41B280, not part of this task, decompiled far enough to confirm the field meaning: it
+//   evaluates the curve at t = stepIndex * mCurveStepDelta using the classic cubic Bezier
+//   Bernstein basis (1-t)^3, 3t(1-t)^2, 3t^2(1-t), t^3 in Q12 fixed point over mCurvePts[0..3]).
 // - mCurvePts[4] (CVector array at 0x108): zeroed, then mCurvePts[0] = the ctor's first
-//   CVector arg (also copied into the inherited mPos), mCurvePts[3] = the second arg. Reads as
-//   a start/end pair with 2 empty control points, filled in by the curve builder (sub_41AFF0).
+//   CVector arg (also copied into the inherited mPos), mCurvePts[3] = the second arg. These are
+//   the 4 control points of a cubic Bezier curve (confirmed via DerivePosition's Bernstein-basis
+//   evaluation, not a Catmull-Rom spline or plain interpolation as earlier sessions guessed from
+//   the shape alone); mCurvePts[1]/[2] are filled in by GenerateControlPoints.
 // - field_138 (i32): a handle to an optional ~88 byte secondary sub-object (own vtable
 //   off_53B400, built only if sub_4088A0(88) succeeds), not decompiled.
-// sub_41AFF0 (the curve builder) is NOT decompiled: it chains 10 unresolved CVector-arithmetic
-// helpers (sub_4E7760/4E7840/4E77D0/4E7720/4E77A0/4E5E20/4E5DA0/4E7590/470430/4E6150) plus a
-// 2-iteration random-perturbation loop over an angle table. This matches the CLAUDE.md note
-// about CVector operator- and operator>> being wrongly inlined here vs the original's real
-// out-of-line calls. The ctor below fills mCurvePts[1]/[2] with a plain linear interpolation
-// as a functional placeholder (NOT the original's randomized arc); the secondary trail
-// sub-object (field_138) is left null (sub_4088A0/sub_410F50/sub_410E80 not decompiled).
+//
+// SOLVED 2026-08-31: sub_41AFF0 is CSymbioteBlade::GenerateControlPoints(void) (confirmed by
+// idbs/spideypc_names.txt "0041aff0: CSymbioteBlade_GenerateControlPoints" and the Mac symbol
+// idbs/spiderman_names.txt "GenerateControlPoints__14CSymbioteBladeFv"). It is a thiscall member
+// function with no extra arguments (called exactly once, from the constructor, right after
+// mCurvePts[0]/[3] are set), NOT a free-standing curve-eval helper. What it actually does,
+// instruction by instruction:
+// 1. delta = (mCurvePts[3] - mCurvePts[0]) >> 12 (chord vector, descaled from Q12 to plain
+//    world units); dist = Utils_Dist(mCurvePts[0], mCurvePts[3]) (chord length, plain units);
+//    unitDir = VectorNormal(delta) (chord direction, renormalized to Q12).
+// 2. mCurvePts[1] = mCurvePts[0] + unitDir * (dist*1365>>12)  (~1/3 of the way along the chord)
+//    mCurvePts[2] = mCurvePts[0] + unitDir * (dist*2731>>12)  (~2/3 of the way along the chord)
+//    (1365/4096 and 2731/4096 are the closest 12-bit fixed-point approximations of 1/3 and 2/3).
+// 3. mCurveNumSteps = dist/32; mCurveStepDelta = 4096/(mCurveNumSteps-1) (Q12 per-step t
+//    increment for DerivePosition's later walk).
+// 4. Utils_CalcPerps(unitDir, perp2, perp1) builds an orthonormal-ish basis perpendicular to the
+//    chord. Then, for i in {1,2}: pick a random angle (Rnd(4096)) and a random magnitude
+//    (Rnd(dist/2)), look up cos/sin from the shared rcossin_tbl (word_610C48/610C4A, see
+//    rhino.cpp/mysterio.cpp/etc for the same idiom), and add
+//    (cos*perp1>>12)*randMag + (sin*perp2>>12)*randMag to mCurvePts[i] -- a random offset in the
+//    plane perpendicular to the chord, magnitude up to half the chord length. Finally clamp
+//    mCurvePts[i].vy so it never exceeds mCurvePts[3].vy (the end point's height): the randomized
+//    control point can bow inward toward the camera/ground but never past the target's height.
+// This IS a real randomized-arc curve builder, same idea earlier sessions guessed from the name,
+// now implemented and verified against the disasm rather than assumed. All 10 helper calls in
+// the original (sub_4E7760/4E7840/4E77D0/4E7720/4E77A0/4E5E20/4E5DA0/4E7590/470430/4E6150) are
+// already implemented and named in the repo: CVector::operator-/>>/+/+=  and the two commutative
+// operator* overloads (vector.cpp), Utils_CalcPerps/Utils_Dist/Rnd (utils.cpp),
+// VectorNormal/M3dMaths_SquareRoot0 (ps2funcs.cpp).
 class CSymbioteBlade : public CBody
 {
 	public:
 		// @NotOk
-		// residue: mCurvePts[1]/[2] are a linear interpolation placeholder, not the original's
-		// randomized arc (needs sub_41AFF0, see the long comment above). field_138's optional
-		// trail sub-object (sub_4088A0/sub_410F50/sub_410E80) is skipped entirely (left null).
-		// Base construction (CBody::CBody), mPos/mCurvePts[0]/[3], InitItem, mModel via
-		// Spool_GetModel, and AttachTo are all implemented against the real disasm.
+		// residue: field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80, none
+		// decompiled) is skipped entirely (left null) instead of being conditionally allocated.
+		// Everything else (base CBody::CBody, mPos/mCurvePts[0]/[3], InitItem, mModel via
+		// Spool_GetModel, AttachTo, and the real GenerateControlPoints curve builder below) is
+		// implemented against the real disasm.
 		EXPORT CSymbioteBlade(const CVector&, const CVector&);
+
+		// see the long comment above the class for what this does and how it was verified.
+		EXPORT void GenerateControlPoints(void);
 
 		PADDING(0xF8 - 0xF4);
 
 		u8 field_F8;
 
-		PADDING(0x108 - 0xF9);
+		PADDING(0x100 - 0xF9);
+
+		i32 mCurveNumSteps;
+		i32 mCurveStepDelta;
 
 		CVector mCurvePts[4];
 
