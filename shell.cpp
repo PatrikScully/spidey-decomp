@@ -1352,24 +1352,109 @@ void Shell_ChooseTrainingMission(i32)
     printf("Shell_ChooseTrainingMission(i32)");
 }
 
+// @Ok
+// Real translation, 0x00478140, 57 bytes (names.json). Copies a
+// matrix4x4's 16 floats (the spin/rotation matrix built by
+// matrix4x4::matrix4x4, 0x00476710) into a plain f32[16] scratch array,
+// 4 floats at a time. Compiled from an unrolled "shifted pointer" loop
+// (CLAUDE.md tips.txt idiom: loops over struct arrays use shifted
+// pointers, not indices), but checked instruction by instruction against
+// Hex-Rays at 0x478140 and confirmed to be a straight in-order 16-float
+// copy, not a transpose or reorder: each of the 4 iterations reads 4
+// consecutive floats starting at pSrc+16*i and writes them to pDst+16*i.
+// Only caller (in the not-yet-decompiled Shell_ComicCollection body,
+// 0x49B270) later splits the 16 floats back out into 4 vector4d::operator=
+// calls onto a render-matrix global, one row per call. Functional only,
+// not chasing byte match (original is __thiscall on an untyped _DWORD*,
+// almost certainly because the source spelled this as a loop over a
+// struct/array type we have not identified yet, not because it is really
+// a class member function).
+static void Shell_CopyMatrixRows(f32 *pDst, const f32 *pSrc)
+{
+	for (i32 i = 0; i < 4; i++)
+	{
+		pDst[i * 4 + 0] = pSrc[i * 4 + 0];
+		pDst[i * 4 + 1] = pSrc[i * 4 + 1];
+		pDst[i * 4 + 2] = pSrc[i * 4 + 2];
+		pDst[i * 4 + 3] = pSrc[i * 4 + 3];
+	}
+}
+
+// @Ok
+// Real translation, 0x0049B1F0, 138 bytes (names.json). Draws the
+// expanding highlight box around one Comic Collection grid cell: gets a
+// POLY_FT4 via Panel_DrawTexturedPoly(pFrame->pTexture, 0) (0x462BB0,
+// already @Ok in panel.cpp), then sizes the quad around a 40x32-pixel
+// cell centred at (x+20, y+16): half-width is (20*amount)>>8, half-height
+// is (i8)(amount>>4), so the box grows from a point to the full cell size
+// as amount goes 0..255 (amount < 0 means "not shown", matching the
+// leading guard). Finishes with DCPanel_DrawTexturedPoly(1.0f, poly,
+// pFrame, 0) (0x4624a0, already @Ok in panel.cpp) to scale/texture/submit
+// it. Only caller is the not-yet-decompiled Shell_ComicCollection
+// (0x49B270); functional only, no null check on the Panel_DrawTexturedPoly
+// return before writing the quad fields, matching the original.
+void Shell_DrawComicHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amount)
+{
+	if (amount >= 0)
+	{
+		POLY_FT4 *poly = (POLY_FT4*)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
+
+		i16 halfW = (i16)((20 * amount) >> 8);
+		i16 x0 = (i16)(x - halfW + 20);
+		i16 x1 = (i16)(x + halfW + 20);
+		poly->x1 = x1;
+		poly->x0 = x0;
+		poly->x2 = x0;
+		poly->x3 = x1;
+
+		i16 halfH = (i16)(i8)(amount >> 4);
+		i16 y0 = (i16)(y - halfH + 16);
+		i16 y1 = (i16)(y + halfH + 16);
+		poly->y0 = y0;
+		poly->y1 = y0;
+		poly->y2 = y1;
+		poly->y3 = y1;
+
+		DCPanel_DrawTexturedPoly(1.0f, poly, pFrame, 0);
+	}
+}
+
 // Address confirmed real this session: 0x49B270, 3882 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
-// sub_49CCB0's menu-code loop, code 10). Same situation as
-// Shell_CharacterViewer above: left as a stub, own callees mostly
-// unnamed, and the only caller (Shell_DoShell) needs ~15 more
-// undecompiled functions before it is itself attemptable.
-// Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
-// directly (see its comment above for the sub_460080 base-class blocker).
-// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
-// shell.h/CDropDownController). Re-ran callees(): this one does NOT use
-// CDummy_ctor (sub_490DF0) at all, unlike CharacterViewer/CostumeViewer/
-// MainMenu/RollCredits -- it uses CExpandingBox instead (already declared
-// in the repo: CExpandingBox_Display, ??0CExpandingBox@@... all named).
-// The only real callees still missing are two small local helpers,
-// sub_478140 and sub_49B1F0 (not yet sized/investigated). This is
-// probably the most tractable of the six menu screens now, alongside
-// Shell_GameCovers below (same situation, no CDummy_ctor dependency).
-// @MEDIUMTODO
+// sub_49CCB0's menu-code loop, code 10). Re-checked 2026-08-31 with a full
+// Hex-Rays decompile: the "one or two small local helpers" estimate from
+// earlier this session was WRONG. Shell_DrawComicHighlightBox (0x49B1F0)
+// and Shell_CopyMatrixRows (0x478140) above are now real and @Ok, but the
+// main body constructs a previously undiscovered class: `sub_455390(420)`
+// (== CClass::operator new(420), and 420 == sizeof(CSuper) per
+// VALIDATE_SIZE(CSuper, 0x1A4) in ob.cpp) then CSuper::CSuper(this)
+// (0x460720, sets vtable to CSuper's own off_53BBE8), then the caller
+// OVERWRITES the vtable pointer to a different, never-named vtable at
+// off_53BFC0 before calling CItem::InitItem(this, "items") (already @Ok
+// in ob.cpp). So this is a same-size (no added fields) CSuper subclass
+// with a swapped-in vtable, not CItem and not CDummy (CDummy/sub_490DF0
+// is a separate, 2584-byte object, confirmed unused by this function).
+// off_53BFC0's slot 0 (scalar deleting destructor) chains to 0x460780,
+// which names.json calls "CBaddy::~CBaddy" -- almost certainly a
+// link-time duplicate-body fold (CLAUDE.md: "identical function bodies
+// across TUs are merged into one address"), not a real CBaddy relationship
+// (CBaddy is 0x324 bytes per VALIDATE_SIZE in baddy.cpp, so this object
+// cannot literally be a CBaddy). off_53BFC0's other slots mix entries
+// that match CSuper's own vtable (off_53BBE8) exactly (slots 1, 3) with
+// entries that differ (slot 2, and everything past slot 4 points into a
+// different address range, 0x4A2xxx-0x4A3xxx). The SAME 420-byte
+// off_53BFC0 object is also constructed in Shell_MainMenu (sub_493990,
+// confirmed via xrefs_to on off_53BFC0), where it exists alongside a
+// separate, real CDummy_ctor (sub_490DF0) object -- so this class is
+// reused across at least MainMenu/ComicCollection/GameCovers, not
+// something invented just for comics. Next session: name this class,
+// give it a header declaration + VALIDATE_SIZE(<name>, 0x1A4), diff its
+// vtable slot-by-slot against off_53BBE8 to find which virtual(s) it
+// really overrides (ignore the CBaddy-address coincidence), then this
+// function's own body (mostly the per-cell grid loop, pad input, and the
+// M3d_Render calls building the spinning-item preview matrix that
+// Shell_CopyMatrixRows feeds) is comparatively mechanical.
+// @BIGTODO
 void Shell_ComicCollection(void)
 {
     printf("Shell_ComicCollection(void)");
@@ -1896,20 +1981,63 @@ i32 Shell_Gallery(EShellResult a1)
 	return v9;
 }
 
+// @Ok
+// Real translation, 0x0049C1A0, 122 bytes (names.json). Same shape as
+// Shell_DrawComicHighlightBox above, but for the (larger) Game Covers
+// grid: cell is 80x64 pixels, centred at (x+40, y+32), half-width is
+// (40*amount)>>8, half-height is (i8)(amount>>3). Gets its POLY_FT4
+// through the SAnimFrame* overload of Panel_DrawTexturedPoly (0x462B90,
+// "Panel_DrawTexturedPoly_0" in names.json, forwards to the Texture*
+// overload internally) rather than dereferencing pFrame->pTexture
+// directly like the Comic Collection helper does -- confirmed from
+// Hex-Rays to be a real difference between the two original functions
+// (they pass different arguments to two different real addresses), not a
+// transcription slip. Only caller is the not-yet-decompiled
+// Shell_GameCovers (0x49C220); functional only, no null check on the
+// Panel_DrawTexturedPoly return, matching the original.
+void Shell_DrawGameCoverHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amount)
+{
+	if (amount >= 0)
+	{
+		POLY_FT4 *poly = (POLY_FT4*)Panel_DrawTexturedPoly(pFrame, 0);
+
+		i16 halfW = (i16)((40 * amount) >> 8);
+		i16 x0 = (i16)(x - halfW + 40);
+		i16 x1 = (i16)(x + halfW + 40);
+		poly->x1 = x1;
+		poly->x0 = x0;
+		poly->x2 = x0;
+		poly->x3 = x1;
+
+		i16 halfH = (i16)(i8)(amount >> 3);
+		i16 y0 = (i16)(y - halfH + 32);
+		i16 y1 = (i16)(y + halfH + 32);
+		poly->y0 = y0;
+		poly->y1 = y0;
+		poly->y2 = y1;
+		poly->y3 = y1;
+
+		DCPanel_DrawTexturedPoly(1.0f, poly, pFrame, 0);
+	}
+}
+
 // Address confirmed real this session: 0x49C220, 2675 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
-// sub_49CCB0's menu-code loop, code 11). Same situation as
-// Shell_CharacterViewer/Shell_ComicCollection above: left as a stub
-// pending Shell_DoShell's own dispatch chain.
-// Confirmed 2026-08-31 via IDA callees(): also calls CheckForPadUnplugged
-// directly (see its comment above for the sub_460080 base-class blocker).
-// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
-// shell.h/CDropDownController). Same situation as Shell_ComicCollection:
-// no CDummy_ctor dependency (uses CExpandingBox instead, already in the
-// repo). Only real callee still missing is one small local helper,
-// sub_49C1A0 (not yet sized/investigated). Probably the most tractable of
-// the six menu screens now, alongside Shell_ComicCollection above.
-// @MEDIUMTODO
+// sub_49CCB0's menu-code loop, code 11). Re-checked 2026-08-31 with a full
+// Hex-Rays decompile: same conclusion as Shell_ComicCollection above, the
+// "one small local helper" estimate was WRONG. Shell_DrawGameCoverHighlightBox
+// (0x49C1A0) is now real and @Ok, but the main body constructs SIX of the
+// same previously-undiscovered 420-byte CSuper-subclass objects (off_53BFC0
+// vtable, see the long comment on Shell_ComicCollection above for the full
+// writeup: same size as CSuper (VALIDATE_SIZE(CSuper, 0x1A4) in ob.cpp), same
+// CSuper::CSuper()+vtable-swap+CItem::InitItem construction, and the same
+// class is also used by Shell_MainMenu). Six because Game Covers shows six
+// grid cells at once (vs Comic Collection's 32, drawn from a shared pool of
+// preview items lazily). Blocked on the same next step: name and validate
+// that class. The rest of the body (grid layout math, pad input, the six
+// CExpandingBox-less M3d_Render calls) is comparatively mechanical once
+// that class exists.
+// @BIGTODO
 void Shell_GameCovers(void)
 {
     printf("Shell_GameCovers(void)");
@@ -2721,6 +2849,21 @@ i32 Shell_LoadGame(void)
 // The remaining real blocker for this function is CDummy_ctor
 // (sub_490DF0) and this file's own sub_493860, both still BIGTODO/
 // undecompiled.
+// Addendum 2026-08-31 (from the Shell_ComicCollection/Shell_GameCovers
+// session): func_profile on sub_490DF0 confirms it is not a quick pickup
+// even leaf-first -- 512 instructions, 85 basic blocks, 27 distinct
+// callees (about 16 of them still unnamed/undecompiled), plus an
+// ___CxxFrameHandler SEH frame (the "new T(...) needs a cleanup frame
+// when the ctor isn't visible in the same TU" pattern from this file's
+// CLAUDE.md notes). Also: this function (sub_493990) is confirmed via
+// IDA xrefs_to on off_53BFC0 to ALSO construct the same previously
+// undiscovered 420-byte CSuper-subclass object documented in the long
+// comment above Shell_ComicCollection (same sizeof(CSuper), same
+// CSuper::CSuper()+vtable-swap+CItem::InitItem shape), used here
+// alongside its own separate CDummy object. So Shell_MainMenu has BOTH
+// blockers: CDummy_ctor and the off_53BFC0 class. Recommend doing the
+// off_53BFC0 class first (shared by 3 functions, smaller/simpler) before
+// tackling CDummy_ctor's 27-callee tree.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
