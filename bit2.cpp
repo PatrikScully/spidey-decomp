@@ -134,6 +134,81 @@ CGPolyLine::CGPolyLine(i32 numsegs)
 	this->mCode = 80;
 }
 
+// Segment count for CKnottedWeb: distance between the two endpoints, one segment per 80
+// units, clamped to [1, 40]. Split out of the constructor because the original computes it
+// before calling the CGPolyLine base constructor (this needs to happen in a member
+// initializer, which can't hold the clamping if/else directly). Not a separate function in
+// the original (inlined into 0x4F8E20, no address of its own), but real decompiled logic.
+// @Ok
+static i32 KnottedWeb_NumSegs(const CVector &start, const CVector &end)
+{
+	i32 numSegs = (end - start).Length() / 80;
+
+	if (numSegs < 1)
+		numSegs = 1;
+	else if (numSegs > 40)
+		numSegs = 40;
+
+	return numSegs;
+}
+
+// @Ok
+// residue: field_C/field_D/field_10/field_11 in SKnottedWebSeg are placeholder names (see
+// bit2.h). The values and their Rnd() ranges are taken straight from the disasm.
+CKnottedWeb::CKnottedWeb(const CVector &start, const CVector &end)
+	: CGPolyLine(KnottedWeb_NumSegs(start, end))
+{
+	this->field_58 = 0;
+	this->field_5C = 0;
+	this->field_60 = 0;
+
+	this->mStartR = 0xA2;
+	this->mStartG = 0xA2;
+	this->mStartB = 0xA2;
+
+	for (i32 i = 0; i < this->mNumSegs; i++)
+	{
+		this->mSegs[i].r = 0xA2;
+		this->mSegs[i].g = 0xA2;
+		this->mSegs[i].b = 0xA2;
+	}
+
+	this->mpExtraSegs = static_cast<SKnottedWebSeg*>(DCMem_New(28 * this->mNumSegs, 0, 1, 0, 1));
+
+	for (i32 j = 0; j < this->mNumSegs; j++)
+	{
+		SKnottedWebSeg *pSeg = &this->mpExtraSegs[j];
+
+		pSeg->field_C = 4;
+		pSeg->field_D = static_cast<u8>(Rnd(100) + 125);
+		pSeg->field_E = static_cast<i16>(Rnd(4096));
+		pSeg->field_11 = static_cast<u8>(Rnd(192) + 64);
+		pSeg->field_10 = static_cast<u8>(Rnd(19) - 9);
+
+		CFlatBit *pBit = new CFlatBit();
+		pBit->SetSemiTransparent();
+		pBit->SetAnim(4);
+		pBit->SetScale(176);
+		pBit->mProtected = 1;
+
+		pSeg->mpBit = pBit;
+	}
+
+	this->mpInnerLine = new CGPolyLine(2 * this->mNumSegs);
+	this->mpInnerLine->mStartR = 0xA2;
+	this->mpInnerLine->mStartG = 0xA2;
+	this->mpInnerLine->mStartB = 0xA2;
+
+	for (i32 k = 0; k < 2 * this->mNumSegs; k++)
+	{
+		this->mpInnerLine->mSegs[k].r = 0xA2;
+		this->mpInnerLine->mSegs[k].g = 0xA2;
+		this->mpInnerLine->mSegs[k].b = 0xA2;
+	}
+
+	this->field_70 = 1;
+}
+
 // @Ok
 // @AlmostMatching: diff reg allocation for the reg for the loop
 CPolyLine::CPolyLine(i32 numsegs)
@@ -290,6 +365,33 @@ void validate_CGPolyLine(void){
 	VALIDATE(CGPolyLine, mCode, 0x53);
 
 	VALIDATE(CGPolyLine, field_57, 0x57);
+}
+
+void validate_CKnottedWeb(void)
+{
+	VALIDATE_SIZE(CKnottedWeb, 0x78);
+
+	VALIDATE(CKnottedWeb, field_58, 0x58);
+	VALIDATE(CKnottedWeb, field_5C, 0x5C);
+	VALIDATE(CKnottedWeb, field_60, 0x60);
+
+	VALIDATE(CKnottedWeb, mpExtraSegs, 0x64);
+	VALIDATE(CKnottedWeb, mpInnerLine, 0x68);
+
+	VALIDATE(CKnottedWeb, field_6E, 0x6E);
+	VALIDATE(CKnottedWeb, field_70, 0x70);
+}
+
+void validate_SKnottedWebSeg(void)
+{
+	VALIDATE_SIZE(SKnottedWebSeg, 0x1C);
+
+	VALIDATE(SKnottedWebSeg, field_C, 0xC);
+	VALIDATE(SKnottedWebSeg, field_D, 0xD);
+	VALIDATE(SKnottedWebSeg, field_E, 0xE);
+	VALIDATE(SKnottedWebSeg, field_10, 0x10);
+	VALIDATE(SKnottedWebSeg, field_11, 0x11);
+	VALIDATE(SKnottedWebSeg, mpBit, 0x14);
 }
 
 void validate_CGLine(void)
