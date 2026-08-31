@@ -373,8 +373,16 @@ void CHostage::TellSomebodyToShootMe(void)
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
+// Confirmed against the inlined call sites in CHostage::WaitForPlayer
+// (0x442960, disasm 0x4429A1-0x442A7D and 0x442A1C-0x442A7D): Utils_CrapDist
+// takes (MechList->mPos, this->mPos) with MechList read from the fixed
+// address 0x6A9038, offset +8 for mPos matches CBody::mPos layout, the
+// distance/mInputFlags OR-condition and the DifficultyLevel 0/1 gate on
+// field_218 |= 1 match exactly, and the call chain ends in
+// Baddy_SendSignal() then TellSomebodyToShootMe() (0x442C70) in that order.
+// No standalone address in names.json, this gets inlined into every caller
+// same as the original.
 INLINE void CHostage::CheckIfFreed(void)
 {
 	if (Utils_CrapDist(MechList->mPos, this->mPos) < 0xC8 || this->mInputFlags & 1)
