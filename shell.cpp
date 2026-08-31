@@ -30,6 +30,7 @@
 #include "ps2gamefmv.h"
 #include "bmr.h"
 #include "ps2card.h"
+#include "dcfileio.h"
 
 #include <cstring>
 
@@ -3609,49 +3610,337 @@ done:
 	return v9;
 }
 
-// Investigated this session (address confirmed real: 0x4931E0, 1602 bytes,
-// names.json). Parses credits.txt (FileIO_Open/Load/Sync) with a hand-
-// rolled tokenizer (per-line "(r,g,b)name" records, up to 520 lines,
-// stored 43 bytes apart: 40 name chars + 3 RGB bytes), then runs a
-// per-frame scroll-and-render loop, same shell-tick boilerplate as
-// Shell_MainMenu/CheckForPadUnplugged (see the comment on
-// CheckForPadUnplugged above for the callee-name map, identical set here:
-// Db_FlipClear, CalcPolyBufferEnd, PCGfx_BeginScene/EndScene,
-// M3dMaths_RotMatrixYXZ, TransMatrix, M3d_RenderSetup/Render/RenderCleanup,
-// Pad_Update, Utils_VblankProcessing, PCSHELL_Relax, Pause,
-// CheckForPadUnplugged, Mem_Delete, DCMem_New, Mess_SetRGB/SetRGBBottom,
-// Db_SkyColor (0x56FC74, real name from idb_globals.txt), Init_KillAll,
-// Redbook_XAStop, Mess_DeleteAll) plus one menu-specific unnamed helper,
-// sub_490DF0 (a CDummy constructor overload, same one Shell_MainMenu uses
-// to spawn its preview spidey model) and sub_458640/670/700/610 (Mess_
-// SetRGB/SetRGBBottom/DrawText/SetTextJustify, already resolved above).
-// Left as a stub: direct same-TU dependency on CheckForPadUnplugged (still
-// a stub, see above) blocks a clean leaf-first attempt, and the RGB text
-// tokenizer plus the scroll math would need its own careful pass. Smaller
-// and more self-contained than Shell_MainMenu/Shell_DoShell though, a
-// reasonable next target once CheckForPadUnplugged is done.
-// Re-checked 2026-08-31: CheckForPadUnplugged's blocker is now narrowed to
-// one shared base class (sub_460080), see its comment above. Once that
-// lands, this is likely the most tractable of the six menu screens (it
-// only needs sub_490DF0, the CDummy preview-model ctor, on top of that).
-// Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
-// shell.h/CDropDownController). Confirmed still true: sub_490DF0
-// (CDummy_ctor) is the only real remaining blocker for this one.
-// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now,
-// see shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function fully to check
-// whether "the only real remaining blocker" claim above still held: it does not -- this function
-// is 1602 bytes / 504 instructions / 95 basic blocks with 45 distinct callees, and while every
-// one has a real name, roughly 30 of them (the credits.txt tokenizer helpers sub_4302D0/
-// sub_440920/sub_4581A0, background/scene setup sub_505E00/sub_47A3B0/sub_479EE0, the
-// scroll/camera chain sub_472DC0/sub_46E730/sub_46CFA0, input handling sub_50C180, cleanup
-// sub_4739A0/sub_4737F0, sound sub_4587A0, and more) are still undecompiled stubs in this repo.
-// Smallest of the four CDummy_ctor-adjacent screens by a good margin, so probably still the best
-// next target, but it is a real leaf-first session of its own, not a quick follow-up. Left as a
-// stub rather than force a partial/guessed translation.
-// @MEDIUMTODO
+// Update 2026-08-31, functional-decompile session (PLAN.md relaxed bar): all 41 callees turned
+// out to already be real implemented functions elsewhere in the repo (verified individually via
+// tools/names.json + grepping every .cpp for their definitions), so the "roughly 30 still
+// undecompiled" note above is stale. Full disasm (504 instructions, cross-checked against the
+// Hex-Rays decompile via idalib) confirms:
+// - credits.txt tokenizer: FileIO_Open("credits.txt") + Mem_New(fileSize) + FileIO_Load +
+//   FileIO_Sync, then a hand-rolled parser for up to 520 "(r,g,b)name" lines into a
+//   Mem_New(520*43) byte buffer, 43 bytes/record (R,G,B then a 40-char null-terminated name --
+//   confirmed record layout from the store addresses at 0x4933c3-0x4933d6). A record with no
+//   leading "(r,g,b)" tag keeps the PREVIOUS record's colour (R/G/B locals are seeded 0x80 once,
+//   before the loop, and only overwritten inside the '(' branch) -- reproduced as-is. The two
+//   nullsub_1() calls in the tokenizer ("Missing ) in rgb definition", "Excess left chars") are
+//   the confirmed-empty print_if_false stub already omitted at call sites elsewhere in this repo
+//   (see CSwinger_SwingBack in web.cpp); the name-copy loop has NO real bounds enforcement in the
+//   original (the store happens before the useless assert), so a >40-char name in credits.txt
+//   would spill into the next record's R byte -- a genuine original defect, reproduced not fixed.
+// - Per-frame loop: identical shell-tick boilerplate to CheckForPadUnplugged above (same
+//   Db_FlipClear/CalcPolyBufferEnd/PCGfx_BeginScene-EndScene/M3dMaths_RotMatrixYXZ/TransMatrix/
+//   M3d_RenderSetup-Render-RenderCleanup/Pad_Update/DoVblankProcessing+Utils_VblankProcessing/
+//   PCSHELL_Relax/Pause/gShellMenuAbort tail, confirmed address-for-address: dword_54D38C really
+//   is gShellMenuAbort, dword_5598B8 really is DoVblankProcessing (idb_globals.txt), dword_66129C
+//   really is Pad_IdleTime (idb_globals.txt) -- all already-established shell.cpp globals, no new
+//   naming needed there), plus the credits-specific bits: a smooth 15-vblank-per-line scroll
+//   (frame timer counts 0 down to -61440 in -4096 steps, i.e. "timer>>12" walks 0..-14 as a
+//   per-line pixel Y offset before the next record is due; confirmed 61440/4096=15 rows of scroll
+//   per 15px-tall line) and the "spidey" preview CDummy model, built and updated exactly like
+//   CheckForPadUnplugged's CDropDownController widget (new via CClass::operator new + placement
+//   new, matches decomp.me-adjacent front.cpp/web.cpp/pshell.cpp precedent for objects allocated
+//   this way in the original).
+// - gMikeCamera[0] fields (0x56F1B0 base, confirmed against panel.cpp's existing
+//   "qword_56F1B4/dword_56F1BC = gMikeCamera[0].Position" comment and SCamera's field offsets):
+//   Style/Position/Angles all zeroed once before the loop, then rebuilt every frame exactly like
+//   CheckForPadUnplugged does (M3dMaths_RotMatrixYXZ -> TransMatrix -> M3d_RenderSetup).
+// - Redbook_XAStat() (0x479D20) is COMDAT-folded with std::ctype<char>::_Term in this binary --
+//   tools/names.json already has the real name for this address (same class of gotcha as
+//   pshell.cpp's CClass/CItem::operator new folding, CLAUDE.md's "Link-time duplicate
+//   elimination"). Used here to auto-restart the credits music track (67,14,0, same args as the
+//   initial Redbook_XAPlay) once Redbook_XAStat()==4 (track finished); the "restart" flag it
+//   clears is G_CARNAGE_XA_RELATED_TWO (0x68276C), already a shared macro in ps2redbook.h.
+// - CDummy field pokes after construction (0x4936b0-0x4936c7, unconditional even on a failed
+//   allocation -- same class of reproduced defect as CSwinger_SwingBack in web.cpp): mPos =
+//   (50, 0, 350) in 4096-scaled units (204800/4096=50, 1433600/4096=350), mAngles.vy = 3584, and
+//   a byte poke at offset 0x1D8 that was pure PADDING in shell.h before this session (now named
+//   CDummy::field_1D8, see shell.h and its new VALIDATE entry).
+// - Three small u16 arrays (0x553CE8/553CF8/553D0C) feed the CDummy ctor's pTrackA/B/C
+//   parameters for the "spidey" costume; read directly via idalib get_bytes and confirmed
+//   0xFFFF-terminated (same sentinel CDummy::SelectNewTrack already expects per shell.h), each
+//   with exactly one xref in the whole binary (this function) via idalib xrefs_to. These are
+//   almost certainly one row of the larger per-costume off_553Dxx table the CDummy::CDummy
+//   comment above says Shell_CharacterViewer will eventually need to decode generically, but
+//   Shell_RollCredits always wants the "spidey"/mType 50 row specifically, so it hardcodes these
+//   addresses instead of doing a table lookup. Named gSpideyPreviewTrackA/B/C below.
+// - G_SCONTROL[0].Type (dword_66126C) reused as the "pad still recognised" check, matching the
+//   established idiom already used by CheckForPadUnplugged above -- NOTE this conflicts with
+//   front.cpp's own unrelated tentative name for the same address (gFrontCardSlotChoice); kept
+//   the shell.cpp-local SControl::Type interpretation for consistency within this file, since
+//   that one is corroborated by ps2pad.cpp's own VALIDATEd offset (0x16C) and by this exact
+//   read/clear/delete-on-unplug pattern, not just address adjacency.
+struct SCreditsEntry
+{
+	u8 R;
+	u8 G;
+	u8 B;
+	char Name[40];
+};
+
+// "spidey" (mType 50) preview-model track-id lists for the CDummy ctor's pTrackA/B/C. See the
+// long comment above Shell_RollCredits for the evidence (raw bytes read via idalib, single xref).
+// gSpideyPreviewTrackA = {0, 1, 21, 21, 21, 11, 0xFFFF}
+// gSpideyPreviewTrackB = {294, 33, 34, 34, 34, 35, 34, 36, 293, 0xFFFF}
+// gSpideyPreviewTrackC = {0, 290, 291, 292, 0xFFFF}
+static u16 * const gSpideyPreviewTrackA = (u16*)0x553CE8;
+static u16 * const gSpideyPreviewTrackB = (u16*)0x553CF8;
+static u16 * const gSpideyPreviewTrackC = (u16*)0x553D0C;
+
+// Same address/evidence as spidey.cpp's gPlayerSynthTickScratch (0x6B4CA4, address-adjacent to
+// Vblanks/0x6B4CA0 and gTimerRelated/0x6B4CA8); spidey.cpp's own comment already names this exact
+// function (0x4931E0) as one of the two other zeroers. Duplicated here as a plain file-local
+// static, same convention as other repo-wide raw-address globals.
+static i32 * const gPlayerSynthTickScratch = (i32*)0x6B4CA4;
+
+// @Bogus
+// Plain non-throwing placement new, same convention as front.cpp's/web.cpp's own file-local copy
+// (the original builds the preview CDummy via a raw CClass::operator new call plus a manual
+// constructor call, not a plain "new CDummy(...)" expression).
+inline void* operator new(size_t, void* location)
+{
+	return location;
+}
+
+// Address 0x4931E0, 1602 bytes. See the long comment above for the session's findings.
+// @Ok
 void Shell_RollCredits(void)
 {
-    printf("Shell_RollCredits(void)");
+	Db_SkyColor = 0xFF000000;
+	Db_UpdateSky();
+	Front_ClearScreen();
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	i32 fileSize = FileIO_Open("credits.txt");
+	char* fileBuf = static_cast<char*>(Mem_New(fileSize));
+	FileIO_Load(fileBuf);
+	FileIO_Sync();
+
+	SCreditsEntry* records = static_cast<SCreditsEntry*>(Mem_New(520 * sizeof(SCreditsEntry)));
+
+	char* p = fileBuf;
+	u8 r = 0x80, g = 0x80, b = 0x80;
+	i32 numRecords = 0;
+
+	for (; numRecords < 520; numRecords++)
+	{
+		if (*p == '#')
+			break;
+
+		if (*p == '(')
+		{
+			++p;
+			while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',')
+				++p;
+
+			i32 v = 0;
+			while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); ++p; }
+			r = static_cast<u8>(v);
+			while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',')
+				++p;
+
+			v = 0;
+			while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); ++p; }
+			g = static_cast<u8>(v);
+			while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',')
+				++p;
+
+			v = 0;
+			while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); ++p; }
+			b = static_cast<u8>(v);
+			while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',')
+				++p;
+
+			// Original: nullsub_1(*p == ')', "Missing ) in rgb definition in credits text").
+			// nullsub_1 (0x4015B0) is the confirmed-empty print_if_false stub this repo already
+			// omits at call sites; only the semantic assertion is preserved as this comment.
+			++p;
+		}
+
+		records[numRecords].R = r;
+		records[numRecords].G = g;
+		records[numRecords].B = b;
+
+		// Original: nullsub_1(nameLen < 40, "Excess left chars") every iteration, another no-op
+		// print_if_false assertion (see above) -- the store below is unconditional in the
+		// original, so a name of 40+ chars spills into the next record's R byte. Reproduced as-is
+		// rather than adding a bounds check the original doesn't have.
+		i32 nameLen = 0;
+		while (*p != '\r')
+		{
+			records[numRecords].Name[nameLen] = *p;
+			++nameLen;
+			++p;
+		}
+		records[numRecords].Name[nameLen] = 0;
+		p += 2;
+	}
+
+	Mem_Delete(fileBuf);
+
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	i32 scrollIndex = 0;
+	i32 rowTimer = 0;
+	CDummy* pDummy = 0;
+
+	for (;;)
+	{
+		*gPlayerSynthTickScratch = 0;
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		u32 startVblanks = Vblanks;
+
+		if (gSceneRelated == 0)
+			PCGfx_BeginScene(1, -1);
+
+		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+
+		if (pDummy)
+			M3d_Render(pDummy);
+
+		M3d_RenderCleanup();
+		Bit_Display();
+		PShell_DefaultText();
+		Mess_SetTextJustify(1);
+
+		i32 rowY = rowTimer >> 12;
+		if (rowY < 260)
+		{
+			i32 idx = scrollIndex;
+			while (idx < numRecords && rowY < 260)
+			{
+				SCreditsEntry* rec = &records[idx];
+				if (rec->Name[0] != 0)
+				{
+					Mess_SetRGB(rec->R, rec->G, rec->B, 0);
+					Mess_SetRGBBottom(150 * rec->R / 256, 150 * rec->G / 256, 150 * rec->B / 256);
+					Mess_DrawText(40, rowY, rec->Name, 0, 0x1000);
+				}
+				rowY += 15;
+				idx++;
+			}
+		}
+
+		if (gSceneRelated != 0)
+			PCGfx_EndScene(1);
+
+		Pad_Update();
+
+		if (*gShellMenuAbort != 0)
+			return;
+
+		if (G_SCONTROL[0].Type != 0)
+		{
+			// keep the existing preview model
+		}
+		else
+		{
+			if (pDummy)
+				delete pDummy;
+			pDummy = 0;
+			CheckForPadUnplugged();
+		}
+
+		if (PCSHELL_CheckTriggers(0x70330, 1, 1))
+		{
+			G_SCONTROL[0].X.Triggered = 0;
+			G_SCONTROL[0].Triangle.Triggered = 0;
+			G_SCONTROL[0].Circle.Triggered = 0;
+			G_SCONTROL[0].Square.Triggered = 0;
+			G_SCONTROL[0].Start.Triggered = 0;
+			goto finished;
+		}
+
+		rowTimer -= 4096;
+		if (rowTimer <= -61440)
+		{
+			rowTimer = 0;
+			scrollIndex++;
+			if (scrollIndex >= numRecords)
+				goto finished;
+		}
+
+		if (!pDummy)
+		{
+			void* mem = CClass::operator new(sizeof(CDummy));
+			if (mem)
+			{
+				pDummy = ::new (mem) CDummy("spidey", 50, 4096, -32, 0,
+						gSpideyPreviewTrackA, gSpideyPreviewTrackB, gSpideyPreviewTrackC,
+						0, 0, 0, 0);
+			}
+			else
+			{
+				pDummy = 0;
+			}
+
+			// Original writes these fields unconditionally, even down the "operator new
+			// returned null" path (a genuine defect, reproduced not fixed -- same class of bug
+			// as CSwinger_SwingBack in web.cpp).
+			pDummy->mPos.vx = 204800;
+			pDummy->mPos.vy = 0;
+			pDummy->mPos.vz = 1433600;
+			pDummy->mAngles.vy = 3584;
+			pDummy->field_1D8 = 1;
+
+			Redbook_XAPlay(67, 14, 0);
+		}
+
+		pDummy->AI();
+
+		Bit_Move();
+		Bit_RemoveDeadBits();
+
+		if (Redbook_XAStat() == 4)
+		{
+			Redbook_XAStop();
+			G_CARNAGE_XA_RELATED_TWO = 0;
+			Redbook_XAPlay(67, 14, 0);
+		}
+
+		if (Vblanks == startVblanks)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
+
+finished:
+	if (pDummy)
+		delete pDummy;
+	Mem_Delete(records);
+	Init_KillAll();
+	Pad_IdleTime = 0;
+	Redbook_XAStop();
+	Mess_DeleteAll();
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+	Front_ClearScreen();
 }
 
 // forward to original, slider drawing helper (0x498060, 472B), not yet decompiled
@@ -7016,6 +7305,7 @@ void validate_CDummy(void){
 
 	VALIDATE(CDummy, field_1D0, 0x1D0);
 	VALIDATE(CDummy, field_1D4, 0x1D4);
+	VALIDATE(CDummy, field_1D8, 0x1D8);
 
 	VALIDATE(CDummy, field_1DC, 0x1DC);
 

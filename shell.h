@@ -226,7 +226,12 @@ public:
 	// constant 1, written unconditionally by the constructor.
 	i32 field_1D4;
 
-	PADDING(4); // not written by the constructor; unconfirmed.
+	// Not written by the constructor itself, but Shell_RollCredits (0x4931E0) pokes byte
+	// field_1D8=1 directly on its own "spidey" preview CDummy right after construction, same
+	// idiom as Front_Init's pYesNoMenu->field_1E poke. Purpose unconfirmed beyond that one
+	// caller; the other 3 bytes of this dword are still unconfirmed padding.
+	u8 field_1D8;
+	PADDING(3);
 
 	// constructor parameter a13, stored as-is. Not read by any currently-decompiled CDummy method.
 	i32 field_1DC;
