@@ -1,6 +1,10 @@
 #include "spclone.h"
 #include "validate.h"
 #include "m3dutils.h"
+#include "trig.h"
+#include "utils.h"
+#include "ps2redbook.h"
+#include "m3dcolij.h"
 
 extern CBaddy* BaddyList;
 extern u8 submarinerDieRelated;
@@ -233,10 +237,345 @@ void CSpClone::KillCommandBlockByID(i32 a2)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// A byte-code VM, same idiom as CBlackCat::SynthesizeAnalogueInput
+// (blackcat.cpp), reverse engineered from IDA decompile+disasm of 0x4B03C0
+// (2464 bytes). field_348 is the byte-code stream (i16 dueTime/opcode/params
+// entries, same shape as CBlackCat's field_34C), field_340 is the elapsed
+// time counter (field_80 added per tick), field_344 is the phase-1-active
+// byte flag. Opcodes:
+//   1 = read a trig id, teleport to it (mPos.vx/vz from the trig, mPos.vy
+//       from ground height minus field_21E).
+//   2 = cancel any pending id-6 command block, read a trig id, enqueue a
+//       persistent id-2 "walk to trig" block, RunAnim(1).
+//   4 = Redbook_XAPlay(a,b,c).
+//   5 = read trig id + duration, enqueue persistent id-5 "move to trig for
+//       N ticks" block.
+//   6 = read 2 params, enqueue persistent id-6 "hold anim for N ticks"
+//       block (deadline = param2 + field_80).
+//   8 = read 2 params, enqueue persistent id-8 "look at trig for N ticks"
+//       block (deadline = param2 + field_80).
+//   15 = read anim id, enqueue persistent id-15 "run anim once" block.
+//   255 = stop phase 1 processing (field_344 = 0) with no stream advance.
+// Phase 2 walks field_34C (same node layout as GetNewCommandBlock /
+// KillCommandBlock): 2 steers mVel/mAngVel/mAngAcc toward its trig target
+// (magnitude 8) and deletes itself once close (Utils_XZDist < 64), waking
+// phase 1 again and calling RunAnim(13); 5 does the same with
+// Utils_Dist/VectorNormal into mVel directly; 6 and 8 are countdown timers
+// (field_80 per tick) that hold an anim / a look-at trig (field_324) until
+// they expire; 15 is a one-shot anim gated on mInputFlags bit 0.
+//
+// Known dead code kept for fidelity: case 5's final CVector::operator<<=
+// call on the duration (its result is discarded and never observably used,
+// same dead call already documented in CBlackCat::SynthesizeAnalogueInput),
+// omitted here too.
+//
+// Functional-only per this session's bar (session override on the matching
+// discipline): every field offset, opcode, and call target was checked
+// against the disasm; GetNewCommandBlock/KillCommandBlock are called as
+// real member functions here instead of the inlined-at-each-site shape the
+// original compiled (same class of residue already documented for
+// CBlackCat's version), so this is not expected to byte-match.
 void CSpClone::SynthesizeAnalogueInput(void)
 {
-    printf("CSpClone::SynthesizeAnalogueInput(void)");
+	this->field_340 += this->field_80;
+
+	if (this->field_344)
+	{
+		do
+		{
+			i16* stream = reinterpret_cast<i16*>(this->field_348);
+			i16 dueTime = stream[0];
+			if (dueTime != -1 && dueTime > this->field_340)
+				break;
+
+			this->field_340 = 0;
+			stream++;
+			i16 opcode = stream[0];
+			stream++;
+			this->field_348 = reinterpret_cast<i32>(stream);
+
+			switch (opcode)
+			{
+				case 1:
+				{
+					i16 trigId = stream[0];
+					stream++;
+					this->field_348 = reinterpret_cast<i32>(stream);
+
+					CVector target;
+					target.vx = 0; target.vy = 0; target.vz = 0;
+					Trig_GetPosition(&target, trigId);
+
+					i32 groundHeight = Utils_GetGroundHeight(&target, 0, 0x800, 0);
+					i32 height = this->field_21E << 12;
+
+					this->mPos.vx = target.vx;
+					this->mPos.vz = target.vz;
+					this->mPos.vy = groundHeight - height;
+					continue;
+				}
+
+				case 2:
+				{
+					i32* block = this->field_34C;
+					while (block)
+					{
+						i32* next = reinterpret_cast<i32*>(block[block[1] - 1]);
+						if (block[0] == 6)
+							this->KillCommandBlock(block);
+						block = next;
+					}
+
+					i16 trigId = stream[0];
+					stream++;
+					this->field_348 = reinterpret_cast<i32>(stream);
+
+					CVector trigPos;
+					trigPos.vx = 0; trigPos.vy = 0; trigPos.vz = 0;
+					Trig_GetPosition(&trigPos, trigId);
+
+					i32* newBlock = this->GetNewCommandBlock(5);
+					newBlock[0] = 2;
+					newBlock[1] = 5;
+					newBlock[2] = trigPos.vx;
+					newBlock[3] = trigPos.vz;
+
+					this->field_344 = 0;
+					this->RunAnim(1, 0, -1);
+					continue;
+				}
+
+				case 4:
+				{
+					i16 p1 = stream[0]; stream++;
+					i16 p2 = stream[0]; stream++;
+					i16 p3 = stream[0]; stream++;
+					this->field_348 = reinterpret_cast<i32>(stream);
+
+					Redbook_XAPlay(p1, p2, p3);
+					continue;
+				}
+
+				case 5:
+				{
+					i16 trigId = stream[0]; stream++;
+					i16 duration = stream[0]; stream++;
+					this->field_348 = reinterpret_cast<i32>(stream);
+
+					CVector target;
+					target.vx = 0; target.vy = 0; target.vz = 0;
+					Trig_GetPosition(&target, trigId);
+
+					i32* block = this->GetNewCommandBlock(7);
+					block[0] = 5;
+					block[1] = 7;
+					block[2] = target.vx;
+					block[3] = target.vy;
+					block[4] = target.vz;
+					block[5] = duration;
+
+					this->field_344 = 0;
+					continue;
+				}
+
+				case 6:
+				{
+					i16 param1 = stream[0]; stream++;
+					i16 param2 = stream[0]; stream++;
+					this->field_348 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(5);
+					block[0] = 6;
+					block[1] = 5;
+					block[2] = param1;
+					block[3] = param2 + this->field_80;
+					continue;
+				}
+
+				case 8:
+				{
+					i16 param1 = stream[0]; stream++;
+					i16 param2 = stream[0]; stream++;
+					this->field_348 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(5);
+					block[0] = 8;
+					block[1] = 5;
+					block[2] = param1;
+					block[3] = param2 + this->field_80;
+					continue;
+				}
+
+				case 15:
+				{
+					i16 animId = stream[0];
+					stream++;
+					this->field_348 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(3);
+					block[0] = 15;
+					block[1] = 3;
+
+					this->field_344 = 0;
+					if (this->mAnim != animId)
+						this->RunAnim(animId, 0, -1);
+					continue;
+				}
+
+				case 255:
+					this->field_344 = 0;
+					continue;
+
+				default:
+					continue;
+			}
+		}
+		while (this->field_344);
+	}
+
+	i32* block = this->field_34C;
+	while (block)
+	{
+		switch (block[0])
+		{
+			case 2:
+			{
+				CVector target;
+				target.vx = block[2];
+				target.vy = 0;
+				target.vz = block[3];
+
+				if (Utils_XZDist(&target, &this->mPos) >= 64)
+				{
+					CVector flatPos;
+					flatPos.vx = this->mPos.vx;
+					flatPos.vy = 0;
+					flatPos.vz = this->mPos.vz;
+
+					CSVector dir;
+					Utils_CalcAim(&dir, &flatPos, &target);
+					Utils_GetVecFromMagDir(&this->mVel, 8, &dir);
+
+					Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, dir, 8);
+
+					if (this->mAnim == 1 && this->mAnimFinished)
+						this->CycleAnim(21, 1);
+
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				}
+				else
+				{
+					block = this->KillCommandBlock(block);
+
+					this->mVel.vx = 0;
+					this->mVel.vy = 0;
+					this->mVel.vz = 0;
+
+					this->mAngVel.vx = 0;
+					this->mAngVel.vy = 0;
+					this->mAngVel.vz = 0;
+					this->mAngAcc.vx = 0;
+					this->mAngAcc.vy = 0;
+					this->mAngAcc.vz = 0;
+
+					this->field_344 = 1;
+					this->RunAnim(13, 0, -1);
+				}
+				break;
+			}
+
+			case 5:
+			{
+				CVector target;
+				target.vx = block[2];
+				target.vy = block[3];
+				target.vz = block[4];
+
+				if (Utils_Dist(target, this->mPos) < 64)
+				{
+					block = this->KillCommandBlock(block);
+					this->field_344 = 1;
+					break;
+				}
+
+				CVector delta = target;
+				delta -= this->mPos;
+				delta >>= 12;
+				VectorNormal(reinterpret_cast<VECTOR*>(&delta), reinterpret_cast<VECTOR*>(&this->mVel));
+
+				block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				break;
+			}
+
+			case 6:
+			{
+				i32 animId = block[2];
+				i32 remaining = block[3] - this->field_80;
+
+				if (remaining < 0)
+				{
+					block = this->KillCommandBlock(block);
+				}
+				else
+				{
+					block[3] = remaining;
+					if (this->mAnimFinished || this->mAnim != animId)
+						this->RunAnim(animId, 0, -1);
+
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				}
+				break;
+			}
+
+			case 8:
+			{
+				i32 remaining = block[3] - this->field_80;
+
+				if (remaining < 0)
+				{
+					block = this->KillCommandBlock(block);
+					this->field_324 = 0;
+				}
+				else
+				{
+					this->mFlags |= 4;
+					block[3] = remaining;
+					this->field_324 = block[2];
+
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				}
+				break;
+			}
+
+			case 15:
+			{
+				if (this->mInputFlags & 1)
+				{
+					this->mInputFlags &= ~1;
+					block = this->KillCommandBlock(block);
+					this->field_344 = 1;
+				}
+				else
+				{
+					if (this->mAnimFinished)
+						this->RunAnim(this->mAnim, 0, -1);
+
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				}
+				break;
+			}
+
+			default:
+				print_if_false(0, "Bad command");
+				break;
+		}
+	}
+
+	if (!this->field_34C && !this->field_344)
+	{
+		this->field_33C = 0;
+	}
 }
 
 // @Ok
@@ -348,11 +687,18 @@ void CSpClone::KillAllCommandBlocks(void)
 void validate_CSpClone(void){
 	VALIDATE_SIZE(CSpClone, 0x350);
 
+	VALIDATE(CSpClone, field_324, 0x324);
+
 	VALIDATE(CSpClone, field_328, 0x328);
 	VALIDATE(CSpClone, field_32C, 0x32C);
 	VALIDATE(CSpClone, field_330, 0x330);
 	VALIDATE(CSpClone, field_334, 0x334);
 	VALIDATE(CSpClone, field_338, 0x338);
+
+	VALIDATE(CSpClone, field_33C, 0x33C);
+
+	VALIDATE(CSpClone, field_340, 0x340);
+	VALIDATE(CSpClone, field_344, 0x344);
 
 	VALIDATE(CSpClone, field_348, 0x348);
 
