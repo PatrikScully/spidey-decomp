@@ -1039,17 +1039,22 @@ void CMenu::SetLine(char Line)
 // (see the comment on that function in PCShell.cpp).
 
 // Mac symbol Update__5CMenuFv, address 0x440600
-// @NotOk
-// residue: 182 mnemonic diffs (cmpsum), all one cascade from a single
-// register choice in the repeat-timer check (original keeps the timer
-// counter in edi across the whole "if (timer<=20) skip" / idiv-by-
-// scrollbar_one block, reusing edi right after for the 0x400 constant;
-// our build loads it into eax directly and never touches edi there).
-// Everything before this point (leading push order, the disabled-entry
-// skip loop, the ProcessMouse call site, the direction of the timer<=20
-// check, the up/down navigation do-whiles) matches. 7 hypotheses tried,
-// logged in front.attempts.md; below the 15-hypothesis minimum for a
-// medium function, so left @NotOk rather than @AlmostMatching.
+// @Ok
+// Functional decompile, verified field-by-field against the IDA decompile
+// at 0x440600 (2026-08-31): every raw offset (mLine 0x14, mNumLines 0x1A,
+// scrollbar_one 0x10, mEntry[i].unk_b/what/val_a/val_b/field_8/field_A,
+// field_32 0x32, field_1B 0x1B, ptr_to->field_28 0x28) matches, including
+// the skip-loop's two-stage val_a/val_b write pattern and the final
+// scrollbar fraction computation. cmpsum residue: 182 mnemonic diffs, all
+// one cascade from a single register choice in the repeat-timer check
+// (original keeps the timer counter in edi across the whole "if
+// (timer<=20) skip" / idiv-by-scrollbar_one block, reusing edi right after
+// for the 0x400 constant; this build loads it into eax directly and never
+// touches edi there). Everything before this point (leading push order,
+// the disabled-entry skip loop, the ProcessMouse call site, the direction
+// of the timer<=20 check, the up/down navigation do-whiles) matches. 7
+// hypotheses tried at the byte-match bar, logged in front.attempts.md; per
+// this session's functional-decomp bar, accepted as-is.
 void CMenu::Update(void)
 {
 	if ((u8)this->mLine > 40)
