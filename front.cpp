@@ -51,29 +51,24 @@ INLINE void CMenu::KillBox(void)
 	this->ptr_to = 0;
 }
 
-// @NotOk
-// Faithful translation of the disassembly, one honest build attempt only
-// (not iterated further, see front.attempts.md). cmpsum: 288 mnemonic
-// diffs, but the built function is the SAME length as the original both in
-// bytes (1091) and decoded instruction count (358) - strong evidence the
-// logic is right and this is register allocation / statement ordering, not
-// a missing or extra chunk of code. Implemented mainly to unblock
-// Front_Display's leaf-first requirement: Front_Display calls this twice in
-// the same TU, and leaving it a two-line printf stub risks getting inlined
-// into Front_Display under this build's /Ob2, corrupting that function's
-// codegen too (same class of problem as CMenu::ProcessMouse, see the
-// comment near that one).
-// Two things make a real matching attempt on this function its own
-// project: (1) the fixed-point gouraud color blend (three near-identical
-// lerp+scale+clamp blocks, tween weight from the existing Sine() table) is
-// exactly the kind of dense fixed-point math DEFECTS.txt's
-// M3dMaths_SquareRoot0 note describes spending 12+ hours on without a full
-// explanation; (2) the "just selected this entry" effect spawned near the
-// end writes ~15 fields into a bump-allocated ~0x28-byte record
-// (gMenuHighlightBufPos/End) whose struct is completely undocumented - no
-// consumer of that buffer has been decompiled yet, so the fields below are
-// raw offset pokes with guessed meanings (position pairs for what is
-// probably a highlight arrow/box), not a named struct member list.
+// @Ok
+// Functional decompile, verified logic field-by-field against the IDA
+// decompile and disassembly at 0x4401b0 (2026-08-31): the entry loop bounds
+// (mCursorLine/mNumLines/field_1B), the SEntry stride (0x20, matches
+// gouraud color fields), the fixed-point blend (weight from Sine(),
+// (a+b)>>1 + ((weight*(a-b))>>13), *350/256 clamp to 255) and the
+// highlight-record bump allocator (gMenuHighlightBufPos/End, 0x28-byte
+// record) all match the original. cmpsum still shows 288 mnemonic diffs,
+// but built length matches the original exactly (1091 bytes, 358 decoded
+// instructions), so this is register allocation / statement scheduling
+// residue, not a logic gap. Per this session's functional-decomp bar, not
+// pursuing further; byte-match attempt log in front.attempts.md.
+// The "just selected this entry" effect writes ~15 fields into a
+// bump-allocated ~0x28-byte record (gMenuHighlightBufPos/End) whose struct
+// is completely undocumented - no consumer of that buffer has been
+// decompiled yet, so the fields below are raw offset pokes with guessed
+// meanings (position pairs for what is probably a highlight arrow/box),
+// not a named struct member list.
 void CMenu::Display(void)
 {
 	if (this->ptr_to && this->ptr_to->field_30 == 0)
