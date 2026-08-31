@@ -1704,10 +1704,99 @@ void CPlayer::ProcessSFXArray(void)
     printf("CPlayer::ProcessSFXArray(void)");
 }
 
-// @MEDIUMTODO
+// Reads the player's movement input for this tick from the pad (field_E0C
+// = gSControl) into field_E2D (move forward/back) and field_E2E (move
+// left/right), falling back to the digital D-pad when the analogue stick is
+// centred. While a target is locked (field_E18 != 0) and field_1AC is clear
+// the input is zeroed instead of read. After reading it applies the aim
+// correction (field_EA0/field_EA2), the one-shot "just centred" flags
+// (field_AD8/field_AD9), the input-inversion options (field_8E8/field_8E9)
+// and updates the aim angle field_E32 from field_E34 via ratan2.
+// @Ok
 void CPlayer::ReadAnalogueInput(void)
 {
-    printf("CPlayer::ReadAnalogueInput(void)");
+	u8 *pad = reinterpret_cast<u8*>(this->field_E0C);
+
+	this->field_E2F = this->field_E2D;
+	this->field_E30 = this->field_E2E;
+	this->field_E2D = 0;
+	this->field_E2E = 0;
+
+	if (this->field_E18 == 0)
+	{
+		if (this->field_1AC == 0)
+		{
+			// SControl::Type (pad+0x16C) is 0x73 for the pad that reports
+			// the analogue move values in pad+0x168/0x169.
+			if (*reinterpret_cast<i32*>(pad + 0x16C) == 0x73)
+			{
+				this->field_E2D = pad[0x168]; // AnalogueMoveForwardsBackwards
+				this->field_E2E = pad[0x169]; // AnalogueMoveLeftRight
+			}
+			if (this->field_E2D == 0 && this->field_E2E == 0)
+			{
+				if (pad[0xA0])                 // Up.Pressed
+					this->field_E2D = -127;
+				else if (pad[0xB0])            // Down.Pressed
+					this->field_E2D = 127;
+				if (pad[0x90])                 // Right.Pressed
+					this->field_E2E = 127;
+				else if (pad[0x80])            // Left.Pressed
+					this->field_E2E = -127;
+			}
+		}
+		else
+		{
+			this->SynthesizeAnalogueInput();
+		}
+	}
+	else
+	{
+		if (this->field_1AC == 0)
+		{
+			this->field_8F0 = 0;
+			this->field_AD8 = 0;
+			this->field_AD9 = 0;
+			pad[0x40] = 0;                     // LeftOne.Pressed
+			return;
+		}
+		this->SynthesizeAnalogueInput();
+	}
+
+	if (this->field_EA0 != 0)
+	{
+		this->field_E2D -= (char)(this->field_EA0 * (char)this->field_E2D / this->field_EA2);
+		this->field_E2E -= (char)(this->field_EA0 * (char)this->field_E2E / this->field_EA2);
+	}
+
+	if (this->field_AD8 != 0 && this->field_E2D == 0 && this->field_E2E == 0)
+	{
+		this->field_211 = 1;
+		this->field_AD8 = 0;
+		pad[0x51] = 1;                         // LeftTwo.Triggered
+	}
+	else if (this->field_AD9 != 0 && this->field_E2D == 0 && this->field_E2E == 0)
+	{
+		this->field_AD9 = 0;
+	}
+
+	if (this->field_8E9 != 0 && this->field_AD8 != 0)
+		this->field_E2D = -this->field_E2D;
+	else if (this->field_8E8 != 0 && this->field_AD9 != 0)
+		this->field_E2D = -this->field_E2D;
+
+	if (this->field_E2D != 0 || this->field_E2E != 0)
+	{
+		this->field_8F0 += 32;
+		if (this->field_8F0 > 256)
+			this->field_8F0 = 256;
+		this->field_E32 = (i16)((this->field_E34 - ratan2(-this->field_E2D, this->field_E2E) + 1024) & 0xFFF);
+	}
+	else
+	{
+		this->field_8F0 = 0;
+		this->field_E32 = this->field_E34;
+	}
 }
 
 // @SMALLTODO

@@ -57,7 +57,13 @@ class CPlayer : public CSuper
 
 		i32* field_1BC;
 
-		PADDING(0x350-0x1BC-4);
+		PADDING(0x211-0x1BC-4);
+
+		// set by ReadAnalogueInput when the move input returns to centre
+		// while field_AD8 was pending.
+		u8 field_211;
+
+		PADDING(0x350-0x211-1);
 
 		i32 *field_350;
 
@@ -162,7 +168,13 @@ class CPlayer : public CSuper
 
 		u8 gCamAngleLock; //8EC
 
-		PADDING(0xAB8-0x8EC-1);
+		PADDING(0x8F0-0x8EC-1);
+
+		// ReadAnalogueInput: accumulates +32 per tick while the move input is
+		// non-centre (clamped at 256), reset to 0 when it centres.
+		i32 field_8F0;
+
+		PADDING(0xAB8-0x8F0-4);
 
 		SHandle field_AB8;
 
@@ -176,7 +188,11 @@ class CPlayer : public CSuper
 
 		u8 field_AD7;
 
-		PADDING(0xAE4-0xAD7-1);
+		// ReadAnalogueInput: one-shot "move input just centred" flags.
+		u8 field_AD8;
+		u8 field_AD9;
+
+		PADDING(0xAE4-0xAD9-1);
 
 		u8 field_AE4;
 		u8 field_AE5;
@@ -332,13 +348,20 @@ class CPlayer : public CSuper
 		char field_E2D;
 		char field_E2E;
 
-		PADDING((0xE32-0xE2E)-0x1);
+		// ReadAnalogueInput: previous-tick copy of field_E2D/field_E2E.
+		char field_E2F;
+		char field_E30;
+
+		PADDING((0xE32-0xE30)-0x1);
 
 		// used as an index (masked to 0xFFF, then scaled) into
 		// word_610C4A/word_610C48 in CPlayer::PutCameraBehind.
 		i16 field_E32;
 
-		PADDING((0xE38-0xE32)-0x2);
+		// ReadAnalogueInput: previous aim angle; field_E32 is the new angle.
+		i16 field_E34;
+
+		PADDING((0xE38-0xE34)-0x2);
 
 		i32 field_E38;
 
@@ -368,8 +391,11 @@ class CPlayer : public CSuper
 
 		u8 field_E8C;
 
-		PADDING(0xEA4-0xE8C-1);
+		PADDING(0xEA0-0xE8C-1);
 
+		// ReadAnalogueInput: aim correction ratio (field_EA0/field_EA2).
+		u16 field_EA0;
+		u16 field_EA2;
 
 		u8 field_EA4;
 
