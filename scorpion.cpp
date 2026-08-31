@@ -126,8 +126,7 @@ void INLINE CScorpion::PlayXA_NoRepeat(i32 a2, i32 a3, i32 a4, i32 *a5, CBody* p
 	}
 }
 
-// @NotOk
-// case 1 is fucked up
+// @Ok
 void CScorpion::GetTrapped(void)
 {
 	i32 **v6;
@@ -202,7 +201,7 @@ void CScorpion::GetTrapped(void)
 					
 					this->field_104.pWhatever = 0;
 				}
-				this->field_31C.bothFlags = 12;
+				this->field_31C.bothFlags = 11;
 				this->dumbAssPad++;
 			}
 			else
