@@ -232,7 +232,12 @@ class CPlayer : public CSuper
 
 		SHandle field_AB8;
 
-		PADDING(0xAC8-0xAB8-sizeof(SHandle));
+		// CPlayer::DoMGSShadow: lazily-allocated CQuadBit for the MGS shadow
+		// (132 bytes via CBit::operator new), created when field_158 is set
+		// and deleted (vtable[0](this,1)) when field_158 is cleared.
+		CQuadBit *field_AC0;
+
+		PADDING(4);
 
 		CVector field_AC8;
 

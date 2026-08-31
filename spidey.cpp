@@ -1241,10 +1241,112 @@ void CPlayer::CreateWebDrips(bool a2, bool a3)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
 void CPlayer::DoMGSShadow(void)
 {
-    printf("CPlayer::DoMGSShadow(void)");
+	if (this->field_158 != 0)
+	{
+		// Four hook corners (0, 1, 5, 6) as a contiguous CVector[4].
+		CVector hooks[4];
+		i32 i;
+		for (i = 0; i < 4; i++)
+		{
+			hooks[i].vx = 0;
+			hooks[i].vy = 0;
+			hooks[i].vz = 0;
+		}
+		M3dUtils_GetHookPosition((VECTOR*)&hooks[0], this, 0);
+		M3dUtils_GetHookPosition((VECTOR*)&hooks[1], this, 1);
+		M3dUtils_GetHookPosition((VECTOR*)&hooks[2], this, 5);
+		M3dUtils_GetHookPosition((VECTOR*)&hooks[3], this, 6);
+
+		CVector v20 = this->mShadowPos - this->mPos;
+		for (i = 0; i < 4; i++)
+			hooks[i] -= this->mPos;
+
+		i32 maxX = 16;
+		i32 maxZ = 16;
+		i32 minX = -16;
+		i32 minZ = -16;
+		gte_SetRotMatrix(&this->field_89C);
+		for (i = 0; i < 4; i++)
+		{
+			hooks[i] >>= 12;
+			gte_ldlvl((VECTOR*)&hooks[i]);
+			gte_rtir();
+			gte_stlvnl((VECTOR*)&hooks[i]);
+			if (hooks[i].vx <= maxX)
+			{
+				if (hooks[i].vx < minX)
+					minX = hooks[i].vx;
+			}
+			else
+			{
+				maxX = hooks[i].vx;
+			}
+			if (hooks[i].vz <= maxZ)
+			{
+				if (hooks[i].vz < minZ)
+					minZ = hooks[i].vz;
+			}
+			else
+			{
+				maxZ = hooks[i].vz;
+			}
+		}
+
+		v20 >>= 12;
+		gte_ldlvl((VECTOR*)&v20);
+		gte_rtir();
+		gte_stlvnl((VECTOR*)&v20);
+		for (i = 0; i < 4; i++)
+			hooks[i].vy = v20.vy;
+
+		// Fold the rotated bounds into the four corners (a flat shadow quad).
+		hooks[0].vx = minX;
+		hooks[1].vx = minX;
+		hooks[0].vz = maxZ;
+		hooks[1].vz = minZ;
+		hooks[2].vx = maxX;
+		hooks[2].vz = maxZ;
+		hooks[3].vx = maxX;
+		hooks[3].vz = minZ;
+
+		gte_SetRotMatrix(&this->mTransform);
+		for (i = 0; i < 4; i++)
+		{
+			gte_ldlvl((VECTOR*)&hooks[i]);
+			gte_rtir();
+			gte_stlvnl((VECTOR*)&hooks[i]);
+			hooks[i] <<= 12;
+			hooks[i] += this->mPos;
+		}
+
+		if (this->field_AC0 == 0)
+		{
+			void *mem = CBit::operator new(132);
+			CQuadBit *bit = 0;
+			if (mem != 0)
+				bit = ::new (mem) CQuadBit();
+			this->field_AC0 = bit;
+			bit->SetTexture(0, 0);
+			bit->mFrigDeltaZ = 32;
+			bit->SetSubtractiveTransparency();
+		}
+
+		i32 trans = (this->field_570 >> 3) + 32;
+		if (this->field_8E8 != 0)
+			trans >>= 1;
+		this->field_AC0->SetTransparency(trans);
+		this->field_AC0->SetCorners(hooks[0], hooks[1], hooks[2], hooks[3]);
+		this->field_158 = 0;
+	}
+	else
+	{
+		if (this->field_AC0 != 0)
+			delete this->field_AC0;
+		this->field_AC0 = 0;
+	}
 }
 
 // @Ok
