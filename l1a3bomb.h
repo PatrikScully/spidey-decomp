@@ -21,7 +21,14 @@ class CL1A3Bomb : public CManipOb
 		u8 field_128;
 		u8 field_129;
 
-		PADDING(0x12C-0x129-1);
+		// set to 1 the first time DoPhysics lands the bomb on the ground
+		// (Utils_GetGroundHeight != -1) and reset to 0 whenever it is
+		// airborne again; gates the one-shot camera shake + landing SFX in
+		// DoPhysics (0x4470a0). Confirmed real by disassembly: read/written
+		// at this+0x12A, one byte past field_129.
+		u8 field_12A;
+
+		PADDING(0x12C-0x12A-1);
 };
 
 EXPORT extern u32 gBombRelated;

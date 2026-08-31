@@ -48,6 +48,37 @@ void Post_PostProcessEffects(void)
 	}
 }
 
+// Investigated 2026-08-31, left as a stub (not tractable in the time
+// available, documenting findings per repo policy rather than guessing).
+// Real PC address found via IDA xrefs on gPaletteProcessingPaused/
+// gPostSpideyLogoRelated/gPostPauseRelated: 0x46A3E0, size 0x8db (2267
+// bytes, matches the Mac prototypes.json size of 2372 for
+// "Post_SpideyLogo(void)" closely enough to be the same function). Not in
+// names.json and no tools/functions/*.bin entry, so there is no ground
+// truth byte blob checked into the repo for it either; this was found
+// straight from the exe.
+// The call site (Post_DoPauseDisplayListProcessing, unnamed in names.json
+// as sub_46ACC0/0x46ACC0, tagged @Ok in this file even though its body is
+// just "if (gPaletteProcessingPaused) Post_SpideyLogo();") already matches
+// byte-for-byte with this printf stub in place, because compare.py masks
+// call targets: "call <stub>" and "call <real function>" look identical at
+// the mnemonic/operand level it checks. That is why the gap was invisible
+// until traced by hand.
+// Why it is hard: the function draws the "SPIDER-MAN" logo lettering as a
+// sequence of individually shaped textured quads, reading per-letter
+// mesh/UV records out of a raw data table (off_54ED9C in the disassembly)
+// with 3 record shapes selected by a leading tag byte (3, 1, 0), plus two
+// small lookup tables (word_54ECBC/word_54ECBE, 512 entries each,
+// apparently a sin/cos-style angle-to-offset table) and a sprintf-style
+// helper (sub_46CB90) that formats each letter's glyph index into a
+// per-quad UV rect. None of this data table format exists anywhere else
+// in the repo (it is not SLineInfo, not POLY_FT4, not an SAnimFrame
+// table); decompiling this function correctly needs the actual byte
+// layout of that table, which is not something IDA's decompiler recovers
+// on its own and is not written down anywhere in this codebase. Guessing
+// a layout risks producing code that "looks plausible" but draws garbage
+// or crashes on the real letter data. Leaving as a stub rather than
+// guessing, per the "don't guess, document and move on" rule.
 // @MEDIUMTODO
 INLINE void Post_SpideyLogo(void)
 {
