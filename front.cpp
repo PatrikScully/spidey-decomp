@@ -764,9 +764,20 @@ void Front_SaveGameState(void)
 // - gFrontCardExistsThisFrame (0x5FAE8C): written every frame from
 //   DCCard_Exists(0), never read again in this function - likely read by
 //   another (undecompiled) front-end function.
-// - gFrontCardPollDelay (0x5FAE20) / gFrontCardSlotChoice (0x66126C):
-//   the memory-card-poll delay counter and its result, matching
-//   gFrontCardExists' (0x5FAD98) existing "wait a few frames" pattern.
+// - gFrontCardPollDelay (0x5FAE20): the memory-card-poll delay counter,
+//   matching gFrontCardExists' (0x5FAD98) existing "wait a few frames"
+//   pattern. gFrontCardSlotChoice (0x66126C) is its poll result, NOT an
+//   independent scratch value: 0x66126C = gSControl (0x661100, ps2pad.h)
+//   + 0x16C = SControl::Type. shell.cpp's CheckForPadUnplugged/
+//   Shell_RollCredits confirm this offset via VALIDATE(SControl, Type,
+//   0x16C) and read it the same way (G_SCONTROL[0].Type). The original
+//   game reuses this field as pause-menu scratch state here (writes 0 at
+//   0x441013/0x441030, reads/compares == 0 || == -1) despite it also
+//   being the pad-hardware type field elsewhere; reproduced faithfully
+//   as-is (confirmed via raw disasm, not just a coincidence of address
+//   arithmetic). Correcting this session's own audit: the macro's
+//   underlying address/access pattern was already correct, only the
+//   "independent card-slot value" story above was wrong.
 // - gFrontFadeGateOne (0x6611F0) / gFrontFadeGateTwo (0x6611E0): both must
 //   be nonzero to arm a ~0x78-vblank timer (gFrontFadeTimerActive/
 //   gFrontFadeTimerStart, 0x5FAED8/0x5FAEDC) that force-closes the pause
