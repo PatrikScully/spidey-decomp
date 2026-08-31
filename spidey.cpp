@@ -2031,10 +2031,67 @@ void CPlayer::ReadAnalogueInput(void)
 	}
 }
 
-// @SMALLTODO
-void CPlayer::SelectAutoAimTarget(void)
+// @Ok
+// 0x4C5AA0. Manages the dedicated auto-aim target CBody (field_878). Clears
+// field_E04/06/08 and field_DD0 each pass. If field_8EA is set, deletes the
+// existing target. Otherwise selects a target via SelectTargetBaddy; on a hit
+// it creates field_878 (once), sets field_DCC, and repositions field_878 at
+// the target with a height offset (the u16 at CBody+0xF4 << 12) plus a Y-angle
+// nudge from field_80. On a miss it deletes the existing target.
+u8 CPlayer::SelectAutoAimTarget(void)
 {
-    printf("CPlayer::SelectAutoAimTarget(void)");
+	static u8 * const gRegionByte = (u8*)0x6B4678; // same byte as gM3dRegionTwo (ps2m3d.cpp)
+
+	this->field_E04 = 0;
+	this->field_E06 = 0;
+	this->field_E08 = 0;
+	this->field_DD0 = 0;
+
+	if (this->field_8EA != 0)
+	{
+		if (this->field_878 != 0)
+		{
+			this->field_878->DeleteFrom((CBody**)&MiscellaneousRenderingList);
+			delete this->field_878;
+			this->field_878 = 0;
+		}
+		return this->field_8EA;
+	}
+
+	this->field_DCC = 0;
+	CBody *target = this->SelectTargetBaddy(0x800, 0xB50, 0x1000, 0x1000);
+	if (target != 0)
+	{
+		this->field_DCC = target;
+		i32 vx = target->mPos.vx;
+		i32 vy = target->mPos.vy - (*(u16*)((char*)target + 0xF4) << 12);
+		i32 vz = target->mPos.vz;
+		if (this->field_878 == 0)
+		{
+			CBody *v6 = new CBody();
+			this->field_878 = v6;
+			v6->InitItem("items");
+			v6->mModel = Spool_GetModel(0xB08EC1FB, *gRegionByte);
+			v6->mType = 503;
+			*((u16*)((char*)v6 + 0xDC)) = 100;
+			v6->AttachTo((CBody**)&MiscellaneousRenderingList);
+		}
+		CBody *v6 = this->field_878;
+		v6->mPos.vx = vx;
+		v6->mPos.vy = vy;
+		v6->mPos.vz = vz;
+		v6->mAngles.vy += 16 * (u16)this->field_80;
+	}
+	else
+	{
+		if (this->field_878 != 0)
+		{
+			this->field_878->DeleteFrom((CBody**)&MiscellaneousRenderingList);
+			delete this->field_878;
+			this->field_878 = 0;
+		}
+	}
+	return this->field_8EA;
 }
 
 // @Ok

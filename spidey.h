@@ -146,7 +146,12 @@ class CPlayer : public CSuper
 		SIndicator field_5F0[6];
 
 
-		PADDING(0x89C-0x5F0-(sizeof(SIndicator)*6));
+		PADDING(0x878-0x5F0-(sizeof(SIndicator)*6));
+
+		// SelectAutoAimTarget: current auto-aim target CBody (owned, deleted on switch)
+		CBody *field_878;
+
+		PADDING(0x89C-0x87C);
 
 		MATRIX field_89C;
 
@@ -312,7 +317,10 @@ class CPlayer : public CSuper
 		// @FIXME - type
 		CBody *field_DCC;
 
-		PADDING(0xDD8-0xDCC-4);
+		// SelectAutoAimTarget: cleared at the start of each auto-aim pass
+		i32 field_DD0;
+
+		PADDING(0xDD8-0xDD0-4);
 
 		// grab target handle, recovered via Mem_RecoverPointer in GrabUpdate
 		SHandle field_DD8;
@@ -339,7 +347,12 @@ class CPlayer : public CSuper
 
 		i32 field_E00;
 
-		PADDING(0xE0C-0xE00-4);
+		// SelectAutoAimTarget: three words cleared at the start of each pass
+		u16 field_E04;
+		u16 field_E06;
+		u16 field_E08;
+
+		PADDING(0xE0C-0xE08-2);
 
 		i32 field_E0C;
 		char field_E10;
@@ -523,7 +536,7 @@ class CPlayer : public CSuper
 		EXPORT void ParseFightData(void);
 		EXPORT i32 ProcessSFXArray(void);
 		EXPORT void ReadAnalogueInput(void);
-		EXPORT void SelectAutoAimTarget(void);
+		EXPORT u8 SelectAutoAimTarget(void);
 		EXPORT CBody *SelectTargetBaddy(i32,i32,i32,i32);
 		EXPORT void SelectTargetSwitch(i32,i32,SHandle *,i32,i32);
 		EXPORT u8 SetArmor(bool);
