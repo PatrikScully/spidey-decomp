@@ -13,6 +13,11 @@ EXPORT extern i32 gFireDomes;
 EXPORT extern i32 gNumDomes;
 EXPORT extern CBody* WebList;
 
+// Address 0x4F7680. Axis-aligned-box-vs-line-segment clip test; see its own comment in
+// web.cpp. pMin/pMax are a box's two opposite corners; on a hit, *pEnd is overwritten with
+// the crossing point.
+EXPORT i32 BoundingBoxCollisionCheck(SVECTOR const *pMin, SVECTOR const *pMax, SVECTOR const *pStart, SVECTOR *pEnd);
+
 class CImpactWeb : public CFlatBit
 {
 	public:

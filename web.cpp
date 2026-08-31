@@ -8,6 +8,10 @@
 #include "utils.h"
 #include "camera.h"
 #include "spool.h"
+#include "decomp.h"
+#include <string.h>
+
+extern i16 gRotMatrix[3][3];
 
 #include "validate.h"
 
@@ -19,53 +23,296 @@ EXPORT i32 gGetGroundDefaultValue;
 
 extern CBody* MiscList;
 
-// @MEDIUMTODO
-// Investigated 2026-08-31, left as a stub, not attempted. Findings for
-// whoever picks this up next (address 0x4F7AE0, ~1126 bytes):
-// - Most of the function decompiles cleanly. It transforms the line
-//   segment (a2 start, a3 end) into pSuper's local space, then walks a
-//   per-hook mesh table looking for the closest hook whose bounding box
-//   the line crosses:
-//   - World-to-local transform: M3dMaths_TransposeMatrix1(&pSuper->mTransform,
-//     &localMatrix) then gte_SetRotMatrix(&localMatrix) (or the
-//     memcpy(gRotMatrix, ...) form Utils_RotateWorldToObject in utils.cpp
-//     already uses), followed by the same MTC2(GT_ZERO)/MTC2(GT_ONE)/
-//     gte_mvmva(1,0,0,3,0)/gte_stsv idiom Utils_RotateWorldToObject already
-//     has, run once for (start - pSuper->mPos) and once for (end - pSuper->mPos).
-//   - Region lookup: pSuper->mRegion (CItem, offset 0x1F) indexes
-//     CItemRelatedList[mRegion*17] (ob.h, 0x6B2454) for a per-hook mesh
-//     pointer table, and a second, currently unnamed twin table at
-//     0x6B2458 (dword_6B2458[mRegion*17]+8) for the hook count.
-//   - The blocker: both tables index into the same undocumented "SModel"
-//     packed struct that a prior session already investigated and declined
-//     to guess at (see m3dinit.cpp's M3dInit_ParsePSX @MEDIUMTODO comment,
-//     2026-08-31: "every one of those five arrays is an opaque,
-//     undocumented struct-of-pointers table... dcmodel.h only forward-
-//     declares struct SModel, zero fields known"). Here the per-hook entry
-//     at CItemRelatedList[region*17][i]+24, stride 24 bytes, is read
-//     directly as a MATRIX* (passed straight into
-//     M3dMaths_TransposeMatrix1), and *v18+12 (v18 = the twin table's
-//     per-hook pointer) is read as a flat i16 mesh-vertex array. Getting
-//     these offsets right needs the same struct reverse-engineering pass
-//     the m3dinit.cpp note flags as out of scope for a single-file task.
-//   - Also missing: BoundingBoxCollisionCheck (tools/names.json calls it
-//     that, address 0x4F7680, tentative name only, no repo declaration or
-//     stub anywhere). Called as
-//     BoundingBoxCollisionCheck(&meshPoint0, &meshPoint1, &localStart, &localEnd)
-//     (cdecl, 4 args, all pointers to packed i16 triples), returns a bool
-//     gating a running-minimum distance search that fills the output SHook
-//     (a4) with the winning hook's scaled position and sets a4->Offset (a4[3])
-//     to a bit index (1,2,4,8,...). Its own body is a separate, undocumented
-//     ~unknown-size routine; forwarding to the original address would work
-//     for runtime correctness but the 4 packed-point arguments only make
-//     sense once the SModel mesh layout above is known, so a forward stub
-//     here would be guesswork about which fields feed it.
-// Not attempted further: the real blocker is the shared SModel struct, not
-// this function's own control flow, which is otherwise a plain nested loop.
-i32 Web_CollideWithSuper(CSuper *,CVector const *,CVector const *,SHook *,i32)
+// Second table parallel to CItemRelatedList (ob.h, 0x6B2454), indexed the same way
+// (region*17). Web_CollideWithSuper (0x4F7AE0) is the only known reader: it reads a hook
+// COUNT from this table's per-region entry at offset+8
+// (`*(DWORD*)(dword_6B2458[region*17]+8)`). No idb_globals.txt entry; name and every field
+// beyond that one offset are our guess.
+static i32 *** const gWebHookCountTable = (i32***)0x006B2458;
+
+// @Ok
+// 2026-08-31: functional decompile (session bar). Address 0x4F7680. Previously undeclared and
+// unimplemented anywhere in the repo (tools/names.json's own tentative name). Self-contained
+// axis-aligned-box-vs-line-segment clip test, independent of any mesh/SModel struct knowledge
+// (all four parameters are raw SVECTOR triples): a coarse per-axis trivial-reject first, then
+// 6 unrolled face-plane clips (classic fully-unrolled PS1-era collision macro expansion,
+// confirmed instruction-by-instruction against the 0x4F7680 disasm). Returns 1 and overwrites
+// *pEnd with the exact crossing point on the first face the segment actually crosses INSIDE
+// the box's other two dimensions; returns 0 if the segment never crosses the box.
+i32 BoundingBoxCollisionCheck(SVECTOR const *pMin, SVECTOR const *pMax, SVECTOR const *pStart, SVECTOR *pEnd)
 {
-    printf("Web_CollideWithSuper(CSuper *,CVector const *,CVector const *,SHook *,i32)");
-	return 0x23022025;
+	if (pStart->vy > pMin->vy && pEnd->vy > pMin->vy)
+		return 0;
+
+	if (pStart->vy < pMax->vy && pEnd->vy < pMax->vy)
+		return 0;
+
+	if (pStart->vx > pMin->vx && pEnd->vx > pMin->vx)
+		return 0;
+
+	if (pStart->vx < pMax->vx && pEnd->vx < pMax->vx)
+		return 0;
+
+	if (pStart->vz > pMin->vz && pEnd->vz > pMin->vz)
+		return 0;
+
+	if (pStart->vz < pMax->vz && pEnd->vz < pMax->vz)
+		return 0;
+
+	i32 dy = pEnd->vy - pStart->vy;
+	i32 dz = pEnd->vz - pStart->vz;
+	i32 dx = pEnd->vx - pStart->vx;
+
+	// Face: x == pMin->vx
+	if (pStart->vx > pMin->vx && pEnd->vx < pMin->vx)
+	{
+		i32 y = pStart->vy + dy * (pMin->vx - pStart->vx) / dx;
+		i32 z = pStart->vz + dz * (pMin->vx - pStart->vx) / dx;
+
+		if (y < pMin->vy && y > pMax->vy && z < pMin->vz && z > pMax->vz)
+		{
+			pEnd->vx = pMin->vx;
+			pEnd->vy = static_cast<i16>(y);
+			pEnd->vz = static_cast<i16>(z);
+			return 1;
+		}
+	}
+
+	// Face: x == pMax->vx
+	if (pStart->vx < pMax->vx && pEnd->vx > pMax->vx)
+	{
+		i32 y = pStart->vy + dy * (pMax->vx - pStart->vx) / dx;
+		i32 z = pStart->vz + dz * (pMax->vx - pStart->vx) / dx;
+
+		if (y < pMin->vy && y > pMax->vy && z < pMin->vz && z > pMax->vz)
+		{
+			pEnd->vx = pMax->vx;
+			pEnd->vy = static_cast<i16>(y);
+			pEnd->vz = static_cast<i16>(z);
+			return 1;
+		}
+	}
+
+	// Face: y == pMin->vy
+	if (pStart->vy > pMin->vy && pEnd->vy < pMin->vy)
+	{
+		i32 x = pStart->vx + dx * (pMin->vy - pStart->vy) / dy;
+		i32 z = pStart->vz + dz * (pMin->vy - pStart->vy) / dy;
+
+		if (x < pMin->vx && x > pMax->vx && z < pMin->vz && z > pMax->vz)
+		{
+			pEnd->vx = static_cast<i16>(x);
+			pEnd->vy = pMin->vy;
+			pEnd->vz = static_cast<i16>(z);
+			return 1;
+		}
+	}
+
+	// Face: y == pMax->vy
+	if (pStart->vy < pMax->vy && pEnd->vy > pMax->vy)
+	{
+		i32 x = pStart->vx + dx * (pMax->vy - pStart->vy) / dy;
+		i32 z = pStart->vz + dz * (pMax->vy - pStart->vy) / dy;
+
+		if (x < pMin->vx && x > pMax->vx && z < pMin->vz && z > pMax->vz)
+		{
+			pEnd->vx = static_cast<i16>(x);
+			pEnd->vy = pMax->vy;
+			pEnd->vz = static_cast<i16>(z);
+			return 1;
+		}
+	}
+
+	// Face: z == pMin->vz
+	if (pStart->vz > pMin->vz && pEnd->vz < pMin->vz)
+	{
+		i32 x = pStart->vx + dx * (pMin->vz - pStart->vz) / dz;
+		i32 y = pStart->vy + dy * (pMin->vz - pStart->vz) / dz;
+
+		if (x < pMin->vx && x > pMax->vx && y < pMin->vy && y > pMax->vy)
+		{
+			pEnd->vx = static_cast<i16>(x);
+			pEnd->vy = static_cast<i16>(y);
+			pEnd->vz = pMin->vz;
+			return 1;
+		}
+	}
+
+	// Face: z == pMax->vz
+	if (pStart->vz >= pMax->vz)
+		return 0;
+
+	if (pEnd->vz <= pMax->vz)
+		return 0;
+
+	i32 x = pStart->vx + dx * (pMax->vz - pStart->vz) / dz;
+	i32 y = pStart->vy + dy * (pMax->vz - pStart->vz) / dz;
+
+	if (x >= pMin->vx || x <= pMax->vx || y >= pMin->vy || y <= pMax->vy)
+		return 0;
+
+	pEnd->vx = static_cast<i16>(x);
+	pEnd->vy = static_cast<i16>(y);
+	pEnd->vz = pMax->vz;
+	return 1;
+}
+
+// @Ok
+// 2026-08-31: functional decompile (session bar), address 0x4F7AE0 (1126 bytes). Supersedes
+// the earlier "investigated, left as a stub" note this function used to carry (still visible
+// in git history): BoundingBoxCollisionCheck (above) is now implemented, and the GTE
+// world-to-local rotate is the same idiom Utils_RotateWorldToObject (utils.cpp) already uses,
+// just run four times: once for pStart/pEnd against pSuper's own matrix, then again per hook
+// against that hook's own local matrix, read straight out of Decomp_GetAnimTransform's
+// SMatrix array (decomp.h/ob.h). SMatrix::m is bit-compatible with MATRIX::m (both i16[3][3],
+// the only field M3dMaths_TransposeMatrix1 touches), confirmed by the disasm's own inner-loop
+// call to it with a SMatrix* (0x4F7AE0's v16) in place of a MATRIX*.
+//
+// The one thing still not independently confirmed anywhere else in the repo is the exact
+// record CItemRelatedList[region*17] (ob.h) points at per hook: only the one offset actually
+// read here is used (+12: a packed, per-axis-interleaved i16[6] bounding box -- min0,max0,
+// min1,max1,min2,max2, confirmed both by BoundingBoxCollisionCheck's own two-SVECTOR-corner
+// signature and by the disasm's own stack packing of the 6 values into two interleaved
+// triples). Reproduced below as raw offset arithmetic rather than invented as a named struct,
+// since naming fields never read here would be a guess this repo's bar explicitly forbids.
+// gWebHookCountTable (this file, own comment) is the same kind of parallel, only-partially-
+// understood table.
+//
+// Walks pSuper's hook table for its region, skipping hook 0 and any hook whose bit is clear
+// in pSuper->field_194 (CSuper, ob.h). For each remaining hook: offsets the pSuper-local
+// segment by the hook's own SMatrix::t (>>4), rotates that offset segment again by the hook's
+// own SMatrix::m (transposed), scales the hook's bounding box by a5/4096 (or takes it
+// verbatim when a5==4096), and tests the doubly-local segment against that box with
+// BoundingBoxCollisionCheck. Among every hook whose box the segment actually crosses, keeps
+// the one whose hit point is closest to the segment start (Euclidean distance via
+// gte_ldlvl+gte_sqr0+gte_stlvnl+M3dMaths_SquareRoot0, the same idiom M3dColij_LineToSphere
+// already uses, m3dcolij.cpp) and fills pOut with that hook's hit position (scaled back up by
+// <<4) and pOut->Offset with the winning hook's bit index. Returns 1 if any hook was found,
+// 0 otherwise (pOut->Offset != -1).
+i32 Web_CollideWithSuper(CSuper *pSuper, CVector const *pStart, CVector const *pEnd, SHook *pOut, i32 a5)
+{
+	MATRIX superMatrix;
+	M3dMaths_TransposeMatrix1(&pSuper->mTransform, &superMatrix);
+	memcpy(gRotMatrix, &superMatrix, sizeof(gRotMatrix));
+
+	SVECTOR localStart;
+	localStart.vx = static_cast<i16>((pStart->vx - pSuper->mPos.vx) >> 12);
+	localStart.vy = static_cast<i16>((pStart->vy - pSuper->mPos.vy) >> 12);
+	localStart.vz = static_cast<i16>((pStart->vz - pSuper->mPos.vz) >> 12);
+
+	MTC2(*reinterpret_cast<i32*>(&localStart.vx), GT_ZERO);
+	MTC2(*reinterpret_cast<i32*>(&localStart.vz), GT_ONE);
+	gte_mvmva(1, 0, 0, 3, 0);
+	gte_stsv(&localStart);
+
+	SVECTOR localEnd;
+	localEnd.vx = static_cast<i16>((pEnd->vx - pSuper->mPos.vx) >> 12);
+	localEnd.vy = static_cast<i16>((pEnd->vy - pSuper->mPos.vy) >> 12);
+	localEnd.vz = static_cast<i16>((pEnd->vz - pSuper->mPos.vz) >> 12);
+
+	MTC2(*reinterpret_cast<i32*>(&localEnd.vx), GT_ZERO);
+	MTC2(*reinterpret_cast<i32*>(&localEnd.vz), GT_ONE);
+	gte_mvmva(1, 0, 0, 3, 0);
+	gte_stsv(&localEnd);
+
+	pOut->Offset = -1;
+
+	u32 bestDist = 0xFFFFFFFFu;
+
+	SMatrix *pHookMatrix = Decomp_GetAnimTransform(pSuper) + 1;
+
+	i32 regionBase = pSuper->mRegion * 17;
+	i32 **pRegionHooks = CItemRelatedList[regionBase] + 1;
+	i32 hookCount = *reinterpret_cast<i32*>(reinterpret_cast<char*>(gWebHookCountTable[regionBase]) + 8);
+
+	i32 bit = 2;
+
+	for (i32 hookIndex = 1; hookIndex < hookCount; hookIndex++, bit <<= 1, pHookMatrix++, pRegionHooks++)
+	{
+		if (pSuper->field_194 & bit)
+			continue;
+
+		i16 offX = static_cast<i16>(pHookMatrix->t[0] >> 4);
+		i16 offY = static_cast<i16>(pHookMatrix->t[1] >> 4);
+		i16 offZ = static_cast<i16>(pHookMatrix->t[2] >> 4);
+
+		SVECTOR hookStart;
+		hookStart.vx = static_cast<i16>(localStart.vx - offX);
+		hookStart.vy = static_cast<i16>(localStart.vy - offY);
+		hookStart.vz = static_cast<i16>(localStart.vz - offZ);
+
+		SVECTOR hookEnd;
+		hookEnd.vx = static_cast<i16>(localEnd.vx - offX);
+		hookEnd.vy = static_cast<i16>(localEnd.vy - offY);
+		hookEnd.vz = static_cast<i16>(localEnd.vz - offZ);
+
+		MATRIX hookMatrixT;
+		M3dMaths_TransposeMatrix1(reinterpret_cast<MATRIX*>(pHookMatrix), &hookMatrixT);
+		memcpy(gRotMatrix, &hookMatrixT, sizeof(gRotMatrix));
+
+		MTC2(*reinterpret_cast<i32*>(&hookStart.vx), GT_ZERO);
+		MTC2(*reinterpret_cast<i32*>(&hookStart.vz), GT_ONE);
+		gte_mvmva(1, 0, 0, 3, 0);
+		gte_stsv(&hookStart);
+
+		MTC2(*reinterpret_cast<i32*>(&hookEnd.vx), GT_ZERO);
+		MTC2(*reinterpret_cast<i32*>(&hookEnd.vz), GT_ONE);
+		gte_mvmva(1, 0, 0, 3, 0);
+		gte_stsv(&hookEnd);
+
+		i16 *pBox = reinterpret_cast<i16*>(reinterpret_cast<char*>(*pRegionHooks) + 12);
+
+		SVECTOR boxMin;
+		SVECTOR boxMax;
+
+		if (a5 == 4096)
+		{
+			boxMin.vx = pBox[0];
+			boxMax.vx = pBox[1];
+			boxMin.vy = pBox[2];
+			boxMax.vy = pBox[3];
+			boxMin.vz = pBox[4];
+			boxMax.vz = pBox[5];
+		}
+		else
+		{
+			boxMin.vx = static_cast<i16>((a5 * pBox[0]) >> 12);
+			boxMax.vx = static_cast<i16>((a5 * pBox[1]) >> 12);
+			boxMin.vy = static_cast<i16>((a5 * pBox[2]) >> 12);
+			boxMax.vy = static_cast<i16>((a5 * pBox[3]) >> 12);
+			boxMin.vz = static_cast<i16>((a5 * pBox[4]) >> 12);
+			boxMax.vz = static_cast<i16>((a5 * pBox[5]) >> 12);
+		}
+
+		SVECTOR hitPoint = hookEnd;
+
+		if (BoundingBoxCollisionCheck(&boxMin, &boxMax, &hookStart, &hitPoint))
+		{
+			CVector delta;
+			delta.vx = hookStart.vx - hitPoint.vx;
+			delta.vy = hookStart.vy - hitPoint.vy;
+			delta.vz = hookStart.vz - hitPoint.vz;
+
+			gte_ldlvl(reinterpret_cast<VECTOR*>(&delta));
+			gte_sqr0();
+
+			VECTOR deltaSq;
+			gte_stlvnl(&deltaSq);
+
+			u32 dist = static_cast<u32>(M3dMaths_SquareRoot0(deltaSq.vx + deltaSq.vy + deltaSq.vz));
+
+			if (dist < bestDist)
+			{
+				bestDist = dist;
+				pOut->Part.vx = static_cast<i16>(hitPoint.vx << 4);
+				pOut->Part.vy = static_cast<i16>(hitPoint.vy << 4);
+				pOut->Part.vz = static_cast<i16>(hitPoint.vz << 4);
+				pOut->Offset = static_cast<i16>(hookIndex);
+			}
+		}
+	}
+
+	return pOut->Offset != -1;
 }
 
 // @Ok
