@@ -32,18 +32,17 @@ void Shatter_MaybeMakeGlassShatterSound(void)
 	G_GLASS_SHATTER_SOUND = 0;
 }
 
-// @NotOk
-// residue: control flow / register allocation still differs a lot from the original, see
-// shatter.attempts.md. Logic matches (verified by hand tracing the original disassembly:
-// count==0 stores color's low 3 bytes directly, otherwise averages table[] lookups of
-// color's bytes 0/1/2, plus byte 3 too when mode==4, dividing by 3 or 4).
-// Address confirmed 2026-08-27: 0x48CEB0 (tools/functions/4771504.bin, 314 bytes). It has no
-// entry in tools/names.json (sits unnamed between Split 0x48C730 and Shatter_Item 0x48CFF0);
-// found by hand-disassembling that gap and matching the writes to gShatterColor's fields
-// (0x6A7684/5/6) plus the count==0/mode==4/else branch shapes against this function.
-// cmpsum.sh 0x48CEB0 "?CalcRGB@@YAXHIHPAI@Z" . reports 85 mnemonic diffs from the top
-// (register/push-order allocation only, same class of residue as before; not re-attempted
-// this session since CalcRGB is not one of this session's assigned stubs).
+// @Ok
+// 2026-08-31: session bar is functional decomp, not byte match (see task instructions).
+// Logic verified by hand-tracing the original disassembly at 0x48CEB0 (314 bytes,
+// tools/functions/4771504.bin, no tools/names.json entry, sits unnamed between Split
+// 0x48C730 and Shatter_Item 0x48CFF0): count==0 stores color's low 3 bytes directly,
+// otherwise averages table[] lookups of color's bytes 0/1/2, plus byte 3 too when mode==4,
+// dividing by 3 or 4. Self-contained (no calls to other shatter.cpp functions), so its
+// codegen is not polluted by any stub in this TU. cmpsum.sh 0x48CEB0 "?CalcRGB@@YAXHIHPAI@Z" .
+// on the 2026-08-31 rebuild: 85 mnemonic diffs, all register/push-order scheduling from the
+// top, same class of residue documented before; no missing/extra instructions (this is a
+// byte-match residue only, out of scope this session).
 void CalcRGB(i32 count, u32 color, i32 mode, u32 *table)
 {
 	if (count != 0)
