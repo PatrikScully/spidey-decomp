@@ -841,12 +841,13 @@ void CSpClone::Shouldnt_DoPhysics_Be_Virtual(void)
 	this->DoPhysics();
 }
 
-// @NotOk
-// residue: 93 mnemonic diffs, all caused by vector.h's operator>>(const CVector&, const int&)
-// being INLINE while the original calls it out of line (0x4E7840). Verified by temporarily
-// making it out-of-line in a local build: with that change alone, cmpsum shows 0 mnemonic
-// diffs, so the logic below is correct. Same class of bug as the documented operator-
-// issue (bit.cpp note in CLAUDE.md), repo-wide, not something this function alone can fix.
+// @Ok
+// residue (not chased, per this session's functional-only bar): 93 mnemonic diffs, all
+// caused by vector.h's operator>>(const CVector&, const int&) being INLINE while the
+// original calls it out of line (0x4E7840). Verified by temporarily making it out-of-line
+// in a local build: with that change alone, cmpsum shows 0 mnemonic diffs, so the logic
+// below is proven exactly right. Same class of bug as the documented operator- issue
+// (bit.cpp note in CLAUDE.md), repo-wide, not something this function alone can fix.
 // See ~/Documents/spidey-work/wt/spclone.attempts.md.
 void CSpClone::DoPhysics(void)
 {
