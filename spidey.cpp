@@ -1213,6 +1213,49 @@ static i32 * const gLookaroundActiveCamAngle = (i32*)0x6A818C;
 // idb_globals.txt entry, tentative name).
 static i16 * const gLookaroundHeadingSnapshot = (i16*)0x6A8D44;
 
+// gWideScreen (0x660F80): named in idb_globals.txt. Moved up here (from
+// its original spot right before ExitLookaroundMode) because
+// SetupLookaroundCamera, defined earlier in the file, needs it too.
+static i32 * const gWideScreen = (i32*)0x660F80;
+// dword_60F76C: falls inside gAnimWebcart (0x60F760, idb_globals.txt) at
+// byte offset 0xC. Structure of gAnimWebcart is not known, so this is a
+// tentative slot name only, not a real standalone global.
+static i32 * const gAnimWebcart_field_C = (i32*)0x60F76C;
+
+// raw accumulated yaw offset (relative to body heading) driven by look
+// input each frame in CPlayer::SetupLookaroundCamera (0x4C38A0); used
+// directly to drive the joint/head-turn and, added to GetEffectiveHeading,
+// to aim SetTargetTorsoAngle on lock-on. No idb_globals.txt entry (nearest
+// named neighbours are the gSpidey*Cam* tuning constants around
+// 0x6A81xx-0x6A8Cxx, none at this address), tentative name only.
+static i32 * const gLookaroundYawOffset = (i32*)0x6A7FFC;
+
+// smoothed copy of gLookaroundYawOffset, chased with a max delta of 192
+// per SetupLookaroundCamera call; feeds the camera-orientation matrix
+// (as opposed to gLookaroundYawOffset itself, which feeds the raw
+// raycast direction and the head/neck joints). No idb_globals.txt entry,
+// tentative name.
+static i32 * const gLookaroundYawSmoothed = (i32*)0x6A8D54;
+
+// smoothed copy of gLookaroundActiveCamAngle (pitch), same 192/frame max
+// delta as gLookaroundYawSmoothed; sits 4 bytes before the named
+// gSpideySFXEntry table (0x6A82B8, idb_globals.txt) but is a distinct
+// single i32, not part of that array. No idb_globals.txt entry, tentative
+// name.
+static i32 * const gLookaroundPitchSmoothed = (i32*)0x6A82B4;
+
+// three anim-linked pose/SFX-trigger tables (same "walk id list, mask off
+// high 16 bits, -1 terminated" idiom as gSpideySFXEntry, CLAUDE.md
+// "Matching tricks"), selected by CPlayer::SetupLookaroundCamera right
+// before RunAnim(0x104/0xFA/0x111, 0, -1) on a successful zip/swing-web
+// lock-on. Each global itself holds a POINTER to the table (double
+// indirection observed in the disasm: "mov eax, dword_6A86C8" then walks
+// *eax). No idb_globals.txt entry for any of the three, tentative names
+// only, guessed from which RunAnim call each precedes.
+static i32 ** const gLookaroundZipHeldAnimTable = (i32**)0x6A86C8;
+static i32 ** const gLookaroundZipAnimTable = (i32**)0x6A86A0;
+static i32 ** const gLookaroundSwingAnimTable = (i32**)0x6A86FC;
+
 // @Ok
 // residue: 100 mnemonic diffs (cmpsum, 0x4C3580, improved from an
 // earlier 133 once the CameraList placeholder-address bug above was
@@ -2659,10 +2702,492 @@ void CPlayer::SetWallCamera(i32 a3)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// verified against IDA sub_4C38A0 (0x4C38A0, 3674 bytes) via decompile()
+// cross-checked with disasm() for every field offset and call site (the
+// Switch_GetCSwitchObjectFromItem/CheckSwingWebAvailability call site in
+// particular: Hex-Rays showed a bogus 3-arg call, the real disasm is a
+// plain thiscall(SLineInfo*) matching the header exactly). Seven new
+// CPlayer fields carved out of existing PADDING blocks this session:
+// field_54F, field_558, field_8ED, field_CD4, field_CE8, field_CF4,
+// field_DAC (see their comments in spidey.h for offset evidence). Six new
+// tentative globals (gLookaroundYawOffset/YawSmoothed/PitchSmoothed,
+// gLookaroundZipHeldAnimTable/ZipAnimTable/SwingAnimTable) declared above
+// alongside the existing gLookaroundActiveCamAngle/HeadingSnapshot; none
+// have an idb_globals.txt entry. This is a per-frame update: heading
+// tracking with wraparound, a 24-frame entrance/exit blend of a
+// precomputed CQuat path (field_C90, built by EnterLookaroundMode) versus
+// a freshly raycast anchor point, a small raycast grid-search to find a
+// wall-clear camera anchor, then (only once neither transition is
+// active) a target raycast that dispatches into switch/zip-web/swing-web
+// lock-on or a default baddy-target reticle. Two real bugs were caught
+// against the disasm while writing this: the CheckSwingWebAvailability
+// call must bind to the (i16, bool) overload (SetTargetTorsoAngle has
+// the same overload-resolution hazard, "false" not "0" is used at both
+// call sites here to force it) since the (i16, int) overload is still an
+// unimplemented stub at this address; and gLookaroundActiveCamAngle
+// reads must NOT be treated as i16 without the intermediate i32 (the
+// original keeps it as a full DWORD end to end except at the very final
+// store into the joint array / CSVector angle).
 void CPlayer::SetupLookaroundCamera(void)
 {
-    printf("CPlayer::SetupLookaroundCamera(void)");
+	if (!this->field_8EA)
+		return;
+
+	Screen_TargetOn(false);
+
+	MATRIX camMat;
+	i32 elapsed;
+	i32 dt = this->field_80;
+
+	i32 entranceRemaining = this->field_CB4;
+
+	if (entranceRemaining > dt)
+	{
+		CQuat* path = reinterpret_cast<CQuat*>(this->field_C90);
+
+		entranceRemaining -= dt;
+		this->field_CB4 = entranceRemaining;
+		elapsed = 24 - entranceRemaining;
+		this->field_DF8 = 0;
+
+		QToM(&path[elapsed], &camMat);
+
+		*gWideScreen = 32 * elapsed / 24;
+		*gAnimWebcart_field_C = 32 * elapsed / 24;
+	}
+	else
+	{
+		i32 exitRemaining = this->field_CE4;
+		this->field_CB4 = 0;
+
+		if (exitRemaining > dt)
+		{
+			CQuat* path = reinterpret_cast<CQuat*>(this->field_C90);
+
+			exitRemaining -= dt;
+			this->field_CE4 = exitRemaining;
+			elapsed = 24 - exitRemaining;
+
+			QToM(&path[elapsed], &camMat);
+
+			*gWideScreen = 32 * elapsed / 24;
+			*gAnimWebcart_field_C = 32 * elapsed / 24;
+		}
+		else if (exitRemaining != 0)
+		{
+			// last tick of the exit fade: tear the lookaround state down
+			// entirely (mirrors ExitLookaroundMode, minus the camera
+			// pop/PutCameraBehind/RenderReticle bookkeeping that function
+			// also does, matching the disassembly exactly).
+			i16* joints = reinterpret_cast<i16*>(this->mpJoints);
+
+			this->field_CE4 = 0;
+			this->field_8EA = 0;
+
+			if (joints)
+			{
+				joints[6] = 0;
+				joints[7] = 0;
+				joints[18] = 0;
+				joints[19] = 0;
+			}
+
+			i32 path = this->field_C90;
+			*gWideScreen = 0;
+			*gAnimWebcart_field_C = 0;
+
+			if (path)
+			{
+				Mem_Delete(reinterpret_cast<void*>(path));
+				this->field_C90 = 0;
+			}
+
+			return;
+		}
+		else
+		{
+			// steady state: neither entering nor exiting.
+			camMat = this->mTransform;
+		}
+	}
+
+	// --- heading tracking -------------------------------------------
+	i16 heading = this->GetEffectiveHeading();
+	i16 headingDelta = heading - *gLookaroundHeadingSnapshot;
+	if (headingDelta > 512)
+		headingDelta -= 4096;
+	else if (headingDelta < -512)
+		headingDelta += 4096;
+	*gLookaroundHeadingSnapshot = heading;
+
+	if (this->field_CB4 == 0)
+	{
+		if (this->field_8E9)
+		{
+			*gLookaroundYawOffset += headingDelta;
+			*gLookaroundYawSmoothed += headingDelta;
+		}
+		else
+		{
+			*gLookaroundYawOffset -= headingDelta;
+			*gLookaroundYawSmoothed -= headingDelta;
+		}
+	}
+
+	if (this->field_CE4 != 0)
+	{
+		// exiting: let the head/neck joint rotation decay back to centre.
+		i16* joints = reinterpret_cast<i16*>(this->mpJoints);
+		if (joints)
+		{
+			joints[6] -= joints[6] / 4;
+			joints[7] -= joints[7] / 4;
+			joints[18] -= joints[18] / 4;
+			joints[19] -= joints[19] / 4;
+		}
+	}
+	else
+	{
+		i16* joints = reinterpret_cast<i16*>(this->mpJoints);
+		if (joints)
+		{
+			i16 pitch = static_cast<i16>((2 * *gLookaroundActiveCamAngle / 4) & 0xFFF);
+			i16 yaw = static_cast<i16>((2 * *gLookaroundYawOffset / 4) & 0xFFF);
+			joints[6] = pitch;
+			joints[7] = yaw;
+			joints[18] = pitch;
+			joints[19] = yaw;
+		}
+	}
+
+	CSVector rawAngles(static_cast<i16>(*gLookaroundActiveCamAngle), static_cast<i16>(*gLookaroundYawOffset), 0);
+	MATRIX rawLookMat;
+	M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(&rawAngles), &rawLookMat);
+
+	// smoothed pitch/yaw chase the raw values with a max step of 192/call.
+	i32 pitchTarget = *gLookaroundActiveCamAngle;
+	i32 smoothPitch = *gLookaroundPitchSmoothed;
+	if (pitchTarget > smoothPitch + 192)
+		smoothPitch = pitchTarget - 192;
+	else if (pitchTarget < smoothPitch - 192)
+		smoothPitch = pitchTarget + 192;
+	*gLookaroundPitchSmoothed = smoothPitch;
+
+	i32 yawTarget = *gLookaroundYawOffset;
+	i32 smoothYaw = *gLookaroundYawSmoothed;
+	if (yawTarget > smoothYaw + 192)
+		smoothYaw = yawTarget - 192;
+	else if (yawTarget < smoothYaw - 192)
+		smoothYaw = yawTarget + 192;
+	*gLookaroundYawSmoothed = smoothYaw;
+
+	if (this->field_CE4 == 0)
+	{
+		CSVector smoothedAngles(static_cast<i16>(smoothPitch), static_cast<i16>(smoothYaw), 0);
+		MATRIX smoothedLookMat;
+		M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(&smoothedAngles), &smoothedLookMat);
+		MulMatrix(&camMat, &smoothedLookMat);
+		MToQ(camMat, this->field_CD4);
+	}
+
+	// flip 180 degrees about Y (negate the X and Z columns), same idiom
+	// as EnterLookaroundMode's camera-orientation flip.
+	camMat.m[0][0] = -camMat.m[0][0];
+	camMat.m[1][0] = -camMat.m[1][0];
+	camMat.m[2][0] = -camMat.m[2][0];
+	camMat.m[0][2] = -camMat.m[0][2];
+	camMat.m[1][2] = -camMat.m[1][2];
+	camMat.m[2][2] = -camMat.m[2][2];
+
+	MToQ(camMat, CameraList->field_1F4);
+
+	CVector anchor = this->mPos + this->field_D0C;
+	this->field_D00 = anchor;
+
+	// line-of-sight adjustment: pull the anchor back towards mPos if
+	// something is in the way between the player and it.
+	SLineInfo losAdjustInfo;
+	losAdjustInfo.StartCoords = this->mPos;
+	losAdjustInfo.EndCoords = anchor;
+	M3dColij_InitLineInfo(&losAdjustInfo);
+	M3dZone_LineToItem(&losAdjustInfo, 1);
+
+	if (losAdjustInfo.pItem != 0)
+	{
+		if (losAdjustInfo.Distance >= 16)
+		{
+			i32 frac = 3 * losAdjustInfo.Distance / 4;
+			anchor = this->mPos + (this->field_D0C * frac) / losAdjustInfo.Length;
+		}
+		else
+		{
+			anchor = this->mPos;
+		}
+	}
+
+	// candidate grid-search target: during a transition, blend towards
+	// it from the saved snapshot; in steady state, just place it in
+	// front of/behind the anchor along the working matrix's Z column.
+	CVector campPos;
+
+	if (this->field_CB4 != 0)
+	{
+		CVector bodyForward(this->mTransform.m[0][2], this->mTransform.m[1][2], this->mTransform.m[2][2]);
+		CVector aheadPoint = anchor + bodyForward * 512;
+		CVector diff = aheadPoint - this->field_CB8;
+		CVector scaled = diff * (24 - this->field_CB4);
+		CVector blended = scaled / 24;
+		campPos = this->field_CB8 + blended;
+	}
+	else if (this->field_CE4 != 0)
+	{
+		CVector diff = this->field_CF4 - this->field_CE8;
+		CVector scaled = diff * (24 - this->field_CE4);
+		CVector blended = scaled / 24;
+		campPos = this->field_CE8 + blended;
+	}
+	else
+	{
+		CVector forward(camMat.m[0][2], camMat.m[1][2], camMat.m[2][2]);
+		campPos = anchor - forward * 512;
+	}
+
+	SLineInfo gridInfo;
+	gridInfo.StartCoords = anchor;
+	gridInfo.EndCoords = campPos;
+	M3dColij_InitLineInfo(&gridInfo);
+	M3dZone_LineToItem(&gridInfo, 1);
+
+	i32 stepsLeft = gridInfo.Length;
+
+	if (gridInfo.pItem != 0)
+	{
+		campPos.vx = gridInfo.Position.vx + 16 * camMat.m[0][2];
+		campPos.vy = gridInfo.Position.vy + 16 * camMat.m[1][2];
+		campPos.vz = gridInfo.Position.vz + 16 * camMat.m[2][2];
+		stepsLeft -= 16;
+	}
+
+	// small raycast grid-search: walk forward along the camera Z axis in
+	// steps of 8, at each step testing lateral clearance (+16 then -16
+	// along the X axis) until a clear spot is found or steps run out.
+	CVector col0(camMat.m[0][0], camMat.m[1][0], camMat.m[2][0]);
+	CVector col2(camMat.m[0][2], camMat.m[1][2], camMat.m[2][2]);
+
+gridSearchTop:
+	gridInfo.StartCoords = campPos;
+	gridInfo.EndCoords = campPos + col0 * 16;
+	M3dColij_InitLineInfo(&gridInfo);
+	M3dZone_LineToItem(&gridInfo, 1);
+
+	if (gridInfo.pItem != 0)
+	{
+		stepsLeft -= 8;
+		if (stepsLeft <= 16)
+			goto gridSearchDone;
+
+		campPos = campPos + col2 * 8;
+		goto gridSearchTop;
+	}
+
+	gridInfo.EndCoords = gridInfo.EndCoords - col0 * 32;
+	M3dColij_InitLineInfo(&gridInfo);
+	M3dZone_LineToItem(&gridInfo, 1);
+	if (gridInfo.pItem != 0)
+	{
+		stepsLeft -= 8;
+		if (stepsLeft > 16)
+		{
+			campPos = campPos + col2 * 8;
+			goto gridSearchTop;
+		}
+	}
+
+gridSearchDone:
+	if (this->field_CE4 == 0)
+	{
+		this->field_CE8 = campPos;
+	}
+
+	CameraList->mPos = campPos;
+
+	if (this->field_CB4 != 0 || this->field_CE4 != 0)
+	{
+		// still transitioning: no target selection this frame.
+		return;
+	}
+
+	// --- steady state: pick a lookaround target -----------------------
+	MATRIX bodyLookMat = this->mTransform;
+	this->field_DE4 = 1;
+	MulMatrix(&bodyLookMat, &rawLookMat);
+
+	CVector farPoint;
+	farPoint.vx = anchor.vx - (bodyLookMat.m[0][2] << 12);
+	farPoint.vy = anchor.vy - (bodyLookMat.m[1][2] << 12);
+	farPoint.vz = anchor.vz - (bodyLookMat.m[2][2] << 12);
+
+	this->field_DCC = 0;
+	CVector hitPos;
+	CBody* sphereHit = M3dColij_LineToSphere(&anchor, &farPoint, &hitPos, BaddyList, 0, 4096);
+	this->field_DCC = sphereHit;
+
+	if (sphereHit != 0)
+	{
+		farPoint = hitPos;
+		if ((sphereHit->mCBodyFlags & 0x10) == 0)
+			this->field_DCC = 0;
+	}
+
+	SLineInfo targetInfo;
+	targetInfo.StartCoords = anchor;
+	targetInfo.EndCoords = farPoint;
+
+	LineOfSightCheck = 1;
+	M3dColij_InitLineInfo(&targetInfo);
+	M3dZone_LineToItem(&targetInfo, 1);
+	LineOfSightCheck = 0;
+
+	if (targetInfo.pItem != 0)
+	{
+		this->field_DA0.vx = targetInfo.Normal.vx;
+		this->field_DA0.vy = targetInfo.Normal.vy;
+		this->field_DA0.vz = targetInfo.Normal.vz;
+		this->field_DC0 = targetInfo.Position;
+		this->field_DCC = 0;
+		this->field_DE8 = 0x202080;
+
+		if ((targetInfo.pFace[3] & 0x2000000) != 0)
+		{
+			CSwitch* sw = Switch_GetCSwitchObjectFromItem(targetInfo.pItem);
+			if (sw->field_100 != 0)
+			{
+				this->field_DCC = sw;
+				this->field_DE8 = 0x802020;
+				this->field_54F = 0;
+				return;
+			}
+		}
+
+		u8 zipOk = this->CheckZipWebAvailability(&targetInfo, 0x800);
+		u8 swingOk;
+
+		if (zipOk)
+		{
+			this->field_DE8 = 0x208020;
+			swingOk = this->CheckSwingWebAvailability(&targetInfo);
+
+			if (!swingOk && this->field_54F != 0 && this->field_E1C == 1)
+			{
+				// zip-web lock-on.
+				this->field_558 = this->mPos;
+				this->field_E1C = 0x40000;
+				this->field_8ED = 1;
+
+				if (this->field_AD4)
+				{
+					i32* table = *gLookaroundZipHeldAnimTable;
+					this->field_350 = table;
+					if (table)
+					{
+						i32 v = table[0];
+						if (v != -1)
+						{
+							i32* p = table;
+							do { *p = static_cast<u16>(v); v = p[1]; ++p; } while (v != -1);
+						}
+					}
+					this->RunAnim(0x104, 0, -1);
+				}
+				else
+				{
+					i32* table = *gLookaroundZipAnimTable;
+					this->field_350 = table;
+					if (table)
+					{
+						i32 v = table[0];
+						if (v != -1)
+						{
+							i32* p = table;
+							do { *p = static_cast<u16>(v); v = p[1]; ++p; } while (v != -1);
+						}
+					}
+					this->RunAnim(0xFA, 0, -1);
+				}
+
+				this->SetTargetTorsoAngle(this->GetEffectiveHeading() + *gLookaroundYawOffset, false);
+				this->ExitLookaroundMode();
+				this->field_54F = 0;
+				return;
+			}
+		}
+		else
+		{
+			swingOk = this->CheckSwingWebAvailability(&targetInfo);
+		}
+
+		if (swingOk)
+		{
+			this->field_DE8 = 0x208020;
+
+			if (this->field_54F != 0 && this->field_E1C == 1)
+			{
+				// swing-web lock-on.
+				print_if_false(this->field_E64 == 0, "Error");
+
+				i32* table = *gLookaroundSwingAnimTable;
+				this->field_E1C = 0x100;
+				this->field_8ED = 1;
+				this->field_350 = table;
+				if (table)
+				{
+					i32 v = table[0];
+					if (v != -1)
+					{
+						i32* p = table;
+						do { *p = static_cast<u16>(v); v = p[1]; ++p; } while (v != -1);
+					}
+				}
+				this->RunAnim(0x111, 0, -1);
+
+				if (!this->field_AD4)
+				{
+					this->SetTargetTorsoAngle(this->GetEffectiveHeading() + *gLookaroundYawOffset, false);
+					this->field_DAC = ZeroVector;
+				}
+				else
+				{
+					this->field_DAC = targetInfo.Position;
+				}
+
+				this->field_AD4 = 0;
+				this->ExitLookaroundMode();
+				this->field_54F = 0;
+				return;
+			}
+		}
+	}
+	else
+	{
+		// nothing zip/swing-eligible on the target ray: fall back to the
+		// baddy found by the earlier sphere-cast, if any.
+		this->field_DC0 = targetInfo.EndCoords;
+
+		if (this->field_DCC != 0)
+		{
+			this->field_DE4 = 0;
+			Screen_TargetOn(true);
+			Screen_SetTarget(&this->field_DCC->mPos, 24, 32 * (gTimerRelated & 0x7F));
+			this->field_DC0 = this->field_DCC->mPos;
+			this->field_54F = 0;
+			return;
+		}
+
+		this->field_DE8 = 0x202080;
+	}
+
+	this->field_54F = 0;
 }
 
 // @Ok
@@ -4629,13 +5154,6 @@ void CPlayer::SetCamAngleLock(u16 a1)
 	}
 }
 
-// gWideScreen (0x660F80): named in idb_globals.txt.
-static i32 * const gWideScreen = (i32*)0x660F80;
-// dword_60F76C: falls inside gAnimWebcart (0x60F760, idb_globals.txt) at
-// byte offset 0xC. Structure of gAnimWebcart is not known, so this is a
-// tentative slot name only, not a real standalone global.
-static i32 * const gAnimWebcart_field_C = (i32*)0x60F76C;
-
 // @Ok
 // verified against IDA sub_4C3810 (0x4C3810, 0x8A bytes). Field offsets
 // (field_8EA 0x8EA, field_C90 0xC90, field_CB4 0xCB4, field_CE4 0xCE4,
@@ -5776,6 +6294,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_548, 0x548);
 
 	VALIDATE(CPlayer, field_54C, 0x54C);
+	VALIDATE(CPlayer, field_54F, 0x54F);
+	VALIDATE(CPlayer, field_558, 0x558);
 
 	VALIDATE(CPlayer, field_568, 0x568);
 	VALIDATE(CPlayer, field_56C, 0x56C);
@@ -5821,6 +6341,7 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_8EA, 0x8EA);
 
 	VALIDATE(CPlayer, gCamAngleLock, 0x8EC);
+	VALIDATE(CPlayer, field_8ED, 0x8ED);
 
 	VALIDATE(CPlayer, field_AB8, 0xAB8);
 
@@ -5859,7 +6380,10 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_CA4, 0xCA4);
 	VALIDATE(CPlayer, field_CB4, 0xCB4);
 	VALIDATE(CPlayer, field_CB8, 0xCB8);
+	VALIDATE(CPlayer, field_CD4, 0xCD4);
 	VALIDATE(CPlayer, field_CE4, 0xCE4);
+	VALIDATE(CPlayer, field_CE8, 0xCE8);
+	VALIDATE(CPlayer, field_CF4, 0xCF4);
 	VALIDATE(CPlayer, field_D00, 0xD00);
 	VALIDATE(CPlayer, field_D0C, 0xD0C);
 	VALIDATE(CPlayer, field_D18, 0xD18);
@@ -5872,6 +6396,7 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_D8C, 0xD8C);
 
 	VALIDATE(CPlayer, field_DA0, 0xDA0);
+	VALIDATE(CPlayer, field_DAC, 0xDAC);
 
 	VALIDATE(CPlayer, field_DB8, 0xDB8);
 

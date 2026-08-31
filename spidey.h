@@ -100,7 +100,24 @@ class CPlayer : public CSuper
 
 		u8 field_54C;
 
-		PADDING(0x568-0x54C-4);
+		PADDING(0x54F-0x54C-1);
+
+		// set nonzero by some other (not yet decompiled) caller to request a
+		// zip-web/switch/swing-web lock-on the next time
+		// CPlayer::SetupLookaroundCamera runs; SetupLookaroundCamera reads
+		// it to gate the lock-on and always clears it back to 0 before
+		// returning. offset/evidence: IDA disasm of SetupLookaroundCamera
+		// (0x4C38A0), "cmp [ebp+54Fh], bl" / "mov [ebp+54Fh], bl".
+		u8 field_54F;
+
+		PADDING(0x558-0x54F-1);
+
+		// player-position snapshot taken by CPlayer::SetupLookaroundCamera
+		// right before playing the zip-web-target lock-on animation
+		// (offset 0x558, IDA disasm of 0x4C38A0).
+		CVector field_558;
+
+		PADDING(0x568-0x558-0xC);
 
 		i32 field_568;
 		i32 field_56C;
@@ -181,7 +198,12 @@ class CPlayer : public CSuper
 
 		u8 gCamAngleLock; //8EC
 
-		PADDING(0x8F0-0x8EC-1);
+		// set to 1 by CPlayer::SetupLookaroundCamera (0x4C38A0) whenever it
+		// commits to a zip-web/swing-web lock-on animation; offset 0x8ED
+		// per its IDA disasm ("mov byte ptr [ebp+8EDh], 1").
+		u8 field_8ED;
+
+		PADDING(0x8F0-0x8ED-1);
 
 		// ReadAnalogueInput: accumulates +32 per tick while the move input is
 		// non-centre (clamped at 256), reset to 0 when it centres.
@@ -258,11 +280,27 @@ class CPlayer : public CSuper
 		// camera position snapshot taken by EnterLookaroundMode.
 		CVector field_CB8;
 
-		PADDING(0xCE4-0xCB8-0xC);
+		PADDING(0xCD4-0xCB8-0xC);
+
+		// per-frame smoothed lookaround camera orientation quaternion,
+		// written by CPlayer::SetupLookaroundCamera (MToQ of its working
+		// matrix) while not mid-exit-transition. offset 0xCD4, IDA disasm
+		// of 0x4C38A0.
+		CQuat field_CD4;
 
 		i32 field_CE4;
 
-		PADDING(0xD00-0xCE4-4);
+		// SetupLookaroundCamera's grid-search anchor result, snapshotted
+		// here whenever field_CE4 (the exit-transition countdown) is 0;
+		// used together with field_CF4 as the two lerp endpoints while
+		// field_CE4 is counting down. offset 0xCE8, IDA disasm of 0x4C38A0.
+		CVector field_CE8;
+
+		// the other endpoint of the field_CE8 exit-transition lerp; never
+		// written by SetupLookaroundCamera itself, so presumably set by
+		// whichever (not yet decompiled) function requests the exit.
+		// offset 0xCF4, IDA disasm of 0x4C38A0.
+		CVector field_CF4;
 
 		// hook-8 world position plus field_C84*0x80, used by
 		// EnterLookaroundMode as the lookaround camera anchor.
@@ -306,7 +344,10 @@ class CPlayer : public CSuper
 
 		CVector field_DA0;
 
-		PADDING(0xDB8-0xDA0-sizeof(CVector));
+		// SetupLookaroundCamera's swing-web-lock fallback target position
+		// (either lineInfo.Position when field_AD4 was set, or ZeroVector
+		// otherwise). offset 0xDAC, IDA disasm of 0x4C38A0.
+		CVector field_DAC;
 
 		i32 field_DB8;
 
