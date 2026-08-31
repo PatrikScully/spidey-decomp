@@ -113,13 +113,141 @@ INLINE void NextInquiry(void)
 }
 
 
-// @MEDIUMTODO
-void M3dColij_InitLineInfo(SLineInfo *)
+// @Ok
+// Sets up a fresh SLineInfo for a line-vs-world collision query: resets the
+// nearest-hit trackers, clears the hit result fields, builds the line's
+// bounding box, builds the combined rotation matrix M3dAsm_LineColijPreprocessItems(Zoned)
+// uses to transform vertices into line-aligned space, and hands out a fresh
+// Inquiry token.
+//
+// The original builds the sin/cos-like terms via a leading-zero-count
+// normalize (gte_ldlzc/gte_stlzc), a table-precision M3dMaths_SquareRoot0
+// call on the normalized value, then a shift-back (PS2 hardware sqrt needs a
+// normalized operand for full precision). Our M3dMaths_SquareRoot0 already
+// does a real double sqrt with full precision (sqrt(x << 2k) == sqrt(x) << k
+// for the even shift counts used there, so the normalize/shift-back cancels
+// out algebraically), so we can call it directly on the plain squared
+// distance and get the same result.
+void M3dColij_InitLineInfo(SLineInfo *pInfo)
 {
-	printf("void M3dColij_InitLineInfo(SLineInfo *)");
+	pInfo->Distance = 0x7FFFFFFF;
+	pInfo->tNear = 0x7FFFFFFF;
+
+	pInfo->pItem = NULL;
+	pInfo->pFace = NULL;
+	pInfo->Model = -1;
+
+	pInfo->RecordTriggerZoneHits = 0;
+	pInfo->DropDown = 0;
+
+	i32 dx = pInfo->EndCoords.vx - pInfo->StartCoords.vx;
+	i32 dy = pInfo->EndCoords.vy - pInfo->StartCoords.vy;
+	i32 dz = pInfo->EndCoords.vz - pInfo->StartCoords.vz;
+
+	i16 sdx = (i16)(dx >> 12);
+	i16 sdz = (i16)(dz >> 12);
+	i16 sdy = (i16)(dy >> 12);
+
+	i32 horiz2 = sdz * sdz + sdx * sdx;
+
+	if (horiz2 != 0)
+	{
+		i32 horizMag = M3dMaths_SquareRoot0(horiz2);
+
+		i16 sinYaw = (i16)((i32)sdx * 4096 / horizMag);
+		i16 cosYaw = (i16)((i32)sdz * 4096 / horizMag);
+
+		gLineColijRotMatrix->m[0][0] = cosYaw;
+		gLineColijRotMatrix->m[0][1] = 0;
+		gLineColijRotMatrix->m[0][2] = -sinYaw;
+		gLineColijRotMatrix->m[1][0] = 0;
+		gLineColijRotMatrix->m[1][1] = 4096;
+		gLineColijRotMatrix->m[1][2] = 0;
+		gLineColijRotMatrix->m[2][0] = sinYaw;
+		gLineColijRotMatrix->m[2][1] = 0;
+		gLineColijRotMatrix->m[2][2] = cosYaw;
+
+		i32 full2 = horiz2 + sdy * sdy;
+		i32 fullMag = M3dMaths_SquareRoot0(full2);
+
+		pInfo->Length = fullMag;
+
+		i16 sinPitch = (i16)((i32)sdy * 4096 / fullMag);
+		i16 cosPitch = (i16)(horizMag * 4096 / fullMag);
+
+		pInfo->WorldCst.m[0][0] = 4096;
+		pInfo->WorldCst.m[0][1] = 0;
+		pInfo->WorldCst.m[0][2] = 0;
+		pInfo->WorldCst.m[1][0] = 0;
+		pInfo->WorldCst.m[1][1] = cosPitch;
+		pInfo->WorldCst.m[1][2] = -sinPitch;
+		pInfo->WorldCst.m[2][0] = 0;
+		pInfo->WorldCst.m[2][1] = sinPitch;
+		pInfo->WorldCst.m[2][2] = cosPitch;
+
+		MulMatrix(&pInfo->WorldCst, gLineColijRotMatrix);
+	}
+	else
+	{
+		i16 sign;
+
+		if (sdy >= 0)
+		{
+			sign = 4096;
+			pInfo->Length = sdy;
+			pInfo->DropDown = 1;
+		}
+		else
+		{
+			sign = -4096;
+			pInfo->Length = -sdy;
+		}
+
+		pInfo->WorldCst.m[0][0] = 4096;
+		pInfo->WorldCst.m[0][1] = 0;
+		pInfo->WorldCst.m[0][2] = 0;
+		pInfo->WorldCst.m[1][0] = 0;
+		pInfo->WorldCst.m[1][1] = 0;
+		pInfo->WorldCst.m[1][2] = -sign;
+		pInfo->WorldCst.m[2][0] = 0;
+		pInfo->WorldCst.m[2][1] = sign;
+		pInfo->WorldCst.m[2][2] = 0;
+	}
+
+	gte_SetRotMatrix(&pInfo->WorldCst);
+
+	pInfo->MinCoords.vx = pInfo->StartCoords.vx < pInfo->EndCoords.vx ? pInfo->StartCoords.vx : pInfo->EndCoords.vx;
+	pInfo->MaxCoords.vx = pInfo->StartCoords.vx < pInfo->EndCoords.vx ? pInfo->EndCoords.vx : pInfo->StartCoords.vx;
+
+	pInfo->MinCoords.vy = pInfo->StartCoords.vy < pInfo->EndCoords.vy ? pInfo->StartCoords.vy : pInfo->EndCoords.vy;
+	pInfo->MaxCoords.vy = pInfo->StartCoords.vy < pInfo->EndCoords.vy ? pInfo->EndCoords.vy : pInfo->StartCoords.vy;
+
+	pInfo->MinCoords.vz = pInfo->StartCoords.vz < pInfo->EndCoords.vz ? pInfo->StartCoords.vz : pInfo->EndCoords.vz;
+	pInfo->MaxCoords.vz = pInfo->StartCoords.vz < pInfo->EndCoords.vz ? pInfo->EndCoords.vz : pInfo->StartCoords.vz;
+
+	NextInquiry();
+	pInfo->Inquiry = Inquiry;
 }
 
 // @BIGTODO
+// Original at 0x452C30, 1047 bytes. Checked in IDA (2026-08-31): needs real
+// decompiles of leaf helpers that do not exist in the repo yet, before this
+// function can be written for real (leaf-first rule):
+//   - CVector::operator-(const CVector&, const CVector&) at 0x4E7760 and
+//     CVector::operator>>(const CVector&, int) at 0x4E7840, both called
+//     out-of-line here. These are the exact addresses already flagged in
+//     CLAUDE.md as wrongly-INLINE in vector.h (repo-wide issue, not fixed
+//     yet). Also calls sub_4E7870, sub_4E7800, sub_4E7680, sub_4E7590 in the
+//     same 0x4E7xxx range, almost certainly more CVector operators.
+//   - A cluster of unnamed GTE-area helpers around 0x46D6xx-0x46E0xx
+//     (sub_46DD00, sub_46D790, sub_46D930, sub_46D700, sub_46DEB0,
+//     sub_46DF60, sub_46D990, sub_46E010), none named or decompiled in the
+//     repo. sub_46D430 is M3dMaths_SquareRoot0 (already @Ok).
+// This is a real line-vs-sphere/body test (walks a body's item chain doing a
+// bounding-box reject then a closest-point-on-segment distance check against
+// each item's collision radius, offsets +8/+12/+16 = position, +220 =
+// radius-ish u16, +70 bit 0x40 = some skip flag, +32 = next-item link).
+// Leaving as @BIGTODO rather than guessing the helper bodies; not touched.
 i32 M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32)
 {
 	printf("i32 M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32)");
@@ -127,6 +255,17 @@ i32 M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32)
 }
 
 // @BIGTODO
+// Original at 0x4529C0, 617 bytes. Checked in IDA (2026-08-31): this does the
+// real per-item line-vs-model collision test (picks a coarse/fine face table
+// by radius, sets up the GTE transform for the item, calls into a
+// spool/trigger-zone lookup and a Trig_TriggerCommandPoint dispatch on hit).
+// Needs real decompiles of several unnamed leaf helpers before it can be
+// written for real (leaf-first rule), the biggest being sub_46F1F0 (1176
+// bytes) and sub_46F6B0 (359 bytes); also sub_46D810, sub_46D620, sub_46E4D0,
+// sub_46DD40, none named or decompiled in the repo yet. Left as a
+// forward-to-original stub (functionally correct at runtime, already used by
+// the @Ok M3dColij_LineToItem/LineToItemZoned) rather than guessing the
+// bodies of ~1600 bytes of undecompiled leaf code; not touched further.
 void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 {
 	typedef void (*func_ptr)(CItem*, SLineInfo*);
