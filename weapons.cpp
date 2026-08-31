@@ -56,13 +56,40 @@ extern SCamera gMikeCamera[2];
 //   can find the previous frame's screen points; this bookkeeping is not
 //   shared with anything else in bit.h/weapons.h.
 //
-// None of the callees needed to finish this safely (sub_4F2AB0,
-// sub_46DF80, sub_46DF70, sub_46CB90, the dword_614Cxx ring, the
-// dword_568154/568158/628614/61B5FC scale constants) exist anywhere in the
-// repo yet, and this function is bigger and denser than the ones bit.cpp's
-// family notes already declined to finish this session. Left as a stub
-// rather than guessing at five new undocumented globals and an unnamed
-// helper's exact math.
+// Re-checked 2026-08-31, same session, after other work landed several of this
+// function's blockers as a side effect:
+// - sub_46DF80/sub_46DF70 ARE gte_stsxy/gte_stlvnl2 after all (tools/names.json:
+//   0x46DF80 = ?gte_stsxy@@YAXPAH@Z, 0x46DF70 = ?gte_stlvnl2@@YAXPAH@Z, both
+//   already @Ok in ps2funcs.cpp). The "not the same, different registers" claim
+//   two paragraphs up was wrong; sorry, future reader.
+// - sub_4F2AB0 is CalcScreenNormal, already @Ok right in this file (see below).
+//   A per-segment screen-space normal is exactly what a ribbon needs to build
+//   its left/right edge offsets, so this fits the "ring of midpoints" role well.
+// - sub_46CB90 is stubbed_printf (already used throughout the repo), not a
+//   real callee to decompile, just an assert/debug print.
+// - dword_568154/568158/628614/61B5FC got named this session in venom.cpp and
+//   PCGfx.cpp: gGameResolutionX/gGameResolutionY and Xres/Yres.
+// - The dword_614CD4..614CF4 ring buffer is very likely the same scratch slot
+//   this file already declares as gSmokeRingScreenPoints (0x614CD4, see below);
+//   different Display functions reusing one scratch array between calls is the
+//   normal pattern in this codebase.
+// - The 16-float "refresh gGfxMatrix" copy loop is a named, working @Ok
+//   function now (RefreshGfxMatrix, bit.cpp), but it is `static INLINE`
+//   (file-local); would need duplicating here (repo convention allows this)
+//   or exporting.
+// - The real remaining blocker: the invZ pipeline's vector3d/vector4d helpers
+//   (sub_402620 = vector4d_ctor, sub_402600, sub_402540 = the vector3d ctor)
+//   are NAMED in tools/names.json and vector3d/vector4d already exist as real
+//   classes (bit.h) with some members implemented (ps2m3d.cpp has
+//   vector4d::operator=), but 0x402540's actual disassembly (this-in-ecx,
+//   ONE stack arg, retn 4, copies 3 dwords through a pointer deref) does NOT
+//   match its mangled name's signature (??0vector3d@@QAE@MMM@Z decodes to
+//   vector3d(float,float,float), which would need 3 stack args and retn 0Ch,
+//   not 1 arg and retn 4). This looks like a real names.json
+//   address/signature mismatch for this one entry, not just an unnamed
+//   function - needs sorting out (probably against the compiler-generated
+//   copy constructor) before it is safe to implement, so still not attempted
+//   here. Left as a stub for this reason alone now, not the long list above.
 // @BIGTODO
 void CGouraudRibbon::Display(void)
 {

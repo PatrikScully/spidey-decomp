@@ -62,7 +62,9 @@ void validate_SLineInfo(void);
 void validate_Vector(void);
 
 EXPORT void M3dColij_InitLineInfo(SLineInfo *);
-EXPORT i32 M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32);
+// signature confirmed via thps2-stuff/decls.h (THPS2 PSX demo symbols):
+// M3dColij_LineToSphere__FRC7CVectorT0R7CVectorP5CBodyT3i, returning CBody*.
+EXPORT CBody * M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32);
 
 EXPORT void M3dColij_LineToItem(CItem*, SLineInfo*);
 EXPORT void M3dColij_LineToThisItem(CItem*, SLineInfo*);

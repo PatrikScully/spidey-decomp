@@ -11,12 +11,31 @@ SLineInfo gLineInfo;
 
 i32 LineOfSightCheck;
 
+// address 0x005FBD38 in the original, right before M3dColij_OneMask (0x005FBDA8).
+// M3dColij_LineToSphere resets this to 0x7FFFFFFF ("nothing found yet") at the top of
+// every call, then keeps the best (lowest) line-parameter-t found while scanning items.
+// No idb_globals.txt entry, name is our guess.
+i32 gLineToSphereBestT;
+
 u32 M3dColij_OneMask;
 u32 M3dColij_ZeroMask;
+
+// address 0x005FBDE0 in the original, right after M3dColij_ZeroMask (0x005FBDDC ends
+// here). M3dColij_LineToSphere resets this to 0 at the top of every call, then keeps the
+// CBody* that currently owns gLineToSphereBestT; it is also the function's return value.
+// No idb_globals.txt entry, name is our guess.
+CBody * gLineToSphereBestBody;
 
 i32 BaddyCollisionCheck;
 i32 CameraCollisionCheck;
 i32 TriggerCollisionCheck;
+
+// address 0x005FBEF0 in the original, right after TriggerCollisionCheck (0x005FBEE8 ends
+// at 0x005FBEEC, small gap). Same family as the CollisionCheck flags above (debug/editor
+// visualization toggles); M3dColij_LineToSphere skips its actual radius-distance check
+// when this is set, accepting any item whose bounding box overlapped the line. No
+// idb_globals.txt entry, name is our guess.
+i32 gLineToSphereIgnoreRadius;
 
 // @NotOk
 // @FIXME - check ppc version to address this
@@ -229,29 +248,171 @@ void M3dColij_InitLineInfo(SLineInfo *pInfo)
 	pInfo->Inquiry = Inquiry;
 }
 
-// @BIGTODO
-// Original at 0x452C30, 1047 bytes. Checked in IDA (2026-08-31): needs real
-// decompiles of leaf helpers that do not exist in the repo yet, before this
-// function can be written for real (leaf-first rule):
-//   - CVector::operator-(const CVector&, const CVector&) at 0x4E7760 and
-//     CVector::operator>>(const CVector&, int) at 0x4E7840, both called
-//     out-of-line here. These are the exact addresses already flagged in
-//     CLAUDE.md as wrongly-INLINE in vector.h (repo-wide issue, not fixed
-//     yet). Also calls sub_4E7870, sub_4E7800, sub_4E7680, sub_4E7590 in the
-//     same 0x4E7xxx range, almost certainly more CVector operators.
-//   - A cluster of unnamed GTE-area helpers around 0x46D6xx-0x46E0xx
-//     (sub_46DD00, sub_46D790, sub_46D930, sub_46D700, sub_46DEB0,
-//     sub_46DF60, sub_46D990, sub_46E010), none named or decompiled in the
-//     repo. sub_46D430 is M3dMaths_SquareRoot0 (already @Ok).
-// This is a real line-vs-sphere/body test (walks a body's item chain doing a
-// bounding-box reject then a closest-point-on-segment distance check against
-// each item's collision radius, offsets +8/+12/+16 = position, +220 =
-// radius-ish u16, +70 bit 0x40 = some skip flag, +32 = next-item link).
-// Leaving as @BIGTODO rather than guessing the helper bodies; not touched.
-i32 M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32)
+// @Ok
+// Original at 0x452C30, 1047 bytes. Re-checked 2026-08-31: every callee that blocked this
+// (see the previous BIGTODO note, kept below the divider for the record) is now decompiled:
+// CVector::operator- (0x4E7760), operator>> (0x4E7840), operator<< (0x4E7870), operator/
+// (0x4E7800), operator>>= (0x4E7680), operator+= (0x4E7590) all got moved out of the
+// wrongly-INLINE vector.h into vector.cpp already; the GTE helper cluster (gte_sqr0,
+// gte_stlvnl, gte_op12, gte_ldopv1, gte_ldopv2, gte_ldlv0, gte_ldlvl, gte_stlvnl0, gte_lddp,
+// M3dMaths_SquareRoot0) all exist in ps2funcs.cpp; the only 3 genuinely missing leaves
+// (sub_46D930, sub_46DEB0, sub_46E010) are confirmed via IDA xrefs to be used ONLY by this
+// function, so they are decompiled alongside it as gsub_46D930/gsub_46DEB0/gte_gpf in
+// ps2funcs.cpp (see the comments there).
+//
+// Behavior (matches the disassembly move for move): normalizes (pEnd-pStart) into a
+// fixed-point (Q12) direction, stashes it as the "row 0" of the GTE scratch matrix used by
+// gsub_46DEB0, then walks the pFirst item chain. Per item: skip if mCBodyFlags bit 0x40 is
+// set or the item is pExclude; reject on an axis-aligned bounding-box test against the
+// line's start/end extents inflated by the item's (scaled) radius; then, unless
+// gLineToSphereIgnoreRadius is set, reject unless the line passes within the item's radius
+// (via the cross-product perpendicular-distance-squared test the original does with
+// gte_op12/gte_sqr0). For a surviving item, project it onto the line (gsub_46DEB0) to get a
+// line parameter t; if t is closer than the current best, accept it outright when
+// 0 <= t <= line length, or fall back to a plain point-radius test against the segment's
+// start (t<0) or end (t>length) point. The nearest accepted item becomes the new best.
+// After the scan, if anything was found, *pOutPos is set to pStart + (direction * bestT),
+// using the same double->12 shift the original does (gte_gpf then CVector::operator>>=(12)).
+// Returns the found CBody* (or NULL).
+//
+// Old blocker note (2026-08-27, resolved above): needed CVector::operator- (0x4E7760) and
+// operator>> (0x4E7840) out-of-line (CLAUDE.md's wrongly-INLINE vector.h issue), plus an
+// unnamed GTE-area helper cluster (sub_46DD00, sub_46D790, sub_46D930, sub_46D700,
+// sub_46DEB0, sub_46DF60, sub_46D990, sub_46E010).
+CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, CBody *pFirst, CBody *pExclude, i32 radiusScale)
 {
-	printf("i32 M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32)");
-	return 0x03072024;
+	CVector delta = *pEnd - *pStart;
+	CVector deltaShifted = delta >> 12;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&deltaShifted));
+	gte_sqr0();
+
+	VECTOR deltaSq;
+	gte_stlvnl(&deltaSq);
+
+	i32 length = M3dMaths_SquareRoot0(deltaSq.vx + deltaSq.vy + deltaSq.vz);
+
+	gLineToSphereBestT = 0x7FFFFFFF;
+	gLineToSphereBestBody = 0;
+
+	if (length == 0)
+		return 0;
+
+	CVector dirQ12 = (deltaShifted << 12) / length;
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&dirQ12));
+
+	SVECTOR dirShort;
+	dirShort.vx = (i16)dirQ12.vx;
+	dirShort.vy = (i16)dirQ12.vy;
+	dirShort.vz = (i16)dirQ12.vz;
+	gsub_46D930(&dirShort);
+
+	i32 minX = pStart->vx < pEnd->vx ? pStart->vx : pEnd->vx;
+	i32 maxX = pStart->vx < pEnd->vx ? pEnd->vx : pStart->vx;
+	i32 minY = pStart->vy < pEnd->vy ? pStart->vy : pEnd->vy;
+	i32 maxY = pStart->vy < pEnd->vy ? pEnd->vy : pStart->vy;
+	i32 minZ = pStart->vz < pEnd->vz ? pStart->vz : pEnd->vz;
+	i32 maxZ = pStart->vz < pEnd->vz ? pEnd->vz : pStart->vz;
+
+	for (CBody *item = pFirst; item; item = (CBody*)item->mNextItem)
+	{
+		if (item->mCBodyFlags & 0x40)
+			continue;
+		if (item == pExclude)
+			continue;
+
+		i32 rad = radiusScale * item->mRMinor;
+
+		if (item->mPos.vx + rad < minX) continue;
+		if (item->mPos.vx - rad > maxX) continue;
+		if (item->mPos.vy + rad < minY) continue;
+		if (item->mPos.vy - rad > maxY) continue;
+		if (item->mPos.vz + rad < minZ) continue;
+		if (item->mPos.vz - rad > maxZ) continue;
+
+		CVector itemFromStart;
+		itemFromStart.vx = (item->mPos.vx - pStart->vx) >> 12;
+		itemFromStart.vy = (item->mPos.vy - pStart->vy) >> 12;
+		itemFromStart.vz = (item->mPos.vz - pStart->vz) >> 12;
+
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&itemFromStart));
+		gte_op12();
+		gte_sqr0();
+
+		VECTOR crossSq;
+		gte_stlvnl(&crossSq);
+
+		i32 radShifted = rad >> 12;
+		i32 radSq = radShifted * radShifted;
+
+		if (!gLineToSphereIgnoreRadius)
+		{
+			if (crossSq.vx + crossSq.vy + crossSq.vz >= radSq)
+				continue;
+		}
+
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&itemFromStart));
+		gsub_46DEB0();
+
+		i32 t;
+		gte_stlvnl0(&t);
+
+		if (t >= gLineToSphereBestT)
+			continue;
+
+		if (t >= 0)
+		{
+			if (t > length)
+			{
+				CVector itemFromEnd;
+				itemFromEnd.vx = (item->mPos.vx - pEnd->vx) >> 12;
+				itemFromEnd.vy = (item->mPos.vy - pEnd->vy) >> 12;
+				itemFromEnd.vz = (item->mPos.vz - pEnd->vz) >> 12;
+
+				gte_ldlvl(reinterpret_cast<VECTOR*>(&itemFromEnd));
+				gte_sqr0();
+
+				VECTOR endSq;
+				gte_stlvnl(&endSq);
+
+				if (!gLineToSphereIgnoreRadius)
+				{
+					if (endSq.vx + endSq.vy + endSq.vz >= radSq)
+						continue;
+				}
+			}
+		}
+		else
+		{
+			gte_ldlvl(reinterpret_cast<VECTOR*>(&itemFromStart));
+			gte_sqr0();
+
+			VECTOR startSq;
+			gte_stlvnl(&startSq);
+
+			if (!gLineToSphereIgnoreRadius)
+			{
+				if (startSq.vx + startSq.vy + startSq.vz >= radSq)
+					continue;
+			}
+		}
+
+		gLineToSphereBestT = t;
+		gLineToSphereBestBody = item;
+	}
+
+	if (gLineToSphereBestBody)
+	{
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&dirQ12));
+		gte_lddp(gLineToSphereBestT);
+		gte_gpf();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(pOutPos));
+		*pOutPos >>= 12;
+		*pOutPos += *pStart;
+	}
+
+	return gLineToSphereBestBody;
 }
 
 // @BIGTODO
@@ -266,6 +427,13 @@ i32 M3dColij_LineToSphere(CVector*, CVector*, CVector*, CBody*, CBody*, i32)
 // forward-to-original stub (functionally correct at runtime, already used by
 // the @Ok M3dColij_LineToItem/LineToItemZoned) rather than guessing the
 // bodies of ~1600 bytes of undecompiled leaf code; not touched further.
+//
+// Re-checked 2026-08-31, same session as M3dColij_LineToSphere above: verified via IDA
+// xrefs that sub_46F1F0 and sub_46F6B0 (the two big blockers) are still unnamed and are
+// used only by this function, so no shortcut appeared elsewhere in the repo. sub_46D810
+// is also called from two unrelated, large, still-unnamed functions (sub_4739A0, 0xdf2
+// bytes; sub_474C10, 0x1290 bytes) outside this file, so decompiling it here would need
+// checking those too. Still genuinely blocked; not attempted.
 void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 {
 	typedef void (*func_ptr)(CItem*, SLineInfo*);

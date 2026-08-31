@@ -31,7 +31,7 @@ void CLaserFence::AI(void)
 							&v5,
 							MechList,
 							0,
-							4096) == reinterpret_cast<i32>(MechList))
+							4096) == reinterpret_cast<CBody*>(MechList))
 				{
 					SHitInfo v6;
 
