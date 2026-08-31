@@ -1528,47 +1528,245 @@ void DisplayTextBoxList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x40dbd0. Re-verified this session (2026-08-31, second pass) against a fresh IDA
-// decompile - still NOT implemented (dense fixed-point dual-precision corner packing, timer
-// decrements, several interacting flag bits), but one correction and several confirmations to
-// the previous pass's note:
+// Shared bump-allocated scratch buffer, same address/bounds as flash.cpp's
+// gEffectRecordBufPos/gEffectRecordBufEnd (0x56FB04/0x5FCD1C, see DisplayGlassList's comment
+// above). File-local copy of the same macros (plain address globals, not the G_* hook-sharing
+// form, so per-file duplication is fine per repo convention).
+#define gFlatBitScratchBufPos (*reinterpret_cast<u8**>(0x0056FB04))
+#define gFlatBitScratchBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31, third pass). Address 0x40dbd0.
+// Fully traced against a fresh IDA decompile AND the raw disassembly (both cross-checked
+// instruction by instruction for every field offset and mask constant below); this closes out
+// the previous two passes' open questions:
 //
-// CORRECTION: the previous note said the u16 at offset 0x66 (`*(WORD*)(v1+102)`) "gates whether
-// the texture-corner packing takes a 32-bit or 16-bit-wrapped path". That is wrong - re-traced
-// this session, the 32-vs-16-bit corner-packing split is gated by `*(BYTE*)(v1+80) & 1`
-// (CFT4Bit::mBitFlags bit 0x1, offset 0x50) alone, confirmed by both corner-computation
-// branches (rotated and axis-aligned) independently checking the exact same bit before choosing
-// between DWORD-packed (`*(DWORD*)(v5+16)=...`) and WORD-packed+clamped (`*(WORD*)(v5+8)=...;
-// ...&=0xFFFu`) stores. The 0x66 field (v6) does something else: when v6 != 0, it's OR'd in as
-// `(v6<<16)` on top of the low 16 bits of `*(DWORD*)mpPSXFrame->pTexture` when building the
-// clut/texture-page dword at the scratch record's +12 - i.e. it looks like a clut/page OVERRIDE
-// for the frame's texture, not a precision selector. Still not sure which CFlatBit-derived
-// class actually owns this field (CSimpleAnim/CMotionBlur/CCombatImpactRing/CFrag are the
-// candidates registered into FlatBitList) - don't guess without checking those classes' own
-// fields.
-//
-// Confirmed as the previous note described: camera-space transform of ONLY the sprite centre
-// (CBit::mPos) through gte_ldlv0-equivalent + Algebra_Transform4 invZ (no per-corner GTE);
-// CFlatBit::mAngle (0x58) selects a rotated-vs-axis-aligned corner path via word_610C48/610C4A
-// (rcossin_tbl); mBitFlags (0x50) bit 0x8 overrides an assert-like perspective-scale-range check
-// (the scale value, clamped to <=0x200, is skipped/bypassed when this bit is set instead of
-// gating a draw-skip); a POLY_FT4-shaped emit via PCGfx_DrawQPoly3D (sub_508550, already @Ok).
-// New this pass: the scratch record used for the real draw is the SAME shared 0x56FB04/0x5FCD1C
-// buffer DisplayGlassList/DisplayGlowList also use (see DisplayGlassList's comment) - used for
-// real here too, with the same "bare return bails the whole function on overflow" hazard
-// DisplayGlowList has. Four small `nullsub_1(flag, "Sub on zero")` calls guard four in-place
-// byte decrements on the scratch record (offsets +20/+29/+36/+37) - these read as a debug assert
-// for an animation/fade timer underflowing, only reachable when the perspective scale is
-// large (`v66>=0x100`) or the angle is nonzero; not otherwise load-bearing for the draw itself.
-// A screen-space range check (-256..768 x / -256..360 y, NOT gGameResolutionX/Y - looks like the
-// same kind of fixed reference viewport DisplayGlowList's -100..612/-100..340 rect used) sets a
-// skip flag that suppresses the actual draw call further down if any corner falls outside it.
-//
-// Still needs a dedicated session to write and test with confidence: the exact CFlatBit-derived
-// class(es) that populate FlatBitList and their field at 0x66 need pinning down first.
-void DisplayFlatBitList(void**)
+// - The u16 at offset 0x66 IS a real per-instance CFlatBit field (added to bit.h as
+//   mClutOverride): CMotionBlur/CFrag (plain CFlatBit, no extra fields of their own) both
+//   VALIDATE_SIZE at 0x68, which only works if CFlatBit itself is 0x68 bytes - i.e. this u16
+//   is real storage, not compiler tail padding. Confirmed by the raw disasm (`mov cx,[ebx+66h]`)
+//   independently of which CFlatBit subclass is actually walking the list; every subclass shares
+//   the same base-class field, so no need to know which concrete class populated FlatBitList.
+// - The 32-vs-16-bit corner-packing split really is CFT4Bit::mBitFlags bit 0x1 alone (previous
+//   pass's correction still holds).
+// - `dword_64E514+0xA`/`+0xE` (G_VIEW_CLIP_INFO, screen.h) are read here as a "far" limit and a
+//   half-limit respectively, gating a perspective-scale visibility test together with a hardcoded
+//   raw-depth floor of 200 - semantics beyond "visibility gate" not pinned down further, not
+//   needed to translate the code faithfully.
+// - The scratch buffer (0x56FB04/0x5FCD1C) bump-allocation and its overflow bail (abandons the
+//   REST of the list, not just the current bit - confirmed via the raw disasm jump target, which
+//   is the function's own return) is real and reproduced. Its content writes (texpage/clut/UV
+//   fields at rec+12/20/28/36, and four debug-assert byte decrements guarded by
+//   `nullsub_1(cond, "Sub on zero")` = print_if_false, at rec+20/29/36/37) are all confirmed dead
+//   for the actual draw call below (never read back anywhere in this function or elsewhere in the
+//   repo) and are skipped, same documented choice as DisplayGlassList's scratch record.
+// - When the visibility gate fails, the original rewinds the bump allocation
+//   (`gFlatBitScratchBufPos = rec`) instead of leaving it consumed - reproduced below.
+// - Colour is CFT4Bit::mCodeBGR's low 3 bytes as (R,G,B) with alpha forced to 0x80 (semi
+//   -transparent, blend mode 2) when CFlatBit::mSemiTransparencyRate == 32, else 0xFF (opaque,
+//   blend mode 0) - read straight from the bit instead of round-tripping through the dead scratch
+//   record. Clut for PCGfx_UseTexture is mpPSXFrame->pTexture->clut (Texture::clut, texture.h).
+// - Only the sprite centre (CBit::mPos) goes through the camera-space GTE transform
+//   (gte_ldlv0/gte_rtps) and the separate Algebra_Transform4/invZ pass (RefreshGfxMatrix already
+//   run for this frame by an earlier Display*List call, same as DisplayChunkBitList); all 4
+//   corners share that single invZ. The 4 corners' screen positions are built directly from
+//   SAnimFrame::OffX/OffY/Width/Height (mpPSXFrame->pTexture's owning frame), CFT4Bit::mScale
+//   (perspective falloff with raw depth), CFlatBit::mPostScale (packed lo/hi u16 X/Y scale) and,
+//   when CFlatBit::mAngle != 0, a rcossin_tbl (word_610C48/610C4A, same idiom as CCamera::CM_Normal
+//   in camera.cpp) rotation of the frame rectangle. This matches a billboarded, optionally
+//   rotated, 2D sprite quad - consistent with the class family name (CSimpleAnim/CMotionBlur/
+//   CCombatImpactRing/CFrag are all "flat" 2D effect sprites).
+// - Single PCGfx_DrawQPoly3D call per bit (no back-face pass, unlike DisplayQuadBitList/
+//   DisplayGlassList), standard 0.01/0.99 texture-bleed-inset UVs, gated on
+//   `mpPSXFrame->pTexture->clut != 0 && corners-all-in-range`.
+void DisplayFlatBitList(void** a1)
 {
+	u8* clip = G_VIEW_CLIP_INFO;
+	i32 farLimit = *(u16*)(clip + 0xA);
+	i32 halfLimit = *(u16*)(clip + 0xE) >> 1;
+
+	CFlatBit* pBit = reinterpret_cast<CFlatBit*>(*a1);
+	while (pBit)
+	{
+		VECTOR relPos;
+		relPos.vx = (pBit->mPos.vx >> 12) - gCameraViewPos->vx;
+		relPos.vy = (pBit->mPos.vy >> 12) - gCameraViewPos->vy;
+		relPos.vz = (pBit->mPos.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relPos);
+		gte_rtps();
+
+		f32 rawPos[3];
+		rawPos[0] = (f32)pBit->mPos.vx / 4096.0f;
+		rawPos[1] = (f32)pBit->mPos.vy / 4096.0f;
+		rawPos[2] = (f32)pBit->mPos.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZ = (fabsf(xf[3]) > 0.00000001f) ? 1.0f / xf[3] : -1.0e12f;
+
+		u8* rec = gFlatBitScratchBufPos;
+		if (rec + 40 > gFlatBitScratchBufEnd)
+			break;
+		gFlatBitScratchBufPos = rec + 40;
+
+		i32 depth;
+		gte_stlvnl2(&depth);
+
+		bool visible = false;
+		i32 scale = 0;
+		if (depth >= halfLimit && depth <= farLimit && depth >= 200)
+		{
+			scale = (i32)(((u32)(pBit->mScale << 7)) / (u32)depth);
+			visible = ((u32)scale <= 0x200) || (pBit->mBitFlags & 8);
+		}
+
+		if (!visible)
+		{
+			gFlatBitScratchBufPos = rec;
+			pBit = reinterpret_cast<CFlatBit*>(pBit->mNext);
+			continue;
+		}
+
+		i32 packedCenter;
+		gte_stsxy(&packedCenter);
+
+		SAnimFrame* frame = pBit->mpPSXFrame;
+		i32 offX = frame->OffX;
+		i32 offY = frame->OffY;
+		i32 width = frame->Width;
+		i32 height = frame->Height;
+		Texture* pTexture = frame->pTexture;
+
+		i32 halfW = (scale * (i32)(pBit->mPostScale & 0xFFFF)) >> 12;
+		i32 halfH = (scale * (i32)(pBit->mPostScale >> 16)) >> 12;
+
+		bool highPrecision = (pBit->mBitFlags & 1) != 0;
+		i32 outOfRange = 0;
+
+		i16 cx[4], cy[4];
+
+		if (pBit->mAngle != 0)
+		{
+			i32 idx = pBit->mAngle & 0xFFF;
+			i32 sinA = rcossin_tbl[idx].sin;
+			i32 cosA = rcossin_tbl[idx].cos;
+
+			i32 t54 = sinA * offX;
+			i32 t31 = cosA * offX;
+			i32 t53 = offY * sinA;
+			i32 t55 = offY * cosA;
+			i32 t32 = t54 + width * sinA;
+			i32 t63 = t53 + height * sinA;
+			i32 t34 = t31 + width * cosA;
+			i32 t60 = t55 + height * cosA;
+
+			if (highPrecision)
+			{
+				i32 dw16 = (((halfH * (t54 + t55)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t31 - t53)) >> 19);
+				i32 dw8  = (((halfH * (t55 + t32)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t34 - t53)) >> 19);
+				i32 dw32 = (((halfH * (t54 + t60)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t31 - t63)) >> 19);
+				i32 dw24 = (((halfH * (t32 + t60)) >> 3) & 0x1FFF0000) + packedCenter + ((halfW * (t34 - t63)) >> 19);
+
+				cx[0] = (i16)dw8;  cy[0] = (i16)(dw8 >> 16);
+				cx[1] = (i16)dw16; cy[1] = (i16)(dw16 >> 16);
+				cx[2] = (i16)dw24; cy[2] = (i16)(dw24 >> 16);
+				cx[3] = (i16)dw32; cy[3] = (i16)(dw32 >> 16);
+			}
+			else
+			{
+				i16 x0 = (i16)(packedCenter + (i32)((u16)((halfW * (t31 - t53)) >> 16) >> 3));
+				i16 y0 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t54 + t55)) >> 16) >> 3));
+				i16 x1 = (i16)(packedCenter + (i32)((u16)((halfW * (t34 - t53)) >> 16) >> 3));
+				i16 y1 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t55 + t32)) >> 16) >> 3));
+				i16 x2 = (i16)(packedCenter + (i32)((u16)((halfW * (t31 - t63)) >> 16) >> 3));
+				i16 y2 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t60 + t54)) >> 16) >> 3));
+				i16 x3 = (i16)(packedCenter + (i32)((u16)((halfW * (t34 - t63)) >> 16) >> 3));
+				i16 y3 = (i16)((packedCenter >> 16) + (i32)((u16)((halfH * (t32 + t60)) >> 16) >> 3));
+
+				i16 ccx = (i16)packedCenter;
+				i16 ccy = (i16)(packedCenter >> 16);
+				if (ccx < -256 || ccy < -256 || ccx > 768 || ccy > 360)
+					outOfRange = 1;
+
+				cx[0] = x0 & 0xFFF; cy[0] = y0 & 0xFFF;
+				cx[1] = x1 & 0xFFF; cy[1] = y1 & 0xFFF;
+				cx[2] = x2 & 0xFFF; cy[2] = y2 & 0xFFF;
+				cx[3] = x3 & 0xFFF; cy[3] = y3 & 0xFFF;
+			}
+		}
+		else
+		{
+			i16 v21 = (i16)((offX * halfW) >> 7);
+			i32 v23 = (height * halfH) & 0xFFFFFF80;
+			i32 v24 = (width * halfW) >> 7;
+			i32 v25 = packedCenter + ((0x7FFF80 & (offY * halfH)) << 9) + v21;
+			i32 v26 = v23 << 9;
+
+			if ((u32)v24 < 5)
+				v24 = 2;
+			if ((u32)v26 < 0x50000)
+				v26 = 0x10000;
+
+			if (highPrecision)
+			{
+				i32 dw16 = v25;
+				i32 dw8  = v24 + v25;
+				i32 dw32 = v26 + v25;
+				i32 dw24 = v25 + v24 + v26;
+
+				cx[0] = (i16)dw8;  cy[0] = (i16)(dw8 >> 16);
+				cx[1] = (i16)dw16; cy[1] = (i16)(dw16 >> 16);
+				cx[2] = (i16)dw24; cy[2] = (i16)(dw24 >> 16);
+				cx[3] = (i16)dw32; cy[3] = (i16)(dw32 >> 16);
+			}
+			else
+			{
+				i16 x0 = (i16)v25;
+				i16 y0 = (i16)(v25 >> 16);
+				i16 x1 = (i16)(v24 + v25);
+				i16 y1 = (i16)(v25 >> 16);
+				i16 x2 = (i16)v25;
+				i16 y2 = (i16)((v26 >> 16) + (v25 >> 16));
+				i16 x3 = (i16)(v24 + v25);
+				i16 y3 = (i16)((v26 >> 16) + (v25 >> 16));
+
+				i16 ccx = (i16)v25;
+				i16 ccy = (i16)(v25 >> 16);
+				if (ccx < -256 || ccy < -256 || ccx > 768 || ccy > 360)
+					outOfRange = 1;
+
+				cx[0] = x0 & 0xFFF; cy[0] = y0 & 0xFFF;
+				cx[1] = x1 & 0xFFF; cy[1] = y1 & 0xFFF;
+				cx[2] = x2 & 0xFFF; cy[2] = y2 & 0xFFF;
+				cx[3] = x3 & 0xFFF; cy[3] = y3 & 0xFFF;
+			}
+		}
+
+		u16 clut = pTexture->clut;
+		if (clut != 0 && outOfRange == 0)
+		{
+			i32 blendMode = (pBit->mSemiTransparencyRate == 32) ? 2 : 0;
+			u32 alpha = (pBit->mSemiTransparencyRate == 32) ? 0x80 : 0xFF;
+
+			PCGfx_UseTexture(clut, (DCGfx_BlendingMode)blendMode);
+
+			u32 color = (alpha << 24) | ((pBit->mCodeBGR & 0xFF) << 16) |
+					(((pBit->mCodeBGR >> 8) & 0xFF) << 8) | ((pBit->mCodeBGR >> 16) & 0xFF);
+
+			f32 scaleX = gGameResolutionX / (f32)Xres;
+			f32 scaleY = gGameResolutionY / (f32)Yres;
+
+			PCGfx_DrawQPoly3D(
+				cx[0] * scaleX, cy[0] * scaleY, invZ, 0.01f, 0.01f, color,
+				cx[1] * scaleX, cy[1] * scaleY, invZ, 0.99f, 0.01f, color,
+				cx[2] * scaleX, cy[2] * scaleY, invZ, 0.01f, 0.99f, color,
+				cx[3] * scaleX, cy[3] * scaleY, invZ, 0.99f, 0.99f, color);
+		}
+
+		pBit = reinterpret_cast<CFlatBit*>(pBit->mNext);
+	}
 }
 
 // @Ok
@@ -4199,11 +4397,14 @@ CGlassBit::~CGlassBit(void)
 }
 
 void validate_CFlatBit(void){
+	VALIDATE_SIZE(CFlatBit, 0x68);
+
 	VALIDATE(CFlatBit, mAngle, 0x58);
 	VALIDATE(CFlatBit, field_5A, 0x5A);
 	VALIDATE(CFlatBit, mAngFric, 0x5E);
 	VALIDATE(CFlatBit, mPostScale, 0x60);
 	VALIDATE(CFlatBit, mSemiTransparencyRate, 0x65);
+	VALIDATE(CFlatBit, mClutOverride, 0x66);
 }
 
 void validate_CFT4Bit(void){
