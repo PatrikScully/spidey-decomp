@@ -229,6 +229,7 @@ i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 }
 
 extern CPlayer* MechList;
+extern CSVector gTrajectoryVector;
 static u16 word_5FBC0C;
 
 // @Ok
@@ -651,10 +652,61 @@ void CLizMan::FlyAcrossRoom(void)
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// @MEDIUMTODO
+// @Ok
+// Decompiled from 0x450920 (560 bytes) via IDA disassembly + Hex-Rays,
+// cross-checked field by field against CBody's validated layout (mVel
+// 0x60, mAcc 0x6C, mFric 0x78, field_80 0x80, mAngVel 0x88, mAngAcc 0x8E,
+// mAngFric 0x94, field_A8 0xA8, mCollision 0xE0) and against CSuper's
+// mFrame (0x128) / mAnim (0x12A). field_A8 = gTrajectoryVector matches the
+// identical idiom already @Ok in CPlatform::DoPhysics (platform.cpp).
+// rollFactor is a Q12 fixed-point "how much of mVel to apply this frame"
+// value: 4096 (1.0) normally, and a sin-table-derived value while playing
+// specific fly/roll anims (2, 8, 0x23) so the landing arc eases instead of
+// snapping. The two operator* + operator>> calls in the original
+// (((mVel * rollFactor) >> 12) * field_80) are the same expression on both
+// sides of the original's rollFactor==4096 shortcut branch, so this is
+// written as one expression without the branch.
 void CLizMan::DoLizmanPhysics(void)
 {
-	printf("CLizMan::DoLizmanPhysics(void)");
+	this->field_A8 = gTrajectoryVector;
+	this->mCollision = 0;
+
+	i32 speed = this->field_80;
+
+	this->mVel += this->mAcc;
+	this->mVel %= this->mFric;
+	this->mVel.KillSmall();
+
+	i32 rollFactor;
+	switch (this->mAnim)
+	{
+		case 2:
+			rollFactor = (my_abs(rcossin_tbl[(this->mFrame << 7) & 0xFFF].sin) >> 1) + 1024;
+			break;
+		case 8:
+			rollFactor = (my_abs(rcossin_tbl[((this->mFrame << 12) / 20) & 0xFFF].sin) >> 2) + 2048;
+			break;
+		case 0x23:
+			rollFactor = ((my_abs(rcossin_tbl[((this->mFrame << 12) / 24) & 0xFFF].sin) * 3) >> 2) + 1024;
+			break;
+		default:
+			rollFactor = 0x1000;
+			break;
+	}
+
+	this->mPos += ((this->mVel * rollFactor) >> 12) * speed;
+
+	i16 angSpeed = static_cast<i16>(speed);
+	this->mAngles.vx += this->mAngVel.vx * angSpeed;
+	this->mAngles.vy += this->mAngVel.vy * angSpeed;
+	this->mAngles.vz += this->mAngVel.vz * angSpeed;
+	this->mAngles.Mask();
+
+	this->mAngVel += this->mAngAcc;
+	this->mAngVel %= this->mAngFric;
+	this->mAngVel.KillSmall();
+
+	this->field_2AC = 0;
 }
 
 // @Ok
