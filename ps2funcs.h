@@ -146,6 +146,9 @@ EXPORT void gte_rtv0(void);
 EXPORT void gte_stlvnl0(i32 *a1);
 EXPORT void gte_stlvnl2(i32 *a1);
 EXPORT void gte_gpf0(void);
+// sf=1 variant of gte_gpf0 (real GTE opcode pair GPF0/GPF), address 0x0046E010.
+// Only caller: M3dColij_LineToSphere (m3dcolij.cpp).
+EXPORT void gte_gpf(void);
 EXPORT void gte_ldlzc(i32 a1);
 EXPORT void gte_stlzc(i32 *a1);
 EXPORT void gte_stsv(SVECTOR *a1);
@@ -158,6 +161,20 @@ EXPORT void gte_ldopv2(VECTOR *a1);
 EXPORT void gte_ldlv0(const VECTOR *a1);
 EXPORT void gte_stsxy3(i32 *a1, i32 *a2, i32 *a3);
 EXPORT void gte_rtir(void);
+
+// unnamed GTE helpers, addresses 0x0046D930/0x0046DEB0. Both used ONLY by
+// M3dColij_LineToSphere (m3dcolij.cpp, verified via IDA xrefs 2026-08-31).
+// gsub_46D930 loads a short vector into row 0 of a small scratch "matrix"
+// (address 0x00610B40, right after gTranslationVector and before gWtfOP12,
+// no idb_globals.txt entry); gsub_46DEB0 dot-products each row of that
+// matrix against vertexRegister (fixed-point, >>12) into
+// gGeneralLongVector. LineToSphere only ever writes row 0 (the line
+// direction) and only ever reads gGeneralLongVector.vx back out
+// afterward (via gte_stlvnl0), so rows 1/2 are functionally dead for the
+// one call site that exists in the binary; kept as a 3-row matrix for
+// fidelity to the real memory layout, not because rows 1/2 do anything.
+EXPORT void gsub_46D930(const SVECTOR *a1);
+EXPORT void gsub_46DEB0(void);
 
 // unnamed GTE store, address 0x0046D9B0. called by Utils_CalculateSpatialAttenuation
 // right after gte_rtir(), stores 2 of the 3 result fields (offset 0 and offset 8 of

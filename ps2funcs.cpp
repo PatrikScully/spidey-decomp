@@ -507,6 +507,18 @@ void gte_gpf0()
   gGeneralLongVector.vz = gScalar * gOp12Result.vz;
 }
 
+// @Ok
+// sf=1 variant of gte_gpf0 above: same multiply, but with a fixed-point
+// >>12 shift on every component (matches the real GTE opcode pair
+// GPF0/GPF, sf=0 vs sf=1). Unnamed in the IDB, address 0x0046E010. Only
+// caller: M3dColij_LineToSphere (m3dcolij.cpp).
+void gte_gpf(void)
+{
+  gGeneralLongVector.vx = (gOp12Result.vx * gScalar) >> 12;
+  gGeneralLongVector.vy = (gOp12Result.vy * gScalar) >> 12;
+  gGeneralLongVector.vz = (gOp12Result.vz * gScalar) >> 12;
+}
+
 EXPORT int lzc;
 
 // @Ok
@@ -661,6 +673,53 @@ void gte_stsxy3(int *a1, int *a2, int *a3)
 // @Ok
 void gte_rtir(void){
 	FixedXForm(gRotMatrix, &gOp12Result, &gGeneralLongVector);
+}
+
+// Scratch 3-row short-vector "matrix" at address 0x00610B40 in the original:
+// right after gTranslationVector (0x00610B34, VECTOR, ends 0x00610B40) and
+// before gWtfOP12 (0x00610B80). No idb_globals.txt entry for this gap.
+// gsub_46D930 (writer) and gsub_46DEB0 (reader) are its only users, and
+// (per IDA xrefs, 2026-08-31) both are called ONLY from
+// M3dColij_LineToSphere, which only ever writes row 0 and only ever reads
+// gGeneralLongVector.vx back out of gsub_46DEB0's result. Rows 1/2 are
+// therefore never populated by anything in this binary; kept as a 3-row
+// array for fidelity to the real layout, not because rows 1/2 do anything.
+EXPORT SVECTOR gLineToSphereDirMatrix[3];
+
+// @Ok
+// unnamed in the IDB, address 0x0046D930. Loads a short vector into row 0
+// of gLineToSphereDirMatrix. Only caller: M3dColij_LineToSphere, which
+// uses it to stash the line's (already normalized) direction.
+void gsub_46D930(const SVECTOR *a1)
+{
+	gLineToSphereDirMatrix[0].vx = a1->vx;
+	gLineToSphereDirMatrix[0].vy = a1->vy;
+	gLineToSphereDirMatrix[0].vz = a1->vz;
+}
+
+// @Ok
+// unnamed in the IDB, address 0x0046DEB0. Dot-products each row of
+// gLineToSphereDirMatrix against vertexRegister (the GTE V0 "IR" vector),
+// fixed-point (>>12), into gGeneralLongVector. Only caller:
+// M3dColij_LineToSphere (see gLineToSphereDirMatrix comment above for why
+// rows 1/2 do not matter there). The original also stores a 4th value
+// (read off the caller's stack via an argument that is never actually
+// passed at the one call site in the binary, i.e. caller-frame garbage)
+// into the word right after this matrix; that value is never read back
+// anywhere, so it is not reproduced here.
+void gsub_46DEB0(void)
+{
+	VECTOR *v = (VECTOR *)vertexRegister;
+
+	gGeneralLongVector.vx = (gLineToSphereDirMatrix[0].vx * v->vx
+	                        + gLineToSphereDirMatrix[0].vy * v->vy
+	                        + gLineToSphereDirMatrix[0].vz * v->vz) >> 12;
+	gGeneralLongVector.vy = (gLineToSphereDirMatrix[1].vx * v->vx
+	                        + gLineToSphereDirMatrix[1].vy * v->vy
+	                        + gLineToSphereDirMatrix[1].vz * v->vz) >> 12;
+	gGeneralLongVector.vz = (gLineToSphereDirMatrix[2].vx * v->vx
+	                        + gLineToSphereDirMatrix[2].vy * v->vy
+	                        + gLineToSphereDirMatrix[2].vz * v->vz) >> 12;
 }
 
 // @Ok
