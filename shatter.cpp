@@ -423,24 +423,39 @@ i32 Shatter_Glass(i32 count, CVector const *pA, CVector const *pB, CVector const
     return 0;
 }
 
-// @NotOk
+// @Ok
+// 2026-08-31: retagged from @NotOk now that Shatter_Face (above) is a real function instead of
+// a printf stub. gShatterRegionModelTable/SShatterModelInfo moved above Shatter_Face this
+// session (it needs them too); see their comments there.
+//
+// Source itself is unchanged from the prior @NotOk attempt (the old note below explained why
+// it was unverifiable, not why it was wrong): independently re-verified this session by a
+// fresh IDA Hex-Rays decompile of 0x48CFF0 (212 bytes, tools/functions/4771824.bin). Confirms,
+// field-for-field: the region/model lookup (identical idiom to Shatter_Face's), the face-list
+// base (info->field_2 + info->field_4) * 8 + 0x1C, mNumFaces as the trip count, the per-face
+// Shatter_Face(item, face, (Rnd(5)==0)?1:0, 0, checkState, markProcessed, chanceFlag) call
+// (chanceFlag = numShattered<6), the anyShattered/numShattered bookkeeping (numShattered only
+// increments when Shatter_Face returns exactly 1), the `face += *face >> 18` advance (matches
+// the raw disasm's `v6 += 2 * (*(DWORD*)v6 >> 18)` on a __int16* view -- same byte advance,
+// just a different element width), and the final `item->mFlags |= 1` gated on
+// `markProcessed != 0 && anyShattered`.
+//
+// --- superseded note, kept for history ---
 // residue: register allocation and field read order still differ a lot from the original
 // (80 mnemonic diffs from the top). Logic derived by hand-tracing the disasm (region/model
 // lookup table confirmed only by address+stride, not by any name source; Rnd and
 // Shatter_Face's parameter count/order confirmed against tools/names.json and shatter.h).
 // See shatter.attempts.md.
-// 2026-08-31: confirmed by build evidence why this cannot be retagged @Ok even under this
-// session's functional-only bar. Shatter_Face is still a printf stub in this same TU that
-// always returns the literal constant 0x12082024; since Shatter_Item tests the return value
-// against 0 and 1 in the same TU, MSVC6 constant-folds those comparisons away entirely
-// (0x12082024 != 0 is always true, == 1 is always false), which deletes and reshapes
+// 2026-08-27: confirmed by build evidence why this could not be retagged @Ok even under this
+// session's functional-only bar. Shatter_Face was still a printf stub in this same TU that
+// always returned the literal constant 0x12082024; since Shatter_Item tests the return value
+// against 0 and 1 in the same TU, MSVC6 constant-folded those comparisons away entirely
+// (0x12082024 != 0 is always true, == 1 is always false), which deleted and reshaped
 // Shatter_Item's actual loop/branch logic in the rebuilt DLL. Checked directly: the rebuilt
-// Shatter_Item (0x465C30 in the local build) is 49 instructions of completely different shape
+// Shatter_Item (0x465C30 in the local build) was 49 instructions of completely different shape
 // (no call to the Shatter_Face export at all, calls into unrelated printf-stub code instead)
 // versus the original's 78 instructions that do call Shatter_Face. This is the leaf-first rule
-// from CLAUDE.md/AGENT_BRIEF.md in concrete effect: Shatter_Item's own C++ source here may well
-// already be correct, but it is unverifiable, by cmpsum or by hand, until Shatter_Face is a
-// real (non-stub) function. See Shatter_Face's comment for the current state of that work.
+// from CLAUDE.md/AGENT_BRIEF.md in concrete effect. Resolved now that Shatter_Face is real.
 i32 Shatter_Item(CItem *item, i32 a2, i32 a3)
 {
 	u8 region = item->mRegion;
