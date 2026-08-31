@@ -903,13 +903,22 @@ int INLINE CMenu::FindEntry(const char* a2)
 }
 
 // @Ok
+// Bug fix (2026-08-31): was field_32-- (copy-paste from EntryOff). Verified
+// against ground-truth disassembly of an inlined EntryOn call site in
+// Front_Update (0x441576-0x44158c, `inc word ptr [ebp+32h]`), since EntryOn
+// itself has no standalone address in the PC binary (always inlined at its
+// few call sites, so there is no dedicated function bytes to diff against).
+// field_32 tracks the enabled-entry count (AddEntry increments it,
+// EntryOff decrements it); re-enabling an entry must increment it back,
+// not decrement it again. The old code silently corrupted CMenu::Update's
+// scrollbar fraction (field_32 - field_1B) on repeated enable/disable.
 void CMenu::EntryOn(const char* a2)
 {
 	int res = this->FindEntry(a2);
 	if (!this->mEntry[res].unk_b)
 	{
 		this->mEntry[res].unk_b = 1;
-		this->field_32--;
+		this->field_32++;
 	}
 }
 
