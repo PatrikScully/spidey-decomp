@@ -69,12 +69,9 @@ void CBaddy::GetWaypointNearTarget(
 // Fixed bug: PathCheck returns 0 when the path is clear (same polarity as
 // PlayerIsVisible's "!this->PathCheck(...)" a few functions down). Both
 // calls here used the return value the wrong way round (nonzero treated as
-// "clear"), confirmed against the original disasm at 0x4048f0. Note:
-// PathCheckGuts is still a @BIGTODO stub that always returns a nonzero
-// constant with no side effects, so MSVC6 currently proves both success
-// branches here dead and removes them (same situation as ParseScript's
-// existing @Ok tag with the ExecuteCommand stub). This source is correct;
-// it will start compiling to real code once PathCheckGuts is implemented.
+// "clear"), confirmed against the original disasm at 0x4048f0.
+// PathCheckGuts is now decompiled for real (see below), so these calls
+// compile to real code again instead of the dead-code-folded stub path.
 i32 CBaddy::AddPointToPath(
 		CVector* pVec,
 		i32 a3)
@@ -425,22 +422,198 @@ int CBaddy::RunTimer(int *a2)
 	return *a2;
 }
 
-// @BIGTODO
-// Checked the original disasm at 0x403350 (1661 bytes, 505 instructions).
-// It is a real point-to-point path clearance test: builds a subdivided
-// line between the two CVector args (offset by a half-width derived from
-// mRMinor), checks it against the level's collision grid via a repeated
-// sub_4E6840 query (halving the step count until each segment is under
-// ~1024000 units), and returns 0 for "clear" or 1/2/4 for specific
-// blocked cases (2 = blocked in x, 4 = blocked in z, per the two setnle
-// compares at the very end). Genuinely BIGTODO scale, left as a stub.
-// Left as a plain constant return rather than e.g. reading a volatile
-// flag: every caller in this TU (PathCheck, and through it AddPointToPath
-// and PlayerIsVisible) already tolerates a dead-code-folded stub callee,
-// same as ParseScript/ExecuteCommand elsewhere in this file.
-int CBaddy::PathCheckGuts(CVector*, CVector*, CVector*, int)
+// @Ok
+// Decompiled from the original disasm at 0x403350 (1661 bytes, 505
+// instructions), read via IDA/Hex-Rays and cross-checked against the raw
+// disasm for every call site (Hex-Rays prints the pushed stack argument,
+// not the thiscall ecx, for the CVector member operators here, so each
+// one was resolved by hand: which local is "this" and which is the
+// pushed operand). All callees already exist in the repo (CVector free
+// operators in vector.cpp, VectorNormal, Utils_LineOfSight,
+// Utils_GetGroundHeight, print_if_false).
+//
+// pStart/pEnd are the two endpoints of the path segment. pHitOut is an
+// optional out-param for the exact blocked point; when null a local
+// scratch CVector is used instead, so the internal logic always has a
+// valid pointer. flags is passed straight through to Utils_LineOfSight
+// and Utils_GetGroundHeight.
+//
+// Shape: extend the segment past both ends by half of mRMinor along its
+// own (normalized, Y-zeroed unless field_2A8 bit 0x20000 is set)
+// direction, giving farPoint/nearPoint. Test farPoint->nearPoint with
+// Utils_LineOfSight; if blocked, snap nearPoint to the exact hit. Then
+// pick a perpendicular test offset (xStep/zStep, derived from mRMinor
+// and whichever axis the segment leans on) and test the segment shifted
+// by +half that offset, then by -half (a 3-line "capsule" test: center,
+// plus-side, minus-side). If the whole capsule is clear, walk the
+// collision grid in subdivided steps via Utils_GetGroundHeight
+// (halving the step until each segment is under ~1024000 units) and
+// return 0 (found ground the whole way) or 1 (hit a gap). Otherwise
+// interpolate a precise hit point along the near/far chord, write it to
+// *pHitOut, and fall through to a final check: the hit point must lie
+// on the same side of pStart as pEnd on both axes, or the result is
+// forced to 4; otherwise 2.
+i32 CBaddy::PathCheckGuts(CVector* pStart, CVector* pEnd, CVector* pHitOut, i32 flags)
 {
-	return 0x14141414;
+	CVector fallbackHit;
+	fallbackHit.vx = 0;
+	fallbackHit.vy = 0;
+	fallbackHit.vz = 0;
+
+	CVector* pHit = pHitOut ? pHitOut : &fallbackHit;
+	i32 wantHitPoint = (pHitOut != 0);
+	i32 losFlags = this->field_2A8 & 0x100000;
+
+	CVector alongDir = (*pEnd - *pStart) >> 12;
+	if ((this->field_2A8 & 0x20000) == 0)
+		alongDir.vy = 0;
+	VectorNormal(reinterpret_cast<VECTOR*>(&alongDir), reinterpret_cast<VECTOR*>(&alongDir));
+	alongDir *= (this->mRMinor >> 1);
+
+	CVector nearPoint = *pEnd + alongDir;
+	CVector farPoint = *pStart - alongDir;
+	if ((this->field_2A8 & 0x20000) == 0)
+		nearPoint.vy = farPoint.vy;
+
+	i32 gotHit = 0;
+	if (Utils_LineOfSight(&farPoint, &nearPoint, pHit, losFlags) == 0)
+	{
+		gotHit = 1;
+		nearPoint = *pHit;
+	}
+
+	i32 dz = farPoint.vz - nearPoint.vz;
+	i32 dx = farPoint.vx - nearPoint.vx;
+	i32 absDx = my_abs(dx);
+	i32 absDz = my_abs(dz);
+
+	i32 xStep = 0;
+	i32 zStep = 0;
+	if (absDz <= (absDx >> 1))
+	{
+		if (absDx <= (absDz >> 1))
+		{
+			zStep = this->mRMinor << 11;
+			xStep = zStep;
+		}
+		else
+		{
+			zStep = this->mRMinor << 12;
+		}
+	}
+	else
+	{
+		xStep = this->mRMinor << 12;
+	}
+
+	CVector testA = farPoint;
+	CVector testB = nearPoint;
+
+	if ((this->field_2A8 & 0x20000) == 0)
+		print_if_false(nearPoint.vy == farPoint.vy, "Hmmm... these aren't equal!  Fire Matt immediately.");
+
+	testA.vx += xStep >> 1;
+	testA.vz += zStep >> 1;
+	testB.vx += xStep >> 1;
+	testB.vz += zStep >> 1;
+
+	CVector chord;
+	i32 result = 0;
+
+	if (Utils_LineOfSight(&testA, &testB, pHit, losFlags) == 0)
+	{
+		if (!wantHitPoint)
+			goto finalCheck;
+
+		chord = testA - *pHit;
+		gotHit = 0;
+
+		testA.vx -= xStep;
+		testA.vz -= zStep;
+		testB.vx = pHit->vx - xStep;
+		testB.vy = pHit->vy;
+		testB.vz = pHit->vz - zStep;
+
+		if (Utils_LineOfSight(&testA, &testB, pHit, losFlags) != 0)
+			goto haveChord;
+		goto recomputeChord;
+	}
+
+	testA.vx -= xStep;
+	testA.vz -= zStep;
+	testB.vx -= xStep;
+	testB.vz -= zStep;
+
+	if (Utils_LineOfSight(&testA, &testB, pHit, losFlags) == 0)
+	{
+		gotHit = 0;
+	}
+	else if (gotHit == 0)
+	{
+		if (this->field_2A8 & 0x2020000)
+			return 0;
+
+		i32 targetY = this->field_29C + (this->field_21E << 12);
+
+		i32* pDominant = (absDz <= absDx) ? &dx : &dz;
+		i32 steps = 1;
+		for (i32 i = 1; my_abs(*pDominant) > 1024000; i *= 2)
+		{
+			steps += i;
+			dz >>= 1;
+			dx >>= 1;
+		}
+
+		if (steps == 0)
+			return 0;
+
+		CVector walkPos;
+		walkPos.vx = nearPoint.vx;
+		walkPos.vy = targetY;
+		walkPos.vz = nearPoint.vz;
+
+		i32 remaining = steps - 1;
+		while (Utils_GetGroundHeight(&walkPos, flags, flags, 0) != -1)
+		{
+			walkPos.vx += dx;
+			walkPos.vz += dz;
+			if (remaining-- == 0)
+				return 0;
+		}
+		return 1;
+	}
+
+	if (!(wantHitPoint && gotHit == 0))
+		goto finalCheck;
+
+recomputeChord:
+	chord = testA - *pHit;
+
+haveChord:
+	if (gotHit == 0)
+	{
+		CVector chordFull = nearPoint - farPoint;
+		i32 lenNear = chord.Length();
+		i32 lenChordFull = chordFull.Length();
+		i32 divisor = (this->mRMinor >> 1) + lenChordFull;
+
+		chordFull >>= 12;
+		chordFull *= lenNear;
+		chordFull /= divisor;
+		chordFull <<= 12;
+
+		*pHit = farPoint + chordFull;
+	}
+
+finalCheck:
+	if ((pHit->vx - pStart->vx > 0) != (pEnd->vx - pStart->vx > 0))
+		return 4;
+
+	result = 2;
+	if ((pHit->vz - pStart->vz > 0) != (pEnd->vz - pStart->vz > 0))
+		return 4;
+
+	return result;
 }
 
 // @Ok
