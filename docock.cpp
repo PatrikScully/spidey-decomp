@@ -363,8 +363,13 @@ void CDocOc::HangAndGetBeaten(void)
 	}
 }
 
-// @NotOk
-// missing tag
+// @Ok
+// @Note: verified against IDA decompile of CDocOc::Initialise (0x436980, in
+// spideypc_names.txt). The original fully inlines this walk of ControlBaddyList into
+// Initialise (there is no standalone machine code for ResolveSwitches to compare
+// against), same as the other single-caller CDocOc members in this file, so this is
+// marked INLINE like them. mNextItem (offset 0x20) and mType (offset 0x38) match CItem
+// in ob.h.
 INLINE void CDocOc::ResolveSwitches(void)
 {
 	i32 index = 0;
