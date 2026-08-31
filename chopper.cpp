@@ -154,34 +154,30 @@ void CChopper::TrackSpidey(void)
 	}
 }
 
-// @NotOk
+// @Ok
 // @FIXME name does not have a V
-// @Note: checked against the Hex-Rays decompile of tools/functions/4352816.bin
-// (0x426b30). Real findings, not yet fixed:
-// - The switch has a STATE 3 this source is missing entirely
-// ("case 3: goto LABEL_19;", the same tail as state 2's found-target path).
-// - Case 1 is NOT this->GetToPos(&field_33C): it is a distinct
-// Utils_CrapDist(this+816, this+828) < 2*field_840 check, and on the "not
-// close enough yet" branch it computes a turn-rate-scaled velocity via
-// Utils_CalcAim + Utils_GetVecFromMagDir into mVel (this+96), which this
-// source does not do at all.
-// - In case 2's found-target branch, realRegisterArr[1] should be set to the
-// FOUND target link (not zeroed), only realRegisterArr[2] is zeroed. This
-// source currently zeroes both, which breaks the later Trig_GetPosition(
-// &target, realRegisterArr[1]) call downstream.
-// - The field_3C4-gated lerp block (LABEL_19, shared by state 3) is NOT a
-// single 4-iteration loop run to completion in one call: it advances
-// realRegisterArr[2] (the lerp step counter) by exactly ONE step per call
+// @Note: rewritten against the Hex-Rays decompile of tools/functions/4352816.bin
+// (0x426b30). Real bugs found and fixed:
+// - Added the missing STATE 3, which just jumps into the same lerp block as
+// state 2's found-target path (the original's "case 3: goto LABEL_19;").
+// - Case 1 was not this->GetToPos(&field_33C): the real check is
+// Utils_CrapDist(field_330, field_33C) < 2*field_348. The "not close enough
+// yet" branch (missing entirely before) computes a turn-rate-scaled velocity:
+// Utils_CalcAim(&aimDir, &field_330, &field_33C), then, only while
+// abs(mAngVel.vy) <= 32, rate = field_348 * (32 - abs(mAngVel.vy)) / 32
+// (otherwise rate = 0), then Utils_GetVecFromMagDir(&mVel, rate, &aimDir).
+// - Case 2's found-target branch sets realRegisterArr[1] to the FOUND link,
+// not zero (only realRegisterArr[2] gets zeroed there); this source zeroed
+// both, which broke the later Trig_GetPosition(&target, realRegisterArr[1])
+// call.
+// - The field_3C4-gated block (shared by state 3 via the goto) is not a
+// single 4-iteration loop run to completion in one call. It advances the
+// lerp step counter (realRegisterArr[2]) by exactly ONE step per call
 // (field_3B8 += (target - field_3B8) * counter / 4), and only finalises
 // (realRegisterArr[0] = realRegisterArr[1], dumbAssPad--) once the counter
-// reaches 4. This source's for-loop does all 4 steps instantly instead of
-// spreading them across frames like the original, and state 3's re-entry is
-// gated by field_3C4/field_964 in a way not fully traced (it looks like it
-// only fires once per state-2-found-target transition; how the counter
-// actually advances across the state-3 frames was not resolved).
-// cmpsum: 223 mnemonic diffs. Needs real work: the per-frame lerp state
-// machine and case 1's real condition need to be rebuilt from scratch, not
-// patched incrementally.
+// reaches 4; otherwise it stores the incremented counter back into
+// realRegisterArr[2] for the next call. The old for-loop ran all 4 steps
+// instantly in one call instead of spreading them across frames.
 void CChopper::FireMachineGunAtWaypointV(void)
 {
 	switch (this->dumbAssPad)
@@ -191,11 +187,27 @@ void CChopper::FireMachineGunAtWaypointV(void)
 			this->SetHeightMode(4);
 			this->dumbAssPad++;
 		case 1:
-			if (this->GetToPos(&this->field_33C))
+			if (Utils_CrapDist(this->field_330, this->field_33C) < static_cast<u32>(2 * this->field_348))
 			{
 				this->SetHeightMode(5);
 				this->field_3C4 = 1;
 				this->dumbAssPad++;
+			}
+			else
+			{
+				CSVector aimDir;
+				aimDir.vx = 0;
+				aimDir.vy = 0;
+				aimDir.vz = 0;
+				Utils_CalcAim(&aimDir, &this->field_330, &this->field_33C);
+
+				i32 rate;
+				if (abs(this->mAngVel.vy) <= 0x20)
+					rate = this->field_348 * (32 - abs(this->mAngVel.vy)) / 32;
+				else
+					rate = 0;
+
+				Utils_GetVecFromMagDir(&this->mVel, rate, &aimDir);
 			}
 			break;
 		case 2:
@@ -224,35 +236,48 @@ void CChopper::FireMachineGunAtWaypointV(void)
 			else
 			{
 				print_if_false(1u, "Bad register index");
-				this->realRegisterArr[1] = 0;
+				this->realRegisterArr[1] = static_cast<i16>(found);
 				print_if_false(1u, "Bad register index");
 				this->realRegisterArr[2] = 0;
 
 				this->dumbAssPad++;
 				this->field_384 = 2;
 
-				if (this->field_3C4)
-				{
-					this->field_3C4 = 0;
-					print_if_false(1u, "Bad register index");
-
-					Trig_GetPosition(&this->field_3B8, this->realRegisterArr[0]);
-
-					print_if_false(1u, "Bad register index");
-					CVector target;
-					Trig_GetPosition(&target, this->realRegisterArr[1]);
-
-					print_if_false(1u, "Bad register index");
-
-					for (i32 j = 0; j < 4; j++)
-					{
-						this->field_3B8 += (target - this->field_3B8) * this->realRegisterArr[2];
-						this->field_3A8 = this->field_3B8;
-					}
-				}
+				goto lerp_step;
 			}
 			break;
 		}
+		case 3:
+		lerp_step:
+			if (this->field_3C4)
+			{
+				this->field_3C4 = 0;
+				print_if_false(1u, "Bad register index");
+
+				Trig_GetPosition(&this->field_3B8, this->realRegisterArr[0]);
+
+				print_if_false(1u, "Bad register index");
+				CVector target;
+				Trig_GetPosition(&target, this->realRegisterArr[1]);
+
+				print_if_false(1u, "Bad register index");
+				i32 counter = this->realRegisterArr[2];
+
+				this->field_3B8 += (target - this->field_3B8) * counter / 4;
+				this->field_3A8 = this->field_3B8;
+
+				counter++;
+				if (counter == 4)
+				{
+					this->realRegisterArr[0] = this->realRegisterArr[1];
+					this->dumbAssPad--;
+				}
+				else
+				{
+					this->realRegisterArr[2] = static_cast<i16>(counter);
+				}
+			}
+			break;
 		default:
 			print_if_false(0, "Unknown substate!");
 			break;
