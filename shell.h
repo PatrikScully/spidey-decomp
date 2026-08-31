@@ -292,7 +292,13 @@ class CShellSimbyFireDeath : public CNonRenderedBit
 {
 	public:
 		EXPORT CShellSimbyFireDeath(CDummy*);
-		u8 fullPad[0x15];
+
+		SHandle field_3C;
+		CVector *field_44;
+
+		// tail unknown, ctor at 0x4908E0 never touches it. total size
+		// (0x54) confirmed by VALIDATE_SIZE below.
+		PADDING(0xC);
 };
 
 class CShellGoldFish : public CBody

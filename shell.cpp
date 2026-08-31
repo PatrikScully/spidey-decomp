@@ -4706,10 +4706,59 @@ CShellGoldFish::CShellGoldFish(CDummy *pDummy)
 	this->mScale.vx = 10000;
 }
 
-// @MEDIUMTODO
-CShellSimbyFireDeath::CShellSimbyFireDeath(CDummy*)
+// @Ok
+// Functional decompile (session-wide bar 2026-08-30: correctness, not byte
+// match). Verified against IDA decompile of 0x4908E0 (517 bytes). CDummy
+// field offsets confirmed against VALIDATE entries: mExtraFlags 0x12C
+// (CSuper), mFlags 0x4/mPos 0x8/mRGB 0x24/mRegion 0x1F/mType 0x38 (CItem).
+// offset 0x156 has no declared field yet (it sits in the PADDING(2) gap
+// between CSuper's field_154 and field_158 in ob.h), so it is written with
+// a raw offset cast rather than editing the shared ob.h struct (same
+// approach Spidey_SwapSuitTextures in spidey.cpp used for undeclared
+// fields). field_44 is the DCMem_New'd CVector array of computed hook
+// positions, one per mesh piece for the dummy's region (count from
+// word_6B2478[34*region], same table Spidey_SwapSuitTextures uses). Each
+// position is found via a random link picked from CItemRelatedList
+// (ob.h, 0x6B2454) for that mesh piece, packed into an SHook (m3dutils.h)
+// and resolved with M3dUtils_GetDynamicHookPosition (still a printf stub
+// in m3dutils.cpp, out of scope for this file; called cross-TU the same
+// way blackcat.cpp/carnage.cpp/mysterio.cpp/effects.cpp already do while
+// tagged @Ok).
+CShellSimbyFireDeath::CShellSimbyFireDeath(CDummy *pDummy)
 {
-	printf("CShellSimbyFireDeath::CShellSimbyFireDeath(CDummy*)");
+	print_if_false(pDummy != 0, "NULL pSimby?");
+	print_if_false(pDummy->mType == 324, "Non symbiote sent to CShellSimbyFireDeath");
+
+	this->field_3C = Mem_MakeHandle(reinterpret_cast<void*>(pDummy));
+
+	pDummy->mExtraFlags |= 8;
+	pDummy->mFlags |= 0x408;
+
+	*reinterpret_cast<i16*>(reinterpret_cast<u8*>(pDummy) + 0x156) =
+		static_cast<i16>((pDummy->mPos.vy >> 12) + 100);
+
+	pDummy->mRGB = 0x202020;
+
+	i32 count = word_6B2478[34 * pDummy->mRegion];
+
+	this->field_44 = reinterpret_cast<CVector*>(DCMem_New(12 * count, 0, 1, 0, 1));
+
+	i32 **pRegionTable = CItemRelatedList[pDummy->mRegion * 17];
+
+	for (i32 i = 0; i < count; i++)
+	{
+		u8 *pEntry = reinterpret_cast<u8*>(pRegionTable[i]);
+		i32 idx = Rnd(*reinterpret_cast<u16*>(pEntry + 2));
+
+		SHook hook;
+		hook.Part = *reinterpret_cast<CSVector*>(pEntry + 8 * idx + 28);
+		hook.Offset = static_cast<i16>(i);
+
+		M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_44[i]),
+			reinterpret_cast<CSuper*>(pDummy),
+			&hook);
+	}
 }
 
 // @Ok
@@ -5785,6 +5834,9 @@ void validate_CShellSimbyMeltSplat(void)
 void validate_CShellSimbyFireDeath(void)
 {
 	VALIDATE_SIZE(CShellSimbyFireDeath, 0x54);
+
+	VALIDATE(CShellSimbyFireDeath, field_3C, 0x3C);
+	VALIDATE(CShellSimbyFireDeath, field_44, 0x44);
 }
 
 void validate_CShellGoldFish(void)
