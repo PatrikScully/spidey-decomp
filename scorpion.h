@@ -32,7 +32,25 @@ class CScorpion : public CBaddy {
 
 		i32 field_324;
 
-		PADDING(0xBD4-0x324-4);
+		PADDING(0x3F8-0x324-4);
+
+		// Two embedded CItem sub-objects (confirmed against the disasm of both
+		// constructors at 0x483290/0x483450: each is default-constructed with a
+		// real call to CItem::CItem(), this+0x3F8 and this+0x440, then the ctor
+		// pokes mRegion to 0xFF right after construction). Meaning unclear (a
+		// guess: a pair of scorpion-specific marker items, maybe used by the
+		// still-undecompiled tail code), left as plain field_XXX names.
+		CItem field_3F8;
+
+		PADDING(0x440-0x3F8-sizeof(CItem));
+
+		CItem field_440;
+
+		// Both constructors zero this whole range (0x480-0xBD4) with three
+		// dword-triple loops in the disasm (this+0x48C x4, this+0x4BC x23,
+		// this+0x5D0 x128); no struct is known for it, so the ctors zero it
+		// with raw memset calls instead of guessing field names.
+		PADDING(0xBD4-0x440-sizeof(CItem));
 
 		i32 field_BD4;
 		i32 field_BD8;
@@ -50,7 +68,12 @@ class CScorpion : public CBaddy {
 		// @FIXME guess type: candidate environmental object position
 		CVector field_C00;
 
-		PADDING(0xC10-0xC00-sizeof(CVector));
+		// field_C0C is explicitly cleared at the end of the (i16*,i32) ctor
+		// (the void ctor leaves it untouched); no other reference to it in
+		// this file yet, name is a placeholder.
+		u8 field_C0C;
+
+		PADDING(0xC10-0xC00-sizeof(CVector)-1);
 
 		i32 field_C10;
 		i32 field_C14;
