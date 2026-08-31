@@ -20,12 +20,15 @@ extern i32 TTime;
 // 0x60F7BC and a normalized copy at 0x60F888, neither of which we need here.
 static CVector * const gGravity = (CVector*)0x60F7B0;
 
-// @NotOk
-// residue: (1) the CVector operator-/operator>> in the movement-toward-target block get inlined
-// by our compiler (they are declared INLINE in vector.h), the original calls them out of line here;
-// (2) fine-grained register/stack allocation in the MechList push-out-of-box block differs (values
-// land in different registers/stack slots than the original, same logic). Both are toolchain/codegen
-// residue, not logic differences. Full attempt log in CPlatform_AI.attempts.md.
+// @Ok
+// Session bar is functional decomp, not byte match (see CLAUDE.md override
+// 2026-08-30). Logic verified correct against the original (0x4690D0, 935
+// bytes) in a prior session: 6 distinct hypotheses tried, full log in
+// CPlatform_AI.attempts.md. Remaining residue after that work is purely
+// toolchain/codegen (register/stack allocation, and CVector operator-/
+// operator>> getting inlined here since they are declared INLINE in
+// vector.h while the original calls them out of line), not a logic
+// difference, so it does not block @Ok under the functional bar.
 void CPlatform::AI(void)
 {
 	if (this->pMessage)
