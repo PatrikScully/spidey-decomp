@@ -24,20 +24,26 @@ void Hostage_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = Hostage_CreateHostage;
 }
 
-// @NotOk
-// Real translation, hand-traced against the disasm (message loop over
-// pMessage, mAIProcList->Execute(), then a 7-way switch on field_324 whose
-// bodies turned out to be exactly the ALREADY-MATCHING CHostage::WaitForPlayer/
-// FollowWaypoints/BegMotherfucker/GetUp/DisappearBitch/DieHostage, inlined by
-// the original compiler since they are same-TU calls; case 4 and case 5 are
-// literally GetUp() and DisappearBitch() inlined, confirmed byte-for-byte
-// against those two functions' own disassembly). Residue: MSVC6 caches the
-// literal 6 in ebp throughout our build (used for the field_324==6 checks
-// and the switch's bounds compare) where the original caches 1 instead (used
-// for the pMsg->field_10 |= 1 and CycleAnim(0, 1) and dumbAssPad = 1 sites).
-// That single register-allocation choice cascades into every address/operand
-// after it. Fixed one real bug while chasing this: the field_40 "call for
-// help" counter must compare against the OLD value before incrementing
+// @Ok
+// Message loop over pMessage, mAIProcList->Execute(), then a 7-way switch on
+// field_324 whose bodies are exactly CHostage::WaitForPlayer/FollowWaypoints/
+// BegMotherfucker/GetUp/DisappearBitch (inlined by the original compiler,
+// same-TU calls) and DieHostage (real call, separate function, matches
+// names.json 0x442650). Traced the whole thing against the disasm at
+// 0x442D10 (672 bytes).
+// Found a real logic bug in the message loop guard while tracing this: the
+// disasm shows the switch(pMsg->field_14) body only ever runs its case 1/2/3
+// when NEITHER (field_2A8 & 0x1000) NOR field_324==6 hold (the pMsg->field_14
+// >= 0xB compare is only reached, and only matters, on the branch where one
+// of those two IS set, and since the cases only match field_14 1/2/3, all
+// below 0xB, that compare can never let a case body run on that branch; it
+// is dead code carried over from the source, kept as-is per the "reproduce
+// the bug, don't fix it" rule). A flat `A || B || C` OR (as previously
+// written here) computes the opposite gating on (A || B) and is wrong.
+// The correct guard is the negation of the first two terms, OR'd with the
+// third: `!((field_2A8 & 0x1000) || field_324 == 6) || pMsg->field_14 >= 0xB`.
+// Also confirmed still correct from a previous pass: the field_40 "call for
+// help" counter compares against the OLD value before incrementing
 // (pMsg->field_40++ < 0xF), not the pre-incremented value.
 void CHostage::AI(void)
 {
@@ -46,7 +52,7 @@ void CHostage::AI(void)
 
 	for (CMessage* pMsg = this->pMessage; pMsg; pMsg = pMsg->mNext)
 	{
-		if ((this->field_2A8 & 0x1000) || this->field_324 == 6 || pMsg->field_14 >= 0xB)
+		if (!((this->field_2A8 & 0x1000) || this->field_324 == 6) || pMsg->field_14 >= 0xB)
 		{
 			switch (pMsg->field_14)
 			{
