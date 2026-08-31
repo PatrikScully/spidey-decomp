@@ -360,6 +360,44 @@ void CManipOb::Smash(void)
 }
 
 // @BIGTODO
+// Left as a stub, genuinely intractable in one session: leaf-first would
+// require decompiling roughly ten still-unnamed helper functions in OTHER
+// subsystems first (sound, explosion effects, spawn pooling, camera
+// shake), none of which are in tools/names.json. Notes from reading the
+// IDA decompile of 0x456E90 (about 1600 bytes) for whoever picks this up:
+//   - v9/a1 of most helper calls below is &this->mPos (this+8).
+//   - Explosion-radius damage pass, gated by (this->field_10C flag 0x20):
+//     if MechList is within 300 (Y) and Utils_CrapDist(mPos, MechList->mPos)
+//     < 1024, calls sub_403250(&pos, 2000) and a vtable+12 "hurt" call on
+//     MechList via sub_43CF90(v9), then loops dword_56E990's linked list
+//     (next at +32, flag byte at +70 bit 0x10) doing the same distance
+//     check per item and calling each item's vtable+72 (type 324 case) or
+//     vtable+12 (SHitInfo-style call, other types) hurt method.
+//   - sub_471EA0(flags, &this->mPos, 0): looks like a sound/pulse trigger,
+//     called with either the node's own link data (mNode != 0) or a fixed
+//     id 27/28 selected by a this+268 flag bit 3, when mNode == 0.
+//   - Utils_GetGroundHeight (0x4E6840, already named in utils.cpp) and
+//     Utils_CrapDist (0x4E6220, already named in utils.cpp) ARE usable now.
+//   - MechList (CPlayer*, spidey.h) is the 0x6A9038 global; ZeroVector
+//     (CVector, 0x60D9D0) is the other confirmed global (idb_globals.txt).
+//   - After the damage pass: walks a null-terminated pointer array at
+//     this+288 (field_120, an array of CManipObChunk model ids) to find its
+//     length, then spawns that many CManipObChunk objects (sub_456450 is
+//     CManipObChunk::CManipObChunk, address matches names.json) scattered
+//     in a fan using word_610C48/610C4A (rcossin_tbl sin/cos) at increasing
+//     angle steps of 682 up to 4092, picking a random model id from the
+//     this+288 array via sub_4E5DA0 (Rnd) each time; sub_455390 allocates
+//     each chunk (0x455390, referenced but not yet decompiled; carnage.h
+//     has a comment that it derives from CClass, not CBit's pooled
+//     allocator). Two branches: a3 (the a3 parameter, an i32) >= -3000 uses
+//     sub_4E61A0/sub_4E6150/sub_4E5E20 (unnamed, look like some kind of
+//     basis-vector/matrix setup from a2, the CVector* argument, combined
+//     with dword_60D9D0=ZeroVector and this+96 i.e. mAngles) to build a
+//     rotated velocity per chunk; a3 < -3000 uses a simpler straight-down
+//     fan (v68 = {v28*sin, -field_10, v28*cos}). Both branches end with
+//     sub_43B2A0(v9, dir1, dir2, 300, 24) (looks like a generic "spawn
+//     debris burst" call, same shape in other files' explosion code).
+//   - Tail: TurnOffShadow/SendPulse bodies inlined again (same as Smash).
 void CManipOb::Chunk(SLineInfo*, CVector*)
 {
 	printf("void CManipOb::Chunk(SLineInfo*, CVector*)");
