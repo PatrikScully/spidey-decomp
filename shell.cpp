@@ -2849,6 +2849,21 @@ i32 Shell_LoadGame(void)
 // The remaining real blocker for this function is CDummy_ctor
 // (sub_490DF0) and this file's own sub_493860, both still BIGTODO/
 // undecompiled.
+// Addendum 2026-08-31 (from the Shell_ComicCollection/Shell_GameCovers
+// session): func_profile on sub_490DF0 confirms it is not a quick pickup
+// even leaf-first -- 512 instructions, 85 basic blocks, 27 distinct
+// callees (about 16 of them still unnamed/undecompiled), plus an
+// ___CxxFrameHandler SEH frame (the "new T(...) needs a cleanup frame
+// when the ctor isn't visible in the same TU" pattern from this file's
+// CLAUDE.md notes). Also: this function (sub_493990) is confirmed via
+// IDA xrefs_to on off_53BFC0 to ALSO construct the same previously
+// undiscovered 420-byte CSuper-subclass object documented in the long
+// comment above Shell_ComicCollection (same sizeof(CSuper), same
+// CSuper::CSuper()+vtable-swap+CItem::InitItem shape), used here
+// alongside its own separate CDummy object. So Shell_MainMenu has BOTH
+// blockers: CDummy_ctor and the off_53BFC0 class. Recommend doing the
+// off_53BFC0 class first (shared by 3 functions, smaller/simpler) before
+// tackling CDummy_ctor's 27-callee tree.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
