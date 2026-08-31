@@ -761,11 +761,14 @@ i32 INLINE CLizMan::IsSafeToSwitchToFollowWaypoints(void)
 	return 0;
 }
 
+// addresses confirmed against the maintainer's IDB (idb_globals.txt):
+// gGlobalLizMan 0x682C44, gLizManAttackFlag 0x682B6E. Verified by walking
+// the inlined copy of this function inside CLizMan::FlyAcrossRoom's case 0
+// (0x44dec4-0x44df1b) instruction by instruction, both match exactly.
 static CLizMan* gGlobalLizMan;
 static unsigned char gLizManAttackFlag;
 
-// @NotOk
-// globals
+// @Ok
 void INLINE CLizMan::ClearAttackFlags(void)
 {
 	if (gGlobalLizMan == this)
