@@ -8,123 +8,394 @@
 #include "db.h"
 #include "panel.h"
 #include "ps2m3d.h"
+#include "PCGfx.h"
+#include "algebra.h"
+#include "screen.h"
+#include "m3dinit.h"
+#include "SpideyDX.h"
+#include <cmath>
 
 CItem* CWeapons;
 extern SCamera gMikeCamera[2];
 
-// Investigated 2026-08-31, not attempted, retagged from @MEDIUMTODO. Address
-// 0x4f1860, 4681 bytes, 1286 instructions (checked via iced-x86 decode of
-// tools/functions/5183584.bin), so the size tag was wrong: this is BIGTODO
-// scale, well past the 1200-byte functions bit.cpp already parks as
-// @BIGTODO in the same call-shape family (see the shared family notes
-// above CSimpleTexturedRibbon::Display in bit.cpp, which this function
-// matches point for point).
+// Per-point scratch ring used only by CGouraudRibbon::Display (below), one
+// element per ribbon point, address confirmed via raw disasm (dword_614CD4).
+// Reuses the same 0x614CD4 scratch address as CSmokeRing::Display's own
+// gSmokeRingScreenPoints (above) with a completely different 32-byte layout -
+// different Display functions time-sharing one scratch region between calls
+// is the normal pattern in this codebase (see the comment above
+// gSmokeRingScreenPoints). field_14 is never written or read by anything
+// this session traced; kept only so the struct's stride matches the
+// original's (CalcScreenNormal, below, relies on this struct's field_20/
+// field_38 landing on the NEXT ring element's screenXY/clipped purely from
+// the 0x20-byte stride).
+struct SGouraudRibbonScreenPoint
+{
+	i32 screenXY;      // 0x00: packed sx | (sy<<16), this frame (Transform()/gte_stsxy)
+	i32 normX;         // 0x04: smoothed screen-space edge-normal X (see CalcScreenNormal)
+	i32 normY;         // 0x08: smoothed screen-space edge-normal Y
+	i32 depth;         // 0x0C: raw camera-space depth (Transform()/gte_stlvnl2)
+	i32 scaledWidth;   // 0x10: 400 * point's Width / depth, only valid when !clipped
+	i32 field_14;       // 0x14: never read back; kept for stride fidelity only
+	i32 clipped;         // 0x18: 1 if depth falls outside G_VIEW_CLIP_INFO's range
+	f32 invZ;             // 0x1C: 1 / w from the Algebra_Transform4 pass, or -1e12 fallback
+};
+static SGouraudRibbonScreenPoint* const gGouraudRibbonScreenPoints = reinterpret_cast<SGouraudRibbonScreenPoint*>(0x614CD4);
+
+// Shared growing scratch/poly buffer, same address as front.cpp's
+// gMenuHighlightBufPos/End, flash.cpp's gEffectRecordBufPos/End and panel.cpp's
+// pPoly (0x56FB04/0x5FCD1C) - a plain address duplicated per file, not a G_*
+// hook macro, so the "one file only" G_* rule does not apply. Only the pointer
+// advance and the overflow bail-out are observable here (see the comment
+// above CGouraudRibbon::Display), so unlike those files this one never writes
+// through gRibbonPolyPos.
+#define gRibbonPolyPos (*reinterpret_cast<u8**>(0x0056FB04))
+#define gRibbonPolyBufferEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+
+// Camera-space projection matrix refresh shared by the whole Display*List/
+// ribbon-Display family (see bit.cpp's RefreshGfxMatrix and the family notes
+// above CSimpleTexturedRibbon::Display there). bit.cpp's own copy is `static
+// INLINE` (file-local), so this file gets its own copy of the same 16-float
+// memcpy at the same addresses, per repo convention.
+static f32 * const gGouraudFrameProjMatrix = (f32*)0x56E668;    // == algebra.cpp's gGfxMatrix
+static f32 * const gGouraudCameraBasisMatrix = (f32*)0x56E6F8;  // == bit.cpp's gCameraBasisMatrix
+// @Ok
+static INLINE void GouraudRibbon_RefreshGfxMatrix(void)
+{
+	for (i32 i = 0; i < 16; i++)
+	{
+		gGouraudFrameProjMatrix[i] = gGouraudCameraBasisMatrix[i];
+	}
+}
+
+// Both quad types CGouraudRibbon::Display draws build their vertex colours
+// from a CONSTANT alpha byte (128, DCGfx_BlendingMode_2) rather than per-point
+// data - confirmed via raw disasm, the record byte tested for the semi-
+// transparent flag is always the fixed float bit-pattern (0x3A000000) this
+// function itself writes a few instructions earlier, so the branch is
+// provably always taken. Reproduced directly rather than as a dead branch.
+static const u32 kGouraudRibbonBlack = 0x80000000u;
+// @Ok
+static INLINE u32 GouraudRibbon_RealColor(const SRibbonPoint* pPt)
+{
+	return 0x80000000u | ((u32)pPt->r << 16) | ((u32)pPt->g << 8) | (u32)pPt->b;
+}
+
+// Packed-short screen xy (as produced by Transform()/gte_stsxy, or stored in
+// SRibbonPoint::Last1Scr/Last2Scr) to device screen space, same
+// gGameResolutionX/Xres, gGameResolutionY/Yres ratio idiom
+// PanelCompass_DrawNeedleHalf (panel.cpp) and PCGfx.cpp's own DrawTexture2D
+// helpers already use.
+// @Ok
+static INLINE void GouraudRibbon_ScaleScreenXY(i32 packedXY, f32* outX, f32* outY)
+{
+	i32 sx = (i16)(packedXY & 0xFFFF);
+	i32 sy = (i16)(packedXY >> 16);
+	*outX = (f32)sx * gGameResolutionX / (f32)Xres;
+	*outY = (f32)sy * gGameResolutionY / (f32)Yres;
+}
+
+// Shared draw for both quad types CGouraudRibbon::Display emits: a
+// black-to-real-colour fade quad between an "old" vertex pair (associated
+// with point i+1 then point i) and a "new" vertex pair (same order). Used
+// both for the motion-trail quad (old = 2-frames-ago Last2Scr, new = this
+// frame's position) and the edge/glow quad (old = width-offset screen
+// corner, new = the raw un-offset point). UVs are the fixed 0/1 corner
+// constants the whole Display*List family uses (see the family notes above
+// CSimpleTexturedRibbon::Display, bit.cpp).
+// @Ok
+static INLINE void GouraudRibbon_DrawFadeQuad(
+		i32 oldNextXY, f32 oldNextInvZ, u32 oldNextColor,
+		i32 oldCurXY,  f32 oldCurInvZ,  u32 oldCurColor,
+		i32 newNextXY, f32 newNextInvZ, u32 newNextColor,
+		i32 newCurXY,  f32 newCurInvZ,  u32 newCurColor)
+{
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_2);
+
+	f32 x0, y0, x1, y1, x2, y2, x3, y3;
+	GouraudRibbon_ScaleScreenXY(oldNextXY, &x0, &y0);
+	GouraudRibbon_ScaleScreenXY(oldCurXY,  &x1, &y1);
+	GouraudRibbon_ScaleScreenXY(newNextXY, &x2, &y2);
+	GouraudRibbon_ScaleScreenXY(newCurXY,  &x3, &y3);
+
+	// First draw: matches the original's confirmed vertex/colour assignment
+	// exactly (see the comment above CGouraudRibbon::Display).
+	PCGfx_DrawQPoly3D(
+			x0, y0, oldNextInvZ, 0.0f, 0.0f, oldNextColor,
+			x1, y1, oldCurInvZ,  1.0f, 0.0f, oldCurColor,
+			x2, y2, newNextInvZ, 0.0f, 1.0f, newNextColor,
+			x3, y3, newCurInvZ,  1.0f, 1.0f, newCurColor);
+
+	// Second draw: the original calls PCGfx_DrawQPoly3D again here reading the
+	// exact same source bytes (confirmed via raw disasm), with no second
+	// corner/colour data anywhere in flight - reproduced as the same quad
+	// with a reordered vertex pair (double-sided/backface visibility for a
+	// zero-thickness strip). See the comment above CGouraudRibbon::Display:
+	// this is the one part of the function not pinned down to individual
+	// argument slots.
+	PCGfx_DrawQPoly3D(
+			x1, y1, oldCurInvZ,  0.0f, 0.0f, oldCurColor,
+			x0, y0, oldNextInvZ, 1.0f, 0.0f, oldNextColor,
+			x3, y3, newCurInvZ,  0.0f, 1.0f, newCurColor,
+			x2, y2, newNextInvZ, 1.0f, 1.0f, newNextColor);
+}
+
+// Implemented 2026-08-31 (functional-only bar, see PLAN.md). Address 0x4f1860,
+// 4681 bytes / 1286 instructions. Traced fully against Hex-Rays and cross-checked
+// with raw disassembly (0x4f1860..0x4f2aa1) section by section; the older
+// investigation notes above this line (now removed) are superseded by this one.
+// Four phases, matching the original's structure exactly:
 //
-// Confirmed via Hex-Rays decompile (0x4f1860) against tools/names.json:
-// - Opens with the same "refresh gGfxMatrix from its 4 source arrays"
-//   16-float copy loop bit.cpp's notes describe as not implemented
-//   anywhere yet.
-// - Per-point camera transform is the exact gte_ldlv0/gte_rtps idiom from
-//   the family notes: IDA's FLIRT signature mislabels the gte_ldlv0 call
-//   (0x46D840) as qt_register_signal_spy_callbacks, a coincidental Qt hit,
-//   not a real callee. sub_46DBC0 = gte_rtps (0x46DBC0, matches names.json).
-// - After the transform it also calls two more still-unnamed GTE-style
-//   helpers, sub_46DF80/sub_46DF70 (0x46DF80/0x46DF70), that are not the
-//   same as the family's usual gte_stsxy/gte_stlvnl2 (those are named
-//   exports at different addresses in names.json), so this ribbon reads a
-//   different pair of GTE result registers than the simpler family members.
-// - Clip test against G_VIEW_CLIP_INFO (dword_64E514, screen.cpp) matches
-//   the family's documented clip idiom.
-// - The "invZ" perspective-divide pipeline (Algebra_Transform4-shaped:
-//   raw fixed/4096.0f, dot with the gGfxMatrix rows, 1/w with a fabs
-//   guard) matches the family notes too, but goes through
-//   sub_402620/sub_402600 (IDA mislabels 0x402620 as QModelIndex::QModelIndex,
-//   another coincidental FLIRT hit; both are almost certainly the
-//   vector3d/vector4d helpers the family notes already flag as unnamed).
-// - Beyond the shared per-point transform, this function builds a ring of
-//   midpoints between consecutive ribbon points via a still-unnamed helper
-//   (sub_4F2AB0, called once per segment) into a small fixed globals block
-//   (dword_614CD4..614CF4, not documented anywhere in the repo), then walks
-//   that ring emitting up to 5 PCGfx_DrawQPoly3D (0x508550, already @Ok)
-//   calls per segment for a lit, shaded ribbon strip (front polys, a fringe
-//   quad, and glow/edge quads gated by per-point RGB/width tests), each
-//   built from more unnamed screen-space scale constants (dword_568154,
-//   dword_568158, dword_628614, dword_61B5FC) and an assert helper
-//   (sub_46CB90, format string byte_56EB54) not decoded anywhere else.
-// - Tail writes back into a small per-frame history buffer at this[15]/
-//   this[17] (CGouraudRibbon fields with no name yet) so the next frame
-//   can find the previous frame's screen points; this bookkeeping is not
-//   shared with anything else in bit.h/weapons.h.
-//
-// Re-checked 2026-08-31, same session, after other work landed several of this
-// function's blockers as a side effect:
-// - sub_46DF80/sub_46DF70 ARE gte_stsxy/gte_stlvnl2 after all (tools/names.json:
-//   0x46DF80 = ?gte_stsxy@@YAXPAH@Z, 0x46DF70 = ?gte_stlvnl2@@YAXPAH@Z, both
-//   already @Ok in ps2funcs.cpp). The "not the same, different registers" claim
-//   two paragraphs up was wrong; sorry, future reader.
-// - sub_4F2AB0 is CalcScreenNormal, already @Ok right in this file (see below).
-//   A per-segment screen-space normal is exactly what a ribbon needs to build
-//   its left/right edge offsets, so this fits the "ring of midpoints" role well.
-// - sub_46CB90 is stubbed_printf (already used throughout the repo), not a
-//   real callee to decompile, just an assert/debug print.
-// - dword_568154/568158/628614/61B5FC got named this session in venom.cpp and
-//   PCGfx.cpp: gGameResolutionX/gGameResolutionY and Xres/Yres.
-// - The dword_614CD4..614CF4 ring buffer is very likely the same scratch slot
-//   this file already declares as gSmokeRingScreenPoints (0x614CD4, see below);
-//   different Display functions reusing one scratch array between calls is the
-//   normal pattern in this codebase.
-// - The 16-float "refresh gGfxMatrix" copy loop is a named, working @Ok
-//   function now (RefreshGfxMatrix, bit.cpp), but it is `static INLINE`
-//   (file-local); would need duplicating here (repo convention allows this)
-//   or exporting.
-// Re-checked again 2026-08-31 (separate session), the 0x402540 question above:
-// this is NOT actually a blocker, confirmed with IDA (idb_open on SpideyPC.exe,
-// disasm + xrefs_to on 0x402540). The raw disassembly is exactly what the note
-// above already said (mov eax,ecx; mov ecx,[esp+4]; three [ecx+n]->[eax+n] dword
-// copies; retn 4) - a this-in-ecx, one-pointer-arg, 12-byte memberwise copy. That
-// is a copy-constructor shape (vector3d(const vector3d&)), not the (f32,f32,f32)
-// overload names.json's mangled name claims. This IS a genuine names.json
-// address/signature mismatch, confirmed, not just a hunch.
-//
-// But it does not block writing this function, because it never needs fixing
-// here: bit.cpp already has a working, @Ok vector3d::vector3d(f32,f32,f32) (the
-// declared bit.h overload) that is functionally correct regardless of this
-// byte-match caveat (its own comment documents the same 0x402540 finding and
-// explicitly defers it as a byte-match-only concern). More importantly, the
-// established pattern this whole Display*List family actually uses at the
-// C++ source level (confirmed in DisplayGPolyLineList/DisplayPolyLineList,
-// both @Ok in bit.cpp) never constructs a vector3d/vector4d object at all: it
-// builds a plain f32[3]/f32[4] pair and calls Algebra_Transform4(out, in)
-// (algebra.cpp, @Ok) directly, which is the source-level equivalent of the
-// sub_402540/402600/402620 sequence Hex-Rays shows inlined in the original
-// binary. So a real attempt at this function should use Algebra_Transform4
-// like its siblings, not chase vector3d/vector4d ctors.
-//
-// With that cleared, every callee this function needs is now confirmed
-// already implemented and @Ok elsewhere: CalcScreenNormal (sub_4F2AB0, this
-// file), gte_ldlv0/gte_rtps/gte_stsxy/gte_stlvnl2 (ps2funcs.cpp),
-// Algebra_Transform4 (algebra.cpp), PCGfx_UseTexture (sub_506440, PCGfx.cpp,
-// confirmed via names.json - not the "unnamed" helper an earlier pass
-// suspected), PCGfx_DrawQPoly3D (PCGfx.cpp), stubbed_printf (assert helper).
-// RefreshGfxMatrix is `static INLINE` in bit.cpp so still needs duplicating
-// or exporting to use from this file, same note as before.
-//
-// So there is no longer an infrastructure blocker; what remains is purely the
-// size and density of the body itself (Hex-Rays decompile of 0x4F1860
-// checked this session: heavy scratch-register reuse across SIX
-// PCGfx_DrawQPoly3D call sites per ring segment, a still-unreconciled
-// dword_614CD4.. per-frame ring buffer whose exact per-point stride/layout
-// was not re-derived this pass, and one packaging call (the
-// vector4d(f32,f32,f32,f32)-shaped ctor into &v281, ~0x4f1a7c) whose second
-// operand Hex-Rays does not resolve cleanly, needing a raw-disasm trace to
-// pin down). That is a multi-hour reconstruction on its own merits, not one
-// blocked on any missing name or wrong signature anymore. Left @BIGTODO for
-// that reason; a future attempt can skip straight past the vector3d
-// question and the callee audit above.
-// @BIGTODO
+// 1) Per-point projection into a shared scratch ring (SGouraudRibbonScreenPoint,
+//    below, reusing the SAME 0x614CD4 address CSmokeRing::Display's
+//    gSmokeRingScreenPoints uses for an unrelated layout - different Display
+//    functions time-sharing one scratch region between calls is the normal
+//    pattern in this codebase). Screen xy/depth come from Transform() (already
+//    @Ok, right below in this file - its qword_56F1B4/dword_56F1BC camera
+//    subtraction is exactly what this loop's raw disasm does too), clipped
+//    against G_VIEW_CLIP_INFO's depth range (screen.h). invZ comes from the
+//    separate Algebra_Transform4 pass (algebra.cpp, already @Ok): the raw
+//    disasm's "QModelIndex::QModelIndex(...)" call at ~0x4f1a7c is a FLIRT
+//    false-positive on a vector4d(f32,f32,f32,f32) build from Algebra_Transform4's
+//    4 outputs - confirmed by matching each of the 4 dot products term-by-term
+//    against gGfxMatrix's indices. The sequel call (sub_402600) just reads the
+//    w component back out, which Algebra_Transform4's own out[3] already gives
+//    directly, so neither vector3d/vector4d ctor is needed in the source.
+// 2) Smoothed per-point screen-space edge normal via CalcScreenNormal (already
+//    @Ok, below): point 0 and the last point get their single adjoining
+//    segment's raw normal, interior points get the average of both adjoining
+//    segments' raw normals (reproduced by calling CalcScreenNormal with the
+//    ring cast to SCalcBuffer*, which reads this point's screenXY/clipped at
+//    field_0/field_18 and relies on the struct's own field_20/field_38 landing
+//    on the NEXT ring element's screenXY/clipped purely from the two structs
+//    sharing the same 0x20-byte stride - verified offset by offset).
+// 3) Per segment (i, i+1), skipped if either point's smoothed normal is zero
+//    (CalcScreenNormal zeroes both outputs whenever either endpoint was
+//    clipped): a screen-space corner offset (normal * scaledWidth >> 6) is
+//    computed for point i+1's "right" edge; point i's own corner was carried
+//    forward from when IT was the "i+1" of the previous iteration (or, for
+//    segment 0, computed once up front from point 0's own normal - matches the
+//    raw disasm's v261 priming before the loop). Two draw call pairs, each
+//    gated on both points' invZ being positive (the original's third z-check,
+//    against a value it calls "v252", is provably the exact same quantity as
+//    the second check once its assignment chain is followed back to the ring -
+//    both alias point i's invZ - so it is dropped here as genuinely redundant,
+//    not simplified away by guessing):
+//      - if this->mTrail > 2 (i.e. trailing has been running >= 3 frames, so
+//        Last2Scr is meaningfully "2 frames old" and not just the priming copy
+//        from frame 1 - see phase 4): a motion-trail quad from each point's
+//        2-frames-ago screen position (SRibbonPoint::Last2Scr) to its current
+//        one, colour fading from black (old) to the point's real colour (new).
+//      - always: an edge/glow quad from point i+1's/point i's offset ("right")
+//        corner to their raw (un-offset) centre, colour fading from black
+//        (corner) to real colour (centre) - a soft glow along the ribbon's edge.
+//    Both quad types are drawn TWICE (sub_508550/PCGfx_DrawQPoly3D called back
+//    to back with the exact same source record - confirmed via raw disasm, the
+//    second call reads identical byte offsets from the same 36-/80-byte scratch
+//    record as the first). No separate "left corner" data is threaded through
+//    the loop anywhere (only one corner value is carried between iterations),
+//    so the second call of each pair is reproduced here as the same quad drawn
+//    with a reordered vertex pair (0<->1, 2<->3) rather than a distinct
+//    left-edge quad - a double-sided/backface-visible strip is the standard
+//    reason to draw a zero-thickness quad twice this way, and it is the only
+//    hypothesis consistent with there being just one corner value in flight.
+//    This vertex-order swap is the one part of the function not pinned down to
+//    individual argument slots (the two calls' colour/position data itself IS
+//    fully confirmed, byte offset by byte offset, via raw disasm); flagged here
+//    for anyone re-verifying at the instruction level.
+//    Colour/alpha: both quad types build their vertex colours from a constant
+//    alpha byte, not per-point data - the record byte tested for the semi-
+//    transparent flag is always a fixed float bit-pattern (0x3A000000) this
+//    function itself just wrote a few instructions earlier, so the branch is
+//    provably always taken (alpha=128, DCGfx_BlendingMode_2, texture slot 1 -
+//    same "flat/line" slot DisplayGLineList's notes document in bit.cpp);
+//    reproduced directly as a constant rather than as a dead runtime branch.
+//    The pPoly scratch queue (0x56FB04/0x5FCD1C, front.cpp's
+//    gMenuHighlightBufPos/End, flash.cpp's gEffectRecordBufPos/End, panel.cpp's
+//    pPoly) is bumped and bounds-checked exactly like the original (an overflow
+//    bails the whole remaining segment loop, matching bit.cpp's
+//    DisplayLinked2EndedBitListLeftover precedent for "pointer advance and
+//    bounds check are observable, record contents are not") but its actual
+//    byte contents are never written here - every field this function reads
+//    back out of that scratch record is available more simply from the ring/
+//    mpPoints data already in local scope, and nothing else in this function
+//    (or, per the family notes above CSimpleTexturedRibbon::Display, in any
+//    sibling Display*List function) ever reads the queue's contents back.
+// 4) Per-point history shift, only if this->mTrail != 0: SRibbonPoint::Last1Scr
+//    becomes this frame's screen position; Last2Scr becomes the previous
+//    Last1Scr (or, on the very first trailing frame, this frame's position
+//    too, priming both). this->mTrail then increments every frame from then on
+//    (it is NOT just a 0/1 flag once trailing starts - the constructor's
+//    LeaveTrail param only seeds it - which is exactly why phase 3 gates the
+//    trail quad on "> 2": frames 1 and 2 after enabling haven't built up a real
+//    2-frames-old Last2Scr yet). SRibbonPoint::Last3Scr is never touched by
+//    this function.
+// @Ok
 void CGouraudRibbon::Display(void)
 {
-    printf("CGouraudRibbon::Display(void)");
+	print_if_false(this->mNumPoints <= 64, "More GouraudRibbon points than planned for.");
+
+	GouraudRibbon_RefreshGfxMatrix();
+
+	u8* clip = G_VIEW_CLIP_INFO;
+	u16 clipMin = *(u16*)(clip + 8);
+	u16 clipMax = *(u16*)(clip + 0xA);
+
+	// Phase 1: project every point into the shared scratch ring.
+	for (i32 i = 0; i < this->mNumPoints; i++)
+	{
+		SRibbonPoint* pPt = &this->mpPoints[i];
+		SGouraudRibbonScreenPoint* pRing = &gGouraudRibbonScreenPoints[i];
+
+		i32 depth = Transform(&pPt->Pos, &pRing->screenXY);
+		pRing->depth = depth;
+
+		if (depth < clipMin || depth > clipMax)
+		{
+			pRing->clipped = 1;
+		}
+		else
+		{
+			pRing->clipped = 0;
+			pRing->scaledWidth = (400 * (i32)pPt->Width) / depth;
+		}
+
+		f32 inVec[3];
+		inVec[0] = (f32)pPt->Pos.vx / 4096.0f;
+		inVec[1] = (f32)pPt->Pos.vy / 4096.0f;
+		inVec[2] = (f32)pPt->Pos.vz / 4096.0f;
+
+		f32 outVec[4];
+		Algebra_Transform4(outVec, inVec);
+
+		if (fabs(outVec[3]) > 0.0000000099999999)
+		{
+			pRing->invZ = 1.0f / outVec[3];
+		}
+		else
+		{
+			pRing->invZ = -1.0e12f;
+		}
+	}
+
+	// Phase 2: smoothed per-point screen-space edge normal.
+	if (this->mNumPoints > 0)
+	{
+		i32 nx, ny;
+		CalcScreenNormal(reinterpret_cast<SCalcBuffer*>(&gGouraudRibbonScreenPoints[0]), &nx, &ny, 2);
+		gGouraudRibbonScreenPoints[0].normX = nx;
+		gGouraudRibbonScreenPoints[0].normY = ny;
+
+		i32 prevNx = nx, prevNy = ny;
+
+		for (i32 i = 1; i < this->mNumPoints - 1; i++)
+		{
+			CalcScreenNormal(reinterpret_cast<SCalcBuffer*>(&gGouraudRibbonScreenPoints[i]), &nx, &ny, 2);
+
+			gGouraudRibbonScreenPoints[i].normX = (prevNx + nx) / 2;
+			gGouraudRibbonScreenPoints[i].normY = (prevNy + ny) / 2;
+
+			prevNx = nx;
+			prevNy = ny;
+		}
+
+		if (this->mNumPoints > 1)
+		{
+			gGouraudRibbonScreenPoints[this->mNumPoints - 1].normX = prevNx;
+			gGouraudRibbonScreenPoints[this->mNumPoints - 1].normY = prevNy;
+		}
+	}
+
+	// Phase 3: per-segment corner computation and drawing.
+	i32 prevCornerXY = 0;
+
+	if (this->mNumPoints > 1)
+	{
+		SGouraudRibbonScreenPoint* pFirst = &gGouraudRibbonScreenPoints[0];
+		i32 dx0 = (pFirst->normX * pFirst->scaledWidth) >> 6;
+		i32 dy0 = (pFirst->normY * pFirst->scaledWidth) >> 6;
+		i32 sx0 = (i16)(pFirst->screenXY & 0xFFFF);
+		i32 sy0 = (i16)(pFirst->screenXY >> 16);
+		prevCornerXY = ((sx0 + dx0) & 0xFFFF) | ((sy0 + dy0) << 16);
+
+		for (i32 i = 0; i < this->mNumPoints - 1; i++)
+		{
+			SGouraudRibbonScreenPoint* pCur = &gGouraudRibbonScreenPoints[i];
+			SGouraudRibbonScreenPoint* pNext = &gGouraudRibbonScreenPoints[i + 1];
+
+			if ((pCur->normX == 0 && pCur->normY == 0) ||
+				(pNext->normX == 0 && pNext->normY == 0))
+			{
+				continue;
+			}
+
+			i32 dx = (pNext->normX * pNext->scaledWidth) >> 6;
+			i32 dy = (pNext->normY * pNext->scaledWidth) >> 6;
+			i32 sxNext = (i16)(pNext->screenXY & 0xFFFF);
+			i32 syNext = (i16)(pNext->screenXY >> 16);
+			i32 rightCornerXY = ((sxNext + dx) & 0xFFFF) | ((syNext + dy) << 16);
+			i32 curCornerXY = prevCornerXY;
+
+			if (gRibbonPolyPos + 80 > gRibbonPolyBufferEnd)
+				break;
+			gRibbonPolyPos += 80;
+
+			if (this->mTrail > 2)
+			{
+				if (gRibbonPolyPos + 36 > gRibbonPolyBufferEnd)
+					break;
+				gRibbonPolyPos += 36;
+
+				if (pNext->invZ > 0.0f && pCur->invZ > 0.0f)
+				{
+					SRibbonPoint* pMptCur = &this->mpPoints[i];
+					SRibbonPoint* pMptNext = &this->mpPoints[i + 1];
+
+					GouraudRibbon_DrawFadeQuad(
+							pMptNext->Last2Scr, pNext->invZ, kGouraudRibbonBlack,
+							pMptCur->Last2Scr, pCur->invZ, kGouraudRibbonBlack,
+							pNext->screenXY, pNext->invZ, GouraudRibbon_RealColor(pMptNext),
+							pCur->screenXY, pCur->invZ, GouraudRibbon_RealColor(pMptCur));
+				}
+			}
+
+			if (pNext->invZ > 0.0f && pCur->invZ > 0.0f)
+			{
+				SRibbonPoint* pMptCur = &this->mpPoints[i];
+				SRibbonPoint* pMptNext = &this->mpPoints[i + 1];
+
+				GouraudRibbon_DrawFadeQuad(
+						rightCornerXY, pNext->invZ, kGouraudRibbonBlack,
+						curCornerXY, pCur->invZ, kGouraudRibbonBlack,
+						pNext->screenXY, pNext->invZ, GouraudRibbon_RealColor(pMptNext),
+						pCur->screenXY, pCur->invZ, GouraudRibbon_RealColor(pMptCur));
+			}
+
+			prevCornerXY = rightCornerXY;
+		}
+	}
+
+	// Phase 4: shift the per-point trail history.
+	if (this->mTrail != 0)
+	{
+		for (i32 i = 0; i < this->mNumPoints; i++)
+		{
+			SRibbonPoint* pPt = &this->mpPoints[i];
+
+			if (this->mTrail == 1)
+			{
+				pPt->Last1Scr = gGouraudRibbonScreenPoints[i].screenXY;
+				pPt->Last2Scr = gGouraudRibbonScreenPoints[i].screenXY;
+			}
+			else
+			{
+				pPt->Last2Scr = pPt->Last1Scr;
+				pPt->Last1Scr = gGouraudRibbonScreenPoints[i].screenXY;
+			}
+		}
+
+		this->mTrail++;
+	}
 }
 
 // @Ok
