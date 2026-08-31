@@ -2195,10 +2195,61 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	(void)result;
 }
 
-// @MEDIUMTODO
-void RenderSuperItem(CItem *,bool)
+typedef void (*RenderSuperItem_fn)(CItem*, bool);
+
+// @BIGTODO
+// forward to original (0x474C10, ~4.7KB, retagged from @MEDIUMTODO after
+// investigating this session -- it is much bigger than that tag implied).
+// The actual PC disassembly's call site (inside M3d_Render, above) only
+// ever pushes ONE argument (the CItem*); tools/prototypes.json's 2-param
+// `(CItem*, bool)` signature this repo already carries may be the Mac
+// build's shape rather than the PC one -- kept as-is since it's harmless
+// under cdecl (an unread extra stack arg) and not worth an unverified
+// header change.
+//
+// This is a per-bone skinned-model renderer, one call per CSuper item
+// (confirmed: the raw disasm's "a1" here is CItem* with the SAME +4
+// vtable-pointer shift documented on M3d_Render above -- e.g. "a1+4" is
+// mFlags, "a1+31" is mRegion -- and it is reinterpret_cast to CSuper*
+// internally to call the already-forwarded Decomp_GetAnimTransform, whose
+// own header already types its argument as CSuper*). Traced this session
+// (IDA decompile only, no raw disasm cross-check given the size): per-item
+// LOD/distance setup very close to M3d_Render's own (same
+// PSXRegion[region].ppModels/.NumParts mapping -- see M3d_Render's comment
+// -- confirmed via `dword_6B2454[v10/2]`/`word_6B2478[v10]` with
+// v10=34*region, identical shape); then loops `PSXRegion[region].NumParts`
+// times, once per body part/bone: resolves this part's pose matrix via the
+// already-forwarded Decomp_GetAnimTransform(pSuper)[part] (an SMatrix,
+// converted to matrix4x4 via the STILL-UNDECOMPILED sub_4024A0 at 0x4024A0
+// -- not yet named or forwarded anywhere in this repo), concatenates it
+// with the item's own transform and the camera/projection matrix (the
+// same 3-matrix-product shape gsub_476A00/matrix4x4's 16-arg ctor already
+// cover, called here via sub_476710 == the SAME address as the already-@Ok
+// matrix4x4 16-float constructor and sub_476A00's own callee), applies a
+// couple of debug/preview color overlays gated by dword_2E09BF0/2E09BF4
+// (unnamed, unexplored), an "outline" tint block gated by a region-equality
+// check + dword_6B4CA8 (unnamed), then dispatches this part's model
+// through the SAME DC_PSXModel_RenderModel/DCModel_RenderModel choice
+// (mFlags & 0x4000) the other renderers in this file use.
+//
+// Left as a forward rather than reimplemented: needs (1) sub_4024A0
+// (ConvertSMatrixTomatrix4x4) leafed first, per the repo's leaf-first
+// rule; (2) CSuper extended well past its current ob.h declaration -- this
+// function reads item-relative offsets up to +1513 bytes, deep into
+// CSuper's per-bone animation/outline state that ob.h does not model yet
+// (CSuper as declared stops well under 300 bytes in); extending that
+// struct blind, without the maintainer's IDB struct dump or a runtime test
+// to catch a wrong offset, risks corrupting an already-working class used
+// throughout the game-object code, which is a bigger risk than leaving
+// this one function forwarded. A future session with either the IDB
+// struct data or a runtime-test setup should tackle the CSuper extension
+// first, then this function should fall out following the same shape as
+// DCModel_RenderModel/DC_PSXModel_RenderModel (both @Ok, this file/
+// ps2m3d.cpp) for the per-part render call itself.
+EXPORT void RenderSuperItem(CItem *pItem, bool a2)
 {
-    printf("RenderSuperItem(CItem *,bool)");
+	RenderSuperItem_fn f = (RenderSuperItem_fn)0x00474C10;
+	f(pItem, a2);
 }
 
 void validate_matrix4x4(void)
