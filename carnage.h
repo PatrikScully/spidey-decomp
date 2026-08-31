@@ -77,13 +77,11 @@ class CSymbioteBlade : public CBody
 {
 	public:
 		// @NotOk
-		// residue: mCurvePts[1]/[2] are a linear interpolation placeholder, not the original's
-		// randomized arc (the real curve builder is now implemented below as
-		// GenerateControlPoints, just not wired into this constructor yet, see its own commit).
-		// field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80) is skipped
-		// entirely (left null). Base construction (CBody::CBody), mPos/mCurvePts[0]/[3],
-		// InitItem, mModel via Spool_GetModel, and AttachTo are all implemented against the
-		// real disasm.
+		// residue: field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80, none
+		// decompiled) is skipped entirely (left null) instead of being conditionally allocated.
+		// Everything else (base CBody::CBody, mPos/mCurvePts[0]/[3], InitItem, mModel via
+		// Spool_GetModel, AttachTo, and the real GenerateControlPoints curve builder below) is
+		// implemented against the real disasm.
 		EXPORT CSymbioteBlade(const CVector&, const CVector&);
 
 		// see the long comment above the class for what this does and how it was verified.

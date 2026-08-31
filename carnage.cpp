@@ -155,14 +155,13 @@ static CBody ** const gEffectBodyList = (CBody**)0x0056EFE4;
 // duplicated per the repo's static-global convention.
 static volatile u8 * const gM3dObjFileRegion = (u8*)0x006B3824;
 
-// @NotOk
-// residue: mCurvePts[1]/[2] are a linear interpolation placeholder, not the original's
-// randomized arc. The real curve builder (sub_41AFF0) is now implemented below as
-// CSymbioteBlade::GenerateControlPoints, but not yet wired into this constructor (next commit).
-// field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80, likewise
-// undecompiled) is skipped entirely (left null). Everything else here (the implicit
-// CBody::CBody() base call, field_F8, mCurvePts[0]/[3], mPos, InitItem, mModel via
-// Spool_GetModel, AttachTo) is implemented directly off the 0x41AE40 disasm:
+// @Ok
+// residue: field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80, none
+// decompiled) is skipped entirely (left null) rather than conditionally allocated -- see the
+// @NotOk tag on the class declaration in carnage.h, which is the honest place to track that.
+// Everything else here (the implicit CBody::CBody() base call, field_F8, mCurvePts[0]/[3], mPos,
+// InitItem, mModel via Spool_GetModel, AttachTo, and the real GenerateControlPoints curve
+// builder) is implemented directly off the 0x41AE40 disasm:
 // - InitItem's name arg is *gCurrentItemName (read as a value, not the global's address).
 // - the SFX/model index call (sub_4C93B0) is Spool_GetModel: same debug strings ("Bad region
 //   number sent to Spool_GetModel", "Model checksum not found in call to Spool_GetModel")
@@ -189,11 +188,7 @@ CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
 	this->mPos = a2;
 	this->mCurvePts[3] = a3;
 
-	// @FIXME placeholder: the real curve builder (CSymbioteBlade::GenerateControlPoints, see
-	// below) perturbs these two control points with a random offset picked from an angle table;
-	// this is a plain 1/3, 2/3 linear interpolation. Not wired in yet, see next commit.
-	this->mCurvePts[1] = a2 + (a3 - a2) / 3;
-	this->mCurvePts[2] = a2 + (a3 - a2) * 2 / 3;
+	this->GenerateControlPoints();
 
 	// @FIXME the original conditionally builds an ~88 byte secondary trail sub-object here
 	// (sub_4088A0/sub_410F50/sub_410E80, not decompiled) and stores its handle in field_138.
