@@ -14,6 +14,10 @@
 #include "camera.h"
 #include "screen.h"
 #include "ps2redbook.h"
+#include "pshell.h"
+#include "flash.h"
+#include "post.h"
+#include "ps2card.h"
 
 CMenu* pYesNoMenu;
 
@@ -746,77 +750,460 @@ void Front_SaveGameState(void)
 	*pDestBuf = 0;
 }
 
-// @BIGTODO
-// Retagged from @MEDIUMTODO 2026-08-31: real address 0x440ef0 (a small
-// dword_68293C/dword_682950 guard) which falls straight through to a 400+
-// line, 6-state menu state machine at 0x440f00-0x441cc7. This is the
-// in-game pause menu controller (builds and drives gPausedMenu, pYesNoMenu,
-// and gFrontControllerTwoMenu / the "choose a restart point" submenu via
-// Trig). Left stubbed this session: no runtime path exists to verify it
-// (SpideyMain is still a stub, shell.cpp's dispatchers are undecompiled,
-// and headless runtime testing is unavailable this session per the task
-// brief), and a dozen+ of its counters/flags have no idb_globals.txt name
-// and no other repo caller to cross-check meaning against, so a rushed
-// implementation risks a wrong tag with no way to catch it. Reconnaissance
-// done so the next session does not have to redo it:
-// - Guard: `i32 result = gFrontShowTrainingTip; if (gFrontShowTrainingTip
-//   == 0 && dword_682950 == 0) { <state machine>; } return;` (void fn,
-//   `result` is dead - the original C mirrors a non-void Mac prototype).
-//   dword_682950 is unnamed, 0x14 bytes after gFrontShowTrainingTip.
-// - Trigger polling at the top calls PCSHELL_CheckTriggers (0x50C180,
-//   already used in CMenu::Update) with different bitmasks depending on
-//   whether gFrontScreenState is 0; also calls Pad_Update (0x505720),
-//   Card_CheckStatus (0x46C9A0), DCCard_Exists (0x4310D0, matches
-//   Front_Init's gFrontCardExists pattern).
-// - `switch (gFrontScreenState)` (already-named macro, 0x5FAECC):
-//   case 0: first-frame setup. Builds gPausedMenu via `new CMenu(256, 0,
-//     0, 256, 256, 16)` (CMenu::CMenu is sub_43F9B0, exact same ctor args
-//     as Front_Init's pYesNoMenu), then calls what compiles down to
-//     `gPausedMenu->AddEntry("Continue"); ...->AddEntry("Restart level");
-//     ...->AddEntry("skip to restart"); ...->AddEntry("Quit");`
-//     (confirmed: the inlined byte pattern writing name/unk_b=1/unk_a=0
-//     plus a Mess_TextWidth-based menu_width update and field_32++ exactly
-//     matches CMenu::AddEntry inlined in-TU) then centres it and, if a
-//     `skip to restart` precondition (dword_60CFDC, unnamed) is false,
-//     disables that entry via what compiles down to
-//     `gPausedMenu->EntryOff("skip to restart")`.
-//   case 1: normal paused-menu frame. Runs gPausedMenu->Update() (already
-//     @Ok, sub_440600), then a long cascade of what compile down to
-//     `gPausedMenu->ChoiceIs("...")` / `EntryOn/EntryOff("skip to
-//     restart")` calls (all confirmed against CMenu's real member
-//     functions, not raw structs - see CMenu::ChoiceIs/EntryOn/EntryOff)
-//     deciding whether Continue/Restart/Quit was picked, each setting
-//     gLevelStatus (trig.h, already a real repo global, values 6/7/8 seen
-//     here) and gFrontScreenState for the next frame, plus SFX_Play calls
-//     via sub_471C50.
-//   case 2: restart-point submenu. Iterates an array at 0x6B4614, count at
-//     0x6B4664 (both unnamed, not in idb_globals.txt - looks like a Trig
-//     restart-node table, not owned by front.cpp, needs someone who knows
-//     the Trig subsystem layout), building gFrontControllerTwoMenu entries
-//     and calling Trig_SetRestart (0x4DE970) on selection.
-//   case 3: yes/no confirm submenu (pYesNoMenu), same ChoiceIs/Update
-//     pattern as case 1.
-//   case 4: `if (v5 != 0 && v5 != -1) gFrontScreenState = 1;` then falls
-//     to the shared exit handling below (v5 is the byte_5FAD98/
-//     dword_5FAE20/dword_66126C memory-card-poll delay counter computed
-//     at the top of the function, unnamed, unclear purpose beyond "wait a
-//     few frames before allowing input").
-//   case 9: Flash_Update (0x43D8C0) / Flash_FadeFinished (0x43D820) gate,
-//     then gLevelStatus = 3 and falls into the shared teardown.
-// - Shared teardown (when the "close the pause menu" flag is set):
-//   Post_UndoPausePaletteProcessing (0x46A3C0), gFrontScreenState = 0,
-//   `delete gPausedMenu; gPausedMenu = 0; pYesNoMenu->KillBox();` (matches
-//   CMenu::KillBox exactly - confirmed the vtable-slot-0-with-arg-1 calls
-//   are the scalar deleting destructor pattern, not a hand-rolled virtual
-//   call), then if gLevelStatus is not 7 or 3: SFX_Unpause (0x472200),
-//   Redbook_XAPause(0) (0x479D70, already declared in ps2redbook.h).
-// Also found and fixed while mapping this function: CMenu::EntryOn had a
-// field_32-- bug (see that function's own commit), discovered because an
-// inlined EntryOn call site inside this function's disassembly
-// (0x441576-0x44158c) is ground truth and disagreed with the repo.
+// New globals for Front_Update, decompiled 2026-08-31 from Hex-Rays at
+// 0x440ef0. None of these addresses are in idb_globals.txt; nearest
+// neighbours were checked (0x6B4614/0x6B4664 sit in a real gap before
+// gTrigNodes 0x6B466C/NumNodes 0x6B4670, so they are not part of those).
+// Tentative names, our own guesses:
+// - gFrontUpdateBlocked (0x682950, 0x14 bytes after gFrontShowTrainingTip):
+//   ANDed into the same top-level guard as gFrontShowTrainingTip, so it
+//   gates the whole state machine the same way. Guess: another "something
+//   else owns the screen this frame" flag.
+// - gFrontUseAltTriggerMask (0x5FAE9D): selects between two trigger
+//   bitmasks (0x40000 / 0x40040) for the top-of-frame confirm poll.
+// - gFrontCardExistsThisFrame (0x5FAE8C): written every frame from
+//   DCCard_Exists(0), never read again in this function - likely read by
+//   another (undecompiled) front-end function.
+// - gFrontCardPollDelay (0x5FAE20) / gFrontCardSlotChoice (0x66126C):
+//   the memory-card-poll delay counter and its result, matching
+//   gFrontCardExists' (0x5FAD98) existing "wait a few frames" pattern.
+// - gFrontFadeGateOne (0x6611F0) / gFrontFadeGateTwo (0x6611E0): both must
+//   be nonzero to arm a ~0x78-vblank timer (gFrontFadeTimerActive/
+//   gFrontFadeTimerStart, 0x5FAED8/0x5FAEDC) that force-closes the pause
+//   menu with gLevelStatus = 7 once it expires. Guess: some kind of
+//   "cutscene/fade taking over" watchdog.
+// - gFrontConfirmSeen (0x6611E1): cleared whenever the top-of-frame poll
+//   sees a confirm press while gFrontScreenState == 0; not read elsewhere
+//   in this function.
+// - gFrontSkipToRestartEnabled (0x60CFDC): the "skip to restart" entry's
+//   enable precondition, already flagged unnamed by the previous session.
+// - gFrontSfxHandle (0x5FAE90): last SFX_Play() return value, not read
+//   elsewhere in this function; kept as a real global since it is a fixed
+//   original address, in case another undecompiled function reads it.
+// - gFrontRestartNodeNames (0x6B4614) / gFrontRestartNodeCount (0x6B4664):
+//   a pointer array + count this function iterates to build the "choose a
+//   restart point" submenu. Genuinely new Trig-subsystem state, not owned
+//   by front.cpp; the per-entry filtering (skip entries whose first 3
+//   bytes match gFrontRestartFilterNode, 0x54AC44, itself another runtime
+//   pointer with no static string behind it) is a best-effort read of the
+//   disassembly, not confirmed against any Trig data. If this case turns
+//   out wrong, the Trig side needs a real look, not just this file.
+#define gFrontUpdateBlocked (*reinterpret_cast<i32*>(0x00682950))
+#define gFrontUseAltTriggerMask (*reinterpret_cast<u8*>(0x005FAE9D))
+#define gFrontCardExistsThisFrame (*reinterpret_cast<u8*>(0x005FAE8C))
+#define gFrontCardPollDelay (*reinterpret_cast<i32*>(0x005FAE20))
+#define gFrontCardSlotChoice (*reinterpret_cast<i32*>(0x0066126C))
+#define gFrontFadeGateOne (*reinterpret_cast<u8*>(0x006611F0))
+#define gFrontFadeGateTwo (*reinterpret_cast<u8*>(0x006611E0))
+#define gFrontConfirmSeen (*reinterpret_cast<u8*>(0x006611E1))
+#define gFrontFadeTimerActive (*reinterpret_cast<i32*>(0x005FAED8))
+#define gFrontFadeTimerStart (*reinterpret_cast<u32*>(0x005FAEDC))
+#define gFrontSfxHandle (*reinterpret_cast<i32*>(0x005FAE90))
+#define gFrontSkipToRestartEnabled (*reinterpret_cast<i32*>(0x0060CFDC))
+#define gFrontRestartNodeNames (reinterpret_cast<char**>(0x006B4614))
+#define gFrontRestartNodeCount (*reinterpret_cast<i32*>(0x006B4664))
+#define gFrontRestartFilterNode (*reinterpret_cast<char**>(0x0054AC44))
+
+// The four gPausedMenu entry strings and the pYesNoMenu comparison text,
+// same 0x54Bxxx pattern as gFrontYesText/gFrontPadTextOne above. Order
+// confirmed against the disassembly's AddEntry sequence: Continue, skip to
+// restart, Restart level, Quit.
+#define gFrontContinueText (*reinterpret_cast<char**>(0x0054B750))
+#define gFrontRestartLevelText (*reinterpret_cast<char**>(0x0054B754))
+#define gFrontQuitText (*reinterpret_cast<char**>(0x0054B760))
+#define gFrontSkipToRestartText (*reinterpret_cast<char**>(0x0054B774))
+// pYesNoMenu's "yes" entry is compared against gFrontNoText (0x54B77C,
+// front.cpp above) - yes, that constant really does hold "yes", not "no".
+// The names look swapped versus gFrontYesText (0x54B780, which holds
+// "no"). Pre-existing repo naming from Front_Init, not touched here.
+
+// Shared by case 1 (gPausedMenu) and case 3 (pYesNoMenu): after Update()
+// runs, a separate mouse-click confirm check walks the entries from
+// mCursorLine forward - same y-accumulation as CMenu::Display's per-line
+// unk_a/mLineSep loop - to find the on-screen Y of the currently selected
+// entry (mLine), then hit-tests the mouse there via PCSHELL_IsMouseOverText.
+// Inlined at both call sites in the original; pulled into one helper here
+// since the functional-decomp bar this session does not require keeping
+// the duplication.
+// @Ok
+static i32 Front_MenuMouseConfirmsSelection(CMenu* pMenu)
+{
+	if (!PCSHELL_CheckTriggers(0x100, 1, 1))
+		return 0;
+
+	const char* pSelectedName = pMenu->mEntry[pMenu->mLine].name;
+	i32 y = pMenu->mY;
+	i32 i = pMenu->mCursorLine;
+
+	if (i < pMenu->mNumLines)
+	{
+		while (i < pMenu->mCursorLine + pMenu->field_1B)
+		{
+			y += pMenu->mEntry[i].unk_a;
+
+			if (pMenu->mEntry[i].unk_b)
+			{
+				if (Utils_CompareStrings(pSelectedName, pMenu->mEntry[i].name))
+					break;
+
+				y += pMenu->mLineSep;
+			}
+
+			i++;
+			if (i >= pMenu->mNumLines)
+				break;
+		}
+	}
+
+	return PCSHELL_IsMouseOverText(pSelectedName, pMenu->mX, y, pMenu->mJustification) != 0;
+}
+
+// @Ok
+// Decompiled 2026-08-31 from Hex-Rays at 0x440ef0 (the small
+// gFrontShowTrainingTip/gFrontUpdateBlocked guard) and 0x440f00 (the state
+// machine itself). This is the in-game pause menu controller: builds and
+// drives gPausedMenu (main pause menu), pYesNoMenu (quit confirmation) and
+// gFrontControllerTwoMenu (restart-point picker) through gFrontScreenState.
+// All CMenu member calls (AddEntry/EntryOn/EntryOff/ChoiceIs/Update/
+// KillBox/Zoom/GetMenuHeight/Reset) are inlined in the original at their
+// call sites here; mapped back to the real member functions (all already
+// @Ok) instead of reproducing the inlined byte pattern, since this
+// session's bar is functional correctness, not a byte match. Every
+// callee this function needs turned out to already be decompiled and
+// @Ok (Pad_ClearTriggers, SFX_Pause/Play/Unpause, Pad_ActuatorOff,
+// Post_Do/UndoPausePaletteProcessing, PShell_MoveTowards,
+// PCSHELL_CheckTriggers/IsMouseOverText, Utils_CompareStrings,
+// Trig_SetRestart, Card_CheckStatus, DCCard_Exists, Flash_Update/
+// FadeFinished, Redbook_XAPause) - the previous session's blocker (leaf
+// helpers not yet decompiled) turned out to already be resolved by other
+// work on this branch.
+// No runtime path is available this session (see task brief), so this is
+// verified by tracing the Hex-Rays decompile control-flow-by-control-flow
+// against the built source, not by an actual playtest. The one genuinely
+// weak spot is case 2 (the restart-point submenu): it needs a Trig-owned
+// "named restart points" array that does not exist anywhere else in this
+// repo yet, so gFrontRestartNodeNames/Count and the per-entry filter are
+// best-effort reads of the disassembly, not confirmed. If case 2 turns
+// out wrong, everything else in this function does not depend on it.
 void Front_Update(void)
 {
-    printf("Front_Update(void)");
+	if (gFrontShowTrainingTip != 0 || gFrontUpdateBlocked != 0)
+		return;
+
+	i32 closeMenu = 0;
+	i32 confirmPressed = 0;
+	i32 cancelTrigger = 0;
+	i32 primaryConfirm;
+
+	if (gFrontScreenState != 0)
+	{
+		i32 triggerMask = gFrontUseAltTriggerMask ? 0x40040 : 0x40000;
+		primaryConfirm = PCSHELL_CheckTriggers(triggerMask, 1, 1);
+		confirmPressed = PCSHELL_CheckTriggers(0x10010, 1, 1) || primaryConfirm;
+		cancelTrigger = PCSHELL_CheckTriggers(0x20220, 1, 1);
+		if (confirmPressed)
+			cancelTrigger = 0;
+	}
+	else
+	{
+		primaryConfirm = PCSHELL_CheckTriggers(0x40040, 1, 1);
+		if (primaryConfirm)
+			gFrontConfirmSeen = 0;
+		Pad_Update();
+	}
+
+	if (gFrontScreenState != 0 && TTime % 10 == 0)
+		Card_CheckStatus(0, 0);
+
+	u8 cardExists = DCCard_Exists(0);
+	gFrontCardExistsThisFrame = cardExists;
+
+	i32 cardChoice;
+	if (*gFrontCardExists == 0 || cardExists != 0)
+	{
+		if (gFrontCardPollDelay-- <= 0)
+		{
+			cardChoice = gFrontCardSlotChoice;
+		}
+		else
+		{
+			cardChoice = 0;
+			gFrontCardSlotChoice = 0;
+		}
+	}
+	else
+	{
+		cardChoice = 0;
+		gFrontCardPollDelay = 40;
+		gFrontCardSlotChoice = 0;
+	}
+	*gFrontCardExists = cardExists;
+
+	if (gFrontFadeGateOne != 0 && gFrontFadeGateTwo != 0)
+	{
+		if (gFrontFadeTimerActive == 0)
+		{
+			gFrontFadeTimerActive = 1;
+			gFrontFadeTimerStart = Vblanks;
+		}
+
+		if (static_cast<u32>(Vblanks - gFrontFadeTimerStart) > 0x78)
+		{
+			gFrontFadeTimerActive = 0;
+			closeMenu = 1;
+			gLevelStatus = 7;
+		}
+	}
+	else
+	{
+		gFrontFadeTimerActive = 0;
+	}
+
+	switch (gFrontScreenState)
+	{
+	case 0:
+	{
+		if ((primaryConfirm == 0 || gLevelStatus != 0) && cardChoice != 0 && cardChoice != -1)
+			goto sharedExit;
+
+		Pad_ClearTriggers(&G_SCONTROL[0]);
+		SFX_Pause();
+		gFrontSfxHandle = SFX_Play(30, 0x2000, 0);
+		Redbook_XAPause(true);
+		Pad_ActuatorOff(0, 0);
+		Pad_ActuatorOff(0, 1);
+		G_POST_WATER_EFFECT = 1;
+		Post_DoPausePaletteProcessing();
+
+		print_if_false(gPausedMenu == 0, "Already got a paused menu?");
+
+		void* pMenuMem = CMenu::operator new(sizeof(CMenu));
+		gPausedMenu = pMenuMem ? ::new (pMenuMem) CMenu(256, 0, 0, 256, 256, 16) : 0;
+
+		gPausedMenu->AddEntry(gFrontContinueText);
+		gPausedMenu->AddEntry(gFrontSkipToRestartText);
+
+		if (gFrontSkipToRestartEnabled == 0)
+			gPausedMenu->EntryOff(gFrontSkipToRestartText);
+
+		gPausedMenu->AddEntry(gFrontRestartLevelText);
+		gPausedMenu->AddEntry(gFrontQuitText);
+
+		gPausedMenu->mY = (240 - gPausedMenu->GetMenuHeight()) / 2 + 5;
+
+		gPausedMenu->Zoom(0);
+
+		if (cardChoice != 0 && cardChoice != -1)
+		{
+			gFrontMysteryValueOne = 512;
+			gFrontScreenState = 1;
+			goto sharedExit;
+		}
+
+		gFrontScreenState = 4;
+		goto sharedExit;
+	}
+
+	case 1:
+	{
+		gFrontMysteryValueOne = PShell_MoveTowards(gFrontMysteryValueOne, 460);
+
+		if (G_POST_WATER_EFFECT == 0)
+			closeMenu = 1;
+
+		if (gFrontCardSlotChoice == 0 || gFrontCardSlotChoice == -1)
+			gFrontScreenState = 4;
+
+		print_if_false(gPausedMenu != 0, "No paused menu?");
+
+		if (gFrontSkipToRestartEnabled != 0)
+			gPausedMenu->EntryOn(gFrontSkipToRestartText);
+		else
+			gPausedMenu->EntryOff(gFrontSkipToRestartText);
+
+		gPausedMenu->Update();
+
+		i32 mouseConfirm = Front_MenuMouseConfirmsSelection(gPausedMenu);
+		i32 sfxToPlay = 0;
+
+		if (confirmPressed || mouseConfirm != 0)
+		{
+			if (primaryConfirm != 0)
+			{
+				Pad_ClearTriggers(&G_SCONTROL[0]);
+				gFrontSfxHandle = SFX_Play(30, 0x2000, 0);
+				goto sharedExit;
+			}
+
+			if (gPausedMenu->ChoiceIs(gFrontRestartLevelText))
+			{
+				closeMenu = 1;
+				gLevelStatus = 8;
+			}
+
+			if (gPausedMenu->ChoiceIs(gFrontContinueText))
+			{
+				Pad_ClearTriggers(&G_SCONTROL[0]);
+				sfxToPlay = 30;
+				closeMenu = 1;
+			}
+
+			if (gPausedMenu->ChoiceIs(gFrontSkipToRestartText))
+			{
+				sfxToPlay = 31;
+				gFrontScreenState = 2;
+			}
+
+			if (gPausedMenu->ChoiceIs(gFrontQuitText))
+			{
+				pYesNoMenu->Reset();
+				sfxToPlay = 31;
+				pYesNoMenu->Zoom(0);
+				gFrontScreenState = 3;
+				gFrontMysteryValueOne = 800;
+			}
+
+			if (closeMenu != 0)
+			{
+				gFrontSfxHandle = SFX_Play(sfxToPlay, 0x2000, 0);
+				goto sharedExit;
+			}
+		}
+
+		SFX_Play(sfxToPlay, 0x2000, 0);
+		break;
+	}
+
+	case 2:
+	{
+		if (gFrontControllerTwoMenu == 0)
+		{
+			void* pMenuMem = CMenu::operator new(sizeof(CMenu));
+			gFrontControllerTwoMenu = pMenuMem ? ::new (pMenuMem) CMenu(256, 0, 0, 256, 256, 16) : 0;
+
+			print_if_false(gFrontRestartNodeCount != 0, "No restarts listed");
+
+			for (i32 i = 0; i < gFrontRestartNodeCount; i++)
+			{
+				char* pName = gFrontRestartNodeNames[i];
+
+				char code[4];
+				code[0] = pName[0];
+				code[1] = pName[1];
+				code[2] = pName[2];
+				code[3] = 0;
+
+				if (!Utils_CompareStrings(code, gFrontRestartFilterNode))
+					gFrontControllerTwoMenu->AddEntry(pName);
+			}
+
+			gFrontControllerTwoMenu->mY = (240 - gFrontControllerTwoMenu->GetMenuHeight()) / 2;
+		}
+
+		gFrontControllerTwoMenu->Update();
+
+		if (confirmPressed)
+		{
+			Trig_SetRestart(const_cast<char*>(gFrontControllerTwoMenu->mEntry[gFrontControllerTwoMenu->mLine].name));
+			delete gFrontControllerTwoMenu;
+			gFrontControllerTwoMenu = 0;
+			closeMenu = 1;
+			gLevelStatus = 6;
+			SFX_Play(31, 0x2000, 0);
+		}
+
+		if (cancelTrigger != 0)
+		{
+			delete gFrontControllerTwoMenu;
+			gFrontControllerTwoMenu = 0;
+			gFrontScreenState = 1;
+			SFX_Play(35, 0x2000, 0);
+		}
+
+		goto sharedExit;
+	}
+
+	case 3:
+	{
+		gFrontMysteryValueOne = PShell_MoveTowards(gFrontMysteryValueOne, 350);
+
+		if (gFrontCardSlotChoice == 0 || gFrontCardSlotChoice == -1)
+		{
+			gFrontScreenState = 4;
+			goto sharedExit;
+		}
+
+		if (pYesNoMenu->mLine > 40)
+			Pad_ClearTriggers(&G_SCONTROL[0]);
+
+		i32 prevLine = pYesNoMenu->mLine;
+		pYesNoMenu->Update();
+		if (pYesNoMenu->mLine != prevLine)
+			gFrontMysteryValueOne = 350;
+
+		i32 mouseConfirm = Front_MenuMouseConfirmsSelection(pYesNoMenu);
+
+		if (confirmPressed || mouseConfirm != 0)
+		{
+			if (primaryConfirm != 0)
+			{
+				closeMenu = 1;
+				SFX_Play(30, 0x2000, 0);
+			}
+			else if (pYesNoMenu->ChoiceIs(gFrontNoText))
+			{
+				closeMenu = 1;
+				gLevelStatus = 7;
+				SFX_Play(31, 0x2000, 0);
+			}
+		}
+
+		if (cancelTrigger == 0)
+			goto sharedExit;
+
+		SFX_Play(35, 0x2000, 0);
+		if (gPausedMenu != 0)
+			gPausedMenu->Zoom(0);
+		gFrontScreenState = 1;
+		gFrontMysteryValueOne = 512;
+		goto sharedExit;
+	}
+
+	case 4:
+		if (cardChoice != 0 && cardChoice != -1)
+			gFrontScreenState = 1;
+		goto sharedExit;
+
+	case 9:
+		Flash_Update();
+		if (Flash_FadeFinished() == 0)
+			goto sharedExit;
+		gLevelStatus = 3;
+		closeMenu = 1;
+		goto sharedExit;
+
+	default:
+		goto sharedExit;
+	}
+
+sharedExit:
+	if (closeMenu != 0)
+	{
+		G_POST_WATER_EFFECT = 0;
+		Post_UndoPausePaletteProcessing();
+		gFrontScreenState = 0;
+
+		delete gPausedMenu;
+		gPausedMenu = 0;
+
+		pYesNoMenu->KillBox();
+
+		if (gLevelStatus != 7 && gLevelStatus != 3)
+		{
+			SFX_Unpause();
+			Redbook_XAPause(false);
+		}
+	}
 }
 
 // @Ok
