@@ -862,28 +862,31 @@ CChopper::~CChopper(void)
 		SFX_Stop(this->field_324);
 }
 
-// @NotOk
-// @Note: checked against the Hex-Rays decompile of tools/functions/4346880.bin
-// (0x425400). Everything up to and including the mVel computation
-// (Utils_GetVecFromMagDir(&mVel, field_108>>12, &mAngles)) matches this
-// source. The stepping loop below that does NOT match: the original mutates
-// this->mPos DIRECTLY inside the collision-check loop (mPos += mVel*2 each
-// iteration, via CVector::operator+=), and ALSO updates a turn-smoothing
-// sub-state each iteration (this+136/138/142/144/148/149, a CSVector pair
-// plus shift-amount bytes, fed through CSVector::Mask()/KillSmall() and a
-// manual "x - (x >> shift)" IIR-style smoothing formula) before the
-// Utils_Dist(mPos, field_110) < 0x80 hit check, not just a plain position
-// accumulate in a local. This source's version steps a local `pos` copy with
-// no per-step turn-state update, which is a real behavioural gap (the missile
-// homing curve depends on that per-substep smoothing feeding mAngVel-derived
-// state forward into later frames), not just register residue. AFTER the
-// loop, the original also repositions the smoke ribbon at
+// @Ok
+// @Note: fixed against the Hex-Rays decompile of tools/functions/4346880.bin
+// (0x425400) and the raw disassembly of the TurnTowards call site (arg
+// order confirmed by matching Utils_TurnTowards's real signature in
+// utils.cpp: (Current, AngVel*, AngAcc*, Ideal, accfactor), which never
+// writes back to Current). Three real bugs fixed:
+// - The original passes (this->mAngles, &mAngVel, &mAngAcc, aimDir, rate) to
+// Utils_TurnTowards, not (aimDir, &newAngles, &mAngVel, mAngAcc, rate). Since
+// Utils_TurnTowards only ever writes AngAcc (and clears AngVel when already
+// aligned), it never touches mAngles directly; the old code's
+// `this->mAngles = newAngles;` after the branch was wrong for the "far"
+// case, since the original leaves mAngles alone there and only updates it
+// via the += mAngVel step inside the loop below.
+// - The stepping loop mutates this->mPos and this->mAngles DIRECTLY (not a
+// local `pos` copy): each iteration does mPos += mVel*2, then
+// mAngles += mAngVel; mAngles.Mask(); then the angular velocity is damped
+// toward mAngAcc via an IIR "x - (x >> mAngFric)" step per axis (matching
+// the same idiom already used in CSniperTarget::AI's settle loop), then
+// mAngVel.KillSmall(), all before the Utils_Dist(mPos, field_110) < 0x80 hit
+// check. The previous version stepped a disconnected local with no angle
+// integration at all.
+// - After the loop, the smoke ribbon (field_F8) is repositioned to
 // mPos - Utils_GetVecFromMagDir(128, mAngles) (a fixed offset behind the
-// missile along its facing), not at mPos directly as this source's
-// field_F8->SetPos(this->mPos) does. The this+136 region's exact field
-// identity (offsets relative to CBody, likely inside/near mAngVel's
-// smoothing state) was not resolved. Left @NotOk: fixing this needs mapping
-// those fields properly, which is more than triage time allows in this pass.
+// missile along its current facing), confirmed by the CRibbon_SetPos call
+// (0x410EB0) taking that adjusted vector, not mPos directly.
 void CChopperMissile::AI(void)
 {
 	if (this->field_120)
@@ -922,32 +925,41 @@ void CChopperMissile::AI(void)
 	aimDir.vz = 0;
 	Utils_CalcAim(&aimDir, &this->mPos, &this->field_110);
 
-	CSVector newAngles;
 	if (Utils_CrapDist(this->mPos, this->field_110) > 0x200)
-		Utils_TurnTowards(aimDir, &newAngles, &this->mAngVel, this->mAngAcc, this->field_108 >> 12);
+		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimDir, this->field_108 >> 12);
 	else
-		newAngles = aimDir;
-
-	this->mAngles = newAngles;
+		this->mAngles = aimDir;
 
 	Utils_GetVecFromMagDir(&this->mVel, this->field_108 >> 12, &this->mAngles);
 
 	bool hitTarget = false;
-	CVector pos = this->mPos;
 
 	for (i32 steps = 0; steps < this->field_80; steps += 2)
 	{
-		pos += this->mVel * 2;
+		this->mPos += this->mVel * 2;
 
-		if (Utils_Dist(pos, this->field_110) < 0x80)
+		this->mAngles += this->mAngVel;
+		this->mAngles.Mask();
+
+		i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
+		this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
+
+		i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
+		this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
+
+		this->mAngVel.KillSmall();
+
+		if (Utils_Dist(this->mPos, this->field_110) < 0x80)
 		{
 			hitTarget = true;
 			break;
 		}
 	}
 
-	this->mPos = pos;
-	this->field_F8->SetPos(this->mPos);
+	CVector smokeOffset;
+	Utils_GetVecFromMagDir(&smokeOffset, 128, &this->mAngles);
+	CVector smokePos = this->mPos - smokeOffset;
+	this->field_F8->SetPos(smokePos);
 	SFX_ModifyPos(this->field_10C, &this->mPos, 0);
 
 	if (!hitTarget)
