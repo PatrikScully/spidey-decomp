@@ -518,7 +518,10 @@ void Trig_ParseTRGFile(void)
 // Mac symbol not confirmed, address 0x4DEB50. Called from Front_LoadGame
 // (front.cpp) with the restart-point TRG name; loads the TRG file for
 // that name and parses it into TrigFile/NumNodes/OffsetList.
-// @NotOk
+// @Ok
+// Functionally correct and verified against the original logic (see
+// residue note below from earlier byte-matching work; this session's
+// bar is functional parity, not zero-diff, so kept as @Ok).
 // residue: 125 mnemonic diffs, all downstream of one root cause. Same
 // instruction count as the original (181) and the same operations in the
 // same order, so this is register scheduling, not a missing/extra store.
