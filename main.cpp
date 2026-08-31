@@ -436,6 +436,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CBitServer();
 	validate_CCarnageHitSpark();
 	validate_CChunkBit();
+	validate_CShatterBit();
 	validate_CTextBox();
 	validate_CCopLaserPing();
 	validate_CDamagedSoftSpotEffect();
