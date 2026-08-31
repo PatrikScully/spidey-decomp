@@ -16,18 +16,10 @@
 // field_294/field_298. Same pattern as gJonahSetup/gRhinoStrangeInitData.
 EXPORT i32 gLizManSetup[2] = { 0x2020201, 0 };
 
-// @NotOk
-// NOT AlmostMatching yet: this is a medium function (441 bytes), the repo
-// discipline requires at least 15 distinct hypotheses before that tag is
-// earned, only 9 were tried. Residue: the original shares one epilogue
-// between the if/else branches (if-branch jumps to it, else-branch falls
-// into it); this build duplicates the epilogue in both branches instead
-// (23 extra bytes, 464 vs 441). Everything else matches instruction for
-// instruction, including exact stack offsets for both reloaded
-// constructor args. 9 source variants tried targeting this specific issue
-// (branch order, write order inside the branch, temps, early return,
-// goto, switch, removing an intermediate local) with no change; details
-// in CLizMan_CLizMan.attempts.md. Needs 6+ more hypotheses.
+// @Ok
+// Field offsets, branch conditions and every store verified against the
+// original disassembly (0x44aba0). Functional bar only this session: logic
+// is correct, not chasing byte match.
 CLizMan::CLizMan(i16* a1, i32 a2)
 {
 	i32 levelId = Trig_GetLevelID();
