@@ -928,8 +928,12 @@ void CCopPing::Move(void)
 		this->Die();
 }
 
-// @NotOk
-// globals
+// @Ok
+// Same shape as the already-verified CThug::ClearAttackFlags (thug.cpp):
+// gCopGlobal/gAttackFlagsRelated here play the role of
+// gGlobalThug/gAttackFlagRelated there. Also confirmed inlined verbatim
+// inside the original ~CCop (0x428980) and matches this file's own
+// SetAttacker, which calls it on both this and the previous gCopGlobal.
 void CCop::ClearAttackFlags(void)
 {
 	if (gCopGlobal == this)
