@@ -1421,39 +1421,41 @@ void Shell_DrawComicHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amount)
 
 // Address confirmed real this session: 0x49B270, 3882 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
-// sub_49CCB0's menu-code loop, code 10). Re-checked 2026-08-31 with a full
-// Hex-Rays decompile: the "one or two small local helpers" estimate from
-// earlier this session was WRONG. Shell_DrawComicHighlightBox (0x49B1F0)
-// and Shell_CopyMatrixRows (0x478140) above are now real and @Ok, but the
-// main body constructs a previously undiscovered class: `sub_455390(420)`
-// (== CClass::operator new(420), and 420 == sizeof(CSuper) per
-// VALIDATE_SIZE(CSuper, 0x1A4) in ob.cpp) then CSuper::CSuper(this)
-// (0x460720, sets vtable to CSuper's own off_53BBE8), then the caller
-// OVERWRITES the vtable pointer to a different, never-named vtable at
-// off_53BFC0 before calling CItem::InitItem(this, "items") (already @Ok
-// in ob.cpp). So this is a same-size (no added fields) CSuper subclass
-// with a swapped-in vtable, not CItem and not CDummy (CDummy/sub_490DF0
-// is a separate, 2584-byte object, confirmed unused by this function).
-// off_53BFC0's slot 0 (scalar deleting destructor) chains to 0x460780,
-// which names.json calls "CBaddy::~CBaddy" -- almost certainly a
-// link-time duplicate-body fold (CLAUDE.md: "identical function bodies
-// across TUs are merged into one address"), not a real CBaddy relationship
-// (CBaddy is 0x324 bytes per VALIDATE_SIZE in baddy.cpp, so this object
-// cannot literally be a CBaddy). off_53BFC0's other slots mix entries
-// that match CSuper's own vtable (off_53BBE8) exactly (slots 1, 3) with
-// entries that differ (slot 2, and everything past slot 4 points into a
-// different address range, 0x4A2xxx-0x4A3xxx). The SAME 420-byte
-// off_53BFC0 object is also constructed in Shell_MainMenu (sub_493990,
-// confirmed via xrefs_to on off_53BFC0), where it exists alongside a
-// separate, real CDummy_ctor (sub_490DF0) object -- so this class is
-// reused across at least MainMenu/ComicCollection/GameCovers, not
-// something invented just for comics. Next session: name this class,
-// give it a header declaration + VALIDATE_SIZE(<name>, 0x1A4), diff its
-// vtable slot-by-slot against off_53BBE8 to find which virtual(s) it
-// really overrides (ignore the CBaddy-address coincidence), then this
-// function's own body (mostly the per-cell grid loop, pad input, and the
-// M3d_Render calls building the spinning-item preview matrix that
-// Shell_CopyMatrixRows feeds) is comparatively mechanical.
+// sub_49CCB0's menu-code loop, code 10). Shell_DrawComicHighlightBox
+// (0x49B1F0) and Shell_CopyMatrixRows (0x478140) above are @Ok. The
+// off_53BFC0 class blocker described in earlier revisions of this comment
+// is RESOLVED (see CShellPreviewIcon in shell.h for the full writeup):
+// off_53BFC0 only overrides two of CSuper's five inherited virtual slots
+// (the destructor and AI; Die/Hit/DeleteStuff are unchanged), confirmed by
+// grepping ob.h for CBody/CItem's actual `virtual` methods (there are only
+// five) and independently confirmed by CShellPreviewIcon::AI compiling to
+// an EXACT (0 mnemonic diff) match against 0x493970 -- see the commit
+// history for CShellPreviewIcon and Shell_GameCovers, which fully
+// implements the same construction idiom this function needs (six
+// `new CShellPreviewIcon(x, y, z)` there vs. one here, called once per grid
+// cell as it becomes fully selected). The earlier note about "entries past
+// slot 4 point into 0x4A2xxx-0x4A3xxx" was a misread of unrelated adjacent
+// .rdata (both off_53BBE8 and off_53BFC0 have byte-identical filler
+// immediately after their real 5-slot arrays; not vtable entries).
+//
+// Remaining blocker, NOT the class: when a grid cell's highlight amount
+// reaches 256 (fully selected), the original rebuilds a one-off perspective
+// matrix from gMikeCamera/gViewport fields (xL/yB/xR/yT/vpHither/vpYon/Zoom,
+// per the comment on M3d_RenderSetup in ps2m3d.cpp) via a 16-float
+// matrix4x4(...) constructor call and a matrix4x4_ml multiply, then feeds
+// the result through Shell_CopyMatrixRows before M3d_Render. The individual
+// terms are identifiable (aspect-ratio-scaled screen-space offset, GTE-style
+// depth bias -Yon*vpHither/(Yon-vpHither)) but mapping each of the ~16
+// stack locals to its exact matrix4x4(...) argument slot, in order, needs
+// more care than this session had budget for; guessing the slot order wrong
+// would silently produce a wrong render matrix with no compile-time signal.
+// Left as a stub rather than risk a confidently-wrong @Ok on the one truly
+// novel piece of math left in this function. The rest of the body (the
+// per-cell grid loop over 32 cells at 58x40 spacing, CExpandingBox loading
+// overlay, pad input incl. up/down/left/right cycling, disc-swap "please
+// insert" bmp paging, confirm/cancel) is the same idiom as the now-complete
+// Shell_GameCovers and is comparatively mechanical once someone nails the
+// matrix block above.
 // @BIGTODO
 void Shell_ComicCollection(void)
 {
@@ -3158,15 +3160,16 @@ i32 Shell_LoadGame(void)
 // callees (about 16 of them still unnamed/undecompiled), plus an
 // ___CxxFrameHandler SEH frame (the "new T(...) needs a cleanup frame
 // when the ctor isn't visible in the same TU" pattern from this file's
-// CLAUDE.md notes). Also: this function (sub_493990) is confirmed via
-// IDA xrefs_to on off_53BFC0 to ALSO construct the same previously
-// undiscovered 420-byte CSuper-subclass object documented in the long
-// comment above Shell_ComicCollection (same sizeof(CSuper), same
-// CSuper::CSuper()+vtable-swap+CItem::InitItem shape), used here
-// alongside its own separate CDummy object. So Shell_MainMenu has BOTH
-// blockers: CDummy_ctor and the off_53BFC0 class. Recommend doing the
-// off_53BFC0 class first (shared by 3 functions, smaller/simpler) before
-// tackling CDummy_ctor's 27-callee tree.
+// CLAUDE.md notes). This function (sub_493990) is also confirmed via IDA
+// xrefs_to on off_53BFC0 to construct the same class documented above
+// Shell_ComicCollection and now fully implemented as CShellPreviewIcon
+// (shell.h) -- that half of this function's blocker is RESOLVED, see
+// Shell_GameCovers for the same construction idiom already working. The
+// remaining, harder blocker is CDummy_ctor (sub_490DF0) itself: still
+// undecompiled, 27 callees, out of scope for this session per the
+// leaf-first rule (most of its callees would need their own sessions
+// first). Recommend a dedicated session working sub_490DF0's callee list
+// bottom-up before attempting this function again.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
