@@ -169,10 +169,65 @@ void M3dUtils_GetHookPosition(VECTOR* pOut, CSuper* pSuper, i32 hookIndex)
 	}
 }
 
-// @BIGTODO
-void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*)
+// @Ok
+void M3dUtils_GetDynamicHookPosition(VECTOR* pOut, CSuper* pSuper, SHook* pHook)
 {
-	printf("void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*)");
+	u16 PartIndex = pHook->Offset;
+	u16 Anim = pSuper->mAnim;
+
+	print_if_false(G_PSXREGION[pSuper->mRegion].ppModels != NULL,
+			"Tried to get hook position with no model table");
+
+	print_if_false(PartIndex < G_PSXREGION[pSuper->mRegion].NumParts,
+			"Bad part number sent to M3dUtils_GetDynamicHookPosition");
+
+	SMatrix* pPoseFrame;
+
+	if (pSuper->mFlags & 4)
+	{
+		if (pSuper->mpPoseBuffer == NULL)
+		{
+			pOut->vx = 0;
+			pOut->vy = 0;
+			pOut->vz = 0;
+			return;
+		}
+
+		pPoseFrame = pSuper->mpPoseBuffer + PartIndex;
+	}
+	else
+	{
+		u32* pAnimFile = G_PSXREGION[pSuper->mRegion].pAnimFile;
+		u32 IntervalWord = pAnimFile[2 * Anim + 2];
+
+		if (IntervalWord & 0xFFFF0000)
+		{
+			M3dUtils_InterpolateVectors(
+					4,
+					(IntervalWord >> 16) + 1,
+					pAnimFile,
+					pSuper,
+					PartIndex,
+					G_PSXREGION[pSuper->mRegion].NumParts);
+
+			pPoseFrame = gTweenBuffer + PartIndex;
+		}
+		else
+		{
+			pPoseFrame = Decomp_GetAnimTransform(pSuper) + PartIndex;
+		}
+	}
+
+	gsub_46F820(pHook, pPoseFrame, &pSuper->mTransform);
+	gte_stlvnl(pOut);
+
+	pOut->vx <<= 12;
+	pOut->vy <<= 12;
+	pOut->vz <<= 12;
+
+	pOut->vx = pSuper->mPos.vx + ((pOut->vx - pSuper->mPos.vx) >> 4);
+	pOut->vy = pSuper->mPos.vy + ((pOut->vy - pSuper->mPos.vy) >> 4);
+	pOut->vz = pSuper->mPos.vz + ((pOut->vz - pSuper->mPos.vz) >> 4);
 }
 
 // @Ok
