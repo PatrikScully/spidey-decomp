@@ -312,6 +312,8 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CSniperSplat();
 	validate_SStateFlags();
 	validate_CGPolyLine();
+	validate_CKnottedWeb();
+	validate_SKnottedWebSeg();
 	validate_CCamera();
 	validate_CQuat();
 	validate_SBlockHeader();

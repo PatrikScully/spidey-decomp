@@ -39,6 +39,67 @@ public:
 	u8 field_57;
 };
 
+// Per-segment metadata for CKnottedWeb's own extra (dangling-bit) array, one entry per base
+// segment (mNumSegs entries, 28 bytes each, DCMem_New'd separately from the inherited mSegs
+// array). Field names are placeholders: the values are confirmed byte-for-byte from the
+// disasm (0x4F8E20), but which of field_D/field_10/field_11 is really "r"/"g"/"b" (they are
+// filled with three different Rnd() ranges) is not confirmed against source.
+struct SKnottedWebSeg
+{
+	PADDING(0xC);
+
+	u8 field_C;
+	u8 field_D;
+	i16 field_E;
+	u8 field_10;
+	u8 field_11;
+
+	PADDING(0x2);
+
+	CFlatBit *mpBit;
+
+	PADDING(0x4);
+};
+
+// Reverse engineered 2026-08-31 (CheckForPadUnplugged chain, functional decompile session).
+// Address 0x4F8E20 (Mac mangled name confirms it: idbs/spiderman_names.txt
+// ".__ct__11CKnottedWebFRC7CVectorRC7CVector", right next to CDropDownController and
+// CheckForPadUnplugged in the Mac symbol table). Base is CGPolyLine (0x412350,
+// "??0CGPolyLine@@QAE@H@Z" in names.json), confirmed by the ctor's first real call being
+// CGPolyLine::CGPolyLine(numSegs), and by *(this+0x3C) (CGPolyLine::mNumSegs) being read
+// before this class writes it. Draws a "knotted" length of spider web between two points:
+// the base CGPolyLine's own segments (recoloured 0xA2/0xA2/0xA2), a second embedded
+// CGPolyLine with twice as many segments (mpInnerLine), and mNumSegs dangling CFlatBit
+// sprites (mpExtraSegs), one per base segment.
+class CKnottedWeb : public CGPolyLine
+{
+public:
+
+	EXPORT CKnottedWeb(const CVector&, const CVector&);
+
+	i32 field_58;
+	i32 field_5C;
+	i32 field_60;
+
+	SKnottedWebSeg *mpExtraSegs;
+	CGPolyLine *mpInnerLine;
+
+	PADDING(0x2);
+
+	// touched by CDropDownController::AI (0x48E930) once the drop finishes; exact meaning
+	// (a "settled"/"snapped" flag on the inner line, guessed) not confirmed.
+	u8 field_6E;
+
+	PADDING(0x1);
+
+	// set to 1 right after construction; same CBit::mProtected-style "don't reap me yet"
+	// convention seen elsewhere in this constructor, but at an offset past CGPolyLine's own
+	// fields, so it must be CKnottedWeb's own flag, not the inherited mProtected.
+	u8 field_70;
+
+	PADDING(0x78 - 0x70 - 1);
+};
+
 class CGLine : public CBit
 {
 	public:
@@ -110,5 +171,7 @@ void validate_CGLine(void);
 void validate_SLineSeg(void);
 void validate_CSmokeGenerator(void);
 void validate_CGLineParticle(void);
+void validate_CKnottedWeb(void);
+void validate_SKnottedWebSeg(void);
 
 #endif
