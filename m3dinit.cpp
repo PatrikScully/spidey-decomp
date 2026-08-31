@@ -135,6 +135,44 @@ void M3dInit_InitAtStart(void)
 }
 
 // @MEDIUMTODO
+// Investigated 2026-08-31, left as a stub, not attempted. Findings for
+// whoever picks this up next:
+// - alloc_dc_models(i32,i32) and setup_pulsing_colors(i32), the other two
+//   TODOs in this file, are NOT separate functions in the PC binary. There
+//   is no address for them in tools/names.json or in the maintainer's IDB
+//   (idbs/spideypc_names.txt). Only the Mac build (spiderman_names.txt,
+//   0x8e530 and 0x8e650) has them as real symbols. On PC, M3dInit_ParsePSX
+//   (0x4534A0, ends at 0x453998, right before M3dInit_FlagZeroWibbles at
+//   0x4539A0) is one solid 1280-byte block: MSVC6 inlined both helpers into
+//   it because they are only ever called from here, in the same TU. This
+//   matches the repo's documented inlining rule (CLAUDE.md, MSVC6 codegen
+//   knowledge). Practical effect: these two stubs cannot be finished, tested
+//   or tagged on their own. They only make sense as part of one combined
+//   M3dInit_ParsePSX decompile.
+// - M3dInit_ParsePSX itself decompiles (Hex-Rays, ecx-based, single i32 arg,
+//   dword_6B2470[17*a1]/dword_6B2454[17*a1]/dword_6B2458[17*a1]/
+//   dword_6B246C[17*a1]/dword_6B2450[17*a1] indexing) but every one of those
+//   five arrays is an opaque, undocumented struct-of-pointers table. The
+//   dword_6B2454 one is the SAME table as ob.h's CItemRelatedList
+//   (0x6B2454, "region*17" stride, already used by platform.cpp, mysterio.cpp,
+//   shatter.cpp, spidey.cpp, shell.cpp, switch.cpp), so a1 here is a region
+//   index, not a model index, and this function reaches across all of those
+//   other files' data. The function body walks at least three more
+//   completely undocumented packed binary formats with no existing struct
+//   in the repo: a colour-pulse-list packet (header at v3-8/v3-4, then
+//   4+4*count byte entries), a PSX "SModel" part/bounding-box packet
+//   (dcmodel.h only forward-declares "struct SModel;", zero fields known;
+//   this function reads/writes raw offsets into it directly at +0, +1, +2,
+//   +4, +6, +24, +26, +28, and iterates variable-stride sub-arrays inside
+//   it), and a hook/item-offset list at dword_6B246C. Getting field offsets
+//   and signedness right here needs a full struct reverse-engineering pass
+//   across several files this agent's task did not own, which is a lot more
+//   risk than the @MEDIUMTODO size tag suggests (real Mac size is 1204
+//   bytes, comparable to a large @BIGTODO in complexity even if not in raw
+//   size). Left untouched rather than guessing at shared game-wide struct
+//   layouts. sub_431430 callee is already named DCModel_CreateFromSModel
+//   (dcmodel.cpp) and sub_505470 is syMalloc; both cross-TU, so leaf-first is
+//   not the blocker, the missing struct layouts are.
 void M3dInit_ParsePSX(i32)
 {
     printf("M3dInit_ParsePSX(i32)");
