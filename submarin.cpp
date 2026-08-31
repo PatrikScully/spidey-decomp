@@ -22,8 +22,11 @@ void Submariner_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = Submariner_CreateSubmariner;
 }
 
-// @NotOk
-// fix the address for 3C
+// @Ok
+// Verified against 0x4CBA80: mFlags |= 0x480, mpLight = &M3d_SubmarinerLight
+// (CItem::mpLight at 0x3C), AttachTo(&BaddyList), mType = 326 (CItem::mType
+// at 0x38), mNode = a3 (CBody::mNode at 0xDE), mRMinor = 0 (CBody::mRMinor
+// at 0xDC). All offsets match validate.h entries in ob.cpp.
 CSubmariner::CSubmariner(i16 * a2, i32 a3)
 {
 	this->InitItem("mariner");
