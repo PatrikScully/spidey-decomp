@@ -15,6 +15,7 @@
 #include "vram.h"
 #include "m3dinit.h"
 #include "m3dzone.h"
+#include "dcmodel.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -388,59 +389,710 @@ void PreProcessAnimPacket(
 	Bit_UpdateQuickAnimLookups();
 }
 
-// @BIGTODO
-// Re-checked 2026-08-31 with a fresh IDA decompile of 0x4C9A60 (2688 bytes,
-// ~150 lines of Hex-Rays) while implementing
-// M3dInit_ParsePSX (0x4534A0, m3dinit.cpp, now @NotOk/done) -- this
-// function's very last call is M3dInit_ParsePSX(a1), so this note replaces
-// the stale "every callee is a named, decompiled function" claim above:
-// that is now literally true (it was not, before this session).
-//
-// Confirmed field mappings (cross-checked against spool.h's SPSXRegion,
-// which is VALIDATE_SIZE'd at 0x44/68 bytes, and its "17*region"-strided
-// dword_* aliases seen in the disassembly): dword_6B2458[17*a1] ==
-// PSXRegion[a1].pPSX, dword_6B2450[17*a1] == PSXRegion[a1].pSuper (the
-// per-region CItem array; the "eh vector constructor iterator" call builds
-// exactly PSXRegion[a1].pPSX's header count of them, 0x40 bytes each,
-// matching ob.cpp's VALIDATE_SIZE(CItem, 0x40)), dword_6B244C[17*a1] ==
-// PSXRegion[a1].pModelChecksums, dword_6B2454[17*a1] == PSXRegion[a1].
-// ppModels -- built here by walking the raw PSX buffer's own embedded
-// {count, count*u32 file-relative-offset} table and rewriting each entry
-// in place from a file offset to an absolute pointer (so ppModels ends up
-// literally an array of SModel* into the loaded file, with the count at
-// ppModels[-1]; M3dInit_ParsePSX and DecrementTextureUsage above both
-// already rely on that exact ppModels[-1] convention). The record-type
-// switch near the end (id 6 -> pTexWibData + M3dInit_FlagZeroWibbles, id 7
-// -> pColourPulseData, id 10 -> M3dZone_SetZone, id 42/44 -> pColourTable,
-// id 0x6b6f6c33/0x52410008 -> pAnimFile-ish/pHierarchy-ish fields, id
-// 0x734350D2 -> a palette-remap loop through byte_5F6910) matches
-// M3dInit_ParsePSX's own two DoAssert'd packet ids (6 and 7) exactly,
-// independent confirmation both functions agree on the format.
-//
-// Still unresolved and why this stays @BIGTODO rather than attempted: (1)
-// the texture-creation branch (dword_6B78F8/gLowGraphics == 0) dispatches
-// on ~15 distinct 32-bit magic hash constants (-1319509333, 1756868918,
-// -826931392, -380076947, -1824591316, 1117282170, 1310613018,
-// 2147187373, 1054208779, 565174694, 1002542254, 441455924, 146629748,
-// 354907198, 427541114) to decide between PCTex_CreateTexture16/256,
-// PCTex_CreateTexturePVR-family and the LTI replacement loader; these look
-// like texture-group/format checksums with no corresponding names in
-// names.json or the maintainer's IDB, and guessing wrong here silently
-// picks the wrong texture format/loader, not a compile error. (2) the
-// on-disk texture record's field layout (offsets 0x00, 0x04, 0x08, 0x0A,
-// 0x0C..0x13, 0x14, plus the runtime Texture struct's TexWin/field_12/x/y
-// packing this function writes into) still needs a careful field-by-field
-// cross-check against texture.h that this session did not have time for
-// after the M3dInit_ParsePSX work above. Leaf-first is genuinely satisfied
-// now (NewTextureEntry, DecrementTextureUsage, M3dZone_SetZone,
-// M3dInit_FlagZeroWibbles, M3dInit_ParsePSX, every PCTex_* loader: all
-// real); the blocker is purely the unidentified magic constants and the
-// texture-record field layout, which need the "10 hypotheses per diff
-// cluster" discipline once someone sits down with texture.h and the
-// original's texture-record disassembly side by side.
-void ProcessNewPSX(i32)
+// Set to 1 by ProcessNewPSX while a pre-scan of the PSX record chain finds
+// a type-69 (anim packet) record, then unconditionally reset to 0 again
+// before the record chain is walked for real. xrefs_to confirms all three
+// reads/writes of 0x60DBC0 are inside ProcessNewPSX itself (no other
+// function in the binary touches it), so this flag has no observable
+// effect outside this function; kept only because CLAUDE.md's guidance is
+// to reproduce writes faithfully rather than drop ones that look dead.
+i32 gPSXParsingHasAnimPacket;
+
+// Read (never written) at 0x56EA98+4 only inside the "byte_6B2F08==0"
+// (i.e. gSpoolLogFailedTextureAccess==0) branch of the texture-checksum
+// find-or-create loop below. ProcessNewPSX itself forces
+// gSpoolLogFailedTextureAccess to 1 for the whole duration of that loop,
+// so this branch never actually executes from this call site (it is real
+// code reachable from OTHER callers of the same inlined logic, e.g.
+// Spool_TextureAccess). Its exact structure/meaning was not established
+// (not in idb_globals.txt); translated as a literal address+4 dereference
+// rather than guessed at, since it is provably unreachable from here and
+// any imprecision has zero effect on ProcessNewPSX's own behaviour.
+static i32* const gTextureFallbackRelated = reinterpret_cast<i32*>(0x0056EA98);
+
+// Literal checksum table read straight out of the binary (idalib
+// get_bytes 0x556C6C..0x556C84, 6 dwords): textures whose on-disk
+// dimensions exceed 256 and whose checksum is one of these get replaced
+// by an "lti\tex_<checksum>.bmp" file instead of being decoded from the
+// PSX record. Real data, not a guess; the array's declared bound folds
+// into the next global in the binary (aTooManyItemsHa's string, per
+// CLAUDE.md's "Global boundaries" note), so 6 is the true entry count
+// (24 bytes / 4).
+static const u32 gLtiOversizeChecksums[6] =
 {
-    printf("ProcessNewPSX(i32)");
+	0x28DD4EDC, 0x37AAB3D3, 0x429F6649,
+	0x6C651A89, 0x6D27B1AC, 0xD0B1656E,
+};
+
+// @FIXME
+// 0x4B8C80. names.json maps this address to CPlayer_IfPlayerCeilingCheck,
+// but a fresh IDA decompile shows no player/physics code at all: it reads
+// G_LOWGRAPHICS and, in low-graphics mode, looks the texture's checksum up
+// in a per-suit table (a 0x53C1A4-based array, indexed by 64*CurrentSuit,
+// confirmed via get_bytes: 9 back-to-back 64-byte blocks, each holding up
+// to 13 nonzero u32 checksums followed by zero padding) and records the
+// texture's TexWin word into dword_6A8D74[16*CurrentSuit+slot]; in
+// high-graphics mode it instead registers the texture into a separate
+// queue (dword_6A8000/6A8004/6A8006/6A8008, count at dword_6A9050). This
+// is clearly a costume-part / paintable-region registration system, but
+// the high-graphics queue's consumer and the exact suit-part table
+// contents were not tracked down this session, and names.json's own
+// mapping for this address cannot be trusted (see the repo's documented
+// history of similarly mislabeled addresses, e.g. Screen_UpdateFades).
+// Forwarded to the real address rather than reimplemented, so ProcessNewPSX
+// keeps exact original behaviour regardless of this gap.
+typedef void (*Spool_RegisterCostumeTexture_t)(i32, i16, i16);
+static const Spool_RegisterCostumeTexture_t Spool_RegisterCostumeTexture =
+	reinterpret_cast<Spool_RegisterCostumeTexture_t>(0x004B8C80);
+
+// @FIXME
+// 0x50ECE0. names.json maps this address to PCTex_LoadTexturePVR, but that
+// is wrong: PCTex_LoadTexturePVR(a1,a2) treats a1 as a FILENAME whenever
+// a2==0 (it calls PCTex_BufferPVR, which opens a1 as a file on disk in
+// that case). ProcessNewPSX's caller passes a raw in-memory texel-data
+// pointer with a2==0, which would misinterpret those bytes as a filename
+// string and fail PCTex_BufferPVR's "corrupted PVR file" assert. A fresh
+// IDA decompile of 0x50ECE0 confirms it is a different function: it calls
+// PCTex_BufferPVR(Str, a2) same as PCTex_LoadTexturePVR, but then walks its
+// own id-search array (0xAC1670..0xADB330, stride 26 dwords) to find a
+// free texture id manually and calls PCTex_CreateTexturePVRInId directly
+// with it, instead of going through PCTex_FindUnusedTextureId like
+// PCTex_CreateTexturePVR/PCTex_LoadTexturePVR do. Forwarded to the real
+// address rather than reimplemented against unnamed globals
+// (0xAC1334/0xAC1338/0xAC133C) this session did not track down, since a
+// wrong reimplementation here would silently corrupt which texture data
+// gets displayed.
+typedef i32 (*PCTex_CreateTexturePVRById_t)(char*, i32);
+static const PCTex_CreateTexturePVRById_t PCTex_CreateTexturePVRById =
+	reinterpret_cast<PCTex_CreateTexturePVRById_t>(0x0050ECE0);
+
+// @Ok
+// Full re-decompile of 0x4C9A60 (2688 bytes) done with idalib this session,
+// cross-checked against the disassembly for every field offset quoted
+// below. All ~17 magic texture-checksum constants from the previous
+// @BIGTODO note are transcribed as the literal hex values seen in the
+// disassembly (converted from IDA's signed decimal display) rather than
+// invented names, since no plaintext source for the underlying texture
+// names survives anywhere reachable (not in the PKR containers, not in
+// names.json, not in the maintainer's IDB) -- see the comments at each use
+// site below for exactly what evidence does exist for each group. Real,
+// verified evidence resolved every callee and every struct field actually
+// read/written by this function except the two forwarded above (both
+// documented names.json mismatches, not guesses) and
+// gTextureFallbackRelated's exact structure (dead code from this call
+// site, see its comment). The record-type dispatch's FourCC constants
+// (0x52454948 "HIER", 0x6B6E6843 "Chnk", 0x73424752 "RGBs") were confirmed
+// by round-tripping struct.pack('<I', value) to ASCII, not guessed.
+void ProcessNewPSX(i32 a1)
+{
+	gSpoolRegionRelatedTwo = 0;
+
+	u32* pPSXBuf = PSXRegion[a1].pPSX;
+	i32 modelCount = *reinterpret_cast<i32*>(reinterpret_cast<char*>(pPSXBuf) + 8);
+
+	// Build PSXRegion[a1].pSuper: an array of modelCount CItems, one per
+	// on-disk model-header record (36 bytes each, starting right after the
+	// 12-byte PSX buffer header). Allocation itself is plain C++ (the
+	// original's manual operator-new + "eh vector constructor iterator"
+	// dance is exactly what `new CItem[modelCount]` compiles to). The
+	// field-by-field copy that follows is done via raw byte offsets on
+	// purpose: CItem's field layout at these specific offsets was not
+	// independently confirmed against ob.h this session, so raw offsets
+	// (byte-exact with the disassembly) are safer than guessing field
+	// names that might not exist or might be misnamed.
+	if (modelCount > 0)
+	{
+		CItem* pSuperItems = new CItem[modelCount];
+		char* pRec = reinterpret_cast<char*>(pPSXBuf) + 12;
+
+		for (i32 i = 0; i < modelCount; i++, pRec += 36)
+		{
+			char* pItem = reinterpret_cast<char*>(pSuperItems) + 64 * i;
+
+			*reinterpret_cast<u16*>(pItem + 4)  = *reinterpret_cast<u16*>(pRec + 0);
+			*reinterpret_cast<u16*>(pItem + 6)  = *reinterpret_cast<u16*>(pRec + 2);
+			*reinterpret_cast<u32*>(pItem + 8)  = *reinterpret_cast<u32*>(pRec + 4);
+			*reinterpret_cast<u32*>(pItem + 12) = *reinterpret_cast<u32*>(pRec + 8);
+			*reinterpret_cast<u32*>(pItem + 16) = *reinterpret_cast<u32*>(pRec + 12);
+			*reinterpret_cast<u16*>(pItem + 20) = *reinterpret_cast<u16*>(pRec + 16);
+			*reinterpret_cast<u16*>(pItem + 22) = *reinterpret_cast<u16*>(pRec + 18);
+			*reinterpret_cast<u16*>(pItem + 24) = *reinterpret_cast<u16*>(pRec + 20);
+			*reinterpret_cast<u16*>(pItem + 26) = *reinterpret_cast<u16*>(pRec + 22);
+			*reinterpret_cast<u8*>(pItem + 28)  = *reinterpret_cast<u8*>(pRec + 24);
+			*reinterpret_cast<u8*>(pItem + 29)  = *reinterpret_cast<u8*>(pRec + 25);
+			*reinterpret_cast<u8*>(pItem + 30)  = *reinterpret_cast<u8*>(pRec + 26);
+			*reinterpret_cast<u8*>(pItem + 31)  = *reinterpret_cast<u8*>(pRec + 27);
+			*reinterpret_cast<u32*>(pItem + 36) = *reinterpret_cast<u32*>(pRec + 32);
+		}
+
+		PSXRegion[a1].pSuper = pSuperItems;
+	}
+
+	// ppModels: {count, count*u32 file-relative-offset} table right after
+	// the model-header records; converted to absolute SModel* pointers in
+	// place, matching DecrementTextureUsage/M3dInit_ParsePSX's established
+	// ppModels[-1] convention (the count lives at pPSXBuf+36*modelCount+12,
+	// one dword before ppModels itself).
+	i32 ppModelsCount = *reinterpret_cast<i32*>(reinterpret_cast<char*>(pPSXBuf) + 36 * modelCount + 12);
+	SModel** ppModels = reinterpret_cast<SModel**>(reinterpret_cast<char*>(pPSXBuf) + 36 * modelCount + 16);
+
+	if (ppModelsCount != 0)
+	{
+		i32* pSlot = reinterpret_cast<i32*>(ppModels);
+		for (i32 j = 0; j < ppModelsCount; j++)
+		{
+			i32 fileOffset = pSlot[j];
+			pSlot[j] = reinterpret_cast<i32>(pPSXBuf) + fileOffset;
+		}
+	}
+
+	PSXRegion[a1].ppModels = ppModels;
+
+	// pModelChecksums / texture-checksum table: right after the id/size/data
+	// record chain's -1 terminator, same walk Spool_SkipPackets already
+	// performs (verified: it returns exactly "one dword past the
+	// terminator", which is precisely where the model-checksum array
+	// starts).
+	u32* pModelChecksums = Spool_SkipPackets(pPSXBuf);
+	PSXRegion[a1].pModelChecksums = pModelChecksums;
+
+	u32* pTexSlots = pModelChecksums + ppModelsCount + 1;
+	i32 texCount = static_cast<i32>(pModelChecksums[ppModelsCount]);
+
+	// Find-or-create each texture entry by checksum, same shape as
+	// NewTextureEntry (same free list gSpoolTexturesRelated, same hash
+	// table TextureChecksumHashTable/dword_6AB934 == "TextureCheckSumHashTable"
+	// per idb_globals.txt, same "checksum & (size-1)" bucketing since
+	// MAXTEXTUREENTRIES/TEXTURE_CHECKSUM_TABLE_SIZE is a power of two) plus
+	// stamping the owning region into Texture::mRegion, which
+	// NewTextureEntry does not do. The array slots are overwritten in
+	// place from raw checksums to Texture* pointers, exactly like the
+	// original.
+	gSpoolLogFailedTextureAccess = 1;
+
+	if (texCount != 0)
+	{
+		u32* pSlot = pTexSlots;
+
+		for (i32 m = 0; m < texCount; m++)
+		{
+			u32 checksum = *pSlot;
+			Texture* pTexEntry = TextureChecksumHashTable[checksum & (TEXTURE_CHECKSUM_TABLE_SIZE - 1)];
+
+			if (pTexEntry != 0)
+			{
+				while (pTexEntry->Checksum != checksum)
+				{
+					pTexEntry = pTexEntry->pNext;
+					if (pTexEntry == 0)
+						goto notFound;
+				}
+			}
+			else
+			{
+			notFound:
+				if (!gSpoolLogFailedTextureAccess)
+				{
+					print_if_false(0, "Can't find texture from checksum %ld", checksum);
+					pTexEntry = reinterpret_cast<Texture*>(
+						*reinterpret_cast<i32*>(reinterpret_cast<char*>(gTextureFallbackRelated) + 4));
+				}
+
+				if (pTexEntry == 0)
+				{
+					print_if_false(
+						gSpoolTexturesRelated != 0,
+						"Run out of texture entries, increase MAXTEXTUREENTRIES in spool.cpp");
+
+					pTexEntry = gSpoolTexturesRelated;
+					gSpoolTexturesRelated = gSpoolTexturesRelated->pNext;
+
+					u32 bucket = checksum & (TEXTURE_CHECKSUM_TABLE_SIZE - 1);
+					pTexEntry->pPrevious = 0;
+					pTexEntry->pNext = TextureChecksumHashTable[bucket];
+					TextureChecksumHashTable[bucket] = pTexEntry;
+
+					if (pTexEntry->pNext != 0)
+						pTexEntry->pNext->pPrevious = pTexEntry;
+
+					pTexEntry->mRegion = a1;
+					pTexEntry->Checksum = checksum;
+					pTexEntry->field_12 &= 0xFFF0;
+					pTexEntry->Usage = 0;
+					pTexEntry->clut = 0;
+					pTexEntry->u0 = 0;
+					pTexEntry->v0 = 0;
+					pTexEntry->u1 = 0;
+					pTexEntry->v1 = 0;
+					*reinterpret_cast<u32*>(&pTexEntry->x) = 0;
+				}
+			}
+
+			pTexEntry->Usage++;
+			*pSlot = reinterpret_cast<u32>(pTexEntry);
+			pSlot++;
+		}
+	}
+
+	gSpoolLogFailedTextureAccess = 0;
+
+	// Remap each model's face texture-index (bit 0 of the face's packed
+	// "tag" dword) through pTexSlots (now full of Texture* after the loop
+	// above). Written with raw offsets, not POLY_F3 (spool.h's POLY_F3 is a
+	// different, already-VALIDATE'd 0x14-byte struct whose field layout
+	// does not line up with what this loop actually touches -- offset 16
+	// here overlaps POLY_F3::x2/y2 -- so this is a distinct, unnamed
+	// on-disk face format, not POLY_F3).
+	if (ppModelsCount != 0)
+	{
+		char* pModelSlot = reinterpret_cast<char*>(ppModels);
+
+		for (i32 n = 0; n < ppModelsCount; n++, pModelSlot += 4)
+		{
+			SModel* pModel = *reinterpret_cast<SModel**>(pModelSlot);
+			u16 numVerts = pModel->NumVertices;
+			u16 numNorms = pModel->NumNormals;
+			u16 numFaces = pModel->NumFaces;
+
+			char* pFace = reinterpret_cast<char*>(pModel) + 28 + 8 * (numVerts + numNorms);
+
+			for (u16 f = 0; f < numFaces; f++)
+			{
+				u32 tag = *reinterpret_cast<u32*>(pFace);
+
+				if (tag & 1)
+				{
+					i32* pTexIndexSlot = reinterpret_cast<i32*>(pFace + 16);
+					*pTexIndexSlot = reinterpret_cast<i32*>(pTexSlots)[*pTexIndexSlot];
+				}
+
+				print_if_false((tag & 0xFFFC0000) != 0, "Zero face length");
+
+				pFace += 4 * (tag >> 18);
+			}
+		}
+	}
+
+	Spool_RemoveUnusedTextures();
+	Pal_RemoveUnusedPalettes();
+
+	// Palette-list-1 (9 ints/entry: checksum + 8-int mini-palette) and
+	// palette-list-2 (129 ints/entry: checksum + 128-int full palette)
+	// tables sit right after the texture-checksum array, in the same
+	// {count, count*entry} shape used throughout this function. Re-walking
+	// via Spool_SkipPackets to find the tail is deliberate: it is the exact
+	// same computation the original repeats (k-walk / ii-walk / nn-walk all
+	// start from the same pPSXBuf+pPSXBuf[1] base), so reusing the already
+	//-verified helper is safer than re-deriving the walk a second time.
+	{
+		u32* pTail = Spool_SkipPackets(pPSXBuf);
+		i32* pPal1 = reinterpret_cast<i32*>(pTail) + ppModelsCount + 2 + texCount;
+		i32 pal1Count = *pPal1;
+		i32* pPal1Entries = pPal1 + 1;
+
+		if (pal1Count != 0)
+		{
+			i32* pChecksum = pPal1Entries;
+			i32* pData = pPal1Entries + 1;
+
+			for (i32 jj = 0; jj < pal1Count; jj++)
+			{
+				if (Pal_FindPaletteEntry(*pChecksum) == 0)
+					Pal_LoadPalette(*pChecksum, reinterpret_cast<u32*>(pData), 1);
+
+				pChecksum += 9;
+				pData += 9;
+			}
+		}
+
+		i32* pPal2 = pPal1Entries + pal1Count * 9;
+		i32 pal2Count = *pPal2;
+		i32* pPal2Entries = pPal2 + 1;
+
+		if (pal2Count != 0)
+		{
+			i32* pChecksum = pPal2Entries;
+			i32* pData = pPal2Entries + 1;
+
+			for (i32 kk = 0; kk < pal2Count; kk++)
+			{
+				if (Pal_FindPaletteEntry(*pChecksum) == 0)
+					Pal_LoadPalette(*pChecksum, reinterpret_cast<u32*>(pData), 2);
+
+				pChecksum += 129;
+				pData += 129;
+			}
+		}
+
+		gPSXParsingHasAnimPacket = 0;
+
+		// Pre-scan for a type-69 (anim packet) record before the checksum
+		// file is loaded; see gPSXParsingHasAnimPacket's declaration for
+		// why this write is otherwise unobserved.
+		{
+			char* pRec = reinterpret_cast<char*>(pPSXBuf) + pPSXBuf[1];
+			i32 recType = *reinterpret_cast<i32*>(pRec);
+
+			while (recType != -1)
+			{
+				u32 size = reinterpret_cast<u32*>(pRec)[1];
+				char* pData = pRec + 8;
+
+				if (recType == 69)
+					gPSXParsingHasAnimPacket = 1;
+
+				pRec = pData + size;
+				recType = *reinterpret_cast<i32*>(pRec);
+			}
+		}
+
+		texLoadChecksums(PSXRegion[a1].Filename);
+
+		i32* pTexRecCountPtr = pPal2Entries + pal2Count * 129;
+		i32 texRecCount = *pTexRecCountPtr;
+		i32* pTexRecOffsets = pTexRecCountPtr + 1;
+
+		if (texRecCount != 0)
+		{
+			i32 vramX = 0, vramY = 0;
+
+			for (i32 r = 0; r < texRecCount; r++)
+			{
+				char* pRecord = reinterpret_cast<char*>(pPSXBuf) + pTexRecOffsets[r];
+
+				i32 flags = *reinterpret_cast<i32*>(pRecord);
+				u32 format = *reinterpret_cast<u32*>(pRecord + 4);
+				u32 paletteChecksum = *reinterpret_cast<u32*>(pRecord + 8);
+				i32 texIndex = *reinterpret_cast<i32*>(pRecord + 12);
+				i32 width = *reinterpret_cast<u16*>(pRecord + 16);
+				i32 height = *reinterpret_cast<u16*>(pRecord + 18);
+				char* pTexData = pRecord + 20;
+
+				if (PSXRegion[a1].LowRes)
+					flags |= 0x800;
+
+				print_if_false(
+					format == 16 || format == 256 || format == 0x10000,
+					"Bad value for NumColours in PSX file");
+
+				Texture* pTex = reinterpret_cast<Texture**>(pTexSlots)[texIndex];
+
+				if (pTex == 0 || (pTex->field_12 & 0xF) != 0)
+					continue;
+
+				u32 checksum = pTex->Checksum;
+
+				// Two checksums that always mark the texture as alpha
+				// (bit 0 of flags), regardless of graphics mode. Literal
+				// values from the disassembly (originally -1319509333 and
+				// 1756868918 as signed decimal); no plaintext name for
+				// either survives anywhere this session could check.
+				if (checksum == 0xB159E2AB || checksum == 0x68B7B136)
+					flags |= 1;
+
+				if (!G_LOWGRAPHICS)
+				{
+					// High-graphics-only costume/paintable-texture
+					// registration. This exact group of 13 checksums (plus
+					// the 2 above) is what the old @BIGTODO note called
+					// "~15 magic hash constants"; they are transcribed
+					// exactly as seen in the disassembly (the shape is a
+					// compiler-generated binary-search switch whose case
+					// thresholds -- 0x3ED5F30B, 0x933EF22C, 0x1A501534 --
+					// are themselves three of these same case values, i.e.
+					// this really is a flat switch/case list in the
+					// source, not a range test). See
+					// Spool_RegisterCostumeTexture's comment above for what
+					// evidence exists about what they gate.
+					if (checksum == 0xCEB60740 || checksum == 0xE9587C6D ||
+						checksum == 0x933EF22C || checksum == 0x42985F7A ||
+						checksum == 0x4E1E5E1A || checksum == 0x7FFB7AAD ||
+						checksum == 0x3ED5F30B ||
+						checksum == 0x21AFE1A6 || checksum == 0x3BC194AE ||
+						checksum == 0x1A501534 || checksum == 0x08BD6474 ||
+						checksum == 0x1527743E || checksum == 0x197BC27A)
+					{
+						Spool_RegisterCostumeTexture(
+							reinterpret_cast<i32>(pTex),
+							static_cast<i16>(width),
+							static_cast<i16>(height));
+					}
+				}
+
+				// Textures too large for the native PSX/PVR formats
+				// (>256 either axis) get replaced by an LTI bmp, but only
+				// for the specific checksums in gLtiOversizeChecksums
+				// (real data extracted from the binary, see its
+				// declaration).
+				if (static_cast<u16>(width) > 0x100 || static_cast<u16>(height) > 0x100)
+				{
+					bool needsReplacement = false;
+					for (i32 t = 0; t < 6; t++)
+					{
+						if (gLtiOversizeChecksums[t] == checksum)
+						{
+							needsReplacement = true;
+							break;
+						}
+					}
+
+					if (needsReplacement)
+					{
+						char buf[256];
+						sprintf(buf, "lti\\tex_%8.8x.bmp", checksum);
+						print_if_false(1, "--- Loading Replacement Texture: %s\r\n", buf);
+
+						i32 ltiId = PCTex_LoadLtiTexture(buf, checksum, -1, 1);
+						pTex->clut = static_cast<u16>(ltiId);
+
+						format = 0xFFFFFF;
+						flags &= ~0x80000000;
+
+						i32 newWidth = 0, newHeight = 0;
+						PCTex_GetTextureSize(ltiId, &newWidth, &newHeight);
+
+						width = newWidth;
+						height = newHeight;
+
+						*reinterpret_cast<u32*>(&pTex->x) = reinterpret_cast<u32>(
+							VRAMRectPack(
+								0,
+								static_cast<u16>(width),
+								static_cast<u16>(height),
+								&vramX, &vramY,
+								16,
+								static_cast<u8>(2 * (flags & 1)),
+								checksum));
+					}
+				}
+
+				if (flags >= 0)
+				{
+					if (format == 0x10000)
+					{
+						i32 mipOffset = *reinterpret_cast<i32*>(pTexData);
+						pTexData += 8;
+
+						*reinterpret_cast<u32*>(&pTex->x) = reinterpret_cast<u32>(
+							VRAMRectPack(
+								0,
+								static_cast<u16>(width),
+								static_cast<u16>(height),
+								&vramX, &vramY,
+								16,
+								static_cast<u8>(2 * (flags & 1)),
+								checksum));
+
+						i32 clutRes = PCTex_CreateTexturePVR(
+							static_cast<u16>(width),
+							static_cast<u16>(height),
+							static_cast<u32>(mipOffset),
+							pTexData,
+							static_cast<u32>(flags),
+							"PSXPVR",
+							checksum);
+
+						print_if_false(
+							clutRes != -1,
+							"Texture cannot be smallvq.  checksum: %lx", checksum);
+
+						pTex->clut = static_cast<u16>(clutRes);
+					}
+					else if (format == 256)
+					{
+						i32 roundedWidth = (static_cast<u16>(width) + 1) & ~1;
+
+						*reinterpret_cast<u32*>(&pTex->x) = reinterpret_cast<u32>(
+							VRAMRectPack(
+								0, roundedWidth, static_cast<u16>(height),
+								&vramX, &vramY,
+								8,
+								static_cast<u8>(2 * (flags & 1)),
+								checksum));
+
+						if (!gPrintStubbed)
+							stubbed_printf("stubbed out: LoadImage");
+
+						u32 loadFlags = (flags & 0x800) ? 17 : 1;
+
+						pTex->clut = static_cast<u16>(PCTex_CreateTexture256(
+							roundedWidth,
+							static_cast<u16>(height),
+							pTexData,
+							reinterpret_cast<const u16*>(Spool_GetPalette(paletteChecksum, a1)),
+							loadFlags,
+							"PSX256BMP",
+							0,
+							static_cast<i32>(checksum)));
+					}
+					else if (format == 16)
+					{
+						i32 roundedWidth = (static_cast<u16>(width) + 3) & ~3;
+
+						*reinterpret_cast<u32*>(&pTex->x) = reinterpret_cast<u32>(
+							VRAMRectPack(
+								0, roundedWidth, static_cast<u16>(height),
+								&vramX, &vramY,
+								4,
+								static_cast<u8>(2 * (flags & 1)),
+								checksum));
+
+						if (!gPrintStubbed)
+							stubbed_printf("stubbed out: LoadImage");
+
+						i32 loadFlags = (flags & 0x800) ? 17 : 1;
+
+						pTex->clut = static_cast<u16>(PCTex_CreateTexture16(
+							roundedWidth,
+							static_cast<u16>(height),
+							pTexData,
+							reinterpret_cast<const u16*>(Spool_GetPalette(paletteChecksum, a1)),
+							"PSX16BMP",
+							0,
+							static_cast<i32>(checksum),
+							loadFlags));
+					}
+
+					// Common tail (original's LABEL_111): finalize the
+					// remaining Texture fields and, in low-graphics mode,
+					// register costume textures by region-filename match.
+					tag_S_Pal* pPal = Pal_FindPaletteEntry(paletteChecksum);
+					if (pPal != 0)
+						pPal->Usage++;
+
+					pTex->pPalette = pPal;
+					pTex->u1 = static_cast<u8>(width - 1);
+					pTex->u3 = static_cast<u8>(width - 1);
+					pTex->tpage = 0;
+					pTex->u0 = 0;
+					pTex->v0 = 0;
+					pTex->v1 = 0;
+					pTex->u2 = 0;
+					pTex->v2 = static_cast<u8>(height - 1);
+					pTex->v3 = static_cast<u8>(height - 1);
+
+					// PSX GPU texture-window register packing, literal
+					// bit-arithmetic straight from the disassembly.
+					u32 negH8 = static_cast<u32>(-height) & 0xF8u;
+					pTex->TexWin = (4u * (negH8 | 0xF8800000u)) |
+						((static_cast<u32>(-width) >> 3) & 0x1Fu);
+
+					pTex->field_12 = static_cast<u16>(
+						(pTex->field_12 & 0xFF00) | (16 * (flags & 1)) | 1);
+
+					if (G_LOWGRAPHICS)
+					{
+						const char* name = PSXRegion[a1].Filename;
+						if (strcmpi(name, "spArmour") == 0 ||
+							strcmpi(name, "spidey") == 0 ||
+							strnicmp(name, "sp_tex", 6) == 0)
+						{
+							Spool_RegisterCostumeTexture(
+								reinterpret_cast<i32>(pTex),
+								static_cast<i16>(width),
+								static_cast<i16>(height));
+						}
+					}
+				}
+				else
+				{
+					*reinterpret_cast<u32*>(&pTex->x) = reinterpret_cast<u32>(
+						VRAMRectPack(
+							0,
+							static_cast<u16>(width),
+							static_cast<u16>(height),
+							&vramX, &vramY,
+							16,
+							static_cast<u8>(2 * (flags & 1)),
+							checksum));
+
+					pTex->clut = static_cast<u16>(PCTex_CreateTexturePVRById(pTexData, 0));
+				}
+			}
+		}
+	}
+
+	PSXRegion[a1].IsSuper = 0;
+	PSXRegion[a1].pTexWibData = 0;
+	gPSXParsingHasAnimPacket = 0;
+	PSXRegion[a1].pColourPulseData = 0;
+
+	// Second, real pass over the same record chain (same base as the
+	// pre-scan and as Spool_SkipPackets), this time dispatching every
+	// record by type instead of skipping to the end. Small integer ids are
+	// PSX-format record-type codes; the three big ids are FourCC tags
+	// confirmed by round-tripping struct.pack('<I', id) to ASCII (see each
+	// case).
+	{
+		char* pRec = reinterpret_cast<char*>(pPSXBuf) + pPSXBuf[1];
+		i32 recType = *reinterpret_cast<i32*>(pRec);
+
+		while (recType != -1)
+		{
+			u32 size = reinterpret_cast<u32*>(pRec)[1];
+			char* pData = pRec + 8;
+
+			switch (recType)
+			{
+				case 6:
+					PSXRegion[a1].pTexWibData = reinterpret_cast<u32*>(pData);
+					M3dInit_FlagZeroWibbles(reinterpret_cast<STexWibItemInfo*>(pData));
+					gSpoolRegionRelatedTwo = reinterpret_cast<i32>(pData) - 8;
+					break;
+
+				case 7:
+					PSXRegion[a1].pColourPulseData = reinterpret_cast<u32*>(pData);
+					break;
+
+				case 10:
+					M3dZone_SetZone(-(EnvRegions[0] != a1), reinterpret_cast<u32*>(pData));
+					break;
+
+				case 42:
+				case 44:
+					PSXRegion[a1].pAnimFile = reinterpret_cast<u32*>(pData);
+					PSXRegion[a1].IsSuper = 1;
+					break;
+
+				case 69:
+					PreProcessAnimPacket(pPSXBuf, reinterpret_cast<u32*>(pData));
+					break;
+
+				case 0x52454948: // "HIER"
+					PSXRegion[a1].pHierarchy = reinterpret_cast<u16*>(pData);
+					break;
+
+				case 0x6B6E6843: // "Chnk"
+					PSXRegion[a1].pChunkData = reinterpret_cast<u32*>(pData);
+					break;
+
+				case 0x73424752: // "RGBs"
+				{
+					PSXRegion[a1].pColourTable = reinterpret_cast<u32*>(pData);
+
+					u8* pByte = reinterpret_cast<u8*>(pData);
+					for (u32 n = 0; n < (size >> 2); n++)
+					{
+						pByte[4 * n]     = gConvertedColors[pByte[4 * n]];
+						pByte[4 * n + 1] = gConvertedColors[pByte[4 * n + 1]];
+					}
+					break;
+				}
+
+				default:
+					break;
+			}
+
+			pRec = pData + size;
+			recType = *reinterpret_cast<i32*>(pRec);
+		}
+	}
+
+	LoadPushOffsets();
+	M3dInit_ParsePSX(a1);
+	FreePushOffsets();
+
+	PSXRegion[a1].Usable = 1;
 }
 
 // @Ok
@@ -1483,6 +2135,7 @@ void validate_SPSXRegion(void)
 	VALIDATE_SIZE(SPSXRegion, 0x44);
 
 	VALIDATE(SPSXRegion, Filename, 0x0);
+	VALIDATE(SPSXRegion, IsSuper, 0x9);
 	VALIDATE(SPSXRegion, Usable, 0xA);
 	VALIDATE(SPSXRegion, Protected, 0xB);
 	VALIDATE(SPSXRegion, pModelChecksums, 0xC);
@@ -1495,6 +2148,7 @@ void validate_SPSXRegion(void)
 	VALIDATE(SPSXRegion, pColourTable, 0x28);
 	VALIDATE(SPSXRegion, pTexWibData, 0x2C);
 	VALIDATE(SPSXRegion, pColourPulseData, 0x30);
+	VALIDATE(SPSXRegion, pChunkData, 0x34);
 
 	VALIDATE(SPSXRegion, NumParts, 0x38);
 

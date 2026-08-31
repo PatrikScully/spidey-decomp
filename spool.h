@@ -93,9 +93,16 @@ struct SPSXRegion {
 	u32 *pTexWibData;
 	// offset: 002C
 	u32 *pColourPulseData;
-	// offset: 0030
-	i16 *mpAnimTranslation;
 	// offset: 0034
+	// Was "mpAnimTranslation" (i16*): renamed while implementing
+	// ProcessNewPSX (0x4C9A60). The record type that fills this field is a
+	// literal FourCC in the on-disk PSX chunk list, decimal 1802397763 ==
+	// 0x6B6E6843 little-endian == "Chnk" as ASCII bytes, which is chunk
+	// (breakable-debris, see chunk.cpp/CChunk) data, not anim-translation
+	// data. Real evidence: struct.pack('<I', 1802397763) round-trips to
+	// b'Chnk'. Not used anywhere else in the repo yet, so safe to correct.
+	u32 *pChunkData;
+	// offset: 0038
 	u16 NumParts;
 	/*
 	// offset: 0036
