@@ -167,18 +167,20 @@ void gte_SetRotMatrix(MATRIX* a1)
 	}
 }
 
-// auto_inline off: these are real out-of-line functions in the original binary. With
-// /Ob2 the compiler otherwise inlines these trivial forward-to-original bodies into
-// their one caller, turning the caller's real "call ADDR" into "mov eax,ADDR; call eax"
-// and desyncing every instruction after it.
+// auto_inline off: these are real out-of-line functions in the original binary (each has
+// exactly one caller in this TU). With /Ob2 the compiler would otherwise inline them into
+// that caller, turning the caller's real "call ADDR" into inlined code and desyncing the
+// caller's disassembly. This does not change behavior, only codegen shape.
 #pragma auto_inline(off)
 
 // unnamed helper, address 0x0046E990. Called once by M3dAsm_LineColijPreprocessItemsZoned
-// with the fixed-point start/end coordinate arrays and the address of a local that the
-// caller never reads back afterward. Sorts a1[i]/a2[i] per axis (so a1 <= a2), toggling
-// bit i of *a3 whenever a swap happens, then stores the per-axis a2-a1 deltas into
-// gRotMatrix (idb_globals.txt: 0x00610B20 = gRotMatrix; here it is reused as scratch
-// storage for the sorted box's extents, read back by gsub_46EB30 below).
+// with the fixed-point start/end coordinate arrays and the address of a local the caller
+// DOES read back afterward, as a per-axis swap bitmask (confirmed against Hex-Rays: the
+// caller casts it to a byte and passes it straight into gsub_46EA20 as the flags
+// parameter). Sorts a1[i]/a2[i] per axis (so a1 <= a2), toggling bit i of *a3 whenever a
+// swap happens, then stores the per-axis a2-a1 deltas into gRotMatrix (idb_globals.txt:
+// 0x00610B20 = gRotMatrix; here it is reused as scratch storage for the sorted box's
+// extents, read back by gsub_46EB30 below).
 // @Ok
 // @Matching
 EXPORT void gsub_46E990(i32 *a1, i32 *a2, i32 *a3)
@@ -213,60 +215,122 @@ EXPORT void gsub_46E990(i32 *a1, i32 *a2, i32 *a3)
 }
 
 // unnamed helper, address 0x0046EA20. Called once per item by
-// M3dAsm_LineColijPreprocessItemsZoned with the per-model pointer looked up from
-// CItemRelatedList[region*17][model]; its return value is discarded by the caller.
-// Not yet decompiled.
-// @SMALLTODO
-i32 gsub_46EA20(void *a1)
+// M3dAsm_LineColijPreprocessItemsZoned (and by M3dAsm_LineColijPreprocessItems) with the
+// per-model pointer looked up from CItemRelatedList[region*17][model], the line's sorted
+// start/end coords (flat, not a Vector by value), the axis-swap bitmask gsub_46E990 wrote
+// through its 3rd argument, and the item's fixed-point position. pModel[3]/[4]/[5] each
+// pack two i16 model-space extents per axis (low 16 bits, high 16 bits). Builds the
+// item's world-space bounding box from those extents and writes it into the two output
+// Vector-shaped int[3] pointers, mirroring the box about (start+end) per axis whenever
+// gsub_46E990 had to swap that axis, so both corners line up with the line's (now always
+// start <= end) coordinates. Return value discarded by every caller, so it is void here.
+// @Ok
+EXPORT void gsub_46EA20(const i32 *pModel, i32 startX, i32 startY, i32 startZ,
+                         i32 endX, i32 endY, i32 endZ, u8 flags,
+                         i32 posX, i32 posY, i32 posZ, i32 *pOut1, i32 *pOut2)
 {
-	typedef i32 (*func_ptr)(void *);
-	func_ptr func = (func_ptr)0x0046EA20;
+	i32 loX = (i16)pModel[3] + posX + 2;
+	i32 hiX = (pModel[3] >> 16) + posX - 2;
 
-	return func(a1);
+	if (flags & 1)
+	{
+		pOut1[0] = startX + endX - loX;
+		pOut2[0] = startX + endX - hiX;
+	}
+	else
+	{
+		pOut1[0] = hiX;
+		pOut2[0] = loX;
+	}
+
+	i32 loY = (i16)pModel[4] + posY + 2;
+	i32 hiY = (pModel[4] >> 16) + posY - 2;
+
+	if (flags & 2)
+	{
+		pOut1[1] = startY + endY - loY;
+		pOut2[1] = startY + endY - hiY;
+	}
+	else
+	{
+		pOut1[1] = hiY;
+		pOut2[1] = loY;
+	}
+
+	i32 loZ = (i16)pModel[5] + posZ + 2;
+	i32 hiZ = (pModel[5] >> 16) + posZ - 2;
+
+	if (flags & 4)
+	{
+		pOut1[2] = startZ + endZ - loZ;
+		pOut2[2] = startZ + endZ - hiZ;
+	}
+	else
+	{
+		pOut1[2] = hiZ;
+		pOut2[2] = loZ;
+	}
 }
 
 // unnamed helper, address 0x0046EB30. Called once per item by
-// M3dAsm_LineColijPreprocessItemsZoned with the fixed-point start coords, the item's
-// fixed-point position, and the fixed-point end coords (all Vector-by-value); returns
-// a bool the caller tests. Not yet decompiled.
-// @MEDIUMTODO
-i32 gsub_46EB30(Vector a1, Vector a2, Vector a3)
+// M3dAsm_LineColijPreprocessItemsZoned (and by M3dAsm_LineColijPreprocessItems) with the
+// line's sorted start (a1..a3) and end (a4..a6) coords and the item's box corners as
+// written by gsub_46EA20 (a7..a9 = pOut1, a10..a12 = pOut2). Returns nonzero when the
+// line segment intersects the box (a slab/cross-product test). Reads the per-axis
+// end-start deltas back out of gRotMatrix's diagonal, where gsub_46E990 stashed them as
+// scratch (see its comment above).
+// @Ok
+EXPORT i32 gsub_46EB30(i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, i32 a6,
+                        i32 a7, i32 a8, i32 a9, i32 a10, i32 a11, i32 a12)
 {
-	typedef i32 (*func_ptr)(Vector, Vector, Vector);
-	func_ptr func = (func_ptr)0x0046EB30;
+	if (a7 > a4 || a8 > a5 || a9 > a6 || a10 < a1 || a11 < a2 || a12 < a3)
+		return 0;
 
-	return func(a1, a2, a3);
+	i32 dx = *reinterpret_cast<i32*>(&gRotMatrix[0][0]);
+	i32 dy = *reinterpret_cast<i32*>(&gRotMatrix[1][1]);
+	i32 dz = *reinterpret_cast<i32*>(&gRotMatrix[2][2]);
+
+	i32 ey = a11 - a2;
+	i32 ez = a12 - a3;
+	i32 ex = a10 - a1;
+
+	i32 dxez = dx * ez;
+	i32 dyez = dy * ez;
+
+	if (dyez - dz * ey >= 0)
+	{
+		if (dx * ey - dy * ex < 0)
+			return (dy * (a9 - a3) - dz * ey <= 0) && (dx * ey - dy * (a7 - a1) >= 0);
+
+		return (dz * ex - dx * (a9 - a3) >= 0) && (dx * (a8 - a2) - dy * ex <= 0);
+	}
+
+	if (dz * ex - dxez < 0)
+		return (dz * ex - dx * (a9 - a3) >= 0) && (dx * (a8 - a2) - dy * ex <= 0);
+
+	if (dyez - dz * (a8 - a2) >= 0 && dz * (a7 - a1) - dxez <= 0)
+		return 1;
+
+	return 0;
 }
 
 #pragma auto_inline(on)
 
-// @NotOk
-// Residue: 88 mnemonic diffs left (down from 127 on the first honest pass), instruction
-// count also differs (152 original vs 167 built in the same window), so part of this is
-// a real gap, not pure scheduling. The item loop itself (null check, start/end/itemPos
-// >>12 fixed-point extraction, the mFlags&0x21 / mInquiry shortcut, the do-while over the
-// CItem* array) matches exactly, including the gsub_46E990 call becoming a real
-// out-of-line call after adding #pragma auto_inline(off) around the three new helper
-// stubs (they were getting inlined into this function under /Ob2, desyncing everything
-// after the call). The remaining diffs start right after that call: the original caches
-// CItemRelatedList[pItem->mRegion*17] in a register (ebx) that survives across the
-// mFlags branch and folds the table's base address as an immediate
-// (mov ebx,[ecx*4+6B2454h]); our build instead loads the table's own address from a data
-// slot first (mov edx,[reloc]) then indexes off that, one extra instruction, and does not
-// keep the value live in a dedicated register across the branch. Tried: hoisting the
-// region lookup into its own u8 local before the multiply (no change), computing the
-// model pointer only inside the else-if branch instead of unconditionally before it
-// (worse, 99 diffs, confirms the original really does compute it unconditionally),
-// keeping start/end/itemPos as flat i32[3] with Vector temporaries built only at the
-// gsub_46EB30 call site (worse, 126 diffs). 4 source hypotheses tried total, see
-// attempts log. Below the 15-hypothesis medium-size bar, revisit; the constant-fold
-// behaviour of CItemRelatedList (declared `static i32*** const` in ob.h) under /Ob2
-// looks like the real lead to chase next.
+// @Ok
+// Fixed against Hex-Rays decompile of 0x0046E7B0 (2026-08-31): the old version had two
+// real bugs, not just register-allocation residue. (1) The "unused" bitmask local IS read
+// back: gsub_46E990 toggles bit i of it whenever it swaps axis i, and the caller then
+// casts it to a byte and feeds it into gsub_46EA20 as a flags argument. (2) gsub_46EA20
+// and gsub_46EB30 were being called with the wrong shape entirely (gsub_46EA20 took only
+// the model pointer; gsub_46EB30 took Vector-by-value start/itemPos/end). Their real
+// signatures (confirmed against the disassembly of both) are flat-int and very different:
+// gsub_46EA20 builds the item's world-space bounding box from the model's packed extents
+// and the swap flags, gsub_46EB30 does a line-vs-box intersection test against that box.
+// See both functions' updated comments above for the full call shape.
 void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineInfo *pInfo, u16 Inquiry)
 {
 	Vector start = {0, 0, 0};
 	Vector end = {0, 0, 0};
-	Vector itemPos = {0, 0, 0};
 
 	CItem *pItem = *ppItem;
 
@@ -280,8 +344,8 @@ void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineI
 		end.vy = pInfo->EndCoords.vy >> 12;
 		end.vz = pInfo->EndCoords.vz >> 12;
 
-		i32 unused = 0;
-		gsub_46E990(reinterpret_cast<i32*>(&start), reinterpret_cast<i32*>(&end), &unused);
+		i32 swapFlags = 0;
+		gsub_46E990(reinterpret_cast<i32*>(&start), reinterpret_cast<i32*>(&end), &swapFlags);
 
 		do
 		{
@@ -293,15 +357,20 @@ void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineI
 			}
 			else if (pItem->mInquiry != Inquiry)
 			{
-				void *pModel = pRegionEntry[pItem->mModel];
+				const i32 *pModel = reinterpret_cast<const i32*>(pRegionEntry[pItem->mModel]);
 
-				itemPos.vx = pItem->mPos.vx >> 12;
-				itemPos.vy = pItem->mPos.vy >> 12;
-				itemPos.vz = pItem->mPos.vz >> 12;
+				i32 posX = pItem->mPos.vx >> 12;
+				i32 posY = pItem->mPos.vy >> 12;
+				i32 posZ = pItem->mPos.vz >> 12;
 
-				gsub_46EA20(pModel);
+				i32 boxA[3];
+				i32 boxB[3];
 
-				if (!gsub_46EB30(start, itemPos, end))
+				gsub_46EA20(pModel, start.vx, start.vy, start.vz, end.vx, end.vy, end.vz,
+				            static_cast<u8>(swapFlags), posX, posY, posZ, boxA, boxB);
+
+				if (!gsub_46EB30(start.vx, start.vy, start.vz, end.vx, end.vy, end.vz,
+				                 boxA[0], boxA[1], boxA[2], boxB[0], boxB[1], boxB[2]))
 				{
 					pItem->mInquiry = Inquiry;
 				}
@@ -902,6 +971,18 @@ i32 GetClut(int, int a2)
 	return a2 - gClutRelated;
 }
 
+// Researched 2026-08-31 via Hex-Rays decompile of 0x0046ECB0: this is a non-zoned sibling
+// of M3dAsm_LineColijPreprocessItemsZoned. Same mFlags&0x21/mInquiry shortcut and CItem
+// linked-list walk (mNextItem at offset 0x20, not the ppItem array Zoned uses), and it
+// calls gsub_46EA20/gsub_46EB30 the same way Zoned now does. It also builds and uses the
+// item's rotation: if mAngles (offset 0x14, u16/u16 pair read as one dword) is nonzero, it
+// calls two more not-yet-decompiled helpers, sub_46D1E0 (0x0046D1E0, builds a 3x3 matrix
+// from the angles) and sub_46CFC0 (0x0046CFC0, matrix*vector transform, called twice on
+// the box corners), then re-sorts the transformed corners with gsub_46E990 before the
+// gsub_46EA20/gsub_46EB30 calls. Leaving this as a forward stub: it needs those two new
+// leaf helpers decompiled first (leaf-first rule), and the whole function is large (the
+// Hex-Rays pseudocode alone is much bigger than Zoned). Good next candidate once
+// sub_46D1E0/sub_46CFC0 are done.
 // @BIGTODO
 void M3dAsm_LineColijPreprocessItems(CItem* pItem, i32 ModelTable, SLineInfo* pInfo, u16 Inquiry)
 {
