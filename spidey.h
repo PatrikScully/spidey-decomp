@@ -228,7 +228,20 @@ class CPlayer : public CSuper
 
 		CSVector field_D4E;
 
-		PADDING((0xD80-(0xD4E))-sizeof(CSVector));
+		PADDING((0xD60)-(0xD4E)-sizeof(CSVector));
+
+		// 0 = near web-attach point (field_D64) is valid, 1 = far one
+		// (field_D70) is valid. Set by CheckSwingWebAvailability.
+		u8 field_D60;
+
+		PADDING(0xD64-0xD60-1);
+
+		// candidate swing-web attach points, computed by
+		// CheckSwingWebAvailability. field_D60 selects which is active.
+		CVector field_D64;
+		CVector field_D70;
+
+		PADDING(0xD80-0xD70-sizeof(CVector));
 
 		CSVector field_D80;
 		CSVector field_D86;
@@ -402,7 +415,7 @@ class CPlayer : public CSuper
 		EXPORT i32 CheckRunIntoWall(void);
 		EXPORT i32 CheckStickToCeiling(void);
 		EXPORT void CheckStickToWall(void);
-		EXPORT void CheckSwingWebAvailability(SLineInfo *);
+		EXPORT u8 CheckSwingWebAvailability(SLineInfo *);
 		EXPORT void CheckSwitchToGrabbedMode(CVector const *,CVector *);
 		EXPORT void CheckWebShot(void);
 		EXPORT u8 CheckZipWebAvailability(SLineInfo *,i32);
