@@ -118,7 +118,11 @@ class CPlayer : public CSuper
 		CSmokeTrail* field_58C;
 		CSmokeTrail* field_590;
 
-		PADDING(0x5D0-0x590-4);
+		// Per-hook previous trail position (CVector) used by UpdateTrails to
+		// compute intermediate trail steps. [0] = hook 1, [1] = hook 0.
+		CVector field_594[2];
+
+		PADDING(0x5D0-0x594-0x18);
 
 
 		i32 field_5D0;

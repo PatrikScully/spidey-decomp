@@ -6,6 +6,7 @@
 #include "ps2funcs.h"
 #include <cmath>
 #include <cstring>
+#include <new>
 #include "ps2lowsfx.h"
 #include "ps2redbook.h"
 #include "utils.h"
@@ -3634,10 +3635,148 @@ void CPlayer::UpdateOffscreenSpideySenseIndicatorList(void)
 	}
 }
 
-// @MEDIUMTODO
+// Manages the two web-hook smoke trails: field_58C (hook 1) and field_590
+// (hook 0). Based on mAnim/mFrame it creates, updates, or destroys them,
+// computing intermediate trail steps via CalculateIntermediateTrailSteps.
+// field_594[0]/[1] hold the previous per-hook trail offset (pos - mPos).
+// @Ok
 void CPlayer::UpdateTrails(void)
 {
-    printf("CPlayer::UpdateTrails(void)");
+	u8 deleteFlag = 0;  // also destroy field_590 when leaving the web anims
+	u8 createFlag = 0;  // create field_590 during anim 106, frames 2..7
+	i32 action = 0;     // field_58C: 0 none, 1 create, 2 update, 3 destroy
+
+	if (this->mAnim == 104)
+	{
+		if (this->mFrame > 6)
+			action = 3;
+		else if (this->mFrame <= 0)
+			action = (this->field_58C == 0) ? 0 : 2;
+		else
+			action = (this->field_58C == 0) ? 1 : 2;
+	}
+	else if (this->mAnim == 106)
+	{
+		if (this->mFrame > 7)
+		{
+			deleteFlag = 1;
+			action = 3;
+		}
+		else if (this->mFrame > 1)
+		{
+			if (this->field_590 == 0)
+				createFlag = 1;
+			action = (this->field_58C == 0) ? 1 : 2;
+		}
+		else
+		{
+			action = (this->field_58C == 0) ? 0 : 2;
+		}
+	}
+	else
+	{
+		deleteFlag = 1;
+		action = 3;
+	}
+
+	if (action == 3)
+	{
+		if (this->field_58C != 0)
+		{
+			this->field_58C->~CSmokeTrail();
+			this->field_58C = 0;
+		}
+		if (deleteFlag != 0 && this->field_590 != 0)
+		{
+			this->field_590->~CSmokeTrail();
+			this->field_590 = 0;
+		}
+	}
+	else if (action == 1)
+	{
+		CVector pos;
+		pos.vx = 0;
+		pos.vy = 0;
+		pos.vz = 0;
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pos), this, 1);
+		void *mem = CBit::operator new(88);
+		CSmokeTrail *trail = 0;
+		if (mem != 0)
+			trail = ::new (mem) CSmokeTrail(&pos, 6,
+					this->field_580 & 0xFF,
+					(this->field_580 >> 8) & 0xFF,
+					(this->field_580 >> 16) & 0xFF);
+		this->field_58C = trail;
+		this->field_594[0] = pos - this->mPos;
+	}
+	else if (action == 2)
+	{
+		CVector steps[4];
+		for (i32 i = 0; i < 4; i++)
+		{
+			steps[i].vx = 0;
+			steps[i].vy = 0;
+			steps[i].vz = 0;
+		}
+		CVector pos;
+		pos.vx = 0;
+		pos.vy = 0;
+		pos.vz = 0;
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pos), this, 1);
+		CVector delta = pos - this->mPos;
+		i32 count = this->CalculateIntermediateTrailSteps(&delta, &this->field_594[0], steps);
+		if (count > 0)
+		{
+			CVector *p = steps;
+			for (i32 j = count; j != 0; --j)
+				this->field_58C->SetPos(*p++);
+		}
+		this->field_58C->SetPos(pos);
+		this->field_594[0] = pos - this->mPos;
+	}
+
+	if (createFlag != 0)
+	{
+		CVector pos;
+		pos.vx = 0;
+		pos.vy = 0;
+		pos.vz = 0;
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pos), this, 0);
+		void *mem = CBit::operator new(88);
+		CSmokeTrail *trail = 0;
+		if (mem != 0)
+			trail = ::new (mem) CSmokeTrail(&pos, 6,
+					this->field_580 & 0xFF,
+					(this->field_580 >> 8) & 0xFF,
+					(this->field_580 >> 16) & 0xFF);
+		this->field_590 = trail;
+		this->field_594[1] = pos - this->mPos;
+	}
+	else if (this->field_590 != 0)
+	{
+		CVector steps[4];
+		for (i32 i = 0; i < 4; i++)
+		{
+			steps[i].vx = 0;
+			steps[i].vy = 0;
+			steps[i].vz = 0;
+		}
+		CVector pos;
+		pos.vx = 0;
+		pos.vy = 0;
+		pos.vz = 0;
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pos), this, 0);
+		CVector delta = pos - this->mPos;
+		i32 count = this->CalculateIntermediateTrailSteps(&delta, &this->field_594[1], steps);
+		if (count > 0)
+		{
+			CVector *p = steps;
+			for (i32 j = count; j != 0; --j)
+				this->field_590->SetPos(*p++);
+		}
+		this->field_590->SetPos(pos);
+		this->field_594[1] = pos - this->mPos;
+	}
 }
 
 // @MEDIUMTODO
