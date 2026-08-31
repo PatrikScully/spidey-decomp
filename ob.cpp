@@ -423,16 +423,11 @@ void CSuper::SetOutlineRGB(
 	this->outlineB = a4;
 }
 
-// @SMALLTODO
-// Slightly different register allocation, edx and eax are swapped
+// @Ok
+// Functional only, checked against the Hex-Rays decompile of 0x460DA0.
+// Not byte matched: register allocation differs (edx/eax swapped) and was
+// not chased further per session policy (functional decomp is the bar).
 void CSuper::UpdateFrame(void){
-
-	typedef void (FASTCALL *func_ptr)(CSuper*, void*);
-	
-	func_ptr func = (func_ptr)0x00460DA0;
-	func(this, 0);
-	
-	return;
 
 	char v1; // bl
 	i32 v2; // esi
