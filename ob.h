@@ -268,8 +268,12 @@ public:
 	i16 field_152;
 	i16 field_154;
 
-
-	PADDING(0x158-0x154-2);
+	// Was PADDING(2). Confirmed a real i16 field: RenderSuperItem (ps2m3d.cpp,
+	// 0x474C10) reads it, gated by `mExtraFlags & 8`, to temporarily override
+	// the GTE geometry-offset W register (the same global M3d_RenderSetup
+	// manages as gM3dGeomOffW) with `field_156 - cameraY` for this item's
+	// render. Purpose beyond that one read site not confirmed.
+	i16 field_156;
 
 	u8 field_158;
 

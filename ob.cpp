@@ -835,6 +835,7 @@ void validate_CSuper(void)
 	VALIDATE(CSuper, field_150, 0x150);
 	VALIDATE(CSuper, field_152, 0x152);
 	VALIDATE(CSuper, field_154, 0x154);
+	VALIDATE(CSuper, field_156, 0x156);
 
 	VALIDATE(CSuper, field_158, 0x158);
 
