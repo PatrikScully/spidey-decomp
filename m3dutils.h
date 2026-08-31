@@ -15,7 +15,11 @@ struct SHook
 EXPORT void M3dUtils_ReadLinksPacket(CSuper*, void*);
 EXPORT void M3dUtils_InBetween(CSuper*);
 EXPORT void M3dUtils_BuildPose(CSuper*);
-EXPORT void M3dUtils_InterpolateVectors(i32, i32, u32* ,CItem*, i32, i32);
+// @Note: the 4th param was typed CItem* before this was decompiled; the
+// original reads mFrame/mAnim/mAnimMode (CSuper-only fields, see the
+// definition) through it, and every call site already passes a CSuper*,
+// so this is retyped to CSuper* here.
+EXPORT void M3dUtils_InterpolateVectors(i32, i32, u32*, CSuper*, i32, i32);
 EXPORT void M3dUtils_GetHookPosition(VECTOR*, CSuper*, int);
 EXPORT void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*);
 EXPORT void M3dUtils_ReadHooksPacket(CSuper*, void*);
