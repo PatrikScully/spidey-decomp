@@ -81,8 +81,14 @@ INLINE i32 CAIProc::Wait(void)
 	return 0;
 }
 
-// @NotOk
-// Fix casts
+// @Ok
+// No standalone address confirmed in names.json: always inlined at its call
+// sites in the original (verified against CAIProc_Fall::CAIProc_Fall at
+// 0x4015c0, which inlines this whole body, and
+// CAIProc_StateSwitchSendMessage::CAIProc_StateSwitchSendMessage at
+// 0x401e60, which confirms the MarkAIProcList call is skipped there because
+// STATE_SWITCH_SEND_MESSAGE & 0x40000 is nonzero, and the field_288 &= ~a4
+// line vanishes because a4 is 0 there).
 void INLINE CAIProc::AttachProc(AIProcType a2, CBaddy* a3, int a4)
 {
 	this->pBaddy = a3;
