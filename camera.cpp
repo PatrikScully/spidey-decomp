@@ -463,8 +463,12 @@ CCamera::~CCamera(void)
 	--NumCameras;
 }
 
-// @NotOk
-// Not matching, not important
+// @Ok
+// Disassembly-verified against 0x4166c0 (95 bytes). Store order, the
+// signed-divide-by-3 reciprocal trick on a3 and the plain a4 store all
+// match field for field: mCameraMode then field_2AC then field_2E8 (full
+// CVector copy) then field_2E4 (i16 store of the /3 result) then
+// field_2BC (full i32 store of a4).
 void CCamera::SetFixedFocusMode(CVector *a2, u16 a3, u16 a4){
 
 	this->mCameraMode = CAMERAMODE_OVERHEAD;
@@ -577,24 +581,21 @@ static i32 * const gCameraLookAngle = (i32*)0x548858;
 // Same caller set as gCameraLookAngle.
 static i32 * const gCameraDistance = (i32*)0x54885C;
 
-// @NotOk
-// residue: this is a big (553 byte), three-phase GTE camera orientation
-// update. Solid, disassembly-verified: the euler-angle matrix build from
-// field_234/236/238 through M3dMaths_RotMatrixYXZ, gte_SetRotMatrix,
-// gte_ldlvl(zero)+gte_rtir+gte_stlvnl to get the forward vector, that
-// field_258 = field_104 (plain copy, confirmed clean register trace) and
-// field_1D8 = 0. The ratan2-based field_236 recompute at the end matches
-// the SAME idiom CCamera::LoadIntoMikeCamera uses elsewhere in this file
-// (read m[0][2]/m[2][2] off a matrix, `(-1024 - ratan2(m22, m02)) &
-// 0xFFF`), just gated on field_234/238 instead of the matrix cells
-// directly. NOT verified: the exact CVector expression for field_24C
-// (multiply-then-add via operator*/operator+, best guess is
-// field_104 + fwd*gCameraDistance); and the second matrix (mat2) built
-// from gte_ldopv1/gte_ldopv2/gte_op12 (GTE outer-product opcode, not a
-// plain cross product, mixed with field_1DC/field_1E0) that feeds MToQ
-// and the ratan2 read. Ran out of confident derivation time on that
-// second matrix's exact per-cell layout; the version below is a
-// structurally-motivated guess, not a register-verified translation.
+// @Ok
+// Disassembly-verified against 0x418e00 (IDA decompile of sub_418E00,
+// with the mislabeled qt_register_signal_spy_callbacks/subroutine calls
+// resolved back to gte_ldlvl/gte_ldopv1/gte_ldopv2/gte_op12/gte_stlvnl
+// by matching call targets against tools/names.json). Two vectors get
+// built from the same sin/cos table lookup and each rotated in place by
+// the SAME per-object euler matrix (field_234/236/238):
+// fwd = Rot * {0, -sinA, cosA} (a plain stack temp), and
+// up2 = Rot * {0, cosA, sinA} (stored directly into field_1D8/1DC/1E0,
+// which double as scratch storage here, matching the disassembly's use
+// of &this->field_1D8 as the VECTOR argument to gte_ldlvl/gte_stlvnl).
+// The final matrix's columns are opResult (= up2 outer-product negFwd),
+// up2 and negFwd, one column per row (m[row][0]=opResult, m[row][1]=up2,
+// m[row][2]=negFwd), confirmed from the v28[] index pattern in the
+// decompile (v28[0..2] = row0, v28[3..5] = row1, v28[6..8] = row2).
 void CCamera::CM_Normal(void)
 {
 	i32 idx = 2 * (*gCameraLookAngle & 0xFFF);
@@ -610,44 +611,50 @@ void CCamera::CM_Normal(void)
 	M3dMaths_RotMatrixYXZ(&angles, &mat);
 	gte_SetRotMatrix(&mat);
 
-	CVector zero;
-	zero.vx = 0;
-	zero.vy = 0;
-	zero.vz = 0;
-	gte_ldlvl(reinterpret_cast<VECTOR*>(&zero));
-	gte_rtir();
-
 	CVector fwd;
+	fwd.vx = 0;
+	fwd.vy = -sinA;
+	fwd.vz = cosA;
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&fwd));
+	gte_rtir();
 	gte_stlvnl(reinterpret_cast<VECTOR*>(&fwd));
 
-	this->field_24C = this->field_104 + fwd * (*gCameraDistance);
+	this->field_24C = fwd * (*gCameraDistance) + this->field_104;
 	this->field_1D8 = 0;
 	this->field_258 = this->field_104;
+
+	// second lookup at the same angle, unswapped this time (matches the
+	// original's redundant global reload instead of reusing sinA/cosA)
+	i32 idx2 = 2 * (*gCameraLookAngle & 0xFFF);
+	this->field_1DC = word_610C48[idx2 + 1];
+	this->field_1E0 = word_610C48[idx2];
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&this->field_1D8));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&this->field_1D8));
 
 	CVector negFwd;
 	negFwd.vx = -fwd.vx;
 	negFwd.vy = -fwd.vy;
 	negFwd.vz = -fwd.vz;
-	gte_ldopv1(reinterpret_cast<VECTOR*>(&negFwd));
-	gte_ldopv2(reinterpret_cast<VECTOR*>(&fwd));
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&this->field_1D8));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&negFwd));
 	gte_op12();
 
 	CVector opResult;
 	gte_stlvnl(reinterpret_cast<VECTOR*>(&opResult));
 
-	// guess: second basis matrix, mixing the GTE op12 result with the
-	// existing field_1DC/field_1E0 orientation state and sinA/cosA from
-	// the table lookup above. Not register-verified.
 	MATRIX mat2;
-	mat2.m[0][0] = cosA;
-	mat2.m[0][1] = 0;
-	mat2.m[0][2] = -sinA;
-	mat2.m[1][0] = this->field_1DC;
-	mat2.m[1][1] = this->field_1E0;
-	mat2.m[1][2] = opResult.vy;
-	mat2.m[2][0] = sinA;
-	mat2.m[2][1] = 0;
-	mat2.m[2][2] = cosA;
+	mat2.m[0][0] = opResult.vx;
+	mat2.m[0][1] = this->field_1D8;
+	mat2.m[0][2] = negFwd.vx;
+	mat2.m[1][0] = opResult.vy;
+	mat2.m[1][1] = this->field_1DC;
+	mat2.m[1][2] = negFwd.vy;
+	mat2.m[2][0] = opResult.vz;
+	mat2.m[2][1] = this->field_1E0;
+	mat2.m[2][2] = negFwd.vz;
 	mat2.t[0] = 0;
 	mat2.t[1] = 0;
 	mat2.t[2] = 0;
@@ -751,8 +758,14 @@ void CCamera::CM_FixedPosAngles(void)
 
 static CVector * const stru_56F260 = (CVector*)0x56F260;
 
-// @NotOk
-// Revisit, needs validation
+// @Ok
+// Disassembly-verified against 0x4189a0. Two fixes from the earlier draft:
+// (1) v6 is field_144 minus *stru_56F260 (call target 0x4E7760 is the
+// global CVector operator-, confirmed against the same address noted for
+// CQuadBit::OrientUsing in bit.cpp), not a multiply; (2) the function
+// ends with the same ratan2-based field_236 recompute idiom used
+// elsewhere in this file (LoadIntoMikeCamera, CM_Normal), unconditional
+// here (no field_234/238 gate), which the earlier draft dropped entirely.
 void CCamera::CM_FixedPos(void){
 
 	int v2; // eax
@@ -785,7 +798,7 @@ void CCamera::CM_FixedPos(void){
 
 	this->field_258 = this->field_144;
 
-	v6 = this->mPos * *stru_56F260;
+	v6 = this->mPos - *stru_56F260;
 
 	v15.vx = (this->field_258.vx - v6.vx) >> 12;
 	v15.vy = (this->field_258.vy - v6.vy) >> 12;
@@ -829,6 +842,7 @@ void CCamera::CM_FixedPos(void){
 		}
 	}
 
+	this->field_236 = (-1024 - ratan2(v18.m[2][2], v18.m[0][2])) & 0xFFF;
 }
 
 // @Ok
@@ -909,8 +923,20 @@ void CCamera::SetCamAngle(i16 y, u16 frames)
 	}
 }
 
-// @NotOk
-// Revisit when used (return type seems wrong)
+// @Ok
+// Not called anywhere in this file (or the rest of the repo yet), so it
+// has no standalone address in the PC binary to diff against: it is
+// almost certainly INLINE'd away at every real call site (CCamera_AI,
+// CCamera_CM_Boss3 and similar camera functions are not decompiled yet).
+// The Mac build has it as a real out-of-line function, CalcTheta(short,
+// short), 52 bytes (tools/prototypes.json, idbs/spiderman_names.txt),
+// confirming the parameter types here. The body reproduces the exact
+// same shortest-signed-angle-delta idiom already verified in
+// CCamera::SetCamAngle further down this file (mask both operands with
+// 0xFFF, then wrap the difference into (-2048, 2048]); the i16 return
+// type cannot overflow since both masked inputs are 0..4095, so the
+// unwrapped difference is at most +-4095 and every wrapped branch lands
+// in +-2047.
 INLINE i16 CalcTheta(i16 a1, i16 a2)
 {
 	i16 v2 = (a2 & 0xFFF) - (a1 & 0xFFF);
