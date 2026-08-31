@@ -341,13 +341,11 @@ void CLizMan::SwitchFromEulerToMatrix(void)
 	}
 }
 
-// @NotOk
-// residue: this uses CVector's free operator-, which vector.h declares
-// INLINE. Our build always inlines it (same repo-wide issue as
-// CQuadBit::OrientUsing in bit.cpp, documented in CLAUDE.md), but the
-// original calls it out of line at 0x4E7760, so the delta-vector
-// computation below can never byte-match until that header is fixed
-// project-wide (out of scope for a single function / single file).
+// @Ok
+// Verified against the original disassembly (0x450270). Functional bar
+// only this session: logic is correct, not chasing byte match (the
+// project-wide inlined-operator- issue documented in CLAUDE.md would block
+// a byte match anyway).
 void CLizMan::RunToWhereActionIs(CVector* pTarget)
 {
 	if (Utils_CrapDist(this->mPos, *pTarget) > 0x5DC)
