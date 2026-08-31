@@ -176,24 +176,27 @@ void DCPanel_DrawFlatShadedPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u8 r, u
 			false);
 }
 
-// @NotOk
-// real translation (0x4626a0, 640 bytes), reconstructed from the disasm:
-// two-branch geometry setup (raw x+w/y+h when both w and h are nonzero,
-// else fall back to frame->Width/frame->Height), then the same
-// flags-or-poly-color and scaled-QPoly2D-draw tail as the other
-// DCPanel_DrawTexturedPoly overloads in this file. cmpsum: 138 mnemonic
-// diffs, register allocation differs from the very prologue (original
-// pushes ebx,ebp,esi,edi; our build pushes fewer registers), so the source
-// shape is still off, not just scheduling. 1 attempt this session, not
-// iterated further given the size of the remaining queue. a6 (the 3rd of
-// the 5 trailing i32 params) is never read in the original disasm, kept as
-// an unnamed/unused parameter like DCPanel_DrawFlatShadedPoly's own
-// trailing unused i32.
-void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, i32 x, i32 y, i32 a6, i32 h, i32 w, u32 flags)
+// @Ok
+// real translation (0x4626a0, 640 bytes). Found a genuine functional bug
+// while cross-checking against Hex-Rays and the raw disasm of the only
+// three call sites (shell.cpp gsub_498240, tagged @Ok @Matching, e.g.
+// `DCPanel_DrawTexturedPoly(1.0f, pPoly, gAnimTable[23], x - 85, y - 11,
+// 20, 12, G_SORT, 0)`): the trailing i32 params are, in real stack order,
+// x, y, w, h, an unused slot, then flags. The old source here had them as
+// x, y, a6(unused), h, w, flags, so the geometry branch read the unused
+// slot (G_SORT in the shell.cpp calls) as the width and never looked at
+// the real width argument. Confirmed from the raw asm at 0x4626a0: in the
+// true branch, edx = arg_14 (added to x for x1/x3) and ebx = arg_18 (added
+// to y for y2), and arg_14/arg_18 are exactly the "w"/"h" slots that match
+// frame->Width/frame->Height in the fallback (else) branch below. Since
+// callers pass arguments positionally, only the declaration order needed
+// to change here; shell.cpp's already-matching call site is unaffected.
+// Functional only, not chasing byte match this session.
+void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, i32 x, i32 y, i32 w, i32 h, i32 a8, u32 flags)
 {
 	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");
 
-	if (h && w)
+	if (w && h)
 	{
 		poly->x0 = (i16)x;
 		poly->x2 = (i16)x;
