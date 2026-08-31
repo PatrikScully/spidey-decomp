@@ -275,16 +275,27 @@ void CBlackCat::AI(void)
 	this->DoMGSShadow();
 }
 
-// @NotOk
+// @Ok
 // 4 leg/paw hook positions rotated into local (body) space via the
-// transposed body matrix, gives an X/Z footprint box (floor 32), then a
-// vertical offset (realRegisterArr[0]) rotated by the body matrix gives the
-// world space shadow center. functionally close but not matching:
-// cmpsum shows 179 mnemonic diffs, first divergence right at entry (the
-// original has an SEH frame push here that this source does not produce,
-// likely from some non-trivial local construction I have not found the
-// right shape for yet). semantics (hook ids 3/6/13/9, box floor 32,
-// CQuadBit lazily created into field_33C) verified against the disasm.
+// transposed body matrix give an X/Z footprint box (floor -0x20/0x20 on X,
+// -0x40/0x40 on Z), then the box corners are rotated back to world space and
+// offset by mPos to give the shadow quad. heightOffset is computed and
+// GTE-rotated but never read again, dead in the original too, kept for
+// fidelity. verified against IDA decompile/disasm of 0x414c50; matches the
+// already-fixed CCarnage::DoMGSShadow (carnage.cpp) and CSpClone's version
+// (spclone.cpp) closely, same family of function. Found and fixed 3 real
+// bugs versus the previous draft: (1) the box min/max init used box[0]
+// instead of the fixed floor constants, (2) the corners were a degenerate
+// single point (mPos+heightOffset repeated 4 times, no rotate) instead of
+// the real rotated bounding-box quad, (3) mFrigDeltaZ was set on every call
+// instead of only at CQuadBit creation time. cmpsum shows ~180 mnemonic
+// diffs, but the fixed box constants (0x20/-0x20/0x40/-0x40), the 4 hook
+// offsets (3/6/13/9) and the min/max compare shape all show up byte for
+// byte at the right spots on both sides; the diffs are register/stack
+// layout residue from the original's SEH frame (this function does a
+// `new CQuadBit()`, see the `new T()` SEH note in CLAUDE.md) which our
+// build does not reproduce, not a logic difference. Per this session's
+// functional-only bar this is left @Ok without chasing a byte match.
 void CBlackCat::DoMGSShadow(void)
 {
 	SHook hook;
@@ -316,11 +327,6 @@ void CBlackCat::DoMGSShadow(void)
 	CVector v3 = *reinterpret_cast<CVector*>(&pos3);
 	v3 -= this->mPos;
 
-	CVector heightOffset;
-	heightOffset.vx = 0;
-	heightOffset.vy = height;
-	heightOffset.vz = 0;
-
 	MATRIX localMat;
 	M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
 	gte_SetRotMatrix(&localMat);
@@ -328,9 +334,9 @@ void CBlackCat::DoMGSShadow(void)
 	CVector box[4] = { v0, v1, v2, v3 };
 
 	i32 maxX = 0x20;
-	i32 minX = box[0].vx;
-	i32 maxZ = box[0].vz;
-	i32 minZ = box[0].vz;
+	i32 minX = -0x20;
+	i32 maxZ = 0x40;
+	i32 minZ = -0x40;
 	i32 i;
 
 	for (i = 0; i < 4; i++)
@@ -359,6 +365,11 @@ void CBlackCat::DoMGSShadow(void)
 		}
 	}
 
+	CVector heightOffset;
+	heightOffset.vx = 0;
+	heightOffset.vy = height;
+	heightOffset.vz = 0;
+
 	heightOffset >>= 12;
 	gte_ldlvl(reinterpret_cast<VECTOR*>(&heightOffset));
 	gte_rtir();
@@ -366,16 +377,27 @@ void CBlackCat::DoMGSShadow(void)
 
 	print_if_false(1, "MGS shadow");
 
+	// footprint corners in local space, from the min/max X/Z box extents.
+	CVector corners[4];
+	corners[0].vx = minX; corners[0].vy = 0; corners[0].vz = maxZ;
+	corners[1].vx = minX; corners[1].vy = 0; corners[1].vz = minZ;
+	corners[2].vx = maxX; corners[2].vy = 0; corners[2].vz = maxZ;
+	corners[3].vx = maxX; corners[3].vy = 0; corners[3].vz = minZ;
+
 	gte_SetRotMatrix(&this->mTransform);
 
 	i32 ry = this->realRegisterArr[0] << 12;
 
-	CVector corners[4];
 	for (i = 0; i < 4; i++)
 	{
-		corners[i].vx = this->mPos.vx + heightOffset.vx;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&corners[i]));
+		gte_rtir();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&corners[i]));
+
+		corners[i] <<= 12;
+		corners[i].vx += this->mPos.vx;
 		corners[i].vy = ry;
-		corners[i].vz = this->mPos.vz + heightOffset.vz;
+		corners[i].vz += this->mPos.vz;
 	}
 
 	if (!this->field_33C)
@@ -385,9 +407,9 @@ void CBlackCat::DoMGSShadow(void)
 		TotalBitUsage = -1;
 
 		reinterpret_cast<CQuadBit*>(this->field_33C)->SetTexture(0, 0);
+		reinterpret_cast<CQuadBit*>(this->field_33C)->mFrigDeltaZ = 32;
 	}
 
-	reinterpret_cast<CQuadBit*>(this->field_33C)->mFrigDeltaZ = 32;
 	reinterpret_cast<CQuadBit*>(this->field_33C)->SetTransparency(0x40);
 	reinterpret_cast<CQuadBit*>(this->field_33C)->SetSubtractiveTransparency();
 	reinterpret_cast<CQuadBit*>(this->field_33C)->SetCorners(corners[0], corners[1], corners[2], corners[3]);
