@@ -4040,7 +4040,12 @@ void CPlayer::PriorToVenomDistanceAttack(CVector)
 void CPlayer::SwitchToStandMode(void)
 {}
 
-// @NotOk
+// duplicate of the byte right before gWhatIf (0x60CFC4, ob.cpp). Name from
+// baddy.cpp's gSubmarinerDieRelated. Tentative, static per file per repo
+// convention.
+static u8 * const gSubmarinerDieRelated = (u8*)0x60CFC4;
+
+// @Ok
 // Globals
 // raw memory accesses
 void CPlayer::CutSceneSkipCleanup(void)
@@ -4076,6 +4081,8 @@ void CPlayer::CutSceneSkipCleanup(void)
 			this->field_A8.vx = 0;
 			this->field_A8.vy = -4096;
 			this->field_A8.vz = 0;
+
+			this->OrientToNormal(true, &v14);
 		}
 		else
 		{
@@ -4087,9 +4094,15 @@ void CPlayer::CutSceneSkipCleanup(void)
 
 	this->PlaySingleAnim(0, 0, -1);
 	this->SwitchToStandMode();
+
+	this->field_E00 = 0;
 	CameraList->SetStartPosition();
 
 	char * v13 = reinterpret_cast<char*>(this->field_E0C);
+
+	// shared with baddy.cpp/venom.cpp: gSubmarinerDieRelated (0x60CFC4).
+	*gSubmarinerDieRelated = 0;
+
 	*(v13  + 256) = 1;
 	*(v13  + 48) = 1;
 
