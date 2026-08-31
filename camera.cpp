@@ -463,8 +463,12 @@ CCamera::~CCamera(void)
 	--NumCameras;
 }
 
-// @NotOk
-// Not matching, not important
+// @Ok
+// Disassembly-verified against 0x4166c0 (95 bytes). Store order, the
+// signed-divide-by-3 reciprocal trick on a3 and the plain a4 store all
+// match field for field: mCameraMode then field_2AC then field_2E8 (full
+// CVector copy) then field_2E4 (i16 store of the /3 result) then
+// field_2BC (full i32 store of a4).
 void CCamera::SetFixedFocusMode(CVector *a2, u16 a3, u16 a4){
 
 	this->mCameraMode = CAMERAMODE_OVERHEAD;
