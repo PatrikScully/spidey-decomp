@@ -225,6 +225,18 @@ INLINE u32 Shell_CalculateGameChecksum(SSaveGame* pSave)
 // sub_490DF0 and sub_495970 are done; the Shell_DoShell dispatcher issue
 // noted above is a separate, later concern (this function itself does
 // not need Shell_DoShell to exist first).
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now,
+// see shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function in full to check
+// whether it was now tractable: it is genuinely 3497 bytes / 504 instructions / 95 basic blocks
+// with 45 distinct callees, only one of which (sub_495970) still lacks a name -- the other ~44
+// are ALL real functions, but the large majority (sub_43F9B0 the model-preview widget this
+// screen wraps around, sub_47AE80/sub_47AF10 a popup dialog, sub_505E00/sub_5064A0 HUD text
+// rows, sub_509D20/sub_50C470/sub_506160 background/scene setup, sub_50C180/sub_50C6C0/
+// sub_440110 input+trigger handling, sub_472DC0/sub_46E730/sub_46CFA0 a camera-lerp helper
+// chain, sub_4739A0/sub_476790/sub_475FB0 object-list kill/cleanup, plus a dozen more) are
+// themselves still undecompiled stubs in this repo. This is not a quick follow-up: it needs its
+// own dedicated leaf-first session working that ~44-function callee list bottom-up, the same way
+// CDummy_ctor needed one. Left as a stub rather than force a partial/guessed translation.
 // @MEDIUMTODO
 void Shell_CharacterViewer(void)
 {
@@ -1473,6 +1485,17 @@ void Shell_ComicCollection(void)
 // Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
 // shell.h/CDropDownController). sub_490DF0 (CDummy_ctor) remains the real
 // blocker here, same as MainMenu/RollCredits/CharacterViewer.
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now, see
+// shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function to check tractability: it
+// is 2514 bytes / 750 instructions / 118 basic blocks with 61 distinct callees. Every one of them
+// now resolves to a real name (no more unnamed sub_ helpers left unidentified), but a large
+// majority are STILL undecompiled stubs in this repo (sub_43F9B0 the same preview-widget wrapper
+// Shell_CharacterViewer uses, sub_47AE80/sub_48D9C0 popup/title-bar drawing, sub_5064A0/sub_509D20
+// background setup, sub_50C6C0/sub_440110/sub_50C180 input handling, sub_4B8E60 a costume-list-
+// specific helper not seen elsewhere, plus ~15 more shared with Shell_CharacterViewer's callee
+// list). Same conclusion as Shell_CharacterViewer: this needs its own dedicated leaf-first
+// session working that callee list bottom-up, not a quick follow-up. Left as a stub rather than
+// force a partial/guessed translation.
 // @MEDIUMTODO
 void Shell_CostumeViewer(void)
 {
@@ -3170,6 +3193,19 @@ i32 Shell_LoadGame(void)
 // leaf-first rule (most of its callees would need their own sessions
 // first). Recommend a dedicated session working sub_490DF0's callee list
 // bottom-up before attempting this function again.
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now
+// (real callee count was 27 distinct addresses, not ~16 unnamed as guessed above -- every one
+// of them turned out to already have a real name in this repo, including CShellMysterioHeadGlow/
+// CShellGoldFish/CShellMysterioHeadCircle/CVertexWobble, all pre-existing @Ok classes reused
+// as-is; see shell.h/CDummy and CDummy::CDummy for the full writeup). Re-decompiled this
+// function (sub_493990) itself to check tractability now that its two named blockers are gone:
+// it is 2284 bytes / 683 instructions / 142 basic blocks with 54 distinct callees, all real
+// names, but this file's own sub_493860 (survival-arena-name copy helper) is STILL undecompiled,
+// plus a large majority of the other 53 callees (menu-item table dword_552AA8 walk, popup/title-
+// bar drawing sub_48D9C0/sub_47AE80, background setup sub_509D20/sub_4E65E0, input handling
+// sub_50C180/sub_50C6C0/sub_50C5D0, camera-lerp sub_472DC0/sub_46E730/sub_46CFA0, object-list
+// cleanup sub_4739A0, and more). Same conclusion as Shell_CharacterViewer/Shell_CostumeViewer:
+// needs its own dedicated leaf-first session, not a quick follow-up. Left as a stub.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
@@ -3601,6 +3637,17 @@ done:
 // Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
 // shell.h/CDropDownController). Confirmed still true: sub_490DF0
 // (CDummy_ctor) is the only real remaining blocker for this one.
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now,
+// see shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function fully to check
+// whether "the only real remaining blocker" claim above still held: it does not -- this function
+// is 1602 bytes / 504 instructions / 95 basic blocks with 45 distinct callees, and while every
+// one has a real name, roughly 30 of them (the credits.txt tokenizer helpers sub_4302D0/
+// sub_440920/sub_4581A0, background/scene setup sub_505E00/sub_47A3B0/sub_479EE0, the
+// scroll/camera chain sub_472DC0/sub_46E730/sub_46CFA0, input handling sub_50C180, cleanup
+// sub_4739A0/sub_4737F0, sound sub_4587A0, and more) are still undecompiled stubs in this repo.
+// Smallest of the four CDummy_ctor-adjacent screens by a good margin, so probably still the best
+// next target, but it is a real leaf-first session of its own, not a quick follow-up. Left as a
+// stub rather than force a partial/guessed translation.
 // @MEDIUMTODO
 void Shell_RollCredits(void)
 {
