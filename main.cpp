@@ -536,6 +536,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_DCStrip();
 	validate_DCObjectList();
 	validate_DCKeyFrame();
+	validate_DCModelData();
 	validate_PREManager();
 	validate_CSonicRipple();
 	validate_Vector();
