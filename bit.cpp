@@ -1821,16 +1821,125 @@ void DisplayPolyLineList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x4125c0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Same callee shape as DisplayPolyLineList
-// (0x411ef0, confirmed this session: sub_505B90 clip helper, sub_509000
-// emit, Algebra_Transform4/sub_402700 transform) but a different vertex
-// stride/offset set and POLY_FT4 fill order; likely the "gouraud"
-// (colour-per-vertex) poly-line variant.
-void DisplayGPolyLineList(void**)
+// Tentative struct for GPolyLineList's bit type (not in bit.h; no
+// confirmed name). Reuses SPolyLineVert (above) for the inner vertex
+// array - same 16-byte CVector+u32 entry shape - but this bit's own
+// layout differs from SPolyLineBit's: no 0x3C gap (mNumVerts sits right
+// after CBit), and it carries its own starting colour/flags dword
+// (mStartColorFlags) alongside the starting position.
+struct SGPolyLineBit : public CBit
 {
+	i32 mNumVerts;              // 0x3C
+	SPolyLineVert* mVerts;      // 0x40
+	CVector mStartPos;          // 0x44
+	u32 mStartColorFlags;       // 0x50
+};
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x4125c0. Old note's guess was right: this is the gouraud (per-vertex
+// colour) sibling of DisplayPolyLineList (0x411ef0, see its comment for
+// the sub_505B90-is-a-real-no-op and dead-record findings, both confirmed
+// to hold here too - same 0x4000000-tag record shape, just 4 bytes longer
+// to carry a second colour dword). The two functions are otherwise
+// structurally identical: no clip test (sub_505B90 always returns 0), the
+// same Algebra_Transform4/gGfxMatrix pass per point (screenX/Y =
+// xf[0..1]*invZ, no GTE, no gGameResolutionX/Y scaling), one PCGfx_DrawLine
+// (already-@Ok, PCGfx.cpp) per consecutive point pair, and a walk that
+// carries this iteration's point/colour forward as the next iteration's
+// start.
+//
+// The difference: each SPolyLineVert entry supplies its OWN colour, so
+// PCGfx_DrawLine's two colour args differ per call - point1 uses the
+// colour carried in from the previous point (or SGPolyLineBit::
+// mStartColorFlags for the first segment), point2 uses this entry's own
+// mColorFlags. The blend mode/alpha (mColorFlags bit 0x2000000) is decided
+// ONLY by point1's flags for both colour args, mirroring the exact
+// asymmetry traced in the disassembly (point2's own flag bit is never
+// tested, only its RGB bytes are used).
+void DisplayGPolyLineList(void** a1)
+{
+	RefreshGfxMatrix();
+
+	SGPolyLineBit* pBit = reinterpret_cast<SGPolyLineBit*>(*a1);
+	while (pBit)
+	{
+		CVector pt1 = pBit->mStartPos;
+		u32 flags1 = pBit->mStartColorFlags;
+
+		for (i32 i = 0; i < pBit->mNumVerts; i++)
+		{
+			SPolyLineVert& vert = pBit->mVerts[i];
+			CVector pt2 = vert.mPos;
+			u32 flags2 = vert.mColorFlags;
+
+			if ((u8*)pPoly + 28 > PolyBufferEnd)
+				return;
+			pPoly = (u32*)((u8*)pPoly + 28);
+
+			i32 blendMode = 0;
+			u32 alpha = 0xFF;
+			if (flags1 & 0x2000000)
+			{
+				blendMode = 2;
+				alpha = 0x80;
+			}
+
+			PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+			u32 color1 = (alpha << 24) | ((flags1 & 0xFF) << 16) |
+					(((flags1 >> 8) & 0xFF) << 8) | ((flags1 >> 16) & 0xFF);
+			u32 color2 = (alpha << 24) | ((flags2 & 0xFF) << 16) |
+					(((flags2 >> 8) & 0xFF) << 8) | ((flags2 >> 16) & 0xFF);
+
+			f32 rawPos1[3];
+			rawPos1[0] = (f32)pt1.vx / 4096.0f;
+			rawPos1[1] = (f32)pt1.vy / 4096.0f;
+			rawPos1[2] = (f32)pt1.vz / 4096.0f;
+
+			f32 xf1[4];
+			Algebra_Transform4(xf1, rawPos1);
+
+			f32 invZ1;
+			if (fabsf(xf1[3]) > 0.00000001f)
+				invZ1 = 1.0f / xf1[3];
+			else
+				invZ1 = -1.0e12f;
+
+			f32 screen1X = xf1[0] * invZ1;
+			f32 screen1Y = xf1[1] * invZ1;
+
+			f32 rawPos2[3];
+			rawPos2[0] = (f32)pt2.vx / 4096.0f;
+			rawPos2[1] = (f32)pt2.vy / 4096.0f;
+			rawPos2[2] = (f32)pt2.vz / 4096.0f;
+
+			f32 xf2[4];
+			Algebra_Transform4(xf2, rawPos2);
+
+			f32 invZ2;
+			if (fabsf(xf2[3]) > 0.00000001f)
+				invZ2 = 1.0f / xf2[3];
+			else
+				invZ2 = -1.0e12f;
+
+			f32 screen2X = xf2[0] * invZ2;
+			f32 screen2Y = xf2[1] * invZ2;
+
+			if (invZ1 > 0.0f && invZ2 > 0.0f)
+			{
+				PCGfx_DrawLine(
+						screen1X, screen1Y, invZ1, color1,
+						screen2X, screen2Y, invZ2, color2,
+						1.0f);
+			}
+
+			pt1 = pt2;
+			flags1 = flags2;
+		}
+
+		pBit = reinterpret_cast<SGPolyLineBit*>(pBit->mNext);
+	}
 }
 
 // @Ok
