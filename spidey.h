@@ -38,7 +38,22 @@ class CPlayer : public CSuper
 		i32 field_1A8;
 		char field_1AC;
 
-		PADDING(0x1BC-0x1AC-1);
+		PADDING(0x1B0-0x1AC-1);
+
+		// elapsed-time accumulator for SynthesizeAnalogueInput's bytecode
+		// VM (this->field_80 added per tick), same role as
+		// CSpClone::field_340/CBlackCat's analog.
+		i32 field_1B0;
+
+		// phase-1 (bytecode) active flag for SynthesizeAnalogueInput,
+		// same role as CSpClone::field_344.
+		u8 field_1B4;
+
+		PADDING(3);
+
+		// bytecode stream pointer (cast to i16* at use sites) for
+		// SynthesizeAnalogueInput, same role as CSpClone::field_348.
+		i32 field_1B8;
 
 		i32* field_1BC;
 
@@ -103,7 +118,9 @@ class CPlayer : public CSuper
 
 		i32 field_5E0;
 
-		PADDING(0x5E8-0x5E0-4);
+		// SFX handle, stopped (SFX_Stop) and cleared by
+		// SynthesizeAnalogueInput's opcode 1 (teleport) handler.
+		i32 field_5E4;
 
 		char field_5E8;
 		bool field_5E9;
@@ -335,7 +352,12 @@ class CPlayer : public CSuper
 		// pointer (vtable[0](1)) in CPlayer::SwitchToDeathMode
 		i32* field_E64;
 
-		PADDING(0xE70-0xE64-4);
+		PADDING(0xE6C-0xE64-4);
+
+		// @FIXME guess the type, same scalar-deleting-destructor idiom
+		// as field_E64 (vtable[0](1)), used by
+		// SynthesizeAnalogueInput's opcode 1 (teleport) handler.
+		i32* field_E6C;
 
 		SHandle hLockTarget;
 
@@ -351,7 +373,11 @@ class CPlayer : public CSuper
 
 		u8 field_EA4;
 
-		PADDING((0xEA8-0xEA4)-0x1);
+		PADDING(1);
+
+		// zeroed at the top of every SynthesizeAnalogueInput call; exact
+		// purpose unclear.
+		i16 field_EA6;
 
 		u16 field_EA8;
 
