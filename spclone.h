@@ -22,7 +22,7 @@ class CSpClone : public CBaddy {
 		EXPORT void KillAllCommandBlocks(void);
 		EXPORT i32* KillCommandBlock(i32*);
 
-		PADDING(4);
+		i32 field_324;
 
 		i32 field_328;
 		i32 field_32C;
@@ -30,7 +30,12 @@ class CSpClone : public CBaddy {
 		u32 field_334;
 		CQuadBit *field_338;
 
-		PADDING(0x348-0x338-4);
+		u8 field_33C;
+		PADDING(3);
+
+		i32 field_340;
+		u8 field_344;
+		PADDING(3);
 
 		i32 field_348;
 		i32* field_34C;
