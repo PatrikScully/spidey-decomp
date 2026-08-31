@@ -655,17 +655,25 @@ CVenomElectrified::CVenomElectrified(CSuper* pSuper)
 	this->field_3C = Mem_MakeHandle(pSuper);
 }
 
-i32 gVenomFootstepRelated;
+// Real address 0x6B4E58: confirmed via IDA disasm of the inlined body in CVenom_AI (0x4EC040,
+// around 0x4EC135-0x4EC178, a "play footstep on this anim frame, once per frame" check). Not in
+// the maintainer's IDB globals list yet. Tentative name, address is confirmed by evidence above.
+static i32 * const gVenomFootstepRelated = (i32*)0x6B4E58;
 
-// @NotOk
-// globals
+// @Ok
+// Verified against IDA decompile+disasm of the inlined body in CVenom_AI (0x4EC040, around
+// 0x4EC135-0x4EC178): Rnd(4)+245 re-rolled in a loop until it differs from gVenomFootstepRelated,
+// stored back, then SFX_PlayPos(i|0x8000, &this->mPos, 0). CVenom_AI itself is not decompiled in
+// this file yet (separate, much larger function), this only validates PlayNextFootstepSFX's own
+// body, which the original also compiles as a real out-of-line function on the Mac build
+// (PlayNextFootstepSFX__6CVenomFv, 100 bytes, per prototypes.json).
 void CVenom::PlayNextFootstepSFX(void)
 {
 	i32 i;
-	for (i = Rnd(4) + 245; i == gVenomFootstepRelated; i = Rnd(4) + 245)
+	for (i = Rnd(4) + 245; i == *gVenomFootstepRelated; i = Rnd(4) + 245)
 		;
 
-	gVenomFootstepRelated = i;
+	*gVenomFootstepRelated = i;
 	SFX_PlayPos(i | 0x8000, &this->mPos, 0);
 }
 
