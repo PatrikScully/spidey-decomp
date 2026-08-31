@@ -581,24 +581,21 @@ static i32 * const gCameraLookAngle = (i32*)0x548858;
 // Same caller set as gCameraLookAngle.
 static i32 * const gCameraDistance = (i32*)0x54885C;
 
-// @NotOk
-// residue: this is a big (553 byte), three-phase GTE camera orientation
-// update. Solid, disassembly-verified: the euler-angle matrix build from
-// field_234/236/238 through M3dMaths_RotMatrixYXZ, gte_SetRotMatrix,
-// gte_ldlvl(zero)+gte_rtir+gte_stlvnl to get the forward vector, that
-// field_258 = field_104 (plain copy, confirmed clean register trace) and
-// field_1D8 = 0. The ratan2-based field_236 recompute at the end matches
-// the SAME idiom CCamera::LoadIntoMikeCamera uses elsewhere in this file
-// (read m[0][2]/m[2][2] off a matrix, `(-1024 - ratan2(m22, m02)) &
-// 0xFFF`), just gated on field_234/238 instead of the matrix cells
-// directly. NOT verified: the exact CVector expression for field_24C
-// (multiply-then-add via operator*/operator+, best guess is
-// field_104 + fwd*gCameraDistance); and the second matrix (mat2) built
-// from gte_ldopv1/gte_ldopv2/gte_op12 (GTE outer-product opcode, not a
-// plain cross product, mixed with field_1DC/field_1E0) that feeds MToQ
-// and the ratan2 read. Ran out of confident derivation time on that
-// second matrix's exact per-cell layout; the version below is a
-// structurally-motivated guess, not a register-verified translation.
+// @Ok
+// Disassembly-verified against 0x418e00 (IDA decompile of sub_418E00,
+// with the mislabeled qt_register_signal_spy_callbacks/subroutine calls
+// resolved back to gte_ldlvl/gte_ldopv1/gte_ldopv2/gte_op12/gte_stlvnl
+// by matching call targets against tools/names.json). Two vectors get
+// built from the same sin/cos table lookup and each rotated in place by
+// the SAME per-object euler matrix (field_234/236/238):
+// fwd = Rot * {0, -sinA, cosA} (a plain stack temp), and
+// up2 = Rot * {0, cosA, sinA} (stored directly into field_1D8/1DC/1E0,
+// which double as scratch storage here, matching the disassembly's use
+// of &this->field_1D8 as the VECTOR argument to gte_ldlvl/gte_stlvnl).
+// The final matrix's columns are opResult (= up2 outer-product negFwd),
+// up2 and negFwd, one column per row (m[row][0]=opResult, m[row][1]=up2,
+// m[row][2]=negFwd), confirmed from the v28[] index pattern in the
+// decompile (v28[0..2] = row0, v28[3..5] = row1, v28[6..8] = row2).
 void CCamera::CM_Normal(void)
 {
 	i32 idx = 2 * (*gCameraLookAngle & 0xFFF);
@@ -614,44 +611,50 @@ void CCamera::CM_Normal(void)
 	M3dMaths_RotMatrixYXZ(&angles, &mat);
 	gte_SetRotMatrix(&mat);
 
-	CVector zero;
-	zero.vx = 0;
-	zero.vy = 0;
-	zero.vz = 0;
-	gte_ldlvl(reinterpret_cast<VECTOR*>(&zero));
-	gte_rtir();
-
 	CVector fwd;
+	fwd.vx = 0;
+	fwd.vy = -sinA;
+	fwd.vz = cosA;
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&fwd));
+	gte_rtir();
 	gte_stlvnl(reinterpret_cast<VECTOR*>(&fwd));
 
-	this->field_24C = this->field_104 + fwd * (*gCameraDistance);
+	this->field_24C = fwd * (*gCameraDistance) + this->field_104;
 	this->field_1D8 = 0;
 	this->field_258 = this->field_104;
+
+	// second lookup at the same angle, unswapped this time (matches the
+	// original's redundant global reload instead of reusing sinA/cosA)
+	i32 idx2 = 2 * (*gCameraLookAngle & 0xFFF);
+	this->field_1DC = word_610C48[idx2 + 1];
+	this->field_1E0 = word_610C48[idx2];
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&this->field_1D8));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&this->field_1D8));
 
 	CVector negFwd;
 	negFwd.vx = -fwd.vx;
 	negFwd.vy = -fwd.vy;
 	negFwd.vz = -fwd.vz;
-	gte_ldopv1(reinterpret_cast<VECTOR*>(&negFwd));
-	gte_ldopv2(reinterpret_cast<VECTOR*>(&fwd));
+
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&this->field_1D8));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&negFwd));
 	gte_op12();
 
 	CVector opResult;
 	gte_stlvnl(reinterpret_cast<VECTOR*>(&opResult));
 
-	// guess: second basis matrix, mixing the GTE op12 result with the
-	// existing field_1DC/field_1E0 orientation state and sinA/cosA from
-	// the table lookup above. Not register-verified.
 	MATRIX mat2;
-	mat2.m[0][0] = cosA;
-	mat2.m[0][1] = 0;
-	mat2.m[0][2] = -sinA;
-	mat2.m[1][0] = this->field_1DC;
-	mat2.m[1][1] = this->field_1E0;
-	mat2.m[1][2] = opResult.vy;
-	mat2.m[2][0] = sinA;
-	mat2.m[2][1] = 0;
-	mat2.m[2][2] = cosA;
+	mat2.m[0][0] = opResult.vx;
+	mat2.m[0][1] = this->field_1D8;
+	mat2.m[0][2] = negFwd.vx;
+	mat2.m[1][0] = opResult.vy;
+	mat2.m[1][1] = this->field_1DC;
+	mat2.m[1][2] = negFwd.vy;
+	mat2.m[2][0] = opResult.vz;
+	mat2.m[2][1] = this->field_1E0;
+	mat2.m[2][2] = negFwd.vz;
 	mat2.t[0] = 0;
 	mat2.t[1] = 0;
 	mat2.t[2] = 0;
