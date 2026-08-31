@@ -511,6 +511,15 @@ EXPORT int lzc;
 
 // @Ok
 // @Matching
+// loads the leading-zero-count source register (GTE LZCS). Real hardware would count
+// the leading zeroes lazily on read (gte_stlzc); this emulation just stashes the value.
+void gte_ldlzc(i32 a1)
+{
+  lzc = a1;
+}
+
+// @Ok
+// @Matching
 void gte_stlzc(int *a1)
 {
   int v1; // esi
