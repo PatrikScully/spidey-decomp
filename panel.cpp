@@ -370,19 +370,71 @@ void Panel_CreateCompass(CVector * pVec)
 	gCompassStatus = 1;
 }
 
-// @MEDIUMTODO
+// Investigated 2026-08-31 via Hex-Rays. Real address is unclear (names.json
+// has no entry and it was never confirmed against the binary), but
+// prototypes.json (Mac sizes) lists Panel_Display(void) at 4744 bytes,
+// similar in shape to Panel_DisplayCompass/Panel_DisplayHealthBar below:
+// heavy float texture-coordinate math per HUD icon and calls into the same
+// undecompiled draw-primitive family (sub_462BB0/462C30/462CD0/462D60/
+// 462FB0/506440/507910, none named or decompiled anywhere in the repo yet).
+// Retagged @MEDIUMTODO -> @BIGTODO: this is not a size a single session
+// should attempt blind, see Panel_DisplayCompass's comment for the shared
+// blocking dependencies.
+// @BIGTODO
 void Panel_Display(void)
 {
     printf("Panel_Display(void)");
 }
 
-// @MEDIUMTODO
+// Investigated 2026-08-31 via Hex-Rays decompile of 0x00463860 (2444 bytes
+// on Mac). Retagged @MEDIUMTODO -> @BIGTODO: this draws the HUD compass
+// needle, and every draw call in it goes through undecompiled helpers:
+// sub_46D7B0/46DA40/46D430/46D790/470430/46D130 (angle/vector math feeding
+// a compass-heading calculation, unclear which are GTE-style helpers this
+// file might already own vs. trig.cpp's), then sub_506440 and sub_507910
+// (the actual textured-quad draw call, called with a 21-float-and-int
+// argument list, i.e. per-vertex UV/color/depth - this looks like the
+// real "draw one screen-space poly" primitive every panel.cpp draw routine
+// bottoms out in) plus sub_462BB0/462C30 (icon lookup + placement, shared
+// with DisplayHealthBar below). None of these are named or decompiled
+// anywhere in the repo. It also reads about a dozen unnamed globals with
+// no idb_globals.txt entry (byte_60F77C, dword_60F708/70C/710,
+// qword_56F1B4, dword_56F1BC, dword_60F76C, dword_6B4CA8, dword_56FB04,
+// dword_568158/568154, dword_628614/61B5FC, dword_60F75C/60F768) that look
+// like a mix of HUD layout state and a 3D-to-compass-angle conversion
+// (possibly player heading vs. some fixed landmark) - guessing names for
+// these without knowing the real subsystem would just be inventing fields.
+// Left stubbed: needs sub_507910 (the shared draw primitive) decompiled
+// first as the actual leaf, then the angle-math chain, before this is
+// safely attemptable.
+// @BIGTODO
 void Panel_DisplayCompass(void)
 {
     printf("Panel_DisplayCompass(void)");
 }
 
-// @MEDIUMTODO
+// Investigated 2026-08-31 via Hex-Rays decompile of 0x00464270 (5804 bytes
+// on Mac, the biggest of the three). Retagged @MEDIUMTODO -> @BIGTODO: a
+// boss-specific health-bar dispatcher, `switch (dword_60F654)` on what
+// looks like a boss/mech type id (case values 307/308/310/311/313/314,
+// plus a default no-op), each case reading fields at large, boss-specific
+// offsets (+226, +808, +824, +828, +829, +832, +904, +976, +1004, +1212)
+// off a "current mech" pointer (dword_60F788) that were not obviously
+// matchable to any single boss header (rhino.h/carnage.h/venom.h/
+// scorpion.h/docock.h/mysterio.h) in the time available - these read like
+// a shared "mech status" struct distinct from any one boss's CItem
+// subclass, not yet identified in the repo. Every draw call bottoms out in
+// the same undecompiled sub_507910 primitive as Panel_DisplayCompass
+// above, via sub_462BB0/462C30/462CD0/462D60/462FB0 (icon lookup, glyph
+// placement, and what look like bar-graph/number-drawing helpers given the
+// repeated width/threshold arguments), plus sub_506440. None of these six
+// helpers are named or decompiled anywhere in the repo, and the case
+// values suggest around 6 different boss layouts each with their own
+// field offsets to identify - too large and too underspecified to
+// implement blind this session. Good next candidate once sub_507910 and
+// the sub_462* draw family are decompiled and the dword_60F788 "current
+// mech" struct is identified against a real boss header.
+// @BIGTODO
 void Panel_DisplayHealthBar(void)
 {
     printf("Panel_DisplayHealthBar(void)");

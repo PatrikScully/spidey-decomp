@@ -759,21 +759,41 @@ i16* gsub_46E430(i16 *a1)
 	return a1;
 }
 
-// @BIGTODO
-// forward to original. Unnamed in the IDB. Applies a hook's part-local
-// offset (pOffset, a CSVector-shaped 6-byte vector: SHook::Part in
-// m3dutils.h) through pPoseFrame (the part's pose matrix, SMatrix) and then
-// through pTransform (the item's world transform, MATRIX), leaving the
-// result in the software GTE "long vector" accumulator (dword_610BA0/A4/A8,
-// same globals gte_stlvnl reads) for a following gte_stlvnl call to pick
-// up. Uses chained 32x32->64 bit fixed point multiplies (>>12) not yet
-// reproduced from source. Used by M3dUtils_GetHookPosition and
-// M3dUtils_GetDynamicHookPosition (m3dutils.cpp).
+// @Ok
+// Decompiled 2026-08-31 from Hex-Rays at 0x0046F820. Unnamed in the IDB.
+// Applies a hook's part-local offset (pOffset, a CSVector-shaped 6-byte
+// vector: SHook::Part in m3dutils.h) through pPoseFrame (the part's pose
+// matrix, SMatrix, i16 rotation + i16 translation) to get a local result,
+// then applies pTransform (the item's world transform, MATRIX, i16
+// rotation + i32 translation) to that result, leaving it in the software
+// GTE "long vector" accumulator (gGeneralLongVector, same global
+// gte_stlvnl reads) for a following gte_stlvnl call to pick up. Both
+// stages are the same fixed-point rotate-then-translate shape as
+// FixedXForm plus a translation add; the "64 bit multiply" the decompiler
+// showed is IDA's mixed i16/i32 type inference, not a real 64 bit op (the
+// original hardware does this as ordinary 32 bit multiplies). Used by
+// M3dUtils_GetHookPosition and M3dUtils_GetDynamicHookPosition
+// (m3dutils.cpp).
 void gsub_46F820(void *pOffset, SMatrix *pPoseFrame, MATRIX *pTransform)
 {
-	typedef void (*func_ptr)(void*, SMatrix*, MATRIX*);
-	func_ptr func = (func_ptr)0x0046F820;
-	func(pOffset, pPoseFrame, pTransform);
+	i16 *pOff = reinterpret_cast<i16*>(pOffset);
+	i16 offX = pOff[0];
+	i16 offY = pOff[1];
+	i16 offZ = pOff[2];
+
+	i16 localX = static_cast<i16>(pPoseFrame->t[0]
+		+ ((pPoseFrame->m[0][0] * offX + pPoseFrame->m[0][1] * offY + pPoseFrame->m[0][2] * offZ) >> 12));
+	i16 localY = static_cast<i16>(pPoseFrame->t[1]
+		+ ((pPoseFrame->m[1][0] * offX + pPoseFrame->m[1][1] * offY + pPoseFrame->m[1][2] * offZ) >> 12));
+	i16 localZ = static_cast<i16>(pPoseFrame->t[2]
+		+ ((pPoseFrame->m[2][0] * offX + pPoseFrame->m[2][1] * offY + pPoseFrame->m[2][2] * offZ) >> 12));
+
+	gGeneralLongVector.vx = pTransform->t[0]
+		+ ((pTransform->m[0][0] * localX + pTransform->m[0][1] * localY + pTransform->m[0][2] * localZ) >> 12);
+	gGeneralLongVector.vy = pTransform->t[1]
+		+ ((pTransform->m[1][0] * localX + pTransform->m[1][1] * localY + pTransform->m[1][2] * localZ) >> 12);
+	gGeneralLongVector.vz = pTransform->t[2]
+		+ ((pTransform->m[2][0] * localX + pTransform->m[2][1] * localY + pTransform->m[2][2] * localZ) >> 12);
 }
 
 // @Ok
@@ -1076,26 +1096,218 @@ i32 GetClut(int, int a2)
 	return a2 - gClutRelated;
 }
 
-// Researched 2026-08-31 via Hex-Rays decompile of 0x0046ECB0: this is a non-zoned sibling
-// of M3dAsm_LineColijPreprocessItemsZoned. Same mFlags&0x21/mInquiry shortcut and CItem
-// linked-list walk (mNextItem at offset 0x20, not the ppItem array Zoned uses), and it
-// calls gsub_46EA20/gsub_46EB30 the same way Zoned now does. It also builds and uses the
-// item's rotation: if mAngles (offset 0x14, u16/u16 pair read as one dword) is nonzero, it
-// calls two more not-yet-decompiled helpers, sub_46D1E0 (0x0046D1E0, builds a 3x3 matrix
-// from the angles) and sub_46CFC0 (0x0046CFC0, matrix*vector transform, called twice on
-// the box corners), then re-sorts the transformed corners with gsub_46E990 before the
-// gsub_46EA20/gsub_46EB30 calls. Leaving this as a forward stub: it needs those two new
-// leaf helpers decompiled first (leaf-first rule), and the whole function is large (the
-// Hex-Rays pseudocode alone is much bigger than Zoned). Good next candidate once
-// sub_46D1E0/sub_46CFC0 are done.
-// @BIGTODO
+#pragma auto_inline(off)
+
+// unnamed helper, address 0x0046D1E0. Only caller is
+// M3dAsm_LineColijPreprocessItems below (once decompiled from Hex-Rays,
+// this is the same rotation-matrix formula as RotMatrixYXZ term for term,
+// just operating on a raw i16 SVECTOR-shaped input and a raw i16
+// MATRIX::m-shaped output instead of typed pointers). Builds a 3x3 rotation
+// matrix from an item's mAngles.
+// @Ok
+EXPORT i16* gsub_46D1E0(i16 *pAngles, i16 *pOut)
+{
+	float rx = (float)pAngles[0] * 0.0015360969118773937f;
+	float sx = (float)sin(rx);
+	float cx = (float)cos(rx);
+
+	float ry = (float)pAngles[1] * 0.0015360969118773937f;
+	float sy = (float)sin(ry);
+	float cy = (float)cos(ry);
+
+	float rz = (float)pAngles[2] * 0.0015360969118773937f;
+	float sz = (float)sin(rz);
+	float cz = (float)cos(rz);
+
+	float t1 = sz * sy;
+	float t2 = cz * cy;
+	pOut[0] = (t1 * sx + t2) * 4096.0f;
+
+	float t3 = cz * sy;
+	float t4 = sz * cy;
+	pOut[1] = (t3 * sx - t4) * 4096.0f;
+
+	pOut[2] = (sy * cx) * 4096.0f;
+	pOut[3] = (sz * cx) * 4096.0f;
+	pOut[4] = (cz * cx) * 4096.0f;
+	pOut[5] = (-sx) * 4096.0f;
+	pOut[6] = (t4 * sx - t3) * 4096.0f;
+	pOut[7] = (t2 * sx + t1) * 4096.0f;
+	pOut[8] = (cy * cx) * 4096.0f;
+
+	return pOut;
+}
+
+// unnamed helper, address 0x0046CFC0. Only caller is
+// M3dAsm_LineColijPreprocessItems below. 3x3 (i16) matrix times a flat i32
+// vector, fixed point (>>12), writing into a caller-supplied output triple
+// (matches FixedXForm's row*vector shape, just on i32 in/out instead of a
+// VECTOR). The original opens with a call to nullsub_1 (0x4015B0, same
+// address as gsub_4015B0 in panel.cpp, proven empty: tools/functions/
+// 4199856.bin is a single `ret` byte), so that call is omitted here since
+// it cannot do anything.
+// @Ok
+EXPORT i32* gsub_46CFC0(i16 *pMatrix, i32 *pIn, i32 *pOut)
+{
+	pOut[0] = (pMatrix[0] * pIn[0] + pMatrix[1] * pIn[1] + pMatrix[2] * pIn[2]) >> 12;
+	pOut[1] = (pMatrix[3] * pIn[0] + pMatrix[4] * pIn[1] + pMatrix[5] * pIn[2]) >> 12;
+	pOut[2] = (pMatrix[6] * pIn[0] + pMatrix[7] * pIn[1] + pMatrix[8] * pIn[2]) >> 12;
+	return pOut;
+}
+
+#pragma auto_inline(on)
+
+// Decompiled 2026-08-31 from Hex-Rays at 0x0046ECB0 (previously left as a
+// forward-to-original stub once the call-shape reconnaissance below was
+// done; leaf helpers gsub_46D1E0/gsub_46CFC0 decompiled first per the
+// leaf-first rule). Non-zoned sibling of M3dAsm_LineColijPreprocessItemsZoned:
+// same mFlags&0x21/mInquiry shortcut, but walks a plain CItem linked list
+// (mNextItem) instead of an array of pointers, and each item's box is built
+// in the item's LOCAL space (line coords minus mPos) instead of letting
+// gsub_46EA20 do the pos offset.
+//
+// If the item has a nonzero mAngles (CSVector at CItem+0x14), the local box
+// corners get rotated by the TRANSPOSE of the item's rotation matrix
+// (gsub_46D1E0 builds it, M3dMaths_TransposeMatrix1's exact math transposes
+// it) and re-sorted with gsub_46E990, after a quick per-axis
+// bounding-radius reject test against pModel[2]. gsub_46EA20 is then called
+// with pos 0,0,0 (the box is already local), and if mFlags&0x200 is set the
+// resulting box corners get scaled per axis by three i16 reads at CItem
+// offsets 0x18/0x1A/0x1C. Those three offsets do not line up with any named
+// CItem field (0x18 lands on the second half of mAngles, i.e. mAngles.vz;
+// 0x1A is mModel, reinterpreted signed; 0x1C is mDummyFrame+mTintIndex
+// reinterpreted as one i16) - this reads like stale/reused bytes rather
+// than a deliberate named "scale" field, so it is reproduced verbatim
+// (same offsets, same signedness) rather than guessed at with a new field
+// name, per "reproduce the source-level bug, don't fix it".
+//
+// Finally gsub_46EB30 tests the (possibly rotated) local box corners
+// against the object-space box gsub_46EA20 built; a collision keeps the
+// item pending (advance to the next item unchanged), no collision or a
+// failed bounds/radius check marks the item done (mInquiry = Inquiry) so
+// later systems skip it.
+// @Ok
 void M3dAsm_LineColijPreprocessItems(CItem* pItem, i32 ModelTable, SLineInfo* pInfo, u16 Inquiry)
 {
-	typedef void (*func_ptr)(CItem*, i32, SLineInfo*, u16);
+	if (!pItem)
+		return;
 
-	func_ptr func = (func_ptr)0x0046ECB0;
+	Vector start = {0, 0, 0};
+	Vector end = {0, 0, 0};
 
-	func(pItem, ModelTable, pInfo, Inquiry);
+	start.vx = pInfo->StartCoords.vx >> 12;
+	start.vy = pInfo->StartCoords.vy >> 12;
+	start.vz = pInfo->StartCoords.vz >> 12;
+
+	end.vx = pInfo->EndCoords.vx >> 12;
+	end.vy = pInfo->EndCoords.vy >> 12;
+	end.vz = pInfo->EndCoords.vz >> 12;
+
+	i32 swapFlags = 0;
+	gsub_46E990(reinterpret_cast<i32*>(&start), reinterpret_cast<i32*>(&end), &swapFlags);
+
+	do
+	{
+		if (pItem->mFlags & 0x21)
+		{
+			pItem->mInquiry = Inquiry;
+		}
+		else if (pItem->mInquiry != Inquiry)
+		{
+			i32 **pRegionEntry = CItemRelatedList[pItem->mRegion * 17];
+			const i32 *pModel = reinterpret_cast<const i32*>(pRegionEntry[pItem->mModel]);
+
+			i32 posX = pItem->mPos.vx >> 12;
+			i32 posY = pItem->mPos.vy >> 12;
+			i32 posZ = pItem->mPos.vz >> 12;
+
+			i32 boxMin[3] = { start.vx - posX, start.vy - posY, start.vz - posZ };
+			i32 boxMax[3] = { end.vx - posX, end.vy - posY, end.vz - posZ };
+
+			i32 itemFlags = pItem->mFlags;
+			bool boundsOk = true;
+
+			if (pItem->mAngles.vx != 0 || pItem->mAngles.vy != 0 || pItem->mAngles.vz != 0)
+			{
+				i32 radius = pModel[2] >> 12;
+
+				if (boxMin[0] > radius || boxMin[1] > radius || boxMin[2] > radius ||
+				    boxMax[0] < -radius || boxMax[1] < -radius || boxMax[2] < -radius)
+				{
+					boundsOk = false;
+				}
+				else
+				{
+					i16 rotMat[9];
+					i16 rotMatT[9];
+					gsub_46D1E0(reinterpret_cast<i16*>(&pItem->mAngles), rotMat);
+					M3dMaths_TransposeMatrix1(reinterpret_cast<MATRIX*>(rotMat), reinterpret_cast<MATRIX*>(rotMatT));
+
+					if (swapFlags & 1)
+					{
+						i32 tmp = boxMin[0]; boxMin[0] = boxMax[0]; boxMax[0] = tmp;
+					}
+					if (swapFlags & 2)
+					{
+						i32 tmp = boxMin[1]; boxMin[1] = boxMax[1]; boxMax[1] = tmp;
+					}
+					if (swapFlags & 4)
+					{
+						i32 tmp = boxMin[2]; boxMin[2] = boxMax[2]; boxMax[2] = tmp;
+					}
+
+					i32 tmpIn[3] = { boxMin[0], boxMin[1], boxMin[2] };
+					gsub_46CFC0(rotMatT, tmpIn, boxMin);
+
+					tmpIn[0] = boxMax[0]; tmpIn[1] = boxMax[1]; tmpIn[2] = boxMax[2];
+					gsub_46CFC0(rotMatT, tmpIn, boxMax);
+
+					swapFlags = 0;
+					gsub_46E990(boxMin, boxMax, &swapFlags);
+				}
+			}
+
+			if (boundsOk)
+			{
+				*reinterpret_cast<i32*>(&gRotMatrix[0][0]) = boxMax[0] - boxMin[0];
+				*reinterpret_cast<i32*>(&gRotMatrix[1][1]) = boxMax[1] - boxMin[1];
+				*reinterpret_cast<i32*>(&gRotMatrix[2][2]) = boxMax[2] - boxMin[2];
+
+				i32 outMin[3] = {0, 0, 0};
+				i32 outMax[3] = {0, 0, 0};
+
+				gsub_46EA20(pModel, boxMin[0], boxMin[1], boxMin[2], boxMax[0], boxMax[1], boxMax[2],
+				            static_cast<u8>(swapFlags), 0, 0, 0, outMin, outMax);
+
+				if (itemFlags & 0x200)
+				{
+					const u8 *pRawItem = reinterpret_cast<const u8*>(pItem);
+					i16 scaleX = *reinterpret_cast<const i16*>(pRawItem + 0x18);
+					i16 scaleY = *reinterpret_cast<const i16*>(pRawItem + 0x1A);
+					i16 scaleZ = *reinterpret_cast<const i16*>(pRawItem + 0x1C);
+
+					outMin[0] = (outMin[0] * scaleX) >> 12;
+					outMin[1] = (outMin[1] * scaleY) >> 12;
+					outMin[2] = (outMin[2] * scaleZ) >> 12;
+					outMax[0] = (outMax[0] * scaleX) >> 12;
+					outMax[1] = (outMax[1] * scaleY) >> 12;
+					outMax[2] = (outMax[2] * scaleZ) >> 12;
+				}
+
+				if (!gsub_46EB30(boxMin[0], boxMin[1], boxMin[2], boxMax[0], boxMax[1], boxMax[2],
+				                 outMin[0], outMin[1], outMin[2], outMax[0], outMax[1], outMax[2]))
+				{
+					pItem->mInquiry = Inquiry;
+				}
+			}
+			else
+			{
+				pItem->mInquiry = Inquiry;
+			}
+		}
+
+		pItem = pItem->mNextItem;
+	} while (pItem);
 }
 
 // idb_globals.txt: DCFatalError @ 0x6150E4
