@@ -1274,21 +1274,155 @@ i16 CBaddy::GetVariable(u16 a2)
 	}
 }
 
-// @BIGTODO
-// Checked the original disasm at 0x404c50 (878 bytes, 273 instructions).
-// It is a multi-phase per-frame timer/animation-blend update: two early
-// "field_2B4/field_2B0 countdown" branches for things already in
-// progress, then a big block (once both counters hit 0) that seeds a
-// blend pose from a fixed global (dword_60D9E0/word_60D9E4), reads
-// field_1F8 for a "startup" countdown, and on the field_2A8 bit 0 /
-// field_2AC bit 0 flags either runs a full pose-blend setup (several
-// calls into the same CVector/pose helper family used elsewhere in this
-// file, e.g. sub_4E7590/sub_4E7900/sub_4E78A0) or a shorter variant.
-// Genuinely BIGTODO scale (many unnamed helper calls, several fields not
-// yet in baddy.h), left as a stub.
-void CBaddy::DoPhysics(i32)
+// @Ok
+// Decompiled from the original disasm at 0x404c50 (878 bytes, 273
+// instructions), read via IDA/Hex-Rays. Field offsets cross-checked
+// against the already-validated CBody layout (mVel 0x60, mAcc 0x6C,
+// mFric 0x78, field_80 0x80, mAngVel 0x88, mAngAcc 0x8E, mAngFric 0x94,
+// field_A8 0xA8, mCollision 0xE0) and CBaddy's own already-validated
+// fields (field_1F8, field_230, field_27C, field_2A8, field_2AC,
+// field_2B0, field_2B4, field_2B8, field_2C4, field_2C8, field_2CC,
+// field_2D0, field_2DC, field_2DE, field_2E0, field_2E2, field_2E4,
+// field_2E6, field_2E8).
+//
+// Shape: two early branches handle a running position/angle "teleport
+// blend" already in progress (field_2B4 = duration, field_2B0 = elapsed
+// so far, field_230 = active flag, field_2B8/field_2D0 = start position
+// and per-tick rate, field_2C4..field_2CC = final position,
+// field_2DC..field_2E0 = base angle, field_2E8 = per-tick angular rate,
+// field_2E2..field_2E6 = final angle; on completion or abort it snaps to
+// the final pos/angle and clears the state). Once both field_2B4 and
+// field_2B0 are zero, the remaining block re-derives this frame's
+// elapsed ticks: callers passing 0 (see Shouldnt_DoPhysics_Be_Virtual's
+// this->DoPhysics(0)) just use field_80 (the per-frame delta, same field
+// CBaddy::RunTimer subtracts elsewhere in this file); callers passing a
+// nonzero value drain field_1F8, a "startup" countdown, by up to
+// field_80 per call and use whatever it drained. It then does either
+// standard mVel/mAcc/mFric integration (field_2A8 bit 0 clear; same
+// idiom as CLizMan::DoLizmanPhysics in lizman.cpp and CPlatform::DoPhysics
+// in platform.cpp) or a GTE rotate-translate pose blend of field_27C
+// (field_2A8 bit 0 set, guarded by field_2AC bit 0 so it only runs every
+// other call) using the same M3dMaths_RotMatrixYXZ / gte_SetRotMatrix /
+// gte_ldlvl / gte_rtir / gte_stlvnl sequence as CBaddy::GetLocalPos
+// above. gTrajectoryVector is the same global already used identically
+// in CLizMan::DoLizmanPhysics and CPlatform::DoPhysics.
+void CBaddy::DoPhysics(i32 a2)
 {
-	printf("void CBaddy::DoPhysics(int)");
+	if (this->field_2B4 != 0)
+	{
+		i32 elapsed = this->field_2B0 + this->field_80;
+		this->field_2B0 = elapsed;
+
+		if (static_cast<u32>(elapsed) < static_cast<u32>(this->field_2B4) && this->field_230 != 0)
+		{
+			this->mPos = this->field_2B8 + this->field_2D0 * elapsed;
+
+			this->mAngles.vx = this->field_2DC + static_cast<i16>(this->field_2E8.vx * elapsed);
+			this->mAngles.vy = this->field_2DE + static_cast<i16>(this->field_2E8.vy * elapsed);
+			this->mAngles.vz = this->field_2E0 + static_cast<i16>(this->field_2E8.vz * elapsed);
+			this->mAngles.Mask();
+		}
+		else
+		{
+			this->field_2B0 = 0;
+			this->field_2B4 = 0;
+			this->field_230 = 0;
+
+			this->mPos.vx = this->field_2C4;
+			this->mPos.vy = this->field_2C8;
+			this->mPos.vz = this->field_2CC;
+
+			this->mAngles.vx = this->field_2E2;
+			this->mAngles.vy = this->field_2E4;
+			this->mAngles.vz = this->field_2E6;
+		}
+
+		return;
+	}
+
+	if (this->field_2B0 != 0)
+	{
+		if (static_cast<u32>(this->field_80) < static_cast<u32>(this->field_2B0) && this->field_230 != 0)
+		{
+			this->field_2B0 -= this->field_80;
+		}
+		else
+		{
+			this->field_230 = 0;
+			this->field_2B0 = 0;
+		}
+
+		return;
+	}
+
+	this->field_A8 = gTrajectoryVector;
+	this->mCollision = 0;
+
+	i32 elapsed;
+
+	if (a2 == 0)
+	{
+		elapsed = this->field_80;
+	}
+	else
+	{
+		elapsed = this->field_1F8 > this->field_80 ? this->field_80 : this->field_1F8;
+
+		if (elapsed == 0)
+			return;
+
+		this->field_1F8 -= elapsed;
+	}
+
+	if (this->field_2A8 & 1)
+	{
+		if (this->field_2AC & 1)
+		{
+			this->field_2AC = 0;
+			return;
+		}
+
+		this->field_27C += this->mAcc;
+
+		MATRIX rotMat;
+		M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(&this->mAngles), &rotMat);
+		gte_SetRotMatrix(&rotMat);
+
+		this->mAngles += this->mAngVel;
+		this->mAngles.Mask();
+
+		CVector scaled = this->field_27C >> 6;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&scaled));
+		gte_rtir();
+
+		CVector rotated;
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&rotated));
+		rotated <<= 6;
+
+		this->mPos += rotated * elapsed;
+		this->mPos += this->mVel * elapsed;
+
+		this->field_2AC = 0;
+	}
+	else
+	{
+		this->mVel += this->mAcc;
+		this->mVel %= this->mFric;
+		this->mVel.KillSmall();
+
+		this->mPos += this->mVel * elapsed;
+
+		this->mAngles.vx += static_cast<i16>(this->mAngVel.vx * elapsed);
+		this->mAngles.vy += static_cast<i16>(this->mAngVel.vy * elapsed);
+		this->mAngles.vz += static_cast<i16>(this->mAngVel.vz * elapsed);
+		this->mAngles.Mask();
+
+		this->mAngVel += this->mAngAcc;
+		this->mAngVel %= this->mAngFric;
+		this->mAngVel.KillSmall();
+
+		this->field_2AC = 0;
+	}
 }
 
 // @Ok
