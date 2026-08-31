@@ -1737,6 +1737,36 @@ void CSniperTarget::AI(void)
 	switch (this->field_100)
 	{
 		case 0:
+		{
+			CSVector aimDir;
+			aimDir.vx = 0;
+			aimDir.vy = 0;
+			aimDir.vz = 0;
+			Utils_CalcAim(&aimDir, &this->field_104, &MechList->mPos);
+
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimDir, 8);
+
+			for (i32 i = 0; i < this->field_80; i++)
+			{
+				this->mAngles += this->mAngVel;
+				this->mAngles.Mask();
+
+				i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
+				this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
+
+				i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
+				this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
+
+				this->mAngVel.KillSmall();
+			}
+
+			CVector muzzleDir;
+			Utils_GetVecFromMagDir(&muzzleDir, 0x12, reinterpret_cast<CSVector*>(&this->mAngles));
+
+			this->field_104 = this->field_104 + muzzleDir * this->field_80;
+
+			break;
+		}
 		case 1:
 		{
 			CSVector aimDir;
@@ -1745,84 +1775,46 @@ void CSniperTarget::AI(void)
 			aimDir.vz = 0;
 			Utils_CalcAim(&aimDir, &this->field_104, reinterpret_cast<CVector*>(&this->field_13C));
 
-			i32 rate = (this->field_100 == 0) ? 8 : 0x10;
-			Utils_TurnTowards(aimDir, reinterpret_cast<CSVector*>(&this->mAngles), &this->mAngVel, this->mAngAcc, rate);
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimDir, 0x10);
 
 			for (i32 i = 0; i < this->field_80; i++)
 			{
+				this->mAngles += this->mAngVel;
+				this->mAngles.Mask();
+
 				i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
 				this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
 
 				i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
 				this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
-			}
 
-			this->mAngVel.Mask();
-			this->mAngVel.KillSmall();
+				this->mAngVel.KillSmall();
+			}
 
 			CVector muzzleDir;
-			Utils_GetVecFromMagDir(&muzzleDir, this->field_100 == 0 ? 0x12 : 0x10,
-					reinterpret_cast<CSVector*>(&this->mAngles));
+			Utils_GetVecFromMagDir(&muzzleDir, 0xC, reinterpret_cast<CSVector*>(&this->mAngles));
 
-			CVector muzzleEnd = reinterpret_cast<CVector&>(this->field_13C) + muzzleDir;
+			this->field_104 = this->field_104 + muzzleDir * this->field_80;
 
-			SLineInfo lineinfo;
-			lineinfo.StartCoords = reinterpret_cast<CVector&>(this->field_13C);
-			lineinfo.EndCoords = CameraList->mPos;
-			lineinfo.MinCoords.vx = 0;
-			lineinfo.MinCoords.vy = 0;
-			lineinfo.MinCoords.vz = 0;
-			lineinfo.MaxCoords.vx = 0;
-			lineinfo.MaxCoords.vy = 0;
-			lineinfo.MaxCoords.vz = 0;
-			lineinfo.iLo = 0;
-			lineinfo.iHi = 0;
-			lineinfo.jLo = 0;
-			lineinfo.jHi = 0;
-			lineinfo.Distance = 0;
-			lineinfo.Length = 0;
-			lineinfo.pItem = 0;
-			lineinfo.Position.vx = 0;
-			lineinfo.Position.vy = 0;
-			lineinfo.Position.vz = 0;
-			lineinfo.Normal.vx = 0;
-			lineinfo.Normal.vy = 0;
-			lineinfo.Normal.vz = 0;
-
-			M3dColij_InitLineInfo(&lineinfo);
-			M3dZone_LineToItem(&lineinfo, 1);
-
-			if (lineinfo.pItem)
-			{
-				this->field_104 = lineinfo.Position;
-			}
-
-			i32 dist = Utils_Dist(reinterpret_cast<CVector&>(this->field_13C), MechList->mPos);
-
-			if (dist > this->field_12C)
-			{
-				this->field_12C = dist;
-				this->field_130 = Vblanks;
-			}
-			else if (dist < this->field_134)
-			{
-				this->field_134 = dist;
-
-				if (Vblanks - this->field_130 > 0x78)
-				{
-					SFX_Play((Rnd(6) & 0xFE) == 0 ? 0x8F00 : 0x8F04, 0x3C, 0);
-					this->field_130 = Vblanks;
-				}
-			}
-
-			if (Vblanks - this->field_138 > 0x78)
-			{
-				SFX_Play((Rnd(8) & 0xFE) == 0 ? 0x8F18 : 0x8F1C, 0x3C, 0);
-				this->field_138 = Vblanks;
-			}
+			i32 dist = Utils_Dist(this->field_104, reinterpret_cast<CVector&>(this->field_13C));
 
 			if (dist < 200)
 			{
+				reinterpret_cast<CVector&>(this->field_110) = this->field_104;
+
+				CVector toMech = (MechList->mPos - this->field_104) >> 12;
+				reinterpret_cast<CVector&>(this->field_148) = toMech;
+
+				i32 preNormalizeLen = reinterpret_cast<CVector&>(this->field_148).Length();
+				VectorNormal(reinterpret_cast<VECTOR*>(&this->field_148), reinterpret_cast<VECTOR*>(&this->field_148));
+
+				this->field_154 = 0;
+
+				i32 travelLimit = 2 * preNormalizeLen;
+				if (travelLimit < 512)
+					travelLimit = 512;
+				this->field_158 = travelLimit;
+
 				this->field_100 = 2;
 				this->field_128 = false;
 				this->field_F8 = 0;
