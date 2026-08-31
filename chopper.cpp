@@ -1067,22 +1067,31 @@ void CChopperMissile::Explode(void)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4342784.bin. Guarded by
-// field_104 (a Trig node id, non-zero when a target link is set) and field_120 (a state
-// gate, must be 0), then Trig_GetPosition(&field_110, field_104) refreshes the target
-// position and the same gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/
-// gte_stlvnl2/gte_stsxy screen projection idiom as
-// CSniperTarget::DrawTargetRecticle is applied, clipped on depth < 200. The original
-// then draws two Panel_DrawTexturedPoly icons (field_124 plus what looks like a
-// distance/warning readout, calling an unnamed helper at 0x509000 six times, most
-// likely digit rendering for a distance readout) which this reconstruction does not
-// reproduce: could not determine that helper's signature from the disassembly alone
-// without pulling in another file's stub declarations, so only the icon draw and a
-// schematic bracket are implemented here, matching the CSniperTarget precedent. This
-// is a best-effort structural reconstruction, not instruction verified.
-// cmpsum: 975 mnemonic diffs, first divergence right at the field_104/field_120 guard
-// (our compare order differs). 1 attempt (structural reconstruction only). Needs real
-// work.
+// @Note: re-checked 2026-08-31 against a fresh Hex-Rays decompile of
+// tools/functions/4342784.bin (0x424400), not just the disassembly. The old
+// note's guess was wrong: the unnamed helper at 0x509000 is NOT a digit
+// renderer, it draws one LINE SEGMENT (2 screen points + fixed z=6.0 + color
+// + width=2.0), called 6 times to draw crosshair tick marks around the
+// target box. The icon draw does not go through Panel_DrawTexturedPoly
+// either: it goes through a different allocator (0x462BB0, returns a raw
+// primitive struct this function fills by hand: UV/color/tpage bytes, then a
+// screen quad computed from the icon's own bitmap aspect ratio read straight
+// off the SAnimFrame bytes at *(this->field_124-related pointer)). There are
+// also several PS1-GTE-primitive setup calls (0x46D7B0/46E460/46DBC0/46DF70/
+// 46DF80, matching the CPlayer::RenderLookaroundReticle GTE idiom already
+// used elsewhere) and one call to a debug-gated stub (0x46CB90, format
+// string "stubbed out: setLineF4", gated by byte_54D341) that is a no-op in
+// this build. Two icon draws happen (offset by a depth-scaled width, most
+// likely a near/far double-icon like CSearchlight's double ring) followed by
+// the 6 line segments, all using perspective-divided coordinates (screen
+// scale constants dword_568158/568154 divided by projection denominators
+// dword_628614/61B5FC). This is real, more precise ground truth than the old
+// note had, but reproducing the exact float pipeline (roughly 500 lines of
+// packed single-precision arithmetic per Hex-Rays) is a genuinely large,
+// separate task from the rest of this pass; left @NotOk rather than risk an
+// unverified rewrite. Whoever picks this up next should start from the
+// fresh decompile, not the old schematic below (kept only because it at
+// least compiles and does not crash).
 void CChopperMissile::DrawTargetRecticle(void)
 {
 	if (!this->field_104 || this->field_120)
@@ -1427,18 +1436,21 @@ void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4334144.bin. Same
-// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
-// projection idiom as CPlayer::RenderLookaroundReticle (spidey.cpp, same
-// stru_56F1B4/stru_56F224 scratch globals), clip tested against screen bounds, then a
-// Panel_DrawTexturedPoly icon draw for field_11C with a fixed tint/blend flag, an
-// aspect-ratio scale derived from the texture, and 4 bracket-corner quads via
-// PCGfx_UseTexture/PCGfx_DrawQPoly2D. The icon draw (color, tpage flag) is traced with
-// reasonable confidence; the bracket quad coordinates and PCGfx_DrawQPoly2D's many
-// float arguments are a best-effort schematic, not instruction verified: could not
-// trace that many packed float args by hand from raw disassembly.
-// cmpsum: 675 mnemonic diffs, first divergence right at the prologue register
-// allocation. 1 attempt (structural reconstruction only). Needs real work.
+// @Note: re-checked 2026-08-31: the raw disassembly of tools/functions/4334144.bin
+// (0x422240) opens with the exact same sub_46D7B0/46E460/qt_register_signal_
+// spy_callbacks_1/46DBC0/46DF70 GTE screen-projection call sequence as
+// CChopperMissile::DrawTargetRecticle (0x424400), confirmed via a fresh
+// Hex-Rays decompile of that sibling function (see its note above). Same
+// finding applies here: this is very likely NOT a Panel_DrawTexturedPoly +
+// PCGfx_DrawQPoly2D bracket draw, it is almost certainly the same "icon via
+// a raw primitive allocator at 0x462BB0, then crosshair tick marks via 6
+// calls to a line-segment drawer at 0x509000" structure, not digit
+// rendering or a generic bracket quad. Did not re-verify this function's own
+// full body line by line (budget went to CChopperMissile's sibling instead,
+// since decompiling one fully-detailed twin is enough to establish the real
+// approach); whoever continues this should decompile 0x422240 directly with
+// Hex-Rays rather than trust the schematic below, which is now known to be
+// structurally wrong, not just imprecise on float args.
 void CSniperTarget::DrawTargetRecticle(void)
 {
 	CVector camPos = *gCameraViewPos;
@@ -1505,23 +1517,45 @@ void CSniperTarget::DrawTargetRecticle(void)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4331776.bin. Kill-flag check + Die(), then
-// a 3-state machine on field_100: state 0/1 are a line-of-sight/aim acquisition loop
-// (Utils_CalcAim + Utils_TurnTowards toward field_104, a mAngVel/mAngAcc/mAngFric
-// physics-style settle integrator reused for muzzle sway run field_80 times,
-// Utils_GetVecFromMagDir to get the muzzle direction, an M3dColij raycast from the
-// muzzle to the camera, a running best-distance field_12C, and periodic voice-line
-// SFX_Play calls gated by three independent timers field_130/134/138), transitioning
-// to state 2 once close enough. State 2 rate-limits firing (global timer 0x6B4CA8
-// minus field_124, a shot budget field_F8 < field_FC, and a 40% random roll) and
-// spawns a CMachineGunBullet owned by this (matching the existing
-// CMachineGunBullet(CVector*,CVector*,CSniperTarget*) constructor: field_A4 == 10).
-// This is a best-effort structural reconstruction of the control flow shape, not
-// instruction verified: several new fields (field_F8/100/124/12C/130/134/138/154/158)
-// were carved out of what the header had as PADDING, and the exact raycast/voice-line
-// argument wiring and the aim-settle math could not be traced byte for byte by hand.
-// cmpsum: 536 mnemonic diffs, first divergence right at the prologue (missing the SEH
-// frame setup entirely). 1 attempt (structural reconstruction only). Needs real work.
+// @Note: re-checked 2026-08-31 with a fresh Hex-Rays decompile of
+// tools/functions/4331776.bin (0x421900), which corrects and sharpens the
+// earlier structural guess below. Confirmed real (field_100, the state
+// selector, is this+256/0x100):
+// - States 0 and 1 are NOT the same code with a different rate (this
+// source's shared "case 0: case 1:" block is wrong on that point): they are
+// two DIFFERENT blocks with different aim targets.
+//   state 0: Utils_CalcAim aims at MechList->mPos (not field_104), rate 8,
+//   muzzle magnitude 18, and the line-of-sight raycast end is
+//   dword_56F3B8+8 (a global CVector this codebase has not named yet, NOT
+//   CameraList->mPos as this source assumes). On hit it allocates a
+//   CGlowFlash-like effect by hand (operator new via CBit::operator new,
+//   0x4088A0, size 184, then CGLine::CGLine, then CMachineGunBullet::Common
+//   at 0x420DC0, i.e. it is actually spawning a muzzle-flash CMachineGunBullet
+//   variant here already, not only in state 2) and stores an owner handle via
+//   Mem_MakeHandle (0x458360).
+//   state 1: Utils_CalcAim aims at field_13C (this+316, matches this
+//   source's target), rate 16, muzzle magnitude 12, and the raycast end is
+//   MechList->mPos this time. Transitions to state 2 on
+//   Utils_Dist(muzzleEnd, field_13C) < 200 (not the field_10C/field_79
+//   naming this source guessed).
+// - Both states share the same mAngVel/mAngAcc/mAngFric settle-integrator
+// loop this source already has right (matches CChopperMissile::AI's now-
+// fixed per-substep formula), and both play random voice lines via
+// Rnd(0x4E5DA0) + Redbook_XAPlay (0x479EE0, NOT SFX_Play) picking from
+// several distinct (track, ???) pair tables (dword_548F38/548F3C for the
+// "up close" set, dword_548F28/548F2C for the "far" set, etc.), gated by the
+// running best/worst distance fields and the 0x78-vblank timers, roughly as
+// this source already has.
+// - State 2 (top block) matches this source's rate-limit/fire logic in
+// spirit (a global vblank timer, a shot budget, a ~40% random roll,
+// spawning a CMachineGunBullet), but was not re-verified in this pass.
+// This is real, more precise ground truth than the old note had, but a full
+// correct rewrite needs splitting states 0 and 1 into two separate blocks
+// (this source's shared block cannot represent two different aim targets)
+// and naming dword_56F3B8 properly first (nearest-neighbour check against
+// idb_globals.txt not done in this pass). Left @NotOk rather than risk an
+// unverified state-machine rewrite; whoever continues this should start from
+// a fresh Hex-Rays decompile of 0x421900, not the block below.
 void CSniperTarget::AI(void)
 {
 	if (this->mFlags & 1)
@@ -2145,18 +2179,23 @@ void Chopper_CreateSearchlight(const u32* a1, u32* a2)
 }
 
 // @NotOk
-// @Note: reconstructed from tools/functions/4340240.bin. Same
-// gte_SetRotMatrix/m3d_ZeroTransVector/gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy screen
-// projection idiom as CSniperTarget::DrawTargetRecticle, applied per vertex of
-// field_138[] (the CVector[66] light-cone mesh CalculateSearchlight fills). If the beam
-// source (field_138[0]) is too close to the camera (depth < 200) the whole draw is
-// skipped. Otherwise it resets field_12C (the CheckPointInScreenTri hit flag, re-armed
-// every render) and draws the beam as a flat-shaded (PCGfx_UseTexture with no texture)
-// triangle strip walking the near/far vertex pairs. This is a best-effort schematic:
-// the per-vertex draw call parameters were not traced byte for byte, only the GTE
-// transform and the overall loop/early-out shape are grounded in the disassembly.
-// cmpsum: 498 mnemonic diffs, first divergence right at the prologue register
-// allocation. 1 attempt (structural reconstruction only). Needs real work.
+// @Note: re-checked 2026-08-31 against the raw disassembly of
+// tools/functions/4340240.bin (0x423a10) after CalculateSearchlight's fix
+// changed what field_138[] actually holds (see that function's note): it is
+// a double ring around the raycast hit point (33 near + 33 outer/far
+// vertices, not a near/far pair spanning the beam length), so this renderer
+// should walk it as a ring strip around one hit point, not a strip along the
+// beam. The opening GTE screen-projection sequence (sub_46D7B0/46E460/
+// sub_4E7840) matches the same idiom confirmed in the two DrawTargetRecticle
+// notes above, but past that this function's stack frame is large (0x11C
+// bytes, with what look like 12-byte-spaced per-vertex clip-flag bytes),
+// consistent with a real batched multi-vertex strip draw call, not the
+// current per-pair PCGfx_DrawQPoly2D loop. Did not fully decompile the draw
+// call itself (same class of large float-heavy primitive-fill code as the
+// DrawTargetRecticle functions); left @NotOk. Whoever continues this should
+// decompile 0x423a10 with Hex-Rays and rebuild the loop to match
+// CalculateSearchlight's real field_138 layout (index 0 = hit point anchor,
+// 1..32 = inner ring, 33..64 = outer ring, 65 unused).
 void CSearchlight::SpecialRenderer(void)
 {
 	gte_SetRotMatrix(gCameraViewMatrix);
