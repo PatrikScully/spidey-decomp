@@ -384,16 +384,70 @@ void Panel_CreateCompass(CVector * pVec)
 // (defined earlier in the file) can use it too.
 static i32 * const gPanelScreenY = (i32*)0x0060F76C;
 
-// Investigated 2026-08-31 via Hex-Rays. Real address is unclear (names.json
-// has no entry and it was never confirmed against the binary), but
-// prototypes.json (Mac sizes) lists Panel_Display(void) at 4744 bytes,
-// similar in shape to Panel_DisplayCompass/Panel_DisplayHealthBar below:
-// heavy float texture-coordinate math per HUD icon and calls into the same
-// undecompiled draw-primitive family (sub_462BB0/462C30/462CD0/462D60/
-// 462FB0/506440/507910, none named or decompiled anywhere in the repo yet).
-// Retagged @MEDIUMTODO -> @BIGTODO: this is not a size a single session
-// should attempt blind, see Panel_DisplayCompass's comment for the shared
-// blocking dependencies.
+// Investigated further 2026-08-31 (second pass, after Panel_DisplayCompass/
+// Panel_DisplayHealthBar were solved below): its real address IS now known,
+// names.json still has no entry but it is sub_4658C0 (0x4658C0, 4555 bytes),
+// found via xrefs_to on Panel_DisplayCompass/Panel_DisplayHealthBar - this
+// function is their only caller, calling Panel_DisplayCompass unconditionally
+// near the top and Panel_DisplayHealthBar at the very end, exactly matching
+// a "top-level HUD dispatcher" shape. All of its OTHER callees turned out to
+// already be decompiled too, same story as the other two: sub_462BB0/462C30/
+// 462D60/462FB0/506440/507910 are Panel_DrawTexturedPoly/
+// Panel_SetStretchedScreenCoords(SAnimFrame overload)/DCPanel_DrawFlatShadedPoly/
+// DCDrawGouraudPoly(9-arg)/PCGfx_UseTexture/PCGfx_DrawQPoly2D (all in this
+// file or PCGfx.cpp, already @Ok - see Panel_DisplayHealthBar's comment for
+// how each was confirmed). sub_461D00 = Panel_DisplayTimer (already @Ok,
+// right below in this file). sub_458620/458610/458640/458670/458630/458700 =
+// Mess_SetScale/Mess_SetTextJustify/Mess_SetRGB/Mess_SetRGBBottom/
+// Mess_SetSort/Mess_DrawText (mess.h, already used the same way by
+// Panel_DisplayTimer above for its bomb-timer digit readout - this function
+// draws a similar 1-2 digit web-cartridge count next to the webcart icon).
+// dword_6A9038 = MechList (idb_globals.txt: 0x6A9038 MechList - the same
+// CPlayer* already used by Panel_DisplayTimer above, so despite the name
+// this whole function is about the PLAYER's own HUD, not a boss). Its field
+// offsets used here are all already-named CPlayer fields (spidey.h):
+// +0x1AC=field_1AC and +0xE18=field_E18 (both already read by
+// Panel_DisplayTimer's `MechList->field_E18==0 && field_1AC==0` gate - same
+// "player piloting a special mech" suppression check, reused here to hide
+// the normal panel while it is active), +0x5D4=mWebbing, +0x5D8=field_5D8
+// (looks like the actual web-cartridge ammo count, formatted into the 1-2
+// digit byte_54EA90/54EA91 text buffer exactly like Panel_DisplayTimer's
+// bomb-timer digits), +0x5DC/+0x5E0=field_5DC/field_5E0 (each compared
+// against gTimerRelated with a <32 threshold - "frames since this changed"
+// timers driving a shrink/brighten animation on the webcart icon and a
+// fade on a health-adjacent bar), +0x5E8=field_5E8 (char, a state flag
+// gating the webcart icon's color pulse and the final bar's color choice),
+// +0x5E9=field_5E9 (bool, gates one of the small gouraud bars),
+// +0x5EC=field_5EC and +0xEF0=mMaxHealth (used together as a
+// current/max pair the same shape as Panel_DisplayHealthBar's health-percent
+// math, but +0x5EC is compared against mMaxHealth rather than mHealth -
+// read as a second, animated/lagging health value rather than mWebbing
+// despite the offset's proximity to mWebbing; a SEPARATE calc right after
+// uses the real +0x226=mHealth against the same mMaxHealth for the
+// background bar, i.e. this looks like a two-layer "real health bar +
+// smoothed pulse overlay" the same way Panel_DisplayHealthBar draws a solid
+// background bar plus a gouraud highlight). None of these CPlayer field
+// guesses are confirmed beyond "the byte width/comparison shape fits";
+// left unconfirmed rather than committed to spidey.h.
+//
+// Not yet resolved, still genuinely blocking a safe implementation:
+// dword_5FCD1C (compared against pPoly for a "Poly buffer overflowed
+// before Panel_Display" debug check - likely PolyBufferEnd or a second
+// buffer-end marker, not yet confirmed which), dword_54D47C and
+// byte_60F772/byte_60F770 (gate the top-level early-return/branch shape
+// together with the MechList check above - unclear semantics),
+// dword_60F774/60F778/dword_54E8D4 (a decaying counter block right at the
+// top, structurally identical to the bomb-timer decay pattern in
+// Panel_DisplayTimer but for an unidentified HUD element), dword_60F754/
+// 60F750/60F760 (a 3-deep fallback chain "v18 = field_60F754, else
+// field_60F750, else gAnimSp/60F758" feeding the main webcart icon draw -
+// looks like gAnimWebcart's frame-selection state but not confirmed against
+// gAnimWebcart's real address), and the v9<32 icon-resize block (raw
+// POLY_FT4 field reshuffling under a fixed-point interpolation, same shape
+// as the two already-decompiled Panel_DisplayCompass needle-half blocks but
+// with different math not yet worked out). Given the callee tree is now
+// fully resolved, this is a good next target - the remaining unknowns are
+// about a dozen new globals/fields, not missing functions.
 // @BIGTODO
 void Panel_Display(void)
 {
