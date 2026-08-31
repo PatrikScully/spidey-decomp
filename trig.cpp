@@ -1170,24 +1170,81 @@ void Trig_DeleteTrigFile(void)
 }
 
 // @BIGTODO
-// Investigated 2026-08-31 (IDA Hex-Rays), not attempted further. Original
-// at 0x4E0210, 12160 bytes (next symbol SendKillFromNode at 0x4E3190) -
-// the single biggest function found in this pass, decompiles to about
-// 59000 characters of pseudocode. This is the trigger-script bytecode
-// interpreter itself: it walks pCommands and dispatches on the u16
-// opcode/tag stream (the same 0x4100/0x4112-0x4119/0x2000/0x4000-bit
-// encoding CBaddy::ExecuteCommand and CBaddy::SetVariable use), handling
-// node-level commands (spawn objects via Trig_CreateObject/sub_4DEE70,
-// already a forward stub above; kill/suspend/activate nodes; wait-for-
-// spooling; branching/looping tags) plus a long tail of unnamed helpers
-// (sub_453280 seen so far, more before the dump truncated). It shares
-// Trig_CreateObject's blocker (needs that decompiled first) and adds its
-// own: several more per-node global tables (dword_6B466C, dword_6B4664,
-// dword_6B4708, dword_6B468C, dword_6B470C, word_6B4688, dword_6B4614)
-// whose layouts are not documented anywhere in this repo. Given the size
-// and the transitive dependency on the equally-blocked Trig_CreateObject,
-// this needs its own dedicated multi-session pass, not something to
-// attempt inside a three-file task. Left as the forward-to-original stub.
+// Re-investigated 2026-08-31 with IDA (decompile + raw disassembly, not
+// just the earlier Hex-Rays-only pass). Original at 0x4E0210, confirmed
+// 3041 x86 instructions (0x299E = 10654 bytes; the "12160 bytes" and
+// "SendKillFromNode at 0x4E3190" in the previous note were off, probably
+// measured against a stale names.json entry). This is the trigger
+// command-list interpreter: a single big switch on a u16 opcode word
+// (case range 2..305, ~110 of those 304 slots are real handled cases,
+// the rest fall to a shared "Unknown command" default that does NOT
+// advance the read cursor at all -- confirmed dead code in practice,
+// since a real .trg file never emits an unhandled opcode or the retail
+// game would spin on it forever too). Each case reads a
+// command-specific number of argument bytes right after the opcode and
+// advances the cursor by exactly that many before looping to the next
+// opcode, so a correct partial port needs the EXACT byte-length of every
+// opcode it handles, known ones and skipped ones alike -- getting one
+// wrong desyncs the cursor for every remaining command in that node's
+// list, silently corrupting the rest of that level's scripting. That is
+// why this is intentionally still the forward-to-original stub rather
+// than a partial/guessed port: at this size (110 real opcodes) with the
+// wrong-opcode risk this high, a rushed partial implementation is worse
+// than an honest gap. The stub itself calls the real 0x4E0210 code, so
+// it is fully correct at runtime, just not yet a from-source translation.
+//
+// What changed since the last note, and is now confirmed (not guessed):
+//   - Trig_CreateObject (0x4DEE70), this function's other stated
+//     blocker, is fully decompiled above as of this session.
+//   - Of the "several more per-node global tables" the old note flagged
+//     as undocumented, all but one turn out to already be correctly
+//     named and used by OTHER already-decompiled functions in this same
+//     file: dword_6B466C = G_OFFSETLIST, dword_6B4708 = G_COMMANDPOINTS,
+//     dword_6B4664 = G_NUMCHEATRESTARTS, dword_6B4614 =
+//     gCheatRestartNames, word_6B4688 = G_PENDINGLISTARRAY, dword_6B470C
+//     = G_ISRESTARTDEATH (confirmed by its use in the RunCinema opcode
+//     below: cinema triggers on autoexec-type nodes are skipped while
+//     G_ISRESTARTDEATH is set, i.e. don't replay a cutscene when
+//     respawning after death). Only dword_6B468C is still unidentified;
+//     our best guess (not confirmed) is gLevelStatus (front.cpp/trig.h),
+//     which has no fixed game address yet.
+//   - A cluster of small trigger-system helpers sitting immediately
+//     before this function in the binary (0x4DE7F0..0x4DFD30) are ALSO
+//     already decompiled here under their real names:
+//     Trig_DoPendingCommandLists, Trig_DeleteCommandPoints,
+//     Trig_TriggerCommandPoint, Trig_ExecuteRestart, Trig_DeleteTrigFile,
+//     Trig_LoadTRG, Trig_SendPulseToNode, Trig_SendPulse, Trig_SetRestart
+//     -- so this function's own callees into that neighbourhood are not
+//     a blocker either.
+//
+// A representative sample of opcodes read off the game's own debug
+// strings (not guessed -- these strings are compiled into the retail
+// binary right next to each case, e.g. `push offset aSetcheatrestar;
+// "SetCheatRestarts"`), covering roughly the first quarter of the
+// switch (instructions 0..~700 of 3041 read so far): 2 SetCheatRestarts
+// (writes gCheatRestartNames[]/G_NUMCHEATRESTARTS), 110 ClearAllPSXs
+// (calls sub_4CA750), 126/127/128 SpoolIn/SpoolOut/SpoolEnv (string arg,
+// calls sub_4CA640/sub_4CAC20), 129 SpoolLock, 133 KillEverythingInBox
+// (six 12-bit fixed-point floats, calls sub_4E69D0), 140/176 SetRestart
+// (string node-name lookup via Trig_GetPosition, writes G_RESTARTNODE),
+// 142 SetObjFile, 151 SetDualBufferSize (unimplemented no-op), 159
+// SpoolMidi, 162 ClearAllCodeModules, 189 SpoolCodeModule, 190 RunCinema
+// (gated on G_ISRESTARTDEATH, see above), 193/194 SendPushback, 195
+// WideScreen, 196 BuzzSpideySense, 197 SetMotionAngleOffset, 214/300/301
+// NightSky/AllowSpeedup/DisallowSpeedup (unimplemented no-ops), 217
+// AllowCamLOSCheck, 302 EndLevelNode, 303/304 FadePalettesUp/Down
+// (mysterio-specific, calls sub_47D470), 305 KillEverything (calls
+// sub_4437E0). Several of these are simple field pokes into already-
+// known globals and would be safe to port on their own; others (133,
+// 140/176, 141/192/209) involve floating point, strtok-based string
+// matching, or checksum node lookups on a par with a whole separate
+// small function each. The remaining ~three quarters of the switch is
+// unread. Whoever continues this: read the rest via disasm at the case
+// addresses (the jmp table refs at 0x4E02BE list every case target),
+// implement opcodes one at a time the way Trig_CreateObject's cases were
+// ported above, and keep this stub (or a default-case call into it,
+// were that ever wired up per-opcode -- not attempted here, see above)
+// for whatever remains unfinished when done.
 void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 {
 
