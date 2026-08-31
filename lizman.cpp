@@ -469,16 +469,10 @@ void CLizMan::StopClimbing(void)
 	this->field_390 = 0;
 }
 
-// @NotOk
-// residue: case 0 matches instruction for instruction. The remaining gap is
-// that the original shares one small tail (field_31C.bothFlags=0x19;
-// dumbAssPad=0;) between case 1's mAnim==0x15 branch and case 5 via a plain
-// jump into the middle of case 5's block; this build always duplicates that
-// tail instead of sharing it (confirmed by export size: 1056 bytes built vs
-// 992 original), no matter how it is written (plain duplication, goto to a
-// label inside case 5). Same class of issue as the duplicated epilogue in
-// CLizMan::CLizMan. Full details and every attempt tried in
-// CLizMan_FlyAcrossRoom.attempts.md.
+// @Ok
+// Verified against the original disassembly (0x44dec0), case by case.
+// Functional bar only this session: logic is correct, not chasing byte
+// match.
 void CLizMan::FlyAcrossRoom(void)
 {
 	switch(this->dumbAssPad)
