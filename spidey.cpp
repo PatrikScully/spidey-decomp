@@ -210,6 +210,11 @@ static MATRIX * const stru_56F224 = (MATRIX*)0x56F224;
 // above.
 static u32 * const gSpideySenseListLastUpdateTime = (u32*)0x006A9084;
 
+// ProcessSFXArray (0x4C8F40): remembers the last random SFX id it played so
+// the do/while loop re-rolls instead of replaying the same one. Sits 8 bytes
+// after gSpideySenseListLastUpdateTime (0x6A9084).
+static u32 * const gLastPlayedSfx = (u32*)0x006A908C;
+
 // @Ok
 // residue: 13 mnemonic diffs (down from an initial honest pass of 85),
 // accepted as functionally equivalent scheduling residue under this
@@ -1698,10 +1703,66 @@ void CPlayer::ParseFightData(void)
     printf("CPlayer::ParseFightData(void)");
 }
 
-// @SMALLTODO
-void CPlayer::ProcessSFXArray(void)
+// Walks the per-anim SFX trigger array (field_350). Each 32-bit element
+// packs its trigger frame in the low word; once mFrame reaches it the
+// matching SFX is played (picked by mAnim) and the element's high word is
+// set to 0xFFFF so it is not replayed. A -1 sentinel ends the array and
+// clears field_350. Returns the (advanced) array pointer, which the single
+// caller (SpideyAI0) ignores.
+// @Ok
+i32 CPlayer::ProcessSFXArray(void)
 {
-    printf("CPlayer::ProcessSFXArray(void)");
+	i32 *p = this->field_350;
+
+	if (p == 0)
+		return 0;
+
+	i32 elem = *p;
+	if (elem == -1)
+	{
+		this->field_350 = 0;
+		return (i32)p;
+	}
+
+	if (this->mFrame < elem)
+		return this->mFrame;
+
+	switch (this->mAnim)
+	{
+		case 0x15:
+		case 0xC0:
+		case 0xC6:
+		{
+			i32 sfx;
+			do
+			{
+				if (this->field_34C != 0)
+					sfx = (Rnd(4) + 80) | 0x8000;
+				else
+					sfx = Rnd(4) + 1;
+			}
+			while (sfx == *gLastPlayedSfx);
+			SFX_Play(sfx, 0x2000, 0);
+			*gLastPlayedSfx = sfx;
+			break;
+		}
+		case 0x32:
+		case 0x33:
+		case 0x34:
+		case 0x3C:
+		case 0x3F:
+			SFX_Play(Rnd(2) + 5, 0x2000, 0);
+			break;
+		case 0x3B:
+			SFX_Play(9, 0x2000, 0);
+			break;
+		default:
+			break;
+	}
+
+	*p = elem | 0xFFFF0000;
+	this->field_350 = p + 1;
+	return (i32)(p + 1);
 }
 
 // Reads the player's movement input for this tick from the pad (field_E0C

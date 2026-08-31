@@ -63,7 +63,11 @@ class CPlayer : public CSuper
 		// while field_AD8 was pending.
 		u8 field_211;
 
-		PADDING(0x350-0x211-1);
+		PADDING(0x34C-0x211-1);
+
+		// ProcessSFXArray: non-zero selects the (Rnd(4)+80)|0x8000 SFX range,
+		// zero selects the Rnd(4)+1 range, in the mAnim 0x15/0xC0/0xC6 case.
+		i32 field_34C;
 
 		i32 *field_350;
 
@@ -513,7 +517,7 @@ class CPlayer : public CSuper
 		EXPORT void LockTargetTorsoAngle(void);
 		EXPORT void NotifyKill(u16);
 		EXPORT void ParseFightData(void);
-		EXPORT void ProcessSFXArray(void);
+		EXPORT i32 ProcessSFXArray(void);
 		EXPORT void ReadAnalogueInput(void);
 		EXPORT void SelectAutoAimTarget(void);
 		EXPORT void SelectTargetBaddy(i32,i32,i32,i32);
