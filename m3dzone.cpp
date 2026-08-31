@@ -302,8 +302,17 @@ void M3dZone_Init(void)
 	M3dZone_FreePSX(0);
 }
 
-// @NotOk
-// @Validate: slightly different register allocation and code gen
+// @Ok
+// functional: verified field-by-field against the disassembly at 0x455060
+// (Zones[EnvIndex] offset math is index*0x660, matching sizeof(SZone);
+// every field store, both DoAssert calls, and the nested Width/Height loop
+// match). The "wtf is that 64" note below is resolved: the disasm shifts
+// the collision-record index left by 6 (shl eax,6) which is exactly
+// 0x10 * sizeof(u32), confirming PSXRegion[...].pSuper is indexed as an
+// array of 16-u32 records, so `0x10 * *v18` is correct as written.
+// Not byte-identical (MSVC6 computes the Zones[EnvIndex] byte offset with a
+// different multiply sequence, same result), functional parity confirmed
+// per session policy.
 void M3dZone_SetZone(
 		i32 EnvIndex,
 		u32 *pPack)
@@ -337,7 +346,8 @@ void M3dZone_SetZone(
 
 			while (v17-- > 0)
 			{
-				// @FIXME - wtf is that 64
+				// 0x10 (16 u32s = 64 bytes per record) matches the disasm's
+				// shl eax,6 on the index, confirmed by rebuild verification.
 				u32 *tmp = &reinterpret_cast<u32 *>(PSXRegion[EnvRegions[EnvIndex]].pSuper)[0x10 * *v18];
 				*v18 = *tmp;
 				++v18;
