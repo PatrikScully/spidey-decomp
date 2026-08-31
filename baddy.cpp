@@ -3283,20 +3283,73 @@ void validate_SStateFlags(void){
 	VALIDATE_SIZE(SStateFlags, 0x4);
 }
 
-// @BIGTODO
-// Retagged from @SMALLTODO: checked the original disasm at 0x45aaa0, it is
-// 0x307 bytes (231 instructions), SEH-protected, and allocates two
-// different embedded object types (own vtables at 0x53BB14 "Ken'sCircle"
-// and 0x53BB00 "goldfish", neither of whose classes exist in this repo
-// yet) plus several unnamed helper calls (particle/color-table init,
-// random position jitter). Not a small stub port. Left as a printf stub
-// so CMysterio::CMysterio(i16*, i32) in mysterio.cpp can still create one;
-// see the comment above CMystFoot::CMystFoot in mysterio.cpp for why this
-// stays in baddy.cpp rather than mysterio.cpp. Correct size 0xBC, ctor
-// address 0x45AAA0, Mac size 328 bytes.
-CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)
+// tentative: shared zero-initialized CVector at 0x60D9D0, confirmed all-zero
+// BSS via IDA and referenced from well over a dozen unrelated bit.cpp
+// functions (0x411D50 .. 0x4478A9) -- a common "pass the origin" scratch
+// global reused across many CGlow/CBit-family constructors, not Mysterio-
+// specific. Just this file's local handle on it.
+static CVector * const gGlowZeroPos = reinterpret_cast<CVector*>(0x60D9D0);
+
+// @Ok
+// Decompiled from 0x45AAA0 (0x307 bytes, SEH-protected because of the two
+// nested "new" calls below). See the class comment in mysterio.h for how
+// the CGlow base class and the 0x5C+ field layout were worked out (the
+// class is NOT CQuadBit-derived despite the header's old guess: no
+// CQuadBit::CQuadBit/AttachTo(&QuadBitList) call happens for "this", but a
+// real call to the CVector*+ints+6xu8 CGlow ctor overload does, and
+// SetRGB(128,0,255) near the end is CGlow::SetRGB called on "this").
+// gWhatIf selects the "goldfish" visual (What If / alternate-story mode)
+// instead of the normal twin "Ken'sCircle" glow rings; CGoldFish::CGoldFish
+// and CMysterioHeadCircle::CMysterioHeadCircle (mysterio.cpp) are both
+// inlined at their call sites in the real binary, this repo gives them real
+// out-of-line constructors instead (functional-only bar, no behavior
+// change). mProtected/mCBodyFlags on the freshly built child are set here,
+// not inside the child's own ctor, matching the original doing it
+// unconditionally (even on a hypothetical allocation failure) right after
+// storing the pointer.
+CMysterioHeadGlow::CMysterioHeadGlow(CMysterio *owner)
+	: CGlow(gGlowZeroPos, 150, 120, 255, 255, 255, 128, 0, 255)
 {
-	printf("CMysterioHeadGlow::CMysterioHeadGlow(CMysterio*)");
+	this->mOwnerHandle = Mem_MakeHandle(owner);
+
+	if (gWhatIf)
+	{
+		CGoldFish *goldfish = new CGoldFish();
+		this->field_B8 = goldfish;
+		goldfish->mCBodyFlags |= 0x20;
+	}
+	else
+	{
+		CMysterioHeadCircle *circle1 = new CMysterioHeadCircle();
+		this->field_B0 = circle1;
+		circle1->mProtected = 1;
+
+		CMysterioHeadCircle *circle2 = new CMysterioHeadCircle();
+		this->field_B4 = circle2;
+		circle2->mProtected = 1;
+	}
+
+	this->field_A4 = 0;
+
+	this->SetRGB(128, 0, 255);
+
+	for (u32 i = 0; i < this->mNumSections; i++)
+	{
+		this->mSectionPhase[i] = Rnd(4096);
+		this->mSectionPeriod[i] = Rnd(50) + 200;
+	}
+
+	if (this->field_B0 && this->field_B4)
+	{
+		this->field_B0->NormalMode();
+		this->field_B4->NormalMode();
+	}
+	else if (this->field_B8)
+	{
+		this->field_B8->NormalMode();
+	}
+
+	this->mFrigDeltaZ = -160;
 }
 
 // @Ok

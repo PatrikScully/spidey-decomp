@@ -17,6 +17,8 @@
 #include "bit2.h"
 
 extern struct tag_S_Pal *pPaletteList;
+extern CBody *MiscList;
+extern i32 gShellMysterioRelated;
 
 EXPORT SLight M3d_MysterioLight =
 {
@@ -929,6 +931,24 @@ void INLINE CMysterioLaser::SetDamage(int damage)
 }
 
 // @Ok
+// Read straight off the inlined block at 0x45AB39-0x45AB8D inside
+// CMysterioHeadGlow::CMysterioHeadGlow (baddy.cpp). mCBodyFlags |= 0x20 is
+// NOT part of this (it happens unconditionally, even on allocation failure,
+// right after the caller stores the pointer -- see the comment on that
+// function).
+CGoldFish::CGoldFish(void)
+{
+	this->InitItem("goldfish");
+	this->mType = 506;
+	this->AttachTo(&MiscList);
+	this->mFlags |= 0x200;
+	this->mAngVel.vy = 50;
+	this->mScale.vz = 10000;
+	this->mScale.vy = 10000;
+	this->mScale.vx = 10000;
+}
+
+// @Ok
 void INLINE CGoldFish::AngryMode(void)
 {
 	this->field_F8 = 1;
@@ -942,6 +962,31 @@ void INLINE CGoldFish::NormalMode(void)
 
 void validate_CMystFoot(void){
 	VALIDATE_SIZE(CMystFoot, 0x324);
+}
+
+// @Ok
+// Read straight off the two inlined blocks at 0x45ABCF-0x45AC3A and
+// 0x45AC6C-0x45ACD7 inside CMysterioHeadGlow::CMysterioHeadGlow (baddy.cpp),
+// which are identical apart from which of the two circle instances they
+// build. mProtected = 1 is NOT part of this (it happens unconditionally,
+// even on allocation failure, right after the caller stores the pointer --
+// see the comment on that function). Same field_88/gShellMysterioRelated
+// idiom as the menu-preview twin, CShellMysterioHeadCircle::CShellMysterioHeadCircle
+// (shell.cpp): a signed random "wobble amplitude" that alternates sign every
+// other spawn, halved/doubled by NormalMode/AngryMode below.
+CMysterioHeadCircle::CMysterioHeadCircle(void)
+{
+	this->SetTexture(Spool_FindTextureChecksum("Ken'sCircle"));
+	this->SetSemiTransparent();
+
+	this->field_88 = Rnd(100) + 100 * gShellMysterioRelated + 50;
+
+	if (gShellMysterioRelated & 1)
+		this->field_88 = -this->field_88;
+
+	gShellMysterioRelated++;
+
+	this->mType = 28;
 }
 
 // @Ok
