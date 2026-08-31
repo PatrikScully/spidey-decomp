@@ -440,10 +440,51 @@ void CPlayer::CalculateSwingWebParameters(CVector * a2)
 	this->field_DB8 = abs(v5.vy);
 }
 
-// @SMALLTODO
-void CPlayer::CalculateTugWebPathPoints(void)
+// Builds the 8-point path for a tug web. Recovers the web's end position
+// from the handle at field_E6C+0x134, bails if it is more than 0x80000 away
+// vertically, then lays out 8 points on a shrinking spiral: each point sits
+// at mPos + dir * (radius * cos) in XZ and mPos.y - 256*sin in Y, with the
+// radius dropping by (radius-256)/7 for the first four points.
+// @Ok
+i32 *CPlayer::CalculateTugWebPathPoints(void)
 {
-    printf("CPlayer::CalculateTugWebPathPoints(void)");
+	CVector webEnd = *(CVector *)((u8 *)Mem_RecoverPointer((SHandle *)((u8 *)this->field_E6C + 0x134)) + 8);
+
+	i32 dy = webEnd.vy - this->mPos.vy;
+	if (dy < 0)
+		dy = -dy;
+	if (dy > 0x80000)
+		return 0;
+
+	i32 *buffer = (i32 *)DCMem_New(0x60, 0, 1, 0, 1);
+	i32 *path = buffer;
+
+	CVector dir = webEnd;
+	dir -= this->mPos;
+	i32 length = dir.Length();
+	dir >>= 12;
+	dir.vy = 0;
+	VectorNormal((VECTOR *)&dir, (VECTOR *)&dir);
+
+	i32 step = (length - 256) / 7;
+	i32 angle = 0;
+	while (1)
+	{
+		i32 r = (rcossin_tbl[angle & 0xFFF].cos * length) >> 12;
+		i32 px = this->mPos.vx + r * dir.vx;
+		i32 pz = this->mPos.vz + r * dir.vz;
+		if (angle < 1024)
+			length -= step;
+		i32 py = this->mPos.vy - (rcossin_tbl[angle & 0xFFF].sin << 8);
+		*path++ = px;
+		*path++ = py;
+		*path++ = pz;
+		angle += 256;
+		if (angle >= 2048)
+			break;
+	}
+
+	return buffer;
 }
 
 // @Ok

@@ -467,7 +467,7 @@ class CPlayer : public CSuper
 		EXPORT CPlayer(void);
 		EXPORT i32 CalculateIntermediateTrailSteps(CVector *,CVector *,CVector *);
 		EXPORT void CalculateSwingWebParameters(CVector *);
-		EXPORT void CalculateTugWebPathPoints(void);
+		EXPORT i32 *CalculateTugWebPathPoints(void);
 		EXPORT u8 CheckCeilingJumpingSmashPunch(void);
 		EXPORT void CheckExteriorSurfaceTransition(void);
 		EXPORT void CheckFenceSurfaceTransition(void);
