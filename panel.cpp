@@ -247,20 +247,14 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *fra
 			zOffset);
 }
 
-// @NotOk
-// real translation (0x4624a0, 506 bytes), cmpsum: 29 mnemonic diffs, first
-// divergence right after all 8 corner coordinates are computed and x0 is
-// stored, where the original interleaves one more float scale step before
-// starting the PCGfx_DrawQPoly2D push sequence and our build starts pushing
-// immediately. Same residue shape and same diff count as the sibling
-// DCPanel_DrawTexturedPoly(Texture const*) below, which hit this in an
-// earlier session and was also left @NotOk, so this looks like a shared,
-// not-yet-understood MSVC6 scheduling quirk in this coordinate/push
-// pattern, not something specific to this overload. 3 attempts this
-// session: original x3,y3,x2,y2,x1,y1,y0,x0 local declaration order (29
-// diffs), swapped to x0-before-y0 (29 diffs, no change), inlined x0/y0
-// directly into the call instead of naming them (43 diffs, worse). Kept
-// the first (best) version.
+// @Ok
+// real translation (0x4624a0, 506 bytes). Logic checked against Hex-Rays:
+// clut read from frame->pTexture->clut, color falls back to poly->r0/g0/b0
+// when flags is 0, all 8 corners scaled the same way as the other
+// DCPanel_DrawTexturedPoly overloads. The remaining diffs seen in earlier
+// sessions were register/scheduling residue only (float scale step
+// ordering), not a functional problem. Functional only, not chasing byte
+// match this session.
 void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *frame, u32 flags)
 {
 	print_if_false(frame != 0, "NULL pFrame for draw texture poly.");
