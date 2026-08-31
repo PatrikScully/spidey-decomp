@@ -323,6 +323,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CSmokeTrail();
 	validate_CMessage();
 	validate_CTrapWebEffect();
+	validate_CWebFrag();
 	validate_CMenu();
 	validate_SEntry();
 	validate_CBullet();
