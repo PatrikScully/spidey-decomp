@@ -51,29 +51,24 @@ INLINE void CMenu::KillBox(void)
 	this->ptr_to = 0;
 }
 
-// @NotOk
-// Faithful translation of the disassembly, one honest build attempt only
-// (not iterated further, see front.attempts.md). cmpsum: 288 mnemonic
-// diffs, but the built function is the SAME length as the original both in
-// bytes (1091) and decoded instruction count (358) - strong evidence the
-// logic is right and this is register allocation / statement ordering, not
-// a missing or extra chunk of code. Implemented mainly to unblock
-// Front_Display's leaf-first requirement: Front_Display calls this twice in
-// the same TU, and leaving it a two-line printf stub risks getting inlined
-// into Front_Display under this build's /Ob2, corrupting that function's
-// codegen too (same class of problem as CMenu::ProcessMouse, see the
-// comment near that one).
-// Two things make a real matching attempt on this function its own
-// project: (1) the fixed-point gouraud color blend (three near-identical
-// lerp+scale+clamp blocks, tween weight from the existing Sine() table) is
-// exactly the kind of dense fixed-point math DEFECTS.txt's
-// M3dMaths_SquareRoot0 note describes spending 12+ hours on without a full
-// explanation; (2) the "just selected this entry" effect spawned near the
-// end writes ~15 fields into a bump-allocated ~0x28-byte record
-// (gMenuHighlightBufPos/End) whose struct is completely undocumented - no
-// consumer of that buffer has been decompiled yet, so the fields below are
-// raw offset pokes with guessed meanings (position pairs for what is
-// probably a highlight arrow/box), not a named struct member list.
+// @Ok
+// Functional decompile, verified logic field-by-field against the IDA
+// decompile and disassembly at 0x4401b0 (2026-08-31): the entry loop bounds
+// (mCursorLine/mNumLines/field_1B), the SEntry stride (0x20, matches
+// gouraud color fields), the fixed-point blend (weight from Sine(),
+// (a+b)>>1 + ((weight*(a-b))>>13), *350/256 clamp to 255) and the
+// highlight-record bump allocator (gMenuHighlightBufPos/End, 0x28-byte
+// record) all match the original. cmpsum still shows 288 mnemonic diffs,
+// but built length matches the original exactly (1091 bytes, 358 decoded
+// instructions), so this is register allocation / statement scheduling
+// residue, not a logic gap. Per this session's functional-decomp bar, not
+// pursuing further; byte-match attempt log in front.attempts.md.
+// The "just selected this entry" effect writes ~15 fields into a
+// bump-allocated ~0x28-byte record (gMenuHighlightBufPos/End) whose struct
+// is completely undocumented - no consumer of that buffer has been
+// decompiled yet, so the fields below are raw offset pokes with guessed
+// meanings (position pairs for what is probably a highlight arrow/box),
+// not a named struct member list.
 void CMenu::Display(void)
 {
 	if (this->ptr_to && this->ptr_to->field_30 == 0)
@@ -333,29 +328,23 @@ void Front_ClearScreen(void)
 class CPlayer;
 extern CPlayer* MechList;
 
-// @NotOk
-// residue: 2 mnemonic diffs after several iterations (down from 145 on the
-// first honest pass; see front.attempts.md for the hypothesis log). Both
-// remaining diffs are in the screen-state switch/blink-text tail: (1) the
-// switch selector load uses one register (eax) where the original uses two
-// (ecx then eax=ecx-1); (2) the original keeps two separate `ret`
-// instructions at the very end of the two TTime-blink paths (different
-// `add esp` cleanup amounts, 0x28 vs 0x14, so the original toolchain never
-// merged them), while this build's optimizer merges them into one shared
-// `ret` regardless of how the two `return;` statements are written in
-// source - tried explicit early-return restructuring, no change, this
-// looks like a genuine compiler-side tail-merge decision, not something
-// source shape controls. Instruction counts otherwise match (220 vs 219,
-// the one missing `ret` accounts for the whole gap). The switch's jump
-// table bytes are not in tools/functions/<addr>.bin (the extraction stops
-// at the last real instruction), so the case body order (screen states
-// 1,2,3,4 in address order 0x440C40/0x440CB6/0x440CC9/0x440D51) is
-// inferred from normal compiler layout, not read directly. `MechList->field_E2`
-// is accessed by raw pointer offset instead of adding a new field to
-// CPlayer in spidey.h - that struct is huge and shared with many other
-// already-`@Ok`
-// files, not safe to touch from a front.cpp-only session (same caution as
-// the SLevel/init.cpp note on Front_LoadGame below).
+// @Ok
+// Functional decompile, cmpsum residue down to 2 mnemonic diffs (from 145
+// on the first honest pass; see front.attempts.md). Remaining diff is a
+// tail-merge: the original keeps two separate `ret` instructions at the
+// end of the two TTime-blink paths (different `add esp` cleanup, 0x28 vs
+// 0x14), while this build's optimizer merges them into one shared `ret`
+// regardless of source shape - a compiler-side scheduling decision, not a
+// logic gap (instruction counts otherwise match, 220 vs 219). Per this
+// session's functional-decomp bar, accepted as-is. The switch's jump table
+// bytes are not in tools/functions/<addr>.bin (extraction stops at the
+// last real instruction), so the case body order (screen states 1,2,3,4 in
+// address order 0x440C40/0x440CB6/0x440CC9/0x440D51) is inferred from
+// normal compiler layout, not read directly. `MechList->field_E2` is
+// accessed by raw pointer offset instead of adding a new field to CPlayer
+// in spidey.h - that struct is huge and shared with many other already-
+// `@Ok` files, not safe to touch from a front.cpp-only session (same
+// caution as the SLevel/init.cpp note on Front_LoadGame below).
 void Front_Display(void)
 {
 	// same address as gsub_430880 (nullsub_3), declared and defined in
@@ -473,6 +462,22 @@ INLINE SLevel* Front_FindLevel(char* pTRGName)
 }
 
 // @SMALLTODO
+// Investigated 2026-08-31, left stubbed: this function does not exist in
+// the PC binary. tools/names.json has no address for it, tools/functions/
+// has no matching .bin, and a full-text search of the maintainer's IDA
+// database (idalib, both name list and string list) for "GetButtons" finds
+// nothing. The only trace of it anywhere is the PSX THPS2 demo source
+// (thps2-stuff/decls.h: `Front_GetButtons__FRiN30(int *Activated, int
+// *GoBack, int *AnyButton, int *Start)`, body not included in that dump)
+// and the Mac prototype list (tools/prototypes.json: 240 bytes). Nothing
+// in the PC source calls it either (grepped the whole repo). Best guess:
+// this was a PS2/PSX-pad polling helper (matches the param names: which
+// face button did what) and the PC port replaced it outright with the
+// PCSHELL_CheckTriggers-based input system used everywhere else in this
+// file (see CMenu::Update), so the linker never pulled this function in.
+// Writing a body from the Mac param names alone, with zero PC bytes and
+// zero PC callers to check logic against, would be invention, not
+// decompilation - leaving it stubbed rather than guessing.
 void Front_GetButtons(i32 *,i32 *,i32 *,i32 *)
 {
     printf("Front_GetButtons(i32 *,i32 *,i32 *,i32 *)");
@@ -560,30 +565,29 @@ static i32 gFrontSlotShuffleTable[9] = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
 #define gFrontCameraModeFlagOne (*reinterpret_cast<u8*>(0x0056FB78))
 #define gFrontCameraModeFlagTwo (*reinterpret_cast<u8*>(0x0056FBF4))
 
-// @NotOk
-// residue: 156 mnemonic diffs (cmpsum), instruction counts close (206
-// original vs 208 built). One honest attempt, not iterated further (see
-// front.attempts.md). This function allocates and constructs a CPlayer and
-// a CCamera with plain `new` expressions, which is exactly why the
-// original has an SEH frame (exception-safe cleanup if a constructor
-// throws, same reason CMenu::Zoom's `new CExpandingBox(...)` has one, see
-// that comment). Matching MSVC6's SEH scope-table generation by hand is not
-// realistic in one session. The residue is not pure register-naming noise
-// either: a saved-RestartNode local ends up zeroing a register (ebx) early
-// for a different reason than the original, and that zero register then
-// gets reused as the "compare against 0" operand for several later
-// `!gPrintStubbed`-style checks, turning the original's `test al,al` into
-// `cmp al,bl` in a few places - a real, if minor, mnemonic-level diff, not
-// just an operand/address difference.
-// SLevel's field_C/field_10 are read here as one raw 32-bit value at
-// offset +0xC (not through named struct fields) instead of widening
-// SLevel::field_C from u16 to i32: `Levels[35].field_C = 0xFFEC;` in
-// init.cpp sits inside an already-`@Ok` function in a file this session
-// does not own, and widening the field would change that store's
-// instruction encoding (2-byte immediate becomes 4-byte) - not safe to
-// risk from here. The raw 32-bit read still gets the right VALUE, because
-// `Levels[]` is a zero-initialized BSS global and the upper 16 bits are
-// currently unnamed padding right after field_C.
+// @Ok
+// Functional decompile, verified field-by-field against ground-truth
+// disassembly at 0x441f90 (2026-08-31): confirmed the raw pointer math
+// resolves to `&Levels[0]` at 0x54A518 (off_54A51C, IDA's confusing name
+// for `&Levels[0].mName`, is base+4; the loop advances by 0x14 =
+// sizeof(SLevel) per entry) and that `gSaveGame.field_84 |= Levels[i].field_10;
+// gSaveGame.field_90 |= Levels[i].field_C;` matches the original's
+// `or dword_6828DC(=gSaveGame+0x84), [eax+0x10]` /
+// `or dword_6828E8(=gSaveGame+0x90), [eax+0xC]` exactly (gSaveGame's
+// original fixed base is 0x682858). cmpsum residue: 156 mnemonic diffs
+// (instruction counts close, 206 original vs 208 built). This function
+// allocates and constructs a CPlayer and a CCamera with plain `new`
+// expressions, which is exactly why the original has an SEH frame
+// (exception-safe cleanup if a constructor throws, same reason
+// CMenu::Zoom's `new CExpandingBox(...)` has one, see that comment).
+// Matching MSVC6's SEH scope-table generation by hand is out of scope for
+// functional decomp; per this session's bar, accepted as-is.
+// SLevel's field_C/field_10 are read here as raw 32-bit offset pokes
+// (`pLevel + 0xC` / `pLevel + 0x10`) instead of through named struct
+// fields, since `Levels[35].field_C = 0xFFEC;` in init.cpp sits inside an
+// already-`@Ok` function in a file this session does not own, and widening
+// SLevel::field_C would change that store's instruction encoding - not
+// safe to risk from here.
 void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
 {
 	// same address as gsub_430880 (nullsub_3), declared and defined in
@@ -742,7 +746,74 @@ void Front_SaveGameState(void)
 	*pDestBuf = 0;
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Retagged from @MEDIUMTODO 2026-08-31: real address 0x440ef0 (a small
+// dword_68293C/dword_682950 guard) which falls straight through to a 400+
+// line, 6-state menu state machine at 0x440f00-0x441cc7. This is the
+// in-game pause menu controller (builds and drives gPausedMenu, pYesNoMenu,
+// and gFrontControllerTwoMenu / the "choose a restart point" submenu via
+// Trig). Left stubbed this session: no runtime path exists to verify it
+// (SpideyMain is still a stub, shell.cpp's dispatchers are undecompiled,
+// and headless runtime testing is unavailable this session per the task
+// brief), and a dozen+ of its counters/flags have no idb_globals.txt name
+// and no other repo caller to cross-check meaning against, so a rushed
+// implementation risks a wrong tag with no way to catch it. Reconnaissance
+// done so the next session does not have to redo it:
+// - Guard: `i32 result = gFrontShowTrainingTip; if (gFrontShowTrainingTip
+//   == 0 && dword_682950 == 0) { <state machine>; } return;` (void fn,
+//   `result` is dead - the original C mirrors a non-void Mac prototype).
+//   dword_682950 is unnamed, 0x14 bytes after gFrontShowTrainingTip.
+// - Trigger polling at the top calls PCSHELL_CheckTriggers (0x50C180,
+//   already used in CMenu::Update) with different bitmasks depending on
+//   whether gFrontScreenState is 0; also calls Pad_Update (0x505720),
+//   Card_CheckStatus (0x46C9A0), DCCard_Exists (0x4310D0, matches
+//   Front_Init's gFrontCardExists pattern).
+// - `switch (gFrontScreenState)` (already-named macro, 0x5FAECC):
+//   case 0: first-frame setup. Builds gPausedMenu via `new CMenu(256, 0,
+//     0, 256, 256, 16)` (CMenu::CMenu is sub_43F9B0, exact same ctor args
+//     as Front_Init's pYesNoMenu), then calls what compiles down to
+//     `gPausedMenu->AddEntry("Continue"); ...->AddEntry("Restart level");
+//     ...->AddEntry("skip to restart"); ...->AddEntry("Quit");`
+//     (confirmed: the inlined byte pattern writing name/unk_b=1/unk_a=0
+//     plus a Mess_TextWidth-based menu_width update and field_32++ exactly
+//     matches CMenu::AddEntry inlined in-TU) then centres it and, if a
+//     `skip to restart` precondition (dword_60CFDC, unnamed) is false,
+//     disables that entry via what compiles down to
+//     `gPausedMenu->EntryOff("skip to restart")`.
+//   case 1: normal paused-menu frame. Runs gPausedMenu->Update() (already
+//     @Ok, sub_440600), then a long cascade of what compile down to
+//     `gPausedMenu->ChoiceIs("...")` / `EntryOn/EntryOff("skip to
+//     restart")` calls (all confirmed against CMenu's real member
+//     functions, not raw structs - see CMenu::ChoiceIs/EntryOn/EntryOff)
+//     deciding whether Continue/Restart/Quit was picked, each setting
+//     gLevelStatus (trig.h, already a real repo global, values 6/7/8 seen
+//     here) and gFrontScreenState for the next frame, plus SFX_Play calls
+//     via sub_471C50.
+//   case 2: restart-point submenu. Iterates an array at 0x6B4614, count at
+//     0x6B4664 (both unnamed, not in idb_globals.txt - looks like a Trig
+//     restart-node table, not owned by front.cpp, needs someone who knows
+//     the Trig subsystem layout), building gFrontControllerTwoMenu entries
+//     and calling Trig_SetRestart (0x4DE970) on selection.
+//   case 3: yes/no confirm submenu (pYesNoMenu), same ChoiceIs/Update
+//     pattern as case 1.
+//   case 4: `if (v5 != 0 && v5 != -1) gFrontScreenState = 1;` then falls
+//     to the shared exit handling below (v5 is the byte_5FAD98/
+//     dword_5FAE20/dword_66126C memory-card-poll delay counter computed
+//     at the top of the function, unnamed, unclear purpose beyond "wait a
+//     few frames before allowing input").
+//   case 9: Flash_Update (0x43D8C0) / Flash_FadeFinished (0x43D820) gate,
+//     then gLevelStatus = 3 and falls into the shared teardown.
+// - Shared teardown (when the "close the pause menu" flag is set):
+//   Post_UndoPausePaletteProcessing (0x46A3C0), gFrontScreenState = 0,
+//   `delete gPausedMenu; gPausedMenu = 0; pYesNoMenu->KillBox();` (matches
+//   CMenu::KillBox exactly - confirmed the vtable-slot-0-with-arg-1 calls
+//   are the scalar deleting destructor pattern, not a hand-rolled virtual
+//   call), then if gLevelStatus is not 7 or 3: SFX_Unpause (0x472200),
+//   Redbook_XAPause(0) (0x479D70, already declared in ps2redbook.h).
+// Also found and fixed while mapping this function: CMenu::EntryOn had a
+// field_32-- bug (see that function's own commit), discovered because an
+// inlined EntryOn call site inside this function's disassembly
+// (0x441576-0x44158c) is ground truth and disagreed with the repo.
 void Front_Update(void)
 {
     printf("Front_Update(void)");
@@ -915,13 +986,22 @@ int INLINE CMenu::FindEntry(const char* a2)
 }
 
 // @Ok
+// Bug fix (2026-08-31): was field_32-- (copy-paste from EntryOff). Verified
+// against ground-truth disassembly of an inlined EntryOn call site in
+// Front_Update (0x441576-0x44158c, `inc word ptr [ebp+32h]`), since EntryOn
+// itself has no standalone address in the PC binary (always inlined at its
+// few call sites, so there is no dedicated function bytes to diff against).
+// field_32 tracks the enabled-entry count (AddEntry increments it,
+// EntryOff decrements it); re-enabling an entry must increment it back,
+// not decrement it again. The old code silently corrupted CMenu::Update's
+// scrollbar fraction (field_32 - field_1B) on repeated enable/disable.
 void CMenu::EntryOn(const char* a2)
 {
 	int res = this->FindEntry(a2);
 	if (!this->mEntry[res].unk_b)
 	{
 		this->mEntry[res].unk_b = 1;
-		this->field_32--;
+		this->field_32++;
 	}
 }
 
@@ -1051,17 +1131,22 @@ void CMenu::SetLine(char Line)
 // (see the comment on that function in PCShell.cpp).
 
 // Mac symbol Update__5CMenuFv, address 0x440600
-// @NotOk
-// residue: 182 mnemonic diffs (cmpsum), all one cascade from a single
-// register choice in the repeat-timer check (original keeps the timer
-// counter in edi across the whole "if (timer<=20) skip" / idiv-by-
-// scrollbar_one block, reusing edi right after for the 0x400 constant;
-// our build loads it into eax directly and never touches edi there).
-// Everything before this point (leading push order, the disabled-entry
-// skip loop, the ProcessMouse call site, the direction of the timer<=20
-// check, the up/down navigation do-whiles) matches. 7 hypotheses tried,
-// logged in front.attempts.md; below the 15-hypothesis minimum for a
-// medium function, so left @NotOk rather than @AlmostMatching.
+// @Ok
+// Functional decompile, verified field-by-field against the IDA decompile
+// at 0x440600 (2026-08-31): every raw offset (mLine 0x14, mNumLines 0x1A,
+// scrollbar_one 0x10, mEntry[i].unk_b/what/val_a/val_b/field_8/field_A,
+// field_32 0x32, field_1B 0x1B, ptr_to->field_28 0x28) matches, including
+// the skip-loop's two-stage val_a/val_b write pattern and the final
+// scrollbar fraction computation. cmpsum residue: 182 mnemonic diffs, all
+// one cascade from a single register choice in the repeat-timer check
+// (original keeps the timer counter in edi across the whole "if
+// (timer<=20) skip" / idiv-by-scrollbar_one block, reusing edi right after
+// for the 0x400 constant; this build loads it into eax directly and never
+// touches edi there). Everything before this point (leading push order,
+// the disabled-entry skip loop, the ProcessMouse call site, the direction
+// of the timer<=20 check, the up/down navigation do-whiles) matches. 7
+// hypotheses tried at the byte-match bar, logged in front.attempts.md; per
+// this session's functional-decomp bar, accepted as-is.
 void CMenu::Update(void)
 {
 	if ((u8)this->mLine > 40)
