@@ -113,10 +113,16 @@ SlicedImage2::~SlicedImage2(void)
 	}
 }
 
-// @SMALLTODO
+// @Ok
+// Found via IDA: SlicedImage2's vtable (off_53B70C) slot 1 (right after the
+// destructor thunk, before setData/draw which match at slots 2/3) points at
+// 0x407F30, a single one-instruction stub (`retn 8`, no body at all). That
+// same address is reused as a filler at 50+ unrelated vtables across the
+// whole binary (checked via xrefs), so it is a shared, COMDAT-folded
+// reserved/no-op virtual slot, not real per-class code. The function
+// genuinely does nothing.
 void SlicedImage2::UnknownSlicedImageVirtualFunc(void)
 {
-	printf("void SlicedImage2::UnknownSlicedImageVirtualFunc(void)");
 }
 
 // @Ok
