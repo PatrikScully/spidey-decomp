@@ -154,8 +154,7 @@ CBullet::~CBullet(void)
 	}
 }
 
-// @NotOk
-// Global
+// @Ok
 CBullet::CBullet(void)
 {
 	this->field_114 = 0;
@@ -166,8 +165,8 @@ CBullet::CBullet(void)
 	this->field_134 = 0;
 	this->field_138 = 0;
 
-	this->InitItem("items");
 	gBullets++;
+	this->InitItem("items");
 
 	this->mScale.vx = 2048;
 	this->mScale.vy = 2048;
