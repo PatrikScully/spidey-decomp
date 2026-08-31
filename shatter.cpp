@@ -6,6 +6,7 @@
 #include "bit.h"
 #include "camera.h"
 #include "mem.h"
+#include "exp.h"
 #include <string.h>
 
 i32 gGlassShatterSound;
@@ -80,81 +81,263 @@ void CalcRGB(i32 count, u32 color, i32 mode, u32 *table)
 	}
 }
 
-// @MEDIUMTODO
-// return type fixed from void to i32: Shatter_Item (below) uses the return value
-// (tests it against 0 and 1), so Shatter_Face cannot be void. Found while decompiling
-// Shatter_Item, not yet decompiled itself.
-// Investigated 2026-08-27 (byte-match blockers) and 2026-08-31 (deep functional trace via
-// IDA Hex-Rays decompile of 0x48C0D0, 1632 bytes, tools/functions/4767952.bin), still left
-// as a stub. Full control flow and parameter semantics are now understood (see below); it is
-// not written as real source yet because several field-level details remain genuine guesses
-// (not just byte-match residue), and its two recursive-split paths call Split, which itself
-// cannot be implemented this session (needs a whole new CShatterBit class, see Split's note).
-// Committing a partially-guessed ~150 line function whose main recursive branch still calls
-// an unimplemented stub was judged worse than leaving it documented for the next pass.
-//
-// Parameter roles (confirmed against both call sites, 0x48CFF0 Shatter_Item and 0x43C480,
-// an "env item spooled out" error-path caller):
-//   item, face   - as before.
-//   splitDepth   - forwarded to Split(...) as its final "recursion depth" arg. Shatter_Item
-//                  passes (Rnd(5)==0) ? 1 : 0; the other caller passes literal 1.
-//   doGlowFlash  - gates a call to Exp_GlowFlash(&faceCenter, 100, r, g, b, 4, 1, 100) near
-//                  the end. Shatter_Item passes 0 (no flash); the other caller passes 1.
-//   checkState   - if 0, skip the face-state bit checks entirely (jump straight to the
-//                  chanceFlag==0 early return). Shatter_Item passes its own "a2" param.
-//   markProcessed - if checkState and this are both nonzero, marks face state bit0 (word at
-//                  face+14, "seen"), clears bits 0x80/0x100 of face+0, and does an early
-//                  return when chanceFlag==0. When checkState is nonzero but this is 0 (or
-//                  checkState is 0), just does the chanceFlag==0 early return with no mutation.
-//                  IMPORTANT: this same parameter is later reused, in the branch where face+0
-//                  bit0 is clear, reinterpreted as a raw pointer (colorSrc = (u8*)markProcessed)
-//                  read as a per-face UV/data record. This looks like a genuine int/pointer
-//                  parameter reuse in the original source, not a decompiler artifact (the
-//                  mangled name types this parameter as plain int, ?Shatter_Face@@YAXPAVCItem@@
-//                  PAIHHHHH@Z; Shatter_Item and the other caller both pass small integers here,
-//                  so this path is probably not exercised at runtime in practice, but the
-//                  pointer cast is really there in the disassembly). Per CLAUDE.md's rule to
-//                  reproduce source-level oddities rather than "fix" them, this should be
-//                  written as-is (cast the int to a pointer) once implemented for real.
-//   chanceFlag   - if 0, function returns 1 immediately (after any state-bit mutation above).
-//                  Shatter_Item passes (numShattered<6)?1:0.
-// Return value: 0 = face not eligible (state bit3 clear or bit0 already set). 1 = default /
-//   "recursively split via Split()" path taken (or chanceFlag==0 early return). 2 = "leaf"
-//   path taken: Shatter_Glass(...) called directly with count 15 (tri face) or 30 (quad face),
-//   no further splitting. Shatter_Item only increments its numShattered counter when the
-//   result is exactly 1, i.e. it counts recursive-split faces, not direct-glass faces; this
-//   caps how many of a model's faces get the expensive recursive split per Shatter_Item call.
-//
-// Body shape: two symmetric branches selected by face+0 bit 0x10 (SET = triangle, 3 vertices
-// already loaded; CLEAR = quad, loads a 4th vertex). Each branch: transforms its vertices with
-// the same M3dMaths_RotMatrixYXZ(item->mAngles)+gte_SetRotMatrix / M3dAsm_SetTransVector(item->
-// mPos) + per-vertex gte_ldv0/gte_rtv0tr/gte_stlvnl idiom used everywhere else in this codebase
-// (see TransformVertex below, and camera.cpp/baddy.cpp/blackcat.cpp for the same 3-call
-// sequence); calls CalcRGB(face+0 & 0x800, faceColorDword, 3 or 4, gShatterRegionColorTable[
-// item->mRegion*17]) (new table found at 0x6B2468, same region*17 stride as
-// gShatterRegionModelTable but giving a u32* color table directly, no per-model indexing);
-// averages the transformed vertices into a global CVector "face center" at 0x6A75F8 (used
-// later by Exp_GlowFlash); then, gated by *gLowMemory (0x60D224, confirmed name "LowMemory"
-// from the maintainer's IDB) == 0 and by face+0 bits 0x40/0x1: either calls Split(...) once
-// (tri) or twice (quad, one call per half of the quad) forwarding 6 bytes read out of the
-// "markProcessed as pointer" record above as texture-ish coordinates, or calls Shatter_Glass(
-// count, v0, v1, v2, faceNormal, r, g, b) directly, where faceNormal is read as an SVECTOR (i16
-// x,y,z) from vertexTable + 8*(face+12's u16 >> 3) and r/g/b come from gShatterColor (set by
-// the CalcRGB call just above). Falls through to the doGlowFlash-gated Exp_GlowFlash(&faceCenter,
-// ...) at the end regardless of which sub-path ran.
-//
-// Field offsets used on CItem: mAngles@0x14, mPos@0x8, mModel@0x1A, mRegion@0x1F, all already
-// confirmed via VALIDATE in ob.cpp and matching Shatter_Item's own reads.
-// SShatterModelInfo/gShatterRegionModelTable lookup is identical to Shatter_Item's.
-// info->field_2 (offset 2) times 8 plus 0x1C gives a second table pointer used only for the
-// normal lookup above; the raw per-face byte vertex indices (face+4..+7) index directly into
-// info+0x1C (the vertex table) with no field_2 offset, stride 8 (matches SVECTOR's 8-byte size,
-// ps2funcs.h). This SShatterModelInfo/vertex-table structure is still a guess (no idb entry),
-// consistent with the existing comment above SShatterModelInfo.
-i32 Shatter_Face(CItem *,u32 *,i32,i32,i32,i32,i32)
+// guess: per-region array of per-model glass geometry pointers, indexed as
+// gShatterRegionModelTable[item->mRegion * 17]. Stride 17 (region*16+region in the disasm)
+// matches a struct-of-17-u32 per region; we don't know the other 16 slots, no idb_globals.txt
+// entry for this address, name and stride guess are ours only. Moved above Shatter_Face
+// (2026-08-31) since Shatter_Face now needs it too; was previously only above Shatter_Item.
+static void ** const gShatterRegionModelTable = (void**)0x006B2454;
+
+// guess: header of a per-model shatter face list. field_2/field_4 are added and used to
+// offset into the face array (shifted-pointer struct-array pattern, see CLAUDE.md tips);
+// mNumFaces is the loop trip count. Field names are ours, not confirmed anywhere. Moved above
+// Shatter_Face (2026-08-31), see gShatterRegionModelTable's comment just above.
+struct SShatterModelInfo
 {
-    printf("Shatter_Face(CItem *,u32 *,i32,i32,i32,i32,i32)");
-	return 0x12082024;
+	u16 field_0;
+	u16 field_2;
+	u16 field_4;
+	u16 mNumFaces;
+};
+
+// guess: per-region array of 17 u32* color tables, same region*17 stride as
+// gShatterRegionModelTable (20 bytes after it in memory: 0x6B2454 + 0x14 = 0x6B2468). Each
+// entry is a straight color lookup table pointer (indexed by byte inside CalcRGB), no
+// per-model indexing, unlike gShatterRegionModelTable. No idb_globals.txt entry, name is ours.
+static u32 ** const gShatterRegionColorTable = (u32**)0x006B2468;
+
+// Per-face UV/data record (16 bytes), pointed to either by a pointer embedded in the face
+// record itself (face+0x10, when face+0 bit0 is set) or, when that bit is clear, directly by
+// the caller-supplied "markProcessed" parameter reinterpreted as this pointer type. This is
+// the "per-face UV/data record read through an int-reinterpreted-as-pointer parameter" the
+// prior session flagged as an unconfirmed guess (see Shatter_Face's own comment below) -- now
+// confirmed field-by-field against the raw disassembly (0x48C0D0: the reads at v17+0/1/4/5/8/9
+// forward straight into Split's a4..a9 UV args, and v17+2/+6 (u16) forward into
+// G_SHATTER_UV_TEX_ID/G_SHATTER_UV_UNUSED, shatter.h). u3/v3 (offset 10/11) are only read by
+// the quad path's second Split() call. mPackedColor (offset 12, dword) is read only when face+0
+// bit 0x20 is set, and forwards straight into Split's a10 "shard color" arg either way (0 when
+// that bit is clear) -- both the tri and quad branches read the exact same offset for it.
+struct SShatterFaceUV
+{
+	u8 u0, v0;
+	u16 texId;
+	u8 u1, v1;
+	u16 unused;
+	u8 u2, v2;
+	u8 u3, v3;
+	u32 mPackedColor;
+};
+
+// @Ok
+// 2026-08-31: session bar is functional decomp, not byte match (see task instructions).
+// Implemented via a fresh IDA Hex-Rays decompile + raw disasm walk of 0x48C0D0 (1632 bytes,
+// tools/functions/4767952.bin), re-verifying (not just transcribing) the prior session's
+// parameter-role notes now that CShatterBit and Split are both real. All of that prior
+// reconnaissance held up; the one flagged "guess" (the per-face UV record read through an
+// int-reinterpreted-as-pointer parameter) is now confirmed field-by-field, see SShatterFaceUV
+// above. One new finding this session: 0x6A768C (G_SHATTER_VELOCITY_SCALE, shatter.h) is not a
+// fixed table -- Shatter_Face sets it itself, every call, to the current face's normal vector;
+// see shatter.h's updated comment.
+//
+// Parameter roles: item, face as before. splitDepth forwards to Split's final "recursion
+// depth" arg. doGlowFlash gates the Exp_GlowFlash call at the end. checkState, if 0, skips the
+// face-state ("seen") bit checks entirely. markProcessed, when checkState is also nonzero,
+// marks the face processed (state bit0) and clears face+0 bits 0x80/0x100; when the face's own
+// UV-record pointer bit (face+0 bit0) is clear, markProcessed is reused directly as that
+// pointer (see SShatterFaceUV). chanceFlag, if 0, returns 1 immediately (after any state-bit
+// mutation above).
+//
+// Return value: 0 = face not eligible (state bit3 clear, or bit0 already set = already
+// processed). 1 = default / recursive-split-via-Split() path (or an early chanceFlag==0
+// return). 2 = "leaf" path: Shatter_Glass() called directly (count 15 for a triangle face, 30
+// for a quad), no further splitting. Shatter_Item only increments its numShattered counter
+// when the result is exactly 1, capping how many faces per call get the expensive recursive
+// split.
+//
+// Body: two symmetric branches selected by face+0 bit 0x10 (SET = triangle, already-loaded 3
+// vertices; CLEAR = quad, loads a 4th). Each sets up the rotation matrix / translation
+// (M3dMaths_RotMatrixYXZ(item->mAngles) + gte_SetRotMatrix, M3dAsm_SetTransVector(item->mPos)),
+// transforms its vertices via TransformVertex (below; fully inlined in the original, see its
+// own comment), calls CalcRGB(face+0 & 0x800, faceColorDword, 3 or 4, gShatterRegionColorTable[
+// item->mRegion*17]), averages the transformed corners into G_SHATTER_FACE_CENTER (shatter.h),
+// then, gated by LowMemory == 0 (mem.h) and face+0 bits 0x40/0x1, either calls Split() (once
+// for a triangle, twice for a quad -- one call per half, sharing the split diagonal's UV pair)
+// or Shatter_Glass() directly using the face normal (G_SHATTER_VELOCITY_SCALE, shatter.h) and
+// gShatterColor (set by the CalcRGB call just above). Falls through to the doGlowFlash-gated
+// Exp_GlowFlash(&G_SHATTER_FACE_CENTER, 100, r, g, b, 4, 1, 100) at the end regardless of which
+// sub-path ran.
+//
+// Field offsets used on CItem: mAngles@0x14, mPos@0x8, mModel@0x1A, mRegion@0x1F, confirmed via
+// VALIDATE in ob.cpp (matches Shatter_Item's own reads). SShatterModelInfo/
+// gShatterRegionModelTable lookup is identical to Shatter_Item's. info->field_2 * 8 + 0x1C gives
+// a second table pointer used only for the face-normal lookup; the raw per-face byte vertex
+// indices (face+4..+7) index directly into info+0x1C (the vertex table) with no field_2 offset,
+// stride 8 (matches SVECTOR's 8-byte size, ps2funcs.h).
+i32 Shatter_Face(CItem *item, u32 *faceArg, i32 splitDepth, i32 doGlowFlash, i32 checkState, i32 markProcessed, i32 chanceFlag)
+{
+	print_if_false(item != 0, "NULL pItem");
+	print_if_false(faceArg != 0, "NULL pFace");
+
+	u16 *face = (u16*)faceArg;
+
+	void **regionModels = (void**)gShatterRegionModelTable[item->mRegion * 17];
+	SShatterModelInfo *info = (SShatterModelInfo*)regionModels[item->mModel];
+	u8 *vertexTableBase = (u8*)info + 0x1C;
+	u8 *normalTableBase = vertexTableBase + 8 * info->field_2;
+
+	if (checkState != 0)
+	{
+		u16 state = face[7]; // face+14: "seen" state word
+		if ((state & 8) == 0)
+			return 0;
+		if ((state & 1) != 0)
+			return 0;
+
+		if (markProcessed != 0)
+		{
+			state |= 1;
+			face[7] = state;
+			face[0] &= 0xFE7F; // clear bits 0x80/0x100
+
+			u16 flags = face[0];
+			if (chanceFlag == 0)
+			{
+				if ((flags & 0x40) != 0 || (flags & 1) == 0)
+					face[0] = flags & 0xFFBF; // clear bit 0x40
+				return 1;
+			}
+		}
+		else if (chanceFlag == 0)
+		{
+			return 1;
+		}
+	}
+	else if (chanceFlag == 0)
+	{
+		return 1;
+	}
+
+	SShatterFaceUV *uvRecord;
+	if (face[0] & 1)
+	{
+		uvRecord = *(SShatterFaceUV**)((u8*)face + 16);
+		G_SHATTER_UV_TEX_ID = uvRecord->texId;
+		G_SHATTER_UV_UNUSED = uvRecord->unused;
+	}
+	else
+	{
+		uvRecord = (SShatterFaceUV*)markProcessed;
+	}
+
+	u16 normalIdx = face[6] >> 3; // face+12
+	G_SHATTER_VELOCITY_SCALE = (i16*)(normalTableBase + 8 * normalIdx);
+
+	MATRIX rotMat;
+	M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(&item->mAngles), &rotMat);
+	gte_SetRotMatrix(&rotMat);
+	M3dAsm_SetTransVector(reinterpret_cast<VECTOR*>(&item->mPos));
+
+	SVECTOR *vertexTable = (SVECTOR*)vertexTableBase;
+	u8 *vertexIdx = (u8*)face + 4;
+
+	CVector cornerA, cornerB, cornerC;
+	TransformVertex(&cornerA, vertexTable, vertexIdx, 0);
+	TransformVertex(&cornerB, vertexTable, vertexIdx, 1);
+	TransformVertex(&cornerC, vertexTable, vertexIdx, 2);
+
+	u16 flags = face[0];
+	i32 result = 1;
+
+	if (flags & 0x10)
+	{
+		// triangle face
+		CalcRGB(flags & 0x800, *(u32*)((u8*)face + 8), 3, gShatterRegionColorTable[item->mRegion * 17]);
+
+		G_SHATTER_FACE_CENTER.vx = (((cornerA.vx >> 12) + (cornerB.vx >> 12) + (cornerC.vx >> 12)) / 3) << 12;
+		G_SHATTER_FACE_CENTER.vy = (((cornerA.vy >> 12) + (cornerB.vy >> 12) + (cornerC.vy >> 12)) / 3) << 12;
+		G_SHATTER_FACE_CENTER.vz = (((cornerA.vz >> 12) + (cornerB.vz >> 12) + (cornerC.vz >> 12)) / 3) << 12;
+
+		flags = face[0];
+		if ((flags & 0x40) == 0 && (flags & 1) != 0)
+		{
+			u32 shardColor = (flags & 0x20) ? uvRecord->mPackedColor : 0;
+			if (LowMemory == 0)
+			{
+				Split(&cornerA, &cornerB, &cornerC,
+						uvRecord->u0, uvRecord->v0,
+						uvRecord->u1, uvRecord->v1,
+						uvRecord->u2, uvRecord->v2,
+						shardColor, splitDepth);
+			}
+			result = 1;
+		}
+		else
+		{
+			if (LowMemory == 0)
+			{
+				i16 *normal = G_SHATTER_VELOCITY_SCALE;
+				CVector normalCopy(normal[0], normal[1], normal[2]);
+				Shatter_Glass(15, &cornerA, &cornerB, &cornerC, &normalCopy,
+						gShatterColor->r, gShatterColor->g, gShatterColor->b);
+				result = 2;
+			}
+			if (markProcessed != 0)
+				face[0] &= ~0x40;
+		}
+	}
+	else
+	{
+		// quad face
+		CVector cornerD;
+		TransformVertex(&cornerD, vertexTable, vertexIdx, 3);
+
+		CalcRGB(face[0] & 0x800, *(u32*)((u8*)face + 8), 4, gShatterRegionColorTable[item->mRegion * 17]);
+
+		G_SHATTER_FACE_CENTER.vx = (((cornerA.vx >> 12) + (cornerB.vx >> 12) + (cornerC.vx >> 12) + (cornerD.vx >> 12)) / 4) << 12;
+		G_SHATTER_FACE_CENTER.vy = (((cornerA.vy >> 12) + (cornerB.vy >> 12) + (cornerC.vy >> 12) + (cornerD.vy >> 12)) / 4) << 12;
+		G_SHATTER_FACE_CENTER.vz = (((cornerA.vz >> 12) + (cornerB.vz >> 12) + (cornerC.vz >> 12) + (cornerD.vz >> 12)) / 4) << 12;
+
+		flags = face[0];
+		if ((flags & 0x40) == 0 && (flags & 1) != 0)
+		{
+			u32 shardColor = (flags & 0x20) ? uvRecord->mPackedColor : 0;
+			if (LowMemory == 0)
+			{
+				Split(&cornerA, &cornerB, &cornerC,
+						uvRecord->u0, uvRecord->v0,
+						uvRecord->u1, uvRecord->v1,
+						uvRecord->u2, uvRecord->v2,
+						shardColor, splitDepth);
+				Split(&cornerB, &cornerC, &cornerD,
+						uvRecord->u1, uvRecord->v1,
+						uvRecord->u2, uvRecord->v2,
+						uvRecord->u3, uvRecord->v3,
+						shardColor, splitDepth);
+			}
+			result = 1;
+		}
+		else
+		{
+			if (LowMemory == 0)
+			{
+				i16 *normal = G_SHATTER_VELOCITY_SCALE;
+				CVector normalCopy(normal[0], normal[1], normal[2]);
+				Shatter_Glass(30, &cornerA, &cornerB, &cornerC, &normalCopy,
+						gShatterColor->r, gShatterColor->g, gShatterColor->b);
+				result = 2;
+			}
+			if (markProcessed != 0)
+				face[0] &= ~0x40;
+		}
+	}
+
+	if (doGlowFlash != 0 && LowMemory == 0)
+	{
+		Exp_GlowFlash(&G_SHATTER_FACE_CENTER, 100,
+				gShatterColor->r, gShatterColor->g, gShatterColor->b, 4, 1, 100);
+	}
+
+	return result;
 }
 
 // @Ok
@@ -239,23 +422,6 @@ i32 Shatter_Glass(i32 count, CVector const *pA, CVector const *pB, CVector const
 
     return 0;
 }
-
-// guess: per-region array of per-model glass geometry pointers, indexed as
-// gShatterRegionModelTable[item->mRegion * 17]. Stride 17 (region*16+region in the disasm)
-// matches a struct-of-17-u32 per region; we don't know the other 16 slots, no idb_globals.txt
-// entry for this address, name and stride guess are ours only.
-static void ** const gShatterRegionModelTable = (void**)0x006B2454;
-
-// guess: header of a per-model shatter face list. field_2/field_4 are added and used to
-// offset into the face array (shifted-pointer struct-array pattern, see CLAUDE.md tips);
-// mNumFaces is the loop trip count. Field names are ours, not confirmed anywhere.
-struct SShatterModelInfo
-{
-	u16 field_0;
-	u16 field_2;
-	u16 field_4;
-	u16 mNumFaces;
-};
 
 // @NotOk
 // residue: register allocation and field read order still differ a lot from the original

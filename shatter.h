@@ -18,10 +18,17 @@ EXPORT extern i32 gGlassShatterSound;
 // time, e.g. *(i16*)(dword_6A768C + 4)). Read as a per-axis velocity/jitter scale:
 // CShatterBit::SetPos (bit.cpp) uses all 3 axes to bias a freshly-built shard's initial
 // velocity; Split (below) uses only axis 2 (z) to jitter a shattered triangle's corner deltas
-// before constructing the CShatterBit. Also read (not traced, out of scope) inside
-// Shatter_Face's body. No write site found anywhere in this session's tracing (bit.cpp,
-// shatter.cpp, Shatter_Face's disasm), so this is likely a fixed table set up once elsewhere
-// (game init) rather than something Shatter_Item/Face vary per call. Guess name.
+// before constructing the CShatterBit.
+// WRITE SITE FOUND 2026-08-31 (fresh IDA trace of Shatter_Face, 0x48C0D0, superseding the old
+// "no write site found" guess above): Shatter_Face sets this, unconditionally, once per call,
+// to the address of the current face's NORMAL vector (an SVECTOR inside the model's vertex
+// table, `vertexTable + 8 * (faceNormalIndex)`, faceNormalIndex read from the face record and
+// shifted right 3 since the table stride is 8 bytes = 2^3). So this is not a fixed table at
+// all: it is "the current face's normal, as an i16[3]", re-pointed every Shatter_Face call.
+// That actually makes both consumers make more physical sense: CShatterBit::SetPos scaling a
+// shard's outward velocity by the face normal (fly away from the surface) and Split jittering
+// along the normal's z axis are both exactly what you would want a face normal for. Name kept
+// (it still accurately describes the ROLE at both use sites), only the origin was wrong.
 #define G_SHATTER_VELOCITY_SCALE (*reinterpret_cast<i16**>(0x006A768C))
 
 // 0x6A75D8 and 0x6A7688: two u16 globals, both written only inside Shatter_Face (0x48C0D0,
