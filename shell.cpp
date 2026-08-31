@@ -1352,6 +1352,34 @@ void Shell_ChooseTrainingMission(i32)
     printf("Shell_ChooseTrainingMission(i32)");
 }
 
+// @Ok
+// Real translation, 0x00478140, 57 bytes (names.json). Copies a
+// matrix4x4's 16 floats (the spin/rotation matrix built by
+// matrix4x4::matrix4x4, 0x00476710) into a plain f32[16] scratch array,
+// 4 floats at a time. Compiled from an unrolled "shifted pointer" loop
+// (CLAUDE.md tips.txt idiom: loops over struct arrays use shifted
+// pointers, not indices), but checked instruction by instruction against
+// Hex-Rays at 0x478140 and confirmed to be a straight in-order 16-float
+// copy, not a transpose or reorder: each of the 4 iterations reads 4
+// consecutive floats starting at pSrc+16*i and writes them to pDst+16*i.
+// Only caller (in the not-yet-decompiled Shell_ComicCollection body,
+// 0x49B270) later splits the 16 floats back out into 4 vector4d::operator=
+// calls onto a render-matrix global, one row per call. Functional only,
+// not chasing byte match (original is __thiscall on an untyped _DWORD*,
+// almost certainly because the source spelled this as a loop over a
+// struct/array type we have not identified yet, not because it is really
+// a class member function).
+static void Shell_CopyMatrixRows(f32 *pDst, const f32 *pSrc)
+{
+	for (i32 i = 0; i < 4; i++)
+	{
+		pDst[i * 4 + 0] = pSrc[i * 4 + 0];
+		pDst[i * 4 + 1] = pSrc[i * 4 + 1];
+		pDst[i * 4 + 2] = pSrc[i * 4 + 2];
+		pDst[i * 4 + 3] = pSrc[i * 4 + 3];
+	}
+}
+
 // Address confirmed real this session: 0x49B270, 3882 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
 // sub_49CCB0's menu-code loop, code 10). Same situation as
