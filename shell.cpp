@@ -3943,13 +3943,113 @@ finished:
 	Front_ClearScreen();
 }
 
-// forward to original, slider drawing helper (0x498060, 472B), not yet decompiled
-// @MEDIUMTODO
+// Real translation (0x498060, 472B). Draws a horizontal slider bar (used by
+// Shell_SFXMusic for the music/voice/movie level bars): a1/a2 are the
+// screen x/y of the bar, a3 is the value (0..256-ish range, clamped), a4 is
+// a "highlighted" flag that picks a lighter (0x40) vs darker (0x80)
+// grey tint for every piece.
+//
+// Gets its four pieces from a single Spool_FindAnim("slider", 1) call: the
+// disassembly indexes off that one SAnimFrame* with byte offsets +0/+8/
+// +16/+24 (sizeof(SAnimFrame) == 8), i.e. 4 consecutive frames in the
+// "slider" anim starting at index 1. Draw order and geometry (not any
+// string evidence) suggest: +24 is the moving knob (its x tracks `value`,
+// 14x14), +0 is the left end cap (fixed x = a1+5, 10x10), +8 is the track
+// background (stretched to a fixed 180x10 bar), +16 is the right end cap
+// (fixed x = a1+195, 10x10). Kept as raw byte-offset pointers (not array
+// indexing through a named base) to stay directly traceable to the
+// disassembly's `ebp+N` shape (MSVC6 "shifted pointer into inner
+// struct/array" idiom, see CLAUDE.md tips.txt).
+//
+// Each piece: get a POLY_FT4* via one of the two Panel_DrawTexturedPoly
+// overloads, tint it grey (no null check before the field writes, matching
+// the original -- a full poly buffer would already crash here in the real
+// game), then stretch/position it with DCPanel_DrawTexturedPoly. The track
+// piece skips Panel_DrawTexturedPoly's own quad setup (the 2-arg overload
+// only builds the poly, not its geometry) and instead pokes the POLY_FT4
+// fields directly: a 180x10 bar from (a1+15,a2) to (a1+195,a2+10), with
+// u1/u3 (the right-edge U texcoords) each decremented by one texel (avoids
+// sampling the next frame's texture in the tiled sheet at the exact right
+// edge).
+// @Ok
 EXPORT void DrawSlider(i32 a1, i32 a2, i32 a3, i32 a4)
 {
-	typedef void (*func_ptr)(i32, i32, i32, i32);
-	func_ptr func = (func_ptr)0x00498060;
-	func(a1, a2, a3, a4);
+	SAnimFrame *pFrames = Spool_FindAnim("slider", 1);
+	SAnimFrame *pLeftEnd = pFrames;
+	SAnimFrame *pTrack = (SAnimFrame*)((u8*)pFrames + 8);
+	SAnimFrame *pRightEnd = (SAnimFrame*)((u8*)pFrames + 16);
+	SAnimFrame *pKnob = (SAnimFrame*)((u8*)pFrames + 24);
+
+	i32 value = a3;
+	if (value < 0)
+		value = 0;
+	else if (value > 256 || value == 255)
+		value = 256;
+
+	i32 leftEndX = a1 + 5;
+	i32 knobX = ((180 * value) >> 8) + a1 + 5 + 4;
+
+	POLY_FT4 *pKnobPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pKnob, knobX, a2 - 2, 0);
+	if (a4 != 0 && pKnobPoly != 0)
+	{
+		pKnobPoly->r0 = 0x40;
+		pKnobPoly->g0 = 0x40;
+		pKnobPoly->b0 = 0x40;
+	}
+	else
+	{
+		pKnobPoly->r0 = 0x80;
+		pKnobPoly->g0 = 0x80;
+		pKnobPoly->b0 = 0x80;
+	}
+	DCPanel_DrawTexturedPoly(1.0f, pKnobPoly, pKnob, knobX, a2 - 2, 14, 14, 0, 0);
+
+	POLY_FT4 *pLeftEndPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pLeftEnd, leftEndX, a2, 0);
+	if (a4 != 0 && pLeftEndPoly != 0)
+	{
+		pLeftEndPoly->r0 = 0x40;
+		pLeftEndPoly->g0 = 0x40;
+		pLeftEndPoly->b0 = 0x40;
+	}
+	else
+	{
+		pLeftEndPoly->r0 = 0x80;
+		pLeftEndPoly->g0 = 0x80;
+		pLeftEndPoly->b0 = 0x80;
+	}
+	DCPanel_DrawTexturedPoly(2.0f, pLeftEndPoly, pLeftEnd, leftEndX, a2, 10, 10, 0, 0);
+
+	POLY_FT4 *pTrackPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pTrack, 0);
+	if (a4 != 0)
+	{
+		pTrackPoly->r0 = 0x40;
+		pTrackPoly->g0 = 0x40;
+		pTrackPoly->b0 = 0x40;
+	}
+	else
+	{
+		pTrackPoly->r0 = 0x80;
+		pTrackPoly->g0 = 0x80;
+		pTrackPoly->b0 = 0x80;
+	}
+	pTrackPoly->u1--;
+	pTrackPoly->u3--;
+	pTrackPoly->y2 = (i16)(a2 + 10);
+	pTrackPoly->y3 = (i16)(a2 + 10);
+	pTrackPoly->x0 = (i16)(a1 + 15);
+	pTrackPoly->x1 = (i16)(a1 + 195);
+	pTrackPoly->x2 = (i16)(a1 + 15);
+	pTrackPoly->x3 = (i16)(a1 + 195);
+	pTrackPoly->y0 = (i16)a2;
+	pTrackPoly->y1 = (i16)a2;
+	DCPanel_DrawTexturedPoly(2.0f, pTrackPoly, pTrack, a1 + 15, a2, 180, 10, 0, 0);
+
+	POLY_FT4 *pRightEndPoly = (POLY_FT4*)Panel_DrawTexturedPoly(pRightEnd, a1 + 195, a2, 0);
+	u8 color = (a4 != 0 && pRightEndPoly != 0) ? 0x40 : 0x80;
+	pRightEndPoly->r0 = color;
+	pRightEndPoly->g0 = color;
+	pRightEndPoly->b0 = color;
+	DCPanel_DrawTexturedPoly(2.0f, pRightEndPoly, pRightEnd, a1 + 195, a2, 10, 10, 0, 0);
 }
 // forward to original, slider drag helper (0x497F80, 219B), not yet decompiled
 // @MEDIUMTODO
