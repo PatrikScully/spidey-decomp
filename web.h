@@ -43,12 +43,11 @@ class CDome : public CBody
 		i32 field_100;
 		i32 field_104;
 
-		// @FIXME types
-		void *field_108;
-		void *field_10C;
-		void *field_110;
-		void *field_114;
-		void *field_118;
+		CClass *field_108;
+		CClass *field_10C;
+		CClass *field_110;
+		CClass *field_114;
+		CClass *field_118;
 };
 
 class CDomeRing : public CBody {

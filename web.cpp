@@ -116,17 +116,16 @@ CDome::CDome(
 	++gNumDomes;
 }
 
-// @NotOk
-// @FIXME types
+// @Ok
 CDome::~CDome(void)
 {
 	this->DeleteFrom(&MiscList);
 
-	delete reinterpret_cast<CClass*>(this->field_108);
-	delete reinterpret_cast<CClass*>(this->field_10C);
-	delete reinterpret_cast<CClass*>(this->field_110);
-	delete reinterpret_cast<CClass*>(this->field_114);
-	delete reinterpret_cast<CClass*>(this->field_118);
+	delete this->field_108;
+	delete this->field_10C;
+	delete this->field_110;
+	delete this->field_114;
+	delete this->field_118;
 
 	if (this->field_104)
 		gFireDomes--;
