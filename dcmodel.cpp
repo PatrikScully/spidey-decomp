@@ -48,7 +48,21 @@ DCMaterial::~DCMaterial(void)
 		PCTex_ReleaseTexture(this->field_38, true);
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// @Note: checked with IDA (0x431430). Original is about 4.4 KB of code, ~200 locals in
+// the Hex-Rays output. It welds duplicate verts/normals from an SModel into flat vertex
+// buffers, builds UV coordinates from texture pack info, builds a "vert in faces" table,
+// and sets a bunch of flag bits (transparency, stitched normals, and a special-vertex
+// scan against a4). This is much bigger than a MEDIUMTODO, retagged accordingly.
+// DCModelData does not exist anywhere in the repo (only forward-declared in dcmodel.h
+// alongside SModel). Confirmed with an earlier session today: this also blocks
+// ps2m3d.cpp and web.cpp. Do not guess fields from this one function alone: a1 (the
+// DCModelData*) is written at word offsets 0,1,2,3,4,5,6,7,8 (bytes 0x0,0x4,0x8,0xC,
+//0x10,0x14,0x18,0x1C,0x20) in this function alone, and a2 (SModel*) is read at byte
+// offsets 4,8,0xC,and a big run starting at 14 words in, so a real struct needs
+// cross-referencing against DCModel_RenderModel (0x476D00) and other DCObject/DCModel
+// users before any offset gets a name. Left as a stub, not attempted further this
+// session.
 void DCModel_CreateFromSModel(
 		DCModelData *pDcModel,
 		SModel *,i32,i32 *,bool,i32)
