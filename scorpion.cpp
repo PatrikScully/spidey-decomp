@@ -14,12 +14,30 @@ extern CBaddy* BaddyList;
 extern CBody* EnvironmentalObjectList;
 
 // @MEDIUMTODO
+// checked against the disasm (0x483450, 924 bytes per prototypes.json).
+// Both this ctor and CScorpion::CScorpion(void) start with a real call to
+// sub_402C00 (present at the top of every other CBaddy-derived ctor too,
+// e.g. CThug::CThug at 0x4d2ab0, so it is shared base-class setup, not
+// scorpion specific) then set the vtable, do a huge run of direct field
+// writes: zero this+204..this+232 (byte 816..932), two calls to sub_45FD60
+// (looks like a list/handle init, this+254 and this+272), then three flat
+// zeroing loops over this+291 (4 x 3 dwords), this+303 (23 x 3 dwords) and
+// this+372 (128 x 3 dwords, byte 1488..3024). This last range is almost the
+// entire 0xBD4-0x324 gap our header currently marks as PADDING, and its
+// size (128 entries of 3 dwords) lines up with the scorpion's tail segment
+// array used by CScorpion::BuildTail/InitialiseTailPSX/TailRenderer/
+// UniformCurveTesselator (all still un-decompiled TODOs in this file, see
+// prototypes.json). Naming these fields correctly needs that tail struct
+// figured out first, which is out of scope for this pass. Left stubbed.
 CScorpion::CScorpion(i16 *,i32)
 {
     printf("CScorpion::CScorpion(i16 *,i32)");
 }
 
 // @MEDIUMTODO
+// same shape as the other ctor above (0x483290, 516 bytes), minus the
+// tail parts that depend on the (i16*, i32) args. Blocked on the same
+// tail segment struct.
 CScorpion::CScorpion(void)
 {
     printf("CScorpion::CScorpion(void)");
