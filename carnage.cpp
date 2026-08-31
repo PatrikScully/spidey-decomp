@@ -140,52 +140,62 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 // @Ok
 EXPORT CVector gCarnageVector;
 
-// @BIGTODO
-// Investigated 2026-08-31 (IDA decompile of the real ctor at 0x41AE40, and
-// its two heaviest callees) and retagged up from @MEDIUMTODO: this needs a
-// struct that genuinely does not exist in the repo yet, not a small fill-in.
-// callee CCarnage::ThrowBlades needs this. Not one of this file's assigned
-// functions, stubbed only so ThrowBlades compiles (leaf-first rule).
-//
-// Findings, so the next person does not have to re-derive them:
-// - operator new(0x13C) then a real out-of-line ctor call, i.e. new T(a,a)
-//   with the ctor NOT visible at the call site (same SEH-frame mechanism
-//   noted for CRecordBox in the top-of-repo notes).
-// - The ctor (0x41AE40) starts by calling sub_460080(this), a ~150 byte
-//   base-object initializer that assigns the vtable pointer TWICE (writes
-//   &off_53BBD0, sets a batch of fields, then overwrites with &off_53BBD4
-//   and re-touches several of the same byte/word fields). That is not a
-//   pattern anything in this repo currently models; it looks like a base
-//   class this repo has no equivalent of yet (possibly a two-stage
-//   "uninitialized then activated" render primitive, not a simple
-//   CGPolyLine/CBit family member).
-// - After that, the ctor stores the CVector args twice: once at
-//   offset 0x8 (this+2 dwords) and once at offset 0x108 (this+66 dwords,
-//   inside a 4-element CVector array at 0x108..0x138 that gets zeroed
-//   first), with the a3 (target) vector landing in the array's LAST slot
-//   (0x12C, index 3). That shape (start point + 2 zeroed control points +
-//   end point) reads like a bezier/spline path for a curving thrown blade,
-//   consistent with the name CSymbioteBlade.
-// - It then calls sub_41AFF0(this), which builds the actual curve: this
-//   one function alone uses six different CVector-arithmetic helpers
-//   (sub_4E7760/4E7840/4E7720/4E77D0/4E77A0/4E5E20, likely operator-,
-//   operator>>, and friends -- see the CLAUDE.md note about CVector
-//   operators being wrongly inlined vs. the original's real out-of-line
-//   calls) plus a 2-iteration random-perturbation loop over rcossin_tbl.
-// - Remaining unexplored callees from the ctor: sub_460020, sub_4C93B0
-//   (looks like an SFX/sound-related index or hash given the constant
-//   -1873274000 and a byte_6B3824 flag), sub_460260, sub_410F50 (branch
-//   only taken if a second operator-new(88) succeeds, so a second nested
-//   allocated sub-object), sub_410E80(512).
-// None of this (the two-stage base object, the bezier array, the curve
-// generator) has a home anywhere in the current header layout. Building it
-// out means inventing a whole new base class with no repo precedent, which
-// is BIGTODO-scale investigation on its own, not a fill-in for one
-// function. Left as a stub; CCarnage::ThrowBlades cannot be attempted
-// until this lands.
+// current item/model name pointer, read by many CItem-derived constructors right before their
+// own InitItem call (IDA xrefs_to 0x6B4674: 12 hits, all InitItem-adjacent, CSymbioteBlade's
+// ctor at 0x41AE40 included). Not in idb_globals.txt yet, tentative name.
+static char ** const gCurrentItemName = (char**)0x006B4674;
+
+// shared CBody linked list head, passed to CBody::AttachTo (ob.h) by many small
+// effect/projectile object constructors (IDA xrefs_to 0x56EFE4: 15+ hits, CSymbioteBlade's
+// ctor included). Not in idb_globals.txt yet, tentative name.
+static CBody ** const gEffectBodyList = (CBody**)0x0056EFE4;
+
+// region byte passed to Spool_GetModel from CSymbioteBlade::CSymbioteBlade. Already named this
+// way in ps2m3d.cpp (M3d_PreprocessPulsingColours/M3d_PreprocessWibblyTextures); same address,
+// duplicated per the repo's static-global convention.
+static volatile u8 * const gM3dObjFileRegion = (u8*)0x006B3824;
+
+// @NotOk
+// residue: mCurvePts[1]/[2] are a linear interpolation placeholder, not the original's
+// randomized arc (needs sub_41AFF0, still undecompiled, see the long comment on the class in
+// carnage.h). field_138's optional trail sub-object (sub_4088A0/sub_410F50/sub_410E80,
+// likewise undecompiled) is skipped entirely (left null). Everything else here (the implicit
+// CBody::CBody() base call, field_F8, mCurvePts[0]/[3], mPos, InitItem, mModel via
+// Spool_GetModel, AttachTo) is implemented directly off the 0x41AE40 disasm:
+// - InitItem's name arg is *gCurrentItemName (read as a value, not the global's address).
+// - the SFX/model index call (sub_4C93B0) is Spool_GetModel: same debug strings ("Bad region
+//   number sent to Spool_GetModel", "Model checksum not found in call to Spool_GetModel")
+//   as spool.cpp's already-implemented Spool_GetModel, called with checksum 0x90581B70 and
+//   region *gM3dObjFileRegion, result stored into the inherited CItem::mModel.
+// - AttachTo's list head is gEffectBodyList (address 0x56EFE4).
 CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
 {
-	printf("CSymbioteBlade::CSymbioteBlade(const CVector&, const CVector&)");
+	this->field_F8 = 0;
+
+	for (i32 i = 0; i < 4; i++)
+	{
+		this->mCurvePts[i].vx = 0;
+		this->mCurvePts[i].vy = 0;
+		this->mCurvePts[i].vz = 0;
+	}
+
+	this->InitItem(*gCurrentItemName);
+	this->mModel = static_cast<u16>(Spool_GetModel(0x90581B70, *gM3dObjFileRegion));
+
+	this->AttachTo(gEffectBodyList);
+
+	this->mCurvePts[0] = a2;
+	this->mPos = a2;
+	this->mCurvePts[3] = a3;
+
+	// @FIXME placeholder: the real curve (sub_41AFF0) perturbs these two control points with a
+	// random offset picked from an angle table; this is a plain 1/3, 2/3 linear interpolation.
+	this->mCurvePts[1] = a2 + (a3 - a2) / 3;
+	this->mCurvePts[2] = a2 + (a3 - a2) * 2 / 3;
+
+	// @FIXME the original conditionally builds an ~88 byte secondary trail sub-object here
+	// (sub_4088A0/sub_410F50/sub_410E80, not decompiled) and stores its handle in field_138.
+	this->field_138 = 0;
 }
 
 // XA lines played while starting to be grabbed (CCarnage::GettingGrabbed case 0). Not in
@@ -3291,4 +3301,13 @@ void validate_CSonicRipple(void)
 	VALIDATE(CSonicRipple, field_82, 0x82);
 	VALIDATE(CSonicRipple, field_84, 0x84);
 	VALIDATE(CSonicRipple, field_86, 0x86);
+}
+
+void validate_CSymbioteBlade(void)
+{
+	VALIDATE_SIZE(CSymbioteBlade, 0x13C);
+
+	VALIDATE(CSymbioteBlade, field_F8, 0xF8);
+	VALIDATE(CSymbioteBlade, mCurvePts, 0x108);
+	VALIDATE(CSymbioteBlade, field_138, 0x138);
 }
