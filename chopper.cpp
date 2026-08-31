@@ -18,6 +18,9 @@
 #include "ai.h"
 #include "panel.h"
 #include "PCGfx.h"
+#include "m3dinit.h"
+#include "ps2funcs.h"
+#include "SpideyDX.h"
 
 extern CBody* ControlBaddyList;
 extern CBaddy* BaddyList;
@@ -1066,41 +1069,58 @@ void CChopperMissile::Explode(void)
 	this->Die();
 }
 
-// @NotOk
-// @Note: re-checked 2026-08-31 against a fresh Hex-Rays decompile of
-// tools/functions/4342784.bin (0x424400), not just the disassembly. The old
-// note's guess was wrong: the unnamed helper at 0x509000 is NOT a digit
-// renderer, it draws one LINE SEGMENT (2 screen points + fixed z=6.0 + color
-// + width=2.0), called 6 times to draw crosshair tick marks around the
-// target box. The icon draw does not go through Panel_DrawTexturedPoly
-// either: it goes through a different allocator (0x462BB0, returns a raw
-// primitive struct this function fills by hand: UV/color/tpage bytes, then a
-// screen quad computed from the icon's own bitmap aspect ratio read straight
-// off the SAnimFrame bytes at *(this->field_124-related pointer)). There are
-// also several PS1-GTE-primitive setup calls (0x46D7B0/46E460/46DBC0/46DF70/
-// 46DF80, matching the CPlayer::RenderLookaroundReticle GTE idiom already
-// used elsewhere) and one call to a debug-gated stub (0x46CB90, format
-// string "stubbed out: setLineF4", gated by byte_54D341) that is a no-op in
-// this build. Two icon draws happen (offset by a depth-scaled width, most
-// likely a near/far double-icon like CSearchlight's double ring) followed by
-// the 6 line segments, all using perspective-divided coordinates (screen
-// scale constants dword_568158/568154 divided by projection denominators
-// dword_628614/61B5FC). This is real, more precise ground truth than the old
-// note had, but reproducing the exact float pipeline (roughly 500 lines of
-// packed single-precision arithmetic per Hex-Rays) is a genuinely large,
-// separate task from the rest of this pass; left @NotOk rather than risk an
-// unverified rewrite. Whoever picks this up next should start from the
-// fresh decompile, not the old schematic below (kept only because it at
-// least compiles and does not crash).
+// tentative name; same address as the already-named-elsewhere
+// gTimerRelated (export.h) / gM3dTimerRelated (ps2m3d.cpp, volatile i32* at
+// 0x6B4CA8). Reused here for the same "read fresh every frame" idiom; it
+// drives the shimmer/pulse color in CChopperMissile::DrawTargetRecticle.
+static volatile i32 * const gChopperGlowTimer = (i32*)0x6B4CA8;
+
+// @Ok
+// @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
+// tools/functions/4342784.bin (0x424400), cross-checked against names.json
+// for every call target. Corrects the prior schematic on every real point:
+// - sub_462BB0 IS Panel_DrawTexturedPoly(Texture*, int): its address
+//   (0x462BB0 = 4598704 decimal) is exactly names.json's entry for that
+//   function, and this file already uses the same "fill the returned raw
+//   POLY_FT4 by hand" idiom elsewhere (see panel.cpp's gHealthBarTextures
+//   draws). The old note's claim that the icon draw "does not go through
+//   Panel_DrawTexturedPoly at all" does not hold up under a fresh check.
+// - sub_509000 is PCGfx_DrawLine (already @Ok in PCGfx.cpp, same file): its
+//   call sites here pass exactly PCGfx_DrawLine's 9-float argument shape
+//   (x,y,z=6.0,color, x,y,z=6.0,color, width=2.0), not a digit/text
+//   renderer.
+// - There are two stacked icon quads (same texture; icon2's top edge is
+//   icon1's bottom edge), sized from the texture's own UV extents
+//   (tex->u1-tex->u0, tex->v0-tex->v2) scaled by a DEPTH-based factor
+//   (scale = max(4096-depth, 2048), so the reticle grows as the missile
+//   gets closer, floored once depth passes 2048), not the fixed
+//   halfW=halfH=12 box the old draft used.
+// - The color is not a flat grey: r0=0xFF and b0=0 are fixed, but g0 is the
+//   high byte of rcossin_tbl[(gChopperGlowTimer<<6)&0xFFF].sin, a genuine
+//   per-frame shimmer between red and yellow (same "HIBYTE of a sin table
+//   entry" idiom, reproduced as-is including its sawtooth-at-wrap
+//   behaviour rather than "fixed" into a smooth ramp).
+// - The two bracket tick marks either side of the icon are real (unlike
+//   CSniperTarget's twin, see that function's note: it has no equivalent
+//   code at all). Each bracket is a closed 3-segment triangle A-B-C-A, at a
+//   gap of max(Utils_Dist(this->mPos, localPos) >> 4, 32) pixels either
+//   side of screen center, drawn with PCGfx_DrawLine.
+// - Screen-space scaling for every coordinate uses the same
+//   gGameResolutionX/Y over Xres/Yres idiom already established in
+//   CPlayer::DrawReticle and PCPanel_DrawTexturedPoly.
+// - The debug print gated by byte_54D341 ("stubbed out: setLineF4") is a
+//   pure trace marker for a PSX-only GTE macro with no PC effect; skipped
+//   rather than wiring up new globals for a guaranteed no-op.
 void CChopperMissile::DrawTargetRecticle(void)
 {
 	if (!this->field_104 || this->field_120)
 		return;
 
-	Trig_GetPosition(&this->field_110, this->field_104);
+	CVector localPos;
+	Trig_GetPosition(&localPos, this->field_104);
 
 	CVector camPos = *gCameraViewPos;
-	CVector relPos = (this->field_110 >> 12) - camPos;
+	CVector relPos = (localPos >> 12) - camPos;
 
 	gte_SetRotMatrix(gCameraViewMatrix);
 	m3d_ZeroTransVector();
@@ -1119,46 +1139,116 @@ void CChopperMissile::DrawTargetRecticle(void)
 	i32 screenX = screenXY[0];
 	i32 screenY = screenXY[1];
 
-	POLY_FT4* poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(this->field_124, 0));
-	if (!poly)
-		return;
+	i32 scale = 4096 - depth;
+	if (scale < 2048)
+		scale = 2048;
 
-	*reinterpret_cast<u32*>(&poly->r0) = 0x2E808080;
-	poly->tpage = (poly->tpage & 0xFFDF) | 0x40;
+	Texture* tex = this->field_124;
 
-	i32 halfW = 12;
-	i32 halfH = 12;
+	u8 shimmer = static_cast<u8>(static_cast<u16>(
+			rcossin_tbl[(static_cast<u16>(*gChopperGlowTimer) << 6) & 0xFFF].sin) >> 8);
+	u32 color = 0xFF000000u | (0xFFu << 16) | (static_cast<u32>(shimmer) << 8);
 
-	poly->x0 = static_cast<i16>(screenX - halfW);
-	poly->y0 = static_cast<i16>(screenY - halfH);
-	poly->x1 = static_cast<i16>(screenX + halfW);
-	poly->y1 = static_cast<i16>(screenY - halfH);
-	poly->x2 = static_cast<i16>(screenX - halfW);
-	poly->y2 = static_cast<i16>(screenY + halfH);
-	poly->x3 = static_cast<i16>(screenX + halfW);
-	poly->y3 = static_cast<i16>(screenY + halfH);
+	i32 uWidth = tex->u1 - tex->u0;
+	i32 vHeight = tex->v0 - tex->v2;
 
-	i32 bracket = 20;
+	i32 pixWidth = (scale * ((uWidth << 9) / 320)) >> 13;
+	i32 halfPixWidth = (scale * (((uWidth / -2) << 9) / 320)) >> 13;
+	i32 topOffset = (scale * vHeight) >> 13;
+	i32 pixHeight = (scale * -vHeight) >> 13;
 
-	for (i32 i = 0; i < 4; i++)
+	i32 x0 = screenX + halfPixWidth;
+	i32 x1 = x0 + pixWidth;
+	i32 y0 = screenY + topOffset;
+	i32 y2 = y0 + pixHeight;
+
+	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
+	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+
+	POLY_FT4* poly1 = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(tex, 0));
+	if (poly1)
 	{
-		i32 signX = (i & 1) ? 1 : -1;
-		i32 signY = (i & 2) ? 1 : -1;
+		poly1->r0 = 0xFF;
+		poly1->g0 = shimmer;
+		poly1->b0 = 0;
+		poly1->code = 0x2E;
+		poly1->tpage = (poly1->tpage & ~0x40) | 0x20;
 
-		f32 x0 = static_cast<f32>(screenX + signX * bracket);
-		f32 y0 = static_cast<f32>(screenY + signY * bracket);
-		f32 x1 = static_cast<f32>(screenX + signX * (bracket - 6));
-		f32 y1 = y0;
-		f32 x2 = x0;
-		f32 y2 = static_cast<f32>(screenY + signY * (bracket - 6));
+		poly1->x0 = static_cast<i16>(x0);
+		poly1->y0 = static_cast<i16>(y0);
+		poly1->x1 = static_cast<i16>(x1);
+		poly1->y1 = static_cast<i16>(y0);
+		poly1->x2 = static_cast<i16>(x0);
+		poly1->y2 = static_cast<i16>(y2);
+		poly1->x3 = static_cast<i16>(x1);
+		poly1->y3 = static_cast<i16>(y2);
 
-		PCGfx_UseTexture(0, DCGfx_BlendingMode_0);
+		PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_1);
+
 		PCGfx_DrawQPoly2D(
-				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x1, y1, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x2, y2, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
-				0.0f);
+				x0 * scaleX, y0 * scaleY, 0.0f, 0.0f, color,
+				x1 * scaleX, y0 * scaleY, 1.0f, 0.0f, color,
+				x0 * scaleX, y2 * scaleY, 0.0f, 1.0f, color,
+				x1 * scaleX, y2 * scaleY, 1.0f, 1.0f, color,
+				6.0f);
+	}
+
+	// icon2 continues directly below icon1 (its top edge == icon1's bottom edge).
+	i32 y0b = y0 + 2 * pixHeight;
+	i32 y2b = y2;
+
+	POLY_FT4* poly2 = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(tex, 0));
+	if (poly2)
+	{
+		poly2->r0 = 0xFF;
+		poly2->g0 = shimmer;
+		poly2->b0 = 0;
+		poly2->code = 0x2E;
+		poly2->tpage = (poly2->tpage & ~0x40) | 0x20;
+
+		poly2->x0 = static_cast<i16>(x0);
+		poly2->y0 = static_cast<i16>(y0b);
+		poly2->x1 = static_cast<i16>(x1);
+		poly2->y1 = static_cast<i16>(y0b);
+		poly2->x2 = static_cast<i16>(x0);
+		poly2->y2 = static_cast<i16>(y2b);
+		poly2->x3 = static_cast<i16>(x1);
+		poly2->y3 = static_cast<i16>(y2b);
+
+		PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_1);
+
+		PCGfx_DrawQPoly2D(
+				x0 * scaleX, y0b * scaleY, 0.0f, 0.0f, color,
+				x1 * scaleX, y0b * scaleY, 1.0f, 0.0f, color,
+				x0 * scaleX, y2b * scaleY, 0.0f, 1.0f, color,
+				x1 * scaleX, y2b * scaleY, 1.0f, 1.0f, color,
+				6.0f);
+	}
+
+	u32 gap = Utils_Dist(this->mPos, localPos) >> 4;
+	if (gap < 32u)
+		gap = 32u;
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+	for (i32 side = 0; side < 2; side++)
+	{
+		i32 sign = side ? 1 : -1;
+
+		i32 ax = screenX + sign * static_cast<i32>(gap);
+		i32 ay = screenY;
+		i32 bx = ax + sign * 32;
+		i32 by = screenY - 16;
+		i32 cx = bx;
+		i32 cy = screenY + 16;
+
+		f32 fax = ax * scaleX, fay = ay * scaleY;
+		f32 fbx = bx * scaleX, fby = by * scaleY;
+		f32 fcx = cx * scaleX, fcy = cy * scaleY;
+
+		PCGfx_DrawLine(fax, fay, 6.0f, color, fbx, fby, 6.0f, color, 2.0f);
+		PCGfx_DrawLine(fbx, fby, 6.0f, color, fcx, fcy, 6.0f, color, 2.0f);
+		PCGfx_DrawLine(fcx, fcy, 6.0f, color, fax, fay, 6.0f, color, 2.0f);
 	}
 }
 
@@ -1435,24 +1525,33 @@ void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 	this->field_12C = 1;
 }
 
-// @NotOk
-// @Note: re-checked 2026-08-31: the raw disassembly of tools/functions/4334144.bin
-// (0x422240) opens with the exact same sub_46D7B0/46E460/qt_register_signal_
-// spy_callbacks_1/46DBC0/46DF70 GTE screen-projection call sequence as
-// CChopperMissile::DrawTargetRecticle (0x424400), confirmed via a fresh
-// Hex-Rays decompile of that sibling function (see its note above). Same
-// finding applies here: this is very likely NOT a Panel_DrawTexturedPoly +
-// PCGfx_DrawQPoly2D bracket draw, it is almost certainly the same "icon via
-// a raw primitive allocator at 0x462BB0, then crosshair tick marks via 6
-// calls to a line-segment drawer at 0x509000" structure, not digit
-// rendering or a generic bracket quad. Did not re-verify this function's own
-// full body line by line (budget went to CChopperMissile's sibling instead,
-// since decompiling one fully-detailed twin is enough to establish the real
-// approach); whoever continues this should decompile 0x422240 directly with
-// Hex-Rays rather than trust the schematic below, which is now known to be
-// structurally wrong, not just imprecise on float args.
+// @Ok
+// @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
+// tools/functions/4334144.bin (0x422240), not the sibling's schematic. This
+// function is NOT the bracket-tick-mark twin of CChopperMissile's version:
+// it never calls sub_509000/PCGfx_DrawLine at all (confirmed absent from
+// the decompile's call list), so the old note's "same 6 line segments"
+// guess was wrong. Real structure:
+// - Two stacked icon quads (same idiom as CChopperMissile: icon2's top
+//   edge is icon1's bottom edge), but sized with a FIXED scale of 3072
+//   (0xC00 = 0.75 in Q12), not a depth-derived one: this reticle keeps a
+//   constant screen size regardless of range, unlike the missile lock box.
+// - The color is the fixed 0x2E808080 (r0=g0=b0=0x80, code=0x2E) the old
+//   draft already had right for this function (unlike CChopperMissile's,
+//   there is no shimmer-table read anywhere in this decompile).
+// - No bracket ticks. Instead, AFTER the on-screen check/icon block (this
+//   part runs unconditionally, even when the target is off-screen), there
+//   is one more PCGfx_DrawQPoly2D call: a flat, dim, semi-transparent
+//   rectangle (color 0x5F080808, i.e. alpha 0x5F over near-black) anchored
+//   at the top-left of the screen, sized 512x240 in the same
+//   gGameResolution*/Xres,Yres native-to-screen scale used everywhere else
+//   in this function. Left as a literal reproduction (a vignette/scope-dim
+//   overlay); no gameplay-affecting logic here to get wrong.
 void CSniperTarget::DrawTargetRecticle(void)
 {
+	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
+	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+
 	CVector camPos = *gCameraViewPos;
 	CVector relPos = (this->field_104 >> 12) - camPos;
 
@@ -1470,92 +1569,162 @@ void CSniperTarget::DrawTargetRecticle(void)
 	i32 screenX = screenXY[0];
 	i32 screenY = screenXY[1];
 
-	if (screenX < -200 || screenX > 712 || screenY < -200 || screenY > 440)
-		return;
-
-	POLY_FT4* poly = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(this->field_11C, 0));
-	if (!poly)
-		return;
-
-	*reinterpret_cast<u32*>(&poly->r0) = 0x2E808080;
-	poly->tpage = (poly->tpage & 0xFFDF) | 0x40;
-
-	i32 halfW = 12;
-	i32 halfH = 12;
-
-	poly->x0 = static_cast<i16>(screenX - halfW);
-	poly->y0 = static_cast<i16>(screenY - halfH);
-	poly->x1 = static_cast<i16>(screenX + halfW);
-	poly->y1 = static_cast<i16>(screenY - halfH);
-	poly->x2 = static_cast<i16>(screenX - halfW);
-	poly->y2 = static_cast<i16>(screenY + halfH);
-	poly->x3 = static_cast<i16>(screenX + halfW);
-	poly->y3 = static_cast<i16>(screenY + halfH);
-
-	i32 bracket = 20;
-
-	for (i32 i = 0; i < 4; i++)
+	if (screenX >= -200 && screenX <= 712 && screenY >= -200 && screenY <= 440)
 	{
-		i32 signX = (i & 1) ? 1 : -1;
-		i32 signY = (i & 2) ? 1 : -1;
+		i32 scale = 3072;
+		Texture* tex = this->field_11C;
 
-		f32 x0 = static_cast<f32>(screenX + signX * bracket);
-		f32 y0 = static_cast<f32>(screenY + signY * bracket);
-		f32 x1 = static_cast<f32>(screenX + signX * (bracket - 6));
-		f32 y1 = y0;
-		f32 x2 = x0;
-		f32 y2 = static_cast<f32>(screenY + signY * (bracket - 6));
+		u32 color = 0x2E808080u;
 
-		PCGfx_UseTexture(0, DCGfx_BlendingMode_0);
-		PCGfx_DrawQPoly2D(
-				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x1, y1, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x2, y2, 0.0f, 1.0f, 0xFFFFFFFFu,
-				x0, y0, 0.0f, 1.0f, 0xFFFFFFFFu,
-				0.0f);
+		i32 uWidth = tex->u1 - tex->u0;
+		i32 vHeight = tex->v0 - tex->v2;
+
+		i32 pixWidth = (scale * ((uWidth << 9) / 320)) >> 13;
+		i32 halfPixWidth = (scale * ((uWidth / -2) << 9) / 320) >> 13;
+		i32 topOffset = (scale * vHeight) >> 13;
+		i32 pixHeight = (scale * -vHeight) >> 13;
+
+		i32 x0 = screenX + halfPixWidth;
+		i32 x1 = x0 + pixWidth;
+		i32 y0 = screenY + topOffset;
+		i32 y2 = y0 + pixHeight;
+
+		u32 drawColor = 0xFF000000u | ((color >> 16 & 0xFFu) << 16) | ((color >> 8 & 0xFFu) << 8) | (color & 0xFFu);
+
+		POLY_FT4* poly1 = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(tex, 0));
+		if (poly1)
+		{
+			*reinterpret_cast<u32*>(&poly1->r0) = color;
+			poly1->tpage = (poly1->tpage & ~0x20) | 0x40;
+
+			poly1->x0 = static_cast<i16>(x0);
+			poly1->y0 = static_cast<i16>(y0);
+			poly1->x1 = static_cast<i16>(x1);
+			poly1->y1 = static_cast<i16>(y0);
+			poly1->x2 = static_cast<i16>(x0);
+			poly1->y2 = static_cast<i16>(y2);
+			poly1->x3 = static_cast<i16>(x1);
+			poly1->y3 = static_cast<i16>(y2);
+
+			PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_1);
+
+			PCGfx_DrawQPoly2D(
+					x0 * scaleX, y0 * scaleY, 0.0f, 0.0f, drawColor,
+					x1 * scaleX, y0 * scaleY, 1.0f, 0.0f, drawColor,
+					x0 * scaleX, y2 * scaleY, 0.0f, 1.0f, drawColor,
+					x1 * scaleX, y2 * scaleY, 1.0f, 1.0f, drawColor,
+					6.0f);
+		}
+
+		// icon2 continues directly below icon1 (its top edge == icon1's bottom edge).
+		i32 y0b = y0 + 2 * pixHeight;
+		i32 y2b = y2;
+
+		POLY_FT4* poly2 = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(tex, 0));
+		if (poly2)
+		{
+			*reinterpret_cast<u32*>(&poly2->r0) = color;
+			poly2->tpage = (poly2->tpage & ~0x20) | 0x40;
+
+			poly2->x0 = static_cast<i16>(x0);
+			poly2->y0 = static_cast<i16>(y0b);
+			poly2->x1 = static_cast<i16>(x1);
+			poly2->y1 = static_cast<i16>(y0b);
+			poly2->x2 = static_cast<i16>(x0);
+			poly2->y2 = static_cast<i16>(y2b);
+			poly2->x3 = static_cast<i16>(x1);
+			poly2->y3 = static_cast<i16>(y2b);
+
+			PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_1);
+
+			PCGfx_DrawQPoly2D(
+					x0 * scaleX, y0b * scaleY, 0.0f, 0.0f, drawColor,
+					x1 * scaleX, y0b * scaleY, 1.0f, 0.0f, drawColor,
+					x0 * scaleX, y2b * scaleY, 0.0f, 1.0f, drawColor,
+					x1 * scaleX, y2b * scaleY, 1.0f, 1.0f, drawColor,
+					6.0f);
+		}
 	}
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+
+	f32 dimW = scaleX * 512.0f;
+	f32 dimH = scaleY * 240.0f;
+	u32 dimColor = 0x5F080808u;
+
+	PCGfx_DrawQPoly2D(
+			0.0f, 0.0f, 0.0f, 0.0f, dimColor,
+			dimW, 0.0f, 1.0f, 0.0f, dimColor,
+			0.0f, dimH, 0.0f, 1.0f, dimColor,
+			dimW, dimH, 1.0f, 1.0f, dimColor,
+			5.0f);
 }
 
 // @NotOk
-// @Note: re-checked 2026-08-31 with a fresh Hex-Rays decompile of
-// tools/functions/4331776.bin (0x421900), which corrects and sharpens the
-// earlier structural guess below. Confirmed real (field_100, the state
-// selector, is this+256/0x100):
-// - States 0 and 1 are NOT the same code with a different rate (this
-// source's shared "case 0: case 1:" block is wrong on that point): they are
-// two DIFFERENT blocks with different aim targets.
-//   state 0: Utils_CalcAim aims at MechList->mPos (not field_104), rate 8,
-//   muzzle magnitude 18, and the line-of-sight raycast end is
-//   dword_56F3B8+8 (a global CVector this codebase has not named yet, NOT
-//   CameraList->mPos as this source assumes). On hit it allocates a
-//   CGlowFlash-like effect by hand (operator new via CBit::operator new,
-//   0x4088A0, size 184, then CGLine::CGLine, then CMachineGunBullet::Common
-//   at 0x420DC0, i.e. it is actually spawning a muzzle-flash CMachineGunBullet
-//   variant here already, not only in state 2) and stores an owner handle via
-//   Mem_MakeHandle (0x458360).
-//   state 1: Utils_CalcAim aims at field_13C (this+316, matches this
-//   source's target), rate 16, muzzle magnitude 12, and the raycast end is
-//   MechList->mPos this time. Transitions to state 2 on
-//   Utils_Dist(muzzleEnd, field_13C) < 200 (not the field_10C/field_79
-//   naming this source guessed).
-// - Both states share the same mAngVel/mAngAcc/mAngFric settle-integrator
-// loop this source already has right (matches CChopperMissile::AI's now-
-// fixed per-substep formula), and both play random voice lines via
-// Rnd(0x4E5DA0) + Redbook_XAPlay (0x479EE0, NOT SFX_Play) picking from
-// several distinct (track, ???) pair tables (dword_548F38/548F3C for the
-// "up close" set, dword_548F28/548F2C for the "far" set, etc.), gated by the
-// running best/worst distance fields and the 0x78-vblank timers, roughly as
-// this source already has.
-// - State 2 (top block) matches this source's rate-limit/fire logic in
-// spirit (a global vblank timer, a shot budget, a ~40% random roll,
-// spawning a CMachineGunBullet), but was not re-verified in this pass.
-// This is real, more precise ground truth than the old note had, but a full
-// correct rewrite needs splitting states 0 and 1 into two separate blocks
-// (this source's shared block cannot represent two different aim targets)
-// and naming dword_56F3B8 properly first (nearest-neighbour check against
-// idb_globals.txt not done in this pass). Left @NotOk rather than risk an
-// unverified state-machine rewrite; whoever continues this should start from
-// a fresh Hex-Rays decompile of 0x421900, not the block below.
+// @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
+// tools/functions/4331776.bin (0x421900), tracing every offset against
+// CBody/CItem's VALIDATE()'d field layout (ob.cpp) instead of guessing.
+// This corrects real, verified structural mistakes in the previous version,
+// but state 2's own body is left untouched pending more work (see below):
+// - States 0 and 1 ARE two distinct blocks (confirmed), but the previous
+//   note's description of what's in each was wrong in an important way: the
+//   line-of-sight raycast, the CGlowFlash/CMachineGunBullet-style muzzle
+//   object spawn, and the field_12C/130/134/138 SFX-distance-timer
+//   bookkeeping do NOT live in states 0/1 at all. All of that is inside
+//   state 2's own body (confirmed: those calls sit inside the `if (v3==0)`
+//   branch, i.e. field_100==2), not the two outer branches. States 0 and 1
+//   are each just: CalcAim, TurnTowards, the per-substep settle loop, a
+//   GetVecFromMagDir muzzle direction, and field_104 advancing by
+//   muzzleDir*field_80 (a "reticle drifts toward its aim point" effect).
+// - State 0 (field_100==0): Utils_CalcAim aims at MechList->mPos (not
+//   field_104 at itself, the previous shared block's bug), rate 8, muzzle
+//   magnitude 18 (0x12). Nothing else: no raycast, no state transition, no
+//   SFX in this branch.
+// - State 1 (field_100==1): Utils_CalcAim aims at field_13C (this+316),
+//   rate 16, muzzle magnitude 12 (0xC, NOT 16 as the old shared block had).
+//   When Utils_Dist(field_104, field_13C) < 200 it transitions to state 2,
+//   and that transition does real setup this source was missing entirely:
+//   field_110/114/118 (a CVector-shaped run of 3 i32 fields, VALIDATE'd
+//   contiguous) = a copy of field_104; field_148 (also a CVector-shaped run
+//   of 3 i32s) = normalize((MechList->mPos - field_104) >> 12); field_154 =
+//   0; field_158 = max(2*Length(the pre-normalize delta), 512); field_100 =
+//   2; field_128 = false; field_F8 = field_FC = 0. Without this, state 2's
+//   field_148/154/158 (which it reads immediately) would be garbage.
+// - Both states share the exact per-substep settle loop already confirmed
+//   correct in CChopperMissile::AI (this->mAngles += this->mAngVel;
+//   this->mAngles.Mask(); then the mAngVel/mAngAcc/mAngFric IIR decay per
+//   axis; then this->mAngVel.KillSmall(); ALL inside the field_80-iteration
+//   loop, not after it) -- the previous shared block ran Mask()/KillSmall()
+//   only once, after the loop, and never touched mAngles at all.
+// - The TurnTowards call itself was wrong in argument order: the real
+//   signature (utils.h) is Utils_TurnTowards(Current, AngVel*, AngAcc*,
+//   Ideal, rate); the previous code passed (aimDir, &mAngles, &mAngVel,
+//   mAngAcc, rate) -- aimDir and mAngles swapped, and the pointer args
+//   shifted by one. Confirmed against CChopperMissile::AI's already-@Ok
+//   call, which uses the identical raw call shape.
+// - dword_56F3B8 needs no new global: it is the value stored AT the
+//   existing gCameraList/CameraList pointer variable (0x56F3B8, per
+//   idb_globals.txt via pshell.cpp), i.e. "dword_56F3B8 + 8" is
+//   &CameraList->mPos. But this only matters for state 2's raycast, not
+//   states 0/1.
+// - State 2 itself is NOT re-verified in this pass (its own body needs a
+//   separate, careful pass): the raycast target really is CameraList->mPos
+//   with vy += 0x200000 (matching CSearchlight::AI's identical idiom
+//   already in this file), the field_12C/130/134/138 SFX-distance timers
+//   really do belong here (not states 0/1) using Redbook_XAPlay with
+//   dword_548Fxx/548Exx track-pair tables, and there IS a genuine
+//   CGlowFlash-style object spawned by hand (CBit::operator new(184),
+//   CGLine::CGLine, vtable off_53B590, CMachineGunBullet::Common) gated by
+//   a field_124 rate-limit AND field_154 < field_158 -- but the raw
+//   disassembly's control flow does not obviously reconcile with this
+//   source's current case-2 body (which reads like a paraphrase, not a
+//   transcription: e.g. it uses Vblanks for the SFX timers where the
+//   decompile clearly reads dword_6B4CA8/gChopperGlowTimer instead, a
+//   different global, and the CMachineGunBullet-firing block's gating
+//   doesn't line up with where field_154/field_158 are actually tested in
+//   the disasm). Left untouched rather than guess; whoever continues this
+//   should decompile 0x421900's `if (v3 == 0)` branch fresh and rebuild
+//   state 2 from that, not from this source's current case 2.
 void CSniperTarget::AI(void)
 {
 	if (this->mFlags & 1)
@@ -1568,6 +1737,36 @@ void CSniperTarget::AI(void)
 	switch (this->field_100)
 	{
 		case 0:
+		{
+			CSVector aimDir;
+			aimDir.vx = 0;
+			aimDir.vy = 0;
+			aimDir.vz = 0;
+			Utils_CalcAim(&aimDir, &this->field_104, &MechList->mPos);
+
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimDir, 8);
+
+			for (i32 i = 0; i < this->field_80; i++)
+			{
+				this->mAngles += this->mAngVel;
+				this->mAngles.Mask();
+
+				i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
+				this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
+
+				i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
+				this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
+
+				this->mAngVel.KillSmall();
+			}
+
+			CVector muzzleDir;
+			Utils_GetVecFromMagDir(&muzzleDir, 0x12, reinterpret_cast<CSVector*>(&this->mAngles));
+
+			this->field_104 = this->field_104 + muzzleDir * this->field_80;
+
+			break;
+		}
 		case 1:
 		{
 			CSVector aimDir;
@@ -1576,84 +1775,46 @@ void CSniperTarget::AI(void)
 			aimDir.vz = 0;
 			Utils_CalcAim(&aimDir, &this->field_104, reinterpret_cast<CVector*>(&this->field_13C));
 
-			i32 rate = (this->field_100 == 0) ? 8 : 0x10;
-			Utils_TurnTowards(aimDir, reinterpret_cast<CSVector*>(&this->mAngles), &this->mAngVel, this->mAngAcc, rate);
+			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimDir, 0x10);
 
 			for (i32 i = 0; i < this->field_80; i++)
 			{
+				this->mAngles += this->mAngVel;
+				this->mAngles.Mask();
+
 				i16 vx = this->mAngVel.vx + this->mAngAcc.vx;
 				this->mAngVel.vx = vx - (vx >> this->mAngFric.vx);
 
 				i16 vy = this->mAngVel.vy + this->mAngAcc.vy;
 				this->mAngVel.vy = vy - (vy >> this->mAngFric.vy);
-			}
 
-			this->mAngVel.Mask();
-			this->mAngVel.KillSmall();
+				this->mAngVel.KillSmall();
+			}
 
 			CVector muzzleDir;
-			Utils_GetVecFromMagDir(&muzzleDir, this->field_100 == 0 ? 0x12 : 0x10,
-					reinterpret_cast<CSVector*>(&this->mAngles));
+			Utils_GetVecFromMagDir(&muzzleDir, 0xC, reinterpret_cast<CSVector*>(&this->mAngles));
 
-			CVector muzzleEnd = reinterpret_cast<CVector&>(this->field_13C) + muzzleDir;
+			this->field_104 = this->field_104 + muzzleDir * this->field_80;
 
-			SLineInfo lineinfo;
-			lineinfo.StartCoords = reinterpret_cast<CVector&>(this->field_13C);
-			lineinfo.EndCoords = CameraList->mPos;
-			lineinfo.MinCoords.vx = 0;
-			lineinfo.MinCoords.vy = 0;
-			lineinfo.MinCoords.vz = 0;
-			lineinfo.MaxCoords.vx = 0;
-			lineinfo.MaxCoords.vy = 0;
-			lineinfo.MaxCoords.vz = 0;
-			lineinfo.iLo = 0;
-			lineinfo.iHi = 0;
-			lineinfo.jLo = 0;
-			lineinfo.jHi = 0;
-			lineinfo.Distance = 0;
-			lineinfo.Length = 0;
-			lineinfo.pItem = 0;
-			lineinfo.Position.vx = 0;
-			lineinfo.Position.vy = 0;
-			lineinfo.Position.vz = 0;
-			lineinfo.Normal.vx = 0;
-			lineinfo.Normal.vy = 0;
-			lineinfo.Normal.vz = 0;
-
-			M3dColij_InitLineInfo(&lineinfo);
-			M3dZone_LineToItem(&lineinfo, 1);
-
-			if (lineinfo.pItem)
-			{
-				this->field_104 = lineinfo.Position;
-			}
-
-			i32 dist = Utils_Dist(reinterpret_cast<CVector&>(this->field_13C), MechList->mPos);
-
-			if (dist > this->field_12C)
-			{
-				this->field_12C = dist;
-				this->field_130 = Vblanks;
-			}
-			else if (dist < this->field_134)
-			{
-				this->field_134 = dist;
-
-				if (Vblanks - this->field_130 > 0x78)
-				{
-					SFX_Play((Rnd(6) & 0xFE) == 0 ? 0x8F00 : 0x8F04, 0x3C, 0);
-					this->field_130 = Vblanks;
-				}
-			}
-
-			if (Vblanks - this->field_138 > 0x78)
-			{
-				SFX_Play((Rnd(8) & 0xFE) == 0 ? 0x8F18 : 0x8F1C, 0x3C, 0);
-				this->field_138 = Vblanks;
-			}
+			i32 dist = Utils_Dist(this->field_104, reinterpret_cast<CVector&>(this->field_13C));
 
 			if (dist < 200)
 			{
+				reinterpret_cast<CVector&>(this->field_110) = this->field_104;
+
+				CVector toMech = (MechList->mPos - this->field_104) >> 12;
+				reinterpret_cast<CVector&>(this->field_148) = toMech;
+
+				i32 preNormalizeLen = reinterpret_cast<CVector&>(this->field_148).Length();
+				VectorNormal(reinterpret_cast<VECTOR*>(&this->field_148), reinterpret_cast<VECTOR*>(&this->field_148));
+
+				this->field_154 = 0;
+
+				i32 travelLimit = 2 * preNormalizeLen;
+				if (travelLimit < 512)
+					travelLimit = 512;
+				this->field_158 = travelLimit;
+
 				this->field_100 = 2;
 				this->field_128 = false;
 				this->field_F8 = 0;
@@ -2178,72 +2339,157 @@ void Chopper_CreateSearchlight(const u32* a1, u32* a2)
 	*a2 = reinterpret_cast<u32>(new CSearchlight(v3));
 }
 
-// @NotOk
-// @Note: re-checked 2026-08-31 against the raw disassembly of
-// tools/functions/4340240.bin (0x423a10) after CalculateSearchlight's fix
-// changed what field_138[] actually holds (see that function's note): it is
-// a double ring around the raycast hit point (33 near + 33 outer/far
-// vertices, not a near/far pair spanning the beam length), so this renderer
-// should walk it as a ring strip around one hit point, not a strip along the
-// beam. The opening GTE screen-projection sequence (sub_46D7B0/46E460/
-// sub_4E7840) matches the same idiom confirmed in the two DrawTargetRecticle
-// notes above, but past that this function's stack frame is large (0x11C
-// bytes, with what look like 12-byte-spaced per-vertex clip-flag bytes),
-// consistent with a real batched multi-vertex strip draw call, not the
-// current per-pair PCGfx_DrawQPoly2D loop. Did not fully decompile the draw
-// call itself (same class of large float-heavy primitive-fill code as the
-// DrawTargetRecticle functions); left @NotOk. Whoever continues this should
-// decompile 0x423a10 with Hex-Rays and rebuild the loop to match
-// CalculateSearchlight's real field_138 layout (index 0 = hit point anchor,
-// 1..32 = inner ring, 33..64 = outer ring, 65 unused).
+// @Ok
+// @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
+// tools/functions/4340240.bin (0x423a10), cross-checked against names.json
+// for call targets and against ob.cpp's VALIDATE()'d CSearchlight layout for
+// field offsets. Real structure, confirmed field by field:
+// - Projects field_138[0] (the raycast hit point, per CalculateSearchlight)
+//   first; bail (return) if it's behind the near plane (depth < 200), same
+//   as before.
+// - Also projects MechList->mPos to screen space ONCE, reused every loop
+//   iteration; this is NOT part of the previous single-strip loop at all.
+// - Resets field_12C (the "beam is hitting MechList" flag CheckPointInScreenTri
+//   sets, per that function's own note) to 0, same as before.
+// - Walks the INNER ring (field_138[1..32], wrapping 32 back to 1) as 32
+//   filled screen-space triangles fanning out from MechList's screen
+//   position (Panel_DrawTexturedPoly is not involved at all here: this uses
+//   sub_507DA0, which matches PCGfx_DrawTPoly2D's exact 3-vertex argument
+//   shape, already @Ok in PCGfx.cpp), coloured by a flicker derived from
+//   this->field_134 (NOT a shared timer global; a per-instance field), alpha
+//   0x22. This is the "spotlight cone hitting the ground" visual. For each
+//   triangle, if field_12C is still 0 this frame, calls
+//   this->CheckPointInScreenTri(mechScreen, hitScreen, innerScreen,
+//   nextInnerScreen) to test whether MechList's screen position falls
+//   inside it (the actual "is the player caught in the beam" hit test,
+//   which happens here in the renderer, not in AI() or
+//   CalculateSearchlight()).
+// - For the SAME ring index, also projects the matching OUTER ring point
+//   (field_138[33..64], wrapping 64 back to 33) and draws a translucent
+//   quad band between the inner and outer ring segments (sub_507910 =
+//   PCGfx_DrawQPoly2D, already @Ok) using a fixed literal color
+//   0x00808060 (confirmed via raw disasm: `push offset unk_808060`, a
+//   literal immediate that happens to coincide with a data symbol's address
+//   -- the "global boundaries are unreliable" MSVC quirk CLAUDE.md
+//   documents -- not an actual variable read). This is the soft glow/halo
+//   ring around the cone.
+// - Any ring point behind the near plane aborts the WHOLE function early
+//   (the original's inner while(1) loop `break`s out to the function's
+//   single `return`, it does not just skip that segment); reproduced as an
+//   early return from inside the loop, not a `break`.
+// - Screen-space scaling for every coordinate uses the same
+//   gGameResolutionX/Y over Xres/Yres idiom already established elsewhere in
+//   this file. The original's own scratch primitive-queue bookkeeping
+//   (dword_56FB04 buffer allocation/capacity check, the "stubbed out:
+//   setLineF4"-style debug print) has no effect on what gets drawn and is
+//   skipped, same precedent as CChopperMissile::DrawTargetRecticle.
 void CSearchlight::SpecialRenderer(void)
 {
 	gte_SetRotMatrix(gCameraViewMatrix);
 	m3d_ZeroTransVector();
 
 	CVector camPos = *gCameraViewPos;
-	CVector relPos = (this->field_138[0] >> 12) - camPos;
+	CVector hitRel = (this->field_138[0] >> 12) - camPos;
 
-	gte_ldlv0(reinterpret_cast<VECTOR*>(&relPos));
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&hitRel));
 	gte_rtps();
 
 	i32 depth;
 	gte_stlvnl2(&depth);
 
-	i16 screenXY[2];
-	gte_stsxy(reinterpret_cast<i32*>(screenXY));
+	i16 hitXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(hitXY));
 
 	if (depth < 200)
 		return;
+
+	CVector mechRel = (MechList->mPos >> 12) - camPos;
+
+	gte_ldlv0(reinterpret_cast<VECTOR*>(&mechRel));
+	gte_rtps();
+
+	i16 mechXY[2];
+	gte_stsxy(reinterpret_cast<i32*>(mechXY));
 
 	this->field_12C = 0;
 
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 
-	f32 prevX = static_cast<f32>(screenXY[0]);
-	f32 prevY = static_cast<f32>(screenXY[1]);
+	i32 a = (this->field_134 << 6) >> 12;
+	i32 b = (48 * this->field_134) >> 12;
+	u32 beamColor = (a & 0xFFu) | ((a & 0xFFu) << 8) | ((b & 0xFFu) << 16) | 0x22000000u;
 
-	for (i32 i = 1; i < 66; i++)
+	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
+	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+
+	u32 mechPacked = static_cast<u16>(mechXY[0]) | (static_cast<u32>(static_cast<u16>(mechXY[1])) << 16);
+	u32 hitPacked = static_cast<u16>(hitXY[0]) | (static_cast<u32>(static_cast<u16>(hitXY[1])) << 16);
+
+	for (i32 i = 1; i <= 32; i++)
 	{
-		CVector rel = (this->field_138[i] >> 12) - camPos;
+		i32 nextIdx = (i < 32) ? (i + 1) : 1;
+		i32 outerIdx = i + 32;
+		i32 outerNextIdx = (i < 32) ? (outerIdx + 1) : 33;
 
-		gte_ldlv0(reinterpret_cast<VECTOR*>(&rel));
+		CVector innerRel = (this->field_138[i] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&innerRel));
 		gte_rtps();
-		gte_stlvnl2(&depth);
-		gte_stsxy(reinterpret_cast<i32*>(screenXY));
+		i32 innerDepth;
+		gte_stlvnl2(&innerDepth);
+		i16 innerXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(innerXY));
+		if (innerDepth < 200)
+			return;
 
-		f32 x = static_cast<f32>(screenXY[0]);
-		f32 y = static_cast<f32>(screenXY[1]);
+		CVector nextRel = (this->field_138[nextIdx] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&nextRel));
+		gte_rtps();
+		i32 nextDepth;
+		gte_stlvnl2(&nextDepth);
+		i16 nextXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(nextXY));
+		if (nextDepth < 200)
+			return;
+
+		PCGfx_DrawTPoly2D(
+				mechXY[0] * scaleX, mechXY[1] * scaleY, 0.0f, 0.0f, beamColor,
+				innerXY[0] * scaleX, innerXY[1] * scaleY, 1.0f, 0.0f, beamColor,
+				nextXY[0] * scaleX, nextXY[1] * scaleY, 0.0f, 1.0f, beamColor,
+				5.0f);
+
+		if (!this->field_12C)
+		{
+			u32 innerPacked = static_cast<u16>(innerXY[0]) | (static_cast<u32>(static_cast<u16>(innerXY[1])) << 16);
+			u32 nextPacked = static_cast<u16>(nextXY[0]) | (static_cast<u32>(static_cast<u16>(nextXY[1])) << 16);
+			this->CheckPointInScreenTri(mechPacked, hitPacked, innerPacked, nextPacked);
+		}
+
+		CVector outerRel = (this->field_138[outerIdx] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&outerRel));
+		gte_rtps();
+		i32 outerDepth;
+		gte_stlvnl2(&outerDepth);
+		i16 outerXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(outerXY));
+		if (outerDepth < 200)
+			return;
+
+		CVector outerNextRel = (this->field_138[outerNextIdx] >> 12) - camPos;
+		gte_ldlv0(reinterpret_cast<VECTOR*>(&outerNextRel));
+		gte_rtps();
+		i32 outerNextDepth;
+		gte_stlvnl2(&outerNextDepth);
+		i16 outerNextXY[2];
+		gte_stsxy(reinterpret_cast<i32*>(outerNextXY));
+		if (outerNextDepth < 200)
+			return;
 
 		PCGfx_DrawQPoly2D(
-				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
-				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
-				x, y, 0.0f, 1.0f, 0x40FFFFFFu,
-				prevX, prevY, 0.0f, 1.0f, 0x40FFFFFFu,
-				0.0f);
-
-		prevX = x;
-		prevY = y;
+				innerXY[0] * scaleX, innerXY[1] * scaleY, 0.0f, 0.0f, 0x00808060u,
+				nextXY[0] * scaleX, nextXY[1] * scaleY, 1.0f, 0.0f, 0x00808060u,
+				outerXY[0] * scaleX, outerXY[1] * scaleY, 0.0f, 1.0f, 0x00808060u,
+				outerNextXY[0] * scaleX, outerNextXY[1] * scaleY, 1.0f, 1.0f, 0x00808060u,
+				5.0f);
 	}
 }
 
