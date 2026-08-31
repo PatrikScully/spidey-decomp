@@ -17,6 +17,7 @@
 #include "SpideyDX.h"
 #include "algebra.h"
 #include "shatter.h"
+#include "screen.h"
 
 // @Ok
 EXPORT bool SparkSemiTrans = true;
@@ -365,13 +366,102 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 // offset), so they stay @BIGTODO. The next attempt should be able to move
 // much faster starting from this map instead of raw disassembly.
 
+// Shared camera-matrix refresh for the Display*List family (see the family
+// notes above). Every function that reads the invZ pass through
+// Algebra_Transform4 opens with the same instruction sequence: a 16-float
+// copy that IDA renders as 4 interleaved "arrays"
+// (dword_56E6F8/56E6FC/56E700/flt_56E674) because of array-boundary folding
+// (CLAUDE.md: "MSVC folds array indexing into neighboring globals' base
+// addresses"). Traced instruction-by-instruction against the raw disasm of
+// 0x4097e0 (0x4097f6..0x409895): dword_56E6FC is just dword_56E6F8+4 bytes
+// and dword_56E700 is dword_56E6F8+8 bytes (one contiguous 16-float array,
+// not three), and flt_56E674 is literally &gGfxMatrix[3] (an alias into the
+// SAME destination array algebra.cpp already declares as gGfxMatrix at
+// 0x56E668). Once the folding is undone the whole loop is exactly
+// `memcpy(gGfxMatrix, gCameraBasisMatrix, 16 * sizeof(f32))`. gGfxMatrix is
+// `static` in algebra.cpp (file-local pointer, shared address per repo
+// convention), so this file gets its own pointer to the same 0x56E668
+// address rather than reaching into algebra.cpp.
+static f32 * const gFrameProjMatrix = (f32*)0x56E668;   // == algebra.cpp's gGfxMatrix
+// Tentative name; source basis matrix the family copies into gFrameProjMatrix
+// once per Display call, address confirmed via the byte-offset trace above.
+// Not in idb_globals.txt. Likely the camera's un-composed view/rotation
+// matrix (refreshed once per frame elsewhere), but that is not confirmed.
+static f32 * const gCameraBasisMatrix = (f32*)0x56E6F8;
+
+// @Ok
+// Functional. Factored out of DisplayQuadBitList's opening instructions
+// (see the comment above gFrameProjMatrix); every Display*List function
+// that projects through Algebra_Transform4 repeats this exact copy inline
+// in the original, so this helper is reused across the family as more of
+// it gets implemented.
+static INLINE void RefreshGfxMatrix(void)
+{
+	for (i32 i = 0; i < 16; i++)
+	{
+		gFrameProjMatrix[i] = gCameraBasisMatrix[i];
+	}
+}
+
+// Camera position used by the per-corner relPos = (rawPos>>12) - camPos
+// idiom (see the family notes and Screen_DrawArrow). Same address as
+// chopper.cpp's gCameraViewPos / mysterio.cpp's and spidey.cpp's
+// stru_56F1B4; duplicated here per the repo's file-local-static convention.
+static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
+
 // @BIGTODO
-// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). See the
-// shared family notes above. Per-segment camera-space transform through a
-// self-set rotation matrix (gte_SetRotMatrix, m3d_ZeroTransVector), a
-// camera-facing calculation (Utils_CalcUnitFacingCamera), then a strip of
-// gouraud-textured POLY_GT4 quads via PCGfx_DrawQPoly3D (sub_508550), one
-// per pair of ribbon points.
+// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Fully
+// decompiled and traced this session (2026-08-31) - correcting the old
+// note, which had the wrong mechanism (no Utils_CalcUnitFacingCamera call
+// anywhere in the real disassembly; that guess came from the class name,
+// not the code). Not implemented yet, ~400 lines of raw disasm, but here
+// is what is confirmed so a future attempt can skip straight to writing
+// source:
+// - `this` fields used: field_3C (0x3C, NumFaces, VALIDATEd as
+//   CSimpleTexturedRibbon::field_3C) and field_3E (0x3E,
+//   mNumFacesToDisplay, asserted <= field_3C), pTextures (0x40),
+//   field_44 (0x44, SSimpleRibbonParams*), field_48 (0x48, u32* widths).
+// - dword_6150C8 (already named G_QUADBIT_RENDER_STATE above) is saved,
+//   forced to 0xFFFF0000, and restored at the end - the SAME sentinel
+//   DisplayQuadBitList uses, confirming it really is a shared "currently
+//   building a render batch" flag, not QuadBitList-specific.
+// - Per-segment perpendicular/width offset comes from a still-unnamed
+//   helper, sub_4E7090(a1: outVec, a2: pointRecord, a3: widthRecord) -
+//   this is the one genuinely new piece of math needed; nothing else in
+//   the repo calls it yet.
+// - Camera-facing setup: gte_SetRotMatrix(&gTargetRotMatrix) (sub_46D7B0,
+//   same fixed MATRIX screen.cpp already declares for Screen_DrawArrow)
+//   then m3d_ZeroTransVector (sub_46E460) - a real self-set rotation
+//   matrix, but reusing an EXISTING global, not a new one.
+// - Per point: relPos = (raw>>12) - gCameraViewPos, gte_ldlv0/gte_rtps,
+//   THEN a separate Algebra_Transform4 (sub_402700) invZ pass exactly like
+//   DisplayQuadBitList/DisplayPixelList's (see RefreshGfxMatrix above);
+//   near-clip override to -1.0 when gte's raw depth < 100, same idiom as
+//   DisplayQuadBitList's stlv.vz<100 check. sub_402540/402600/402620
+//   (vector3d/vector4d ctors, already identified elsewhere in this file)
+//   package the invZ triple; IDA mislabels sub_402620 as
+//   `QModelIndex::QModelIndex` (another FLIRT false positive, same class
+//   of mislabel as qt_register_signal_spy_callbacks==gte_ldlv0).
+// - Two-pass structure: first a loop over field_3E points fills a flat
+//   float buffer (v108/String, 0x5498fc) with one invZ per point (2 per
+//   ribbon segment - "near" and "far" edge); THEN a second loop walks
+//   BACKWARDS through a screen-coordinate array (dword_628618 -
+//   gRevisitInitOne above - via negative strides -3/-4/-7/-8/-11/-12 on a
+//   pointer advancing +8 shorts/iteration) pairing up 4 screen corners per
+//   quad and emitting via PCGfx_DrawQPoly3D (sub_508550, already @Ok).
+//   The negative-index bookkeeping is the main remaining puzzle - needs
+//   careful reconstruction of what gRevisitInitOne's per-point record
+//   layout actually is here (it is NOT the same 8-byte/corner layout
+//   DisplayQuadBitList uses; the strides here imply something like 16
+//   shorts per point, not 4).
+// - Blend/colour: PCGfx_UseTexture keyed off pTextures[0].field_0's 0x40/
+//   0x80 bits (same CSimpleTexturedRibbon::SetOpaque/SetSemiTransparent
+//   bits, already @Ok above), alpha 255 or a signed-extended variant of
+//   0x80's bit.
+// Given the still-unknown sub_4E7090 and the backwards-indexed
+// screen-buffer bookkeeping, this needs a dedicated session rather than a
+// quick pass; do not guess the buffer layout without re-tracing it in
+// the raw disasm.
 void CSimpleTexturedRibbon::Display(void)
 {
     printf("CSimpleTexturedRibbon::Display(void)");
@@ -803,18 +893,166 @@ void Bit_DeleteAll(void)
 	DoAssert(G_BITCOUNT == 0, "Still some bits left");
 }
 
-// @BIGTODO
-// Address 0x412f10, real name DisplayGLineList_0 in tools/names.json
-// (found by tracing Bit_Init's RegisterSlot calls, see DisplayTextBoxList).
-// See the shared family notes above CSimpleTexturedRibbon::Display. Camera
-// -space transform of the two line endpoints via the gte_ldlv0/gte_rtps/
-// gte_stlvnl2 idiom, clip test against G_VIEW_CLIP_INFO (0x64E514), a
-// separate invZ pass through Algebra_Transform4/gGfxMatrix for line width
-// scaling by distance, an unidentified 28-byte record queued into pPoly
-// (tag 0x4000000, see the shared notes), then the line draw itself via the
-// still-unnamed sub_509000.
-void DisplayGLineList(void**)
+// Tentative struct for GLineList's bit type (not in bit.h; no confirmed
+// name in names.json/idb_globals.txt). Traced from the raw disassembly of
+// DisplayGLineList (0x412f10) this session: two ARGB-ish colours (u32
+// each) followed by two endpoint CVectors, laid out directly after CBit
+// (whose own size is the confirmed 0x3C, VALIDATE_SIZE below).
+struct SGLineBit : public CBit
 {
+	u32 mColor1;
+	u32 mColor2;
+	CVector mPos1;
+	CVector mPos2;
+};
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x412f10 (names.json: DisplayGLineList_0). Fully traced against the raw
+// disassembly, which corrects the shared family notes above for this one
+// function specifically: the 28-byte pPoly-queue record it builds (tag
+// 0x4000000) is NOT dead/inert here (unlike DisplayGlassList's matching
+// -shaped record, still unconfirmed) - it IS read back to build the real
+// PCGfx_DrawLine call, confirmed byte-offset by byte-offset. Only the two
+// dword_56E9D0/56E9D4 globals copied into the record's last 8 bytes go
+// unread, matching the family's "always written, never read" note for
+// those two globals specifically. sub_509000 (family notes: "still
+// unnamed") is also resolved: it is the already-@Ok PCGfx_DrawLine
+// (PCGfx.cpp, PCGfx.h - 9-param signature matches exactly).
+//
+// Per bit: both endpoints (mPos1, mPos2) go through the standard
+// gte_ldlv0/gte_rtps/gte_stlvnl2 camera transform and are clip tested
+// against G_VIEW_CLIP_INFO's depth range (screen.cpp/screen.h); either
+// endpoint failing skips the whole bit with no draw. CBit::mFrigDeltaZ
+// (0x38, VALIDATEd below) is then subtracted from the nearer of the two
+// depths as a second, combined near-clip fudge test.
+//
+// Screen position comes from gte_stsxy per endpoint. invZ per endpoint
+// comes from the separate Algebra_Transform4/gGfxMatrix pass (see
+// RefreshGfxMatrix above); raw disasm confirms the "vector3d ctor" call
+// the family notes flagged as producing dead output for DisplayQuadBitList
+// corner 0 is NOT dead here - its 3rd float (stack offset traced directly)
+// IS invZ1, Hex-Rays' pseudocode just failed to alias the stack slot back
+// to a named local. Both invZ values get PCGfx_DrawLine's own documented
+// -7.0710726 z bias before being passed in; both must be positive
+// (endpoint in front of camera) or the whole bit is skipped.
+//
+// Colour is each endpoint's own mColor1/mColor2 dword's low 3 bytes
+// (byte0->R, byte1->G, byte2->B, same ARGB pack the rest of this family
+// uses), with a SHARED alpha/blend mode for both endpoints taken only from
+// mColor1's byte 3 bit 0x02 (semi-transparent) - mColor2's own top byte is
+// never read for this. Texture slot 1 (the flat/line texture constant
+// DisplayTextBoxList and DisplayPixelList also use), line width flat 2.0f.
+void DisplayGLineList(void** a1)
+{
+	RefreshGfxMatrix();
+
+	u8* clip = G_VIEW_CLIP_INFO;
+	u16 clipMin = *(u16*)(clip + 8);
+	u16 clipMax = *(u16*)(clip + 0xA);
+
+	SGLineBit* pBit = reinterpret_cast<SGLineBit*>(*a1);
+	while (pBit)
+	{
+		VECTOR relPos1;
+		relPos1.vx = (pBit->mPos1.vx >> 12) - gCameraViewPos->vx;
+		relPos1.vy = (pBit->mPos1.vy >> 12) - gCameraViewPos->vy;
+		relPos1.vz = (pBit->mPos1.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relPos1);
+		gte_rtps();
+
+		i32 depth1;
+		gte_stlvnl2(&depth1);
+
+		if (depth1 >= clipMin && depth1 <= clipMax)
+		{
+			i32 sxy1;
+			gte_stsxy(&sxy1);
+
+			VECTOR relPos2;
+			relPos2.vx = (pBit->mPos2.vx >> 12) - gCameraViewPos->vx;
+			relPos2.vy = (pBit->mPos2.vy >> 12) - gCameraViewPos->vy;
+			relPos2.vz = (pBit->mPos2.vz >> 12) - gCameraViewPos->vz;
+
+			gte_ldlv0(&relPos2);
+			gte_rtps();
+
+			i32 depth2;
+			gte_stlvnl2(&depth2);
+
+			if (depth2 >= clipMin && depth2 <= clipMax)
+			{
+				i32 sxy2;
+				gte_stsxy(&sxy2);
+
+				i32 nearDepth = (depth1 < depth2 ? depth1 : depth2) - pBit->mFrigDeltaZ;
+				if (nearDepth >= clipMin)
+				{
+					i16 x1 = (i16)sxy1;
+					i16 y1 = (i16)(sxy1 >> 16);
+					i16 x2 = (i16)sxy2;
+					i16 y2 = (i16)(sxy2 >> 16);
+
+					f32 rawPos1[3];
+					rawPos1[0] = (f32)pBit->mPos1.vx / 4096.0f;
+					rawPos1[1] = (f32)pBit->mPos1.vy / 4096.0f;
+					rawPos1[2] = (f32)pBit->mPos1.vz / 4096.0f;
+
+					f32 xf1[4];
+					Algebra_Transform4(xf1, rawPos1);
+
+					f32 invZ1;
+					if (fabsf(xf1[3]) > 0.00000001f)
+						invZ1 = 1.0f / xf1[3];
+					else
+						invZ1 = -1.0e12f;
+
+					f32 rawPos2[3];
+					rawPos2[0] = (f32)pBit->mPos2.vx / 4096.0f;
+					rawPos2[1] = (f32)pBit->mPos2.vy / 4096.0f;
+					rawPos2[2] = (f32)pBit->mPos2.vz / 4096.0f;
+
+					f32 xf2[4];
+					Algebra_Transform4(xf2, rawPos2);
+
+					f32 invZ2;
+					if (fabsf(xf2[3]) > 0.00000001f)
+						invZ2 = 1.0f / xf2[3];
+					else
+						invZ2 = -1.0e12f;
+
+					if (invZ1 > 0.0f && invZ2 > 0.0f)
+					{
+						i32 blendMode = 0;
+						u32 alpha = 0xFF;
+						if ((pBit->mColor1 >> 24) & 2)
+						{
+							blendMode = 2;
+							alpha = 0x80;
+						}
+
+						PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+						u32 color1 = (alpha << 24) | ((pBit->mColor1 & 0xFF) << 16) |
+								(((pBit->mColor1 >> 8) & 0xFF) << 8) | ((pBit->mColor1 >> 16) & 0xFF);
+						u32 color2 = (alpha << 24) | ((pBit->mColor2 & 0xFF) << 16) |
+								(((pBit->mColor2 >> 8) & 0xFF) << 8) | ((pBit->mColor2 >> 16) & 0xFF);
+
+						f32 scaleX = gGameResolutionX / (f32)Xres;
+						f32 scaleY = gGameResolutionY / (f32)Yres;
+
+						PCGfx_DrawLine(
+								x1 * scaleX, y1 * scaleY, invZ1 - 7.0710726f, color1,
+								x2 * scaleX, y2 * scaleY, invZ2 - 7.0710726f, color2,
+								2.0f);
+					}
+				}
+			}
+		}
+
+		pBit = reinterpret_cast<SGLineBit*>(pBit->mNext);
+	}
 }
 
 // @Ok
@@ -842,54 +1080,71 @@ void DisplayGlassList(void**)
 }
 
 // @BIGTODO
-// Address 0x40c6f0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Largest of the Display*List family:
-// WPlane/CVector math (operator>>/operator- at 0x4e7840/0x4e7760, the
-// wrongly-INLINE CVector operators noted elsewhere in this file's
-// history), the gte_ldlv0/gte_rtps camera transform, a fringe/glow ring
-// loop, and several PCGfx_DrawQPoly3D (sub_508550) gouraud quad emits per
-// fringe.
+// Address 0x40c6f0. CORRECTION this session (2026-08-31): a previous pass
+// mis-attributed a full trace of this address to DisplayChunkBitList; it
+// is actually DisplayGlowList - confirmed by matching every offset it
+// reads against CGlow's already-VALIDATEd layout (bit.h/below): the two
+// array pointers it walks are mpSections (0x3C) and mpFringes (0x40), the
+// two counts gating the two nested loops are mNumSections (0x44) and
+// mNumFringes (0x48), and the per-section visibility test
+// `(*(DWORD*)(v2+88)>>i)&1` is mMask (0x58) indexed by section. So this is
+// the real "fringe/glow ring" renderer the old note described, just far
+// more involved than a simple ring:
+// - A per-glow subdivision/segment count (traced as a local clamped to the
+//   5..20000 range) drives two loops that fill a screen-space contour
+//   array by rotating around the glow's centre via word_610C48/610C4A
+//   (rcossin_tbl, see gTTime/Sine() and DisplayFlatBitList's note below),
+//   scaled by a value read through mpSections[i] and divided by that
+//   subdivision count and the section's own colour-fade-in ramp (`255 *
+//   n/700 + 1` while n<700). Screen coordinates are clamped to a fixed
+//   -100..612 / -100..340 rect (not gGameResolutionX/Y - looks like a
+//   fixed reference/debug viewport, needs confirming before use).
+// - A camera-space transform of the glow CENTRE only (CBit::mPos, the
+//   usual (raw>>12)-gCameraViewPos into gte_ldlv0/gte_rtps, then
+//   Algebra_Transform4 for invZ) - not per contour point.
+// - Fog colour blending reuses the SAME LUT tables (byte_6FC6DC/6BC6C0/
+//   6DC6C0/71C75C) and the same >>8 brighten-by-alpha math that
+//   gsub_509400 (PCGfx.cpp, already @Ok, feeds PCGfx_DrawTPoly3D) already
+//   implements - very likely the same real function inlined here a second
+//   time, worth comparing side by side before re-deriving it from scratch.
+// - Two PCGfx_DrawQPoly3D (sub_508550, already @Ok) calls per fringe
+//   segment, once for the "inner" ring position and once for the "outer"
+//   (shifted by a per-vertex delta array at mpSections[i]+8*n, +4), each a
+//   gouraud POLY_GT4 quad between consecutive contour samples.
+// This needs a dedicated session: the subdivision-count source and the
+// exact contour delta-array layout (mpSections' per-entry stride) are not
+// pinned down yet, and the screen-clamp rect's purpose is unconfirmed.
 void DisplayGlowList(void**)
 {
 }
 
 // @BIGTODO
-// Address 0x40bac0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Builds 4 WPlane objects (WPlane::WPlane,
-// sub_40C190, already named in tools/names.json) from the chunk's 4 corner
-// verts, normalizes each with Algebra_Transform4 (sub_402700) plus the
-// still-unnamed vector ctors 0x402600/402560/402540, then draws the 4
-// chunk faces with the still-unnamed sub_5081F0 (not sub_508550, unlike
-// the rest of the family - this is the one function that does not use
-// PCGfx_DrawQPoly3D).
+// Address 0x40bac0. Re-verified this session (2026-08-31) against a fresh
+// decompile - the old note's shape was CORRECT, and is now much more
+// precise: it builds 4 WPlane objects (WPlane::WPlane, sub_40C190,
+// already named) from CChunkBit::mWorldPosA/B/C/D (0x5C/0x68/0x74/0x80,
+// already VALIDATEd below - confirmed these are the exact 4 fields read),
+// each pushed through Algebra_Transform4 (sub_402700, already @Ok
+// elsewhere as Algebra_Transform4) and the same vector3d/vector4d copy
+// helpers (sub_402600/402560/402540) already identified and used above in
+// this file (DisplayGLineList/DisplayPolyLineList commits), giving one
+// screen (x,y) + invZ per corner. If all 4 invZ > 0, it draws the chunk as
+// 4 TRIANGLES via sub_5081F0 - which is NOT still-unnamed, it is the
+// already-@Ok PCGfx_DrawTPoly3D (PCGfx.cpp, confirmed by its own
+// documented decompile address 0x5081f0) - in rotating corner triples
+// (ABC, ACD, BCD, DBA by call order), each with its own per-corner UV pair
+// (offsets 0x94/0x98, 0x9C/0xA0, 0xA4/0xA8 relative to the bit - only 3
+// pairs confirmed independently, the 4th call reuses earlier corners'
+// pairs so a 4th UV slot may not exist) and per-corner ARGB colour
+// (0xB8/0xBC/0xC0/0xC4, alpha forced to 0xFF), textured via
+// PCGfx_UseTexture with a clut field at 0xB4. None of the 0x94+ fields are
+// VALIDATEd yet (CChunkBit's VALIDATE block below stops at mAngles,
+// 0x8C); add VALIDATE entries once the exact triangle corner order and
+// the 4th UV slot are confirmed, then this should be quick to implement -
+// almost everything it calls is already @Ok.
 void DisplayChunkBitList(void**)
 {
 }
-
-// Shared camera-matrix refresh for the Display*List family (see the family
-// notes above CSimpleTexturedRibbon::Display). Every function that reads the
-// invZ pass through Algebra_Transform4 opens with the same instruction
-// sequence: a 16-float copy that IDA renders as 4 interleaved "arrays"
-// (dword_56E6F8/56E6FC/56E700/flt_56E674) because of array-boundary folding
-// (CLAUDE.md: "MSVC folds array indexing into neighboring globals' base
-// addresses"). Traced instruction-by-instruction against the raw disasm of
-// 0x4097e0 (0x4097f6..0x409895): dword_56E6FC is just dword_56E6F8+4 bytes
-// and dword_56E700 is dword_56E6F8+8 bytes (one contiguous 16-float array,
-// not three), and flt_56E674 is literally &gGfxMatrix[3] (an alias into the
-// SAME destination array algebra.cpp already declares as gGfxMatrix at
-// 0x56E668). Once the folding is undone the whole loop is exactly
-// `memcpy(gGfxMatrix, gCameraBasisMatrix, 16 * sizeof(f32))`. gGfxMatrix is
-// `static` in algebra.cpp (file-local pointer, shared address per repo
-// convention), so this file gets its own pointer to the same 0x56E668
-// address rather than reaching into algebra.cpp.
-static f32 * const gFrameProjMatrix = (f32*)0x56E668;   // == algebra.cpp's gGfxMatrix
-// Tentative name; source basis matrix the family copies into gFrameProjMatrix
-// once per Display call, address confirmed via the byte-offset trace above.
-// Not in idb_globals.txt. Likely the camera's un-composed view/rotation
-// matrix (refreshed once per frame elsewhere), but that is not confirmed.
-static f32 * const gCameraBasisMatrix = (f32*)0x56E6F8;
 
 // Two small per-corner scratch buffers the family stages screen coords
 // through before drawing (see the family notes and DisplayQuadBitList
@@ -897,26 +1152,6 @@ static f32 * const gCameraBasisMatrix = (f32*)0x56E6F8;
 // layout beyond "8 bytes per corner, up to 4 corners".
 static u8 * const gRevisitInitOne = (u8*)0x628618;
 static u8 * const gRevisitInitTwo = (u8*)0x654F54;
-
-// @Ok
-// Functional. Factored out of DisplayQuadBitList's opening instructions
-// (see the comment above gFrameProjMatrix); every Display*List function
-// that projects through Algebra_Transform4 repeats this exact copy inline
-// in the original, so this helper will get reused as more of the family
-// gets implemented.
-static INLINE void RefreshGfxMatrix(void)
-{
-	for (i32 i = 0; i < 16; i++)
-	{
-		gFrameProjMatrix[i] = gCameraBasisMatrix[i];
-	}
-}
-
-// Camera position used by the per-corner relPos = (rawPos>>12) - camPos
-// idiom (see the family notes and Screen_DrawArrow). Same address as
-// chopper.cpp's gCameraViewPos / mysterio.cpp's and spidey.cpp's
-// stru_56F1B4; duplicated here per the repo's file-local-static convention.
-static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
 
 // Tentative name, address 0x6150C8, not in idb_globals.txt. DisplayQuadBitList
 // saves this dword, forces it to 0xFFFF0000 for the whole list walk, then
@@ -1172,31 +1407,307 @@ void DisplayTextBoxList(void** a1)
 }
 
 // @BIGTODO
-// Address 0x40dbd0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Camera-space transform of the sprite
-// quad via the gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy idiom, then a
-// rotated-vs-axis-aligned corner path and a textured POLY_FT4 emit via
-// PCGfx_DrawQPoly3D (sub_508550). Correction to the old note here:
-// "word_610C48" is rcossin_tbl (confirmed this session, see gTTime/Sine()
-// above CWibbly::Move) - a sin/cos table, not a UV table, so any lookup
-// through it in this function is rotation/angle math, not animation-frame
-// UVs; re-derive what it is actually used for from the disassembly rather
-// than trusting that old framing.
+// Address 0x40dbd0. Fully decompiled and traced this session
+// (2026-08-31), still not implemented (dense fixed-point dual-precision
+// code, ~170 lines of pseudocode). Camera-space transform of ONLY the
+// sprite CENTRE (CBit::mPos) via gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy
+// (no per-corner GTE), a rotated-vs-axis-aligned corner path keyed off
+// CFlatBit::mAngle (0x58, confirmed read as `*(WORD*)(v1+88)`) through
+// word_610C48/610C4A (rcossin_tbl - confirmed this session, see
+// gTTime/Sine() above CWibbly::Move; the old-old note calling it a UV
+// table was wrong), a perspective-scaled half-size from CFT4Bit::mScale
+// (0x56) and the current frame's Height (mpPSXFrame->pTexture, same
+// pattern as DisplayLinked2EndedBitListLeftover above), and a POLY_FT4
+// -shaped emit via PCGfx_DrawQPoly3D (sub_508550, already @Ok).
+//
+// NEW FINDING this session: the function reads a u16 at offset 0x66 on
+// the bit (`*(WORD*)(v1+102)`), one field past CFlatBit's own documented
+// end (mSemiTransparencyRate is the last known field, at 0x65, size so
+// far 0x66) - this is NOT a CFlatBit field, it belongs to whichever
+// derived class actually populates FlatBitList's entries (CSimpleAnim,
+// CMotionBlur, CCombatImpactRing or CFrag, all : public CFlatBit) and is
+// not documented anywhere yet. It gates whether the texture-corner packing
+// takes a 32-bit or 16-bit-wrapped path; do not guess its meaning without
+// checking which of those subclasses is actually queued into FlatBitList
+// and cross-referencing their own fields.
+//
+// Also: CFT4Bit::mBitFlags (0x50) bit 0x8 overrides an assert-like scale
+// -range check, and bit 0x1 (`v92`) selects the same 32-bit-vs-16-bit
+// split as the field_0x66 check above - these two flag bits interact and
+// were not fully disentangled this session.
 void DisplayFlatBitList(void**)
 {
 }
 
-// @BIGTODO
-// Address 0x40e840 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Ribbon segment renderer: walks CBit
-// pairs building a quad strip between consecutive positions (perpendicular
-// offset via sub_46D430 = M3dMaths_SquareRoot0, already named), the
-// gte_ldlv0/gte_rtps camera transform per vertex, then a
-// PCGfx_DrawQPoly3D (sub_508550) gouraud emit.
-void DisplayLinked2EndedBitListLeftover(void**)
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x40e840, found by tracing Bit_Init's RegisterSlot calls (see
+// DisplayTextBoxList). Fully traced against the raw disassembly this
+// session (previous note's "CBit pairs" framing was a guess; the real
+// operand is CLinked2EndedBit, bit.h).
+//
+// CLinked2EndedBit::field_58/field_64 (both CVector, VALIDATEd above) are
+// one segment's two world-space endpoints. Consecutive nodes in the
+// registered list form a connected quad-strip ribbon: CRibbon::CRibbon
+// (above) sets mBits[0]->mBitFlags |= 0x10 to mark a chain's first bit.
+//
+// Per node: unless mBitFlags & 0x10 (chain start) or the previous node's
+// segment failed (clipped or zero-length), the start point and its
+// perpendicular half-width corners are simply reused from the previous
+// node's end point/corners (screen-space strip continuity, no GTE work).
+// Otherwise the start point is freshly projected from this node's own
+// field_58 via the gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy idiom (same as
+// Screen_DrawArrow, screen.cpp), clip-tested against G_VIEW_CLIP_INFO's
+// depth range, with its own perspective-scaled half width from
+// CFT4Bit::mScale and the current frame's Height (CFT4Bit::mpPSXFrame->
+// pTexture, SAnimFrame::Height, bit.h).
+//
+// The end point is always freshly projected from field_64 the same way.
+// The segment direction (end - start) feeds M3dMaths_SquareRoot0 for the
+// length, then a perpendicular offset (scaled by each end's own half
+// width) gives a left/right corner pair at both ends. mBitFlags & 3 selects
+// which of the 4 resulting points lands in which quad slot (screen
+// winding/orientation variant - all 4 combinations traced and reproduced
+// below via the switch). mBitFlags & 0x20 (no in-repo setter found yet)
+// skips recomputing the end corners and reuses whatever was last cached as
+// the "chain start" corners (set only when 0x10 fires) instead.
+//
+// A single invZ (from the separate Algebra_Transform4/gGfxMatrix pass, see
+// RefreshGfxMatrix above) over the CURRENT/end point only is shared by all
+// 4 corners - unlike DisplayQuadBitList there is no per-corner invZ and no
+// 1.03 fudge factor here. Colour is CFT4Bit::mCodeBGR's low 3 bytes
+// (byte0->R, byte1->G, byte2->B, same ARGB pack DisplayQuadBitList uses for
+// CQuadBit::mTint), alpha/blend mode from mCodeBGR's byte 3 bit 0x02
+// (semi-transparent). UVs are the fixed 0/1 corner constants, like
+// DisplayQuadBitList. A 40-byte scratch record is carved out of the pPoly
+// queue per node (tag 0x9000000) and its texture-corner/UV bytes are built
+// but never read back for the draw call - same confirmed dead/inert queue
+// pattern the family notes describe for DisplayGLineList/DisplayGlassList's
+// 28-byte record - but the pointer advance and PolyBufferEnd bounds check
+// ARE kept here (unlike those two) because on overflow the original does a
+// bare `return`, abandoning the rest of the list, which is an observable
+// effect even though the record's contents are not.
+void DisplayLinked2EndedBitListLeftover(void** a1)
 {
+	RefreshGfxMatrix();
+
+	CLinked2EndedBit* pBit = reinterpret_cast<CLinked2EndedBit*>(*a1);
+
+	bool prevFailed = false;
+	i32 prevEndX = 0, prevEndY = 0;
+	i32 prevEndLeftX = 0, prevEndLeftY = 0, prevEndRightX = 0, prevEndRightY = 0;
+	i32 historyLeftX = 0, historyLeftY = 0, historyRightX = 0, historyRightY = 0;
+
+	while (pBit)
+	{
+		u8* clip = G_VIEW_CLIP_INFO;
+		u16 clipMin = *(u16*)(clip + 8);
+		u16 clipMax = *(u16*)(clip + 0xA);
+
+		bool freshStart = (pBit->mBitFlags & 0x10) || prevFailed;
+
+		i32 startX, startY;
+		i32 halfWidthStart = 0;
+
+		if (freshStart)
+		{
+			VECTOR relPos;
+			relPos.vx = (pBit->field_58.vx >> 12) - gCameraViewPos->vx;
+			relPos.vy = (pBit->field_58.vy >> 12) - gCameraViewPos->vy;
+			relPos.vz = (pBit->field_58.vz >> 12) - gCameraViewPos->vz;
+
+			gte_ldlv0(&relPos);
+			gte_rtps();
+
+			i32 depth;
+			gte_stlvnl2(&depth);
+			if ((u32)depth < clipMin || (u32)depth > clipMax)
+			{
+				prevFailed = true;
+				pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+				continue;
+			}
+
+			i32 sxy;
+			gte_stsxy(&sxy);
+			startX = (i16)sxy;
+			startY = (i16)(sxy >> 16);
+
+			u8 height = pBit->mpPSXFrame->Height;
+			halfWidthStart = (i32)(((u32)height * (u16)pBit->mScale) / (u32)depth) >> 1;
+			if (halfWidthStart < 2)
+				halfWidthStart = 2;
+		}
+		else
+		{
+			startX = prevEndX;
+			startY = prevEndY;
+		}
+
+		if ((u8*)pPoly + 40 > PolyBufferEnd)
+			return;
+		pPoly = (u32*)((u8*)pPoly + 40);
+
+		VECTOR relEnd;
+		relEnd.vx = (pBit->field_64.vx >> 12) - gCameraViewPos->vx;
+		relEnd.vy = (pBit->field_64.vy >> 12) - gCameraViewPos->vy;
+		relEnd.vz = (pBit->field_64.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relEnd);
+		gte_rtps();
+
+		i32 endDepth;
+		gte_stlvnl2(&endDepth);
+		if ((u32)endDepth < clipMin || (u32)endDepth > clipMax)
+		{
+			prevFailed = true;
+			pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+			continue;
+		}
+
+		i32 endSxy;
+		gte_stsxy(&endSxy);
+		i32 endX = (i16)endSxy;
+		i32 endY = (i16)(endSxy >> 16);
+
+		u8 height = pBit->mpPSXFrame->Height;
+		i32 halfWidthEnd = (i32)(((u32)height * (u16)pBit->mScale) / (u32)endDepth) >> 1;
+		if (halfWidthEnd < 2)
+			halfWidthEnd = 2;
+
+		i32 dx = endX - startX;
+		i32 dy = endY - startY;
+		i32 len = M3dMaths_SquareRoot0(dx * dx + dy * dy);
+
+		if (len == 0)
+		{
+			prevFailed = true;
+			pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+			continue;
+		}
+
+		i32 startLeftX, startLeftY, startRightX, startRightY;
+		if (freshStart)
+		{
+			i32 offY = (halfWidthStart * dy) / len;
+			i32 offX = (halfWidthStart * dx) / len;
+			startLeftX = startX + offY;
+			startLeftY = startY - offX;
+			startRightX = startX - offY;
+			startRightY = startY + offX;
+		}
+		else
+		{
+			startLeftX = prevEndLeftX;
+			startLeftY = prevEndLeftY;
+			startRightX = prevEndRightX;
+			startRightY = prevEndRightY;
+		}
+
+		if (pBit->mBitFlags & 0x10)
+		{
+			historyLeftX = startLeftX;
+			historyLeftY = startLeftY;
+			historyRightX = startRightX;
+			historyRightY = startRightY;
+		}
+
+		i32 endLeftX, endLeftY, endRightX, endRightY;
+		if (pBit->mBitFlags & 0x20)
+		{
+			endLeftX = historyLeftX;
+			endLeftY = historyLeftY;
+			endRightX = historyRightX;
+			endRightY = historyRightY;
+		}
+		else
+		{
+			i32 offY = (halfWidthEnd * dy) / len;
+			i32 offX = (halfWidthEnd * dx) / len;
+			endLeftX = endX + offY;
+			endLeftY = endY - offX;
+			endRightX = endX - offY;
+			endRightY = endY + offX;
+		}
+
+		prevEndX = endX;
+		prevEndY = endY;
+		prevEndLeftX = endLeftX;
+		prevEndLeftY = endLeftY;
+		prevEndRightX = endRightX;
+		prevEndRightY = endRightY;
+		prevFailed = false;
+
+		i32 ax, ay, bx, by, cx, cy, dcx, dcy;
+		switch (pBit->mBitFlags & 3)
+		{
+			case 2:
+				ax = endRightX; ay = endRightY;
+				bx = endLeftX;  by = endLeftY;
+				cx = startRightX; cy = startRightY;
+				dcx = startLeftX; dcy = startLeftY;
+				break;
+			case 3:
+				ax = endLeftX;  ay = endLeftY;
+				bx = endRightX; by = endRightY;
+				cx = startLeftX; cy = startLeftY;
+				dcx = startRightX; dcy = startRightY;
+				break;
+			case 1:
+				ax = startRightX; ay = startRightY;
+				bx = endRightX;   by = endRightY;
+				cx = startLeftX;  cy = startLeftY;
+				dcx = endLeftX;   dcy = endLeftY;
+				break;
+			default:
+				ax = startLeftX; ay = startLeftY;
+				bx = endLeftX;   by = endLeftY;
+				cx = startRightX; cy = startRightY;
+				dcx = endRightX;  dcy = endRightY;
+				break;
+		}
+
+		f32 rawPos[3];
+		rawPos[0] = (f32)pBit->field_64.vx / 4096.0f;
+		rawPos[1] = (f32)pBit->field_64.vy / 4096.0f;
+		rawPos[2] = (f32)pBit->field_64.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZ;
+		if (fabsf(xf[3]) > 0.00000001f)
+			invZ = 1.0f / xf[3];
+		else
+			invZ = -1.0e12f;
+
+		i32 blendMode = 0;
+		u32 alpha = 0xFF;
+		if ((pBit->mCodeBGR >> 24) & 2)
+		{
+			blendMode = 2;
+			alpha = 0x80;
+		}
+
+		Texture* pTexture = pBit->mpPSXFrame->pTexture;
+		PCGfx_UseTexture(pTexture->clut, (DCGfx_BlendingMode)blendMode);
+
+		u32 colorR = pBit->mCodeBGR & 0xFF;
+		u32 colorG = (pBit->mCodeBGR >> 8) & 0xFF;
+		u32 colorB = (pBit->mCodeBGR >> 16) & 0xFF;
+		u32 color = (alpha << 24) | (colorR << 16) | (colorG << 8) | colorB;
+
+		f32 scaleX = gGameResolutionX / (f32)Xres;
+		f32 scaleY = gGameResolutionY / (f32)Yres;
+
+		PCGfx_DrawQPoly3D(
+				ax * scaleX, ay * scaleY, invZ, 0.0f, 0.0f, color,
+				bx * scaleX, by * scaleY, invZ, 1.0f, 0.0f, color,
+				cx * scaleX, cy * scaleY, invZ, 0.0f, 1.0f, color,
+				dcx * scaleX, dcy * scaleY, invZ, 1.0f, 1.0f, color);
+
+		pBit = reinterpret_cast<CLinked2EndedBit*>(pBit->mNext);
+	}
 }
 
 // @Ok
@@ -1276,31 +1787,262 @@ void DisplayPixelList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x411ef0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Iterates a poly-line's inner vertex
-// array (shifted pointer over CBit-like sub-entries), per-segment
-// Algebra_Transform4 (sub_402700) transform and a clip test through
-// sub_505B90 (tools/names.json labels this "syRtcInit", almost certainly a
-// link-time duplicate-body merge with the real clip helper here, not
-// actually an RTC init call - see the shared notes), then a textured/flat
-// POLY_FT4 or POLY_F4 emit via the still-unnamed sub_509000 (same emitter
-// as DisplayGLineList and DisplayGPolyLineList, not PCGfx_DrawQPoly3D).
-void DisplayPolyLineList(void**)
+// Tentative structs for PolyLineList's bit type and its inner vertex array
+// (not in bit.h; no confirmed names). Traced from the raw disassembly of
+// DisplayPolyLineList (0x411ef0) this session. field_3C is an unidentified
+// 4-byte gap between CBit (confirmed size 0x3C, VALIDATE_SIZE below) and
+// the fields this function actually reads (0x40/0x44/0x48) - not guessed.
+struct SPolyLineVert
 {
+	CVector mPos;
+	u32 mColorFlags;
+};
+
+struct SPolyLineBit : public CBit
+{
+	u32 field_3C;
+	i32 mNumVerts;          // 0x40
+	SPolyLineVert* mVerts;  // 0x44
+	CVector mStartPos;      // 0x48
+};
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x411ef0. Fully traced against the raw disassembly, which corrects two
+// things the shared family notes and this function's own old note guessed
+// wrong:
+//
+// 1) sub_505B90 ("syRtcInit" in names.json) is a REAL, literal `xor eax,eax
+//    ; retn` no-op (confirmed via raw disasm at the actual address, no
+//    hidden logic) - it really is a stubbed init call, exactly what its
+//    name says, not a mislabeled clip helper. Its return value (always 0)
+//    makes the `if (result >= 0)` that gates each segment's draw always
+//    true, so this function performs NO clip test of any kind - every
+//    segment always draws. This is a real, reproducible property of the
+//    shipped game for this bit type, not something to "fix".
+// 2) The pPoly-queue record it builds (tag 0x3000000, 24 bytes) genuinely
+//    IS fully dead/inert here: every field written into it (the
+//    dword_56E9D0/56E9D4 pair, and two globals doing double duty as a
+//    would-be "point 1 screen position" - dword_614CEC/614CF0, which
+//    other, unrelated, not-yet-decompiled functions also write - see
+//    xrefs) gets read back for color only (record+12..14, i.e. this
+//    segment's own SPolyLineVert::mColorFlags low 3 bytes); the position
+//    data is never read from the record at all. This function's actual
+//    on-screen positions come entirely from a second, separate
+//    Algebra_Transform4/gGfxMatrix pass per point (same idiom
+//    DisplayPixelList uses: screenX/Y = xf[0..1]*invZ, no gte_ldlv0/rtps
+//    GTE path at all, and no gGameResolutionX/Y scaling - the values are
+//    already in pixel space).
+//
+// Per bit: mStartPos is the strip's first point; mVerts[0..mNumVerts-1]
+// are the following points, each also carrying its own colour/blend-flag
+// dword (SPolyLineVert::mColorFlags, bit 0x2000000 selects a semi
+// -transparent blend the same way the rest of this family's mCodeBGR-style
+// flags do). One PCGfx_DrawLine segment (already-@Ok, PCGfx.cpp) is drawn
+// per consecutive point pair, both endpoints sharing THIS segment's own
+// colour (the vertex being walked TO, not a per-endpoint blend), flat
+// width 1.0f; the walk then advances (this point becomes the next
+// segment's start), matching the "shifted pointer over CBit-like sub
+// -entries" description in the old note.
+void DisplayPolyLineList(void** a1)
+{
+	RefreshGfxMatrix();
+
+	SPolyLineBit* pBit = reinterpret_cast<SPolyLineBit*>(*a1);
+	while (pBit)
+	{
+		CVector pt1 = pBit->mStartPos;
+
+		for (i32 i = 0; i < pBit->mNumVerts; i++)
+		{
+			SPolyLineVert& vert = pBit->mVerts[i];
+			CVector pt2 = vert.mPos;
+
+			if ((u8*)pPoly + 24 > PolyBufferEnd)
+				return;
+			pPoly = (u32*)((u8*)pPoly + 24);
+
+			i32 blendMode = 0;
+			u32 alpha = 0xFF;
+			if (vert.mColorFlags & 0x2000000)
+			{
+				blendMode = 2;
+				alpha = 0x80;
+			}
+
+			PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+			u32 color = (alpha << 24) | ((vert.mColorFlags & 0xFF) << 16) |
+					(((vert.mColorFlags >> 8) & 0xFF) << 8) | ((vert.mColorFlags >> 16) & 0xFF);
+
+			f32 rawPos1[3];
+			rawPos1[0] = (f32)pt1.vx / 4096.0f;
+			rawPos1[1] = (f32)pt1.vy / 4096.0f;
+			rawPos1[2] = (f32)pt1.vz / 4096.0f;
+
+			f32 xf1[4];
+			Algebra_Transform4(xf1, rawPos1);
+
+			f32 invZ1;
+			if (fabsf(xf1[3]) > 0.00000001f)
+				invZ1 = 1.0f / xf1[3];
+			else
+				invZ1 = -1.0e12f;
+
+			f32 screen1X = xf1[0] * invZ1;
+			f32 screen1Y = xf1[1] * invZ1;
+
+			f32 rawPos2[3];
+			rawPos2[0] = (f32)pt2.vx / 4096.0f;
+			rawPos2[1] = (f32)pt2.vy / 4096.0f;
+			rawPos2[2] = (f32)pt2.vz / 4096.0f;
+
+			f32 xf2[4];
+			Algebra_Transform4(xf2, rawPos2);
+
+			f32 invZ2;
+			if (fabsf(xf2[3]) > 0.00000001f)
+				invZ2 = 1.0f / xf2[3];
+			else
+				invZ2 = -1.0e12f;
+
+			f32 screen2X = xf2[0] * invZ2;
+			f32 screen2Y = xf2[1] * invZ2;
+
+			if (invZ1 > 0.0f && invZ2 > 0.0f)
+			{
+				PCGfx_DrawLine(
+						screen1X, screen1Y, invZ1, color,
+						screen2X, screen2Y, invZ2, color,
+						1.0f);
+			}
+
+			pt1 = pt2;
+		}
+
+		pBit = reinterpret_cast<SPolyLineBit*>(pBit->mNext);
+	}
 }
 
-// @BIGTODO
-// Address 0x4125c0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Same callee shape as DisplayPolyLineList
-// (0x411ef0, confirmed this session: sub_505B90 clip helper, sub_509000
-// emit, Algebra_Transform4/sub_402700 transform) but a different vertex
-// stride/offset set and POLY_FT4 fill order; likely the "gouraud"
-// (colour-per-vertex) poly-line variant.
-void DisplayGPolyLineList(void**)
+// Tentative struct for GPolyLineList's bit type (not in bit.h; no
+// confirmed name). Reuses SPolyLineVert (above) for the inner vertex
+// array - same 16-byte CVector+u32 entry shape - but this bit's own
+// layout differs from SPolyLineBit's: no 0x3C gap (mNumVerts sits right
+// after CBit), and it carries its own starting colour/flags dword
+// (mStartColorFlags) alongside the starting position.
+struct SGPolyLineBit : public CBit
 {
+	i32 mNumVerts;              // 0x3C
+	SPolyLineVert* mVerts;      // 0x40
+	CVector mStartPos;          // 0x44
+	u32 mStartColorFlags;       // 0x50
+};
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31). Address
+// 0x4125c0. Old note's guess was right: this is the gouraud (per-vertex
+// colour) sibling of DisplayPolyLineList (0x411ef0, see its comment for
+// the sub_505B90-is-a-real-no-op and dead-record findings, both confirmed
+// to hold here too - same 0x4000000-tag record shape, just 4 bytes longer
+// to carry a second colour dword). The two functions are otherwise
+// structurally identical: no clip test (sub_505B90 always returns 0), the
+// same Algebra_Transform4/gGfxMatrix pass per point (screenX/Y =
+// xf[0..1]*invZ, no GTE, no gGameResolutionX/Y scaling), one PCGfx_DrawLine
+// (already-@Ok, PCGfx.cpp) per consecutive point pair, and a walk that
+// carries this iteration's point/colour forward as the next iteration's
+// start.
+//
+// The difference: each SPolyLineVert entry supplies its OWN colour, so
+// PCGfx_DrawLine's two colour args differ per call - point1 uses the
+// colour carried in from the previous point (or SGPolyLineBit::
+// mStartColorFlags for the first segment), point2 uses this entry's own
+// mColorFlags. The blend mode/alpha (mColorFlags bit 0x2000000) is decided
+// ONLY by point1's flags for both colour args, mirroring the exact
+// asymmetry traced in the disassembly (point2's own flag bit is never
+// tested, only its RGB bytes are used).
+void DisplayGPolyLineList(void** a1)
+{
+	RefreshGfxMatrix();
+
+	SGPolyLineBit* pBit = reinterpret_cast<SGPolyLineBit*>(*a1);
+	while (pBit)
+	{
+		CVector pt1 = pBit->mStartPos;
+		u32 flags1 = pBit->mStartColorFlags;
+
+		for (i32 i = 0; i < pBit->mNumVerts; i++)
+		{
+			SPolyLineVert& vert = pBit->mVerts[i];
+			CVector pt2 = vert.mPos;
+			u32 flags2 = vert.mColorFlags;
+
+			if ((u8*)pPoly + 28 > PolyBufferEnd)
+				return;
+			pPoly = (u32*)((u8*)pPoly + 28);
+
+			i32 blendMode = 0;
+			u32 alpha = 0xFF;
+			if (flags1 & 0x2000000)
+			{
+				blendMode = 2;
+				alpha = 0x80;
+			}
+
+			PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
+
+			u32 color1 = (alpha << 24) | ((flags1 & 0xFF) << 16) |
+					(((flags1 >> 8) & 0xFF) << 8) | ((flags1 >> 16) & 0xFF);
+			u32 color2 = (alpha << 24) | ((flags2 & 0xFF) << 16) |
+					(((flags2 >> 8) & 0xFF) << 8) | ((flags2 >> 16) & 0xFF);
+
+			f32 rawPos1[3];
+			rawPos1[0] = (f32)pt1.vx / 4096.0f;
+			rawPos1[1] = (f32)pt1.vy / 4096.0f;
+			rawPos1[2] = (f32)pt1.vz / 4096.0f;
+
+			f32 xf1[4];
+			Algebra_Transform4(xf1, rawPos1);
+
+			f32 invZ1;
+			if (fabsf(xf1[3]) > 0.00000001f)
+				invZ1 = 1.0f / xf1[3];
+			else
+				invZ1 = -1.0e12f;
+
+			f32 screen1X = xf1[0] * invZ1;
+			f32 screen1Y = xf1[1] * invZ1;
+
+			f32 rawPos2[3];
+			rawPos2[0] = (f32)pt2.vx / 4096.0f;
+			rawPos2[1] = (f32)pt2.vy / 4096.0f;
+			rawPos2[2] = (f32)pt2.vz / 4096.0f;
+
+			f32 xf2[4];
+			Algebra_Transform4(xf2, rawPos2);
+
+			f32 invZ2;
+			if (fabsf(xf2[3]) > 0.00000001f)
+				invZ2 = 1.0f / xf2[3];
+			else
+				invZ2 = -1.0e12f;
+
+			f32 screen2X = xf2[0] * invZ2;
+			f32 screen2Y = xf2[1] * invZ2;
+
+			if (invZ1 > 0.0f && invZ2 > 0.0f)
+			{
+				PCGfx_DrawLine(
+						screen1X, screen1Y, invZ1, color1,
+						screen2X, screen2Y, invZ2, color2,
+						1.0f);
+			}
+
+			pt1 = pt2;
+			flags1 = flags2;
+		}
+
+		pBit = reinterpret_cast<SGPolyLineBit*>(pBit->mNext);
+	}
 }
 
 // @Ok

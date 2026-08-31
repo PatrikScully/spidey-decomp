@@ -6,6 +6,12 @@
 #include "export.h"
 #include "vector.h"
 
+// guess: pointer to some "current view/clip" record, only known from the disasm (loaded
+// as a pointer from this fixed address, then two u16 fields at +8/+0xA read as a Y-range
+// / depth clip test). No idb_globals.txt entry for this address, name and layout are our
+// guess. Shared by screen.cpp (Screen_DrawArrow) and bit.cpp (DisplayLinked2EndedBitListLeftover
+// and friends) per the repo's G_* macro placement rule (one definition when 2+ files use it).
+#define G_VIEW_CLIP_INFO (*reinterpret_cast<u8**>(0x0064E514))
 
 EXPORT void Screen_TargetOn(bool);
 EXPORT void Screen_DrawArrow(void);

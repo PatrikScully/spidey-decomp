@@ -31,11 +31,6 @@ EXPORT u8 gCircularFadeRelatedThree;
 EXPORT u8 gCircularFadeRelatedFour;
 
 
-// guess: pointer to some "current view/clip" record, only known from the disasm (loaded
-// as a pointer from this fixed address, then two u16 fields at +8/+0xA read as a Y-range
-// clip test). No idb_globals.txt entry for this address, name and layout are our guess.
-#define G_VIEW_CLIP_INFO (*reinterpret_cast<u8**>(0x0064E514))
-
 // @Ok
 void Screen_DrawArrow(void)
 {
