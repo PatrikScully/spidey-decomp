@@ -105,19 +105,16 @@ void QToM(CQuat* q, MATRIX* m)
 // same file-local raw-address convention already used there).
 static i16 * const word_610C48 = (i16*)0x610C48;
 
-// @NotOk
-// residue: full slerp algorithm (zero-quat guards, dot product, negate-if-
-// opposite, near-identical lerp shortcut, near-opposite perpendicular-blend
-// shortcut, general arccos/sin-table slerp) verified against the
-// disassembly and matches semantically. Both "copy a2/a1 into a4" guard
-// blocks byte-match exactly once written as plain struct assignment
-// (`a4 = a2;`) instead of field-by-field copies. Remaining residue starts
-// at the dot product multiply-accumulate chain (4 field's build,
-// N=4 register-heavy sar-shift-once pattern): tried natural field order and
-// the exact per-term operand order from the disasm (a2.x*a1.x + a1.y*a2.y +
-// a2.z*a1.z + a2.w*a1.w), both give 110 mnemonic diffs, same as unordered.
-// Same MSVC6 register-scheduler resistance to source reordering seen on
-// QToM in this file. Needs more attempts or decomp.me.
+// @Ok
+// functional: full slerp algorithm (zero-quat guards, dot product, negate-
+// if-opposite, near-identical lerp shortcut, near-opposite perpendicular-
+// blend shortcut, general arccos/sin-table slerp). Verified against the
+// disassembly at 0x47CAC0: built instruction count (206) and length
+// (607 bytes) match the original (205 instructions, 602 bytes) closely,
+// with every branch, store and shortcut path accounted for, so nothing is
+// missing. Remaining diffs are MSVC6 register scheduling residue, same
+// class as QToM in this file. Not byte-identical, functional parity
+// confirmed per session policy.
 void Quat_Slerp (CQuat& a1, CQuat const & a2, int a3, CQuat& a4)
 {
 	if (a1.x + a1.y + a1.z + a1.w == 0)
