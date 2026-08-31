@@ -415,10 +415,23 @@ i32* CBlackCat::GetNewCommandBlock(u32 a1)
 	return res;
 }
 
-// @SMALLTODO
-void CBlackCat::KillCommandBlockByID(i32)
+// @Ok
+// no xrefs to this function found in IDA (it is not called from AI(),
+// DoMGSShadow(), the constructor/destructor or SynthesizeAnalogueInput()),
+// same as CSpClone::KillCommandBlockByID (spclone.cpp), so there is no
+// original address to compare against; likely dead/unused code, kept for
+// interface completeness. Written to match the field_350 command block list
+// walk used everywhere else in this file (block[0] is the command id).
+void CBlackCat::KillCommandBlockByID(i32 a2)
 {
-    printf("CBlackCat::KillCommandBlockByID(i32)");
+	i32* i = this->field_350;
+	while (i)
+	{
+		if (i[0] == a2)
+			this->KillCommandBlock(i);
+
+		i = reinterpret_cast<i32*>(i[i[1] - 1]);
+	}
 }
 
 // @MEDIUMTODO
