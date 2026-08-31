@@ -127,7 +127,20 @@ void CalcPolyBufferEnd(void)
 			(reinterpret_cast<u32>(pDoubleBuffer->Polys) + POLYBUFFERSIZE - 0x100) & 0x7FFFFFFF);
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Investigated 2026-08-31 (address 0x455C90, per idb_globals /
+// spideypc_names.txt, not in tools/names.json). 434 instructions,
+// but it is the top level game state machine: attract mode, level
+// select, in game states 1 to 11 (switch on dword_60CFA4), FMV
+// playback, shell/menu transitions. It calls about 80 different
+// functions, most of them not decompiled in the repo yet (level
+// load, shell dispatch, screen fade, etc). The current stub below
+// only reproduces a small slice (init, boot movies, model preview)
+// and is not a faithful implementation of the real function. Not
+// tractable as a single leaf-first pass; leaving as TODO, retagged
+// to reflect real size. Do not confuse this stub's behavior with
+// the original: the real SpideyMain never returns during normal
+// play, it loops until the game exits.
 void SpideyMain(void)
 {
 	DXERR_printf("xxx main\n");

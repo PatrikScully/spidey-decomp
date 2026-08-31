@@ -22,8 +22,10 @@ void Submariner_RelocatableModuleInit(reloc_mod *pMod)
 	pMod->field_C[0] = Submariner_CreateSubmariner;
 }
 
-// @NotOk
-// fix the address for 3C
+// @Ok
+// Verified against 0x4CBA80: instruction order and every field offset
+// (mFlags 0x4, mpLight 0x3C, mType 0x38, mNode 0xDE, mRMinor 0xDC) match
+// the disassembly exactly. Only relocated call targets/addresses differ.
 CSubmariner::CSubmariner(i16 * a2, i32 a3)
 {
 	this->InitItem("mariner");
