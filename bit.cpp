@@ -247,7 +247,8 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 // DisplayGlassList, DisplayGlowList, DisplayChunkBitList, DisplayQuadBitList,
 // DisplayFlatBitList, DisplayLinked2EndedBitListLeftover, DisplayPixelList,
 // DisplayPolyLineList, DisplayGPolyLineList), found this session (2026-08-31)
-// while trying to implement them. None of these are done yet, but a lot of
+// while trying to implement them. DisplayQuadBitList and DisplayPixelList
+// are now done (@Ok, see below); the rest are not done yet, but a lot of
 // the pipeline they all share is already built and @Ok elsewhere in the
 // repo, which should make a real attempt much faster than starting cold:
 //
@@ -306,18 +307,39 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 //     each of its 4 faces, built from WPlane objects (sub_40C190 =
 //     WPlane::WPlane(WVector&, f32), already named in names.json).
 //   - DisplayPixelList calls sub_507470 = PCGfx_DrawQuad2D (already @Ok,
-//     PCGfx.h) instead, i.e. it is a 2D sprite/dot draw, not a 3D quad; its
-//     screen x/y arguments (v32/v33 in the raw decompile) did not resolve
-//     cleanly from Hex-Rays pseudocode alone and need the raw disassembly
-//     to pin down before implementing this one.
-//   - DisplayGLineList ALSO appends a 28-byte record (tag 0x4000000) to the
-//     pPoly queue (0x56FB04, already declared in this file and in
-//     screen.cpp, bounds-checked against PolyBufferEnd at 0x5FCD1C) before
-//     its sub_509000 draw call. The record layout and whoever reads it back
-//     are not identified yet; it is not a POLY_F3/POLY_F4 (psx_types.h,
-//     panel.h) and no other decompiled function in the repo writes this
-//     tag. Possibly an unrelated debug-line log, not part of the draw path
-//     itself - unconfirmed.
+//     PCGfx.h) instead, i.e. it is a 2D sprite/dot draw, not a 3D quad.
+//     DONE this session (2026-08-31): its screen x/y args do NOT come from
+//     the GTE pipeline at all (this function never calls gte_ldlv0/rtps),
+//     they are the x*invZ/y*invZ stack slots written by the same
+//     sub_402540 vector3d-ctor call that produces the depth value - traced
+//     in the raw disassembly (Hex-Rays lost the alias and printed them as
+//     uninitialized locals). See DisplayPixelList's implementation below.
+//   - DisplayGLineList and DisplayGlassList (0x411560, also traced this
+//     session) BOTH append a 28-byte record (tag 0x4000000) to the pPoly
+//     queue (0x56FB04, bounds-checked against PolyBufferEnd at 0x5FCD1C)
+//     before their real draw calls: tag(u32), r/g/b/0x22 (4 bytes, from
+//     the bit's current color), 3x packed-sxy (12 bytes), then the two
+//     globals dword_56E9D0/56E9D4 (also referenced the same way by
+//     DisplayGlowList, DisplayPolyLineList, DisplayGPolyLineList and
+//     DisplayGLineList - xref-confirmed, meaning still unknown). The
+//     3x-sxy fill is sub_46DFA0, which IS already decompiled and @Ok in
+//     this repo: it is gte_stsxy3 (ps2funcs.cpp), and the original PC
+//     port's own gte_stsxy3 body calls stubbed_printf("stubbed out:
+//     gte_stsxy3") - i.e. the original binary itself treats this whole
+//     28-byte queue as an unfinished/inert debug path, not the real
+//     render output (DisplayGlassList's actual PCGfx_DrawQPoly3D calls
+//     read positions from a completely separate Algebra_Transform4/invZ
+//     pipeline, not from this record). Safe to skip reproducing this
+//     queue write for a functional decomp; note it if picking this back
+//     up so the skip is a documented choice, not an oversight.
+//   - DisplayGlassList's actual draw geometry is NOT just its 3 stored
+//     corners (mPosA/B/C): the disassembly derives a 4th and further
+//     offset corners via scaled vector differences (a "grow" scale field
+//     read from the bit, exact field not pinned down yet) before running
+//     each through its own Algebra_Transform4/invZ pass - closer to a
+//     tessellated glass-shard fan than a single static quad. Needs more
+//     work to identify the scale field before this can be implemented
+//     correctly; do not guess the geometry.
 // - DisplayPolyLineList/DisplayGPolyLineList's clip helper, sub_505B90, is
 //   labelled "syRtcInit" in tools/names.json; that is almost certainly a
 //   link-time duplicate-body merge (CLAUDE.md: identical bodies across TUs
@@ -332,9 +354,13 @@ CSimpleTexturedRibbon::CSimpleTexturedRibbon(i32 numfaces)
 //   Utils_CalcUnitFacingCamera (utils.cpp) which strongly suggests this is
 //   a camera-facing ("billboarded") ribbon, consistent with its name.
 //
-// None of the above was enough to responsibly finish any of these within
-// this session's budget (dense float/fixed-point pipelines, several still
-// -unnamed helpers, and no runtime test available to catch a wrong sign or
+// DisplayQuadBitList and DisplayPixelList got finished this session (see
+// RefreshGfxMatrix and their implementations below) using exactly this
+// map. The rest were not enough to responsibly finish within this
+// session's budget (dense float/fixed-point pipelines, several still
+// -unnamed helpers - sub_509000, sub_5081F0 - or, for DisplayGlassList,
+// derived geometry beyond the bit's stored corners that is not pinned
+// down yet, and no runtime test available to catch a wrong sign or
 // offset), so they stay @BIGTODO. The next attempt should be able to move
 // much faster starting from this map instead of raw disassembly.
 
