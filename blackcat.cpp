@@ -453,8 +453,10 @@ CBlackCat::~CBlackCat(void)
 	this->KillAllCommandBlocks();
 }
 
-// @NotOk
-// globals
+// @Ok
+// verified line by line against IDA decompile/disasm of 0x4139a0. "bc2"
+// string confirmed at 0x54875C, mpLight target confirmed as M3d_BlackCatLight,
+// AttachTo target confirmed as BaddyList.
 CBlackCat::CBlackCat(i16* a2, i32 a3)
 {
 	if (Trig_GetLevelID() != 2051)
