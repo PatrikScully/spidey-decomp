@@ -378,14 +378,17 @@ void validate_CKnottedWeb(void)
 	VALIDATE(CKnottedWeb, mpExtraSegs, 0x64);
 	VALIDATE(CKnottedWeb, mpInnerLine, 0x68);
 
+	VALIDATE(CKnottedWeb, field_6D, 0x6D);
 	VALIDATE(CKnottedWeb, field_6E, 0x6E);
 	VALIDATE(CKnottedWeb, field_70, 0x70);
+	VALIDATE(CKnottedWeb, field_74, 0x74);
 }
 
 void validate_SKnottedWebSeg(void)
 {
 	VALIDATE_SIZE(SKnottedWebSeg, 0x1C);
 
+	VALIDATE(SKnottedWebSeg, mPos, 0x0);
 	VALIDATE(SKnottedWebSeg, field_C, 0xC);
 	VALIDATE(SKnottedWebSeg, field_D, 0xD);
 	VALIDATE(SKnottedWebSeg, field_E, 0xE);
