@@ -88,8 +88,9 @@ void CChain::Move(CVector *pVec)
 
 }
 
-// @NotOk
-// @Test
+// @Ok
+// @Note: verified field by field against IDA decompile of 0x420400, including the
+// zero-order of field_C.vz/vy/vx in the init loop and the field_18/field_24 stores.
 CChain::CChain(
 		CVector* a2,
 		i32 a3,
