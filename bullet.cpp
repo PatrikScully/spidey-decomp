@@ -1,6 +1,8 @@
 #include "bullet.h"
 #include "utils.h"
 #include "exp.h"
+#include "mem.h"
+#include "spidey.h"
 
 #include "validate.h"
 
@@ -10,12 +12,76 @@
 CBody* BulletList;
 EXPORT i32 gBullets;
 
+extern CPlayer* MechList;
 
-// @MEDIUMTODO
+
+// @Ok
 void CBullet::BlowUp(void)
 {
-    printf("CBullet::BlowUp(void)");
+	if (this->field_100 == reinterpret_cast<void*>(&MechList))
+	{
+		new CSmokePuff(&this->mPos);
+
+		if (MechList)
+		{
+			u32 dist = Utils_Dist(this->mPos, MechList->mPos);
+
+			if (dist < this->field_106)
+			{
+				SHitInfo hit;
+				hit.field_0 = 4;
+				hit.field_C.vx = 0;
+				hit.field_C.vy = 0;
+				hit.field_C.vz = 0;
+				hit.field_8 = dist * this->field_104 / this->field_106;
+
+				MechList->Hit(&hit);
+			}
+		}
+	}
+	else
+	{
+		new CFireyExplosion(&this->mPos);
+	}
+
+	if (this->field_124)
+	{
+		if (this->field_13C)
+		{
+			void *pObj = Mem_RecoverPointer(&this->field_140);
+
+			if (pObj)
+			{
+				print_if_false(
+						(reinterpret_cast<CItem*>(pObj)->mFlags & 0x10) != 0,
+						"Eh? Recovered pointer not an env obj");
+				print_if_false(
+						pObj == this->field_128,
+						"Eh? Recovered pointer does not match original");
+
+				SHitInfo hit;
+				hit.field_0 = 14;
+				hit.field_4 = 1;
+				hit.field_8 = this->field_104;
+				hit.field_C.vx = -this->field_A8.vx;
+				hit.field_C.vy = -this->field_A8.vy;
+				hit.field_C.vz = -this->field_A8.vz;
+
+				reinterpret_cast<CBody*>(pObj)->Hit(&hit);
+			}
+		}
+		else
+		{
+			Exp_HitEnvItem(
+					reinterpret_cast<CItem*>(this->field_128),
+					reinterpret_cast<u32*>(this->field_12C),
+					this->field_104);
+		}
+	}
+
+	this->Die();
 }
+
 
 // @Ok
 // @Matching
@@ -140,24 +206,21 @@ CSmokePuff::~CSmokePuff(void)
 {
 }
 
-// @NotOk
+// @Ok
 CBullet::~CBullet(void)
 {
 	--gBullets;
 
-	// @FIXME
 	delete reinterpret_cast<CItem*>(this->field_10C);
 
 	if (this->field_120)
 	{
-		// @FIXME
 		reinterpret_cast<u8*>(this->field_120)[58] = 0;
 		reinterpret_cast<u32*>(this->field_120)[21] = 1;
 	}
 }
 
-// @NotOk
-// Global
+// @Ok
 CBullet::CBullet(void)
 {
 	this->field_114 = 0;
@@ -168,8 +231,8 @@ CBullet::CBullet(void)
 	this->field_134 = 0;
 	this->field_138 = 0;
 
-	this->InitItem("items");
 	gBullets++;
+	this->InitItem("items");
 
 	this->mScale.vx = 2048;
 	this->mScale.vy = 2048;
@@ -181,9 +244,11 @@ CBullet::CBullet(void)
 
 void validate_CBullet(void)
 {
-	VALIDATE_SIZE(CBullet, 0x13C);
+	VALIDATE_SIZE(CBullet, 0x148);
 
+	VALIDATE(CBullet, field_100, 0x100);
 	VALIDATE(CBullet, field_104, 0x104);
+	VALIDATE(CBullet, field_106, 0x106);
 
 	VALIDATE(CBullet, field_10C, 0x10C);
 
@@ -191,10 +256,15 @@ void validate_CBullet(void)
 	VALIDATE(CBullet, field_118, 0x118);
 	VALIDATE(CBullet, field_11C, 0x11C);
 	VALIDATE(CBullet, field_120, 0x120);
+	VALIDATE(CBullet, field_124, 0x124);
+	VALIDATE(CBullet, field_128, 0x128);
+	VALIDATE(CBullet, field_12C, 0x12C);
 
 	VALIDATE(CBullet, field_130, 0x130);
 	VALIDATE(CBullet, field_134, 0x134);
 	VALIDATE(CBullet, field_138, 0x138);
+	VALIDATE(CBullet, field_13C, 0x13C);
+	VALIDATE(CBullet, field_140, 0x140);
 }
 
 void validate_CSmokePuff(void)
