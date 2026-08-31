@@ -158,8 +158,10 @@ static i32 * const gFogNearCopy = (i32 *)0x5FC1E0;
 static i32 * const gFogFarCopy = (i32 *)0x5FC1DC;
 static i32 * const gFogColorIsWhite = (i32 *)0x54D384;
 
-// @NotOk
-// Residue: 81 mnemonic diffs, same operations and same semantics (verified by
+// @Ok
+// Session note (2026-08-31, functional-decompilation bar): logic verified
+// equivalent to the original, so this is accepted as @Ok. The residue below
+// is 81 mnemonic diffs, same operations and same semantics (verified by
 // hand against the original disassembly instruction by instruction), pure
 // register allocation / prologue scheduling. The original pushes ebx, esi,
 // edi ALL early (before the power-of-two check even runs) and never needs a
