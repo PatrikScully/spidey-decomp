@@ -1,3 +1,4 @@
+#include <new>
 #include "simby.h"
 #include "validate.h"
 #include "trig.h"
@@ -16,6 +17,7 @@
 #include "my_assert.h"
 #include "spool.h"
 #include "effects.h"
+#include "exp.h"
 
 static SStateFlags gSimbyFlags;
 extern CPlayer* MechList;
@@ -535,9 +537,105 @@ void CPunchOb::AI(void)
 	}
 }
 
-// @BIGTODO
-void Simby_SplattyExplosion(CVector*, CVector*, i32)
-{}
+// @Ok
+// verified against IDA decompile+disasm of sub_4A57E0 (0x4A57E0). Not a
+// named function in tools/names.json ("CSimbyDrop" is our own guess, going
+// off this file's naming convention for small debris/particle classes);
+// mType=13 and the CQuadBit-derived base ctor call are directly confirmed.
+CSimbyDrop::CSimbyDrop(CVector *a2, CVector *a3, i32 a4, i32 a5)
+{
+	this->SetTexture(*reinterpret_cast<Texture**>(*reinterpret_cast<i32*>(0x56EAC4) + 4));
+	this->SetTint(0x3B, 0xB, 0x37);
+	this->SetSemiTransparent();
+
+	this->field_88 = a4;
+
+	this->mVel = *a3;
+
+	this->mPosC = *a2;
+	this->mPos = *a2;
+
+	CVector facing;
+	Utils_CalcUnitFacingCamera(&this->mPosC, &this->mPos, &facing);
+
+	this->mPosD = this->mPosC + facing * 10;
+	this->mPosB = this->mPos + facing * 10;
+
+	this->field_84 = 1;
+	this->field_8C = a5;
+	this->mType = 13;
+}
+
+// @Ok
+// verified against IDA decompile+disasm of sub_4A6D50 (0x4A6D50). Spawns
+// one CGlowFlash at the impact point plus a3 CSimbyDrop debris particles
+// scattered in a cone around the a2 direction, using the same rcossin_tbl
+// two-rotation scatter idiom already established elsewhere in this repo
+// (carnage.cpp CSymbioteBlade::GenerateControlPoints; bit.cpp): the first
+// rotation picks a random point on a circle perpendicular to a2 (using the
+// Utils_CalcWallPerps basis), the second tilts that back toward a2 by a
+// second random angle, giving a random unit-ish direction inside a cone
+// around a2. Both allocations are the original's manual operator-new +
+// null-check + placement-new (see CSwinger_SwingBack in web.cpp for the
+// established pattern in this repo), matching the original exactly:
+// unlike CSimbyDrop above, the CGlowFlash allocation failure path is NOT
+// guarded before the mAngle write that follows it in the original disasm
+// (same in the very similar CSimbyShot::Move, sub_4A6520, not yet in this
+// repo) -- reproduced faithfully rather than "fixed", per this repo's
+// dead-code-preservation convention.
+void Simby_SplattyExplosion(CVector *a1, CVector *a2, i32 a3)
+{
+	CGlowFlash *pFlash = static_cast<CGlowFlash*>(CBit::operator new(sizeof(CGlowFlash)));
+
+	if (pFlash)
+	{
+		::new (pFlash) CGlowFlash(
+				a1, 5, 255, 255, 255, 0, 100, 0, 100, 0, 9, 0, 1, 36, 120, 18, 60, 1, 2);
+	}
+
+	pFlash->mAngle = Rnd(4096);
+
+	CVector perpUp;
+	CVector perpSide;
+	perpUp.vx = 0; perpUp.vy = 0; perpUp.vz = 0;
+	perpSide.vx = 0; perpSide.vy = 0; perpSide.vz = 0;
+	Utils_CalcWallPerps(a2, &perpUp, &perpSide);
+
+	CVector groundCheckPos = *a1 + (*a2 * 100);
+	i32 groundY = Web_GetGroundY(&groundCheckPos);
+
+	i32 surfaceVal = 0;
+	if (gLineInfo.pItem && (gLineInfo.pItem->mFlags & 0x100))
+	{
+		surfaceVal = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(gLineInfo.pItem) + 100);
+	}
+
+	for (i32 i = a3; i != 0; i--)
+	{
+		i32 angle1 = (Rnd(1601) - 1824) & 0xFFF;
+
+		i32 sin1 = rcossin_tbl[angle1].sin;
+		i32 cos1 = rcossin_tbl[angle1].cos;
+
+		CVector circleOffset = ((sin1 * perpSide) + (cos1 * perpUp)) >> 12;
+
+		i32 angle2 = Rnd(512) & 0xFFF;
+
+		i32 sin2 = rcossin_tbl[angle2].sin;
+		i32 cos2 = rcossin_tbl[angle2].cos;
+
+		CVector coneOffset = ((sin2 * (*a2)) + (cos2 * circleOffset)) >> 12;
+
+		coneOffset *= (Rnd(20) + 20);
+
+		CSimbyDrop *pDrop = static_cast<CSimbyDrop*>(CBit::operator new(sizeof(CSimbyDrop)));
+
+		if (pDrop)
+		{
+			::new (pDrop) CSimbyDrop(a1, &coneOffset, groundY, surfaceVal);
+		}
+	}
+}
 
 // @Ok
 i32 CPunchOb::Hit(SHitInfo* pHitInfo)
@@ -1313,6 +1411,14 @@ void validate_CPunchOb(void){
 	VALIDATE_SIZE(CPunchOb, 0x32C);
 
 	VALIDATE(CPunchOb, field_328, 0x328);
+}
+
+void validate_CSimbyDrop(void){
+	VALIDATE_SIZE(CSimbyDrop, 0x90);
+
+	VALIDATE(CSimbyDrop, field_84, 0x84);
+	VALIDATE(CSimbyDrop, field_88, 0x88);
+	VALIDATE(CSimbyDrop, field_8C, 0x8C);
 }
 
 void validate_CSimby(void){

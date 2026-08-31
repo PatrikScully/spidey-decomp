@@ -290,6 +290,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CRhino();
 	validate_CScorpion();
 	validate_CPunchOb();
+	validate_CSimbyDrop();
 	validate_CSimby();
 	validate_CSimbyBase();
 	validate_CSpClone();

@@ -152,6 +152,29 @@ class CEmber : public CFlatBit
 		i32 field_8C;
 };
 
+// small debris particle spawned by Simby_SplattyExplosion (sub_4A57E0,
+// 0x4A57E0). Confirmed CQuadBit-derived (base ctor sub_408FA0, mType=13);
+// no standalone name in names.json ("CSimbyDrop_CSimbyDrop" is our own
+// guess based on the CGlowFlash/CSimbyShot naming pattern in this file,
+// not an IDB-confirmed name).
+class CSimbyDrop : public CQuadBit
+{
+	public:
+		EXPORT CSimbyDrop(CVector*, CVector*, i32, i32);
+
+		// always set to 1 by the constructor; purpose beyond that not
+		// determined (no reader found yet in this file's scope).
+		i32 field_84;
+
+		// ground height under the spawn position (Web_GetGroundY), stashed
+		// but not otherwise used within the constructor.
+		i32 field_88;
+
+		// opaque value read from the SLineInfo raycast hit item's data if a
+		// flag bit was set (see Simby_SplattyExplosion), otherwise 0.
+		i32 field_8C;
+};
+
 class CSimbyShot : public CQuadBit
 {
 	public:
@@ -253,6 +276,7 @@ class CFlamingImpactWeb : public CFlatBit
 };
 
 void validate_CPunchOb(void);
+void validate_CSimbyDrop(void);
 void validate_CSimby(void);
 void validate_CSimbyBase(void);
 void validate_CSimbySlimeBase(void);
