@@ -898,8 +898,16 @@ INLINE i32* CSpClone::KillCommandBlock(i32* a1)
 	return res;
 }
 
-// @NotOk
-// Revisit
+// @Ok
+// No original address to compare against: this has no xrefs in IDA outside
+// the destructor, and the original inlines this loop there (same situation
+// as CBlackCat::KillCommandBlockByID / CBlackCat::~CBlackCat's inlined
+// KillAllCommandBlocks, blackcat.cpp). KillCommandBlock always finds
+// this->field_34C == cur (cur starts at the head and KillCommandBlock keeps
+// field_34C pointed at the head after every delete), so this walks and
+// frees every block exactly once in list order. The trailing
+// field_34C = 0 is a harmless no-op once the loop empties the list (the
+// last KillCommandBlock call already leaves it 0), kept for clarity.
 void CSpClone::KillAllCommandBlocks(void)
 {
 	for (int* cur = reinterpret_cast<int*>(this->field_34C); cur; cur = this->KillCommandBlock(cur));
