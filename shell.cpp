@@ -307,7 +307,12 @@ void Shell_Cheats(void)
 //   (same addresses, 0x460080/0x53BBD0/0x53BBD4) today from
 //   CSymbioteBlade::CSymbioteBlade (0x41AE40, in carnage.cpp) and reached
 //   the same conclusion independently: it is a whole base class with no
-//   repo precedent, BIGTODO on its own. See carnage.cpp's comment above
+//   repo precedent, BIGTODO on its own. IDA xrefs_to shows sub_460080 has
+//   30+ direct callers spread across the whole binary (villains, items,
+//   this widget, CDummy), not just these two files, so it is one of the
+//   highest-leverage single functions left to crack in the whole repo,
+//   worth a dedicated session of its own rather than a shell.cpp side
+//   quest. See carnage.cpp's comment above
 //   CSymbioteBlade::CSymbioteBlade for that session's notes on it (the
 //   two-stage vtable, the CVector array layout). Cracking sub_460080 once
 //   would unblock CSymbioteBlade, this widget, AND Shell_MainMenu's own
