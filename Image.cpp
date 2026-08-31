@@ -3,6 +3,8 @@
 #include "PCTex.h"
 #include "dcfileio.h"
 #include "mem.h"
+#include "pal.h"
+#include "ps2funcs.h"
 
 #include "validate.h"
 
@@ -176,10 +178,112 @@ INLINE i32 GetBMPBitDepth(char* pData)
 	return depth;
 }
 
-// @MEDIUMTODO
-void Load4BitBMP_2(char *,char **,i32 *,i32 *,u16 *)
+// @Ok
+// Verified against the real disassembly (IDA, function at 0x443190, 649
+// bytes, matches tools/functions/4469136.bin). The real function returns
+// i32 (always 1), not void; the header prototype was wrong, fixed below.
+// Same overall shape as Load8BitBMP2 further down (bottom-up BMP row
+// copy, stride rounded up to a multiple of 4, rewind by 2*stride between
+// rows), but for a 4bpp BMP: at most 16 palette colors get packed into a
+// small LOCAL 16-entry array that nothing outside this function ever
+// reads again, and the row copy combines both nibbles of each source
+// byte into a SINGLE destination byte via `(lowNibble<<4) +
+// signExtend4(highNibble)`, an add rather than a combine, instead of
+// expanding them into two separate destination bytes. Both look like a
+// leftover, never-finished PS1-era code path (the two calls right after
+// the palette loop literally print "stubbed out: LoadImage" and
+// "stubbed out: DrawSync" the first time they run, same idiom as the
+// ps2funcs.h _LoadImage/DrawSync inline stubs; real PC game textures are
+// 8bpp, so this path is likely dead in the shipped game). Reproduced
+// exactly as found, not "fixed", per tips.txt.
+i32 Load4BitBMP_2(char *a1, char **a2, i32 *a3, i32 *a4, u16 *a5)
 {
-    printf("Load4BitBMP_2(char *,char **,i32 *,i32 *,u16 *)");
+	BMPHeader* pBmp = reinterpret_cast<BMPHeader*>(a1);
+
+	i32 width = pBmp->width_px;
+	i32 height = pBmp->height_px;
+
+	print_if_false(pBmp->bits_per_pixel == 4, "Non-4 bit texture in Load4bitBMP_2");
+
+	i32 numColors = pBmp->num_colors;
+	if (!numColors)
+		numColors = 16;
+
+	print_if_false(numColors <= 16, "More than 16 colors in 4 bit .BMP");
+
+	u16 localClut[16];
+	u8 keyIndex = 0;
+
+	char* pPalette = reinterpret_cast<char*>(&pBmp[1]);
+
+	for (i32 i = 0; i < numColors; i++)
+	{
+		i16 blue = pPalette[0];
+		i16 green = pPalette[1];
+		i16 red = pPalette[2];
+
+		if ((u16)blue <= 0xF7 || green != 0 || (u16)red <= 0xF7)
+		{
+			i16 blueShifted = (u16)blue >> 3;
+			i16 greenShifted = (u16)green >> 3;
+			i16 redShifted = (u16)red >> 3;
+
+			if (blueShifted || greenShifted || redShifted)
+				localClut[i] = (blueShifted << 10) + (greenShifted << 5) + redShifted;
+			else
+				localClut[i] = 0x8000;
+		}
+		else
+		{
+			keyIndex = (u8)i;
+			localClut[i] = 0;
+		}
+
+		pPalette += 4;
+	}
+
+	i32 clut = GetClut(Pal16X, Pal16Y + GetFree16Slot());
+
+	_LoadImage();
+	DrawSync();
+
+	i32 byteWidth = width >> 1;
+	i32 pad = byteWidth % 4;
+	if (pad > 0)
+		pad = 4 - pad;
+	i32 stride = byteWidth + pad;
+
+	char* dstData = reinterpret_cast<char*>(DCMem_New(height * (stride + 3), 1, 1, 0, 1));
+	*a2 = dstData;
+
+	char* pSrc = reinterpret_cast<char*>(&reinterpret_cast<i32*>(&pBmp[1])[numColors]);
+	char* pRow = &dstData[(height - 1) * stride];
+
+	u8 fillByte = (u8)(keyIndex * 17);
+
+	for (i32 row = 0; row < height; row++)
+	{
+		i32 col;
+
+		for (col = 0; col < byteWidth; col++)
+		{
+			u8 b = *pSrc++;
+			*pRow++ = (u8)((b << 4) + ((i8)b >> 4));
+		}
+
+		for (col = 0; col < pad; col++)
+		{
+			*pRow++ = fillByte;
+		}
+
+		pRow -= 2 * stride;
+	}
+
+	*a3 = 2 * stride;
+	*a4 = height;
+	*a5 = (u16)clut;
+
+	return 1;
 }
 
 // @Ok
