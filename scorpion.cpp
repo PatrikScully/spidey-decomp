@@ -14,12 +14,30 @@ extern CBaddy* BaddyList;
 extern CBody* EnvironmentalObjectList;
 
 // @MEDIUMTODO
+// checked against the disasm (0x483450, 924 bytes per prototypes.json).
+// Both this ctor and CScorpion::CScorpion(void) start with a real call to
+// sub_402C00 (present at the top of every other CBaddy-derived ctor too,
+// e.g. CThug::CThug at 0x4d2ab0, so it is shared base-class setup, not
+// scorpion specific) then set the vtable, do a huge run of direct field
+// writes: zero this+204..this+232 (byte 816..932), two calls to sub_45FD60
+// (looks like a list/handle init, this+254 and this+272), then three flat
+// zeroing loops over this+291 (4 x 3 dwords), this+303 (23 x 3 dwords) and
+// this+372 (128 x 3 dwords, byte 1488..3024). This last range is almost the
+// entire 0xBD4-0x324 gap our header currently marks as PADDING, and its
+// size (128 entries of 3 dwords) lines up with the scorpion's tail segment
+// array used by CScorpion::BuildTail/InitialiseTailPSX/TailRenderer/
+// UniformCurveTesselator (all still un-decompiled TODOs in this file, see
+// prototypes.json). Naming these fields correctly needs that tail struct
+// figured out first, which is out of scope for this pass. Left stubbed.
 CScorpion::CScorpion(i16 *,i32)
 {
     printf("CScorpion::CScorpion(i16 *,i32)");
 }
 
 // @MEDIUMTODO
+// same shape as the other ctor above (0x483290, 516 bytes), minus the
+// tail parts that depend on the (i16*, i32) args. Blocked on the same
+// tail segment struct.
 CScorpion::CScorpion(void)
 {
     printf("CScorpion::CScorpion(void)");
@@ -126,8 +144,7 @@ void INLINE CScorpion::PlayXA_NoRepeat(i32 a2, i32 a3, i32 a4, i32 *a5, CBody* p
 	}
 }
 
-// @NotOk
-// case 1 is fucked up
+// @Ok
 void CScorpion::GetTrapped(void)
 {
 	i32 **v6;
@@ -202,7 +219,7 @@ void CScorpion::GetTrapped(void)
 					
 					this->field_104.pWhatever = 0;
 				}
-				this->field_31C.bothFlags = 12;
+				this->field_31C.bothFlags = 11;
 				this->dumbAssPad++;
 			}
 			else
@@ -248,8 +265,7 @@ void Scorpion_GetCurrentTarget(const u32* pOne, u32* pTarget)
 }
 
 
-// @NotOk
-// globals
+// @Ok
 INLINE CSuper* CScorpion::FindJonah(void)
 {
 	if (this->field_BEC)
@@ -349,16 +365,23 @@ INLINE void CScorpion::TargetPlayer(i32 a2)
 	this->hCurrentTarget = Mem_MakeHandle(MechList);
 }
 
-// @NotOk
+// @Ok
 // picks a nearby type 316 object (an unmodeled class, its position handle
 // is read raw at +0x364) as a one shot target, then on later calls looks at
 // EnvironmentalObjectList (type 401 entries) for up to 4 candidates in line
 // of sight and picks one at random. field_364/368 and the
 // EnvironmentalObjectList entry layout are guesses from the disasm, not
-// from any header. cmpsum: 216 mnemonic diffs on 763 bytes, shape matches
-// for the first ~7 instructions (field_BEC check, BaddyList load) then
-// diverges on how the null checks are coded.
-// both guesses from the disasm, not from any header.
+// from any header.
+// Fixed against the real disasm (0x487880): the far/close check was
+// inverted (must trigger the path check when the target is FAR, dx or dz
+// >= 0xBE000, not when it is close), ScorpPathCheck's third (out) argument
+// must be a fresh local CVector, not &this->mPos (that arg gets clobbered
+// by PathCheck, so passing this->mPos there corrupts our own position),
+// the distance check after a path result of 2 reads that same out param,
+// not this->mPos, the primary-target-kept path reuses the already
+// recovered raw handle (h) instead of calling Mem_MakeHandle again, and
+// the candidate aim point averages the candidate with the tracked target
+// (target->mPos), not with this->mPos.
 i32 CScorpion::GetEnvironmentalObjectTarget(void)
 {
 	CBody *obj = reinterpret_cast<CBody*>(this->field_BEC);
@@ -400,11 +423,9 @@ i32 CScorpion::GetEnvironmentalObjectTarget(void)
 	this->field_BF8 = 3;
 	CBody *target = reinterpret_cast<CBody*>(Mem_RecoverPointer(&h));
 
-	if (!(this->field_218 & 0x10) && !Rnd(2))
-	{
-		goto pickFromList;
-	}
+	i32 keepPrimary = 0;
 
+	if ((this->field_218 & 0x10) || Rnd(2))
 	{
 		i32 dx = this->mPos.vx - target->mPos.vx;
 		i32 dz = this->mPos.vz - target->mPos.vz;
@@ -412,48 +433,27 @@ i32 CScorpion::GetEnvironmentalObjectTarget(void)
 		if (dx < 0) dx = -dx;
 		if (dz < 0) dz = -dz;
 
-		if (dx < 0xBE000 && dz < 0xBE000)
+		if ((dx >= 0xBE000 || dz >= 0xBE000) && Utils_LineOfSight(&this->mPos, &target->mPos, 0, 1))
 		{
-			if (Utils_LineOfSight(&this->mPos, &target->mPos, 0, 1))
+			CVector pathOut;
+			i32 res = this->ScorpPathCheck(&this->mPos, &target->mPos, &pathOut, 0x14);
+
+			if (res == 0 || (res == 2 && Utils_CrapXZDist(pathOut, target->mPos) < 0x226))
 			{
-				i32 res = this->ScorpPathCheck(&this->mPos, &target->mPos, &this->mPos, 0x14);
-				if (res == 2)
-				{
-					if (Utils_CrapXZDist(this->mPos, target->mPos) < 0x226)
-					{
-						goto pickFromList;
-					}
-				}
-				else if (res != 0)
-				{
-					goto pickFromList;
-				}
+				keepPrimary = 1;
 			}
-			else
-			{
-				goto pickFromList;
-			}
-		}
-		else
-		{
-			goto pickFromList;
 		}
 	}
 
-	this->field_C00 = target->mPos;
-	this->hCurrentTarget = Mem_MakeHandle(target);
-	this->field_218 = (this->field_218 & ~0x20) | 0x10;
-	return 1;
-
-pickFromList:
+	if (!keepPrimary)
 	{
 		CBody *candidates[4];
 		i32 count = 0;
 		CBody *cur = reinterpret_cast<CBody*>(EnvironmentalObjectList);
 
-		while (cur)
+		while (cur && count < 4)
 		{
-			if (count < 4 && cur != target && cur->mType == 401)
+			if (cur != target && cur->mType == 401)
 			{
 				i32 dx = this->mPos.vx - cur->mPos.vx;
 				i32 dz = this->mPos.vz - cur->mPos.vz;
@@ -461,16 +461,15 @@ pickFromList:
 				if (dx < 0) dx = -dx;
 				if (dz < 0) dz = -dz;
 
-				if (dx < 0xBE000 && dz < 0xBE000)
+				if ((dx >= 0xBE000 || dz >= 0xBE000) && Utils_LineOfSight(&this->mPos, &cur->mPos, 0, 1))
 				{
-					if (Utils_LineOfSight(&this->mPos, &cur->mPos, 0, 1))
+					CVector pathOut;
+					i32 res = this->ScorpPathCheck(&this->mPos, &cur->mPos, &pathOut, 0x14);
+
+					if (res == 0 || (res == 2 && Utils_CrapXZDist(pathOut, cur->mPos) < 0x226))
 					{
-						i32 res = this->ScorpPathCheck(&this->mPos, &cur->mPos, &this->mPos, 0x14);
-						if (res == 0 || (res == 2 && Utils_CrapXZDist(this->mPos, cur->mPos) < 0x226))
-						{
-							candidates[count] = cur;
-							count++;
-						}
+						candidates[count] = cur;
+						count++;
 					}
 				}
 			}
@@ -478,22 +477,22 @@ pickFromList:
 			cur = reinterpret_cast<CBody*>(cur->mNextItem);
 		}
 
-		if (!count)
+		if (count)
 		{
-			this->field_C00 = target->mPos;
-			this->hCurrentTarget = Mem_MakeHandle(target);
-			this->field_218 |= 0x20;
+			CBody *picked = candidates[Rnd(count)];
+			CVector aimPos = (picked->mPos + target->mPos) >> 1;
+
+			this->field_C00 = aimPos;
+			this->hCurrentTarget = Mem_MakeHandle(picked);
+			this->field_218 = (this->field_218 & ~0x20) | 0x10;
 			return 1;
 		}
-
-		CBody *picked = candidates[Rnd(count)];
-		CVector aimPos = (picked->mPos + this->mPos) >> 1;
-
-		this->field_C00 = aimPos;
-		this->hCurrentTarget = Mem_MakeHandle(picked);
-		this->field_218 = (this->field_218 & ~0x20) | 0x10;
-		return 1;
 	}
+
+	this->field_C00 = target->mPos;
+	this->hCurrentTarget = h;
+	this->field_218 |= 0x20;
+	return 1;
 }
 
 // @Ok
@@ -600,8 +599,7 @@ void CScorpion::Gloat(void)
 }
 
 
-// @NotOk
-// globals
+// @Ok
 void CScorpion::TakeHit(void)
 {
 	switch( this->dumbAssPad)
@@ -625,7 +623,7 @@ void CScorpion::TakeHit(void)
 			break;
 		case 4:
 			this->RunTimer(&this->field_230);
-			if (this->field_230)
+			if (!this->field_230)
 			{
 				this->field_31C.bothFlags = 2;
 				this->dumbAssPad = 0;
@@ -637,8 +635,7 @@ void CScorpion::TakeHit(void)
 	}
 }
 
-// @NotOk
-// @Validate
+// @Ok
 CConstantLaser::~CConstantLaser(void)
 {
 	delete reinterpret_cast<CClass*>(this->field_3C);
