@@ -410,12 +410,58 @@ static INLINE void RefreshGfxMatrix(void)
 static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
 
 // @BIGTODO
-// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). See the
-// shared family notes above. Per-segment camera-space transform through a
-// self-set rotation matrix (gte_SetRotMatrix, m3d_ZeroTransVector), a
-// camera-facing calculation (Utils_CalcUnitFacingCamera), then a strip of
-// gouraud-textured POLY_GT4 quads via PCGfx_DrawQPoly3D (sub_508550), one
-// per pair of ribbon points.
+// Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Fully
+// decompiled and traced this session (2026-08-31) - correcting the old
+// note, which had the wrong mechanism (no Utils_CalcUnitFacingCamera call
+// anywhere in the real disassembly; that guess came from the class name,
+// not the code). Not implemented yet, ~400 lines of raw disasm, but here
+// is what is confirmed so a future attempt can skip straight to writing
+// source:
+// - `this` fields used: field_3C (0x3C, NumFaces, VALIDATEd as
+//   CSimpleTexturedRibbon::field_3C) and field_3E (0x3E,
+//   mNumFacesToDisplay, asserted <= field_3C), pTextures (0x40),
+//   field_44 (0x44, SSimpleRibbonParams*), field_48 (0x48, u32* widths).
+// - dword_6150C8 (already named G_QUADBIT_RENDER_STATE above) is saved,
+//   forced to 0xFFFF0000, and restored at the end - the SAME sentinel
+//   DisplayQuadBitList uses, confirming it really is a shared "currently
+//   building a render batch" flag, not QuadBitList-specific.
+// - Per-segment perpendicular/width offset comes from a still-unnamed
+//   helper, sub_4E7090(a1: outVec, a2: pointRecord, a3: widthRecord) -
+//   this is the one genuinely new piece of math needed; nothing else in
+//   the repo calls it yet.
+// - Camera-facing setup: gte_SetRotMatrix(&gTargetRotMatrix) (sub_46D7B0,
+//   same fixed MATRIX screen.cpp already declares for Screen_DrawArrow)
+//   then m3d_ZeroTransVector (sub_46E460) - a real self-set rotation
+//   matrix, but reusing an EXISTING global, not a new one.
+// - Per point: relPos = (raw>>12) - gCameraViewPos, gte_ldlv0/gte_rtps,
+//   THEN a separate Algebra_Transform4 (sub_402700) invZ pass exactly like
+//   DisplayQuadBitList/DisplayPixelList's (see RefreshGfxMatrix above);
+//   near-clip override to -1.0 when gte's raw depth < 100, same idiom as
+//   DisplayQuadBitList's stlv.vz<100 check. sub_402540/402600/402620
+//   (vector3d/vector4d ctors, already identified elsewhere in this file)
+//   package the invZ triple; IDA mislabels sub_402620 as
+//   `QModelIndex::QModelIndex` (another FLIRT false positive, same class
+//   of mislabel as qt_register_signal_spy_callbacks==gte_ldlv0).
+// - Two-pass structure: first a loop over field_3E points fills a flat
+//   float buffer (v108/String, 0x5498fc) with one invZ per point (2 per
+//   ribbon segment - "near" and "far" edge); THEN a second loop walks
+//   BACKWARDS through a screen-coordinate array (dword_628618 -
+//   gRevisitInitOne above - via negative strides -3/-4/-7/-8/-11/-12 on a
+//   pointer advancing +8 shorts/iteration) pairing up 4 screen corners per
+//   quad and emitting via PCGfx_DrawQPoly3D (sub_508550, already @Ok).
+//   The negative-index bookkeeping is the main remaining puzzle - needs
+//   careful reconstruction of what gRevisitInitOne's per-point record
+//   layout actually is here (it is NOT the same 8-byte/corner layout
+//   DisplayQuadBitList uses; the strides here imply something like 16
+//   shorts per point, not 4).
+// - Blend/colour: PCGfx_UseTexture keyed off pTextures[0].field_0's 0x40/
+//   0x80 bits (same CSimpleTexturedRibbon::SetOpaque/SetSemiTransparent
+//   bits, already @Ok above), alpha 255 or a signed-extended variant of
+//   0x80's bit.
+// Given the still-unknown sub_4E7090 and the backwards-indexed
+// screen-buffer bookkeeping, this needs a dedicated session rather than a
+// quick pass; do not guess the buffer layout without re-tracing it in
+// the raw disasm.
 void CSimpleTexturedRibbon::Display(void)
 {
     printf("CSimpleTexturedRibbon::Display(void)");
@@ -1034,28 +1080,68 @@ void DisplayGlassList(void**)
 }
 
 // @BIGTODO
-// Address 0x40c6f0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Largest of the Display*List family:
-// WPlane/CVector math (operator>>/operator- at 0x4e7840/0x4e7760, the
-// wrongly-INLINE CVector operators noted elsewhere in this file's
-// history), the gte_ldlv0/gte_rtps camera transform, a fringe/glow ring
-// loop, and several PCGfx_DrawQPoly3D (sub_508550) gouraud quad emits per
-// fringe.
+// Address 0x40c6f0. CORRECTION this session (2026-08-31): a previous pass
+// mis-attributed a full trace of this address to DisplayChunkBitList; it
+// is actually DisplayGlowList - confirmed by matching every offset it
+// reads against CGlow's already-VALIDATEd layout (bit.h/below): the two
+// array pointers it walks are mpSections (0x3C) and mpFringes (0x40), the
+// two counts gating the two nested loops are mNumSections (0x44) and
+// mNumFringes (0x48), and the per-section visibility test
+// `(*(DWORD*)(v2+88)>>i)&1` is mMask (0x58) indexed by section. So this is
+// the real "fringe/glow ring" renderer the old note described, just far
+// more involved than a simple ring:
+// - A per-glow subdivision/segment count (traced as a local clamped to the
+//   5..20000 range) drives two loops that fill a screen-space contour
+//   array by rotating around the glow's centre via word_610C48/610C4A
+//   (rcossin_tbl, see gTTime/Sine() and DisplayFlatBitList's note below),
+//   scaled by a value read through mpSections[i] and divided by that
+//   subdivision count and the section's own colour-fade-in ramp (`255 *
+//   n/700 + 1` while n<700). Screen coordinates are clamped to a fixed
+//   -100..612 / -100..340 rect (not gGameResolutionX/Y - looks like a
+//   fixed reference/debug viewport, needs confirming before use).
+// - A camera-space transform of the glow CENTRE only (CBit::mPos, the
+//   usual (raw>>12)-gCameraViewPos into gte_ldlv0/gte_rtps, then
+//   Algebra_Transform4 for invZ) - not per contour point.
+// - Fog colour blending reuses the SAME LUT tables (byte_6FC6DC/6BC6C0/
+//   6DC6C0/71C75C) and the same >>8 brighten-by-alpha math that
+//   gsub_509400 (PCGfx.cpp, already @Ok, feeds PCGfx_DrawTPoly3D) already
+//   implements - very likely the same real function inlined here a second
+//   time, worth comparing side by side before re-deriving it from scratch.
+// - Two PCGfx_DrawQPoly3D (sub_508550, already @Ok) calls per fringe
+//   segment, once for the "inner" ring position and once for the "outer"
+//   (shifted by a per-vertex delta array at mpSections[i]+8*n, +4), each a
+//   gouraud POLY_GT4 quad between consecutive contour samples.
+// This needs a dedicated session: the subdivision-count source and the
+// exact contour delta-array layout (mpSections' per-entry stride) are not
+// pinned down yet, and the screen-clamp rect's purpose is unconfirmed.
 void DisplayGlowList(void**)
 {
 }
 
 // @BIGTODO
-// Address 0x40bac0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Builds 4 WPlane objects (WPlane::WPlane,
-// sub_40C190, already named in tools/names.json) from the chunk's 4 corner
-// verts, normalizes each with Algebra_Transform4 (sub_402700) plus the
-// still-unnamed vector ctors 0x402600/402560/402540, then draws the 4
-// chunk faces with the still-unnamed sub_5081F0 (not sub_508550, unlike
-// the rest of the family - this is the one function that does not use
-// PCGfx_DrawQPoly3D).
+// Address 0x40bac0. Re-verified this session (2026-08-31) against a fresh
+// decompile - the old note's shape was CORRECT, and is now much more
+// precise: it builds 4 WPlane objects (WPlane::WPlane, sub_40C190,
+// already named) from CChunkBit::mWorldPosA/B/C/D (0x5C/0x68/0x74/0x80,
+// already VALIDATEd below - confirmed these are the exact 4 fields read),
+// each pushed through Algebra_Transform4 (sub_402700, already @Ok
+// elsewhere as Algebra_Transform4) and the same vector3d/vector4d copy
+// helpers (sub_402600/402560/402540) already identified and used above in
+// this file (DisplayGLineList/DisplayPolyLineList commits), giving one
+// screen (x,y) + invZ per corner. If all 4 invZ > 0, it draws the chunk as
+// 4 TRIANGLES via sub_5081F0 - which is NOT still-unnamed, it is the
+// already-@Ok PCGfx_DrawTPoly3D (PCGfx.cpp, confirmed by its own
+// documented decompile address 0x5081f0) - in rotating corner triples
+// (ABC, ACD, BCD, DBA by call order), each with its own per-corner UV pair
+// (offsets 0x94/0x98, 0x9C/0xA0, 0xA4/0xA8 relative to the bit - only 3
+// pairs confirmed independently, the 4th call reuses earlier corners'
+// pairs so a 4th UV slot may not exist) and per-corner ARGB colour
+// (0xB8/0xBC/0xC0/0xC4, alpha forced to 0xFF), textured via
+// PCGfx_UseTexture with a clut field at 0xB4. None of the 0x94+ fields are
+// VALIDATEd yet (CChunkBit's VALIDATE block below stops at mAngles,
+// 0x8C); add VALIDATE entries once the exact triangle corner order and
+// the 4th UV slot are confirmed, then this should be quick to implement -
+// almost everything it calls is already @Ok.
 void DisplayChunkBitList(void**)
 {
 }
@@ -1321,17 +1407,34 @@ void DisplayTextBoxList(void** a1)
 }
 
 // @BIGTODO
-// Address 0x40dbd0 (found by tracing Bit_Init's RegisterSlot calls, see
-// DisplayTextBoxList). See the shared family notes above
-// CSimpleTexturedRibbon::Display. Camera-space transform of the sprite
-// quad via the gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy idiom, then a
-// rotated-vs-axis-aligned corner path and a textured POLY_FT4 emit via
-// PCGfx_DrawQPoly3D (sub_508550). Correction to the old note here:
-// "word_610C48" is rcossin_tbl (confirmed this session, see gTTime/Sine()
-// above CWibbly::Move) - a sin/cos table, not a UV table, so any lookup
-// through it in this function is rotation/angle math, not animation-frame
-// UVs; re-derive what it is actually used for from the disassembly rather
-// than trusting that old framing.
+// Address 0x40dbd0. Fully decompiled and traced this session
+// (2026-08-31), still not implemented (dense fixed-point dual-precision
+// code, ~170 lines of pseudocode). Camera-space transform of ONLY the
+// sprite CENTRE (CBit::mPos) via gte_ldlv0/gte_rtps/gte_stlvnl2/gte_stsxy
+// (no per-corner GTE), a rotated-vs-axis-aligned corner path keyed off
+// CFlatBit::mAngle (0x58, confirmed read as `*(WORD*)(v1+88)`) through
+// word_610C48/610C4A (rcossin_tbl - confirmed this session, see
+// gTTime/Sine() above CWibbly::Move; the old-old note calling it a UV
+// table was wrong), a perspective-scaled half-size from CFT4Bit::mScale
+// (0x56) and the current frame's Height (mpPSXFrame->pTexture, same
+// pattern as DisplayLinked2EndedBitListLeftover above), and a POLY_FT4
+// -shaped emit via PCGfx_DrawQPoly3D (sub_508550, already @Ok).
+//
+// NEW FINDING this session: the function reads a u16 at offset 0x66 on
+// the bit (`*(WORD*)(v1+102)`), one field past CFlatBit's own documented
+// end (mSemiTransparencyRate is the last known field, at 0x65, size so
+// far 0x66) - this is NOT a CFlatBit field, it belongs to whichever
+// derived class actually populates FlatBitList's entries (CSimpleAnim,
+// CMotionBlur, CCombatImpactRing or CFrag, all : public CFlatBit) and is
+// not documented anywhere yet. It gates whether the texture-corner packing
+// takes a 32-bit or 16-bit-wrapped path; do not guess its meaning without
+// checking which of those subclasses is actually queued into FlatBitList
+// and cross-referencing their own fields.
+//
+// Also: CFT4Bit::mBitFlags (0x50) bit 0x8 overrides an assert-like scale
+// -range check, and bit 0x1 (`v92`) selects the same 32-bit-vs-16-bit
+// split as the field_0x66 check above - these two flag bits interact and
+// were not fully disentangled this session.
 void DisplayFlatBitList(void**)
 {
 }
