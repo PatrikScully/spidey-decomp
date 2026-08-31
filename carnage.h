@@ -9,28 +9,61 @@
 #include "bit2.h"
 #include "main.h"
 
-// thrown blade projectile (CCarnage::ThrowBlades). Allocated via CClass::operator new
-// (0x455390 in the disasm, not CBit's pooled allocator), so it derives from CClass, not CBit.
-// Not in idb_globals.txt or spideypc_names.txt yet; name and ctor signature come from the Mac
-// build symbols (tools/prototypes.json: "CSymbioteBlade::CSymbioteBlade((CVector const &,CVector const &))",
-// size 0x13C from the CClass_new(0x13C) call). Fields are unknown, this is a stub the caller needs,
-// not one of this file's assigned functions.
+// thrown blade projectile (CCarnage::ThrowBlades). Allocated via operator new(0x13C)
+// (0x455390 in the disasm). Name and ctor signature come from the Mac build symbols
+// (tools/prototypes.json: "CSymbioteBlade::CSymbioteBlade((CVector const &,CVector const &))",
+// size 0x13C from the new(0x13C) call).
 //
-// Investigated 2026-08-31 (see the long comment on the ctor definition in
-// carnage.cpp): the real ctor (0x41AE40) builds a bezier-ish 4 point
-// CVector path via an entirely un-modeled base object (a two-stage,
-// double vtable-assignment constructor at 0x460080, not any class this
-// repo currently has), plus a curve generator (0x41AFF0) that leans on
-// CVector operators the repo currently mis-inlines. This is genuinely
-// BIGTODO-scale (see @BIGTODO on the ctor), not a small fill-in; left as
-// PADDING until that groundwork exists.
-class CSymbioteBlade : public CClass
+// SOLVED 2026-08-31: the ctor's first call, sub_460080, is CBody::CBody(). Confirmed via
+// idbs/spideypc_names.txt ("00460080: ??0CBody@@QAE@XZ") and idb_globals.txt (the vtable it
+// ends on, off_53BBD4, is named "cbody_vtable" there). 0x455390 is CItem::operator new (same
+// body as CItem::operator new in ob.cpp, not a separate CClass version; the old comment here
+// calling it "CClass::operator new" was a guess based on a merged/identical function body,
+// see CLAUDE.md's link-time duplicate elimination note). CBody::CBody, CItem::CItem and
+// CSuper::CSuper are ALL already implemented and tagged @Ok in ob.cpp: the "unmodeled base
+// object" this stub used to describe already has a home, just in ob.h/ob.cpp, a file this
+// investigation had not checked. So CSymbioteBlade derives from CBody, not CClass.
+//
+// This also unblocks shell.cpp's CheckForPadUnplugged chain (sub_48E4B0 -> sub_460720 ->
+// sub_460080): sub_460720 is CSuper::CSuper (0x460720 = "??0CSuper@@QAE@XZ" in
+// spideypc_names.txt), also already @Ok in ob.cpp. A parallel session working shell.cpp found
+// the same sub_460080 independently (30+ callers binary-wide: villains, items, widgets,
+// CDummy); all of them are CBody (or CBody-derived) constructors.
+//
+// CSymbioteBlade's own fields (past CBody's 0xF4 bytes), from the 0x41AE40 disasm:
+// - field_F8 (1 byte, zeroed only).
+// - mCurvePts[4] (CVector array at 0x108): zeroed, then mCurvePts[0] = the ctor's first
+//   CVector arg (also copied into the inherited mPos), mCurvePts[3] = the second arg. Reads as
+//   a start/end pair with 2 empty control points, filled in by the curve builder (sub_41AFF0).
+// - field_138 (i32): a handle to an optional ~88 byte secondary sub-object (own vtable
+//   off_53B400, built only if sub_4088A0(88) succeeds), not decompiled.
+// sub_41AFF0 (the curve builder) is NOT decompiled: it chains 10 unresolved CVector-arithmetic
+// helpers (sub_4E7760/4E7840/4E77D0/4E7720/4E77A0/4E5E20/4E5DA0/4E7590/470430/4E6150) plus a
+// 2-iteration random-perturbation loop over an angle table. This matches the CLAUDE.md note
+// about CVector operator- and operator>> being wrongly inlined here vs the original's real
+// out-of-line calls. The ctor below fills mCurvePts[1]/[2] with a plain linear interpolation
+// as a functional placeholder (NOT the original's randomized arc); the secondary trail
+// sub-object (field_138) is left null (sub_4088A0/sub_410F50/sub_410E80 not decompiled).
+class CSymbioteBlade : public CBody
 {
 	public:
-		// @BIGTODO
+		// @NotOk
+		// residue: mCurvePts[1]/[2] are a linear interpolation placeholder, not the original's
+		// randomized arc (needs sub_41AFF0, see the long comment above). field_138's optional
+		// trail sub-object (sub_4088A0/sub_410F50/sub_410E80) is skipped entirely (left null).
+		// Base construction (CBody::CBody), mPos/mCurvePts[0]/[3], InitItem, mModel via
+		// Spool_GetModel, and AttachTo are all implemented against the real disasm.
 		EXPORT CSymbioteBlade(const CVector&, const CVector&);
 
-		PADDING(0x13C - 0x4);
+		PADDING(0xF8 - 0xF4);
+
+		u8 field_F8;
+
+		PADDING(0x108 - 0xF9);
+
+		CVector mCurvePts[4];
+
+		i32 field_138;
 };
 
 class CSonicRipple : public CGPolyLine
@@ -171,6 +204,7 @@ void validate_CSonicBubble(void);
 void validate_CCarnageElectrified(void);
 void validate_CCarnageHitSpark(void);
 void validate_CSonicRipple(void);
+void validate_CSymbioteBlade(void);
 
 EXPORT void CreateSonicBubbleVertexWobbler(void);
 EXPORT void Carnage_CreateCarnage(const u32 *stack, u32 *result);
