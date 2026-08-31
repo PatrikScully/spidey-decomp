@@ -247,8 +247,7 @@ void Scorpion_GetCurrentTarget(const u32* pOne, u32* pTarget)
 }
 
 
-// @NotOk
-// globals
+// @Ok
 INLINE CSuper* CScorpion::FindJonah(void)
 {
 	if (this->field_BEC)
