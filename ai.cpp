@@ -52,8 +52,13 @@ CAIProc::~CAIProc(void)
 		this->mNext->field_18 = this->field_18;
 }
 
-// @NotOk
-// validate
+// @Ok
+// No standalone address confirmed in names.json: this function is always
+// inlined at its call sites in the original (CAIProc_LookAt::Execute at
+// 0x4013d0, CAIProc_AccZ::Execute at 0x4017c0). Verified by hand against the
+// inlined copy inside CAIProc_LookAt::Execute (0x4013d0): same field_10 & 3
+// check first, field_10 & 4 second, field_C countdown third, in that exact
+// order and exclusivity.
 INLINE i32 CAIProc::Wait(void)
 {
 	if (this->field_10 & 3)
