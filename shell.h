@@ -11,6 +11,9 @@
 
 EXPORT extern CBody *MiscList;
 
+// defined in effects.h (CBit-derived); only used here as a pointer member of CDummy.
+class CVertexWobble;
+
 struct SRecordRelated
 {
 	char* pName;
@@ -162,30 +165,115 @@ public:
 
 };
 
+// Reverse engineered 2026-08-31 (CDummy_ctor session, functional decompile). CDummy is the 3D
+// preview-model object shown by Shell_MainMenu/Shell_CharacterViewer/Shell_CostumeViewer/
+// Shell_RollCredits. Its constructor is sub_490DF0 (0x490DF0, 0x746 bytes / 512 instructions);
+// its destructor is sub_491560 (0x491560, entered via the small scalar-deleting-destructor thunk
+// at 0x491540) and its AI is sub_491A10 (0x491A10, 0x123E bytes -- a separate, much bigger
+// function, out of scope for this session, still a stub below, see CDummy::AI).
+//
+// Field layout from 0x1A4 (CDummy's own region, right after CSuper ends) to 0x240 (where the two
+// embedded CItem sub-objects start) was mostly still raw PADDING before this session; every dword
+// in that range is written by the constructor or read/deleted by the destructor (cross-checked
+// against both, plus Shell_CharacterViewer's own per-mType switch which reads several of the same
+// offsets directly). Fields with no evidence of their own name/purpose beyond "the constructor
+// writes an argument here" or "the destructor deletes a pointer here" keep the field_XXX
+// convention with a comment; nothing here is a guess at final behaviour.
 class CDummy : public CSuper {
 public:
+	EXPORT CDummy(const char* pName, i16 mTypeArg, i16 scale, i32 posY, i32 defaultAnim,
+	              u16* pTrackA, u16* pTrackB, u16* pTrackC, u16* pTrackD, u16* pTrackE,
+	              i32 a12, i32 a13);
+	EXPORT virtual ~CDummy(void) OVERRIDE;
+	// @BIGTODO: 0x491A10, 0x123E bytes, not attempted this session (only reached through the
+	// vtable -- no direct caller in the binary -- so it does not block CDummy_ctor or any of the
+	// menu functions that construct a CDummy).
+	EXPORT virtual void AI(void) OVERRIDE;
+
 	EXPORT void FadeBack(void);
 	EXPORT void FadeAway(void);
 	EXPORT void SelectNewTrack(i32);
 	EXPORT void SelectNewAnim(void);
 
+	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).
 	u16* field_1A4;
 	u16* field_1A8;
 	u16* field_1AC;
 
-	PADDING(0x1B8-0x1AC-4);
+	// two more constructor-supplied pointers (a10/a11) in the same table row as field_1A4/1A8/1AC
+	// (same off_553Dxx parallel-array shape at every call site), but not read by SelectNewTrack or
+	// any other currently-decompiled CDummy method -- purpose beyond "another track-like list"
+	// unconfirmed.
+	u16* field_1B0;
+	u16* field_1B4;
 
+	// current track pointer / track start pointer (SelectNewTrack, SelectNewAnim).
 	u16* field_1B8;
 	u16* field_1BC;
+	// default/idle animation id, used when no track list exists (SelectNewTrack, SelectNewAnim).
 	i32 field_1C0;
 
-	PADDING(0x1F8-0x1C0-4);
+	// constructor parameter a12. Boolean-ish; if nonzero, ~CDummy calls Redbook_XAStop().
+	i32 field_1C4;
+	// Vblanks value at construction time (spawn timestamp).
+	i32 field_1C8;
 
+	PADDING(4); // not written by the constructor; unconfirmed.
 
+	// Rnd(300) + 300 (a randomised 300..599 value; likely a decay/idle timer, not read by any
+	// currently-decompiled CDummy method).
+	i32 field_1D0;
+	// constant 1, written unconditionally by the constructor.
+	i32 field_1D4;
+
+	PADDING(4); // not written by the constructor; unconfirmed.
+
+	// constructor parameter a13, stored as-is. Not read by any currently-decompiled CDummy method.
+	i32 field_1DC;
+
+	// polymorphic pointer, deleted in ~CDummy via its vtable slot 0; not set by the constructor
+	// (set elsewhere -- CDummy::AI or similar -- not decompiled this session).
+	void* field_1E0;
+
+	// "symbi_02" region CVertexWobble effects spawned for the fire/symbiote costume (mType 324);
+	// null for every other costume. Deleted polymorphically in ~CDummy.
+	CVertexWobble* field_1E4;
+	CVertexWobble* field_1E8;
+
+	// sound/spool handle, -1 by default; set to Spool_PSX("fire", 0) for the fire/symbiote costume.
+	i32 field_1EC;
+
+	// polymorphic pointers, deleted in ~CDummy; not set by the constructor (set elsewhere, not
+	// decompiled this session).
+	void* field_1F0;
+	void* field_1F4;
+
+	// FadeAway()/FadeBack() flags, already established before this session.
 	i32 field_1F8;
 	i32 field_1FC;
 
-	PADDING(0x240-0x1FC-4);
+	// polymorphic pointers, deleted in ~CDummy; not set by the constructor.
+	void* field_200;
+	void* field_204;
+
+	PADDING(8); // not written by the constructor; unconfirmed.
+
+	// Mysterio costume (mType 311) glow effect. Deleted polymorphically in ~CDummy.
+	CShellMysterioHeadGlow* field_210;
+
+	// 8 more polymorphic pointers (two parallel 4-element arrays; ~CDummy's mType 0x134/0x135
+	// case deletes field_214[i] and field_224[i] together, Shell_CharacterViewer's own switch
+	// reads field_214[0..3] directly for the same two mTypes). Not set by the constructor.
+	void* field_214[4];
+	void* field_224[4];
+
+	// constant 455, written for the Scorpion-claw (mType 308) and SuperOck (mType 309) costumes.
+	i32 field_234;
+
+	// polymorphic pointer, deleted in ~CDummy; not set by the constructor.
+	void* field_238;
+
+	PADDING(4); // not written by the constructor; unconfirmed.
 
 	CItem field_240;
 

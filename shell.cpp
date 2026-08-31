@@ -225,6 +225,18 @@ INLINE u32 Shell_CalculateGameChecksum(SSaveGame* pSave)
 // sub_490DF0 and sub_495970 are done; the Shell_DoShell dispatcher issue
 // noted above is a separate, later concern (this function itself does
 // not need Shell_DoShell to exist first).
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now,
+// see shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function in full to check
+// whether it was now tractable: it is genuinely 3497 bytes / 504 instructions / 95 basic blocks
+// with 45 distinct callees, only one of which (sub_495970) still lacks a name -- the other ~44
+// are ALL real functions, but the large majority (sub_43F9B0 the model-preview widget this
+// screen wraps around, sub_47AE80/sub_47AF10 a popup dialog, sub_505E00/sub_5064A0 HUD text
+// rows, sub_509D20/sub_50C470/sub_506160 background/scene setup, sub_50C180/sub_50C6C0/
+// sub_440110 input+trigger handling, sub_472DC0/sub_46E730/sub_46CFA0 a camera-lerp helper
+// chain, sub_4739A0/sub_476790/sub_475FB0 object-list kill/cleanup, plus a dozen more) are
+// themselves still undecompiled stubs in this repo. This is not a quick follow-up: it needs its
+// own dedicated leaf-first session working that ~44-function callee list bottom-up, the same way
+// CDummy_ctor needed one. Left as a stub rather than force a partial/guessed translation.
 // @MEDIUMTODO
 void Shell_CharacterViewer(void)
 {
@@ -1473,6 +1485,17 @@ void Shell_ComicCollection(void)
 // Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
 // shell.h/CDropDownController). sub_490DF0 (CDummy_ctor) remains the real
 // blocker here, same as MainMenu/RollCredits/CharacterViewer.
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now, see
+// shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function to check tractability: it
+// is 2514 bytes / 750 instructions / 118 basic blocks with 61 distinct callees. Every one of them
+// now resolves to a real name (no more unnamed sub_ helpers left unidentified), but a large
+// majority are STILL undecompiled stubs in this repo (sub_43F9B0 the same preview-widget wrapper
+// Shell_CharacterViewer uses, sub_47AE80/sub_48D9C0 popup/title-bar drawing, sub_5064A0/sub_509D20
+// background setup, sub_50C6C0/sub_440110/sub_50C180 input handling, sub_4B8E60 a costume-list-
+// specific helper not seen elsewhere, plus ~15 more shared with Shell_CharacterViewer's callee
+// list). Same conclusion as Shell_CharacterViewer: this needs its own dedicated leaf-first
+// session working that callee list bottom-up, not a quick follow-up. Left as a stub rather than
+// force a partial/guessed translation.
 // @MEDIUMTODO
 void Shell_CostumeViewer(void)
 {
@@ -3170,6 +3193,19 @@ i32 Shell_LoadGame(void)
 // leaf-first rule (most of its callees would need their own sessions
 // first). Recommend a dedicated session working sub_490DF0's callee list
 // bottom-up before attempting this function again.
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now
+// (real callee count was 27 distinct addresses, not ~16 unnamed as guessed above -- every one
+// of them turned out to already have a real name in this repo, including CShellMysterioHeadGlow/
+// CShellGoldFish/CShellMysterioHeadCircle/CVertexWobble, all pre-existing @Ok classes reused
+// as-is; see shell.h/CDummy and CDummy::CDummy for the full writeup). Re-decompiled this
+// function (sub_493990) itself to check tractability now that its two named blockers are gone:
+// it is 2284 bytes / 683 instructions / 142 basic blocks with 54 distinct callees, all real
+// names, but this file's own sub_493860 (survival-arena-name copy helper) is STILL undecompiled,
+// plus a large majority of the other 53 callees (menu-item table dword_552AA8 walk, popup/title-
+// bar drawing sub_48D9C0/sub_47AE80, background setup sub_509D20/sub_4E65E0, input handling
+// sub_50C180/sub_50C6C0/sub_50C5D0, camera-lerp sub_472DC0/sub_46E730/sub_46CFA0, object-list
+// cleanup sub_4739A0, and more). Same conclusion as Shell_CharacterViewer/Shell_CostumeViewer:
+// needs its own dedicated leaf-first session, not a quick follow-up. Left as a stub.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
@@ -3601,6 +3637,17 @@ done:
 // Update 2026-08-31, later same day: CheckForPadUnplugged is done now (see
 // shell.h/CDropDownController). Confirmed still true: sub_490DF0
 // (CDummy_ctor) is the only real remaining blocker for this one.
+// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now,
+// see shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function fully to check
+// whether "the only real remaining blocker" claim above still held: it does not -- this function
+// is 1602 bytes / 504 instructions / 95 basic blocks with 45 distinct callees, and while every
+// one has a real name, roughly 30 of them (the credits.txt tokenizer helpers sub_4302D0/
+// sub_440920/sub_4581A0, background/scene setup sub_505E00/sub_47A3B0/sub_479EE0, the
+// scroll/camera chain sub_472DC0/sub_46E730/sub_46CFA0, input handling sub_50C180, cleanup
+// sub_4739A0/sub_4737F0, sound sub_4587A0, and more) are still undecompiled stubs in this repo.
+// Smallest of the four CDummy_ctor-adjacent screens by a good margin, so probably still the best
+// next target, but it is a real leaf-first session of its own, not a quick follow-up. Left as a
+// stub rather than force a partial/guessed translation.
 // @MEDIUMTODO
 void Shell_RollCredits(void)
 {
@@ -6051,6 +6098,275 @@ CShellVenomElectrified::CShellVenomElectrified(CSuper* pSuper)
 	this->field_3C = Mem_MakeHandle(reinterpret_cast<void*>(pSuper));
 }
 
+// mpLight presets for CDummy_ctor's per-mType switch (0x552Cxx-0x552Fxx, all unnamed .rdata in
+// idb_globals.txt). Named after the mType numeric case they belong to, since only some of them
+// have an obvious character identity; see the switch in CDummy::CDummy for the exact mapping.
+static SLight * const gLightType703 = reinterpret_cast<SLight*>(0x552C20);
+static SLight * const gLightType704 = reinterpret_cast<SLight*>(0x552C58);
+static SLight * const gLightType50 = reinterpret_cast<SLight*>(0x552C90);
+static SLight * const gLightType319 = reinterpret_cast<SLight*>(0x552CC8);
+static SLight * const gLightType307 = reinterpret_cast<SLight*>(0x552D38);
+// Carnage (mType 314): print_if_false(..., "Carnage not lit?") right before this is set.
+static SLight * const gLightCarnage = reinterpret_cast<SLight*>(0x552D70);
+static SLight * const gLightType701 = reinterpret_cast<SLight*>(0x552DA8);
+// SuperOck (mType 309): print_if_false(..., "SuperOck not lit?") right before this is set.
+static SLight * const gLightSuperOck = reinterpret_cast<SLight*>(0x552DE0);
+static SLight * const gLightType700 = reinterpret_cast<SLight*>(0x552E18);
+// shared by mType 303 and mType 719 (both branch to the same LABEL_63 in the original).
+static SLight * const gLightType303_719 = reinterpret_cast<SLight*>(0x552EC0);
+// Scorpion claw (mType 308): also sets field_234=455, Spool_PSX("claw", 0).
+static SLight * const gLightScorpionClaw = reinterpret_cast<SLight*>(0x552EF8);
+// Scorpion (mType 310, "scimpact"): print_if_false(..., "Scorpion not lit?") right before.
+static SLight * const gLightScorpion = reinterpret_cast<SLight*>(0x552FE0);
+// Read (not written) by CDummy_ctor when the model has any spark-flagged face part (mFlags bit
+// 0x400/0x80 set via the PSXRegion walk below); a genuine global VARIABLE holding an SLight*
+// (the original reads its value, not its address), presumably filled in by another subsystem
+// not investigated this session.
+static SLight ** const gLightElectrifiedSlot = reinterpret_cast<SLight**>(0x552BE8);
+
+// Utils_Jumble(gDummyTrackShuffle, 5) is called unconditionally, once, by every CDummy_ctor
+// call. Purpose beyond "a 5-entry table gets shuffled here" not investigated this session (not
+// read anywhere else in this file).
+static i32 * const gDummyTrackShuffle = reinterpret_cast<i32*>(0x550DF8);
+
+// @Ok
+// Functional decompile, 2026-08-31 session. sub_490DF0 (0x490DF0, 0x746 bytes / 512
+// instructions / 85 basic blocks / 27 callees). Every callee resolves to an already-implemented
+// function (including CShellMysterioHeadCircle/CShellGoldFish/CShellMysterioHeadGlow/
+// CVertexWobble, all pre-existing @Ok classes matched field-for-field against this constructor's
+// inline construction sequences) except the new CDummy struct fields this session added (see
+// shell.h). Field layout for CDummy's own 0x1A4-0x240 region (previously mostly raw PADDING) is
+// now fully accounted for by this function plus ~CDummy plus Shell_CharacterViewer's own
+// per-mType switch; see shell.h for the evidence on each field.
+//
+// Parameter mapping confirmed against a real call site (Shell_CharacterViewer, 0x4962D0): the
+// caller reads all of pTrackA/B/C/D/E, a12 and a13 from the same parallel off_553Dxx table row
+// used for pName/mTypeArg/scale/posY/defaultAnim, so all 12 constructor arguments come from one
+// per-costume table entry.
+CDummy::CDummy(const char* pName, i16 mTypeArg, i16 scale, i32 posY, i32 defaultAnim,
+               u16* pTrackA, u16* pTrackB, u16* pTrackC, u16* pTrackD, u16* pTrackE,
+               i32 a12, i32 a13)
+{
+	// CSuper::CSuper(), the two embedded CItem sub-objects (field_240/field_288) and the three
+	// CVector arrays (field_2D4/field_304/field_418, all default-constructed to zero) are all
+	// automatic via C++ member/base initialization -- matches the original's explicit
+	// CItem-ctor calls and zero loops exactly (CVector's default ctor zeroes vx/vy/vz).
+
+	Redbook_XAStop();
+
+	this->field_1C4 = a12;
+	this->field_1DC = a13;
+	this->field_1C8 = Vblanks;
+
+	Utils_Jumble(gDummyTrackShuffle, 5);
+
+	this->field_1D0 = Rnd(300) + 300;
+
+	Spool_PSX(pName, 0);
+	this->field_1D4 = 1;
+
+	this->InitItem(pName);
+	this->mType = mTypeArg;
+
+	this->field_1A4 = pTrackA;
+	this->field_1A8 = pTrackB;
+	this->field_1AC = pTrackC;
+	this->field_1B0 = pTrackD;
+	this->field_1B4 = pTrackE;
+	this->field_1C0 = defaultAnim;
+
+	this->SelectNewTrack(0);
+
+	this->mScale.vx = scale;
+	this->mScale.vy = scale;
+	this->mScale.vz = scale;
+
+	this->mFlags |= 0x200;
+
+	// "has any spark-flagged face part" walk over every model in this costume's PSX region
+	// (SModel format already established in spool.h; face records are a compressed PSX
+	// primitive format with no named struct here, same walk idiom as elsewhere in the repo --
+	// see CLAUDE.md's "Walk idiom for PSX section lists").
+	u8 region = this->mRegion;
+	bool hasSpark = false;
+	i32 modelCount = reinterpret_cast<i32*>(PSXRegion[region].ppModels)[-1];
+	if (modelCount > 0)
+	{
+		SModel* pModel = PSXRegion[region].ppModels[0];
+		for (i32 m = modelCount; m != 0; --m)
+		{
+			i32 numFaces = pModel->NumFaces;
+			u32* pFace = reinterpret_cast<u32*>(&pModel->Vertices)
+			            + 2 * pModel->NumVertices + 2 * pModel->NumNormals;
+			for (i32 f = 0; f < numFaces; f++)
+			{
+				if ((*pFace & 4) != 0)
+					hasSpark = true;
+				pFace += 2 * (*pFace >> 18);
+			}
+			pModel = reinterpret_cast<SModel*>(pFace);
+		}
+	}
+
+	this->mPos.vy = posY << 12;
+
+	if (hasSpark)
+	{
+		this->mpLight = *gLightElectrifiedSlot;
+		this->mFlags |= 0x480;
+	}
+
+	this->field_1EC = -1;
+
+	switch (mTypeArg)
+	{
+		case 703:
+			this->mpLight = gLightType703;
+			break;
+
+		case 704:
+			this->mpLight = gLightType704;
+			break;
+
+		case 50:
+			this->field_194 |= 0x420;
+			this->mpLight = gLightType50;
+			break;
+
+		case 319:
+			this->mpLight = gLightType319;
+			break;
+
+		case 307:
+			this->mpLight = gLightType307;
+			break;
+
+		case 303:
+		case 719:
+			this->mpLight = gLightType303_719;
+			break;
+
+		case 308: // Scorpion claw
+			this->mpLight = gLightScorpionClaw;
+			this->field_234 = 455;
+			this->field_194 = static_cast<i32>(0xFFFC0000); // -262144
+			this->field_198 = 0x3FFF;
+			Spool_PSX("claw", 0);
+			break;
+
+		case 309: // SuperOck
+			print_if_false(hasSpark != 0, "SuperOck not lit?");
+			this->mpLight = gLightSuperOck;
+			this->field_234 = 455;
+			this->field_194 = static_cast<i32>(0xFFFE0000); // -131072
+			this->field_198 = 0x1FFF;
+			Spool_PSX("claw", 0);
+			break;
+
+		case 310: // Scorpion (scimpact)
+			print_if_false(hasSpark != 0, "Scorpion not lit?");
+			this->mpLight = gLightScorpion;
+			this->field_194 = 0x00FE0000;
+			this->field_240.mRegion = 0xFF;
+			this->field_288.mRegion = 0xFF;
+			Spool_PSX("scimpact", 0);
+			break;
+
+		case 311: // Mysterio
+		{
+			print_if_false(hasSpark != 0, "Mysterio not lit?");
+
+			this->field_210 = new CShellMysterioHeadGlow();
+			this->field_210->field_A4 = 30;
+			this->field_210->mProtected = 1;
+
+			if (gWhatIf)
+			{
+				Spool_PSX("goldfish", 0);
+				new CShellGoldFish(this);
+			}
+			else
+			{
+				// two decorative "impact spark" objects, already fully implemented (same
+				// gShellMysterioRelated-based decay offset/sign logic this session had
+				// independently reverse engineered before finding this class already existed).
+				new CShellMysterioHeadCircle(this);
+				new CShellMysterioHeadCircle(this);
+			}
+			break;
+		}
+
+		case 324: // fire/symbiote
+		{
+			this->field_1EC = Spool_PSX("fire", 0);
+			this->field_194 |= 0x8000;
+
+			u8 arr1[6] = { 2, 3, 4, 9, 8, 7 };
+			i32 symbiRegion1 = Spool_FindRegion("symbi_02");
+			this->field_1E4 = new CVertexWobble(symbiRegion1, 1, 6, arr1, 53, 53, 133, 100);
+			this->field_1E4->mProtected = 1;
+
+			u8 arr2[6] = { 11, 10, 0, 1, 6, 5 };
+			i32 symbiRegion2 = Spool_FindRegion("symbi_02");
+			this->field_1E8 = new CVertexWobble(symbiRegion2, 1, 6, arr2, 53, 53, 133, 100);
+			this->field_1E8->mProtected = 1;
+			break;
+		}
+
+		case 700:
+			this->mpLight = gLightType700;
+			break;
+
+		case 701:
+			this->mpLight = gLightType701;
+			break;
+
+		default:
+			break;
+	}
+}
+
+// @NotOk
+// sub_491560 (entered via the scalar-deleting-destructor thunk at 0x491540). The vtable reset,
+// the nine polymorphic member deletes and the CItem/CSuper base cleanup below are a faithful
+// translation (cross-checked field-for-field against CDummy_ctor and Shell_CharacterViewer's own
+// per-mType switch, see shell.h for the field evidence). NOT translated: the original's
+// mType 0x134/0x135/0x136/0x137 per-costume cleanup block (zeroing entries in the
+// PSXRegion-adjacent active-flag tables at 0x6B2440/0x6B244A/0x6B244B/0x6B2468/0x6B2478 and the
+// field_214[]/field_224[] pointer-pair delete loop for 0x134/0x135) and the CurrentSuit/gWhatIf
+// sound-swap block at the very top of the function (sub_4E6560/sub_4CA640, sound-stop/select-
+// by-name helpers not investigated this session). Left out rather than guessed; does not affect
+// the 4 shell.cpp menu functions this session's callers care about (none of them read those
+// tables), but a future session should finish this before relying on ~CDummy for full parity.
+CDummy::~CDummy(void)
+{
+	if (this->field_1E0) delete reinterpret_cast<CBit*>(this->field_1E0);
+	if (this->field_200) delete reinterpret_cast<CBit*>(this->field_200);
+	if (this->field_204) delete reinterpret_cast<CBit*>(this->field_204);
+	if (this->field_238) delete reinterpret_cast<CBit*>(this->field_238);
+	if (this->field_210) delete this->field_210;
+	if (this->field_1E4) delete this->field_1E4;
+	if (this->field_1E8) delete this->field_1E8;
+	if (this->field_1F0) delete reinterpret_cast<CBit*>(this->field_1F0);
+	if (this->field_1F4) delete reinterpret_cast<CBit*>(this->field_1F4);
+
+	if (this->field_1C4)
+		Redbook_XAStop();
+
+	// field_240 / field_288 (CItem) and the CSuper base are destructed automatically.
+}
+
+// @BIGTODO
+// 0x491A10, 0x123E bytes (4670). Confirmed via xrefs_to that this is reached ONLY through
+// CDummy's own vtable (off_53BFAC slot 2) -- no direct caller anywhere in the binary -- so it
+// does not block CDummy_ctor or any of the four shell.cpp menu functions that construct a
+// CDummy. A dedicated session should pick this up separately; it is a large, self-contained
+// per-frame update (animation advance, camera-facing, per-costume special behaviour).
+void CDummy::AI(void)
+{
+	printf("CDummy::AI");
+}
+
 // @Ok
 void CDummy::SelectNewAnim(void)
 {
@@ -6689,12 +7005,38 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_1A4, 0x1A4);
 	VALIDATE(CDummy, field_1A8, 0x1A8);
 	VALIDATE(CDummy, field_1AC, 0x1AC);
+	VALIDATE(CDummy, field_1B0, 0x1B0);
+	VALIDATE(CDummy, field_1B4, 0x1B4);
 	VALIDATE(CDummy, field_1B8, 0x1B8);
 	VALIDATE(CDummy, field_1BC, 0x1BC);
 	VALIDATE(CDummy, field_1C0, 0x1C0);
 
+	VALIDATE(CDummy, field_1C4, 0x1C4);
+	VALIDATE(CDummy, field_1C8, 0x1C8);
+
+	VALIDATE(CDummy, field_1D0, 0x1D0);
+	VALIDATE(CDummy, field_1D4, 0x1D4);
+
+	VALIDATE(CDummy, field_1DC, 0x1DC);
+
+	VALIDATE(CDummy, field_1E0, 0x1E0);
+	VALIDATE(CDummy, field_1E4, 0x1E4);
+	VALIDATE(CDummy, field_1E8, 0x1E8);
+	VALIDATE(CDummy, field_1EC, 0x1EC);
+	VALIDATE(CDummy, field_1F0, 0x1F0);
+	VALIDATE(CDummy, field_1F4, 0x1F4);
+
 	VALIDATE(CDummy, field_1F8, 0x1F8);
 	VALIDATE(CDummy, field_1FC, 0x1FC);
+
+	VALIDATE(CDummy, field_200, 0x200);
+	VALIDATE(CDummy, field_204, 0x204);
+
+	VALIDATE(CDummy, field_210, 0x210);
+	VALIDATE(CDummy, field_214, 0x214);
+	VALIDATE(CDummy, field_224, 0x224);
+	VALIDATE(CDummy, field_234, 0x234);
+	VALIDATE(CDummy, field_238, 0x238);
 
 	VALIDATE(CDummy, field_240, 0x240);
 	VALIDATE(CDummy, field_288, 0x288);
@@ -6703,6 +7045,7 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_304, 0x304);
 	VALIDATE(CDummy, field_418, 0x418);
 }
+
 
 void validate_CDropDownController(void)
 {
