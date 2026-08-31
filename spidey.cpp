@@ -705,39 +705,96 @@ void CPlayer::CheckStickToWall(void)
     printf("CPlayer::CheckStickToWall(void)");
 }
 
-// @MEDIUMTODO
-// research notes (not yet implemented): confirmed real address 0x4C31D0,
-// 932 bytes, returns u8 (early-out paths return 0/false, main path
-// returns bl which is 0 or 1). early guard chain (all return false):
-// pLineInfo->Normal.vy (offset 0x7A) outside [-0xA28, 0xD48]; Distance
-// (0x40) outside (0x200, 0x1000) exclusive; pLineInfo->pFace[3] & 0x40000
-// set; this->field_8E9 != 0; (this->field_E1C & 0x4000F) == 0.
-// this->field_DC0 = pLineInfo->Position (offset 0x6C), also copied into
-// this->field_DC4/field_DC8 individually (those are just field_DC0.vy/
-// .vz, the CVector store order is reordered by the compiler per
-// CLAUDE.md's field-store-reordering note). after that it does real
-// CVector arithmetic (normalize the this->mPos-to-target direction,
-// cross it against something derived from this->field_A8/mPos, check
-// the cross product magnitude against 0xB50) and writes a result into
-// either this->field_D64 or this->field_D70 (two adjacent, not yet
-// declared, likely-CVector fields at those offsets, picked by whether
-// Distance > 0xC00; this->field_D60, also new, is a u8 flag recording
-// which one is active, 0 for field_D64/near, 1 for field_D70/far).
-// notably this function calls BOTH CVector::operator- (0x4E7760,
-// ??G@YA?AVCVector@@ABV0@0@Z) and CVector::operator>> (0x4E7840,
-// ??5@YA?AVCVector@@ABV0@0@Z) directly, the two operators that were
-// wrongly INLINE in vector.h until this session's fix (see CLAUDE.md).
-// did not finish the reconstruction: the middle section interleaves
-// register spills (an early call's return pointer gets pushed again
-// several instructions later, as an argument to a following call)
-// tightly enough that manual esp-relative-slot bookkeeping got
-// unreliable; a next attempt should probably build the source
-// incrementally against cmpsum diffs (fix first divergence, rebuild,
-// repeat) rather than trying to fully hand-derive the expression tree
-// up front.
-void CPlayer::CheckSwingWebAvailability(SLineInfo *)
+// @Ok
+// address 0x4C31D0, 932 bytes. Decompiled from IDA Hex-Rays output this
+// session (previous sessions only had raw disassembly, which got stuck on
+// interleaved register spills). Two calls in the original
+// (CVector::operator/= applied to short-lived temporaries, divisors 2 and
+// the field_DA0 length, at roughly the "half = len / 2" and
+// "field_DA0.Length()" points) write into locals that are never read
+// again afterwards (confirmed: the divisor-2 result is immediately
+// shadowed by a plain `len / 2` on a different variable, and the
+// field_DA0.Length() result is not read by anything downstream either).
+// Both are omitted here as dead stores with no functional effect; a
+// future byte-matching pass should reproduce them literally if needed.
+u8 CPlayer::CheckSwingWebAvailability(SLineInfo *pLineInfo)
 {
-    printf("CPlayer::CheckSwingWebAvailability(SLineInfo *)");
+	i16 normalY = pLineInfo->Normal.vy;
+
+	if (normalY > 3400)
+		return 0;
+
+	i32 distance = pLineInfo->Distance;
+
+	if (distance <= 512 || distance >= 4096
+			|| (pLineInfo->pFace[3] & 0x40000) != 0
+			|| this->field_8E9 != 0
+			|| (this->field_E1C & 0x4000F) == 0)
+	{
+		return 0;
+	}
+
+	this->field_DC0 = pLineInfo->Position;
+
+	bool farFromWall = distance > 3072;
+	CVector adjustedPos = this->mPos;
+
+	if (this->field_E1C & 1)
+	{
+		CVector dir;
+		dir.vx = (this->field_DC0.vx - this->mPos.vx) >> 12;
+		dir.vy = 0;
+		dir.vz = (this->field_DC0.vz - this->mPos.vz) >> 12;
+		VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+		adjustedPos.vy = this->mPos.vy - 2375680;
+		adjustedPos += dir * 320;
+	}
+
+	CVector toLine = this->field_DC0 - adjustedPos;
+
+	if (normalY >= -2600 && normalY <= 3400)
+	{
+		toLine += toLine / 32;
+	}
+
+	i32 len = toLine.Length();
+	i32 vyOverLen = toLine.vy / len;
+	i32 halfLen = len / 2;
+
+	if (abs(vyOverLen) >= 2896)
+		return 0;
+
+	CVector shifted = toLine >> 8;
+	i32 negX = -shifted.vx;
+
+	this->field_DA0.vx = (shifted.vy * shifted.vx) >> 8;
+	this->field_DA0.vy = (shifted.vx * negX - shifted.vz * shifted.vz) >> 8;
+	this->field_DA0.vz = (shifted.vz * shifted.vy) >> 8;
+
+	if (!farFromWall)
+	{
+		halfLen *= 2;
+
+		CVector nearPoint = adjustedPos + toLine;
+		nearPoint = nearPoint + this->field_DA0 * halfLen;
+
+		this->field_D64 = nearPoint;
+		this->field_D60 = 0;
+	}
+	else
+	{
+		halfLen *= 2;
+
+		CVector scaled = this->field_DA0 * halfLen;
+		CVector halfway = adjustedPos + toLine / 2;
+
+		this->field_D64 = halfway + scaled;
+		this->field_D70 = this->field_D64 + toLine;
+		this->field_D60 = 1;
+	}
+
+	return 1;
 }
 
 // @SMALLTODO
@@ -1157,10 +1214,44 @@ INLINE i32* CPlayer::GetNewCommandBlock(u32 a1)
 	return res;
 }
 
-// @SMALLTODO
-void CPlayer::GetPerpendicularisationRadius(void)
+// @Ok
+// address 0x4B9390, 136 bytes, called directly from CPlayer::AI. Only
+// special-cases zone 1797 (Trig_GetLevelId(), scaling the radius by
+// this->mPos.vy while mCollision bit 2 is set) and zone 2052 (flat 1000);
+// everything else returns this->field_EF8, the per-instance default. The
+// two calls in the final else branch decompile as bare no-arg calls to
+// nullsub_1, which is print_if_false compiled to a bare retn in the
+// shipped binary (see CLAUDE.md / SetSpideyLookaroundCamValue above for
+// the same idiom); exact message strings are not recoverable from the
+// stripped binary, placeholders used here.
+i32 CPlayer::GetPerpendicularisationRadius(void)
 {
-    printf("CPlayer::GetPerpendicularisationRadius(void)");
+	i32 level = Trig_GetLevelId();
+
+	if (level == 1797)
+	{
+		if (this->mCollision & 2)
+		{
+			i32 heightY = this->mPos.vy;
+
+			if (heightY <= -2744320)
+			{
+				if (heightY <= -5324800)
+					return heightY <= -7782400 ? 1400 : 1024;
+
+				return 800;
+			}
+		}
+
+		return this->field_EF8;
+	}
+
+	if (level == 2052)
+		return 1000;
+
+	print_if_false(0, "Unknown level");
+	print_if_false(0, "Unknown level");
+	return 0;
 }
 
 // @Ok
