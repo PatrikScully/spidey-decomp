@@ -14,6 +14,7 @@
 #include "PCShell.h"
 #include "PCInput.h"
 #include "DXsound.h"
+#include "SpideyDX.h"
 #include "powerup.h"
 #include "pshell.h"
 #include "spidey.h"
@@ -200,6 +201,15 @@ INLINE u32 Shell_CalculateGameChecksum(SSaveGame* pSave)
 	return checksum | 1;
 }
 
+// Re-investigated this session (address confirmed real: 0x4962D0, 3497
+// bytes, names.json). Called from Shell_DoShell's (0x4A1A80) "Special" menu
+// dispatch (case 7, via sub_49CCB0's menu-code loop, code 8). Left as a
+// stub: its own callees are mostly unnamed (sub_ addresses not in
+// names.json), and Shell_DoShell itself (the only caller) is a huge state
+// machine with ~15 more undecompiled callees of its own (see the Shell_
+// DoShell stub below), so decompiling this in isolation would not be
+// runtime-verifiable or even really leaf-first yet. Bigger than one
+// session's budget alongside the rest of this file's TODOs.
 // @MEDIUMTODO
 void Shell_CharacterViewer(void)
 {
@@ -244,15 +254,47 @@ void Shell_Cheats(void)
 	}
 }
 
-// unnamed helper, address 0x48EA90, name from names.json. Called once per frame by
-// several Shell_ menu loops (ScreenAdjust, ShowRecord, ChooseSurvivalArena, ...).
-// not yet decompiled on its own. Kept out-of-line (same trick as PCShell.cpp's
-// gsub_430680/gsub_430880/gsub_515850, needed because this stub lives in the same
+// address 0x48EA90, name from names.json. Called once per frame by several
+// Shell_ menu loops (ScreenAdjust, ShowRecord, ChooseSurvivalArena, ...).
+// RETAGGED from @SMALLTODO to @BIGTODO this session: this is not a small
+// helper, it is 747 bytes and a full "pad unplugged" modal draw loop (checks
+// dword_66126C, and if set, allocates a widget via sub_48E4B0(size 472,
+// not yet named/decompiled anywhere) and runs a real per-frame render loop
+// until dword_54D38C or the widget closes).
+// Callee research done this session (all confirmed via names.json, most
+// already implemented elsewhere in the repo, so this is more tractable than
+// it looks, just large): Utils_VblankProcessing-style tick boilerplate is
+// shared verbatim with Shell_MainMenu/Shell_RollCredits (same pattern:
+// nullsub_3=0x430880, Db_FlipClear=0x430630, CalcPolyBufferEnd=0x4553E0,
+// PCGfx_BeginScene=0x505E00 (guarded by byte_AC08C4), M3dMaths_RotMatrixYXZ
+// =0x46E730, TransMatrix=0x46CFA0, M3d_RenderSetup=0x472DC0, M3d_Render
+// =0x4739A0, M3d_RenderCleanup=0x4737F0, PCGfx_EndScene=0x506160 (also
+// guarded by byte_AC08C4), Pad_Update=0x505720, Utils_VblankProcessing
+// =0x4E5C10, PCSHELL_Relax=0x50DF80, Pause=0x4E5D60). Menu-specific: Spool_
+// AnimAccess=0x4CB5B0 (gMenubg lazy-load, same idiom as Shell_ChooseSurvival
+// Arena's menubg load), PCPanel_DrawTexturedPoly=0x509D20 (background
+// blit), Bit_Display=0x411CF0 and Bit_Move=0x411B30 (real names in
+// names.json but NOT YET DECLARED ANYWHERE in the repo, not even as
+// printf stubs; they belong to bit.cpp/bit.h, a different file, so adding
+// them is out of scope for a shell.cpp-only session), Bit_RemoveDeadBits
+// =0x408610 (already real, bit.cpp), Pad_ClearTriggers=0x479470 (already
+// real). Still unresolved: sub_48E4B0 (the widget's own ctor/setup
+// function, 0x48E4B0, no name in names.json, needs its own decompile pass
+// before this function can be attempted) and the ~8 M3d render-context
+// globals (dword_56FB2C, off_54D490, unk_56F1E4, qword_56F1B4,
+// dword_56F1BC, dword_56F1DC, word_56F1E0, dword_56F1B0) that this shares
+// with Shell_MainMenu/Shell_RollCredits and would need a real struct
+// layout, not raw addresses, to write cleanly. Left as a stub: the
+// remaining work (a new class decompile plus a cross-file stub addition)
+// is bigger than a single-session leaf task, but the mapping above should
+// save the next session the address-hunting.
+// Kept out-of-line (same trick as PCShell.cpp's
+// gsub_430680/gsub_430880, needed because this stub lives in the same
 // TU as its callers).
 #ifdef _MSC_VER
 #pragma auto_inline(off)
 #endif
-// @SMALLTODO
+// @BIGTODO
 EXPORT void CheckForPadUnplugged(void)
 {
 	printf("CheckForPadUnplugged(void)");
@@ -481,12 +523,25 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 	return v17;
 }
 
+// Re-checked this session (Mac symbol table only: spiderman_names.txt has
+// Shell_ChooseItemCollection__Fi at Mac address 0xec8d0, no PC counterpart).
+// Confirmed no PC address exists: names.json has no entry, IDA's own string
+// search on the PC exe finds nothing, and the callers we can trace on PC
+// (Shell_DoShell's training dispatch, case 4, via sub_4970B0's menu-code
+// loop) only reach sub_49EBA0/sub_49F2F0/sub_49FAF0/sub_50CE70/sub_4977D0/
+// sub_50D9B0/sub_498450, none of which are this function under a different
+// name (checked each one's approximate size against the Mac prototype, no
+// match). Looks like PC-side dead code the port dropped. Left as a stub.
 // @MEDIUMTODO
 void Shell_ChooseItemCollection(i32)
 {
     printf("Shell_ChooseItemCollection(i32)");
 }
 
+// Re-checked this session, same conclusion as Shell_ChooseItemCollection
+// above: Mac-only (spiderman_names.txt, Mac address 0xec450), no PC
+// address in names.json or via string/xref search on the PC exe. Left as
+// a stub.
 // @MEDIUMTODO
 void Shell_ChooseSpeedTraining(i32)
 {
@@ -1001,18 +1056,32 @@ i32 Shell_ChooseTrainingControlType(void)
 	return v12;
 }
 
+// Re-checked this session, same conclusion as Shell_ChooseItemCollection/
+// Shell_ChooseSpeedTraining above: Mac-only (spiderman_names.txt, Mac
+// address 0xecdb0), no PC address in names.json or via string/xref search
+// on the PC exe. Left as a stub.
 // @MEDIUMTODO
 void Shell_ChooseTrainingMission(i32)
 {
     printf("Shell_ChooseTrainingMission(i32)");
 }
 
+// Address confirmed real this session: 0x49B270, 3882 bytes (names.json).
+// Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
+// sub_49CCB0's menu-code loop, code 10). Same situation as
+// Shell_CharacterViewer above: left as a stub, own callees mostly
+// unnamed, and the only caller (Shell_DoShell) needs ~15 more
+// undecompiled functions before it is itself attemptable.
 // @MEDIUMTODO
 void Shell_ComicCollection(void)
 {
     printf("Shell_ComicCollection(void)");
 }
 
+// Address confirmed real this session: 0x49DBC0, 2514 bytes (names.json).
+// Called from Shell_DoShell's (0x4A1A80) main switch, case 22 (v64 == 22).
+// Same situation as Shell_CharacterViewer/Shell_ComicCollection above:
+// left as a stub pending Shell_DoShell's own dispatch chain.
 // @MEDIUMTODO
 void Shell_CostumeViewer(void)
 {
@@ -1284,6 +1353,27 @@ void Shell_DisplayGameInfo(
 	}
 }
 
+// Investigated this session (address confirmed real: 0x4A1A80, 2334 bytes,
+// names.json). This is the top-level game/menu state machine: sets up the
+// costume-name string table (charbio.dat parsing), then runs the main
+// switch that dispatches to Shell_MainMenu (sub_493990), the survival
+// arena chooser (sub_49A3B0, also confirmed as the "Special" costume-code
+// entry screen), the training menu (sub_4970B0's code loop, calling
+// sub_49EBA0/sub_49F2F0/sub_49FAF0/sub_50CE70/sub_4977D0/sub_50D9B0/
+// sub_498450), the "Special" menu (sub_49CCB0's code loop, calling
+// Shell_CharacterViewer/sub_49D230/Shell_ComicCollection/Shell_GameCovers/
+// sub_49D6E0), and a second switch for Shell_CostumeViewer/sub_49E5A0/
+// Shell_RollCredits/sub_4A0AD0/sub_4A0F40. Confirmed this is genuinely the
+// missing link between main.cpp's SpideyMain() stub and the real menu
+// system (per the maintainer's flag on this being valuable), but decompiling
+// it needs roughly 15 more large, entirely undecompiled functions first
+// (sub_4970B0, sub_49EBA0, sub_49F2F0, sub_49FAF0, sub_50CE70, sub_4977D0,
+// sub_50D9B0, sub_498450, sub_49A3B0, sub_49ACE0, sub_49CCB0, sub_49D230,
+// sub_49D6E0, sub_49E5A0, sub_4A0AD0, sub_4A0F40, sub_4A1930, sub_4A17A0),
+// none named in names.json, most 1-2KB each by their disasm size. That is
+// a multi-session undertaking on its own, well past this session's budget.
+// Left as a stub with this map so the next session does not have to
+// re-trace the whole dispatch tree from scratch.
 // @MEDIUMTODO
 void Shell_DoShell(const u32 *,u32 *)
 {
@@ -1502,6 +1592,11 @@ i32 Shell_Gallery(EShellResult a1)
 	return v9;
 }
 
+// Address confirmed real this session: 0x49C220, 2675 bytes (names.json).
+// Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
+// sub_49CCB0's menu-code loop, code 11). Same situation as
+// Shell_CharacterViewer/Shell_ComicCollection above: left as a stub
+// pending Shell_DoShell's own dispatch chain.
 // @MEDIUMTODO
 void Shell_GameCovers(void)
 {
@@ -2275,6 +2370,30 @@ i32 Shell_LoadGame(void)
 	}
 }
 
+// Investigated this session (address confirmed real: 0x493990, 2284 bytes,
+// names.json). This is the real main-menu screen (New Game/Continue/
+// Training/Options/Special/Quit icon row + 3D spidey model preview),
+// called from Shell_DoShell (see the comment there). Every callee's real
+// name is now known (all resolve to already-implemented functions:
+// Db_FlipClear, CalcPolyBufferEnd, PCGfx_BeginScene/EndScene,
+// M3dMaths_RotMatrixYXZ, TransMatrix, M3d_RenderSetup/Render/RenderCleanup,
+// PShell_DefaultText, Mess_SetRGB/SetRGBBottom/DrawText/SetTextJustify,
+// PCSHELL_CheckTriggers/IsMouseOverText/MouseMoved/DrawMouseCursor,
+// CDummy::SelectNewTrack, Shell_DrawTitleBar, PShell_SmallFont/NormalFont,
+// Mess_ShadowsOn/Off, DCCard_Exists, Utils_CopyString, Pad_Update,
+// Db_UpdateSky, Front_ClearScreen, SFX_Play, Redbook_XAPlay/XAStop,
+// Init_KillAll, Utils_VblankProcessing, PCSHELL_Relax, Pause,
+// CheckForPadUnplugged) except Bit_Display (0x411CF0) and Bit_Move
+// (0x411B30), which have real names in names.json but are not declared
+// anywhere in the repo yet (belong to bit.cpp/bit.h, out of scope for a
+// shell.cpp-only session), CDummy_ctor (0x490DF0, an unnamed CDummy
+// constructor overload used to spawn the preview model), and this file's
+// own sub_493860 (the survival-arena-name copy helper, needs decompiling
+// first). The menu item table itself (dword_552AA8/AAC/AB0/AB4, stride 10
+// dwords/8 icons: x, y, icon pointer, unlock state, ...) has no idb_globals
+// entry and no struct declared, would need its own investigation. Left as
+// a stub: CheckForPadUnplugged (a direct same-TU dependency) is also still
+// a stub (see above), so this cannot even be leaf-first attempted yet.
 // @MEDIUMTODO
 void Shell_MainMenu(EShellResult)
 {
@@ -2678,6 +2797,27 @@ done:
 	return v9;
 }
 
+// Investigated this session (address confirmed real: 0x4931E0, 1602 bytes,
+// names.json). Parses credits.txt (FileIO_Open/Load/Sync) with a hand-
+// rolled tokenizer (per-line "(r,g,b)name" records, up to 520 lines,
+// stored 43 bytes apart: 40 name chars + 3 RGB bytes), then runs a
+// per-frame scroll-and-render loop, same shell-tick boilerplate as
+// Shell_MainMenu/CheckForPadUnplugged (see the comment on
+// CheckForPadUnplugged above for the callee-name map, identical set here:
+// Db_FlipClear, CalcPolyBufferEnd, PCGfx_BeginScene/EndScene,
+// M3dMaths_RotMatrixYXZ, TransMatrix, M3d_RenderSetup/Render/RenderCleanup,
+// Pad_Update, Utils_VblankProcessing, PCSHELL_Relax, Pause,
+// CheckForPadUnplugged, Mem_Delete, DCMem_New, Mess_SetRGB/SetRGBBottom,
+// Db_SkyColor (0x56FC74, real name from idb_globals.txt), Init_KillAll,
+// Redbook_XAStop, Mess_DeleteAll) plus one menu-specific unnamed helper,
+// sub_490DF0 (a CDummy constructor overload, same one Shell_MainMenu uses
+// to spawn its preview spidey model) and sub_458640/670/700/610 (Mess_
+// SetRGB/SetRGBBottom/DrawText/SetTextJustify, already resolved above).
+// Left as a stub: direct same-TU dependency on CheckForPadUnplugged (still
+// a stub, see above) blocks a clean leaf-first attempt, and the RGB text
+// tokenizer plus the scroll math would need its own careful pass. Smaller
+// and more self-contained than Shell_MainMenu/Shell_DoShell though, a
+// reasonable next target once CheckForPadUnplugged is done.
 // @MEDIUMTODO
 void Shell_RollCredits(void)
 {
@@ -2699,14 +2839,6 @@ EXPORT i32 SliderDrag(i32 a1, i32 a2, i32 a3)
 	typedef i32 (*func_ptr)(i32, i32, i32);
 	func_ptr func = (func_ptr)0x00497F80;
 	return func(a1, a2, a3);
-}
-// forward to original, menu cleanup helper (0x515850, 290B), not yet decompiled
-// @MEDIUMTODO
-EXPORT void sub_515850(void)
-{
-	typedef void (*func_ptr)(void);
-	func_ptr func = (func_ptr)0x00515850;
-	func();
 }
 
 // @Ok
@@ -2801,7 +2933,7 @@ void Shell_SFXMusic(void)
 				gsub_46CB90((void*)"stubbed out: DrawSync");
 			Pad_ClearTriggers(G_SCONTROL);
 			*(i32*)0x005512EC = 512;
-			sub_515850();
+			SPIDEYDX_SaveSettings();
 			return;
 		}
 		PShell_NormalFont();
@@ -3469,7 +3601,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 
 // Shell_ScreenAdjust and Shell_ShowRecord call these as real out-of-line functions
 // in the original, keep the MSVC inliner away (same trick as PCShell.cpp's
-// gsub_430680/gsub_430880/gsub_515850, needed because these stubs live in the same
+// gsub_430680/gsub_430880, needed because these stubs live in the same
 // TU as their callers). CheckForPadUnplugged and gShellMenuEase/gShellMenuAbort now
 // declared earlier in this file (before the Shell_Choose* family), see there.
 #ifdef _MSC_VER
