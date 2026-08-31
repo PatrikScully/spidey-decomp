@@ -1007,31 +1007,146 @@ void CRhino::DieRhino(void)
 static i16 * const gRhinoDazedStarAngle = reinterpret_cast<i16*>(0x00552070);
 static i16 * const gRhinoDazedStarSpeed = reinterpret_cast<i16*>(0x00682B64);
 
-// @NotOk
-// Checked against the disasm (0x480480) but not rewritten: the real
-// structure is more tangled than this draft's clean "3 independent loops"
-// shape. Confirmed facts from the disasm: (1) the WHOLE function is gated
-// on `mAnim==17 || mAnim==18 || field_3E4[0]!=0` (skip entirely otherwise),
-// a gate this draft does not have; (2) the three per-slot loops are guarded
-// and cross-referenced in a way that does not line up 1:1 with "loop N
-// manages array N" (e.g. the loop entered via `field_3F8[0]!=0` walks
-// field_40C, and positions each slot via a shifted read of
-// field_3F8[i]+0x10, not the array it is iterating); (3) the star-orbit
-// math (fixed-point sin/cos table at 0x610C48, angle tables at 0x552070 /
-// 0x682B64) matches this draft's general shape but the exact scale
-// constants (768, 416, 320, the >>7/>>12 shifts) are not reproduced here.
-// Left as-is rather than risk a wrong rewrite under time pressure; the
-// person picking this up should re-derive the loop/array mapping from the
-// disasm directly instead of trusting this comment's guesses.
+// rcossin_tbl, the shared fixed point sin/cos table (repo-wide convention,
+// see bit.cpp/camera.cpp/manipob.cpp/mysterio.cpp/quat.cpp/shell.cpp/
+// spidey.cpp, confirmed by the maintainer's IDB as 0x610C48). word_610C4A
+// is the same table offset by one i16 (the cos half of each interleaved
+// sin/cos pair), same idiom as mysterio.cpp.
+static i16 * const word_610C48 = reinterpret_cast<i16*>(0x00610C48);
+static i16 * const word_610C4A = reinterpret_cast<i16*>(0x00610C4A);
+
+// @Ok
+// Rewritten from a fresh IDA decompile+disasm of 0x480480 (2026-08-31); the
+// previous draft's "3 independent loops, each managing its own array" shape
+// was wrong. Real structure, confirmed instruction by instruction:
+// - Whole function gated on mAnim==0x11 || mAnim==0x12 (doFirst) ||
+//   field_3E4[0]!=0. field_3E4/field_3F8/field_40C are contiguous CFT4Bit*
+//   arrays of 5 (offsets 0x3E4/0x3F8/0x40C, 0x14 bytes apart each).
+// - Loop over field_40C runs only if field_3F8[0]!=0; each slot's SetPos
+//   reads directly from field_3F8[i]->mPos (CBit::mPos sits at offset 0x10,
+//   confirmed via the disasm's `[esi-0x14]+0x10` address math), not this
+//   object's own array. So field_40C trails field_3F8's position.
+// - Loop over field_3F8 runs only if field_3E4[0]!=0, same shape, trails
+//   field_3E4->mPos. So field_3F8 trails field_3E4's position.
+// - Loop over field_3E4 has no extra gate (always runs once the outer gate
+//   passed). Each slot computes a star-orbit hook offset from
+//   gRhinoDazedStarAngle[i]/gRhinoDazedStarSpeed[i] via rcossin_tbl, calls
+//   M3dUtils_GetDynamicHookPosition, and SetPos's the raw result (no extra
+//   post-call offset, unlike the previous draft).
+// - All three loops share the SAME doFirst flag for alloc-vs-fade (there is
+//   no separate "doSecond"); the fade branch condition was inverted in the
+//   previous draft too: delete when mFrame<=4, else SetTint(mFrame-4,
+//   (mFrame-4)>>1, 0) (not a constant color, and not mFrame>4 for delete).
+// - Loop3's alloc path also differs from the other two: SetScale(0xC0),
+//   SetAnimSpeed(0) (not SetTransparency(0x40)/SetAnimSpeed(0x80)),
+//   SetSemiTransparent(), SetTint(0x80,0x40,0).
 void CRhino::DoDazedEffect(void)
 {
-	bool doFirst = this->mAnim == 0x11 || this->mAnim == 0x12;
-	bool doSecond = this->mAnim == 0x11;
+	i16 anim = this->mAnim;
+	bool doFirst = anim == 0x11 || anim == 0x12;
 	i32 i;
+
+	if (!doFirst && this->field_3E4[0] == 0)
+		return;
+
+	if (this->field_3F8[0] != 0)
+	{
+		for (i = 0; i < 5; i++)
+		{
+			CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_40C[i]);
+
+			if (doFirst)
+			{
+				if (!p)
+				{
+					p = new CFT4Bit();
+					p->SetAnim(0);
+					p->SetScale(0x80);
+					p->SetSemiTransparent();
+					p->SetTint(0x40, 0x20, 0);
+				}
+			}
+			else if (p)
+			{
+				if (p->mFrame <= 4)
+				{
+					delete p;
+					p = 0;
+				}
+				else
+				{
+					u8 fade = p->mFrame - 4;
+					p->SetTint(fade, fade >> 1, 0);
+				}
+			}
+
+			if (p)
+			{
+				CFT4Bit *neighbor = reinterpret_cast<CFT4Bit*&>(this->field_3F8[i]);
+				p->SetPos(neighbor->mPos);
+			}
+		}
+	}
+
+	if (this->field_3E4[0] != 0)
+	{
+		for (i = 0; i < 5; i++)
+		{
+			CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_3F8[i]);
+
+			if (doFirst)
+			{
+				if (!p)
+				{
+					p = new CFT4Bit();
+					p->SetAnim(0);
+					p->SetScale(0xA0);
+					p->SetSemiTransparent();
+					p->SetTint(0x60, 0x30, 0);
+				}
+			}
+			else if (p)
+			{
+				if (p->mFrame <= 4)
+				{
+					delete p;
+					p = 0;
+				}
+				else
+				{
+					u8 fade = p->mFrame - 4;
+					p->SetTint(fade, fade >> 1, 0);
+				}
+			}
+
+			if (p)
+			{
+				CFT4Bit *neighbor = reinterpret_cast<CFT4Bit*&>(this->field_3E4[i]);
+				p->SetPos(neighbor->mPos);
+			}
+		}
+	}
 
 	for (i = 0; i < 5; i++)
 	{
 		CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_3E4[i]);
+
+		i16 oldAngle = gRhinoDazedStarAngle[i];
+		i16 sinA = word_610C48[2 * (oldAngle & 0xFFF)];
+		i16 cosA = word_610C4A[2 * (oldAngle & 0xFFF)];
+		i16 sinSpeed = word_610C48[2 * (gRhinoDazedStarSpeed[i] & 0xFFF)];
+
+		SHook hook;
+		hook.Part.vx = (768 * sinA) >> 12;
+		hook.Part.vy = ((sinSpeed << 7) >> 12) - 320;
+		hook.Part.vz = ((768 * cosA) >> 12) - 416;
+		hook.Offset = 0xF;
+
+		gRhinoDazedStarAngle[i] = (oldAngle + (this->field_80 << 6)) & 0xFFF;
+		gRhinoDazedStarSpeed[i] = (gRhinoDazedStarSpeed[i] + Rnd(64) + 64) & 0xFFF;
+
+		VECTOR hookPos = {0, 0, 0, 0};
+		M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
 
 		if (doFirst)
 		{
@@ -1039,14 +1154,15 @@ void CRhino::DoDazedEffect(void)
 			{
 				p = new CFT4Bit();
 				p->SetAnim(0);
-				p->SetScale(0x80);
+				p->SetScale(0xC0);
+				p->SetAnimSpeed(0);
 				p->SetSemiTransparent();
-				p->SetTint(0x40, 0x20, 0);
+				p->SetTint(0x80, 0x40, 0);
 			}
 		}
 		else if (p)
 		{
-			if (p->mFrame > 4)
+			if (p->mFrame <= 4)
 			{
 				delete p;
 				p = 0;
@@ -1054,103 +1170,12 @@ void CRhino::DoDazedEffect(void)
 			else
 			{
 				u8 fade = p->mFrame - 4;
-				p->SetTint(0x40, fade >> 1, 0);
+				p->SetTint(fade, fade >> 1, 0);
 			}
 		}
 
 		if (p)
-		{
-			CVector pos = this->mPos;
-			pos.vy += 0x10;
-			p->SetPos(pos);
-		}
-	}
-
-	for (i = 0; i < 5; i++)
-	{
-		CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_3F8[i]);
-
-		if (doSecond)
-		{
-			if (!p)
-			{
-				p = new CFT4Bit();
-				p->SetAnim(0);
-				p->SetScale(0xA0);
-				p->SetSemiTransparent();
-				p->SetTint(0x60, 0x30, 0);
-			}
-		}
-		else if (p)
-		{
-			if (p->mFrame > 4)
-			{
-				delete p;
-				p = 0;
-			}
-			else
-			{
-				u8 fade = p->mFrame - 4;
-				p->SetTint(0x60, fade >> 1, 0);
-			}
-		}
-
-		if (p)
-		{
-			CVector pos = this->mPos;
-			pos.vy += 0x10;
-			p->SetPos(pos);
-		}
-	}
-
-	if (!this->mAnim)
-	{
-		for (i = 0; i < 5; i++)
-		{
-			CFT4Bit *&p = reinterpret_cast<CFT4Bit*&>(this->field_40C[i]);
-
-			gRhinoDazedStarAngle[i] += this->field_80;
-
-			VECTOR hookPos;
-			SHook hook;
-			hook.Part.vx = 0;
-			hook.Part.vy = 0;
-			hook.Part.vz = 0;
-			hook.Offset = 0xF;
-			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
-
-			bool ready = true;
-
-			if (!p)
-			{
-				p = new CFT4Bit();
-
-				if (p)
-				{
-					p->SetAnim(1);
-					p->SetSemiTransparent();
-				}
-				else
-				{
-					ready = false;
-				}
-			}
-
-			if (ready && p)
-			{
-				p->SetTransparency(0x40);
-				p->SetAnimSpeed(0x80);
-				p->SetScale(0x80);
-
-				hookPos.vy += gRhinoDazedStarAngle[i] >> 6;
-
-				CVector pos;
-				pos.vx = hookPos.vx;
-				pos.vy = hookPos.vy;
-				pos.vz = hookPos.vz;
-				p->SetPos(pos);
-			}
-		}
+			p->SetPos(*reinterpret_cast<CVector*>(&hookPos));
 	}
 }
 

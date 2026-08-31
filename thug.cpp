@@ -15,6 +15,11 @@
 EXPORT CThug* gGlobalThug;
 EXPORT CThug* gThugList;
 
+// moved up from its original spot right above CThug::ClearAttackFlags so
+// CThug::DetermineFightState (earlier in the file) can also see it; same
+// global, same file-local static, no address/behavior change.
+static unsigned char gAttackFlagRelated;
+
 // @FIXME
 EXPORT SStateFlags gThugStateFlags;
 
@@ -195,44 +200,222 @@ void CThug::LookForPlayer(void)
 	}
 }
 
-// @BIGTODO
-// Left as a stub this session: 0x4d9a40, ~0x4dc bytes (biggest of thug.cpp's
-// open functions), heavy goto/shared-label AI state machine. Notes for
-// whoever picks it up (from an IDA decompile of 0x4d9a40):
-// - Early out: return false if this->mHealth<=0 or MechList->mHealth<=0 or
-//   MechList->field_57C != 0.
-// - Sets a new CThug field at offset 0x36C (poll interval: 3 if
-//   DistanceToPlayer(2)<=1000, 15 if <=2000, else 31) and one at 0x348
-//   (a "just got close" timer, set to 60 once when field_330==0 and
-//   DistanceToPlayer(2)<300 and field_348==0 and
-//   abs(MechList->mPos.vy - mPos.vy) < 819200).
-// - Then reads *(this+420) (offset 0x1A4). That offset falls inside
-//   CBaddy's own layout, in the `PADDING(4)` right before `field_1A8[6]`
-//   (baddy.h). It is read here as a live flag ("if (field_1A4 != 0) return
-//   false"), so it is not real padding; giving it a real name means editing
-//   baddy.h (shared by every CBaddy subclass) and re-auditing anyone else
-//   who touches that offset, which is why this was not done in this pass.
-// - After that: Utils_LineOfSight(&mPos, &MechList->mPos, 0, 0) gates a
-//   block that toggles field_2A8 bit 0x800 and either paths to
-//   field_1A8[0] or, if field_330 != 0 and field_31C.bothFlags isn't
-//   already 23/24, sets field_31C.bothFlags=23. This whole block always
-//   returns (true or false), so it only runs when the line of sight check
-//   fails.
-// - The rest (line of sight succeeded) is a long chain of PathCheck/
-//   AddPointToPath attempts against MechList, guarded by field_330 and a
-//   cached distance (this->DistanceToPlayer(2)), that ends in either
-//   field_31C.bothFlags = 3/4/9/11/23 with dumbAssPad = 0, or leaves state
-//   unchanged. It also touches gGlobalThug-style globals already named in
-//   this file (dword_682C50/dword_682C54/byte_682C18 in the decompile,
-//   likely gGlobalThug/a second "who's talking" slot and its related
-//   flags byte, need cross-checking against ClearAttackFlags/SetAttacker
-//   before naming). Final block: if field_31C.bothFlags changed from the
-//   value at function entry, set mCBodyFlags |= 0x10 and call
-//   RunAppropriateAnim (sub_403230, already used elsewhere in this file).
+// @Ok
+// Rewritten from a fresh IDA decompile+disasm of 0x4d9a40 (2026-08-31).
+// All callees turned out to already be real, named, implemented functions
+// (DistanceToPlayer, Utils_LineOfSight, PathCheck, AddPointToPath,
+// CheckSightCone, Neutralize, Baddy_SendSignal), and gGlobalThug/gThugList/
+// gAttackFlagRelated (already declared in this file, same globals
+// ClearAttackFlags/SetAttacker use) turned out to be exactly the globals
+// this function needed, so no new globals were required.
+// field_1A4 (CBaddy, shared by every subclass), field_32C, field_348 and
+// field_36C were unnamed padding read/written here; carved out of their
+// PADDING blocks in baddy.h/thug.h (same byte ranges, nothing else shifts).
+// Kept as a goto state machine matching the original's shared tail labels
+// (LABEL_80/81/82/83 in the decompile) rather than restructuring into
+// nested if/else, to avoid introducing a logic mistake in a function this
+// tangled.
 i32 CThug::DetermineFightState(void)
 {
-	printf("i32 CThug::DetermineFightState(void)");
-	return 0x26042024;
+	i32 initialBothFlags = this->field_31C.bothFlags;
+	i32 dist = this->DistanceToPlayer(2);
+	i32 cachedPath = -1;
+
+	if (this->mHealth <= 0 || MechList->mHealth <= 0 || MechList->field_57C != 0)
+		return false;
+
+	if (dist <= 1000)
+		this->field_36C = 3;
+	else if (dist <= 2000)
+		this->field_36C = 15;
+	else
+		this->field_36C = 31;
+
+	if (this->field_330 == 0
+			&& dist < 300
+			&& this->field_348 == 0
+			&& abs(MechList->mPos.vy - this->mPos.vy) < 819200)
+	{
+		this->field_348 = 60;
+	}
+
+	if (this->field_1A4 != 0)
+		return false;
+
+	if (Utils_LineOfSight(&this->mPos, &MechList->mPos, 0, 0) == 0)
+	{
+		if (this->field_2A8 & 0x800)
+		{
+			this->field_2A8 &= ~0x800;
+
+			if (this->PathCheck(&this->mPos, &this->field_1A8[0], 0, 55) == 0
+					&& this->AddPointToPath(&this->mPos, 0) != 0
+					&& this->AddPointToPath(&this->field_1A8[0], 0) != 0)
+			{
+				this->field_31C.bothFlags = 24;
+				this->dumbAssPad = 0;
+				return true;
+			}
+		}
+		else if (this->field_330 != 0)
+		{
+			i32 bothFlags = this->field_31C.bothFlags;
+
+			if (bothFlags != 23 && bothFlags != 24)
+			{
+				this->field_31C.bothFlags = 23;
+				this->dumbAssPad = 0;
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	if (this->field_330 != 0 && dist < this->field_370)
+	{
+		cachedPath = this->PathCheck(&this->mPos, &MechList->mPos, 0, 55);
+
+		if (cachedPath == 0)
+		{
+			this->field_31C.bothFlags = 4;
+			goto setDumbAssPadZero;
+		}
+	}
+
+	if (this->CheckSightCone(this->field_378, this->field_374, this->field_370, this->field_37C, MechList) == 0)
+	{
+		i32 pathResult;
+
+		if (MechList->field_57C != 0
+				|| gThugList != 0
+				|| MechList->mHeldObject != 0
+				|| this->field_330 == 0
+				|| dist >= 1500)
+		{
+			goto checkStateChanged;
+		}
+
+		pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) : cachedPath;
+
+		if (pathResult == 0)
+			goto checkStateChanged;
+
+		this->Neutralize();
+		gThugList = this;
+
+		if (gGlobalThug == this)
+		{
+			gGlobalThug = 0;
+			goto clearAttackAndFight;
+		}
+
+		if (this->field_3BC & 2)
+			gAttackFlagRelated = ~this->field_3BD & gAttackFlagRelated;
+
+		goto clearAttackAndFight;
+	}
+
+	if (this->field_330 == 0)
+	{
+		this->field_31C.bothFlags = 3;
+		goto setDumbAssPadZero;
+	}
+
+	if (cachedPath == -1)
+		cachedPath = this->PathCheck(&this->mPos, &MechList->mPos, 0, 55);
+
+	if (cachedPath == 0)
+	{
+		this->field_31C.bothFlags = 4;
+		goto setDumbAssPadZero;
+	}
+
+	if (this->mType != 304
+			&& this->field_32C == 0
+			&& this->DistanceToPlayer(4) > 500
+			&& this->DistanceToPlayer(4) < this->field_384)
+	{
+		this->field_31C.bothFlags = 11;
+		goto setDumbAssPadZero;
+	}
+
+	if (this->field_31C.bothFlags == 1)
+	{
+		i32 pathResult;
+
+		if (MechList->field_57C != 0
+				|| gThugList != 0
+				|| MechList->mHeldObject != 0
+				|| this->field_330 == 0
+				|| dist >= 1500)
+		{
+			goto checkStateChanged;
+		}
+
+		pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) : cachedPath;
+
+		if (pathResult == 0)
+			goto checkStateChanged;
+
+		this->Neutralize();
+		gThugList = this;
+
+		if (gGlobalThug == this)
+		{
+			gGlobalThug = 0;
+			goto clearAttackAndFight;
+		}
+
+		if (this->field_3BC & 2)
+			gAttackFlagRelated = ~this->field_3BD & gAttackFlagRelated;
+
+		goto clearAttackAndFight;
+	}
+
+	this->field_31C.bothFlags = 4;
+	this->dumbAssPad = 0;
+
+	if (MechList->field_57C == 0
+			&& gThugList == 0
+			&& MechList->mHeldObject == 0
+			&& this->field_330 != 0
+			&& dist < 1500)
+	{
+		i32 pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) : cachedPath;
+
+		if (pathResult != 0)
+		{
+			this->Neutralize();
+			gThugList = this;
+
+			if (gGlobalThug == this)
+				gGlobalThug = 0;
+			else if (this->field_3BC & 2)
+				gAttackFlagRelated &= ~this->field_3BD;
+
+			goto clearAttackAndFight;
+		}
+	}
+
+	goto checkStateChanged;
+
+clearAttackAndFight:
+	this->field_3BC = 0;
+	this->field_3BD = 0;
+	this->field_31C.bothFlags = 9;
+
+setDumbAssPadZero:
+	this->dumbAssPad = 0;
+
+checkStateChanged:
+	if (initialBothFlags != this->field_31C.bothFlags)
+	{
+		this->mCBodyFlags |= 0x10;
+		this->Baddy_SendSignal();
+	}
+
+	return initialBothFlags != this->field_31C.bothFlags;
 }
 
 // @Ok
@@ -1318,8 +1501,6 @@ void CThugPing::Move(void)
 		this->Die();
 }
 
-static unsigned char gAttackFlagRelated;
-
 // @Ok
 void CThug::ClearAttackFlags(void)
 {
@@ -1559,12 +1740,15 @@ void validate_CThug(void){
 
 	VALIDATE_SIZE(CThug, 0x3C0);
 
+	VALIDATE(CThug, field_32C, 0x32C);
 	VALIDATE(CThug, field_330, 0x330);
+	VALIDATE(CThug, field_348, 0x348);
 	VALIDATE(CThug, field_33C, 0x33C);
 
 	VALIDATE(CThug, mHandle, 0x354);
 	VALIDATE(CThug, mHandleTwo, 0x35C);
 
+	VALIDATE(CThug, field_36C, 0x36C);
 	VALIDATE(CThug, field_370, 0x370);
 	VALIDATE(CThug, field_374, 0x374);
 	VALIDATE(CThug, field_378, 0x378);
