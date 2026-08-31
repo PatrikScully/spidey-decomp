@@ -412,47 +412,96 @@ static CVector * const gCameraViewPos = (CVector*)0x56F1B4;
 
 // @BIGTODO
 // Address 0x40aa00 (names.json: CSimpleTexturedRibbon_Display). Re-verified this session
-// (2026-08-31, second pass) against a fresh IDA decompile. Still NOT implemented - genuinely
-// needs a dedicated session (dense two-pass fixed/float pipeline, several fields still not
-// pinned down) - but sub_4E7090 (the one previously-unknown helper) is now FULLY decoded, which
-// should save real time for whoever picks this up next:
+// (2026-08-31, THIRD pass, full fresh decompile + partial raw disasm cross-check of sub_4E7090
+// and every gte_* callee). The overall algorithm shape is now FULLY understood (see below) -
+// this is a billboarded ribbon quad-strip, structurally the same "two scratch buffers + a flat
+// invZ array + an overlapping-quad draw loop" idiom DisplayQuadBitList already uses, just with a
+// per-segment perpendicular "width" vector computed fresh each iteration instead of 4 fixed
+// corners. Left @BIGTODO rather than @Ok because the FINAL draw loop's exact per-face colour
+// source (field_48 indexing) is not confirmed and guessing it wrong would silently mis-render
+// every ribbon (spider webs etc) - see "still open" at the bottom.
 //
-// sub_4E7090(a1: CVector* prevPoint, a2: CVector* nextPoint, a3: i32* widthInOut) computes a
-// per-segment perpendicular "width" vector, in place, from THREE inputs: the ribbon's previous
-// and next spine points (a1/a2, raw fixed-point CVectors) and a width record (a3, 3 raw
-// fixed-point i32s used as BOTH input and output). Body: delta = (a2-a1)>>12, clamped >>4
-// further if any axis magnitude exceeds 500 (an overflow guard, same style as other >>12/>>4
-// dual-precision paths in this file); toCamera = (gCameraViewPos - a1)>>12; cross = delta x
-// toCamera (sub_46D6A0, a real cross-product GTE-style helper, still unnamed elsewhere in the
-// repo); a3 (the width record) is then loaded via gte_ldv0-style sub_46D790, right-shifted >>8
-// per axis, magnitude computed via sub_46DD00 (dot-with-self?) then sub_46D430 (this is
-// unnamed and looks like an integer sqrt/normalize-divisor helper judging by its use: "if
-// result < 5, zero the vector and return 0; else scale a3 by 16/result per axis"). Net effect:
-// a3 becomes a camera-facing perpendicular offset vector scaled by the ribbon's per-segment
-// width, zeroed out if the width is degenerate (<5 in whatever fixed units sub_46D430 returns).
-// sub_46D6A0/sub_46DD00/sub_46D430 are still not decoded/named; do that first, this is the
-// critical-path blocker along with the backwards screen-buffer indexing below.
+// sub_4E7090(a1: i32* prevPointSlot, a2: i32* nextPointSlot, a3: i32* out) - OUTPUT ONLY (never
+// reads a3 as input, contrary to the previous pass's guess), computes a per-segment perpendicular
+// offset vector into a3, magnitude 16 (unit-length in that fixed scale), zeroed if degenerate:
+//   delta = (a2 - a1) >> 12, further >>4 if any axis magnitude exceeds 500 (overflow guard)
+//   toCamera = (gCameraViewPos - a1) >> 12
+//   cross = delta x toCamera, via gte_ldopv1(&delta)/gte_ldopv2(&toCamera)/sub_46D6A0() - the
+//     latter is STILL unnamed, but it is confirmed to behave exactly like the already-@Ok
+//     gte_op12 (ps2funcs.cpp, `cross = op1 x op2, >>12` - same inputs, same shape), just at a
+//     different address (0x46D6A0 vs gte_op12's 0x46D700) - a genuinely separate function, not
+//     a names.json mismatch, so do not rename/merge them without more evidence.
+//   cross written to a3 via gte_stlvnl(a3) (sub_46D790, already @Ok)
+//   magnitude: (a3>>8 per axis) -> gte_ldlvl -> gte_sqr0 (sub_46DD00, already @Ok, squares each
+//     axis) -> gte_stlvnl -> M3dMaths_SquareRoot0(sum of the 3 squares) (sub_46D430, already @Ok)
+//   if magnitude < 5: a3 = {0,0,0}; else a3[i] = 16 * (a3[i] / magnitude) per axis
+// Call site passes a1 = field_44-as-int-ptr + 7 (the NEXT spine point) and a2 = the CURRENT spine
+// point, i.e. delta is (current - next), reversed from a "prev->next" reading of the params.
+// The a3 output slot passed by the caller is itself borrowed scratch memory inside the NEXT
+// point's own SSimpleRibbonParams record (offset 0x18-0x23, i.e. the middle PADDING(0xC) bytes
+// bit.h's SSimpleRibbonParams currently declares before field_18) - safe to replace with a local
+// temporary instead of reproducing that memory reuse, since nothing else reads it back.
 //
-// Everything else confirmed in the previous pass still holds: `this` fields field_3C (NumFaces),
-// field_3E (mNumFacesToDisplay), pTextures, field_44 (SSimpleRibbonParams*), field_48 (u32*
-// widths); G_QUADBIT_RENDER_STATE save/force/restore, same sentinel as DisplayQuadBitList;
-// gte_SetRotMatrix(&gTargetRotMatrix)+m3d_ZeroTransVector camera-facing setup; per-point
-// relPos=(raw>>12)-gCameraViewPos through gte_ldlv0/gte_rtps AND a separate Algebra_Transform4
-// invZ pass (RefreshGfxMatrix's target matrix), near-clip override to -1.0 below raw depth 100;
-// two-pass structure (a first loop over field_3E points fills a flat invZ buffer at String/
-// 0x5498fc, 2 entries per segment - near/far edge - THEN a second loop walks the screen-coord
-// scratch arrays dword_628618/dword_654F54 - gRevisitInitOne/Two above - with strides that do
-// NOT match DisplayQuadBitList's plain 8-byte/corner layout; the backwards indexing there,
-// -3/-4/-7/-8/-11/-12 on a +8-shorts/iteration pointer, still needs careful reconstruction of
-// the per-point record shape used specifically by this function (looks like 16 shorts/point,
-// not DisplayQuadBitList's 4). Blend/colour: PCGfx_UseTexture keyed off pTextures[0].field_0's
-// 0x40/0x80 bits (SetOpaque/SetSemiTransparent, already @Ok), alpha 255 or a signed-extended
-// variant of the 0x80 bit - single call before the draw loop, same "set once for the whole
-// list" pattern DisplayGlassList/DisplayGlowList (this session) both confirmed independently.
+// this->field_44 (SSimpleRibbonParams*, cast to a flat i32* by the original) is the ribbon's
+// spine point array, 7 ints (0x1C bytes, matches SSimpleRibbonParams's already-VALIDATEd size)
+// per point: [0..2] = raw fixed-point CVector position (needs adding to bit.h - currently inside
+// PADDING(0x18)), [3..5] = still PADDING/unused by this function, [6] = field_18 = per-point
+// "width" scalar (VALIDATEd already, just needs a real name once confirmed elsewhere).
 //
-// Do not guess the gRevisitInitOne/Two per-point record layout or sub_46D6A0/46DD00/46D430's
-// exact semantics without re-tracing in the raw disasm; a wrong guess here would silently
-// mis-render every ribbon (spider webs, etc) rather than fail to compile.
+// Per segment (field_3E = mNumFacesToDisplay iterations), reusing ONE gte_SetRotMatrix(&stru_
+// 56F224, same fixed matrix as spidey.cpp/panel.cpp's stru_56F224)+m3d_ZeroTransVector() call for
+// BOTH edges (confirmed: no second SetRotMatrix call between them, only two ldlv0/rtps calls):
+//   width = spine[i].field_18 (the per-point width scalar)
+//   crossVec = sub_4E7090(spine[i+1], spine[i], out) * width   (per-axis scale, NOT a dot)
+//   edgeA = spine[i].pos - crossVec
+//   edgeB = spine[i].pos + crossVec
+//   for each of edgeA, edgeB (SAME order, one gte_ldlv0/gte_rtps call per edge, sharing the one
+//   SetRotMatrix/ZeroTransVector call above):
+//     relPos = (edge >> 12) - gCameraViewPos; gte_ldlv0(&relPos); gte_rtps()
+//     invZ via the SAME Algebra_Transform4-equivalent idiom as the rest of this file (confirmed:
+//       sub_402700 here is another instance of the family's "vector4d ctor + gGfxMatrix dot,
+//       read w at +12" idiom weapons.cpp's notes already documented for sub_402540/402600/402620
+//       - use Algebra_Transform4(xf, rawEdge) directly per that established shortcut, do not
+//       chase sub_402700 itself) - append invZ to a flat float array at 0x5498fc (this file's
+//       `String` extern, 2 floats per segment: edgeA then edgeB)
+//     gte_stlvnl(&stlv) + gte_stsxy(&sxy) read back the JUST-COMPLETED transform (edgeA's after
+//       edgeA's own ldlv0/rtps, edgeB's after edgeB's) into an 8-byte record appended to
+//       gRevisitInitOne (dword_628618): {sxy_packed(4 bytes), stlv.vz as i16, -256 as i16} -
+//       CONFIRMED same 8-byte shape DisplayQuadBitList already uses for the same buffer. If
+//       stlv.vz < 100 (near-clip), the invZ value just appended is overridden to -1.0f.
+// After the loop, ONE more "tail" cross-section is built the exact same way (edgeA/edgeB again,
+// reusing the LAST iteration's still-in-scope crossVec/width - no new sub_4E7090 call) from
+// spine[field_3E] (the point one past the loop, i.e. field_3E+1 spine points must exist for a
+// field_3E-face ribbon - matches a quad strip needing N+1 cross-sections for N quads). This tail
+// section is also the ONLY place gRevisitInitTwo (dword_654F54) gets written, one 8-byte record
+// per edge: {stlv.vx as i16, stlv.vy as i16, 0, 0} - unclear why only the tail needs this second
+// buffer; do not guess, re-trace if picked up.
+//
+// Total gRevisitInitOne records after all this: 2*(field_3E+1) (2 per cross-section, field_3E+1
+// cross-sections). The final draw loop (field_3E iterations) reads FOUR consecutive records per
+// quad via a backwards-indexed i16* cursor starting at gRevisitInitOne+24 (record index 3) and
+// advancing +8 shorts (2 records) per iteration: quad k uses records [2k, 2k+1, 2k+2, 2k+3] (the
+// old note's "-3/-4/-7/-8/-11/-12 on a +8-shorts pointer" fully resolved: those are record indices
+// cursor-1, cursor-2, cursor-3 relative to the current position, each a {sx,sy} pair) - i.e. a
+// classic overlapping quad-strip identical in spirit to DisplayQuadBitList's corner list, just
+// built incrementally instead of read from 4 fixed fields. invZ per quad corner comes from the
+// SAME flat 0x5498fc array, 2 floats advanced per quad iteration (matches "2 entries per
+// segment"). PCGfx_UseTexture is called ONCE before this loop, clut = pTextures[9] (a u16 9
+// elements into SRibbonTexture - NOT pTextures[0], re-traced this pass), blend mode from
+// pTextures[0]'s low byte bits 0x40/0x80 (SetOpaque/SetSemiTransparent shape, already @Ok
+// elsewhere), alpha 255 or (0x80-bit ? 0x81-masked-negated : 255) - same "set once for the whole
+// list" pattern as DisplayGlassList/DisplayGlowList.
+//
+// STILL OPEN, do not guess: the draw loop's per-quad colour comes from
+// `*(DWORD*)(this->field_48 + 4*faceIndex)`, i.e. field_48[faceIndex] (already VALIDATEd as
+// `u32* field_48`, tentatively named "widths" by an earlier pass) unpacked as R,G,B bytes with
+// alpha from the pTextures[0]-derived value above - this directly contradicts field_48's current
+// "widths" name/comment (a colour array and a widths array are not the same thing). Before
+// writing this function for real: check every OTHER caller/reader of field_48 in this file
+// (CSimpleTexturedRibbon has no other functions touching field_48 currently) and re-verify via
+// the raw disasm at 0x40b2f1-0x40b3a0 which field this really is, then rename field_48
+// accordingly (it may need splitting into two arrays, or the "widths" name may simply be wrong).
+// Getting this backwards would make every ribbon render with garbage or width-as-colour data.
 void CSimpleTexturedRibbon::Display(void)
 {
     printf("CSimpleTexturedRibbon::Display(void)");
