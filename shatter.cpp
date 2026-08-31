@@ -260,27 +260,27 @@ void Split(CVector const *,CVector const *,CVector const *,i32,i32,i32,i32,i32,i
     printf("Split(CVector const *,CVector const *,CVector const *,i32,i32,i32,i32,i32,i32,u32,i32)");
 }
 
-// @SMALLTODO
-// Investigated 2026-08-27: no standalone address found for TransformVertex anywhere in
-// tools/names.json or in the address range around the other shatter.cpp functions (checked
-// every named AND unnamed function between CShatterBit_CShatterBit 0x48BDC0 and
-// Shatter_MaybeMakeGlassShatterSound 0x48D5B0; all of them are accounted for by the other
-// exports in this file). grep across the whole repo shows only shatter.cpp/shatter.h
-// reference TransformVertex, so nothing outside this TU forces it to stay out-of-line either.
-// Conclusion: it is fully inlined at every call site in the original binary (same-TU MSVC6
-// inlining, see CLAUDE.md), so there is no tools/functions/*.bin to diff against and no way
-// to run cmpsum.sh on it directly. The likely body (inferred from the per-vertex block
-// inlined 3 times inside Shatter_Face, at 0x48C227-0x48C280 and similar): index pVertexNums
-// with Vertex to get a vertex index, gte_ldv0 the matching SVECTOR from pVertices, gte_rtv0tr,
-// gte_stlvnl into a local VECTOR, then store into *a as a CVector. Not written here: without
-// an address to verify against, and given TransformVertex's own callers (Shatter_Face/Split)
-// are themselves blocked (see their notes above), a guess would be unverifiable and the
-// small-function discipline (<200 bytes: must fully match, no @AlmostMatching ever) leaves
-// no acceptable tag to give it. thps2-stuff/decls.h confirms the PSX-era parameter names
-// (CVector *a, SVECTOR *pVertices, u8 *pVertexNums, int Vertex) but its body is stripped
-// (declaration only, no statements), so it gives no extra logic beyond what's above. Left as
-// a stub.
-void TransformVertex(CVector *,SVECTOR *,u8 *,i32)
+// @Ok
+// 2026-08-31: session bar is functional decomp (see task instructions), so this is now
+// implemented, but it is unverifiable against original bytes and currently has no real
+// caller (Shatter_Face/Split, its only plausible callers, are still stubs, see their notes).
+// No standalone address exists for this function: checked tools/names.json and the whole
+// address range around the other shatter.cpp functions (between CShatterBit_CShatterBit
+// 0x48BDC0 and Shatter_MaybeMakeGlassShatterSound 0x48D5B0), nothing unaccounted for; grep
+// across the repo shows only shatter.cpp/shatter.h reference TransformVertex. It is fully
+// inlined at every call site in the original binary (same-TU MSVC6 inlining, see CLAUDE.md).
+// Body confirmed by hand-tracing the 3 identical inlined blocks inside Shatter_Face's original
+// disassembly at 0x48C0D0 (see Shatter_Face's comment): each one does gte_ldv0 on an SVECTOR
+// looked up by a per-face byte vertex index, gte_rtv0tr, then gte_stlvnl into a VECTOR-shaped
+// output, exactly the pattern below. Caller must set up the rotation matrix
+// (M3dMaths_RotMatrixYXZ + gte_SetRotMatrix) and translation (M3dAsm_SetTransVector) first,
+// same as every other gte_ldv0/gte_rtv0tr/gte_stlvnl call site in this codebase (camera.cpp,
+// baddy.cpp, blackcat.cpp use the identical 3-call sequence). thps2-stuff/decls.h confirms the
+// PSX-era parameter names (CVector *a, SVECTOR *pVertices, u8 *pVertexNums, int Vertex) but its
+// body is stripped there (declaration only), so it adds no logic beyond the above.
+void TransformVertex(CVector *a, SVECTOR *pVertices, u8 *pVertexNums, i32 Vertex)
 {
-    printf("TransformVertex(CVector *,SVECTOR *,u8 *,i32)");
+	gte_ldv0(&pVertices[pVertexNums[Vertex]]);
+	gte_rtv0tr();
+	gte_stlvnl((VECTOR*)a);
 }
