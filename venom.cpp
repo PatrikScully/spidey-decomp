@@ -209,24 +209,51 @@ void CVenom::CreateCombatImpactEffect(CVector *a2,i32)
 // Spool_FindTextureEntry (spool.cpp), FindBaddyOfType (baddy.cpp), Utils_XZDist (utils.cpp),
 // Panel_DrawTexturedPoly / Panel_SetStretchedScreenCoords (panel.cpp), PCGfx_UseTexture /
 // PCGfx_DrawQPoly2D (PCGfx.cpp), print_if_false (export.h, inlined). Left as BIGTODO anyway:
-// 1) needs a new CVenom member at 0x32C (this->field_32C += this->field_80, time accumulator),
-//    which currently falls inside the PADDING(0x18-0xC) block in venom.h ahead of field_330;
-//    splitting that padding risks shifting every other already-@Ok field in this class if the
-//    boundary math is off, and there is no runtime HUD test available this session to catch a
-//    subtle mistake.
+//
+// Follow-up pass (2026-08-31, same session, before touching rhino/thug's similar padding-carve
+// blockers): re-checked point 1 below against precedent set later this session (CThug::
+// DetermineFightState carved field_32C/field_348/field_36C out of thug.h padding blocks, and
+// CBaddy got field_1A4 out of baddy.h padding, both by splitting a PADDING() into an equal-size
+// named field plus a smaller PADDING(), same technique this file would need). That part is NOT
+// actually risky: as long as the split covers the identical byte range, no other field's offset
+// moves and class size is unchanged. Point 2's globals were also nearest-neighbor audited against
+// idb_globals.txt just now: dword_54D474 IS in his IDB as DifficultyLevel (not just "difficulty
+// level"), dword_5FAE98 IS in his IDB as gPostWaterEffect (NOT a pause/lowgraphics flag, that
+// guess was wrong), dword_568158/dword_568154 are gGameResolutionY/gGameResolutionX and
+// dword_628614/dword_61B5FC are Yres/Xres (all four confirmed, used here as
+// gGameResolutionY/Yres and gGameResolutionX/Xres scale ratios for texture-space to screen-space
+// coordinate conversion). Still unaudited (genuinely absent from idb_globals.txt, not just
+// unchecked): the dword_559E48..dword_559E94 layout table (20 dwords, 5 groups of 4, mapped to
+// draw calls in a non-sequential order: group0->icon-ish v135[6], group1->v135[7],
+// group2->the 19-frame loop, group3->v135[8] (always drawn), group4->v135[9] (conditional)) and
+// dword_6B4DA8/unk_6B4EE4 (the gVenomTexs binding). Also newly found: the real function at
+// 0x4E7E10 takes ZERO parameters (plain `int sub_4E7E10()`, no `this`, no args, everything
+// through globals and FindBaddyOfType(313)), which does not match this stub's declared signature
+// `(const u32*, u32*)` (from prototypes.json/the Mac build); the PC and Mac signatures genuinely
+// disagree here, not just an inlining artifact.
+// Still left as BIGTODO: even with the struct concern resolved, this needs ~20 new tentative
+// global names for a layout table with zero IDB backing, for a purely cosmetic HUD element with
+// no runtime test available this session to catch a wrong screen coordinate. Given the "prefer a
+// matched small function over an almost-matched big one" rule and no way to visually verify this
+// one, better to leave it accurately documented than rush 3200 bytes of magic-number arithmetic.
+//
+// 1) needs a new CVenom member at 0x32C (venom->field_32C += venom->field_80, a time accumulator
+//    on the FOUND venom baddy, not "this" - see the signature note above), which currently falls
+//    inside the PADDING(0x18-0xC) block in venom.h ahead of field_330. Low risk per the precedent
+//    above: split into PADDING(0x8) + i32 field_32C + PADDING(0x0), same byte range.
 // 2) about 20 unnamed globals (dword_559E48..dword_559E94, a 5-entry x 4-dword screen layout
-//    table; dword_54D474 difficulty level; dword_5FAE98 pause/lowgraphics flag; dword_6B4DA8
-//    scratch texture pointer; dword_568158/dword_628614/dword_568154/dword_61B5FC screen-space
-//    scale factors) each need the maintainer's nearest-neighbor address audit before naming.
+//    table; dword_6B4DA8 scratch texture pointer) still need tentative names; DifficultyLevel,
+//    gPostWaterEffect, gGameResolutionX/Y and Xres/Yres are now IDB-confirmed (see above).
 // 3) unk_6B4EE4 (10 dwords, zeroed by Venom_RelocatableModuleClear) is almost certainly the real
 //    address of gVenomTexs (same size, same file, same zero-on-clear pattern), but gVenomTexs is
 //    currently a plain repo array; binding it to 0x6B4EE4 would need the same audit.
 // Known logic shape for whoever picks this up: FindBaddyOfType(313) finds the venom baddy, player
 // is dword_6A9038; if both exist, distance = Utils_XZDist(player->mPos, venom->mPos), clamped to
-// a per-difficulty max (hard=7500, easy/normal=9000, other=6000), scaled to a 0..307 bar width,
-// then draws an icon (gVenomTexs[8]) plus 4 more textured segments (gVenomTexs[6], [7], [9], and
-// a per-i loop over 342/18=19 chase-bar frames using gVenomTexs[venom->field_something]) via
-// PCGfx_DrawQPoly2D, all using the dword_559Ex layout table for screen coords.
+// a per-difficulty (DifficultyLevel) max (hard=7500, easy/normal=9000, other=6000), scaled to a
+// 0..307 bar width, then draws an icon (gVenomTexs[8]) plus up to 3 more textured segments
+// (gVenomTexs[6], [7], conditionally [9]) and a per-i loop over 342/18=19 chase-bar frames using
+// gVenomTexs[venom->field_something] via PCGfx_DrawQPoly2D, all using the dword_559Ex layout
+// table for screen coords and the gGameResolutionX/Y over Xres/Yres ratios for scaling.
 void Venom_DisplayProgressBar(const u32*, u32*)
 {
 	printf("void Venom_DisplayProgressBar(const u32*, u32*)");
