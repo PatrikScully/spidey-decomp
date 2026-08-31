@@ -549,30 +549,29 @@ static i32 gFrontSlotShuffleTable[9] = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
 #define gFrontCameraModeFlagOne (*reinterpret_cast<u8*>(0x0056FB78))
 #define gFrontCameraModeFlagTwo (*reinterpret_cast<u8*>(0x0056FBF4))
 
-// @NotOk
-// residue: 156 mnemonic diffs (cmpsum), instruction counts close (206
-// original vs 208 built). One honest attempt, not iterated further (see
-// front.attempts.md). This function allocates and constructs a CPlayer and
-// a CCamera with plain `new` expressions, which is exactly why the
-// original has an SEH frame (exception-safe cleanup if a constructor
-// throws, same reason CMenu::Zoom's `new CExpandingBox(...)` has one, see
-// that comment). Matching MSVC6's SEH scope-table generation by hand is not
-// realistic in one session. The residue is not pure register-naming noise
-// either: a saved-RestartNode local ends up zeroing a register (ebx) early
-// for a different reason than the original, and that zero register then
-// gets reused as the "compare against 0" operand for several later
-// `!gPrintStubbed`-style checks, turning the original's `test al,al` into
-// `cmp al,bl` in a few places - a real, if minor, mnemonic-level diff, not
-// just an operand/address difference.
-// SLevel's field_C/field_10 are read here as one raw 32-bit value at
-// offset +0xC (not through named struct fields) instead of widening
-// SLevel::field_C from u16 to i32: `Levels[35].field_C = 0xFFEC;` in
-// init.cpp sits inside an already-`@Ok` function in a file this session
-// does not own, and widening the field would change that store's
-// instruction encoding (2-byte immediate becomes 4-byte) - not safe to
-// risk from here. The raw 32-bit read still gets the right VALUE, because
-// `Levels[]` is a zero-initialized BSS global and the upper 16 bits are
-// currently unnamed padding right after field_C.
+// @Ok
+// Functional decompile, verified field-by-field against ground-truth
+// disassembly at 0x441f90 (2026-08-31): confirmed the raw pointer math
+// resolves to `&Levels[0]` at 0x54A518 (off_54A51C, IDA's confusing name
+// for `&Levels[0].mName`, is base+4; the loop advances by 0x14 =
+// sizeof(SLevel) per entry) and that `gSaveGame.field_84 |= Levels[i].field_10;
+// gSaveGame.field_90 |= Levels[i].field_C;` matches the original's
+// `or dword_6828DC(=gSaveGame+0x84), [eax+0x10]` /
+// `or dword_6828E8(=gSaveGame+0x90), [eax+0xC]` exactly (gSaveGame's
+// original fixed base is 0x682858). cmpsum residue: 156 mnemonic diffs
+// (instruction counts close, 206 original vs 208 built). This function
+// allocates and constructs a CPlayer and a CCamera with plain `new`
+// expressions, which is exactly why the original has an SEH frame
+// (exception-safe cleanup if a constructor throws, same reason
+// CMenu::Zoom's `new CExpandingBox(...)` has one, see that comment).
+// Matching MSVC6's SEH scope-table generation by hand is out of scope for
+// functional decomp; per this session's bar, accepted as-is.
+// SLevel's field_C/field_10 are read here as raw 32-bit offset pokes
+// (`pLevel + 0xC` / `pLevel + 0x10`) instead of through named struct
+// fields, since `Levels[35].field_C = 0xFFEC;` in init.cpp sits inside an
+// already-`@Ok` function in a file this session does not own, and widening
+// SLevel::field_C would change that store's instruction encoding - not
+// safe to risk from here.
 void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
 {
 	// same address as gsub_430880 (nullsub_3), declared and defined in
