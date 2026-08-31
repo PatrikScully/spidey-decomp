@@ -1,3 +1,6 @@
+#include <cstdlib>
+
+#include "psx_types.h"
 #include "panel.h"
 #include "spool.h"
 #include "l1a3bomb.h"
@@ -397,31 +400,213 @@ void Panel_Display(void)
     printf("Panel_Display(void)");
 }
 
-// Investigated 2026-08-31 via Hex-Rays decompile of 0x00463860 (2444 bytes
-// on Mac). Retagged @MEDIUMTODO -> @BIGTODO: this draws the HUD compass
-// needle, and every draw call in it goes through undecompiled helpers:
-// sub_46D7B0/46DA40/46D430/46D790/470430/46D130 (angle/vector math feeding
-// a compass-heading calculation, unclear which are GTE-style helpers this
-// file might already own vs. trig.cpp's), then sub_506440 and sub_507910
-// (the actual textured-quad draw call, called with a 21-float-and-int
-// argument list, i.e. per-vertex UV/color/depth - this looks like the
-// real "draw one screen-space poly" primitive every panel.cpp draw routine
-// bottoms out in) plus sub_462BB0/462C30 (icon lookup + placement, shared
-// with DisplayHealthBar below). None of these are named or decompiled
-// anywhere in the repo. It also reads about a dozen unnamed globals with
-// no idb_globals.txt entry (byte_60F77C, dword_60F708/70C/710,
-// qword_56F1B4, dword_56F1BC, dword_60F76C, dword_6B4CA8, dword_56FB04,
-// dword_568158/568154, dword_628614/61B5FC, dword_60F75C/60F768) that look
-// like a mix of HUD layout state and a 3D-to-compass-angle conversion
-// (possibly player heading vs. some fixed landmark) - guessing names for
-// these without knowing the real subsystem would just be inventing fields.
-// Left stubbed: needs sub_507910 (the shared draw primitive) decompiled
-// first as the actual leaf, then the angle-math chain, before this is
-// safely attemptable.
-// @BIGTODO
+// player-relative reference point (CVector) and rotation matrix (MATRIX)
+// used to turn world positions into a local-space direction - same
+// addresses and same precedent comment as spidey.cpp's stru_56F1B4/
+// stru_56F224 (CPlayer::UpdateSpideySenseList and others); repo convention
+// allows duplicating static address globals across files.
+static CVector * const stru_56F1B4 = (CVector*)0x56F1B4;
+static MATRIX * const stru_56F224 = (MATRIX*)0x56F224;
+
+// compass "flash" countdown: nonzero right after Panel_CreateCompass makes
+// the needle pulse brighter for a few frames, decaying by 2 per call here,
+// clamped to 0. Also touched by two other not-yet-decompiled functions
+// (0x00407840, 0x004E9B00) elsewhere in the binary; tentative name from
+// this function's own usage only.
+static i32 * const gCompassFlashTimer = (i32*)0x0060F768;
+
+// Shared draw sequence for the two needle-half POLY_FT4 quads in
+// Panel_DisplayCompass below (originally repeated inline at 0x463f00ish and
+// 0x464200ish: PCGfx_UseTexture then a manual scale+color-pack
+// PCGfx_DrawQPoly2D, same idiom as PanelHB_DrawIconOverlay above, but with
+// the needle's inset 0.05..0.95 UV range instead of a full 0..1 quad and a
+// fixed zOffset of 0.0).
+// @Ok
+static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
+{
+	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
+
+	f32 yScale = gGameResolutionY / (f32)Yres;
+	f32 xScale = gGameResolutionX / (f32)Xres;
+	u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFFFF00) << 8)) << 8);
+
+	PCGfx_DrawQPoly2D(
+			p->x0 * xScale, p->y0 * yScale, 0.05f, 0.0f, col,
+			p->x1 * xScale, p->y1 * yScale, 0.95f, 0.0f, col,
+			p->x2 * xScale, p->y2 * yScale, 0.05f, 1.0f, col,
+			p->x3 * xScale, p->y3 * yScale, 0.95f, 1.0f, col,
+			0.0f);
+}
+
+// Real translation, 0x00463860. Decompiled via Hex-Rays and cross-checked
+// against the raw disasm. As with Panel_DisplayHealthBar, the previous
+// session's blocking-callee list was wrong: every one of sub_46D7B0/
+// 46DA40/46D430/46D790/470430/46D130/(the call Hex-Rays mislabels
+// "qt_register_signal_spy_callbacks" at 0x46D870, a decompiler symbol mixup
+// - names.json and its declared VECTOR* signature both confirm it is really
+// gte_ldlvl) is already decompiled and named: gte_SetRotMatrix, gte_rtir,
+// M3dMaths_SquareRoot0, gte_stlvnl, VectorNormal, ratan2, gte_ldlvl (all in
+// ps2funcs.cpp, already @Ok). sub_506440/507910 = PCGfx_UseTexture/
+// PCGfx_DrawQPoly2D (see Panel_DisplayHealthBar's comment above for how
+// that was confirmed). sub_462BB0/462C30 = Panel_DrawTexturedPoly(Texture*,
+// int) / Panel_SetStretchedScreenCoords(...,SAnimFrame*,...), both already
+// in this file.
+//
+// Globals: byte_60F77C = gCompassStatus (already declared, set by
+// Panel_CreateCompass/cleared by Panel_DestroyCompass). dword_60F708/70C/
+//710 = gCompassPosition's vx/vy/vz (confirmed via Panel_CreateCompass's own
+// disasm at 0x463800, which writes exactly these three dwords - matches
+// this file's existing `gCompassPosition = *pVec >> 12;`). qword_56F1B4/
+// dword_56F1BC = gMikeCamera[0].Position (idb_globals.txt: 0x56F1B0
+// gMikeCamera; weapons.cpp's Transform() already documents "gMikeCamera[0]
+// .Position split across qword_56F1B4 low/high"); unk_56F224 = the camera
+// view matrix at gMikeCamera[1]'s tail (utils.cpp's gCameraViewMatrix,
+// spidey.cpp's stru_56F224 - same address, reused name here). dword_60F76C
+// = gPanelScreenY (already declared above). dword_6B4CA8 = gTimerRelated
+// (bit.h). dword_56FB04 = pPoly (idb_globals.txt), the same growing poly
+// buffer Panel_DrawFlatShadedPoly/Panel_DrawTexturedPoly already use, here
+// advanced by sizeof(POLY_F3) per triangle with NO PolyBufferEnd check -
+// matches the original disasm exactly (a genuine missing bounds check,
+// reproduced not fixed). dword_568158/568154/628614/61B5FC = gGameResolutionY
+// /gGameResolutionX/Yres/Xres (PCGfx.cpp's own naming comment). word_610C48/
+// 610C4A = rcossin_tbl's .sin/.cos fields read as a raw u16 array (confirmed
+// by address: 610C4A is 610C48+2, i.e. rcossin_tbl[i].cos read via the same
+// "2*i" stride already used for .sin - the same struct, no new global).
+// dword_60F75C = gAnimCompass (already declared). byte_54D341 = gPrintStubbed
+// (ps2funcs.h); its debug-print calls (gsub_46CB90/nullsub_1) are no-ops in
+// this build (see Panel_DisplayHealthBar's comment above) and are omitted.
+//
+// Two faithfully-reproduced original dead stores: in each needle-half block,
+// `poly->code |= 2` is computed and stored, then immediately overwritten by
+// the very next `*(u32*)&poly->r0 = tintColor` full-dword store (confirmed
+// from the disasm store order) - the |2 never actually takes effect. Kept
+// exactly as ordered in the original rather than dropped as "dead code".
+//
+// The math: builds a camera-relative direction vector from the player/
+// camera position to gCompassPosition, GTE-rotates and normalises it,
+// turns it into a heading angle via ratan2, then builds a 2-triangle flat
+// dial background (pPoly, POLY_F3) plus a 2-quad needle sprite (gAnimCompass,
+// split left/right down the middle via a U-coordinate swap on the second
+// half) pointing along that heading. The needle brightens (gCompassFlashTimer)
+// right after Panel_CreateCompass and always has a small time-based pulse
+// (rcossin_tbl indexed by gTimerRelated) baked into the dial's alpha.
+// @Ok
 void Panel_DisplayCompass(void)
 {
-    printf("Panel_DisplayCompass(void)");
+	if (!gCompassStatus)
+		return;
+
+	gte_SetRotMatrix(stru_56F224);
+
+	CVector dir;
+	dir.vx = (gCompassPosition.vx - stru_56F1B4->vx) >> 6;
+	dir.vy = (gCompassPosition.vy - stru_56F1B4->vy) >> 6;
+	dir.vz = (gCompassPosition.vz - stru_56F1B4->vz) >> 6;
+
+	gte_ldlvl(reinterpret_cast<VECTOR *>(&dir));
+	gte_rtir();
+
+	i32 dist = M3dMaths_SquareRoot0(dir.vx * dir.vx + dir.vy * dir.vy + dir.vz * dir.vz) << 6;
+
+	gte_stlvnl(reinterpret_cast<VECTOR *>(&dir));
+
+	dir.vy = 0;
+
+	VectorNormal(reinterpret_cast<VECTOR *>(&dir), reinterpret_cast<VECTOR *>(&dir));
+
+	i16 angle = (i16)ratan2(dir.vz, dir.vx);
+
+	i32 xOff1 = (25 * dir.vx) >> 12;
+	i32 idxA = (angle - 1024) & 0xFFF;
+	i32 sideA = (9 * rcossin_tbl[idxA].cos) >> 12;
+	i32 idxB = (angle + 1024) & 0xFFF;
+	i32 sideB = (9 * rcossin_tbl[idxB].cos) >> 12;
+	i32 xOff2 = (6 * dir.vx) >> 12;
+
+	i32 tipY = *gPanelScreenY + 3604 * (320 * ((25 * dir.vz) >> 12) / 512) / 4096;
+	i32 tailA = *gPanelScreenY + (((320 * ((9 * rcossin_tbl[idxA].sin) >> 12)) >> 9));
+	i32 tailB = *gPanelScreenY + 320 * ((9 * rcossin_tbl[idxB].sin) >> 12) / 512;
+	i32 tipY2 = *gPanelScreenY + 320 * ((6 * dir.vz) >> 12) / 512;
+
+	i32 pulseHalfWidth = (dist <= 0x4000) ? (((0x4000 - dist) >> 8) + 8) : 8;
+
+	i32 pulseSin = rcossin_tbl[(pulseHalfWidth * (i16)gTimerRelated) & 0xFFF].sin;
+	i32 pulseBrightness = (255 * abs(pulseSin)) >> 12;
+	u32 dialColor = (pulseBrightness << 8) | 0xFF;
+
+	for (i32 tri = 0; tri < 2; tri++)
+	{
+		i32 sideOffset = (tri == 0) ? sideA : sideB;
+		i32 tailOffset = (tri == 0) ? tailA : tailB;
+
+		POLY_F3 *p = (POLY_F3 *)pPoly;
+		pPoly = (u32 *)((u8 *)pPoly + sizeof(POLY_F3));
+
+		*(u32 *)&p->r0 = dialColor;
+		p->y0 = (i16)(199 - tipY);
+		p->x0 = (i16)(xOff1 + 432);
+		p->x1 = (i16)(sideOffset + 432);
+		p->y1 = (i16)(199 - tailOffset);
+		p->y2 = (i16)(199 - tipY2);
+		p->x2 = (i16)(xOff2 + 432);
+	}
+
+	POLY_FT4 *pNeedle = (POLY_FT4 *)Panel_DrawTexturedPoly(gAnimCompass->pTexture, 0);
+	if (pNeedle)
+	{
+		u32 tintColor = (*(u32 *)&pNeedle->r0 & 0xFF000000) | 0x323280;
+
+		if (*gCompassFlashTimer != 0)
+		{
+			i32 sinT = rcossin_tbl[(gTimerRelated << 6) & 0xFFF].sin;
+			i32 signMask = (205 * sinT) >> 31;
+			tintColor = (abs((127 * sinT) >> 12) + 128)
+					| (((signMask ^ ((205 * sinT) >> 12)) + 0xFFFFFF * signMask + 50) << 8)
+					| (*(u32 *)&pNeedle->r0 & 0xFF000000);
+			*gCompassFlashTimer -= 2;
+			if (*gCompassFlashTimer < 0)
+				*gCompassFlashTimer = 0;
+		}
+
+		Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle, gAnimCompass, 32, 40);
+
+		i16 x0 = pNeedle->x0;
+		u8 codeOr2 = pNeedle->code | 2;
+		pNeedle->tpage &= 0xFF9F;
+		pNeedle->code = codeOr2;
+		i16 x1 = pNeedle->x1;
+		*(u32 *)&pNeedle->r0 = tintColor;
+		i16 halfWidth = (i16)((x1 - x0) / 2);
+		pNeedle->x2 += halfWidth;
+		pNeedle->x3 += halfWidth;
+		i16 newX1 = x1 + halfWidth;
+		pNeedle->x0 = x0 + halfWidth;
+		pNeedle->x1 = newX1;
+
+		PanelCompass_DrawNeedleHalf(pNeedle, gAnimCompass->pTexture);
+
+		POLY_FT4 *pNeedle2 = (POLY_FT4 *)Panel_DrawTexturedPoly(gAnimCompass->pTexture, 0);
+		if (pNeedle2)
+		{
+			Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle2, gAnimCompass, 32, 40);
+
+			pNeedle2->tpage &= 0xFF9F;
+			pNeedle2->x0 -= halfWidth;
+			pNeedle2->x1 -= halfWidth;
+			pNeedle2->x2 -= halfWidth;
+			pNeedle2->code |= 2;
+			u8 u1minus1 = pNeedle2->u1 - 1;
+			u8 origU0 = pNeedle2->u0;
+			pNeedle2->x3 -= halfWidth;
+			pNeedle2->u2 = u1minus1;
+			pNeedle2->u0 = u1minus1;
+			pNeedle2->u3 = origU0;
+			pNeedle2->u1 = origU0;
+			*(u32 *)&pNeedle2->r0 = tintColor;
+
+			PanelCompass_DrawNeedleHalf(pNeedle2, gAnimCompass->pTexture);
+		}
+	}
 }
 
 // Shared inline draw sequence used at every icon-overlay site in
