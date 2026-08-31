@@ -33,7 +33,11 @@ class CPlayer : public CSuper
 {
 	public:
 
-		PADDING(4);
+		// CPlayer::AI: nonzero gate for the submariner-die check
+		// (0x1A4 must be nonzero, along with field_1AC, to run the check).
+		u8 field_1A4;
+
+		PADDING(3);
 
 		i32 field_1A8;
 		char field_1AC;
@@ -77,7 +81,14 @@ class CPlayer : public CSuper
 		i32 field_358;
 		u32 field_35C;
 
-		PADDING(0x528-0x35C-4);
+		// CPlayer::AI: three-value rolling accumulator for the 1365x shift
+		// (field_360 = last tick delta, field_364 = tick before that,
+		// field_368 = (360+364+field_80) * 1365).
+		i32 field_360;
+		i32 field_364;
+		i32 field_368;
+
+		PADDING(0x528-0x368-4);
 
 		i32 field_528;
 		i32 field_52C;
@@ -87,7 +98,11 @@ class CPlayer : public CSuper
 
 		u32 field_538;
 
-		PADDING(0x540-0x538-4);
+		// CPlayer::AI: nonzero gate for the one-time floor-camera setup
+		// (0x53C is set to 1 after the first AI tick that ran the camera code).
+		u8 field_53C;
+
+		PADDING(3);
 
 		i32 field_540;
 
@@ -110,7 +125,11 @@ class CPlayer : public CSuper
 		// (0x4C38A0), "cmp [ebp+54Fh], bl" / "mov [ebp+54Fh], bl".
 		u8 field_54F;
 
-		PADDING(0x558-0x54F-1);
+		PADDING(4);
+
+		// CPlayer::AI: free-function callback, called as field_554(this)
+		// near the end of every AI tick when nonzero.
+		void (*field_554)(CPlayer*);
 
 		// player-position snapshot taken by CPlayer::SetupLookaroundCamera
 		// right before playing the zip-web-target lock-on animation
@@ -259,7 +278,25 @@ class CPlayer : public CSuper
 		// @FIXME
 		i32* field_C30;
 
-		PADDING(0xC6C-0xC30-4);
+		PADDING(0xC5C-0xC30-4);
+
+		// CPlayer::AI: nonzero gate for the field_C64 accumulator update
+		// (0xC5C must be nonzero to run the clamp logic).
+		u8 field_C5C;
+
+		PADDING(0xC64-0xC5C-1);
+
+		// CPlayer::AI: accumulator clamped to [0, 0x1000], adjusted by
+		// field_80*64 per tick when field_C68 (decrement) or field_C69 (increment).
+		i32 field_C64;
+
+		// CPlayer::AI: nonzero selects the decrement path for field_C64.
+		u8 field_C68;
+
+		// CPlayer::AI: nonzero selects the increment path for field_C64.
+		u8 field_C69;
+
+		PADDING(0xC6C-0xC69-1);
 
 		CVector field_C6C;
 		i32 field_C78;
@@ -396,7 +433,10 @@ class CPlayer : public CSuper
 
 		PADDING(0xE0C-0xE08-2);
 
-		i32 field_E0C;
+		// CPlayer::AI: pointer to a struct of 16 i16-pair fields at 0x10-byte
+		// intervals (0x00..0xB0, 0x100..0x130) plus byte flags at 0x21/0x31/0xE1/0x101.
+		// AI zeroes the 16 pairs and reads/writes the byte flags.
+		i32* field_E0C;
 		char field_E10;
 
 		i16 field_E12;

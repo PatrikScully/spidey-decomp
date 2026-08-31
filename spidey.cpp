@@ -145,10 +145,139 @@ void Bruce_Sync(void)
 	MechList->field_D4E = MechList->mAngles;
 }
 
-// @MEDIUMTODO
+// Relocatable user-function hook globals (0x6A9048/0x6A904C in the original).
+// Set by Spidey_SetUserFunction, read by CPlayer::AI's per-tick callback loop.
+static const char* gUserFunctionName;
+static unsigned int gUserFunctionSize;
+
+// 0x68293C: nonzero forces the level-exit path in CPlayer::AI's
+// submariner-die check (see gPshellForceLevelExit's full comment lower down).
+static i32 * const gPshellForceLevelExitEarly = (i32*)0x68293C;
+
+extern u8 submarinerDieRelated;
+
+// @Ok
 void CPlayer::AI(void)
 {
-    printf("CPlayer::AI(void)");
+	// One-time floor-camera setup, gated on field_53C.
+	if (this->field_53C == 0)
+	{
+		if (CameraList != 0)
+		{
+			if (CameraList->mCameraMode == 3)
+			{
+				CameraList->SetCamXOffset(gSpideyFloorCamXOffset, 0);
+				CameraList->SetCamYOffset(gSpideyFloorCamYOffset, 0);
+				CameraList->SetCamZOffset(gSpideyFloorCamZOffset, 0);
+				CameraList->SetCamXZDistance(gSpideyFloorCamXZDistance, 0);
+				CameraList->SetCamYDistance(gSpideyFloorCamYDistance, 0);
+				this->field_540 = 0;
+			}
+			this->PutCameraBehind(0);
+			CameraList->SetStartPosition();
+			this->field_53C = 1;
+		}
+	}
+
+	// Submariner-die check, gated on field_1AC and field_1A4.
+	if (this->field_1AC != 0 && this->field_1A4 != 0)
+	{
+		if (*gPshellForceLevelExitEarly != 0)
+		{
+			if (this->field_E0C[0xE1] != 0)
+			{
+				this->field_E0C[0xE1] = 0;
+				submarinerDieRelated = 1;
+			}
+		}
+		else
+		{
+			if (DifficultyLevel != 0)
+			{
+				if (this->field_E0C[0x31] != 0 || this->field_E0C[0x21] != 0)
+				{
+					this->field_E0C[0x101] = 0;
+					this->field_E0C[0x21] = 0;
+					this->field_E0C[0x31] = 0;
+					submarinerDieRelated = 1;
+				}
+			}
+		}
+	}
+
+	// Walk the web list: delete flagged webs, AI() the rest.
+	CBody *item = WebList;
+	while (item != 0)
+	{
+		CBody *next = (CBody*)item->mNextItem;
+		if (item->mCBodyFlags & 0x40)
+		{
+			if ((void*)this->field_E6C == (void*)item)
+				this->field_E6C = 0;
+			delete item;
+		}
+		else
+		{
+			item->AI();
+		}
+		item = next;
+	}
+
+	// field_C64 accumulator, clamped to [0, 0x1000].
+	if (this->field_C5C != 0)
+	{
+		if (this->field_C68 != 0)
+		{
+			this->field_C64 -= this->field_80 * 64;
+			if (this->field_C64 < 0)
+				this->field_C64 = 0;
+		}
+		else if (this->field_C69 != 0)
+		{
+			this->field_C64 += this->field_80 * 64;
+			if (this->field_C64 > 0x1000)
+				this->field_C64 = 0x1000;
+		}
+	}
+
+	// Three-value rolling shift, scaled by 1365.
+	i32 old360 = this->field_360;
+	i32 old364 = this->field_364;
+	i32 sum = old360 + this->field_80 + old364;
+	this->field_364 = old360;
+	this->field_360 = this->field_80;
+	this->field_368 = sum * 1365;
+
+	// field_E18 countdown timer.
+	if (this->field_E18 != 0 && this->field_1AC == 0)
+	{
+		this->field_E18 -= this->field_80;
+		if (this->field_E18 < 0)
+		{
+			this->field_E18 = 0;
+			this->mAnimSpeed = this->field_E12;
+		}
+	}
+
+	// Zero the 16 i16-pair fields in the field_E0C struct.
+	for (i32 i = 0; i < 16; i++)
+	{
+		*(i16*)((u8*)this->field_E0C + i * 0x10) = 0;
+	}
+
+	// Per-tick callback.
+	if (this->field_554 != 0)
+		this->field_554(this);
+
+	// User-function hook loop.
+	if (gUserFunctionName != 0)
+	{
+		for (i32 i = 0; i < 8; i++)
+		{
+			if (gUserFunctionSize & (1 << i))
+				Reloc_CallUserFunction(gUserFunctionName, i, 0, 0);
+		}
+	}
 }
 
 // @Ok
@@ -6176,9 +6305,6 @@ void CPlayer::TidyUpZipWebLandingPosition(int a2)
 		i += 512;
 	}while(i<4096);
 }
-
-static const char* gUserFunctionName;
-static unsigned int gUserFunctionSize;
 
 // @Ok
 // trivial two-field store, functionally correct regardless of
