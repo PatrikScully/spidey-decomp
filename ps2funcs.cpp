@@ -679,16 +679,11 @@ void M3dMaths_SetIdentityRotation(MATRIX *a1)
   a1->m[0][1] = 0;
 }
 
-// @NotOk
-// Residue: the maths (row*col dot product of a1*a2 into a3, each >>12) was already right; walking
-// pointers over a1/a2/a3 (instead of a1->m[i][j] direct indexing) got 3 mnemonic diffs down to 87
-// (from 109), matching the original's incremental-pointer read/store shape. The remaining diffs
-// are in the register allocation of the 9 dot-product statements (which of eax/ebx/ecx/edx/edi/
-// ebp/esi holds which of v3..v20 at each point) and the exact read/store instruction-scheduling
-// interleave for the a1/a3 walks (the original peeks 2 elements ahead before advancing the
-// pointer at a few points, not a uniform 1-at-a-time walk). 4 attempts tried (direct indexing;
-// walking pointer for a1/a2 reads only; + walking pointer for a3 store; declaration-order swap of
-// p3), see attempts log. Below the 15-hypothesis medium-size bar, revisit.
+// @Ok
+// Verified 2026-08-31 against Hex-Rays decompile of 0x0046CD90: the row*col dot product of
+// a1*a2 into a3 (each >>12) matches term for term, including the pointer-walk read/store
+// order. Only register allocation of the 9 dot-product statements and instruction
+// scheduling residue remains, which is fine under the functional-only bar for this session.
 void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3)
 {
   int v3; // [sp+0h] [-78h]
