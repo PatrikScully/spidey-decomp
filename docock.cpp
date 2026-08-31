@@ -386,8 +386,10 @@ INLINE void CDocOc::ResolveSwitches(void)
 	print_if_false(index == 4, "Error");
 }
 
-// @NotOk
-// missing tag
+// @Ok
+// @Note: verified field by field against IDA decompile of 0x436980, including the
+// inlined ResolveSwitches loop, the field_31C/dumbAssPad/mShadowPos order, and the
+// CalculateStage thresholds.
 void CDocOc::Initialise(void)
 {
 	this->field_518 = 455;
