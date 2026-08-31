@@ -1218,6 +1218,26 @@ CBaddy* CBaddy::GetClosest(i32 baddyType, i32 inSight)
 }
 
 // @BIGTODO
+// Investigated 2026-08-31 (IDA Hex-Rays on the real exe), not attempted
+// further. Original at 0x4050B0, 7584 bytes (next symbol GetScriptValue at
+// 0x406E50). This is the opcode dispatcher CBaddy::ParseScript (@Ok) calls
+// for every trigger-script command whose opcode has bit 0x4000 set. The
+// switch covers roughly 90 distinct u16 opcodes (0x4101..0x452A, several
+// small ranges) and its case bodies call around 50 different leaf helpers
+// that have no repo declaration and no tools/names.json entry at all
+// (sub_43C250/43CEA0/43D830/43B410/43B740 model/particle spawners,
+// sub_46BD80/46B450 camera, sub_416880/4708B0 sound, sub_40F3D0/3F0/410/
+// 440/460/480 a stateful particle-system setup sequence, sub_460020/
+// 460D00/460C10/4273D0/470430/438EE0/438E20/4C9180/4C9230/4E5DA0/455390/
+// 4E6150/479EE0/479D30 and more). Several other callees ARE already
+// exercised elsewhere in this file (sub_4E3940/4E3880/4E7760/4E7800/
+// 4E79F0/4E7AE0/4E7A40/4E7900, the CVector/list helpers GetScriptValue and
+// SetVariable already use) but the ~50 unnamed ones span several unrelated
+// subsystems well outside baddy.cpp/web.cpp/trig.cpp. Per the leaf-first
+// rule those all need decompiling first; that is a multi-file undertaking,
+// not something to guess piecemeal in one pass. Left as the existing
+// placeholder stub (not hooked anywhere in patch_baddy, so this has no
+// runtime effect either way).
 int CBaddy::ExecuteCommand(u16)
 {
 	return 0x21052025;
