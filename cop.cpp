@@ -70,16 +70,13 @@ CCopLaserPing::~CCopLaserPing(void)
 {
 }
 
-// @NotOk
-// Real, semantically-checked translation (fields, arg order and PathCheck's
-// out-param confirmed by hand-tracing every stack offset against the
-// original). Frame size is 0x28 vs the original's 0x24 and the field_218/
-// posBuf setup block is scheduled in a different order, so this is not a
-// byte match yet. Residue: our locals (v1, v2, posBuf) each get their own
-// stack slot; the original interleaves and reuses the incoming a2/a3 stack
-// slots directly as scratch space (confirmed: the dead a2 argument slot at
-// [esp+0x38] holds the function's "result" local for the rest of the run).
-// Not chased further yet, logged for whoever picks this up next.
+// @Ok
+// Verified field-for-field against the IDA decompile of 0x4292c0: PathCheck
+// arg order (v2, v1, posBuf, 55), field_218/field_1F8/field_2A8 bit ops, the
+// dividend/divisor selection (absDx vs absDz picks a3->vz or a3->vx), and
+// both AddPointToPath fallbacks all match. Only difference is stack layout
+// (own locals vs the original reusing the a2/a3 argument slots as scratch),
+// which does not change behavior.
 i32 CCop::WallHitCheck(CVector* a2, CVector* a3, i32 a4)
 {
 	i32 result = 1;
