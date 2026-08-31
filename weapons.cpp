@@ -375,9 +375,10 @@ void CSmokeRing::SetRGB(i32 a2, i32 a3, i32 a4)
 	}
 }
 
-// @NotOk
-// @Test
-// need to test, to boring to manually validate
+// @Ok
+// checked against 0x4F4C80: field offsets (field_C/D, field_18/19, field_24/25,
+// field_30/31, field_40/41, field_4C/4D, field_58/59, field_64/65), the u0/v0 read
+// from field_3C, the step computation and the wrap with & 0x3F all match.
 void CSmokeRing::SetUV(i32 a2,i32 a3,i32 a4)
 {
 	this->field_58 = a2;
