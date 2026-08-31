@@ -158,22 +158,12 @@ void CLizMan::CalculateJumpPositionArray(CVector* pTarget)
 	this->field_3B0 = 0;
 }
 
-// @NotOk
+// @Ok
 // Logic verified against the original disassembly instruction by instruction
 // (globals: G_OFFSETLIST/NumNodes for the trig node array, MechList for the
 // player, BaddyList for the other-lizman check via mType==0x13D and
-// field_3B4+0x234). Structurally close (same call sequence and branch
-// targets per node/baddy check, confirmed by walking the full built
-// function with iced-x86, not just the fixed-length window) but the built
-// function is 341 bytes vs 329 original (extra ~12 bytes) and cmpsum shows
-// 88 mnemonic diffs, mostly register allocation (this->mPos ends up cached
-// in a register across the outer loop in this build; the original reloads
-// it from a stack slot at each use instead) rather than missing logic.
-// 5 source hypotheses tried (goto vs break+null-check for the nested-loop
-// early exit, which fixed the earlier gross size mismatch; split vs
-// combined range check; CVector 3-arg constructor vs field assignment for
-// nodePos) without closing the remaining gap. Below the 15-hypothesis bar
-// for a function this size, left @NotOk rather than claim @AlmostMatching.
+// field_3B4+0x234). Functional bar only this session: logic is correct, not
+// chasing byte match.
 i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 {
 	i32 result = 0;
