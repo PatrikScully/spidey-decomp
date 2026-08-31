@@ -24,9 +24,44 @@ EXPORT i32 gGameFmvPad;
 
 #define NUM_MOVIES 27
 
-// @NotOk
-// @FIXME
-SMovieDetails movieDetails[NUM_MOVIES];
+// @Ok
+// Data table read directly from the binary at 0x54F2E8 (27 entries,
+// verified via IDA). name is the bink file to play, width/height are
+// the movie's pixel size, endframe is its last frame. field_10 and
+// field_14 are always 1 for every entry in the binary; they land in
+// gGameFmvTwo (u8) and gGameFmvOne (i32) in GameFMV_SetStartTrack, but
+// their real meaning was not determined (both fields are constant 1
+// in every original entry, so no behavior difference is visible here).
+SMovieDetails movieDetails[NUM_MOVIES] =
+{
+	{ "ATVILOGO.bik",  320, 240,  208, {0}, 1, 1 },
+	{ "NEVERSOFT.bik", 320, 192,  239, {0}, 1, 1 },
+	{ "TREYARCH.bik",  320, 240,  119, {0}, 1, 1 },
+	{ "GRAYMATT.bik",  320, 192,  239, {0}, 1, 1 },
+	{ "L1M1.bik",      320, 192, 2787, {0}, 1, 1 },
+	{ "L1M2.bik",      320, 192,  604, {0}, 1, 1 },
+	{ "L2M1.bik",      320, 192,  218, {0}, 1, 1 },
+	{ "L2M2.bik",      320, 192,  432, {0}, 1, 1 },
+	{ "L2M3.bik",      320, 192, 1009, {0}, 1, 1 },
+	{ "L3M1.bik",      320, 192, 1950, {0}, 1, 1 },
+	{ "L4M1.bik",      320, 192,  334, {0}, 1, 1 },
+	{ "L4M2.bik",      320, 192,  685, {0}, 1, 1 },
+	{ "L5M1.bik",      320, 192,  670, {0}, 1, 1 },
+	{ "L5M2.bik",      320, 192,  182, {0}, 1, 1 },
+	{ "L5M3.bik",      320, 192,  226, {0}, 1, 1 },
+	{ "L5M4.bik",      320, 192,  185, {0}, 1, 1 },
+	{ "L6M1.bik",      320, 192, 1629, {0}, 1, 1 },
+	{ "L7M1.bik",      320, 192,  502, {0}, 1, 1 },
+	{ "L7M2.bik",      320, 192,  560, {0}, 1, 1 },
+	{ "L7M3.bik",      320, 192,  935, {0}, 1, 1 },
+	{ "L8M1.bik",      320, 192,  611, {0}, 1, 1 },
+	{ "L8M2.bik",      320, 192,  942, {0}, 1, 1 },
+	{ "L8M3.bik",      320, 192,  395, {0}, 1, 1 },
+	{ "L8M4.bik",      320, 192,  369, {0}, 1, 1 },
+	{ "L8M5.bik",      320, 192, 2378, {0}, 1, 1 },
+	{ "SOFDEC.bik",       0,   0,    0, {0}, 1, 1 },
+	{ "LEGAL.bik",        0,   0,    0, {0}, 1, 1 },
+};
 
 // @Ok
 // @Matching
