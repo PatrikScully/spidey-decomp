@@ -12,7 +12,58 @@
 CItem* CWeapons;
 extern SCamera gMikeCamera[2];
 
-// @MEDIUMTODO
+// Investigated 2026-08-31, not attempted, retagged from @MEDIUMTODO. Address
+// 0x4f1860, 4681 bytes, 1286 instructions (checked via iced-x86 decode of
+// tools/functions/5183584.bin), so the size tag was wrong: this is BIGTODO
+// scale, well past the 1200-byte functions bit.cpp already parks as
+// @BIGTODO in the same call-shape family (see the shared family notes
+// above CSimpleTexturedRibbon::Display in bit.cpp, which this function
+// matches point for point).
+//
+// Confirmed via Hex-Rays decompile (0x4f1860) against tools/names.json:
+// - Opens with the same "refresh gGfxMatrix from its 4 source arrays"
+//   16-float copy loop bit.cpp's notes describe as not implemented
+//   anywhere yet.
+// - Per-point camera transform is the exact gte_ldlv0/gte_rtps idiom from
+//   the family notes: IDA's FLIRT signature mislabels the gte_ldlv0 call
+//   (0x46D840) as qt_register_signal_spy_callbacks, a coincidental Qt hit,
+//   not a real callee. sub_46DBC0 = gte_rtps (0x46DBC0, matches names.json).
+// - After the transform it also calls two more still-unnamed GTE-style
+//   helpers, sub_46DF80/sub_46DF70 (0x46DF80/0x46DF70), that are not the
+//   same as the family's usual gte_stsxy/gte_stlvnl2 (those are named
+//   exports at different addresses in names.json), so this ribbon reads a
+//   different pair of GTE result registers than the simpler family members.
+// - Clip test against G_VIEW_CLIP_INFO (dword_64E514, screen.cpp) matches
+//   the family's documented clip idiom.
+// - The "invZ" perspective-divide pipeline (Algebra_Transform4-shaped:
+//   raw fixed/4096.0f, dot with the gGfxMatrix rows, 1/w with a fabs
+//   guard) matches the family notes too, but goes through
+//   sub_402620/sub_402600 (IDA mislabels 0x402620 as QModelIndex::QModelIndex,
+//   another coincidental FLIRT hit; both are almost certainly the
+//   vector3d/vector4d helpers the family notes already flag as unnamed).
+// - Beyond the shared per-point transform, this function builds a ring of
+//   midpoints between consecutive ribbon points via a still-unnamed helper
+//   (sub_4F2AB0, called once per segment) into a small fixed globals block
+//   (dword_614CD4..614CF4, not documented anywhere in the repo), then walks
+//   that ring emitting up to 5 PCGfx_DrawQPoly3D (0x508550, already @Ok)
+//   calls per segment for a lit, shaded ribbon strip (front polys, a fringe
+//   quad, and glow/edge quads gated by per-point RGB/width tests), each
+//   built from more unnamed screen-space scale constants (dword_568154,
+//   dword_568158, dword_628614, dword_61B5FC) and an assert helper
+//   (sub_46CB90, format string byte_56EB54) not decoded anywhere else.
+// - Tail writes back into a small per-frame history buffer at this[15]/
+//   this[17] (CGouraudRibbon fields with no name yet) so the next frame
+//   can find the previous frame's screen points; this bookkeeping is not
+//   shared with anything else in bit.h/weapons.h.
+//
+// None of the callees needed to finish this safely (sub_4F2AB0,
+// sub_46DF80, sub_46DF70, sub_46CB90, the dword_614Cxx ring, the
+// dword_568154/568158/628614/61B5FC scale constants) exist anywhere in the
+// repo yet, and this function is bigger and denser than the ones bit.cpp's
+// family notes already declined to finish this session. Left as a stub
+// rather than guessing at five new undocumented globals and an unnamed
+// helper's exact math.
+// @BIGTODO
 void CGouraudRibbon::Display(void)
 {
     printf("CGouraudRibbon::Display(void)");
