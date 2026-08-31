@@ -389,31 +389,55 @@ void PreProcessAnimPacket(
 }
 
 // @BIGTODO
-// Retagged from @MEDIUMTODO after reading the original at 0x4C9A60
-// (roughly 0xA80 / 2688 bytes, ~150 lines of decompiled pseudocode). This
-// is the main per-region PSX load/convert routine, called once from
-// Spool_PSX right after the file loads. It is not a small function: it
-// rebuilds the model array (constructing a CItem per model with the eh
-// vector constructor iterator), fixes up model checksum pointers, resolves
-// or creates every texture entry the PSX references (walking
-// TextureChecksumHashTable, same idiom as Spool_FindTextureEntry /
-// NewTextureEntry above), fixes up face material indices, then walks the
-// PSX record list a second time dispatching on record type (id 0x45 =
-// anim packet via PreProcessAnimPacket, id 6/7/10/42/44 = various region
-// fields, id 0x734350C1... several large magic hash constants = texture
-// group formats) and for each texture record picks one of several loaders
-// (PCTex_CreateTexture16/256, PCTex_CreateTexturePVR, LTI replacement
-// texture via PCTex_LoadLtiTexture) depending on packed flag/format bits.
-// Every callee resolved to a named, already-decompiled function (none are
-// stubs in this TU), so leaf-first is satisfied; the size and the amount
-// of bit-packed, hash-dispatched logic is why this is BIGTODO scale, not
-// MEDIUM. Left as a stub for a future session: this needs the full
-// discipline's 10 hypotheses per diff cluster once written, and getting
-// the many magic checksum constants and bitfield packs (offsets 0x00,
-// 0x04, 0x08, 0x0A, 0x0C..0x13, 0x14 of the on-disk texture record; the
-// runtime Texture struct's TexWin/field_12/x/y bit layout) right needs
-// careful field-by-field cross-checking against texture.h, not a quick
-// pass.
+// Re-checked 2026-08-31 with a fresh IDA decompile of 0x4C9A60 (2688 bytes,
+// ~150 lines of Hex-Rays) while implementing
+// M3dInit_ParsePSX (0x4534A0, m3dinit.cpp, now @NotOk/done) -- this
+// function's very last call is M3dInit_ParsePSX(a1), so this note replaces
+// the stale "every callee is a named, decompiled function" claim above:
+// that is now literally true (it was not, before this session).
+//
+// Confirmed field mappings (cross-checked against spool.h's SPSXRegion,
+// which is VALIDATE_SIZE'd at 0x44/68 bytes, and its "17*region"-strided
+// dword_* aliases seen in the disassembly): dword_6B2458[17*a1] ==
+// PSXRegion[a1].pPSX, dword_6B2450[17*a1] == PSXRegion[a1].pSuper (the
+// per-region CItem array; the "eh vector constructor iterator" call builds
+// exactly PSXRegion[a1].pPSX's header count of them, 0x40 bytes each,
+// matching ob.cpp's VALIDATE_SIZE(CItem, 0x40)), dword_6B244C[17*a1] ==
+// PSXRegion[a1].pModelChecksums, dword_6B2454[17*a1] == PSXRegion[a1].
+// ppModels -- built here by walking the raw PSX buffer's own embedded
+// {count, count*u32 file-relative-offset} table and rewriting each entry
+// in place from a file offset to an absolute pointer (so ppModels ends up
+// literally an array of SModel* into the loaded file, with the count at
+// ppModels[-1]; M3dInit_ParsePSX and DecrementTextureUsage above both
+// already rely on that exact ppModels[-1] convention). The record-type
+// switch near the end (id 6 -> pTexWibData + M3dInit_FlagZeroWibbles, id 7
+// -> pColourPulseData, id 10 -> M3dZone_SetZone, id 42/44 -> pColourTable,
+// id 0x6b6f6c33/0x52410008 -> pAnimFile-ish/pHierarchy-ish fields, id
+// 0x734350D2 -> a palette-remap loop through byte_5F6910) matches
+// M3dInit_ParsePSX's own two DoAssert'd packet ids (6 and 7) exactly,
+// independent confirmation both functions agree on the format.
+//
+// Still unresolved and why this stays @BIGTODO rather than attempted: (1)
+// the texture-creation branch (dword_6B78F8/gLowGraphics == 0) dispatches
+// on ~15 distinct 32-bit magic hash constants (-1319509333, 1756868918,
+// -826931392, -380076947, -1824591316, 1117282170, 1310613018,
+// 2147187373, 1054208779, 565174694, 1002542254, 441455924, 146629748,
+// 354907198, 427541114) to decide between PCTex_CreateTexture16/256,
+// PCTex_CreateTexturePVR-family and the LTI replacement loader; these look
+// like texture-group/format checksums with no corresponding names in
+// names.json or the maintainer's IDB, and guessing wrong here silently
+// picks the wrong texture format/loader, not a compile error. (2) the
+// on-disk texture record's field layout (offsets 0x00, 0x04, 0x08, 0x0A,
+// 0x0C..0x13, 0x14, plus the runtime Texture struct's TexWin/field_12/x/y
+// packing this function writes into) still needs a careful field-by-field
+// cross-check against texture.h that this session did not have time for
+// after the M3dInit_ParsePSX work above. Leaf-first is genuinely satisfied
+// now (NewTextureEntry, DecrementTextureUsage, M3dZone_SetZone,
+// M3dInit_FlagZeroWibbles, M3dInit_ParsePSX, every PCTex_* loader: all
+// real); the blocker is purely the unidentified magic constants and the
+// texture-record field layout, which need the "10 hypotheses per diff
+// cluster" discipline once someone sits down with texture.h and the
+// original's texture-record disassembly side by side.
 void ProcessNewPSX(i32)
 {
     printf("ProcessNewPSX(i32)");
