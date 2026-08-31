@@ -14,6 +14,8 @@
 #include "front.h"
 #include "m3dcolij.h"
 #include "m3dzone.h"
+#include "ps2redbook.h"
+#include <new>
 #include <cmath>
 #include "ai.h"
 #include "panel.h"
@@ -43,6 +45,15 @@ static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 // thug.cpp's gThugTypeRelated* tables: fixed, read-only data baked into the
 // original exe image, not a mutable global, so no G_* macro is needed.
 static void * const gChopperHooksPacket = (void*)0x00548F88;
+
+// Chopper sniper end-of-strike SFX track-pair tables: [group, channel] i32 pairs,
+// indexed by (Rnd(4) & 0xFE). The hi pair (0x548F38/548F3C) plays when field_128 is
+// set, the lo pair (0x548F28/548F2C) otherwise. Evidence: CSniperTarget::AI state 2
+// (0x421900) Redbook_XAPlay call sites.
+static i32 * const gSniperHitSFXHi_Group = (i32*)0x00548F38;
+static i32 * const gSniperHitSFXHi_Channel = (i32*)0x00548F3C;
+static i32 * const gSniperHitSFXLo_Group = (i32*)0x00548F28;
+static i32 * const gSniperHitSFXLo_Channel = (i32*)0x00548F2C;
 
 // @Ok
 // @Matching
@@ -1660,12 +1671,30 @@ void CSniperTarget::DrawTargetRecticle(void)
 			5.0f);
 }
 
-// @NotOk
+// @Ok
+// @Note: state 2 rebuilt from the 0x421900 disassembly this session. The old
+// case-2 body was a paraphrase with several real bugs, now fixed:
+// - position was `field_104 += field_148 * field_80`; the original does
+//   `field_154 += 8 * field_80` then `field_104 = field_110 + field_148 * field_154`
+//   (a move from the start point along the direction by a growing distance).
+// - the spawn gate used Vblanks; the original uses gTimerRelated (0x6B4CA8)
+//   with a > 0xA (10) rate limit AND field_154 < field_158.
+// - the spawn object was `new CMachineGunBullet(...)`; the original hand-builds
+//   a 184-byte CGLine (the CMachineGunBullet layout): base ctor, zero the bullet
+//   fields, swap the vtable to off_53B590, then Common(&camPos, &field_104) with
+//   camPos = CameraList->mPos raised by 0x200000, plus field_8C = Mem_MakeHandle
+//   and field_A4 = 10. The per-shot SFX is SFX_Play(0x8074, 0x2000, 0).
+// - the end-of-strike SFX is a Redbook_XAPlay track pair (hi 0x548F38/548F3C when
+//   field_128 is set, lo 0x548F28/548F2C otherwise, indexed by Rnd(4) & 0xFE),
+//   gated by field_154 >= field_158 AND field_F8 == field_FC, then field_120 = 180
+//   and field_100 = 0. The old body had none of this.
+// States 0 and 1 were already confirmed correct (see the note below).
 // @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
 // tools/functions/4331776.bin (0x421900), tracing every offset against
 // CBody/CItem's VALIDATE()'d field layout (ob.cpp) instead of guessing.
-// This corrects real, verified structural mistakes in the previous version,
-// but state 2's own body is left untouched pending more work (see below):
+// This corrects real, verified structural mistakes in the previous version.
+// (State 2's body, which this note left untouched, was rebuilt from the
+// disassembly this session -- see the note above.) The states 0/1 details:
 // - States 0 and 1 ARE two distinct blocks (confirmed), but the previous
 //   note's description of what's in each was wrong in an important way: the
 //   line-of-sight raycast, the CGlowFlash/CMachineGunBullet-style muzzle
@@ -1825,29 +1854,69 @@ void CSniperTarget::AI(void)
 		}
 		case 2:
 		{
-			this->field_104 = this->field_104 + reinterpret_cast<CVector&>(this->field_148) * this->field_80;
+			// Advance the strike distance and recompute position from the start
+			// point (field_110) along the direction (field_148).
+			this->field_154 += 8 * this->field_80;
+			this->field_104 = reinterpret_cast<CVector&>(this->field_110)
+					+ reinterpret_cast<CVector&>(this->field_148) * this->field_154;
 
-			if (Vblanks - this->field_124 <= 10)
-				break;
+			// Raycast/spawn origin: the camera position, raised by 0x200000.
+			CVector camPos;
+			camPos.vx = CameraList->mPos.vx;
+			camPos.vy = CameraList->mPos.vy + 0x200000;
+			camPos.vz = CameraList->mPos.vz;
 
-			if (this->field_154 >= this->field_158)
-				break;
-
-			this->field_124 = Vblanks;
-
-			if (Rnd(100) >= 60)
-				break;
-
-			SFX_Play((Rnd(4) & 0xFE) == 0 ? 0x8F38 : 0x8F3C, 0x3C, 0);
-
-			new CMachineGunBullet(reinterpret_cast<CVector*>(&this->field_13C), &this->field_104, this);
-
-			this->field_F8++;
-
-			if (this->field_F8 == this->field_FC)
+			// Rate-limited (gTimerRelated) bullet spawn while the strike is in flight.
+			if ((u32)(gTimerRelated - this->field_124) > 0xA && this->field_154 < this->field_158)
 			{
-				this->field_120 = 180;
-				this->field_100 = 0;
+				this->field_124 = gTimerRelated;
+				SFX_Play(0x8074, 0x2000, 0);
+
+				// Hand-built CGLine object (184 bytes, the CMachineGunBullet layout):
+				// base ctor, zero the bullet fields, swap the vtable to off_53B590,
+				// then Common() wires up the line from camPos to the strike position.
+				void *mem = CBit::operator new(0xB8);
+				if (mem != 0)
+				{
+					CGLine *line = ::new (mem) CGLine();
+					CMachineGunBullet *b = reinterpret_cast<CMachineGunBullet*>(line);
+					b->field_5C = 0;
+					b->field_60 = 0;
+					b->field_64 = 0;
+					b->field_68 = 0;
+					b->field_6C = 0;
+					b->field_70 = 0;
+					b->field_80 = 0;
+					b->field_82 = 0;
+					b->field_84 = 0;
+					b->field_A8 = 0;
+					b->field_AC = 0;
+					b->field_B0 = 0;
+					*reinterpret_cast<void**>(mem) = (void*)0x53B590;
+					b->Common(&camPos, &this->field_104);
+					b->field_8C = Mem_MakeHandle(this);
+					b->field_A4 = 10;
+				}
+
+				this->field_F8++;
+			}
+
+			// Strike complete and all bullets fired: play the end SFX and reset.
+			if (this->field_154 >= this->field_158)
+			{
+				if (this->field_F8 == this->field_FC)
+				{
+					if (Rnd(100) < 60)
+					{
+						i32 idx = Rnd(4) & 0xFE;
+						if (this->field_128 != 0)
+							Redbook_XAPlay(gSniperHitSFXHi_Group[idx], gSniperHitSFXHi_Channel[idx], 60);
+						else
+							Redbook_XAPlay(gSniperHitSFXLo_Group[idx], gSniperHitSFXLo_Channel[idx], 60);
+					}
+					this->field_120 = 180;
+					this->field_100 = 0;
+				}
 			}
 
 			break;
