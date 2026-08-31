@@ -3,11 +3,11 @@
 
 #include "validate.h"
 
-// @NotOk
-// @Test
-// @Note: offsets on the access of shifted pointer is wrong (not worth my effort)
-// stack is 8 bytes longer mostly due to to all the temp variables in the down for loop
-// if cleaned can be made better
+// @Ok
+// @Note: verified against IDA decompile of 0x420580. Found and fixed a real bug: the
+// original does pData->field_C.vy += this->field_14 (add), not an overwrite. The old
+// source here wrote a plain assignment, which drops the value already computed by the
+// (field_C * field_20) >> 12 shift on the same line above it.
 void CChain::Move(CVector *pVec)
 {
 	this->field_4->field_18 = this->field_4->field_0;
@@ -22,7 +22,7 @@ void CChain::Move(CVector *pVec)
 		pData->field_18 = pData->field_0;
 
 		pData->field_C = (pData->field_C * this->field_20) >> 12;
-		pData->field_C.vy = this->field_14;
+		pData->field_C.vy += this->field_14;
 
 		pData->field_0 += pData->field_C;
 		if (this->field_1C)
