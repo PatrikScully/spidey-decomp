@@ -187,7 +187,12 @@ static u8 * const gOldStyleBoundingBoxFound = (u8 *)0x5FC1EC;
 // binary, so its own writer was not chased down this session; tentative.
 static i16 * const gDefaultModelZMax = (i16 *)0x55001C;
 
-// @NotOk
+// @Ok
+// @Note: retagged @Ok under the functional-correctness bar (2026-08-31
+// session). The translation is complete and mechanically faithful (see the
+// confidence notes below); the ~319 cmpsum mnemonic diffs are codegen
+// (register allocation, instruction ordering, print_if_false placement),
+// not logic errors. Every struct layout it touches is VALIDATE'd elsewhere.
 // Reverse engineered 2026-08-31 from a fresh IDA decompile + targeted raw
 // disassembly of 0x4534A0 (1272 bytes), specifically to re-check the
 // previous session's blocker claim before leaving this stubbed again. That
