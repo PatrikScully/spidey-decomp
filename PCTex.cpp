@@ -2099,6 +2099,12 @@ INLINE ClutPC* clutToClutPc(const u16* pClut)
 // that copyBitmap would have done on Mac. Mac has it as its own function
 // (.copyBitmap__FPCviPviiii, 0x1747d0). Leaving this stub as is, same as
 // downloadTexture below and obtainWaterLevelInPoolA7 in l5a7lsc.cpp.
+// Re-verified 2026-08-31: fresh IDA decompile of PCTex_CreateTexturePVRInId
+// (0x0050F6D0) still shows the row-by-row `qmemcpy(dst, src, rowBytes); src
+// += srcPitch; dst += dstPitch;` loop inlined directly (no call), and
+// idbs/spideypc_names.txt (the maintainer's PC IDB dump) still has no
+// "copyBitmap" entry anywhere, only spiderman_names.txt (Mac). Confirmed
+// still not a real PC function; stub left as is.
 // @SMALLTODO
 void copyBitmap(void const *,i32,void *,i32,i32,i32,i32)
 {
@@ -2222,6 +2228,13 @@ INLINE i32 countLeadingZeroBits(u32 num)
 // own function (.downloadTexture__FP9PCTexturePUsii, 0x174870). Leaving
 // this stub as is, same as copyBitmap above and obtainWaterLevelInPoolA7
 // in l5a7lsc.cpp.
+// Re-verified 2026-08-31: fresh IDA decompile of PCTex_CreateTexturePVRInId
+// (0x0050F6D0) still shows both branches inlined directly at the call site:
+// the row-by-row qmemcpy loop when the source/dest formats already match,
+// and a direct call to sub_50F4A0 (== our @Ok copyConvertBitmap) when they
+// don't, with no separate out-of-line call in between. idbs/spideypc_names.txt
+// still has no "downloadTexture" entry, only spiderman_names.txt (Mac).
+// Confirmed still not a real PC function; stub left as is.
 // @MEDIUMTODO
 void downloadTexture(SPCTexture *,u16 *,i32,i32)
 {
