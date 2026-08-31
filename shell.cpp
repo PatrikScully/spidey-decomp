@@ -2023,24 +2023,327 @@ void Shell_DrawGameCoverHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amoun
 
 // Address confirmed real this session: 0x49C220, 2675 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
-// sub_49CCB0's menu-code loop, code 11). Re-checked 2026-08-31 with a full
-// Hex-Rays decompile: same conclusion as Shell_ComicCollection above, the
-// "one small local helper" estimate was WRONG. Shell_DrawGameCoverHighlightBox
-// (0x49C1A0) is now real and @Ok, but the main body constructs SIX of the
-// same previously-undiscovered 420-byte CSuper-subclass objects (off_53BFC0
-// vtable, see the long comment on Shell_ComicCollection above for the full
-// writeup: same size as CSuper (VALIDATE_SIZE(CSuper, 0x1A4) in ob.cpp), same
-// CSuper::CSuper()+vtable-swap+CItem::InitItem construction, and the same
-// class is also used by Shell_MainMenu). Six because Game Covers shows six
-// grid cells at once (vs Comic Collection's 32, drawn from a shared pool of
-// preview items lazily). Blocked on the same next step: name and validate
-// that class. The rest of the body (grid layout math, pad input, the six
-// CExpandingBox-less M3d_Render calls) is comparatively mechanical once
-// that class exists.
-// @BIGTODO
+// sub_49CCB0's menu-code loop, code 11). Full functional translation
+// 2026-08-31, once CShellPreviewIcon (shell.h) was reverse engineered: the
+// six previously-undiscovered 420-byte objects are `new CShellPreviewIcon(x,
+// y, 500)`, positions read straight off the disassembly (already <<12
+// shifted immediates, divided back out here): (-166,-15), (3,-15),
+// (172,-15) for the top row and (-168,126), (0,126), (172,126) for the
+// bottom row, all at depth 500. Grid is a 3x2 layout (column = index%3 via
+// "index>2 ? index-3 : index", row y = 50 or 128, x = 150*column+62).
+// pLoadingBox is a one-shot "loading overlay" CExpandingBox, sized to match
+// grid cell 0 (62/50/90/70). While it is non-null the grid itself doesn't
+// draw or take input at all -- just Display()s the box and waits for its
+// field_30 completion flag -- matching the same overlay idiom already
+// described above on the not-yet-implemented Shell_ComicCollection. Once
+// field_30 is set the box is deleted and never recreated for the rest of
+// this function (confirmed against the real 0x49C220 disassembly: there is
+// only this one CExpandingBox construction in the whole function).
+// dword_6828E8 is the per-cover "unlocked" bitmask (tentative name
+// gGameCoversUnlockedMask, no idb match; same role/shape as
+// Shell_ComicCollection's dword_6828E4 for comics). "l*cov.bmp" cover art
+// filenames use a fixed per-slot digit ('1','2','4','5','7','8') baked into
+// the switch below, matching the original's literal byte patches (not a
+// linear index -- reproduced as-is, not "fixed").
+static u32 * const gGameCoversUnlockedMask = (u32*)0x006828E8;
+
+// @Ok
 void Shell_GameCovers(void)
 {
-    printf("Shell_GameCovers(void)");
+	// Hex-Rays rendered the first call as a zero-arg "nullsub_1();", but the
+	// raw disasm at 0x49c220 shows it is really print_if_false(gShellInitialized
+	// != 0, "Called Shell_GameCovers() without shell initialised") -- same
+	// idiom as CheckForPadUnplugged above (Hex-Rays just doesn't know
+	// nullsub_1/print_if_false's real prototype, so it drops the pushed
+	// args from the pseudocode even though they're really there). Caught by
+	// the cmpsum sanity check (591 diffs starting at instruction 1) per
+	// CLAUDE.md's "verify the hypothesis... re-read the disassembly" rule.
+	print_if_false(gShellInitialized != 0, "Called Shell_GameCovers() without shell initialised");
+
+	i32 selected = 0;
+
+	CExpandingBox *pLoadingBox = new CExpandingBox(62, 50, 90, 70, 0, 0, 30, 15, 0);
+
+	i32 repeatDelay = 0;
+	SAnimFrame *pFrames = Spool_FindAnim("covers", 1);
+
+	i32 cellAmount[6];
+	for (i32 i = 0, v = 0; v > -360; i++, v -= 60)
+		cellAmount[i] = v;
+
+	CShellPreviewIcon *pIcons[6];
+	pIcons[0] = new CShellPreviewIcon(-166, -15, 500);
+	pIcons[1] = new CShellPreviewIcon(3, -15, 500);
+	pIcons[2] = new CShellPreviewIcon(172, -15, 500);
+	pIcons[3] = new CShellPreviewIcon(-168, 126, 500);
+	pIcons[4] = new CShellPreviewIcon(0, 126, 500);
+	pIcons[5] = new CShellPreviewIcon(172, 126, 500);
+
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	i32 titleScrollX = 0;
+	gShellMenuEase = 384;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 startVblanks = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1, -1);
+
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+
+		Shell_DrawTitleBar(titleScrollX, 38, "game covers", 1, 0, 150, -21, 29);
+
+		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+
+		CExpandingBox *pActiveBox;
+
+		if (pLoadingBox != 0)
+		{
+			pLoadingBox->Display();
+			pActiveBox = pLoadingBox;
+		}
+		else
+		{
+			SAnimFrame *pFrame = pFrames;
+			for (i32 i = 0; i < 6; i++)
+			{
+				i32 col = (i > 2) ? i - 3 : i;
+				i32 y = (i > 2) ? 128 : 50;
+				i32 x = 150 * col + 62;
+
+				if (i == selected)
+					PShell_DrawMenuBox(x, y, 90, 70, 0, 0, 0, 0);
+
+				if (*gGameCoversUnlockedMask & (1 << i))
+				{
+					Shell_DrawGameCoverHighlightBox((i16)(x + 5), (i16)(y + 3), pFrame, cellAmount[i]);
+				}
+				else
+				{
+					i32 amount = cellAmount[i];
+					if (amount >= 0)
+					{
+						Panel_DrawFlatShadedPoly(
+							x - ((90 * amount) >> 9) + 45,
+							y - ((70 * amount) >> 9) + 35,
+							2 * ((90 * amount) >> 9),
+							2 * ((70 * amount) >> 9),
+							5, 5, 15, 4094, 1);
+					}
+
+					if (amount == 256 && pIcons[i] != 0)
+						M3d_Render(pIcons[i]);
+				}
+
+				pFrame++;
+			}
+
+			pActiveBox = 0;
+		}
+
+		M3d_RenderCleanup();
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 128);
+
+		for (i32 i = 0; i < 6; i++)
+		{
+			cellAmount[i] += 40;
+			if (cellAmount[i] > 256)
+				cellAmount[i] = 256;
+		}
+
+		if (selected < 0)
+			Pad_ClearTriggers(G_SCONTROL);
+
+		Pad_Update();
+
+		if (*gShellMenuAbort)
+			return;
+
+		if (PCSHELL_MouseMoved())
+		{
+			for (i32 i = 0; i < 6; i++)
+			{
+				i32 col = (i > 2) ? i - 3 : i;
+				i32 y = (i > 2) ? 128 : 50;
+				i32 x = 150 * col + 62;
+
+				if ((*gGameCoversUnlockedMask & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 90, y + 70))
+					selected = i;
+			}
+		}
+
+		CheckForPadUnplugged();
+
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(35, 0x2000, 0);
+
+			if (pActiveBox != 0)
+				delete pActiveBox;
+
+			for (i32 j = 0; j < 6; j++)
+			{
+				if (pIcons[j] != 0)
+					delete pIcons[j];
+			}
+
+			Pause(1);
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			gsub_430680();
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+
+			Pad_ClearTriggers(G_SCONTROL);
+			return;
+		}
+
+		i32 sameCellRepeat = 0;
+
+		if (pActiveBox != 0)
+		{
+			if (pActiveBox->field_30 == 0)
+				goto tail;
+
+			delete pActiveBox;
+			pLoadingBox = 0;
+		}
+
+		{
+			i32 prevSelected = selected;
+
+			if (PCSHELL_CheckTriggers(49164, 0, 0))
+			{
+				if (repeatDelay == 0 || (repeatDelay > 20 && (repeatDelay & 1) == 0))
+				{
+					if (PCSHELL_CheckTriggers(16388, 0, 0) && selected != 0 && selected != 3)
+						selected--;
+					if (PCSHELL_CheckTriggers(32776, 0, 0) && selected != 2 && selected != 5)
+						selected++;
+				}
+				sameCellRepeat = repeatDelay + 1;
+			}
+			repeatDelay = sameCellRepeat;
+
+			if (PCSHELL_CheckTriggers(4097, 1, 1))
+			{
+				G_SCONTROL[0].Up.Triggered = 0;
+				if (selected > 2)
+					selected -= 3;
+			}
+
+			if (PCSHELL_CheckTriggers(8194, 1, 1))
+			{
+				G_SCONTROL[0].Down.Triggered = 0;
+				if (selected < 3)
+					selected += 3;
+			}
+
+			if (prevSelected != selected)
+				SFX_Play(41, 0x3FFF, 0);
+		}
+
+		{
+			i32 mouseOverSelected = 0;
+
+			if (PCSHELL_CheckTriggers(256, 1, 1))
+			{
+				for (i32 i = 0; i < 6; i++)
+				{
+					i32 col = (i > 2) ? i - 3 : i;
+					i32 x = 150 * col + 62;
+					i32 y = (i > 2) ? 128 : 50;
+
+					if (i == selected && (*gGameCoversUnlockedMask & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 90, y + 70))
+						mouseOverSelected = 1;
+				}
+			}
+
+			if (selected >= 0 && (mouseOverSelected || PCSHELL_CheckTriggers(65552, 1, 1)))
+			{
+				G_SCONTROL[0].Start.Triggered = 0;
+				G_SCONTROL[0].X.Triggered = 0;
+
+				if (*gGameCoversUnlockedMask & (1 << selected))
+				{
+					SFX_Play(31, 0x2000, 0);
+
+					char bmpName[13];
+					strcpy(bmpName, "l*cov.bmp");
+					switch (selected)
+					{
+						case 0: bmpName[1] = '1'; break;
+						case 1: bmpName[1] = '2'; break;
+						case 2: bmpName[1] = '4'; break;
+						case 3: bmpName[1] = '5'; break;
+						case 4: bmpName[1] = '7'; break;
+						case 5: bmpName[1] = '8'; break;
+					}
+					BMP_Draw(bmpName);
+
+					do
+					{
+						Pad_Update();
+					} while (!PCSHELL_CheckTriggers(197424, 1, 1));
+
+					G_SCONTROL[0].Circle.Triggered = 0;
+					G_SCONTROL[0].X.Triggered = 0;
+					G_SCONTROL[0].Start.Triggered = 0;
+					SFX_Play(35, 0x2000, 0);
+					Pad_ClearTriggers(G_SCONTROL);
+				}
+				else
+				{
+					SFX_Play(27, 0x2000, 0);
+				}
+			}
+		}
+
+tail:
+		for (i32 k = 0; k < 6; k++)
+		{
+			if (pIcons[k] != 0)
+				pIcons[k]->AI();
+		}
+
+		if (Vblanks == startVblanks)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
 }
 
 // word lists are defined further down in this file
