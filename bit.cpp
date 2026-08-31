@@ -2523,21 +2523,22 @@ CChunkBit::~CChunkBit(void)
 	this->DeleteFrom(reinterpret_cast<CBit**>(&ChunkBitList));
 }
 
-// @MEDIUMTODO
-// CChunkBit::SetRGB (0x40B830, 154 bytes). Computes a packed base color from (r,g,b) plus 3
-// independently Rnd(4096)-dithered variants, stored into CChunkBit's own undeclared field range
-// at 0xB8-0xC4 (see the @FIXME on validate_CChunkBit's VALIDATE_SIZE above, and the class
-// comment on CShatterBit further down). Declared and stubbed here (not implemented) because
-// Split (shatter.cpp) needs to call it directly on a freshly-built CShatterBit; a real
-// implementation needs CChunkBit's own missing fields added first, out of scope for this
-// CShatterBit-focused session. Printf placeholder, CLAUDE.md convention; harmless, nothing in
-// the leaf-first chain (Split/Shatter_Face/Shatter_Item) is hooked yet.
+// Stores the plain r|g<<8|b<<16 pack in mColorA, then three independently
+// Rnd(4096)-dithered variants of the same base color in mColorB/C/D (the
+// per-corner colors DisplayChunkBitList applies to mWorldPosA/B/C/D).
+// @Ok
 void CChunkBit::SetRGB(u8 r, u8 g, u8 b)
 {
-	(void)r;
-	(void)g;
-	(void)b;
-	printf("CChunkBit::SetRGB(u8,u8,u8)");
+	this->mColorA = r | (g << 8) | (b << 16);
+
+	i32 rnd1 = Rnd(4096);
+	this->mColorB = ((rnd1 * r) >> 12) | (16 * ((rnd1 * b) & 0xFFFFF000)) | (((rnd1 * g) >> 4) & 0xFFFFFF00);
+
+	i32 rnd2 = Rnd(4096);
+	this->mColorC = ((rnd2 * r) >> 12) | (16 * ((rnd2 * b) & 0xFFFFF000)) | (((rnd2 * g) >> 4) & 0xFFFFFF00);
+
+	i32 rnd3 = Rnd(4096);
+	this->mColorD = ((rnd3 * r) >> 12) | (16 * ((rnd3 * b) & 0xFFFFF000)) | (((rnd3 * g) >> 4) & 0xFFFFFF00);
 }
 
 // @MEDIUMTODO
