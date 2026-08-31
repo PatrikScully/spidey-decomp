@@ -3,6 +3,7 @@
 #include <cmath>
 #include "ps2funcs.h"
 #include "message.h"
+#include "utils.h"
 
 // @Ok
 CAIProc_LookAt::~CAIProc_LookAt(void)
@@ -156,19 +157,84 @@ CAIProc_LookAt::CAIProc_LookAt(CBaddy* pBaddy, int a3, int a4, int a5, int a6)
 	this->SetUpVariables(a6, a5);
 }
 
-// @BIGTODO
-// barely started, wait doesnt' seem to match ffs
+// @Ok
+// Was a stub. Reverse engineered from 0x4013d0: Wait() is fully inlined
+// there (confirmed the inlined body matches CAIProc::Wait() above), and the
+// print_if_false(this != 0, "CONAA") placeholder stood in for the real
+// per-mode aim computation, which this replaces.
 void CAIProc_LookAt::Execute(void)
 {
-	if (this->Wait())
+	if (!this->Wait())
 	{
-		if (this->mNext)
-			this->mNext->Execute();
+		CSVector aim;
+
+		if (this->mAIProcType == UNK_258)
+		{
+			CBaddy *baddy = this->pBaddy;
+
+			if (this->field_2C.vx == baddy->mPos.vx && this->field_2C.vz == baddy->mPos.vz)
+			{
+				if (this->field_14)
+				{
+					baddy->field_288 |= this->field_14;
+					this->field_14 &= 0xF0F0;
+				}
+
+				if (this->mNext)
+					this->mNext->Execute();
+
+				return;
+			}
+
+			Utils_CalcAim(&aim, &baddy->mPos, &this->field_2C);
+		}
+		else if (this->mAIProcType == LOOKAT_TWO)
+		{
+			aim.vy = (i16)this->field_20;
+		}
+		else
+		{
+			CBody *body = reinterpret_cast<CBody*>(Mem_RecoverPointer(&this->field_24));
+
+			if (!body)
+			{
+				if (this->field_14)
+				{
+					this->pBaddy->field_288 |= this->field_14;
+					this->field_14 &= 0xF0F0;
+				}
+
+				this->field_10 |= 1;
+
+				if (this->mNext)
+					this->mNext->Execute();
+
+				return;
+			}
+
+			Utils_CalcAim(&aim, &this->pBaddy->mPos, &body->mPos);
+		}
+
+		int rate = (this->pBaddy->field_2A8 & 0x40000004) ? 0 : this->field_3C;
+		int residual = this->pBaddy->YawTowards(aim.vy, rate);
+
+		if (residual < 0)
+			this->pBaddy->field_2AC |= 0x10000;
+		else if (residual > 0)
+			this->pBaddy->field_2AC |= 0x20000;
+
+		if (this->field_38 >= abs(residual))
+		{
+			if (this->field_14)
+			{
+				this->pBaddy->field_288 |= this->field_14;
+				this->field_14 &= 0xF0F0;
+			}
+		}
 	}
-	else
-	{
-		print_if_false(this != 0, "CONAA");
-	}
+
+	if (this->mNext)
+		this->mNext->Execute();
 }
 
 // @Ok
