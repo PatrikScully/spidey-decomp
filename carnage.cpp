@@ -140,9 +140,49 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 // @Ok
 EXPORT CVector gCarnageVector;
 
-// @MEDIUMTODO
-// callee CCarnage::ThrowBlades needs. Not one of this file's assigned functions, stubbed only
-// so ThrowBlades compiles and can be attempted (leaf-first rule).
+// @BIGTODO
+// Investigated 2026-08-31 (IDA decompile of the real ctor at 0x41AE40, and
+// its two heaviest callees) and retagged up from @MEDIUMTODO: this needs a
+// struct that genuinely does not exist in the repo yet, not a small fill-in.
+// callee CCarnage::ThrowBlades needs this. Not one of this file's assigned
+// functions, stubbed only so ThrowBlades compiles (leaf-first rule).
+//
+// Findings, so the next person does not have to re-derive them:
+// - operator new(0x13C) then a real out-of-line ctor call, i.e. new T(a,a)
+//   with the ctor NOT visible at the call site (same SEH-frame mechanism
+//   noted for CRecordBox in the top-of-repo notes).
+// - The ctor (0x41AE40) starts by calling sub_460080(this), a ~150 byte
+//   base-object initializer that assigns the vtable pointer TWICE (writes
+//   &off_53BBD0, sets a batch of fields, then overwrites with &off_53BBD4
+//   and re-touches several of the same byte/word fields). That is not a
+//   pattern anything in this repo currently models; it looks like a base
+//   class this repo has no equivalent of yet (possibly a two-stage
+//   "uninitialized then activated" render primitive, not a simple
+//   CGPolyLine/CBit family member).
+// - After that, the ctor stores the CVector args twice: once at
+//   offset 0x8 (this+2 dwords) and once at offset 0x108 (this+66 dwords,
+//   inside a 4-element CVector array at 0x108..0x138 that gets zeroed
+//   first), with the a3 (target) vector landing in the array's LAST slot
+//   (0x12C, index 3). That shape (start point + 2 zeroed control points +
+//   end point) reads like a bezier/spline path for a curving thrown blade,
+//   consistent with the name CSymbioteBlade.
+// - It then calls sub_41AFF0(this), which builds the actual curve: this
+//   one function alone uses six different CVector-arithmetic helpers
+//   (sub_4E7760/4E7840/4E7720/4E77D0/4E77A0/4E5E20, likely operator-,
+//   operator>>, and friends -- see the CLAUDE.md note about CVector
+//   operators being wrongly inlined vs. the original's real out-of-line
+//   calls) plus a 2-iteration random-perturbation loop over rcossin_tbl.
+// - Remaining unexplored callees from the ctor: sub_460020, sub_4C93B0
+//   (looks like an SFX/sound-related index or hash given the constant
+//   -1873274000 and a byte_6B3824 flag), sub_460260, sub_410F50 (branch
+//   only taken if a second operator-new(88) succeeds, so a second nested
+//   allocated sub-object), sub_410E80(512).
+// None of this (the two-stage base object, the bezier array, the curve
+// generator) has a home anywhere in the current header layout. Building it
+// out means inventing a whole new base class with no repo precedent, which
+// is BIGTODO-scale investigation on its own, not a fill-in for one
+// function. Left as a stub; CCarnage::ThrowBlades cannot be attempted
+// until this lands.
 CSymbioteBlade::CSymbioteBlade(const CVector& a2, const CVector& a3)
 {
 	printf("CSymbioteBlade::CSymbioteBlade(const CVector&, const CVector&)");

@@ -15,10 +15,19 @@
 // build symbols (tools/prototypes.json: "CSymbioteBlade::CSymbioteBlade((CVector const &,CVector const &))",
 // size 0x13C from the CClass_new(0x13C) call). Fields are unknown, this is a stub the caller needs,
 // not one of this file's assigned functions.
+//
+// Investigated 2026-08-31 (see the long comment on the ctor definition in
+// carnage.cpp): the real ctor (0x41AE40) builds a bezier-ish 4 point
+// CVector path via an entirely un-modeled base object (a two-stage,
+// double vtable-assignment constructor at 0x460080, not any class this
+// repo currently has), plus a curve generator (0x41AFF0) that leans on
+// CVector operators the repo currently mis-inlines. This is genuinely
+// BIGTODO-scale (see @BIGTODO on the ctor), not a small fill-in; left as
+// PADDING until that groundwork exists.
 class CSymbioteBlade : public CClass
 {
 	public:
-		// @MEDIUMTODO
+		// @BIGTODO
 		EXPORT CSymbioteBlade(const CVector&, const CVector&);
 
 		PADDING(0x13C - 0x4);
