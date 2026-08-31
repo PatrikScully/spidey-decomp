@@ -206,25 +206,25 @@ void M3d_BuildTransform(CSuper* pSuper)
 typedef void (*M3d_Render_fn)(void*);
 
 // @BIGTODO
-// forward to original (0x4739A0, ~3.5KB). Investigated this session
-// (IDA decompile + partial raw disasm cross-check), NOT reimplemented --
-// left as a forward per the same "too much unbuilt infrastructure" call
-// CLAUDE.md already made for Decomp_GetAnimTransform, for concrete reasons
-// found this session:
+// forward to original (0x4739A0, ~3.5KB). RE-INVESTIGATED this session
+// (fresh IDA decompile, cross-checked against the maintainer's IDB names
+// and this repo's own already-implemented functions) alongside
+// RenderSuperItem below -- see that function's comment for the CSuper
+// false-blocker debunking, which applies equally here (this function's own
+// CItem offsets, up to a1+362/a1+368, all land inside already-declared
+// CItem/CSuper fields, no struct extension needed).
 //  - Walks a linked list of CItem (mNextItem, confirmed: CItem has a
 //    vtable pointer at offset 0 since it declares `virtual ~CItem()`, so
 //    every raw disasm offset in this family of functions is +4 relative to
 //    ob.h's field list -- e.g. the disassembly's "a1+4" is mFlags, "a1+8"
 //    is mPos, "a1+26" is mModel, "a1+31" is mRegion, "a1+32" is
-//    mNextItem. This +4 shift was the key that also unlocked
-//    RenderSuperItem below; worth remembering for any future CItem-family
-//    work.) -- for each item: mFlags bit 0x8000 (tested as the raw i16
-//    sign bit) gates whether it renders at all; if it does, mFlags byte 5
-//    bit 0x2 ("is super") dispatches to RenderSuperItem(item), otherwise
-//    the function does its own single-model render inline: LOD selection
-//    (confirmed: `PSXRegion[region].NumParts`/`.ppModels` -- the
-//    disassembly's `dword_6B2454[17*region]`/`word_6B2478[34*region]` are
-//    exactly `PSXRegion[region].ppModels`/`.NumParts`, since sizeof
+//    mNextItem.) -- for each item: mFlags bit 0x8000 (tested as the raw
+//    i16 sign bit) gates whether it renders at all; if it does, mFlags
+//    byte 5 bit 0x2 ("is super") dispatches to RenderSuperItem(item),
+//    otherwise the function does its own single-model render inline: LOD
+//    selection (confirmed: `PSXRegion[region].NumParts`/`.ppModels` --
+//    the disassembly's `dword_6B2454[17*region]`/`word_6B2478[34*region]`
+//    are exactly `PSXRegion[region].ppModels`/`.NumParts`, since sizeof
 //    SPSXRegion is 0x44 == 17*4 and NumParts really sits at byte offset
 //    0x38 there, not the stale 0x34 the header comment claims -- matches
 //    17*4=0x44*region landing on ppModels's 0x14 offset, 34*2=0x44*region
@@ -238,21 +238,45 @@ typedef void (*M3d_Render_fn)(void*);
 //    DC_PSXModel_RenderModel and DCModel_RenderModel (both @Ok) that
 //    M3d_RenderBackground uses, via the same gM3dBackgroundModelData table
 //    (`dword_5F6764[region] + 36*model`).
-//  - What actually blocks a full decompile: (1) a per-item colour-tint
-//    sub-block (mFlags bit 0x80, then bit 0x400) that gamma-corrects
-//    CItem::mRGB/mTRN bytes through several pow() calls into the same
-//    gDCTexAnimColor*/0x660F90 override-mask globals DCModel_RenderModel
-//    already reads -- traceable, but a real decompile-quality translation
-//    needs more time than this pass had; (2) at least 9 still-undecompiled
-//    GTE/camera helper leaves this function calls directly (sub_46D7E0,
-//    sub_46D810, sub_46E250, sub_46FAD0, sub_475FB0, sub_46D7B0,
-//    sub_46E460, sub_46DDF0, sub_46D790 -- none named in tools/names.json,
-//    none yet in this repo), which the repo's leaf-first rule says should
-//    be decompiled before this caller, not stubbed inline one by one.
-// Whoever picks this up next: start from PSXRegion/CItem confirmations
-// above (they took the real digging), then leaf the GTE helpers, then the
-// tint block, then this function's own list-walk shell should fall out
-// quickly by mirroring M3d_RenderBackground's already-@Ok structure.
+//  - Leaf status re-checked this session (previously reported as "9
+//    still-undecompiled GTE/camera helper leaves" -- mostly stale, cross-
+//    checked against the maintainer's IDB and this repo's own already-@Ok
+//    functions):
+//      sub_46D7B0 = gte_SetRotMatrix (already @Ok, ps2funcs.cpp)
+//      sub_46D790 = gte_stlvnl (already @Ok, ps2funcs.cpp)
+//      sub_46DDF0 = gte_rtv0 (already @Ok, ps2funcs.cpp)
+//      sub_46E460 = m3d_ZeroTransVector (already @Ok, ps2funcs.cpp)
+//      sub_475FB0 = M3d_PreprocessWibblyTextures (already @Ok, this file)
+//    Genuinely still undecompiled: sub_46D7E0/sub_46D810 (small, decompiled
+//    this session: copy 3 precomputed camera-space SVECTORs, written by
+//    M3d_RenderSetup's own gte_stsv loop at 0x628648/0x628620, into a
+//    fixed frustum-plane-normal table at 0x610B40/0x610B60), sub_46E250
+//    (trivial 3-int store into 0x610BF0/F4/F8, a culling-sphere-center
+//    offset), and sub_46FAD0 = M3dAsm_BoundingSpherePreprocessing (large,
+//    ~0x900 bytes: per-item 6-plane view-frustum cull against those
+//    tables, sets/clears CItem::mFlags bit 0x8000 -- decompiled and read
+//    this session but NOT reimplemented, real visibility-culling logic,
+//    wrong math here would make characters invisible or wrongly visible,
+//    too risky for this pass).
+//  - Also still blocking: a per-item colour-tint sub-block (mFlags bit
+//    0x80, then bit 0x400) that gamma-corrects CItem::mRGB/mTRN bytes
+//    through several pow() calls into the same gDCTexAnimColor*/0x660F90
+//    override-mask globals DCModel_RenderModel already reads, PLUS a
+//    second block (mFlags bit 0x2, "has local angles") building a rotation
+//    matrix whose Hex-Rays decompile is corrupted into bogus
+//    `QModelIndex::QModelIndex(...)` calls (the same decompiler-misread
+//    pattern CLAUDE.md documents happening on other GTE/PSX code in this
+//    codebase) -- reconstructing that block safely needs raw disasm, not
+//    the pseudocode, which this pass did not have time to do.
+// Net effect: the false "extend CSuper" blocker from the previous session
+// does not apply here either, and most named leaves turned out to already
+// exist; the real remaining blocker is M3dAsm_BoundingSpherePreprocessing
+// (frustum culling, real behavioural risk) plus the corrupted-decompile
+// rotation/tint blocks. Whoever picks this up next: decompile
+// M3dAsm_BoundingSpherePreprocessing (and its two small feeder functions)
+// first since it is a true leaf with no further dependencies, then
+// hand-disassemble (not Hex-Rays) the rotation/tint blocks before
+// attempting this function's own list-walk shell.
 EXPORT void M3d_Render(void* pList)
 {
 	M3d_Render_fn f = (M3d_Render_fn)0x004739A0;
@@ -2195,57 +2219,113 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	(void)result;
 }
 
+// @Ok
+// (0x004024A0, confirmed real name ConvertSMatrixTomatrix4x4 in the
+// maintainer's IDB.) Traced instruction-by-instruction this session as the
+// prerequisite leaf for RenderSuperItem below (see its comment for the
+// re-investigation that found this was the real remaining blocker, not a
+// CSuper layout gap). Output row r (r=0..2) = source rotation COLUMN r
+// (i.e. transposed) scaled by 1/4096 (fixed-point), with a 0 in column 3;
+// output row 3 = the raw (unscaled) translation with 1.0 in column 3. This
+// matches the row-vector*matrix convention gsub_476A00/matrix4x4 already
+// use elsewhere in this file. Traced concretely: for each source row index
+// i (0,1,2), out.field_0[i] = { m[0][i], m[1][i], m[2][i], 0 } / (4096 for
+// the first 3) and out.field_0[3] = { t[0], t[1], t[2], 1.0f } (not
+// per-row -- the translation is written once, row 3, in the same pass).
+void ConvertSMatrixTomatrix4x4(SMatrix const* pIn, matrix4x4* pOut)
+{
+	for (i32 row = 0; row < 3; row++)
+	{
+		pOut->field_0[row].field_0[0] = (f32)pIn->m[0][row] * 0.00024414062f;
+		pOut->field_0[row].field_0[1] = (f32)pIn->m[1][row] * 0.00024414062f;
+		pOut->field_0[row].field_0[2] = (f32)pIn->m[2][row] * 0.00024414062f;
+		pOut->field_0[row].field_0[3] = 0.0f;
+	}
+
+	pOut->field_0[3].field_0[0] = (f32)pIn->t[0];
+	pOut->field_0[3].field_0[1] = (f32)pIn->t[1];
+	pOut->field_0[3].field_0[2] = (f32)pIn->t[2];
+	pOut->field_0[3].field_0[3] = 1.0f;
+}
+
 typedef void (*RenderSuperItem_fn)(CItem*, bool);
 
 // @BIGTODO
-// forward to original (0x474C10, ~4.7KB, retagged from @MEDIUMTODO after
-// investigating this session -- it is much bigger than that tag implied).
-// The actual PC disassembly's call site (inside M3d_Render, above) only
-// ever pushes ONE argument (the CItem*); tools/prototypes.json's 2-param
-// `(CItem*, bool)` signature this repo already carries may be the Mac
-// build's shape rather than the PC one -- kept as-is since it's harmless
-// under cdecl (an unread extra stack arg) and not worth an unverified
-// header change.
-//
-// This is a per-bone skinned-model renderer, one call per CSuper item
-// (confirmed: the raw disasm's "a1" here is CItem* with the SAME +4
-// vtable-pointer shift documented on M3d_Render above -- e.g. "a1+4" is
-// mFlags, "a1+31" is mRegion -- and it is reinterpret_cast to CSuper*
-// internally to call the already-forwarded Decomp_GetAnimTransform, whose
-// own header already types its argument as CSuper*). Traced this session
-// (IDA decompile only, no raw disasm cross-check given the size): per-item
-// LOD/distance setup very close to M3d_Render's own (same
-// PSXRegion[region].ppModels/.NumParts mapping -- see M3d_Render's comment
-// -- confirmed via `dword_6B2454[v10/2]`/`word_6B2478[v10]` with
-// v10=34*region, identical shape); then loops `PSXRegion[region].NumParts`
-// times, once per body part/bone: resolves this part's pose matrix via the
-// already-forwarded Decomp_GetAnimTransform(pSuper)[part] (an SMatrix,
-// converted to matrix4x4 via the STILL-UNDECOMPILED sub_4024A0 at 0x4024A0
-// -- not yet named or forwarded anywhere in this repo), concatenates it
-// with the item's own transform and the camera/projection matrix (the
-// same 3-matrix-product shape gsub_476A00/matrix4x4's 16-arg ctor already
-// cover, called here via sub_476710 == the SAME address as the already-@Ok
-// matrix4x4 16-float constructor and sub_476A00's own callee), applies a
-// couple of debug/preview color overlays gated by dword_2E09BF0/2E09BF4
-// (unnamed, unexplored), an "outline" tint block gated by a region-equality
-// check + dword_6B4CA8 (unnamed), then dispatches this part's model
-// through the SAME DC_PSXModel_RenderModel/DCModel_RenderModel choice
-// (mFlags & 0x4000) the other renderers in this file use.
-//
-// Left as a forward rather than reimplemented: needs (1) sub_4024A0
-// (ConvertSMatrixTomatrix4x4) leafed first, per the repo's leaf-first
-// rule; (2) CSuper extended well past its current ob.h declaration -- this
-// function reads item-relative offsets up to +1513 bytes, deep into
-// CSuper's per-bone animation/outline state that ob.h does not model yet
-// (CSuper as declared stops well under 300 bytes in); extending that
-// struct blind, without the maintainer's IDB struct dump or a runtime test
-// to catch a wrong offset, risks corrupting an already-working class used
-// throughout the game-object code, which is a bigger risk than leaving
-// this one function forwarded. A future session with either the IDB
-// struct data or a runtime-test setup should tackle the CSuper extension
-// first, then this function should fall out following the same shape as
-// DCModel_RenderModel/DC_PSXModel_RenderModel (both @Ok, this file/
-// ps2m3d.cpp) for the per-part render call itself.
+// forward to original (0x474C10, ~4.7KB). RE-INVESTIGATED this session
+// with the new ConvertSMatrixTomatrix4x4 leaf above and a full fresh IDA
+// decompile (previous session only skimmed it). Good news first: the old
+// blocker comment was WRONG about needing to extend CSuper. Here is why,
+// traced concretely:
+//  - The disassembly's `*(_BYTE *)(a1 + 1513)` (the ">1500 bytes into
+//    CSuper" read that scared off the previous session) is gated behind
+//    `dword_6A9038 == a1` (maintainer's IDB names dword_6A9038
+//    "MechList"), i.e. it is ONLY reached when the CItem being rendered IS
+//    that one specific singleton global pointer, not any generic CSuper
+//    instance. Whatever object MechList actually points to is out of
+//    scope for CSuper's general layout (it is a completely different,
+//    presumably much larger, boss-specific object) -- CSuper itself does
+//    NOT need extending to cover this. All the OTHER offsets this function
+//    reads (a1+4, +8..+30, +31, +300, +342, +356..+368, +388) land exactly
+//    inside the already-declared CSuper/CItem fields once cross-checked
+//    against validate_CSuper/validate_CItem's physical offsets (mFlags,
+//    mPos, mAngles, mModel, mRegion, mExtraFlags, mTransform, mpPoseBuffer
+//    at 0x184=388 confirmed by the SAME `(mFlags&4)` gate
+//    M3dUtils_GetHookPosition already uses for mpPoseBuffer vs
+//    Decomp_GetAnimTransform).
+//  - One genuine NEW CSuper field found this session: physical offset
+//    0x156 (342 decimal) -- previously inside a PADDING(2) gap between
+//    field_154 and field_158 -- is actually read here as a real i16 (see
+//    CSuper::field_156, ob.h). Used only in a small block gated by
+//    `mExtraFlags & 8`: temporarily overrides the GTE geometry-offset W
+//    register (word_62860E, the SAME global M3d_RenderSetup already
+//    manages as gM3dGeomOffW) to `field_156 - (camera+8 as i16)` for the
+//    duration of this item's render, then restores the saved value
+//    afterward. Purpose beyond that one read site not confirmed (kept an
+//    unconfirmed name, per repo convention for such fields).
+//  - Most of the "9 still-undecompiled GTE/camera helper leaves" the
+//    previous session flagged turned out to already be implemented under
+//    different names once cross-checked against the maintainer's IDB
+//    (spideypc_names.txt): sub_46D7B0=gte_SetRotMatrix, sub_46D790=
+//    gte_stlvnl, sub_46DDF0=gte_rtv0, sub_46DA40=gte_rtir,
+//    sub_46CD90=MulMatrix0, sub_433D60=Decomp_GetAnimTransform,
+//    sub_476710=matrix4x4's 16-float ctor (already @Ok, this file),
+//    sub_476A00=gsub_476A00/matrix4x4_ml (already @Ok, this file),
+//    sub_402600=vector4d::operator= (already @Ok, this file),
+//    sub_4024A0=ConvertSMatrixTomatrix4x4 (now implemented, above).
+//  - What is STILL genuinely blocking a full reimplementation, confirmed
+//    this session: (1) sub_478140, a thiscall matrix-copy helper (decompiled,
+//    shape understood in principle -- copies a matrix4x4-shaped return
+//    value into a destination -- but its call site here shows a mismatched
+//    single-argument form vs. its real 2-argument signature, which smells
+//    like the SAME Hex-Rays return-value-passing confusion CLAUDE.md warns
+//    about, not a safe thing to guess at for rendering-critical code);
+//    (2) sub_470320 (decompiled, confirmed to be ValidMATRIX -- a
+//    row-magnitude sanity check -- but its result only feeds a
+//    print_if_false-style debug assert here, so it does not gate any real
+//    behaviour, not worth adding on its own); (3) three debug/preview
+//    color-tint blocks (gated by dword_2E09BF0/dword_2E09BF4/an "outline"
+//    flag + dword_6B4CA8) whose Hex-Rays decompile is corrupted --
+//    several float-constructor calls decode as bogus
+//    `QModelIndex::QModelIndex(...)` (a known decompiler misread class,
+//    CLAUDE.md/PLAN.md already document this happening on GTE/PSX code
+//    elsewhere in this codebase) -- reproducing these blocks would mean
+//    reconstructing the real float math from raw disasm bytes rather than
+//    trusting the pseudocode, which this pass did not have time to do
+//    safely; (4) the main per-part loop's LOD/model-select and
+//    matrix-compose shell itself is straightforward (mirrors M3d_Render's
+//    own LOD dispatch and DCModel_RenderModel/DC_PSXModel_RenderModel's
+//    already-@Ok render dispatch), but is intertwined with (1) and (3)
+//    above closely enough that splitting them out cleanly needs more room
+//    than this pass had.
+// Net effect: this function is meaningfully closer (the false CSuper
+// blocker is gone, the leaf list is almost entirely resolved, one real new
+// CSuper field is documented), but still left as an honest forward rather
+// than risk a wrong guess on the remaining color/matrix-copy pieces of a
+// per-bone character renderer -- CLAUDE.md is explicit that a wrong guess
+// here could silently misrender character models. A future session should
+// start from sub_478140's real 2-arg signature (cross-check its OTHER call
+// site in DC_PSXModel_RenderModel's history) and hand-disassemble (not
+// Hex-Rays) the three color blocks before attempting a full reimplement.
 EXPORT void RenderSuperItem(CItem *pItem, bool a2)
 {
 	RenderSuperItem_fn f = (RenderSuperItem_fn)0x00474C10;
