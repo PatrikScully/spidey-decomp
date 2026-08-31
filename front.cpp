@@ -746,7 +746,74 @@ void Front_SaveGameState(void)
 	*pDestBuf = 0;
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Retagged from @MEDIUMTODO 2026-08-31: real address 0x440ef0 (a small
+// dword_68293C/dword_682950 guard) which falls straight through to a 400+
+// line, 6-state menu state machine at 0x440f00-0x441cc7. This is the
+// in-game pause menu controller (builds and drives gPausedMenu, pYesNoMenu,
+// and gFrontControllerTwoMenu / the "choose a restart point" submenu via
+// Trig). Left stubbed this session: no runtime path exists to verify it
+// (SpideyMain is still a stub, shell.cpp's dispatchers are undecompiled,
+// and headless runtime testing is unavailable this session per the task
+// brief), and a dozen+ of its counters/flags have no idb_globals.txt name
+// and no other repo caller to cross-check meaning against, so a rushed
+// implementation risks a wrong tag with no way to catch it. Reconnaissance
+// done so the next session does not have to redo it:
+// - Guard: `i32 result = gFrontShowTrainingTip; if (gFrontShowTrainingTip
+//   == 0 && dword_682950 == 0) { <state machine>; } return;` (void fn,
+//   `result` is dead - the original C mirrors a non-void Mac prototype).
+//   dword_682950 is unnamed, 0x14 bytes after gFrontShowTrainingTip.
+// - Trigger polling at the top calls PCSHELL_CheckTriggers (0x50C180,
+//   already used in CMenu::Update) with different bitmasks depending on
+//   whether gFrontScreenState is 0; also calls Pad_Update (0x505720),
+//   Card_CheckStatus (0x46C9A0), DCCard_Exists (0x4310D0, matches
+//   Front_Init's gFrontCardExists pattern).
+// - `switch (gFrontScreenState)` (already-named macro, 0x5FAECC):
+//   case 0: first-frame setup. Builds gPausedMenu via `new CMenu(256, 0,
+//     0, 256, 256, 16)` (CMenu::CMenu is sub_43F9B0, exact same ctor args
+//     as Front_Init's pYesNoMenu), then calls what compiles down to
+//     `gPausedMenu->AddEntry("Continue"); ...->AddEntry("Restart level");
+//     ...->AddEntry("skip to restart"); ...->AddEntry("Quit");`
+//     (confirmed: the inlined byte pattern writing name/unk_b=1/unk_a=0
+//     plus a Mess_TextWidth-based menu_width update and field_32++ exactly
+//     matches CMenu::AddEntry inlined in-TU) then centres it and, if a
+//     `skip to restart` precondition (dword_60CFDC, unnamed) is false,
+//     disables that entry via what compiles down to
+//     `gPausedMenu->EntryOff("skip to restart")`.
+//   case 1: normal paused-menu frame. Runs gPausedMenu->Update() (already
+//     @Ok, sub_440600), then a long cascade of what compile down to
+//     `gPausedMenu->ChoiceIs("...")` / `EntryOn/EntryOff("skip to
+//     restart")` calls (all confirmed against CMenu's real member
+//     functions, not raw structs - see CMenu::ChoiceIs/EntryOn/EntryOff)
+//     deciding whether Continue/Restart/Quit was picked, each setting
+//     gLevelStatus (trig.h, already a real repo global, values 6/7/8 seen
+//     here) and gFrontScreenState for the next frame, plus SFX_Play calls
+//     via sub_471C50.
+//   case 2: restart-point submenu. Iterates an array at 0x6B4614, count at
+//     0x6B4664 (both unnamed, not in idb_globals.txt - looks like a Trig
+//     restart-node table, not owned by front.cpp, needs someone who knows
+//     the Trig subsystem layout), building gFrontControllerTwoMenu entries
+//     and calling Trig_SetRestart (0x4DE970) on selection.
+//   case 3: yes/no confirm submenu (pYesNoMenu), same ChoiceIs/Update
+//     pattern as case 1.
+//   case 4: `if (v5 != 0 && v5 != -1) gFrontScreenState = 1;` then falls
+//     to the shared exit handling below (v5 is the byte_5FAD98/
+//     dword_5FAE20/dword_66126C memory-card-poll delay counter computed
+//     at the top of the function, unnamed, unclear purpose beyond "wait a
+//     few frames before allowing input").
+//   case 9: Flash_Update (0x43D8C0) / Flash_FadeFinished (0x43D820) gate,
+//     then gLevelStatus = 3 and falls into the shared teardown.
+// - Shared teardown (when the "close the pause menu" flag is set):
+//   Post_UndoPausePaletteProcessing (0x46A3C0), gFrontScreenState = 0,
+//   `delete gPausedMenu; gPausedMenu = 0; pYesNoMenu->KillBox();` (matches
+//   CMenu::KillBox exactly - confirmed the vtable-slot-0-with-arg-1 calls
+//   are the scalar deleting destructor pattern, not a hand-rolled virtual
+//   call), then if gLevelStatus is not 7 or 3: SFX_Unpause (0x472200),
+//   Redbook_XAPause(0) (0x479D70, already declared in ps2redbook.h).
+// Also found and fixed while mapping this function: CMenu::EntryOn had a
+// field_32-- bug (see that function's own commit), discovered because an
+// inlined EntryOn call site inside this function's disassembly
+// (0x441576-0x44158c) is ground truth and disagreed with the repo.
 void Front_Update(void)
 {
     printf("Front_Update(void)");
