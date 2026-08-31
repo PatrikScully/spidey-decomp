@@ -2,6 +2,7 @@
 #include "m3dinit.h"
 #include "m3dcolij.h"
 #include "m3dzone.h"
+#include "ps2m3d.h"
 #include "spidey.h"
 #include "baddy.h"
 #include "utils.h"
@@ -194,52 +195,166 @@ i32 Web_GetGroundY(const CVector* a1)
 	return gLineInfo.Position.vy;
 }
 
-// @BIGTODO
-// Investigated 2026-08-31, left as a stub, not attempted. Findings for
-// whoever picks this up next (address 0x4F8600, ~570 bytes):
-// - The shape: recover a CSuper* from this->field_3C (SHandle), print_if_false
-//   if null, then if this->field_44's target has a nonzero hook count at
-//   +0x3C: M3d_BuildTransform(pSuper), then for each hook
-//   (this->field_44 + 0x44, stride 0x10, count at +0x3C) call
-//   M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*) to fill
-//   this->field_48 (offset 0x48, a VECTOR). It also does an inlined
-//   ground-height probe identical to Web_GetGroundY's gLineInfo pattern
-//   (StartCoords = pSuper->mPos, EndCoords = pSuper->mPos + (0, 0x1388000, 0),
-//   M3dColij_InitLineInfo, M3dZone_LineToItem(&gLineInfo, 1), then
-//   groundY = gLineInfo.pItem ? gLineInfo.Position.vy : gLineInfo.EndCoords.vy).
-//   Then a loop over hook pairs (i, i+1) allocates a new CWebFrag(0x8C bytes,
-//   via CBit::operator new) per pair and calls its constructor with the
-//   ground position, the two hook world positions (from field_44+0x44,
-//   stride 0x20 this time, not 0x10), and constants (25, 0) -- constructor
-//   signature confirmed from the Mac mangled name already in names.json:
-//   CWebFrag(int, const CVector&, const CVector&, const CVector&, const CVector&, int, int).
-//   After the loop: clear this->field_418's related flag bit on the
-//   recovered CSuper if this->field_418 is set, then a 3-way switch on
-//   this->field_3B (0/1/other) picks which pair of Mem_MakeHandle results
-//   to store (field_104/108 vs field_10C/110), printing "Bad CTrapWebEffect
-//   type" for any other value. Finally calls CBit::Die() (real, already @Ok).
-// - Blockers, both out of this file's scope:
-//   1. M3dUtils_GetDynamicHookPosition (m3dutils.cpp, currently a total
-//      printf stub, @BIGTODO there) is a hard functional dependency: Burst's
-//      hook positions come from it. Decompiling Burst without it gives wrong
-//      numbers, not just wrong bytes.
-//   2. CWebFrag does not exist anywhere in the repo (no header, no .cpp,
-//      no forward declaration). Its constructor is only known by mangled
-//      name and its size (0x8C, from the CBit::operator new(0x8C) call) is
-//      the only layout fact available. Creating it from scratch means
-//      guessing at every field, which the "don't guess a missing struct"
-//      rule for this session rules out.
-//   3. this->field_44's target object (accessed at +0x3C count, +0x40 array
-//      pointer, +0x44 inline hook array with 0x10 and 0x20 byte strides in
-//      different parts of the function) is not CSuper itself (CSuper/CBody/
-//      CItem's known layout does not reach a hook table at those offsets);
-//      it is a separate, currently unnamed and unmapped structure.
-// Not attempted further: needs a same-session fix to m3dutils.cpp plus a
-// brand new CWebFrag class with a struct layout nobody has reverse
-// engineered yet, both outside the web.cpp assignment.
+// @Ok
+// Reverse engineered 2026-08-31 from the original disasm at 0x4F8600
+// (~570 bytes, SEH-protected the same way the CLAUDE.md "new T(...) SEH
+// frame" family is: this session did not try to reproduce that frame,
+// session rule is functional decomp only). Blockers noted by the previous
+// session are both resolved this session:
+//  - M3dUtils_GetDynamicHookPosition is @Ok (done earlier the same day).
+//  - CWebFrag is now declared/implemented (web.h), reverse engineered from
+//    its constructor at 0x4FA080 (see the class comment in web.h and
+//    CWebFrag::CWebFrag below for the field-by-field evidence).
+// Field roles confirmed this session:
+//  - this->field_44 points at an unnamed, unmapped structure (never
+//    constructed anywhere in this repo, so its own layout beyond these
+//    three offsets is out of scope): a hook count at +0x3C, a VECTOR*
+//    pointer at +0x40 into an inline VECTOR[] (16-byte stride) starting at
+//    +0x44. Confirmed by raw pointer arithmetic in the disasm, not
+//    guessed: the loop's byte-offset accumulator advances by 0x10 (one
+//    VECTOR) per hook and is added to the pointer read from +0x40.
+//  - this->field_48 (SHook[122], see web.h) is fed one entry at a time as
+//    the pHook argument; the count comes from the field_44 target.
+//  - The "ground height" is exactly Web_GetGroundY's gLineInfo pattern
+//    inlined in the original; called Web_GetGroundY directly here since
+//    the two are functionally identical (session goal is functional
+//    correctness, not matching MSVC6's inlining choice byte-for-byte).
+//  - this->mType (inherited CBit::mType, tested at offset 0x3B in the
+//    disasm) selects which CSuper attachment slot gets cleared to a
+//    Mem_MakeHandle(NULL): field_104 for mType == 0, field_10C for
+//    mType == 1 (both already declared on CSuper in ob.h, and both are
+//    already used elsewhere in the repo, e.g. carnage.cpp, to recover a
+//    CTrapWebEffect* back out via Mem_RecoverPointer). Any other mType
+//    prints "Bad CTrapWebEffect type", matching the original's assert.
 void CTrapWebEffect::Burst(void)
 {
-	printf("void CTrapWebEffect::Burst(void)");
+	CSuper *pSuper = reinterpret_cast<CSuper*>(Mem_RecoverPointer(&this->field_3C));
+	print_if_false(pSuper != NULL, "pSuper NULL??");
+
+	if (pSuper != NULL)
+	{
+		u8 *pTarget = reinterpret_cast<u8*>(this->field_44);
+		i32 HookCount = *reinterpret_cast<i32*>(pTarget + 0x3C);
+
+		if (HookCount != 0)
+		{
+			M3d_BuildTransform(pSuper);
+
+			VECTOR *pPositions = *reinterpret_cast<VECTOR**>(pTarget + 0x40);
+			i32 i;
+
+			// index 0 is always computed once, unconditionally, before the
+			// count-gated loop below (matches the disasm exactly: the
+			// pre-loop call uses field_48[0], the loop's first pass then
+			// re-writes positions[0] using field_48[1]).
+			M3dUtils_GetDynamicHookPosition(&pPositions[0], pSuper, &this->field_48[0]);
+
+			for (i = 0; i < HookCount; i++)
+			{
+				M3dUtils_GetDynamicHookPosition(&pPositions[i], pSuper, &this->field_48[i + 1]);
+			}
+
+			i32 GroundY = Web_GetGroundY(&pSuper->mPos);
+
+			CVector Prev(pPositions[0].vx, pPositions[0].vy, pPositions[0].vz);
+
+			for (i = 0; i < HookCount - 1; i += 2)
+			{
+				CVector HookA(pPositions[i].vx, pPositions[i].vy, pPositions[i].vz);
+				CVector HookB(pPositions[i + 1].vx, pPositions[i + 1].vy, pPositions[i + 1].vz);
+
+				new CWebFrag(GroundY, Prev, HookA, HookB, pSuper->mPos, 25, 0);
+
+				Prev = HookB;
+			}
+		}
+
+		if (this->field_418)
+			pSuper->mFlags &= ~0x400;
+
+		if (this->mType == 0)
+		{
+			pSuper->field_104 = Mem_MakeHandle(NULL);
+		}
+		else if (this->mType == 1)
+		{
+			pSuper->field_10C = Mem_MakeHandle(NULL);
+		}
+		else
+		{
+			print_if_false(0, "Bad CTrapWebEffect type");
+		}
+	}
+
+	this->Die();
+}
+
+// @Ok
+// See the class comment in web.h for the full field derivation. Order of
+// operations here follows the disasm: base CGLine::CGLine() runs first
+// (implicit), then the 9 new dwords (field_5C/68/74) are zeroed, then
+// mCodeBGR0 gets its flag bit, mGroundY/mStart/mEnd are set, the second
+// CGLine (field_84) is allocated and given the same flag bit plus
+// mProtected = 1, then the direction/length/scale computation, then the
+// three-way copy plus optional jitter, then the random variant byte.
+CWebFrag::CWebFrag(
+		i32 GroundY,
+		const CVector &PrevPos,
+		const CVector &HookA,
+		const CVector &HookB,
+		const CVector &SuperPos,
+		i32 Speed,
+		i32 Jitter)
+{
+	this->field_5C.vx = 0;
+	this->field_5C.vy = 0;
+	this->field_5C.vz = 0;
+
+	this->field_68.vx = 0;
+	this->field_68.vy = 0;
+	this->field_68.vz = 0;
+
+	this->field_74.vx = 0;
+	this->field_74.vy = 0;
+	this->field_74.vz = 0;
+
+	this->mCodeBGR0 |= 0x2000000;
+
+	this->mGroundY = GroundY;
+
+	this->mStart = HookA;
+	this->mEnd = PrevPos;
+
+	this->field_84 = new CGLine();
+
+	this->field_84->mCodeBGR0 |= 0x2000000;
+	this->field_84->mProtected = 1;
+
+	this->field_84->mStart = HookA;
+	this->field_84->mEnd = HookB;
+
+	CVector Dir = HookA - SuperPos;
+	i32 Length = Dir.Length();
+
+	if (Length != 0)
+	{
+		this->field_68 = Dir * Speed / Length;
+	}
+
+	this->field_5C = this->field_68;
+	this->field_74 = this->field_68;
+
+	if (Jitter == 0)
+	{
+		this->field_5C.vy += (Rnd(21) - 10) << 12;
+		this->field_68.vy += (Rnd(21) - 10) << 12;
+		this->field_74.vy += (Rnd(21) - 10) << 12;
+	}
+
+	if (Rnd(3) != 0)
+		this->field_88 = Rnd(3) + 6;
+	else
+		this->field_88 = Rnd(3) + 1;
 }
 
 // @Ok
@@ -336,6 +451,7 @@ void validate_CTrapWebEffect(void)
 
 	VALIDATE(CTrapWebEffect, field_3C, 0x3C);
 	VALIDATE(CTrapWebEffect, field_44, 0x44);
+	VALIDATE(CTrapWebEffect, field_48, 0x48);
 	VALIDATE(CTrapWebEffect, field_418, 0x418);
 }
 
@@ -346,4 +462,16 @@ void validate_CDomeShockWave(void)
 	VALIDATE(CDomeShockWave, field_44, 0x44);
 	VALIDATE(CDomeShockWave, field_50, 0x50);
 	VALIDATE(CDomeShockWave, field_90, 0x90);
+}
+
+void validate_CWebFrag(void)
+{
+	VALIDATE_SIZE(CWebFrag, 0x8C);
+
+	VALIDATE(CWebFrag, field_5C, 0x5C);
+	VALIDATE(CWebFrag, field_68, 0x68);
+	VALIDATE(CWebFrag, field_74, 0x74);
+	VALIDATE(CWebFrag, mGroundY, 0x80);
+	VALIDATE(CWebFrag, field_84, 0x84);
+	VALIDATE(CWebFrag, field_88, 0x88);
 }
