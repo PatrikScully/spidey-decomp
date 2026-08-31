@@ -1132,44 +1132,300 @@ void DisplayGlassList(void** a1)
 	}
 }
 
-// @BIGTODO
-// Address 0x40c6f0. Re-verified this session (2026-08-31, second pass) against a fresh IDA
-// decompile. Still NOT implemented - genuinely dense (contour/fringe renderer with two nested
-// nested nested loops, a double-buffered screen-coordinate array swapped via XOR each ring
-// step, and several still-unresolved helpers/structs) - but several parts of the OLD note are
-// corrected here:
-// - The fog-LUT claim was WRONG: there is no byte_6FC6DC/6BC6C0/6DC6C0/71C75C table anywhere in
-//   this function's actual disasm. Colour is the SAME plain fixed-alpha-0xA0 RGB repack
-//   DisplayGlassList uses (`v.. | 0xFFFFA000` idiom, see DisplayGlassList's comment above),
-//   optionally pre-scaled by a per-section fade-in ramp (`255*n/700+1` while n<700, confirmed);
-//   no LUT read anywhere. Do not reintroduce the LUT theory without re-finding it in the disasm.
-// - Two previously-unnamed helpers, sub_4E7840(a1,a2,a3) and sub_4E7760(a1,a2,a3), are actually
-//   CVector::operator>>(const CVector&, int) and CVector::operator-(const CVector&, const
-//   CVector&) respectively - the SAME two operators CLAUDE.md's "vector.h wrongly-INLINE"
-//   entries already flag as repo-wide problems (confirmed independently here: this function
-//   calls them as real out-of-line calls in the original, exactly like bit2.cpp/shatter.cpp's
-//   already-documented cases). This function is ANOTHER data point for that fix, not a new bug;
-//   whoever de-inlines those operators repo-wide should re-check this function's shape too.
-// - The 0x56FB04/0x5FCD1C scratch buffer (see DisplayGlassList's comment - same shared
-//   bump-allocated buffer as flash.cpp's gEffectRecordBufPos/End) is used for REAL here, not
-//   dead: the per-fringe-segment screen coords and colour ARE read back from it for the actual
-//   PCGfx_DrawQPoly3D (sub_508550, already @Ok) calls. An overflow check on this buffer does a
-//   bare `return` - it silently bails the WHOLE function, not just the current bit/fringe, if
-//   the buffer fills; this matters for functional fidelity (unlike DisplayGlassList/GLineList
-//   where the buffer write was provably dead).
-// - dword_64E514 (external struct, offsets +10/+14/+16/+18 read here) looks like a viewport/FOV
-//   descriptor (half-width-ish and centre-ish values) shared with other rendering code; not
-//   identified yet - check spool.cpp/DXinit.cpp/screen.cpp for something already named at this
-//   address before inventing a new one.
-// - dword_614CD4/614CD8 (a small double-buffered screen-space contour array, swapped via an
-//   XOR-swap idiom each fringe step) and the per-section mask/visibility test against CGlow's
-//   already-VALIDATEd mMask (0x58) are as the old note described; mpSections (0x3C)/mpFringes
-//   (0x40)/mNumSections (0x44)/mNumFringes (0x48) offsets are confirmed correct.
-// This still needs a dedicated session: sub_4E7840/sub_4E7760 need the repo-wide de-inline fix
-// (or a faithful local reproduction) before this can be written and tested with confidence, and
-// the exact per-entry stride/layout of mpSections' contour delta array is not pinned down yet.
-void DisplayGlowList(void**)
+// File-local copy of the shared scratch-buffer macros (see the identical definition above
+// DisplayFlatBitList further down this file; duplicated here because this function needs it
+// earlier in the file and an identical macro redefinition is well-defined in C++).
+#define gGlowScratchBufPos (*reinterpret_cast<u8**>(0x0056FB04))
+#define gGlowScratchBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+
+// Ring-point double buffer (dword_614CD4/614CD8 in the old notes): CLAUDE.md's array-boundary-
+// folding warning applies exactly here - raw disasm (`mov [esp+..], 614CDAh`) proves this is ONE
+// flat i16[2]-per-point array starting at 0x614CD4 (point i's x/y at +4*i/+4*i+2), not two
+// separate globals. Two rings share this one region back to back: ringA (the "previous" ring,
+// starts at 0x614CD4) and ringB (the "current" ring being built, starts right after ringA's
+// (mNumFringes+1) points) - confirmed because the original computes ringB's base as
+// `4*mNumFringes + 0x614CD8` which is algebraically identical to
+// `0x614CD4 + 4*(mNumFringes+1)`, i.e. exactly where ringA's own points end.
+static u8 * const gGlowRingBase = (u8*)0x614CD4;
+
+// sin/cos table, same address/idiom as camera.cpp's CCamera::CM_Normal (word_610C48[idx]=sin,
+// word_610C48[idx+1]=cos, idx = 2*(angle&0xFFF)); file-local copy per repo convention.
+static i16 * const word_610C48 = (i16*)0x610C48;
+#define GLOW_RING_X(buf, i) (*(i16*)((buf) + 4 * (i)))
+#define GLOW_RING_Y(buf, i) (*(i16*)((buf) + 4 * (i) + 2))
+
+// Tentative name/guess, not in idb_globals.txt. A 3-float point (0x56E768/6C/70, confirmed
+// float via the raw disasm's `*(float*)&dword_56E770` bit-reinterpretation, NOT a fixed-point
+// CVector) the glow's proximity-based "grow near camera" factor measures distance to (see
+// below); could be a secondary/near-plane reference position. Naming it a "focus point"
+// describes its use here, not a confirmed engine concept.
+static f32 * const gGlowFocusPoint = (f32*)0x56E768;
+
+// Tentative name/guess, not in idb_globals.txt. Single float at 0x547E3C used as a "near"
+// distance threshold: when the glow's centre is within 10 units beyond this threshold of
+// gGlowFocusPoint, invZ gets scaled up by (threshold/distance + 1) - a proximity-based grow-when-
+// close bloom effect.
+static f32 * const gGlowNearThreshold = (f32*)0x547E3C;
+
+// @Ok
+// Factored out of DisplayGlowList's ring-point clamp (-100..612 x range), reused per point.
+static INLINE i16 ClampGlowX(i32 v) { if (v > 612) return 612; if (v < -100) return -100; return (i16)v; }
+
+// @Ok
+// Factored out of DisplayGlowList's ring-point clamp (-100..340 y range), reused per point.
+static INLINE i16 ClampGlowY(i32 v) { if (v > 340) return 340; if (v < -100) return -100; return (i16)v; }
+
+// @Ok
+// Factored out of DisplayGlowList's depth-based fade-in colour scale (`(fade*c)>>8`, applied
+// only when fade != 0, i.e. depth < 700).
+static INLINE u8 GlowFade(u8 c, i32 fade) { return fade ? (u8)((fade * (i32)c) >> 8) : c; }
+
+// @Ok
+// Factored out of DisplayGlowList's fixed-alpha-0xA0 RGB colour pack, same idiom as
+// DisplayGlassList's inline `0xA0000000 | r<<16 | g<<8 | b`.
+static INLINE u32 GlowColor(u8 r, u8 g, u8 b) { return 0xA0000000u | ((u32)r << 16) | ((u32)g << 8) | b; }
+
+// @Ok
+// Functional (session-wide functional-only bar, 2026-08-31, third pass). Address 0x40c6f0.
+// Fully retraced against a fresh IDA decompile AND raw disassembly (every offset, gate constant
+// and record layout below cross-checked against the actual bytes, not just Hex-Rays' rendering,
+// since Hex-Rays' typing badly mangles this function's ring-buffer pointer arithmetic). This is
+// a radial "starburst" glow/halo: mNumSections angular wedges sweep around by mStepAngle each
+// (closing back to the original mAngle on the last wedge), and within each wedge mNumFringes
+// concentric quads connect the previous wedge's ring points to the current wedge's ring points,
+// plus one triangle-as-quad "cap" per wedge connecting the glow's centre to the innermost ring
+// point of each wedge pair (skippable via CGlow::mSkipTriangles).
+//
+// - The two previously-unnamed helpers sub_4E7840/sub_4E7760 ARE CVector::operator>>/operator-,
+//   confirmed (same repo-wide wrongly-INLINE issue CLAUDE.md documents), but since this session's
+//   bar is functional correctness (not byte-matching), the relPos math below is written as plain
+//   field arithmetic like every other function in this family instead of chasing that operator
+//   fix.
+// - dword_64E514 (G_VIEW_CLIP_INFO, screen.h) offsets +0xA/+0xE are the same far-limit/half-limit
+//   fields the family already uses elsewhere (DisplayGLineList, DisplayFlatBitList); two more
+//   fields at +0x10/+0x12 are read here as signed screen-space X/Y origin constants for a
+//   close-up linear extrapolation fallback (see below) - still not named/pinned down beyond
+//   "clip/viewport descriptor", consistent with the family notes' existing caution.
+// - The ring buffer really is one flat region at 0x614CD4 (see gGlowRingBase above), not two
+//   separate globals - the old note's "dword_614CD4/614CD8" framing was an IDA fold artifact.
+// - The scratch buffer (0x56FB04/0x5FCD1C) really is used for real screen positions and colours
+//   here (unlike DisplayGlassList/DisplayFlatBitList's dead copies of the same buffer), so this
+//   version computes the same positions/colours directly into locals instead of round-tripping
+//   through a byte-packed record - the bump-allocation and its "abort entire function on
+//   overflow" bounds check are still reproduced faithfully (3 alloc sites: 8 bytes once per bit,
+//   28 bytes per wedge for the cap triangle, 36 bytes per fringe strip quad), since that gates
+//   whether later effects in the same frame have buffer room, but the two dead tag dwords each
+//   record opens with are not reproduced (never read back anywhere).
+// - Colour: CGlow::mCentreCodeBGR (0x4C) for the cap's centre vertex, CGlow::mMask (0x58) bit
+//   `sectionIndex` gates whether a wedge draws anything at all, SSection::PadBGR / SFringeQuad::
+//   CodeBGR for the ring/fringe colours, all packed as fixed-alpha-0xA0 RGB (GlowColor above,
+//   same idiom as DisplayGlassList) and optionally scaled by a depth-based fade-in ramp
+//   (255*depth/700+1 while depth<700, matches the family notes).
+// - mpFringes is indexed as a flat SSection-major grid: `fringes[row*mNumSections+col]`, where
+//   `col` is the wedge/section index and `row` is the fringe-ring index within that wedge -
+//   confirmed via the raw pointer strides (`+= 2*mNumSections` DWORDs = one full row per step).
+void DisplayGlowList(void** a1)
 {
+	u8* clip = G_VIEW_CLIP_INFO;
+	i32 halfLimit = *(u16*)(clip + 0xE) >> 1;
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_2);
+
+	CGlow* pBit = reinterpret_cast<CGlow*>(*a1);
+	while (pBit)
+	{
+		VECTOR relPos;
+		relPos.vx = (pBit->mPos.vx >> 12) - gCameraViewPos->vx;
+		relPos.vy = (pBit->mPos.vy >> 12) - gCameraViewPos->vy;
+		relPos.vz = (pBit->mPos.vz >> 12) - gCameraViewPos->vz;
+
+		gte_ldlv0(&relPos);
+		gte_rtps();
+
+		u8* rec8 = gGlowScratchBufPos;
+		if (rec8 + 8 > gGlowScratchBufEnd)
+			return;
+		gGlowScratchBufPos = rec8 + 8;
+
+		VECTOR stlv;
+		gte_stlvnl(&stlv);
+		i32 depth = stlv.vz;
+
+		f32 rawPos[3];
+		rawPos[0] = (f32)pBit->mPos.vx / 4096.0f;
+		rawPos[1] = (f32)pBit->mPos.vy / 4096.0f;
+		rawPos[2] = (f32)pBit->mPos.vz / 4096.0f;
+
+		f32 xf[4];
+		Algebra_Transform4(xf, rawPos);
+
+		f32 invZBase = (fabsf(xf[3]) > 0.00000001f) ? 1.0f / xf[3] : -1.0e12f;
+
+		f32 halfPos[3] = { rawPos[0] * 0.5f, rawPos[1] * 0.5f, rawPos[2] * 0.5f };
+		f32 dx = halfPos[0] - gGlowFocusPoint[0];
+		f32 dy = halfPos[1] - gGlowFocusPoint[1];
+		f32 dz = halfPos[2] - gGlowFocusPoint[2];
+		f32 dist = sqrtf(dx * dx + dy * dy + dz * dz);
+		f32 growFactor = ((dist - *gGlowNearThreshold) >= 10.0f) ? (*gGlowNearThreshold / dist + 1.0f) : 1.0f;
+		f32 invZ = invZBase * growFactor;
+
+		if (depth >= 5 && depth <= 20000)
+		{
+			i32 fadeScale = (depth < 700) ? (255 * depth / 700 + 1) : 0;
+
+			i32 numSections = (i32)pBit->mNumSections;
+			i32 numFringes = (i32)pBit->mNumFringes;
+			SSection* sections = pBit->mpSections;
+			SFringeQuad* fringes = pBit->mpFringes;
+
+			i32 centerX, centerY;
+			if (depth >= halfLimit)
+			{
+				i32 sxy;
+				gte_stsxy(&sxy);
+				centerX = (i16)sxy;
+				centerY = (i16)(sxy >> 16);
+			}
+			else
+			{
+				i32 halfLimitRaw = *(u16*)(clip + 0xE);
+				centerX = *(i16*)(clip + 0x10) + stlv.vx * halfLimitRaw / depth;
+				centerY = *(i16*)(clip + 0x12) + stlv.vy * halfLimitRaw / depth;
+				centerX = (centerX > 1023) ? 1023 : ((centerX < -1024) ? -1024 : centerX);
+				centerY = (centerY > 1023) ? 1023 : ((centerY < -1024) ? -1024 : centerY);
+			}
+
+			if (centerX != -1024 && centerX != 1023 && centerY != -1024 && centerY != 1023)
+			{
+				u8* ringA = gGlowRingBase;
+				u8* ringB = gGlowRingBase + 4 * (numFringes + 1);
+
+				i32 angle = pBit->mAngle;
+				i32 idx0 = 2 * (angle & 0xFFF);
+				i32 sin0 = 400 * word_610C48[idx0] / 256;
+				i32 cos0 = word_610C48[idx0 + 1];
+
+				i32 outerRadius = (i32)sections[numSections - 1].Radius;
+				i32 scaledOuter = 400 * outerRadius / depth;
+
+				i32 x0 = centerX + (scaledOuter * sin0) / 4096;
+				i32 y0 = centerY - (scaledOuter * cos0) / 4096;
+				GLOW_RING_X(ringA, 0) = ClampGlowX(x0);
+				GLOW_RING_Y(ringA, 0) = ClampGlowY(y0);
+
+				i32 seedAccum = outerRadius;
+				for (i32 row = 0; row < numFringes; row++)
+				{
+					seedAccum += (i32)fringes[row * numSections + (numSections - 1)].Width;
+					i32 xs = centerX + sin0 * (400 * seedAccum / depth) / 4096;
+					i32 ys = centerY - cos0 * (400 * seedAccum / depth) / 4096;
+					GLOW_RING_X(ringA, row + 1) = ClampGlowX(xs);
+					GLOW_RING_Y(ringA, row + 1) = ClampGlowY(ys);
+				}
+
+				i32 wedgeAngle = angle + pBit->mStepAngle;
+
+				for (i32 sectionIndex = 0; sectionIndex < numSections; sectionIndex++)
+				{
+					bool sectionVisible = ((pBit->mMask >> sectionIndex) & 1) != 0;
+
+					if (sectionIndex == numSections - 1)
+						wedgeAngle = pBit->mAngle;
+
+					i32 sectionRadius = (i32)sections[sectionIndex].Radius;
+					i32 scaledRadius = 400 * sectionRadius / depth;
+
+					i32 idx = 2 * (wedgeAngle & 0xFFF);
+					i32 cosW = word_610C48[idx + 1];
+					i32 sinW = 400 * word_610C48[idx] / 256;
+
+					i32 rx = centerX + (sinW * scaledRadius) / 4096;
+					i32 ry = centerY - (cosW * scaledRadius) / 4096;
+					GLOW_RING_X(ringB, 0) = ClampGlowX(rx);
+					GLOW_RING_Y(ringB, 0) = ClampGlowY(ry);
+
+					if (pBit->mSkipTriangles == 0 && sectionVisible)
+					{
+						u8* rec28 = gGlowScratchBufPos;
+						if (rec28 + 28 > gGlowScratchBufEnd)
+							return;
+						gGlowScratchBufPos = rec28 + 28;
+
+						u8 cr = (u8)(pBit->mCentreCodeBGR & 0xFF);
+						u8 cg = (u8)((pBit->mCentreCodeBGR >> 8) & 0xFF);
+						u8 cb = (u8)((pBit->mCentreCodeBGR >> 16) & 0xFF);
+						u32 centerColor = GlowColor(GlowFade(cr, fadeScale), GlowFade(cg, fadeScale), GlowFade(cb, fadeScale));
+
+						u32 pad = sections[sectionIndex].PadBGR;
+						u8 pr = (u8)(pad & 0xFF);
+						u8 pg = (u8)((pad >> 8) & 0xFF);
+						u8 pb = (u8)((pad >> 16) & 0xFF);
+						u32 ringColor = GlowColor(GlowFade(pr, fadeScale), GlowFade(pg, fadeScale), GlowFade(pb, fadeScale));
+
+						f32 scaleX = gGameResolutionX / (f32)Xres;
+						f32 scaleY = gGameResolutionY / (f32)Yres;
+						f32 z = invZ * 1.03f;
+
+						f32 cxs = centerX * scaleX, cys = centerY * scaleY;
+						f32 pxs = GLOW_RING_X(ringA, 0) * scaleX, pys = GLOW_RING_Y(ringA, 0) * scaleY;
+						f32 txs = GLOW_RING_X(ringB, 0) * scaleX, tys = GLOW_RING_Y(ringB, 0) * scaleY;
+
+						PCGfx_DrawQPoly3D(
+							cxs, cys, z, 0.0f, 0.0f, centerColor,
+							pxs, pys, z, 1.0f, 0.0f, ringColor,
+							txs, tys, z, 0.0f, 1.0f, ringColor,
+							txs, tys, z, 1.0f, 1.0f, ringColor);
+					}
+
+					for (i32 row = 0; row < numFringes; row++)
+					{
+						sectionRadius += (i32)fringes[row * numSections + sectionIndex].Width;
+						i32 fx = centerX + sinW * (400 * sectionRadius / depth) / 4096;
+						i32 fy = centerY - cosW * (400 * sectionRadius / depth) / 4096;
+						GLOW_RING_X(ringB, row + 1) = ClampGlowX(fx);
+						GLOW_RING_Y(ringB, row + 1) = ClampGlowY(fy);
+
+						if (sectionVisible)
+						{
+							u8* rec36 = gGlowScratchBufPos;
+							if (rec36 + 36 > gGlowScratchBufEnd)
+								return;
+							gGlowScratchBufPos = rec36 + 36;
+
+							u32 newCol = fringes[row * numSections + sectionIndex].CodeBGR;
+							u32 oldCol = (row != 0) ? fringes[(row - 1) * numSections + sectionIndex].CodeBGR : sections[sectionIndex].PadBGR;
+
+							u8 nr = (u8)(newCol & 0xFF), ng = (u8)((newCol >> 8) & 0xFF), nb = (u8)((newCol >> 16) & 0xFF);
+							u8 orr = (u8)(oldCol & 0xFF), og = (u8)((oldCol >> 8) & 0xFF), ob = (u8)((oldCol >> 16) & 0xFF);
+
+							u32 colorNew = GlowColor(GlowFade(nr, fadeScale), GlowFade(ng, fadeScale), GlowFade(nb, fadeScale));
+							u32 colorOld = GlowColor(GlowFade(orr, fadeScale), GlowFade(og, fadeScale), GlowFade(ob, fadeScale));
+
+							f32 scaleX = gGameResolutionX / (f32)Xres;
+							f32 scaleY = gGameResolutionY / (f32)Yres;
+							f32 z = invZ * 1.03f;
+
+							f32 pInnerX = GLOW_RING_X(ringA, row) * scaleX, pInnerY = GLOW_RING_Y(ringA, row) * scaleY;
+							f32 tInnerX = GLOW_RING_X(ringB, row) * scaleX, tInnerY = GLOW_RING_Y(ringB, row) * scaleY;
+							f32 pOuterX = GLOW_RING_X(ringA, row + 1) * scaleX, pOuterY = GLOW_RING_Y(ringA, row + 1) * scaleY;
+							f32 tOuterX = GLOW_RING_X(ringB, row + 1) * scaleX, tOuterY = GLOW_RING_Y(ringB, row + 1) * scaleY;
+
+							PCGfx_DrawQPoly3D(
+								pOuterX, pOuterY, z, 0.0f, 0.0f, colorNew,
+								tOuterX, tOuterY, z, 1.0f, 0.0f, colorNew,
+								pInnerX, pInnerY, z, 0.0f, 1.0f, colorOld,
+								tInnerX, tInnerY, z, 1.0f, 1.0f, colorOld);
+						}
+					}
+
+					u8* tmp = ringA; ringA = ringB; ringB = tmp;
+					wedgeAngle += pBit->mStepAngle;
+				}
+			}
+		}
+
+		pBit = reinterpret_cast<CGlow*>(pBit->mNext);
+	}
 }
 
 // @Ok
