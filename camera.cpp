@@ -755,8 +755,14 @@ void CCamera::CM_FixedPosAngles(void)
 
 static CVector * const stru_56F260 = (CVector*)0x56F260;
 
-// @NotOk
-// Revisit, needs validation
+// @Ok
+// Disassembly-verified against 0x4189a0. Two fixes from the earlier draft:
+// (1) v6 is field_144 minus *stru_56F260 (call target 0x4E7760 is the
+// global CVector operator-, confirmed against the same address noted for
+// CQuadBit::OrientUsing in bit.cpp), not a multiply; (2) the function
+// ends with the same ratan2-based field_236 recompute idiom used
+// elsewhere in this file (LoadIntoMikeCamera, CM_Normal), unconditional
+// here (no field_234/238 gate), which the earlier draft dropped entirely.
 void CCamera::CM_FixedPos(void){
 
 	int v2; // eax
@@ -789,7 +795,7 @@ void CCamera::CM_FixedPos(void){
 
 	this->field_258 = this->field_144;
 
-	v6 = this->mPos * *stru_56F260;
+	v6 = this->mPos - *stru_56F260;
 
 	v15.vx = (this->field_258.vx - v6.vx) >> 12;
 	v15.vy = (this->field_258.vy - v6.vy) >> 12;
@@ -833,6 +839,7 @@ void CCamera::CM_FixedPos(void){
 		}
 	}
 
+	this->field_236 = (-1024 - ratan2(v18.m[2][2], v18.m[0][2])) & 0xFFF;
 }
 
 // @Ok
