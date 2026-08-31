@@ -976,10 +976,61 @@ void CPlayer::CreateCombatImpactEffect(CVector *pPos, i32 a3)
 	}
 }
 
-// @MEDIUMTODO
-void CPlayer::CreateWebDrips(bool,bool)
+// Spits web drip particles from the player's hooks. Makes 2 drips per active
+// hook when both hooks are active, else 4. Each drip is a CGLineParticle at
+// the hook position with a random velocity opposite the player's velocity
+// (field_C6C), coloured (96,96,96) fading to black.
+// @Ok
+void CPlayer::CreateWebDrips(bool a2, bool a3)
 {
-    printf("CPlayer::CreateWebDrips(bool,bool)");
+	i32 count = (a2 && a3) ? 2 : 4;
+
+	CVector hookPos;
+	CVector vel;
+
+	i32 velX = this->field_C6C.vx;
+	i32 velY = this->field_C6C.vy;
+	i32 velZ = this->field_C6C.vz;
+
+	if (a2)
+	{
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR *>(&hookPos), this, 1);
+		i32 n = count;
+		while (n > 0)
+		{
+			vel.vx = -((Rnd(3) + 6) * velX);
+			vel.vy = -((Rnd(3) + 6) * velY);
+			vel.vz = -((Rnd(3) + 6) * velZ);
+			CGLineParticle *line = new CGLineParticle(hookPos, vel, 30, 1);
+			if (line)
+			{
+				line->SetRGB0(0x60, 0x60, 0x60);
+				line->SetRGB1(0, 0, 0);
+				line->mCodeBGR0 |= 0x2000000;
+			}
+			--n;
+		}
+	}
+
+	if (a3)
+	{
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR *>(&hookPos), this, 0);
+		i32 n = count;
+		while (n > 0)
+		{
+			vel.vx = -((Rnd(3) + 6) * velX);
+			vel.vy = -((Rnd(3) + 6) * velY);
+			vel.vz = -((Rnd(3) + 6) * velZ);
+			CGLineParticle *line = new CGLineParticle(hookPos, vel, 30, 1);
+			if (line)
+			{
+				line->SetRGB0(0x60, 0x60, 0x60);
+				line->SetRGB1(0, 0, 0);
+				line->mCodeBGR0 |= 0x2000000;
+			}
+			--n;
+		}
+	}
 }
 
 // @MEDIUMTODO
