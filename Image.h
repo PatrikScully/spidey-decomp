@@ -75,7 +75,7 @@ class SlicedImage2 : public Image
 EXPORT i32 Load8BitBMP_2(char *, char **, i32 *, i32 *, u16*);
 EXPORT i32 Load8BitBMP2(char *, char **, i32 *, i32 *, u16*, bool);
 EXPORT i32 GetBMPBitDepth(char *);
-EXPORT void Load4BitBMP_2(char *,char **,i32 *,i32 *,u16 *);
+EXPORT i32 Load4BitBMP_2(char *,char **,i32 *,i32 *,u16 *);
 EXPORT i32 LoadNBitBMP_(const char *,char **,i32 *,i32 *,u16 *,i32 *);
 
 EXPORT extern u16 gSlicedImageRelated[256];

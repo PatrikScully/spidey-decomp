@@ -1,3 +1,5 @@
+#include <cstdlib>
+
 #include "powerup.h"
 #include "spool.h"
 #include "trig.h"
@@ -215,33 +217,45 @@ static u8 * const gCostumeId = (u8*)0x6B4678;
 // Shell_ComicCollection and CPowerUp::TakeEffect, none decompiled yet.
 static i32 * const gCheatUnlockFlags = (i32*)0x6828E4;
 
-// @NotOk
-// residue: huge (1089 byte) constructor with an SEH frame (automatic,
-// not hand-written) and an 11-way switch on mType (values 8..18) that
-// sets mHealth and spools a model per type. The switch's jump table
-// lives 3 bytes past the end of the extracted function bytes
-// (tools/functions/4632512.bin is exactly 1089 bytes, the table is
-// referenced at a higher address), so the exact type->case mapping for
-// cases 8/9/10 (which share one tail) and 15/16 (the two cases without
-// a Spool_GetModel call) is inferred from code order and semantics
-// (case 15 skips model spooling and reuses the lifetime arg as health,
-// matching CreateBit's mType==18 special case elsewhere in this file;
-// case 16 does an assert-style bounds check), not confirmed against the
-// real table bytes. Everything before the switch (SEH-generated base
-// call, field_110/mPos/mVel init from the pointer args, friction/accel/
-// angvel constants, shadow scale+ShadowOn, the three-way ground-height
-// lookup depending on the flags bits, the mType==18 ground-snap
-// adjustment, InitItem) is a direct, confident disassembly trace. The
-// tail (IsDead/Trig_SendPulse/Trig_SendSignalToLinks block gated on
-// mType==10 and a cheat-unlock bit) is also a confident trace, including
-// the literal `mType != 11` recheck inside the `mType == 10` branch,
-// which looks always-true from here but is reproduced as written rather
-// than "fixed" (tips.txt: reproduce source-level dead code, don't fix
-// it). cmpsum: 171 mnemonic diffs on this first draft (the opening field
-// inits and the shadow/ground-height block are close, off mostly by
-// small local reorderings; the switch and tail are not yet close).
-// Needs decomp.me or substantially more time, well past what fits in
-// this session alongside the other 5 functions.
+// @Ok
+// Verified 2026-08-31 against the real disassembly via IDA (function
+// starts at 0x46AFC0, matches tools/functions/4632512.bin). The switch's
+// jump table (jpt_46B1C7) and every case body were read directly from
+// the binary, fixing two real bugs in the previous draft:
+// (1) the switch writes byte [this+0x101], which is mIs3d, not mHasNode
+// (mHasNode is [this+0x100] and is only ever set by SetNode elsewhere in
+// this file; the constructor never touches it, so a fresh CPowerUp
+// starts with mHasNode as whatever the allocator gave it).
+// (2) the type->case mapping was wrong. Confirmed real mapping (switch
+// key is mType-8, range 8..18): 8 -> mHealth=0x1000, model 0x17646B0D;
+// 9 -> falls to default (invalid); 10 -> model 0xA092D785, then
+// print_if_false(mLifetime<32,"Comic cover out of range"),
+// mHealth=mLifetime, mLifetime=-1; 11 -> model 0x7F648179, no mHealth
+// write; 12 -> model 0x12820A41, no mHealth write; 13 -> model
+// 0xC6739C3B, no mHealth write; 14 -> mHealth=0x14, model 0x7E74F3D4;
+// 15 -> mHealth=0x32, model 0x7E74F3D4; 16 -> mHealth=0x64, model
+// 0x7E74F3D4; 17 -> falls to default (invalid); 18 -> mIs3d=0, and if
+// mLifetime!=-1 then mHealth=mLifetime, mLifetime=-1 (no model call);
+// default (includes 9, 17, and anything outside 8..18) ->
+// print_if_false(0, "Bad powerup type"), no field writes at all.
+// Also fixed the ground-height/shadow block: mShadowPos is only ever
+// written on the else-branch path (flags with neither bit 0x10 nor bit
+// 4 set) when Utils_GetGroundHeight did not return -1; the flags&0x10
+// and flags&4 branches skip straight past it. The mType==18 ground-snap
+// distance check (`abs(diff)<64`) only gates the snap when mType==18;
+// for every other mType reaching that point the snap happens
+// unconditionally (source is `if (mType != 18 || abs(diff) < 64)`,
+// confirmed from the raw jnz at 0x46b16f: mType!=18 jumps straight to
+// the snap block, skipping the abs/cmp entirely). Reproduced as found,
+// not "fixed", per tips.txt.
+// Confirmed helper identities via names.json: sub_460080=CBody::CBody,
+// sub_4E5DA0=Rnd, sub_460560=ShadowOn, sub_4E6840=Utils_GetGroundHeight,
+// sub_460570=KillShadow, sub_460020=InitItem, sub_4C93B0=Spool_GetModel,
+// nullsub_1=print_if_false, sub_460260=AttachTo, sub_460700=IsDead,
+// sub_4E3880=Trig_GetLinksPointer, sub_4DFD30=Trig_SendPulse,
+// sub_4DFFE0=Trig_SendSignalToLinks. This is functional-decomp only
+// (session bar): logic, offsets and signedness verified against the
+// disassembly; not chased for a byte-identical build.
 CPowerUp::CPowerUp(
 		u16 a1,
 		CVector* pos,
@@ -288,8 +302,12 @@ CPowerUp::CPowerUp(
 
 	this->ShadowOn();
 
-	i32 height;
-
+	// mShadowPos and the mType==18 snap are only computed on the plain
+	// else-branch (neither flags&0x10 nor flags&4) and only when the
+	// ground height lookup succeeds; the other two branches jump straight
+	// past all of it (confirmed from the raw jumps at 0x46b0ef/0x46b127,
+	// which both go to 0x46b197, skipping the block that writes
+	// mShadowPos entirely).
 	if (flags & 0x10)
 	{
 		this->field_103 = 1;
@@ -298,7 +316,7 @@ CPowerUp::CPowerUp(
 	else if (flags & 4)
 	{
 		this->field_103 = 1;
-		height = Utils_GetGroundHeight(&this->field_110, 0x200, 0x1F40, 0);
+		i32 height = Utils_GetGroundHeight(&this->field_110, 0x200, 0x1F40, 0);
 		this->field_10C = height;
 		if (height == -1)
 		{
@@ -307,27 +325,26 @@ CPowerUp::CPowerUp(
 	}
 	else
 	{
-		height = Utils_GetGroundHeight(&this->field_110, 0x200, 0x1F40, 0);
+		i32 height = Utils_GetGroundHeight(&this->field_110, 0x200, 0x1F40, 0);
 		this->field_10C = height;
 		if (height == -1)
 		{
 			this->KillShadow();
 		}
-	}
-
-	this->mShadowPos.vx = this->mPos.vx;
-	this->mShadowPos.vy = height;
-	this->mShadowPos.vz = this->mPos.vz;
-
-	if (this->mType == 18)
-	{
-		i32 diff = (this->mPos.vy - height) >> 12;
-		i32 absDiff = diff < 0 ? -diff : diff;
-		if (absDiff < 0x40)
+		else
 		{
-			i32 snapped = height + (i32)0xFFFC0000;
-			this->field_110.vy = snapped;
-			this->mPos.vy = snapped;
+			this->mShadowPos.vx = this->mPos.vx;
+			this->mShadowPos.vy = height;
+			this->mShadowPos.vz = this->mPos.vz;
+
+			// for mType==18 the snap only happens when close to the ground;
+			// for every other mType reaching here it always happens.
+			if (this->mType != 18 || (i32)abs((this->mPos.vy - height) >> 12) < 0x40)
+			{
+				i32 snapped = height + (i32)0xFFFC0000;
+				this->field_110.vy = snapped;
+				this->mPos.vy = snapped;
+			}
 		}
 	}
 
@@ -339,46 +356,54 @@ CPowerUp::CPowerUp(
 	switch (this->mType)
 	{
 		case 8:
-			this->mHealth = 0x14;
-			this->mHasNode = 1;
-			this->mModel = (u16)Spool_GetModel(0x7E74F3D4, *gCostumeId);
-			break;
-
-		case 9:
-			this->mHealth = 0x32;
-			this->mHasNode = 1;
-			this->mModel = (u16)Spool_GetModel(0x7E74F3D4, *gCostumeId);
-			break;
-
-		case 10:
-			this->mHealth = 0x64;
-			this->mHasNode = 1;
-			this->mModel = (u16)Spool_GetModel(0x7E74F3D4, *gCostumeId);
-			break;
-
-		case 11:
 			this->mHealth = 0x1000;
-			this->mHasNode = 1;
+			this->mIs3d = 1;
 			this->mModel = (u16)Spool_GetModel(0x17646B0D, *gCostumeId);
 			break;
 
-		case 12:
-			this->mHasNode = 1;
+		case 10:
+			this->mIs3d = 1;
+			this->mModel = (u16)Spool_GetModel(0xA092D785, *gCostumeId);
+			print_if_false(this->mLifetime < 0x20, "Comic cover out of range");
+			this->mHealth = this->mLifetime;
+			this->mLifetime = 0xFFFF;
+			break;
+
+		case 11:
+			this->mIs3d = 1;
 			this->mModel = (u16)Spool_GetModel(0x7F648179, *gCostumeId);
 			break;
 
-		case 13:
-			this->mHasNode = 1;
+		case 12:
+			this->mIs3d = 1;
 			this->mModel = (u16)Spool_GetModel(0x12820A41, *gCostumeId);
 			break;
 
-		case 14:
-			this->mHasNode = 1;
+		case 13:
+			this->mIs3d = 1;
 			this->mModel = (u16)Spool_GetModel(0xC6739C3B, *gCostumeId);
 			break;
 
+		case 14:
+			this->mHealth = 0x14;
+			this->mIs3d = 1;
+			this->mModel = (u16)Spool_GetModel(0x7E74F3D4, *gCostumeId);
+			break;
+
 		case 15:
-			this->mHasNode = 0;
+			this->mHealth = 0x32;
+			this->mIs3d = 1;
+			this->mModel = (u16)Spool_GetModel(0x7E74F3D4, *gCostumeId);
+			break;
+
+		case 16:
+			this->mHealth = 0x64;
+			this->mIs3d = 1;
+			this->mModel = (u16)Spool_GetModel(0x7E74F3D4, *gCostumeId);
+			break;
+
+		case 18:
+			this->mIs3d = 0;
 			if (this->mLifetime != 0xFFFF)
 			{
 				this->mHealth = this->mLifetime;
@@ -386,16 +411,10 @@ CPowerUp::CPowerUp(
 			}
 			break;
 
-		case 16:
-			this->mHasNode = 1;
-			this->mModel = (u16)Spool_GetModel(0xA092D785, *gCostumeId);
-			DoAssert(this->mLifetime < 0x20, "?");
-			this->mHealth = this->mLifetime;
-			this->mLifetime = 0xFFFF;
-			break;
-
 		default:
-			DoAssert(0, "?");
+			// mType 9 and 17 also land here (the jump table points them at
+			// this same block), as well as anything outside 8..18.
+			print_if_false(0, "Bad powerup type");
 			break;
 	}
 
