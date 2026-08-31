@@ -389,8 +389,44 @@ void CSuper::OutlineOff(void)
 	this->mExtraFlags &= ~CSUPER_OUTLINE;
 }
 
+// Investigated 2026-08-31, missing block not attempted, left @NotOk.
+// Address 0x460880, 824 bytes. Checked via Hex-Rays decompile against
+// tools/names.json: the code already written here (mExtraFlags |=
+// CSUPER_OUTLINE, the field_11C null check that skips the missing block,
+// and the unconditional tail outlineR/G/B = -1 and alsoOutlineRelated =
+// 0x50000000) matches the original exactly (VALIDATE offsets confirm
+// mExtraFlags=0x12C, field_11C=0x11C, alsoOutlineRelated=0x120,
+// outlineR/G/B=0x124/0x125/0x126, all in ob.h). Only the missing block
+// (skipped here by "if (!this->field_11C){ }") is unimplemented.
+//
+// What that block does: on the first call (field_11C == null) it looks up
+// CItemRelatedList[this->mRegion * 17] (ob.h, 0x6B2454, mRegion confirmed
+// at CItem+0x1F), then reads two more values off that same table slot: the
+// pointer stored there (a per-model face/vertex data blob) and the DWORD
+// one slot earlier (i.e. dword_6B2450[this->mRegion * 17], the same
+// address m3dinit.cpp's M3dInit_ParsePSX investigation already flagged as
+// an unnamed parallel table with unknown layout, of the family
+// dword_6B2450/2454/2458/246C/2470[17*a1]). It uses that DWORD as a face
+// count, allocates facecount*1024 bytes via DCMem_New (0x4581A0, already
+// @Ok in mem.cpp) into field_11C, fills it with 0xFF, then walks a packed,
+// variable-stride "neighbor faces" record list (debug asserts confirm the
+// original name: "Bad SNbrFaces size." / "NumFaces too big", strings at
+// 0x54E758/0x54E744) doing byte-level edge comparisons between adjacent
+// face corner indices and writing per-corner edge-outline flags into the
+// allocated buffer. The record walk advances by "*record >> 18" dwords per
+// step, a different shift than the i[0]+4 walk idiom already used
+// elsewhere in the repo (CLAUDE.md), so it is a distinct packed format.
+//
+// This SNbrFaces struct does not exist anywhere in the repo (no struct, no
+// prior use of dword_6B2450, no documented record layout), and the same
+// class of problem was already flagged as too risky for a focused single
+// -function session in m3dinit.cpp's M3dInit_ParsePSX
+// investigation (2026-08-31): getting the field offsets and shift amounts
+// right needs a real struct reverse-engineering pass across the files that
+// own dword_6B2450..2470, which is out of scope here. Left as a stub
+// (NOT_IMPLEMENTED) rather than guessing at an undocumented binary format;
+// only used by CVenom and CDummy per the game's outline-related callers.
 // @NotOk
-// Missing most stuff, only used by CVenom and CDummy
 void CSuper::OutlineOn(void){
 	NOT_IMPLEMENTED;
 	this->mExtraFlags |= CSUPER_OUTLINE;
