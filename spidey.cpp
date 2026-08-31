@@ -2614,10 +2614,705 @@ void CPlayer::SwitchToSynthesizedInput(i16 *pInput)
 	}
 }
 
-// @MEDIUMTODO
+static i16 * const word_610C4A = (i16*)0x610C4A;
+static i16 * const word_610C48 = (i16*)0x610C48;
+
+// @FIXME guess: zeroed unconditionally at the very top of every call. No
+// established evidence beyond address-adjacency to Vblanks (0x6B4CA0)
+// and gTimerRelated (0x6B4CA8); also touched by two other unnamed
+// functions (0x4E5CF0, 0x4931E0) not yet decompiled.
+static i32 * const gPlayerSynthTickScratch = (i32*)0x6B4CA4;
+
+// @FIXME guess: one byte before the already-established gWhatIf
+// (0x60CFC5, idb_globals.txt). Gates both "drop every pending command
+// block and restart the phase-1 script" (top of this function) and
+// "teleport back to the field_1A8 checkpoint trig" (bottom of this
+// function), which fits a debug/replay "what if" rewind feature.
+static u8 * const gWhatIfPending = (u8*)0x60CFC4;
+
+// @FIXME guess: adjacent to the pshell globals gPshellArmorRealted
+// (0x682940)/gShellInitialized(0x682948)/idb_globals.txt. Read-only
+// here; when set, forces gLevelStatus = 7 (front.cpp already uses that
+// same value to kick the front-end back to a menu state).
+static i32 * const gPshellForceLevelExit = (i32*)0x68293C;
+
+// @FIXME guess: near gBombDieRelatedOne (0x60F771, idb_globals.txt).
+// Set from a phase-1 script opcode (18) parameter; purpose otherwise
+// unclear.
+static u8 * const gSynthInputScriptFlag = (u8*)0x60F770;
+
+// @Ok
+// Byte-code VM, same idiom as CSpClone::SynthesizeAnalogueInput
+// (spclone.cpp) and CBlackCat::SynthesizeAnalogueInput (blackcat.cpp),
+// reverse engineered from IDA decompile+disasm of 0x4BC300 (4109 bytes).
+// field_1B8 is the byte-code stream (i16 dueTime/opcode/params entries,
+// same shape as CSpClone's field_348), field_1B0 is the elapsed time
+// counter (field_80 added per tick), field_1B4 is the phase-1-active
+// byte flag, field_1BC is the command-block list head (same node layout
+// as CSpClone's field_34C: block[0]=type, block[1]=dword-size,
+// block[size-1]=next pointer).
+//
+// GetNewCommandBlock/KillCommandBlock/KillAllCommandBlocks are called as
+// real member functions here instead of the inlined-at-each-call-site
+// shape the original compiled (same class of residue already documented
+// for CSpClone's version) -- acceptable under this session's
+// functional-only bar.
+//
+// Phase-1 opcodes (all field offsets/constants checked against the
+// disasm):
+//   1  = teleport to a trig (mPos.vx/vz from the trig, mPos.vy from
+//        ground height minus field_EA8), re-orient to the nearest
+//        cached surface normal (field_C6C for a floor-like normal,
+//        field_C84 for a wall-like one, else a flat up-vector), reset
+//        velocity, and tear down any pending look-target/hold-object
+//        handles (field_E64, field_E6C, field_5E4 SFX). Same overall
+//        shape as CheckStickToCeiling's OrientToNormal call.
+//   2  = read a trig id, enqueue a persistent type-2 "walk to trig"
+//        block (stores target x/z only, like CSpClone's opcode 2, but
+//        does not cancel any other block type first and does not play
+//        an anim).
+//   3  = read an input-flag index + duration, enqueue a persistent
+//        type-3 "hold digital input flag N for M ticks" block.
+//   4  = Redbook_XAPlay(a,b,c).
+//   5  = read trig id + duration, enqueue a persistent type-5 "move
+//        toward trig for N ticks" block (identical shape to CSpClone's
+//        opcode 5).
+//   6  = read anim id + duration, enqueue a persistent type-6
+//        "hold/replay anim for N ticks" block.
+//   7  = read a duration, enqueue a persistent type-7 "force
+//        SwitchToStandMode after N ticks" timer block.
+//   8  = read a value + duration, enqueue a persistent type-8 "hold
+//        field_E00 = value for N ticks" block.
+//   9  = read a duration, enqueue a persistent type-9 plain "wait N
+//        ticks" block; deactivates phase 1 immediately.
+//   15 = read anim id, enqueue a persistent type-15 "run anim once"
+//        block; deactivates phase 1 immediately.
+//   16 = read a trig id, store it in field_1A8 (the checkpoint used by
+//        the end-of-function "what if" rewind).
+//   17 = if field_AD4 is set, enqueue a type-3 block holding input-flag
+//        index 16 (no expiry until the next tick boundary).
+//   18 = read a param, set gSynthInputScriptFlag = (param != 0).
+//   255 = stop phase 1 processing (field_1B4 = 0) with no stream
+//        advance.
+//
+// Phase 2 walks field_1BC (same node layout as GetNewCommandBlock /
+// KillCommandBlock):
+//   2  steers mVel toward its target using CameraList->field_23A-relative
+//      heading baked through the rcossin_tbl magnitude table
+//      (word_610C4A/word_610C48) into field_E2D/field_E2E (the
+//      synthesized analogue stick axes), and deletes itself once close
+//      (Utils_XZDist < 64), waking phase 1 again.
+//   3  is the 20-slot digital input-flag holder: while active it ORs its
+//      index into the local heldMask and latches this+0x1C0+16*index
+//      (same 20-slot/stride-0x10 array CPlayer::~CPlayer's death cleanup
+//      already zeroes); indices 8/9/10/11 additionally force
+//      field_E2E/field_E2D to +-127 (hard up/down/left/right override).
+//   5  steers via Utils_Dist/VectorNormal directly into mVel (identical
+//      to CSpClone's own case 5) and deletes itself once close
+//      (Utils_Dist < 64), waking phase 1 again.
+//   6  is a countdown timer that holds/replays an anim (resetting its
+//      gSpideySFXEntry high-bit flags first, same idiom as
+//      CPlayer::DeathCleanup) while field_AD4 is set or the anim
+//      changed.
+//   7  is a countdown timer that forces field_E1C = 0x40000000 each
+//      tick, then calls SwitchToStandMode() on expiry.
+//   8  is a countdown timer that holds field_E00 = its param, resetting
+//      field_E00 to 0 on expiry.
+//   9  is a plain countdown timer with no side effects; on expiry it
+//      wakes phase 1 again.
+//   15 is a one-shot anim gated on mInputFlags bit 0 (identical to
+//      CSpClone's own case 15): once set, it kills itself and wakes
+//      phase 1; until then it keeps replaying the current anim whenever
+//      mAnimFinished.
+//
+// After the block walk, this publishes the 20-slot input-flag array
+// (this+0x1C0) into the synthesized pad struct pointed to by field_E0C
+// (offsets +0/+1/+2 per slot, same struct CheckCeilingJumpingSmashPunch
+// and CheckStickToCeiling already read via
+// reinterpret_cast<u8*>(this->field_E0C)[...]), clearing any slot not
+// held by an active type-3 block this frame (indices 14/15 are always
+// skipped). Finally, once both field_1BC and field_1B4 are empty/clear,
+// it runs a "zone 1795 mech boss" proximity check (via G_MECHLIST) that
+// can clear field_1AC, applies gPshellForceLevelExit -> gLevelStatus,
+// and (gWhatIfPending only) teleports back to the field_1A8 checkpoint
+// trig. The original returns a bool in AL that no caller reads; kept
+// void here to match the already-committed declaration (spidey.h),
+// same as CSpClone/CBlackCat's own SynthesizeAnalogueInput.
 void CPlayer::SynthesizeAnalogueInput(void)
 {
-    printf("CPlayer::SynthesizeAnalogueInput(void)");
+	*gPlayerSynthTickScratch = 0;
+	this->field_1B0 += this->field_80;
+
+	u8 *pad = reinterpret_cast<u8*>(this->field_E0C);
+	this->field_EA6 = 0;
+
+	static const i32 clearedSlots[16] = {0,1,2,3,4,5,6,7,8,9,10,11,16,17,18,19};
+	for (i32 i = 0; i < 16; i++)
+	{
+		*reinterpret_cast<i16*>(pad + 16 * clearedSlots[i]) = 0;
+	}
+
+	if (*gWhatIfPending)
+	{
+		this->field_1B4 = 0;
+		this->KillAllCommandBlocks();
+	}
+
+	if (this->field_1B4)
+	{
+		do
+		{
+			i16* stream = reinterpret_cast<i16*>(this->field_1B8);
+			i16 dueTime = stream[0];
+			if (dueTime != -1 && dueTime > this->field_1B0)
+				break;
+
+			this->field_1B0 = 0;
+			stream++;
+			i16 opcode = stream[0];
+			stream++;
+			this->field_1B8 = reinterpret_cast<i32>(stream);
+
+			switch (opcode)
+			{
+				case 1:
+				{
+					i32 trigId = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					Trig_GetPosition(&this->mPos, trigId);
+					this->field_E8 = this->mPos;
+
+					if (this->field_54C)
+					{
+						this->field_54C = 0;
+						CameraList->field_12C = -1;
+					}
+
+					if (this->field_E64)
+					{
+						delete reinterpret_cast<SVTableSlot0Deletable*>(this->field_E64);
+					}
+					this->field_E64 = 0;
+
+					if (this->field_E6C)
+					{
+						delete reinterpret_cast<SVTableSlot0Deletable*>(this->field_E6C);
+					}
+					this->field_E6C = 0;
+
+					if (this->field_5E4)
+					{
+						SFX_Stop(this->field_5E4);
+						this->field_5E4 = 0;
+					}
+
+					i32 normalY = this->field_A8.vy;
+					if (normalY > 3400)
+					{
+						this->field_AC8 = this->field_C6C;
+						this->field_A8.vx = 0;
+						this->field_A8.vy = -4096;
+						this->field_A8.vz = 0;
+						this->OrientToNormal(true, &this->field_AC8);
+					}
+					else if (normalY >= -2600)
+					{
+						this->field_AC8 = this->field_C84;
+						this->field_A8.vx = 0;
+						this->field_A8.vy = -4096;
+						this->field_A8.vz = 0;
+						this->OrientToNormal(true, &this->field_AC8);
+					}
+					else
+					{
+						this->OrientToNormal(false, &ZeroVector);
+					}
+
+					this->field_AD4 = 0;
+
+					this->mVel.vx = 0;
+					this->mVel.vy = 0;
+					this->mVel.vz = 0;
+
+					i32 groundHeight = Utils_GetGroundHeight(&this->mPos, 0, 256, 0);
+					if (groundHeight == -1)
+					{
+						this->field_E1C = 4;
+					}
+					else
+					{
+						this->field_E1C = 1;
+						this->mPos.vy = groundHeight - (this->field_EA8 << 12);
+					}
+					continue;
+				}
+
+				case 2:
+				{
+					i32 trigId = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					CVector target;
+					target.vx = 0; target.vy = 0; target.vz = 0;
+					Trig_GetPosition(&target, trigId);
+
+					i32* block = this->GetNewCommandBlock(5);
+					block[0] = 2;
+					block[1] = 5;
+					block[2] = target.vx;
+					block[3] = target.vz;
+
+					this->field_1B4 = 0;
+					continue;
+				}
+
+				case 3:
+				{
+					i32 index = stream[0];
+					stream++;
+					i32 duration = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(5);
+					block[0] = 3;
+					block[1] = 5;
+					block[2] = index;
+					block[3] = duration + this->field_80;
+					continue;
+				}
+
+				case 4:
+				{
+					i16 p1 = stream[0]; stream++;
+					i16 p2 = stream[0]; stream++;
+					i16 p3 = stream[0]; stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					Redbook_XAPlay(p1, p2, p3);
+					continue;
+				}
+
+				case 5:
+				{
+					i32 trigId = stream[0]; stream++;
+					i32 duration = stream[0]; stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					CVector target;
+					target.vx = 0; target.vy = 0; target.vz = 0;
+					Trig_GetPosition(&target, trigId);
+
+					i32* block = this->GetNewCommandBlock(7);
+					block[0] = 5;
+					block[1] = 7;
+					block[2] = target.vx;
+					block[3] = target.vy;
+					block[4] = target.vz;
+					block[5] = duration;
+
+					this->field_1B4 = 0;
+					continue;
+				}
+
+				case 6:
+				{
+					i32 animId = stream[0]; stream++;
+					i32 duration = stream[0]; stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(5);
+					block[0] = 6;
+					block[1] = 5;
+					block[2] = animId;
+					block[3] = duration + this->field_80;
+					continue;
+				}
+
+				case 7:
+				{
+					i32 duration = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(4);
+					block[0] = 7;
+					block[1] = 4;
+					block[2] = duration + this->field_80;
+					continue;
+				}
+
+				case 8:
+				{
+					i32 value = stream[0]; stream++;
+					i32 duration = stream[0]; stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(5);
+					block[0] = 8;
+					block[1] = 5;
+					block[2] = value;
+					block[3] = duration + this->field_80;
+					continue;
+				}
+
+				case 9:
+				{
+					i32 duration = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(4);
+					block[0] = 9;
+					block[1] = 4;
+					block[2] = duration + this->field_80;
+
+					this->field_1B4 = 0;
+					continue;
+				}
+
+				case 15:
+				{
+					i32 animId = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					i32* block = this->GetNewCommandBlock(3);
+					block[0] = 15;
+					block[1] = 3;
+
+					this->field_1B4 = 0;
+					if (this->mAnim != animId || this->mAnimFinished)
+						this->RunAnim(animId, 0, -1);
+					continue;
+				}
+
+				case 16:
+				{
+					this->field_1A8 = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+					continue;
+				}
+
+				case 17:
+				{
+					if (this->field_AD4)
+					{
+						i32* block = this->GetNewCommandBlock(5);
+						block[0] = 3;
+						block[1] = 5;
+						block[2] = 16;
+						block[3] = this->field_80;
+					}
+					continue;
+				}
+
+				case 18:
+				{
+					i32 param = stream[0];
+					stream++;
+					this->field_1B8 = reinterpret_cast<i32>(stream);
+
+					*gSynthInputScriptFlag = (param != 0);
+					continue;
+				}
+
+				case 255:
+					this->field_1B4 = 0;
+					continue;
+
+				default:
+					continue;
+			}
+		}
+		while (this->field_1B4);
+	}
+
+	i32 heldMask = 0;
+	i32* block = this->field_1BC;
+	while (block)
+	{
+		switch (block[0])
+		{
+			case 2:
+			{
+				CVector target;
+				target.vx = block[2];
+				target.vy = 0;
+				target.vz = block[3];
+
+				if (Utils_XZDist(&target, &this->mPos) < 64)
+				{
+					block = this->KillCommandBlock(block);
+					this->field_1B4 = 1;
+					break;
+				}
+
+				i32 dz = (block[3] - this->mPos.vz) >> 12;
+				i32 dx = (block[2] - this->mPos.vx) >> 12;
+				i32 idx = 2 * ((1024 - ratan2(dz, dx) - CameraList->field_23A) & 0xFFF);
+
+				i32 x = word_610C4A[idx] / 32;
+				if (x > 127) x = 127;
+				else if (x < -127) x = -127;
+				this->field_E2D = static_cast<char>(x);
+
+				i32 y = word_610C48[idx] / -32;
+				if (y > 127) y = 127;
+				else if (y < -127) y = -127;
+				this->field_E2E = static_cast<char>(y);
+
+				block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				break;
+			}
+
+			case 3:
+			{
+				i32 index = block[2];
+				i32 remaining = block[3] - this->field_80;
+
+				if (remaining < 0)
+				{
+					block = this->KillCommandBlock(block);
+					break;
+				}
+
+				block[3] = remaining;
+				heldMask |= 1 << index;
+
+				switch (index)
+				{
+					case 0: case 1: case 2: case 3:
+					case 4: case 5: case 6: case 7:
+					case 16: case 17: case 18: case 19:
+					{
+						u8* slot = reinterpret_cast<u8*>(this) + 0x1C0 + 16 * index;
+						if (slot[0] == 0)
+							slot[1] = 1;
+						slot[0] = 1;
+						block = reinterpret_cast<i32*>(block[block[1] - 1]);
+						break;
+					}
+
+					case 8:
+						block = reinterpret_cast<i32*>(block[block[1] - 1]);
+						*(reinterpret_cast<u8*>(this) + 0x1C0 + 16 * 8) = 1;
+						this->field_E2E = -127;
+						break;
+
+					case 9:
+						block = reinterpret_cast<i32*>(block[block[1] - 1]);
+						*(reinterpret_cast<u8*>(this) + 0x1C0 + 16 * 9) = 1;
+						this->field_E2E = 127;
+						break;
+
+					case 10:
+						block = reinterpret_cast<i32*>(block[block[1] - 1]);
+						*(reinterpret_cast<u8*>(this) + 0x1C0 + 16 * 10) = 1;
+						this->field_E2D = -127;
+						break;
+
+					case 11:
+						block = reinterpret_cast<i32*>(block[block[1] - 1]);
+						*(reinterpret_cast<u8*>(this) + 0x1C0 + 16 * 11) = 1;
+						this->field_E2D = 127;
+						break;
+
+					default:
+						print_if_false(0, "Bad register index");
+						block = reinterpret_cast<i32*>(block[block[1] - 1]);
+						break;
+				}
+				break;
+			}
+
+			case 5:
+			{
+				CVector target;
+				target.vx = block[2];
+				target.vy = block[3];
+				target.vz = block[4];
+
+				if (Utils_Dist(target, this->mPos) < 64)
+				{
+					block = this->KillCommandBlock(block);
+					this->field_1B4 = 1;
+					break;
+				}
+
+				CVector delta = target;
+				delta -= this->mPos;
+				delta >>= 12;
+				VectorNormal(
+						reinterpret_cast<VECTOR*>(&delta),
+						reinterpret_cast<VECTOR*>(&this->mVel));
+
+				block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				break;
+			}
+
+			case 6:
+			{
+				i32 animId = block[2];
+				i32 remaining = block[3] - this->field_80;
+
+				if (remaining < 0)
+				{
+					block = this->KillCommandBlock(block);
+					break;
+				}
+
+				block[3] = remaining;
+
+				if (this->field_AD4 || this->mAnim != animId)
+				{
+					i32* p = gSpideySFXEntry[animId];
+					this->field_350 = p;
+
+					if (p)
+					{
+						while (p[0] != -1)
+						{
+							p[0] &= 0xFFFF;
+							p++;
+						}
+					}
+
+					this->RunAnim(animId, 0, -1);
+				}
+
+				block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				break;
+			}
+
+			case 7:
+			{
+				i32 remaining = block[2] - this->field_80;
+
+				if (remaining < 0)
+				{
+					block = this->KillCommandBlock(block);
+					this->SwitchToStandMode();
+				}
+				else
+				{
+					block[2] = remaining;
+					this->field_E1C = 0x40000000;
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				}
+				break;
+			}
+
+			case 8:
+			{
+				i32 remaining = block[3] - this->field_80;
+
+				if (remaining < 0)
+				{
+					block = this->KillCommandBlock(block);
+					this->field_E00 = 0;
+				}
+				else
+				{
+					i32 value = block[2];
+					block[3] = remaining;
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+					this->field_E00 = value;
+				}
+				break;
+			}
+
+			case 9:
+			{
+				i32 remaining = block[2] - this->field_80;
+
+				if (remaining < 0)
+				{
+					block = this->KillCommandBlock(block);
+					this->field_1B4 = 1;
+				}
+				else
+				{
+					block[2] = remaining;
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				}
+				break;
+			}
+
+			case 15:
+			{
+				if (this->mInputFlags & 1)
+				{
+					this->mInputFlags &= ~1;
+					block = this->KillCommandBlock(block);
+					this->field_1B4 = 1;
+				}
+				else
+				{
+					if (this->mAnimFinished)
+						this->RunAnim(this->mAnim, 0, -1);
+
+					block = reinterpret_cast<i32*>(block[block[1] - 1]);
+				}
+				break;
+			}
+
+			default:
+				print_if_false(0, "Bad command");
+				break;
+		}
+	}
+
+	u8* src = reinterpret_cast<u8*>(this) + 0x1C0;
+	u8* dst = reinterpret_cast<u8*>(this->field_E0C) + 2;
+
+	for (i32 slotIdx = 0; slotIdx < 20; slotIdx++)
+	{
+		if (slotIdx != 14 && slotIdx != 15)
+		{
+			if (!((1 << slotIdx) & heldMask))
+				src[0] = 0;
+
+			u8 state = src[0];
+			if (state == 0)
+			{
+				src[1] = 0;
+				src[2] = 0;
+			}
+
+			dst[-2] = state;
+			dst[-1] = src[1];
+			dst[0] = src[2];
+		}
+
+		src += 16;
+		dst += 16;
+	}
+
+	if (!this->field_1BC && !this->field_1B4)
+	{
+		// 31900664/34009330/4915200 are plain fixed-point world-space
+		// constants (IDA mislabeled them unk_1E3CBF8/unk_20532F2/
+		// loc_4B0000 because they happen to look like valid addresses).
+		if (Trig_GetLevelId() != 1795 || !G_MECHLIST
+				|| my_abs(31900664 + G_MECHLIST->mPos.vx) >= 4915200
+				|| my_abs(G_MECHLIST->mPos.vz - 34009330) >= 4915200)
+		{
+			this->field_1AC = 0;
+		}
+
+		if (*gPshellForceLevelExit)
+			gLevelStatus = 7;
+
+		if (*gWhatIfPending && this->field_1A8)
+		{
+			Trig_GetPosition(&this->mPos, this->field_1A8);
+		}
+	}
 }
 
 // @MEDIUMTODO
@@ -3757,8 +4452,6 @@ void CPlayer::SetTargetTorsoAngle(i16 a2, bool a3)
 }
 
 static i16 * const word_6A8C66 = (i16*)0x6A8C66;
-static i16 * const word_610C4A = (i16*)0x610C4A;
-static i16 * const word_610C48 = (i16*)0x610C48;
 
 // @Ok
 // verified against IDA sub_4C64A0 (0x4C64A0, 0x11A bytes). Found and
