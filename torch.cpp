@@ -77,7 +77,13 @@ CTorch::~CTorch(void)
 	this->KillAllCommandBlocks();
 }
 
-// @NotOk
+// @Ok
+// Verified field by field against 0x4DC4F0: field_21E=100 (i16 store),
+// field_330/334=2, RunAnim(4,0,-1), mFlags|=0x480, mpLight before
+// AttachTo, mType=328 (0x148) then field_31C.bothFlags=1, mNode=a3,
+// mRMinor=0, field_34C=SquirtAngles result, Die(0) guarded by
+// submarinerDieRelated (shared global at 0x60CFC4) and level id != 2051
+// (0x803). All offsets and order match the original exactly.
 CTorch::CTorch(i16* a2, i32 a3)
 {
 	this->InitItem("torch");
