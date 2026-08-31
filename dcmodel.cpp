@@ -107,11 +107,14 @@ INLINE void DCSkaterModel::ClearSkaterModel(void)
 	}
 }
 
-// @NotOk
-// @Note: missing some SEH shit
+// @Ok
+// @Note: verified against IDA decompile of 0x432830. The old code only freed field_24.
+// It was missing the field_28.pObject cleanup entirely (the original calls
+// DCObject::~DCObject on it, then operator delete), same pattern as ClearSkaterModel.
 DCSkaterModel::~DCSkaterModel(void)
 {
 	delete[] this->field_24;
+	delete this->field_28.pObject;
 }
 
 // @Ok
