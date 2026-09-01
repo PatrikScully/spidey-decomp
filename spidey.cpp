@@ -710,26 +710,26 @@ CPlayer::CPlayer(void)
 	this->field_AC8.vy = 0;
 	this->field_AC8.vz = 0;
 
-	this->field_B0C.vx = 0;
-	this->field_B0C.vy = 0;
-	this->field_B0C.vz = 0;
-	this->field_B18.vx = 0;
-	this->field_B18.vy = 0;
-	this->field_B18.vz = 0;
-	this->field_B24.vx = 0;
-	this->field_B24.vy = 0;
-	this->field_B24.vz = 0;
-	this->field_B30.vx = 0;
-	this->field_B30.vy = 0;
-	this->field_B30.vz = 0;
+	this->mLineInfo.StartCoords.vx = 0;
+	this->mLineInfo.StartCoords.vy = 0;
+	this->mLineInfo.StartCoords.vz = 0;
+	this->mLineInfo.EndCoords.vx = 0;
+	this->mLineInfo.EndCoords.vy = 0;
+	this->mLineInfo.EndCoords.vz = 0;
+	this->mLineInfo.MinCoords.vx = 0;
+	this->mLineInfo.MinCoords.vy = 0;
+	this->mLineInfo.MinCoords.vz = 0;
+	this->mLineInfo.MaxCoords.vx = 0;
+	this->mLineInfo.MaxCoords.vy = 0;
+	this->mLineInfo.MaxCoords.vz = 0;
 
-	this->field_B78 = 0;
-	this->field_B7C = 0;
-	this->field_B80 = 0;
+	this->mLineInfo.Position.vx = 0;
+	this->mLineInfo.Position.vy = 0;
+	this->mLineInfo.Position.vz = 0;
 
-	this->field_B84.vx = 0;
-	this->field_B84.vy = 0;
-	this->field_B84.vz = 0;
+	this->mLineInfo.Normal.vx = 0;
+	this->mLineInfo.Normal.vy = 0;
+	this->mLineInfo.Normal.vz = 0;
 
 	this->field_BB0.vx = 0;
 	this->field_BB0.vy = 0;
@@ -1339,7 +1339,7 @@ u8 CPlayer::CheckCeilingJumpingSmashPunch(void)
 // @Ok
 i32 CPlayer::CheckExteriorSurfaceTransition(void)
 {
-	if (this->field_B74 == 0)
+	if (this->mLineInfo.pItem == 0)
 		return 0;
 
 	if (this->field_B08 == 0)
@@ -1348,22 +1348,22 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 	if (this->field_AD4 == 0)
 		return 0;
 
-	i16 nx = this->field_B84.vx;
-	i16 ny = this->field_B84.vy;
-	i16 nz = this->field_B84.vz;
+	i16 nx = this->mLineInfo.Normal.vx;
+	i16 ny = this->mLineInfo.Normal.vy;
+	i16 nz = this->mLineInfo.Normal.vz;
 
 	bool bAligned = ((nz * this->field_A8.vz) >> 12)
 		+ ((ny * this->field_A8.vy) >> 12)
 		+ ((nx * this->field_A8.vx) >> 12) >= 1567;
 
-	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+	bool bAlternative = this->field_AD5 != 0 || (this->mLineInfo.pFace[3] & 0x1000000) != 0;
 
 	u16 anim = bAligned ? 75 : 63;
 
 	if (bAlternative)
 		anim = bAligned ? 81 : 69;
 
-	if (this->field_8E8 != 0 && this->field_B84.vy < -2600)
+	if (this->field_8E8 != 0 && this->mLineInfo.Normal.vy < -2600)
 	{
 		CVector up;
 		up.vx = 0;
@@ -1416,7 +1416,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 
 	if (this->field_8E8 != 0)
 	{
-		i16 vy = this->field_B84.vy;
+		i16 vy = this->mLineInfo.Normal.vy;
 
 		if (vy > 3400)
 		{
@@ -1441,14 +1441,14 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 
 			if (lock == 0)
 			{
-				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 			}
 		}
 	}
 	else if (this->field_8E9 != 0)
 	{
-		if (this->field_B84.vy <= 3400)
+		if (this->mLineInfo.Normal.vy <= 3400)
 		{
 			this->field_AD6 = 0;
 
@@ -1463,21 +1463,21 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 
 			if (lock == 0)
 			{
-				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 			}
 
 			this->SetWallCamera(16);
 		}
 	}
-	else if (this->field_B84.vy <= 3400)
+	else if (this->mLineInfo.Normal.vy <= 3400)
 	{
 		u8 lock = this->gCamAngleLock;
 		this->field_AD6 = 0;
 
 		if (lock == 0)
 		{
-			i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+			i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 			CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 		}
 
@@ -1558,9 +1558,9 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 
 	this->SetFloorCamera(16);
 
-	this->field_B84.vz = 0;
-	this->field_B84.vx = 0;
-	this->field_B84.vy = -4096;
+	this->mLineInfo.Normal.vz = 0;
+	this->mLineInfo.Normal.vx = 0;
+	this->mLineInfo.Normal.vy = -4096;
 	this->field_E1C = 0x2000;
 
 	i32 *p2 = gSpideySFXEntry[0x5D];
@@ -1748,7 +1748,7 @@ i32 CPlayer::CheckGroundGone(void)
 // @Ok
 i32 CPlayer::CheckInteriorSurfaceTransition(void)
 {
-	if (this->field_B74 == 0)
+	if (this->mLineInfo.pItem == 0)
 		return 0;
 
 	if (this->field_B08 != 0)
@@ -1757,23 +1757,23 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	if (this->field_AD4 == 0)
 		return 0;
 
-	if (this->field_B4C < 0)
+	if (this->mLineInfo.Distance < 0)
 		return 0;
 
 	i16 ax = this->field_A8.vx;
-	i16 nx = this->field_B84.vx;
-	i16 ny = this->field_B84.vy;
+	i16 nx = this->mLineInfo.Normal.vx;
+	i16 ny = this->mLineInfo.Normal.vy;
 
 	u8 bToFloor = 0;
 	u8 bToWall = 0;
 
-	bool bAligned = ((this->field_B84.vz * this->field_A8.vz) >> 12)
+	bool bAligned = ((this->mLineInfo.Normal.vz * this->field_A8.vz) >> 12)
 		+ ((ny * this->field_A8.vy) >> 12)
 		+ ((nx * ax) >> 12) >= 1567;
 
 	u8 bToCeiling = 0;
 
-	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+	bool bAlternative = this->field_AD5 != 0 || (this->mLineInfo.pFace[3] & 0x1000000) != 0;
 
 	u16 anim = bAligned ? 72 : 60;
 
@@ -1781,7 +1781,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	{
 		this->HandleControlsForSurfaceTransition(false);
 
-		i16 vy = this->field_B84.vy;
+		i16 vy = this->mLineInfo.Normal.vy;
 		if (vy > 3400)
 			bToCeiling = 1;
 		else if (vy < -2600)
@@ -1791,7 +1791,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	{
 		this->HandleControlsForSurfaceTransition(false);
 
-		if (this->field_B84.vy <= 3400)
+		if (this->mLineInfo.Normal.vy <= 3400)
 			bToWall = 1;
 	}
 	else if (ny <= 3400 && ny >= -2600)
@@ -1814,9 +1814,9 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	}
 	else if (!bAligned)
 	{
-		i32 side = (-(this->field_B84.vx * this->field_C78) >> 12)
-			+ (-(this->field_B84.vy * this->field_C7C) >> 12)
-			+ (-(this->field_B84.vz * this->field_C80) >> 12);
+		i32 side = (-(this->mLineInfo.Normal.vx * this->field_C78) >> 12)
+			+ (-(this->mLineInfo.Normal.vy * this->field_C7C) >> 12)
+			+ (-(this->mLineInfo.Normal.vz * this->field_C80) >> 12);
 
 		if (side > 2048)
 			anim = bAlternative ? 68 : 62;
@@ -1832,7 +1832,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 
 	if (this->gCamAngleLock == 0 && bToFloor == 0 && bToWall == 0 && bToCeiling == 0)
 	{
-		i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+		i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 		CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(2 * frames));
 	}
 
@@ -2943,9 +2943,9 @@ i32 CPlayer::CheckLanded(void)
 // @Ok
 // verified against IDA sub_4BFBC0 (0x4BFBC0, 0x11C bytes). Found and
 // fixed two bugs from an earlier revision. (1) The threshold sum used
-// subtraction (field_C6C.x - field_B84.x) for all three components; the
+// subtraction (field_C6C.x - mLineInfo.Normal.x) for all three components; the
 // original multiplies each field_C6C component by the matching
-// field_B84 component (a velocity/heading dot product), not a
+// mLineInfo.Normal component (a velocity/heading dot product), not a
 // difference. (2) field_80 (CBody, ob.h, declared i32 and used as a full
 // int everywhere else in the repo) is added to field_AD7 here through an
 // explicit byte-sized read in the disassembly (mov cl,[esi+80h]); kept
@@ -2960,16 +2960,16 @@ i32 CPlayer::CheckRunIntoWall(void)
 
 	if (this->mCollision & 1)
 	{
-		if ( this->field_B84.vy <= 3400
-				&& this->field_B74
-				&& this->field_B84.vy >= -2600
+		if ( this->mLineInfo.Normal.vy <= 3400
+				&& this->mLineInfo.pItem
+				&& this->mLineInfo.Normal.vy >= -2600
 				// @FIXME
-				&& !(this->field_B8C[3] & 0x40000))
+				&& !(this->mLineInfo.pFace[3] & 0x40000))
 		{
 
-			if (((this->field_C6C.vx * this->field_B84.vx) >> 12) +
-					((this->field_C6C.vy * this->field_B84.vy) >> 12) +
-					((this->field_C6C.vz * this->field_B84.vz) >> 12) > 3800)
+			if (((this->field_C6C.vx * this->mLineInfo.Normal.vx) >> 12) +
+					((this->field_C6C.vy * this->mLineInfo.Normal.vy) >> 12) +
+					((this->field_C6C.vz * this->mLineInfo.Normal.vz) >> 12) > 3800)
 			{
 				v3 = 0;
 				this->field_AD7 += static_cast<u8>(this->field_80);
@@ -3047,25 +3047,25 @@ i32 CPlayer::CheckStickToWall(void)
 	if (!(this->mCollision & 1))
 		return 0;
 
-	if (this->field_B74 == 0)
+	if (this->mLineInfo.pItem == 0)
 		return 0;
 
-	i16 vy = this->field_B84.vy;
+	i16 vy = this->mLineInfo.Normal.vy;
 	if (vy > 0xD48)
 		return 0;
 
 	if (vy < -2600)
 		return 0;
 
-	if (this->field_B8C[3] & 0x40000)
+	if (this->mLineInfo.pFace[3] & 0x40000)
 		return 0;
 
 	if (Utils_GetGroundHeight(&this->mPos, 0, 0xB4, 0) != -1)
 		return 0;
 
-	i16 nx = this->field_B84.vx;
-	i16 ny = this->field_B84.vy;
-	i16 nz = this->field_B84.vz;
+	i16 nx = this->mLineInfo.Normal.vx;
+	i16 ny = this->mLineInfo.Normal.vy;
+	i16 nz = this->mLineInfo.Normal.vz;
 
 	print_if_false((nx | nz | ny) != 0, "Bad normal");
 
@@ -3085,9 +3085,9 @@ i32 CPlayer::CheckStickToWall(void)
 	this->mVel.vy = 0;
 	this->mVel.vx = 0;
 
-	this->mPos.vx = this->field_B78 + this->field_EA8 * this->field_A8.vx;
-	this->mPos.vy = this->field_B7C + this->field_EA8 * this->field_A8.vy;
-	this->mPos.vz = this->field_B80 + this->field_EA8 * this->field_A8.vz;
+	this->mPos.vx = this->mLineInfo.Position.vx + this->field_EA8 * this->field_A8.vx;
+	this->mPos.vy = this->mLineInfo.Position.vy + this->field_EA8 * this->field_A8.vy;
+	this->mPos.vz = this->mLineInfo.Position.vz + this->field_EA8 * this->field_A8.vz;
 
 	i32 anim;
 	i32 *p;
@@ -3775,10 +3775,9 @@ void CPlayer::DoMGSShadow(void)
 //     gSpideySFXEntry[0xEA] (the -1-terminated list the slot points at), and
 //     skipped the null check the original has.
 // Nothing calls it and it is not hooked, so the wrong body was inert.
-i32 CPlayer::DoPhysics(void)
+void CPlayer::DoPhysics(void)
 {
     printf("CPlayer::DoPhysics(void)");
-    return 0;
 }
 
 // @Ok
@@ -4969,7 +4968,7 @@ void CPlayer::HandleControlsForSurfaceTransition(bool bAllowTransition)
 {
 	if (this->field_8E8 != 0)
 	{
-		i16 vy = this->field_B84.vy;
+		i16 vy = this->mLineInfo.Normal.vy;
 
 		if (vy > 0xD48)
 		{
@@ -4999,7 +4998,7 @@ void CPlayer::HandleControlsForSurfaceTransition(bool bAllowTransition)
 	if (this->field_8E9 == 0)
 		return;
 
-	if (this->field_B84.vy > 0xD48)
+	if (this->mLineInfo.Normal.vy > 0xD48)
 		return;
 
 	if ((this->field_AD8 == 0 && this->field_E2D < 0) ||
@@ -5336,7 +5335,7 @@ u8 CPlayer::IfPlayerCeilingCheck(i32 a2, i32 a3)
 	{
 		if (this->mPos.vy >= a2 && this->mPos.vy <= a3)
 		{
-			if (this->field_8E9 || this->field_8E8 && this->field_B84.vy > 3400)
+			if (this->field_8E9 || this->field_8E8 && this->mLineInfo.Normal.vy > 3400)
 			{
 				return 1;
 			}
@@ -11607,10 +11606,10 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_8F4, 0x8F4);
 	VALIDATE(CPlayer, field_8F9, 0x8F9);
 	VALIDATE(CPlayer, field_A80, 0xA80);
-	VALIDATE(CPlayer, field_B0C, 0xB0C);
-	VALIDATE(CPlayer, field_B18, 0xB18);
-	VALIDATE(CPlayer, field_B24, 0xB24);
-	VALIDATE(CPlayer, field_B30, 0xB30);
+	VALIDATE(CPlayer, mLineInfo, 0xB0C);
+	VALIDATE(CPlayer, mLineInfo.EndCoords, 0xB18);
+	VALIDATE(CPlayer, mLineInfo.MinCoords, 0xB24);
+	VALIDATE(CPlayer, mLineInfo.MaxCoords, 0xB30);
 	VALIDATE(CPlayer, field_BB0, 0xBB0);
 	VALIDATE(CPlayer, field_BBC, 0xBBC);
 	VALIDATE(CPlayer, field_BC8, 0xBC8);
@@ -11685,11 +11684,11 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_B08, 0xB08);
 	VALIDATE(CPlayer, field_B09, 0xB09);
-	VALIDATE(CPlayer, field_B4C, 0xB4C);
+	VALIDATE(CPlayer, mLineInfo.Distance, 0xB4C);
 
-	VALIDATE(CPlayer, field_B74, 0xB74);
-	VALIDATE(CPlayer, field_B84, 0xB84);
-	VALIDATE(CPlayer, field_B8C, 0xB8C);
+	VALIDATE(CPlayer, mLineInfo.pItem, 0xB74);
+	VALIDATE(CPlayer, mLineInfo.Normal, 0xB84);
+	VALIDATE(CPlayer, mLineInfo.pFace, 0xB8C);
 
 	VALIDATE(CPlayer, field_C18, 0xC18);
 	VALIDATE(CPlayer, field_C1C, 0xC1C);

@@ -9,6 +9,7 @@
 #include "manipob.h"
 #include "quat.h"
 #include "psx_types.h"
+#include "m3dcolij.h"
 
 struct SAnimFrame;
 
@@ -554,32 +555,18 @@ class CPlayer : public CSuper
 
 		PADDING(0xB0C-0xB09-1);
 
-		// four vectors CPlayer::CPlayer constructs (zeroes) in one run.
-		CVector field_B0C;
-		CVector field_B18;
-		CVector field_B24;
-		CVector field_B30;
-
-		PADDING(0xB4C-0xB30-12);
-
-		// CheckInteriorSurfaceTransition bails out when this is negative
-		i32 field_B4C;
-
-		PADDING(0xB74-0xB4C-4);
-
-		i32 field_B74;
-		i32 field_B78;
-		i32 field_B7C;
-		i32 field_B80;
-
-		CSVector field_B84;
-
-		PADDING(0xB8C-0xB84-sizeof(CSVector));
-
-		// @FIXME guess the type
-		i32* field_B8C;
-
-		PADDING(0xBB0-0xB8C-4);
+		// The player's own SLineInfo raycast scratch block, 0xB0C..0xBB0.
+		// Identified 2026-09-01 from CPlayer::DoSwingingPhysics (0x467D20)
+		// and CPlayer::DoCrawlingPhysics (0x467FD0), which pass &this[0xB0C]
+		// straight to M3dColij_InitLineInfo / M3dZone_LineToItem and then
+		// read the hit back out of it. Every field this file already knew
+		// lines up: 0xB0C/0xB18 are the ray's start/end (StartCoords /
+		// EndCoords), 0xB4C is the hit distance (negative = no hit), 0xB74
+		// is the hit item, 0xB78..0xB80 the hit position, 0xB84 the surface
+		// normal and 0xB8C the hit face pointer. sizeof(SLineInfo) is 0xA4,
+		// which ends the block exactly at 0xBB0, where the next known field
+		// starts.
+		SLineInfo mLineInfo;
 
 		// four more vectors CPlayer::CPlayer constructs in one run.
 		CVector field_BB0;
@@ -977,9 +964,14 @@ class CPlayer : public CSuper
 		EXPORT void CollideWithObject(CBody *);
 		EXPORT void CreateCombatImpactEffect(CVector *,i32);
 		EXPORT void CreateWebDrips(bool,bool);
+		EXPORT void DoCrawlingPhysics(void);
 		EXPORT void DoMGSShadow(void);
-		EXPORT i32 DoPhysics(void);
+		// 0x466CE0, 0x467D20 and 0x467FD0. All three live in physics.cpp,
+		// which is the translation unit the Mac build puts them in (next to
+		// Physics_SetGravity), not in spidey.cpp.
+		EXPORT void DoPhysics(void);
 		EXPORT void DoShadowCheck(void);
+		EXPORT void DoSwingingPhysics(void);
 		EXPORT void DrawOffscreenSpideySenseIndicatorList(void);
 		EXPORT void DrawReticle(u16,u16,u32);
 		EXPORT void EnterLookaroundMode(void);
