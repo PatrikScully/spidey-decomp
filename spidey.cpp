@@ -6925,6 +6925,32 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 }
 
 // @BIGTODO
+// Scoped 2026-09-01 but not implemented, because it is blocked leaf-first.
+// Original address 0x4B9420, 781 bytes, __thiscall taking the CVector by
+// value (the vector is only used as the normal for OrientToNormal(1, &v)).
+// It is the "clean everything up before the Venom distance attack" teardown:
+// deletes the auto-aim target (field_878, off MiscellaneousRenderingList),
+// clears field_ECC and gWaterEffect (0x60FA9C), stops the SFX handle in
+// field_ED0, deletes the body part held by the handle at field_ED4 (off
+// SpideyAdditionalBodyPartsList) and re-makes it as an empty handle, drops
+// mHeldObject at mPos-ish offset (-8 * field_C6C + 4 * field_C84) via
+// CManipOb::Drop, calls CSwinger_SwingBack then deletes field_E64, deletes
+// field_E6C, deletes the two body-part handles at CPlayer+0x5B8 and +0x5C0
+// the same way, clears field_5AC/field_5B0, bursts the dome behind the
+// handle at field_AB8 (CDome::Burst) and re-makes that handle empty, fades
+// all four smoke trails (field_584..field_590), clears
+// field_54C/field_AD4/field_8E8/field_8E9, resets field_A8 to (0,-4096,0),
+// re-orients to the passed normal, zeroes mVel/field_548/field_DF8, leaves
+// lookaround mode if field_8EA, sets CameraList->field_12C to -1 and, when
+// CameraList->mCameraMode == 3, restores the five camera tuning values
+// (gSpideySwingCam* / gSpideyWallCam*) and clears field_540, then
+// PutCameraBehind(0).
+// Blockers: CDome::Burst (0x4FAD50) has no declaration and no body in the
+// repo, and decompiling it first pulls in CDomeRing::CDomeRing (0x4F5510)
+// and CItem_Burst (0x45FDC0), neither of which is declared either. Doing
+// this function honestly means starting from those three. It also needs
+// seven new CPlayer fields (0x5AC, 0x5B0, an SHandle[2] at 0x5B8, 0xECC,
+// 0xED0, an SHandle at 0xED4 and a u8 at 0xEF4).
 void CPlayer::PriorToVenomDistanceAttack(CVector)
 {}
 
