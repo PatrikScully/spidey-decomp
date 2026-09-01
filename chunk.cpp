@@ -45,6 +45,19 @@ extern CBody* ControlBaddyList;
 //   pass this session's scope did not cover. Left as a stub rather than
 //   guess field roles inside a struct several other @Ok functions already
 //   depend on the current (incomplete) layout of.
+// Re-verified 2026-09-01: fresh idalib decompile/disasm confirms the above and adds
+// one more data point. dword_6B2474 is set by the big level/model-section loader at
+// 0x4C9A60 (a huge tag-dispatch switch keyed on 4-char magic constants), specifically
+// in the branch for tag 0x6B6E6843 which decodes (little-endian bytes) to "Chnk" --
+// i.e. dword_6B2474 really is a per-region "chunk section" pointer table, consistent
+// with the CItemRelatedList-family naming here, but that loader only proves the
+// table's PURPOSE, not the byte layout of what it points to (still need
+// SDCRegionItem's +0xD/+0x14 fields and the RuinModel/RuinChunk 28-i16-stride record
+// shape, neither of which any other @Ok function in the repo has pinned down yet).
+// dword_6B2474 also has exactly one other caller in the whole binary (that same
+// loader), so there is no second independent usage site to cross-check a guessed
+// layout against. Still leaving this as a stub rather than guess; not attempting an
+// implementation under this session's "do not invent unconfirmed struct fields" rule.
 void Chunk_ChunkItemByChecksum(u32 Checksum)
 {
 	printf("void Chunk_ChunkItemByChecksum(u32 Checksum)");
