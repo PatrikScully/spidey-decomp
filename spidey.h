@@ -192,7 +192,14 @@ class CPlayer : public CSuper
 
 		i32 field_50C;
 
-		PADDING(0x528-0x50C-4);
+		PADDING(0x514-0x510);
+
+		// zeroed by CPlayer::CPlayer; a position/angle pair, nothing in the
+		// repo writes them again yet.
+		CVector field_514;
+		CSVector field_520;
+
+		PADDING(0x528-0x520-6);
 
 		i32 field_528;
 		i32 field_52C;
@@ -245,7 +252,8 @@ class CPlayer : public CSuper
 		// cleared whenever CheckWebShot starts a web shot animation.
 		u8 field_552;
 
-		PADDING(0x554-0x552-1);
+		// cleared by CPlayer::CPlayer.
+		u8 field_553;
 
 		// CPlayer::AI: free-function callback, called as field_554(this)
 		// near the end of every AI tick when nonzero.
@@ -265,7 +273,12 @@ class CPlayer : public CSuper
 		i32 field_56C;
 
 		u32 field_570;
-		PADDING(8);
+
+		// seeded by CPlayer::CPlayer to 208 / 160 / 256 next to field_570's
+		// 208; trig.cpp reaches 0x574 / 0x578 by raw offset as the shadow
+		// RGB / body RGB pair.
+		i32 field_574;
+		i32 field_578;
 
 		i8 field_57C;
 
@@ -371,7 +384,8 @@ class CPlayer : public CSuper
 		u8 field_8E9;
 		u8 field_8EA;
 
-		PADDING(1);
+		// set to 1 by CPlayer::CPlayer.
+		u8 field_8EB;
 
 		u8 gCamAngleLock; //8EC
 
@@ -386,13 +400,17 @@ class CPlayer : public CSuper
 		// non-centre (clamped at 256), reset to 0 when it centres.
 		i32 field_8F0;
 
-		PADDING(0x8F8-0x8F0-4);
+		// set to 135 by CPlayer::CPlayer.
+		i32 field_8F4;
 
 		// which web shot is running: 1 forward, 2 right, 4 left
 		// (CheckWebShot, CPlayer::FireWeb).
 		u8 field_8F8;
 
-		PADDING(3);
+		// set to 7 by CPlayer::CPlayer.
+		u8 field_8F9;
+
+		PADDING(2);
 
 		// --- active combo state, all set up by CPlayer::InitiateCombo and
 		// --- driven by CPlayer::UpdateAndTrackCombo.
@@ -472,7 +490,16 @@ class CPlayer : public CSuper
 		CBody *field_A6C[4];
 		i32 field_A7C;
 
-		PADDING(0xAB8-0xA7C-4);
+		// set to 1 by CPlayer::CPlayer.
+		u8 field_A80;
+
+		PADDING(0xAA4-0xA80-1);
+
+		// CPlayer::CPlayer asserts this is still null ("Bad") right after
+		// building the body transform; nothing in the repo writes it yet.
+		i32 field_AA4;
+
+		PADDING(0xAB8-0xAA4-4);
 
 		SHandle field_AB8;
 
@@ -525,7 +552,15 @@ class CPlayer : public CSuper
 		// standing on/near a fence surface
 		u8 field_B09;
 
-		PADDING(0xB4C-0xB09-1);
+		PADDING(0xB0C-0xB09-1);
+
+		// four vectors CPlayer::CPlayer constructs (zeroes) in one run.
+		CVector field_B0C;
+		CVector field_B18;
+		CVector field_B24;
+		CVector field_B30;
+
+		PADDING(0xB4C-0xB30-12);
 
 		// CheckInteriorSurfaceTransition bails out when this is negative
 		i32 field_B4C;
@@ -544,7 +579,15 @@ class CPlayer : public CSuper
 		// @FIXME guess the type
 		i32* field_B8C;
 
-		PADDING(0xC18-0xB8C-4);
+		PADDING(0xBB0-0xB8C-4);
+
+		// four more vectors CPlayer::CPlayer constructs in one run.
+		CVector field_BB0;
+		CVector field_BBC;
+		CVector field_BC8;
+		CVector field_BD4;
+
+		PADDING(0xC18-0xBD4-12);
 
 		i32 field_C18;
 		CVector field_C1C;
@@ -562,7 +605,11 @@ class CPlayer : public CSuper
 		// (0xC5C must be nonzero to run the clamp logic).
 		u8 field_C5C;
 
-		PADDING(0xC64-0xC5C-1);
+		PADDING(0xC60-0xC5C-1);
+
+		// set to 300 by CPlayer::CPlayer; trig.cpp reaches it by raw offset
+		// as the fight-music timer.
+		i32 field_C60;
 
 		// CPlayer::AI: accumulator clamped to [0, 0x1000], adjusted by
 		// field_80*64 per tick when field_C68 (decrement) or field_C69 (increment).
@@ -596,7 +643,7 @@ class CPlayer : public CSuper
 		// camera position snapshot taken by EnterLookaroundMode.
 		CVector field_CB8;
 
-		PADDING(0xCD4-0xCB8-0xC);
+		CQuat field_CC4;
 
 		// per-frame smoothed lookaround camera orientation quaternion,
 		// written by CPlayer::SetupLookaroundCamera (MToQ of its working
@@ -629,15 +676,20 @@ class CPlayer : public CSuper
 		// word included), cached by CPlayer::OrientToNormal every call.
 		VECTOR field_D18;
 
-		PADDING(0xD3C-0xD18-sizeof(VECTOR));
+		PADDING(0xD2C-0xD18-sizeof(VECTOR));
+
+		// set to 0x202020 by CPlayer::CPlayer.
+		i32 field_D2C;
+
+		CVector field_D30;
 
 		CVector field_D3C;
 
-		PADDING(((0xD4E)-0xD3C)-sizeof(CVector));
+		CSVector field_D48;
 
 		CSVector field_D4E;
 
-		PADDING((0xD60)-(0xD4E)-sizeof(CSVector));
+		CVector field_D54;
 
 		// 0 = near web-attach point (field_D64) is valid, 1 = far one
 		// (field_D70) is valid. Set by CheckSwingWebAvailability.
@@ -725,7 +777,10 @@ class CPlayer : public CSuper
 
 		i16 field_E12;
 
-		PADDING(4);
+		// set to 1 by CPlayer::CPlayer.
+		u8 field_E14;
+
+		PADDING(3);
 
 		i32 field_E18;
 		i32 field_E1C;
@@ -794,7 +849,9 @@ class CPlayer : public CSuper
 		u8 field_E8C;
 		u8 field_E8D;
 
-		PADDING(0xEA0-0xE8D-1);
+		PADDING(0xE94-0xE8D-1);
+
+		CVector field_E94;
 
 		// ReadAnalogueInput: aim correction ratio (field_EA0/field_EA2).
 		u16 field_EA0;
@@ -810,7 +867,12 @@ class CPlayer : public CSuper
 
 		u16 field_EA8;
 
-		PADDING(0xEBC-0xEAA);
+		// set to 70 by CPlayer::CPlayer next to field_EA8's 96.
+		u16 field_EAA;
+
+		CVector field_EAC;
+
+		PADDING(0xEBC-0xEAC-12);
 
 		// cleared by CheckJump when the player was touching something
 		i32 field_EBC;
