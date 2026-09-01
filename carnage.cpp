@@ -2410,13 +2410,13 @@ void CCarnage::GetTrapped(void)
 				CTrapWebEffect *v6 = static_cast<CTrapWebEffect *>(
 						Mem_RecoverPointer(&this->field_104));
 				if ( !v6
-					|| (DoAssert(1u, "Bad register index"), v6->field_44[15] == this->realRegisterArr[3]) )
+					|| (DoAssert(1u, "Bad register index"), v6->field_44->mNumSegs == this->realRegisterArr[3]) )
 				{
 					this->dumbAssPad++;
 				}
 				else
 				{
-					i32 v7 = v6->field_44[15];
+					i32 v7 = v6->field_44->mNumSegs;
 					DoAssert(1u, "Bad register index");
 					this->realRegisterArr[3] = v7;
 					this->field_1F8 = 2;

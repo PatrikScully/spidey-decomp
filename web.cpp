@@ -23,6 +23,11 @@ EXPORT i32 gGetGroundDefaultValue;
 
 extern CBody* MiscList;
 
+// sin/cos table, same address and idiom as bit.cpp / camera.cpp
+// (word_610C48[idx] = sin, word_610C48[idx + 1] = cos, idx = 2 * (angle & 0xFFF));
+// file-local copy per repo convention.
+static i16 * const word_610C48 = (i16*)0x610C48;
+
 // Second table parallel to CItemRelatedList (ob.h, 0x6B2454), indexed the same way
 // (region*17). Web_CollideWithSuper (0x4F7AE0) is the only known reader: it reads a hook
 // COUNT from this table's per-region entry at offset+8
@@ -566,46 +571,233 @@ i32 Web_GetGroundY(const CVector* a1)
 	return gLineInfo.Position.vy;
 }
 
-// @MEDIUMTODO
-// 0x4F7F40, 429 bytes. Scoped but not written out. What it does: chains
-// CNonRenderedBit::CNonRenderedBit, zeroes the first 6 bytes of 81 entries at
-// +0x48 (stride 8), stores Mem_MakeHandle(pSuper) in field_3C and Type in the
-// inherited mType, then writes a Mem_MakeHandle(this) back into the CSuper's
-// own slot (field_104 for Type 0, field_10C for Type 1; any other Type only
-// asserts). Then +0x424 = 400, +0x41E = 6, +0x41F = <a per-Type count> / 6,
-// and field_44 = new CGPolyLine(80) with its +0x3C cleared.
-//
-// Blocked on class layout, not on callees: the count written to +0x41F comes
-// from a byte at CSuper+0x13E, negated and randomised for Type 0 and divided
-// by three for Type 1, and +0x41E / +0x41F / +0x424 are fields this repo does
-// not have yet. Writing them would mean inventing three offsets inside the
-// existing field_48 padding block, which is exactly the guesswork PLAN.md
-// forbids.
-//
-// Layout finding while scoping this (NOT yet applied, because
-// CTrapWebEffect::Burst is already @Ok against the current declaration): the
-// zeroing loop runs 81 iterations of stride 8 over +0x48, i.e. 0x48..0x2D0,
-// so web.h's `SHook field_48[122]` (0x48..0x418) is too long. 0x2D0 onwards is
-// a separate i16 array, with a count at +0x374, a byte triple at +0x378 and a
-// pointer array at +0x37C, all read by AddAnotherStrand below.
-CTrapWebEffect::CTrapWebEffect(CSuper *, i32)
+// @Ok
+// 0x4F8190, 256 bytes. One shot of the imaginary web "projector" that walks
+// around the trapped baddy: it fires a ray straight in at the baddy's
+// vertical axis, from a point field_424 out at angle field_428 and field_420
+// units up. Web_CollideWithSuper turns a hit into the part/offset pair in
+// field_48[HookIndex]; the projector's height at that moment is kept in
+// field_2D0[HookIndex] so AddAnotherStrand can measure the vertical gap
+// between two hooks later. Returns 1 on a hit, 0 on a miss.
+i32 CTrapWebEffect::CalcHook(i32 HookIndex)
 {
-	printf("CTrapWebEffect::CTrapWebEffect(CSuper *,i32)");
+	print_if_false(HookIndex <= 80, "Bad hook index");
+
+	CSuper *pSuper = reinterpret_cast<CSuper*>(Mem_RecoverPointer(&this->field_3C));
+	print_if_false(pSuper != 0, "pSuper NULL??");
+
+	i32 Idx = (this->field_428 & 0xFFF) * 2;
+
+	CVector Start;
+	Start.vx = pSuper->mPos.vx + word_610C48[Idx + 1] * this->field_424;
+	Start.vy = pSuper->mPos.vy + (this->field_420 << 12);
+	Start.vz = pSuper->mPos.vz + word_610C48[Idx] * this->field_424;
+
+	CVector End;
+	End.vx = pSuper->mPos.vx;
+	End.vy = pSuper->mPos.vy + (this->field_420 << 12);
+	End.vz = pSuper->mPos.vz;
+
+	if (!Web_CollideWithSuper(pSuper, &Start, &End, &this->field_48[HookIndex], 0x1000))
+		return 0;
+
+	this->field_2D0[HookIndex] = static_cast<i16>(this->field_420);
+
+	return 1;
 }
 
-// @MEDIUMTODO
-// 0x4F83C0, 435 bytes. Blocked leaf-first on two callees that do not exist
-// yet, CTrapWebEffect::MoveProjector (0x4F82A0) and CTrapWebEffect::CalcHook
-// (0x4F8190), and on the same unmapped fields as the constructor above.
-// What it does: while field_44's strand count (+0x3C) is under 80, advances
-// the projector, adds one hook, and then, once at least two hooks exist and
-// with a 1-in-4 chance and under 20 strands, picks the widest gap between the
-// newest hook and each earlier one, records the (newest, newest-1, widest)
-// index triple, and allocates a CQuadBit for the new strand
-// (SetTexture(0x35006853), SetSemiTransparent).
+// @Ok
+// 0x4F82A0, 285 bytes. Moves the projector one frame: up or down by
+// field_41F, and a sixteenth of a turn around the baddy. Every time the
+// field_41E countdown runs out it picks a new target height (a random spot
+// on the baddy, in the baddy's own field_13E/field_13F units) and a new
+// speed that gets there in six frames.
+//
+// Original defect kept: with any mType other than 0 or 1 the target height
+// is never assigned (the original just leaves whatever was in the register),
+// so the speed below is computed from garbage. Nothing can reach it, the
+// constructor rejects those types with the same assert.
+void CTrapWebEffect::MoveProjector(void)
+{
+	this->field_420 += this->field_41F;
+
+	if (this->field_41E != 0)
+		this->field_41E--;
+
+	if (this->field_41E == 0)
+	{
+		CSuper *pSuper = reinterpret_cast<CSuper*>(Mem_RecoverPointer(&this->field_3C));
+		print_if_false(pSuper != 0, "pSuper NULL??");
+
+		i32 Target;
+
+		if (this->mType == 0)
+		{
+			Target = Rnd(pSuper->field_13F + pSuper->field_13E) - pSuper->field_13E;
+		}
+		else if (this->mType == 1)
+		{
+			Target = Rnd(pSuper->field_13E * 2 / 3) - pSuper->field_13E / 3;
+		}
+		else
+		{
+			print_if_false(0, "Bad CTrapWebEffect type");
+			Target = 0;
+		}
+
+		this->field_41E = 6;
+		this->field_41F = static_cast<i8>((Target - this->field_420) / 6);
+	}
+
+	this->field_428 = (this->field_428 + 0x100) & 0xFFF;
+}
+
+// @Ok
+// 0x4F7F40, 429 bytes. Hangs a new trap web on a baddy: takes a handle on
+// it, hangs a handle on itself off the baddy (field_104 for a normal trap
+// web, field_10C for the yank web), and sets the web "projector" up (see
+// MoveProjector / CalcHook above) with a 400 unit radius and a first target
+// height picked from the baddy's own size byte.
+//
+// The 81-entry zeroing loop over field_48 in the original is just the
+// implicit construction of the SHook array member (CSVector's default
+// constructor zeroes its three i16s, which is exactly the loop body), so it
+// is not written out here. It is also what pins the array's length, and so
+// the whole tail of the class: see the layout in web.h.
+//
+// Everything the constructor does not write (field_2D0, field_374,
+// field_378, field_420, field_428) is left zero by CBit::operator new, which
+// zeroes the whole allocation.
+//
+// Original defects kept: with a Type other than 0 or 1 the assert fires but
+// the object is still built, with an uninitialised target height (the
+// original just uses whatever was in the register, here 0); and the
+// CGPolyLine is used without a null check, so an out-of-memory
+// CBit::operator new dereferences null right after.
+CTrapWebEffect::CTrapWebEffect(CSuper *pSuper, i32 Type)
+{
+	print_if_false(pSuper != 0, "NULL pBaddy sent to CTrapWebEffect");
+
+	this->field_3C = Mem_MakeHandle(pSuper);
+	this->mType = static_cast<u8>(Type);
+
+	if (this->mType == 0)
+	{
+		print_if_false(Mem_RecoverPointer(&pSuper->field_104) == 0, "Baddy already has a web");
+		pSuper->field_104 = Mem_MakeHandle(this);
+	}
+	else if (this->mType == 1)
+	{
+		print_if_false(Mem_RecoverPointer(&pSuper->field_10C) == 0, "Baddy already has a web");
+		pSuper->field_10C = Mem_MakeHandle(this);
+	}
+	else
+	{
+		print_if_false(0, "Bad CTrapWebEffect type");
+	}
+
+	this->field_424 = 400;
+
+	i32 Target;
+
+	if (this->mType == 0)
+	{
+		Target = -(Rnd(pSuper->field_13E >> 1) + (pSuper->field_13E >> 1));
+	}
+	else if (this->mType == 1)
+	{
+		Target = pSuper->field_13E / -3;
+	}
+	else
+	{
+		print_if_false(0, "Bad CTrapWebEffect type");
+		Target = 0;
+	}
+
+	this->field_41E = 6;
+	this->field_41F = static_cast<i8>(Target / 6);
+
+	this->field_44 = new CGPolyLine(80);
+	this->field_44->SetSemiTransparent();
+	this->field_44->mNumSegs = 0;
+}
+
+// @Ok
+// 0x4F83C0, 435 bytes. One frame's worth of webbing: move the projector on,
+// try to land one more hook on the baddy, and every so often join three
+// hooks up with a triangle of webbing.
+//
+// The hooks live in the field_44 line's segments, so its mNumSegs doubles as
+// the hook count, and 80 is the limit. Hook 0 is laid down on its own the
+// very first time (nothing has been hooked yet, so there is no hook to move
+// away from), which is why the SHook array is 81 long and not 80.
+//
+// A strand is only added one time in four, only once there are at least two
+// hooks, and only up to 20 strands. Its three corners are the newest hook,
+// the one two before it, and whichever earlier hook sits at the biggest
+// height difference from the newest one (the projector's height at the time
+// each hook was made is what field_2D0 keeps). CTrapWebEffect::Move
+// (0x4F8860) turns that index triple into the quad's corners every frame.
 void CTrapWebEffect::AddAnotherStrand(void)
 {
-	printf("CTrapWebEffect::AddAnotherStrand(void)");
+	print_if_false(this->field_44->mNumSegs <= 80, "Bad mNumSegs");
+
+	if (this->field_44->mNumSegs == 80)
+		return;
+
+	this->MoveProjector();
+
+	if (this->field_44->mNumSegs == 0)
+	{
+		if (!this->CalcHook(0))
+			return;
+
+		this->MoveProjector();
+	}
+
+	if (!this->CalcHook(this->field_44->mNumSegs + 1))
+		return;
+
+	this->field_44->mNumSegs++;
+
+	if (this->field_44->mNumSegs < 2)
+		return;
+
+	if (Rnd(4) != 0)
+		return;
+
+	if (this->field_374 >= 20)
+		return;
+
+	i32 Newest = this->field_44->mNumSegs;
+	i32 Widest = Newest - 1;
+	i32 Biggest = 0;
+
+	for (i32 i = 0; i < Newest - 2; i++)
+	{
+		i32 Gap = this->field_2D0[Newest] - this->field_2D0[i];
+
+		if (Gap < 0)
+			Gap = -Gap;
+
+		if (Gap > Biggest)
+		{
+			Biggest = Gap;
+			Widest = i;
+		}
+	}
+
+	this->field_378[this->field_374].mHookA = static_cast<u8>(Newest);
+	this->field_378[this->field_374].mHookB = static_cast<u8>(Newest - 2);
+	this->field_378[this->field_374].mHookC = static_cast<u8>(Widest);
+
+	CQuadBit *pBit = new CQuadBit();
+
+	pBit->SetTexture(0x35023093);
+	pBit->SetSemiTransparent();
+
+	this->field_378[this->field_374].mpBit = pBit;
+	this->field_374++;
 }
 
 // @Ok
@@ -646,14 +838,17 @@ void CTrapWebEffect::Burst(void)
 
 	if (pSuper != NULL)
 	{
-		u8 *pTarget = reinterpret_cast<u8*>(this->field_44);
-		i32 HookCount = *reinterpret_cast<i32*>(pTarget + 0x3C);
+		CGPolyLine *pLine = this->field_44;
+		i32 HookCount = pLine->mNumSegs;
 
 		if (HookCount != 0)
 		{
 			M3d_BuildTransform(pSuper);
 
-			VECTOR *pPositions = *reinterpret_cast<VECTOR**>(pTarget + 0x40);
+			// one hook position per line segment; SLineSeg is 16 bytes with
+			// its CVector first, so a VECTOR* walks it with the same stride
+			// the original uses
+			VECTOR *pPositions = reinterpret_cast<VECTOR*>(pLine->mSegs);
 			i32 i;
 
 			// index 0 is always computed once, unconditionally, before the
@@ -794,6 +989,8 @@ INLINE void CDomeShockWave::ResetHitFlags(CBody* body)
 void validate_CKnottedWebSplat(void){
 	VALIDATE_SIZE(CKnottedWebSplat, 0xB0);
 
+	VALIDATE(CKnottedWebSplat, field_84, 0x84);
+	VALIDATE(CKnottedWebSplat, field_88, 0x88);
 	VALIDATE(CKnottedWebSplat, field_8C, 0x8C);
 	VALIDATE(CKnottedWebSplat, field_98, 0x98);
 	VALIDATE(CKnottedWebSplat, field_A4, 0xA4);
@@ -877,7 +1074,18 @@ void validate_CTrapWebEffect(void)
 	VALIDATE(CTrapWebEffect, field_3C, 0x3C);
 	VALIDATE(CTrapWebEffect, field_44, 0x44);
 	VALIDATE(CTrapWebEffect, field_48, 0x48);
+	VALIDATE(CTrapWebEffect, field_2D0, 0x2D0);
+	VALIDATE(CTrapWebEffect, field_374, 0x374);
+	VALIDATE(CTrapWebEffect, field_378, 0x378);
 	VALIDATE(CTrapWebEffect, field_418, 0x418);
+	VALIDATE(CTrapWebEffect, field_41A, 0x41A);
+	VALIDATE(CTrapWebEffect, field_41C, 0x41C);
+	VALIDATE(CTrapWebEffect, field_41E, 0x41E);
+	VALIDATE(CTrapWebEffect, field_41F, 0x41F);
+	VALIDATE(CTrapWebEffect, field_420, 0x420);
+	VALIDATE(CTrapWebEffect, field_424, 0x424);
+	VALIDATE(CTrapWebEffect, field_428, 0x428);
+	VALIDATE(CTrapWebEffect, field_42C, 0x42C);
 }
 
 void validate_CDomeShockWave(void)
@@ -1043,23 +1251,87 @@ CWeb::CWeb(void)
 	this->mType = 1;
 }
 
-// @MEDIUMTODO
-// 0x4F5BC0, 420 bytes. Scoped but not written out. What it does: chains
-// CQuadBit::CQuadBit, zeroes its own 0x8C..0xAC fields, SetTexture(0x3AF20073)
-// + SetSemiTransparent, sets field_84 (inherited) to 32 and mType to 40, puts
-// field_8C at pPos + pNormal * 10, calls CQuadBit::OrientUsing with a CSVector
-// rebuilt from the low words of pNormal's three i32s and a Rnd(4096) angle,
-// then stores (mPosB - mPos) >> 1 and (mPosC - mPos) >> 1 into field_98 /
-// field_A4 and runs one Move().
+// @Ok
+// 0x4A5E40, 400 bytes. Grows the splat and rebuilds its quad from the centre
+// and the two corner offsets the constructor worked out, then fades it away
+// once it is older than 30 frames and kills it when nothing is left of the
+// tint.
 //
-// Left as a stub because two of its steps cannot be written honestly yet: the
-// texture id 0x3AF20073 has no name in this repo, and the final call is
-// link-folded onto CSimbyShotSplat::Move (0x4A5E40, simby.cpp), so which class
-// really owns that Move body (and therefore what CKnottedWebSplat's vtable
-// should look like) is unresolved. Its caller CWeb::Fire below is complete.
-CKnottedWebSplat::CKnottedWebSplat(const CVector *, const CVector *)
+// The original scales the corner offsets through the (CVector, CVector)
+// operator* overload with a one-int CVector standing in for the left hand
+// side (that overload only reads lhs.vx), the same idiom vector.h's
+// explicit CVector(i32) constructor already exists for.
+void CKnottedWebSplat::Move(void)
 {
-	printf("CKnottedWebSplat::CKnottedWebSplat(const CVector *,const CVector *)");
+	this->field_88 += (this->field_84 - this->field_88) >> 1;
+
+	CVector Scale(this->field_88);
+
+	CVector CornerB = Scale * this->field_98;
+	CVector CornerC = Scale * this->field_A4;
+
+	this->mPos = this->field_8C - CornerB - CornerC;
+	this->mPosB = this->field_8C + CornerB - CornerC;
+	this->mPosC = this->field_8C - CornerB + CornerC;
+	this->mPosD = this->field_8C + CornerB + CornerC;
+
+	this->mAge++;
+
+	if (this->mAge > 30)
+	{
+		this->SetSemiTransparent();
+		Bit_ReduceRGB(&this->mTint, 5);
+	}
+
+	if ((this->mTint & 0xFFFFFF) == 0)
+		this->Die();
+}
+
+// @Ok
+// 0x4F5BC0, 420 bytes. The blob of webbing left where a web shot lands: a
+// quad, facing along the surface normal and spun at a random angle, that
+// grows to full size over the first few frames (see Move above).
+//
+// The nine zero stores the original makes over 0x8C..0xAC before it does
+// anything else are the implicit construction of the three CVector members,
+// so they are not written out here (CVector's default constructor zeroes its
+// three components). field_88 is left at zero by CBit::operator new.
+//
+// shell.cpp has a near-identical sibling splat class at 0x4907F0 (same
+// SetTexture / SetSemiTransparent / OrientUsing(..., 1, 1, Rnd(4096)) /
+// corner-offset / Move() shape, one field further along), which is a good
+// second reading of every step here.
+//
+// The original works out the offset from the surface with the
+// (CVector, CVector) operator* overload and a one-int CVector left hand side
+// (that overload only reads lhs.vx), the idiom vector.h's explicit
+// CVector(i32) constructor exists for: the splat centre is the hit point
+// pushed 10 units back out along the normal.
+CKnottedWebSplat::CKnottedWebSplat(const CVector *pPos, const CVector *pNormal)
+{
+	this->SetTexture(0x3AF6DFF3);
+	this->SetSemiTransparent();
+
+	this->field_84 = 32;
+
+	this->field_8C = *pPos;
+	this->field_8C += CVector(10) * *pNormal;
+
+	// the caller sign-extended a CSVector into the three i32s of pNormal
+	// (see CWeb::Fire below); this reads the low words straight back out
+	SVECTOR Normal;
+	Normal.vx = static_cast<i16>(pNormal->vx);
+	Normal.vy = static_cast<i16>(pNormal->vy);
+	Normal.vz = static_cast<i16>(pNormal->vz);
+
+	this->OrientUsing(&this->field_8C, &Normal, 1, 1, Rnd(4096));
+
+	this->field_98 = (this->mPosB - this->mPos) >> 1;
+	this->field_A4 = (this->mPosC - this->mPos) >> 1;
+
+	this->Move();
+
+	this->mType = 40;
 }
 
 // @Ok
