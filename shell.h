@@ -206,6 +206,7 @@ public:
 	// .InitialiseTailPSX__6CDummyFv / .InitialiseTailSweepPSX__6CDummyFv /
 	// .BuildTail__6CDummyFv / .ScorpionUniformCurveTesselator__6CDummyFP7CVectorUiP7CVector.
 	EXPORT void InitialiseTailPSX(void);
+	EXPORT void InitialiseTailSweepPSX(void);
 
 	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).
 	u16* field_1A4;
@@ -306,7 +307,12 @@ public:
 
 	CItem field_288;
 
-	PADDING(0x2d0 - 0x288 - sizeof(CItem));
+	PADDING(4);
+
+	// the same "1" InitialiseTailPSX writes at field_280, written by
+	// InitialiseTailSweepPSX in front of field_2D0.
+	i32 field_2CC;
+
 
 	// Second dynamically built geometry buffer, the one that belongs to field_288, in the same
 	// role mpTailGeometry has for field_240. Only ~CDummy touches it (Mem_Delete for the

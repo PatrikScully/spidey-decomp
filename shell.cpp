@@ -9155,6 +9155,21 @@ struct STailFace
 	u16 mUV[4];
 };
 
+struct STailSweepFace
+{
+	// 0x8C0: untextured (bits 0x3 clear), quad, colours already converted
+	u16 mFlags;
+	u16 mSize;
+
+	u16 mVertices01;
+	u16 mVertices23;
+
+	u16 mColour01;
+	u16 mColour23;
+
+	PADDING(4);
+};
+
 // @Ok
 // 0x4953C0, 768 bytes. Mac symbol .InitialiseTailPSX__6CDummyFv (0xE72B0). The PC body is
 // the same code as CScorpion::InitialiseTailPSX (0x489050, still a stub in scorpion.cpp)
@@ -9271,6 +9286,132 @@ void CDummy::InitialiseTailPSX(void)
 			pFace->mUV[2] = static_cast<u16>(uHi | ((pTexture->v0 + vLo) << 8));
 			pFace->mUV[3] = static_cast<u16>(uHi | ((pTexture->v0 + vHi) << 8));
 
+			pFace++;
+		}
+	}
+}
+
+// @Ok
+// 0x4956C0, 688 bytes. Mac symbol .InitialiseTailSweepPSX__6CDummyFv (0xE76E0), again the
+// same code as the CScorpion version with CDummy's offsets. Builds the second hand made PSX
+// region, named "SW", for the trail the tail sweeps behind it: a 4 by 23 grid of vertices
+// (the four generations of tail nodes BuildTail keeps in field_418), no normals, and 132
+// untextured quads. Each of the three strips gets its 22 quads twice, wound both ways, so
+// the sweep is visible from either side. The colour table is a green ramp and the corner
+// colours fade the strips out from 0x60 down to 0x00 along the sweep.
+void CDummy::InitialiseTailSweepPSX(void)
+{
+	i32 region = 0;
+	while (region < MAXPSX && PSXRegion[region].Filename[0] != 0)
+		region++;
+
+	if (region < MAXPSX)
+	{
+		this->field_288.mRegion = static_cast<u8>(region);
+
+		SPSXRegion* pRegion = &PSXRegion[region];
+		pRegion->Filename[0] = 'S';
+		pRegion->Filename[1] = 'W';
+		pRegion->Filename[2] = 0;
+		pRegion->IsSuper = 0;
+		pRegion->Usable = 1;
+		pRegion->Protected = 1;
+		pRegion->pPSX = 0;
+		pRegion->pAnimFile = 0;
+		pRegion->pHierarchy = 0;
+		pRegion->pTexWibData = 0;
+		pRegion->pColourPulseData = 0;
+		pRegion->NumParts = 1;
+		pRegion->Pad = 0;
+		pRegion->pHooks = 0;
+	}
+
+	print_if_false(this->field_288.mRegion != 0xFF, "No free region");
+
+	this->field_288.mFlags = 0;
+	this->field_288.mAngles.vz = 0;
+	this->field_288.mAngles.vy = 0;
+	this->field_288.mAngles.vx = 0;
+	this->field_288.mModel = 0;
+	this->field_288.mNextItem = 0;
+	this->field_288.mpLight = 0;
+
+	u32* pClut = static_cast<u32*>(DCMem_New(1024, 0, 1, 0, true));
+	PSXRegion[this->field_288.mRegion].pColourTable = pClut;
+
+	// (r, g, b) = (c / 2, c, c / 2): a green ramp. The blue term is written as
+	// (c & 0xFFFFFFFE) << 15, which is the same as (c >> 1) << 16 for every c.
+	for (u32 c = 0; c < 256; c++)
+		pClut[c] = (c >> 1) | (c << 8) | ((c & 0xFFFFFFFE) << 15);
+
+	// 28 byte header + 92 vertices of 8 bytes + 132 face records of 16 = 2876, and again
+	// the original asks for eight bytes more than it uses.
+	void* pSweep = DCMem_New(2884, 0, 1, 0, true);
+	this->field_2CC = 1;
+	this->field_2D0 = pSweep;
+	PSXRegion[this->field_288.mRegion].ppModels =
+			reinterpret_cast<SModel**>(&this->field_2D0);
+
+	SModel* pModel = static_cast<SModel*>(pSweep);
+	pModel->Flags = 8;
+	pModel->NumVertices = 92;
+	pModel->NumNormals = 0;
+	pModel->NumFaces = 132;
+	pModel->Radius = 0x200000;
+	pModel->zMax = 0x7FFF;
+	pModel->NextLOD = 0xFFFF;
+
+	// 28 byte header plus 92 vertices, and no normals this time
+	STailSweepFace* pFace = reinterpret_cast<STailSweepFace*>(
+			static_cast<u8*>(pSweep) + 764);
+
+	for (i32 strip = 0; strip < 3; strip++)
+	{
+		i32 base = 23 * strip;
+
+		u16 colour01;
+		u16 colour23;
+		if (strip == 0)
+		{
+			colour01 = 0x6060;
+			colour23 = 0x4040;
+		}
+		else if (strip == 1)
+		{
+			colour01 = 0x4040;
+			colour23 = 0x2020;
+		}
+		else
+		{
+			colour01 = 0x2020;
+			colour23 = 0;
+		}
+
+		for (i32 quad = 0; quad < 22; quad++)
+		{
+			pFace->mFlags = 0x8C0;
+			pFace->mSize = 16;
+			pFace->mVertices01 =
+					static_cast<u16>((base + quad) | ((base + quad + 1) << 8));
+			pFace->mVertices23 =
+					static_cast<u16>((base + quad + 23) | ((base + quad + 24) << 8));
+			pFace->mColour01 = colour01;
+			pFace->mColour23 = colour23;
+			pFace++;
+		}
+
+		// the same 22 quads again with the two index pairs swapped, so they face the
+		// other way
+		for (i32 back = 0; back < 22; back++)
+		{
+			pFace->mFlags = 0x8C0;
+			pFace->mSize = 16;
+			pFace->mVertices01 =
+					static_cast<u16>((base + back + 1) | ((base + back) << 8));
+			pFace->mVertices23 =
+					static_cast<u16>((base + back + 24) | ((base + back + 23) << 8));
+			pFace->mColour01 = colour01;
+			pFace->mColour23 = colour23;
 			pFace++;
 		}
 	}
@@ -9991,6 +10132,7 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, mpTailGeometry, 0x284);
 	VALIDATE(CDummy, field_240, 0x240);
 	VALIDATE(CDummy, field_288, 0x288);
+	VALIDATE(CDummy, field_2CC, 0x2CC);
 	VALIDATE(CDummy, field_2D0, 0x2D0);
 
 	VALIDATE(CDummy, field_2D4, 0x2D4);
