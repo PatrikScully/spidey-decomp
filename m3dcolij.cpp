@@ -2,6 +2,14 @@
 #include "m3dcolij.h"
 #include "validate.h"
 #include "ob.h"
+#include "trig.h"
+#include "spool.h"
+
+// translationVector/gGeneralLongVector are EXPORT globals defined in ps2funcs.cpp but
+// (as of this writing) not declared extern in ps2funcs.h; declared here locally rather
+// than editing that header, per this task's file scope.
+extern VECTOR translationVector;
+extern VECTOR gGeneralLongVector;
 
 // @Ok
 u16	Inquiry=0xFFFF;
@@ -415,76 +423,516 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 	return gLineToSphereBestBody;
 }
 
-// @BIGTODO
-// Original at 0x4529C0, 617 bytes. Checked in IDA (2026-08-31): this does the
-// real per-item line-vs-model collision test (picks a coarse/fine face table
-// by radius, sets up the GTE transform for the item, calls into a
-// spool/trigger-zone lookup and a Trig_TriggerCommandPoint dispatch on hit).
-// Needs real decompiles of several unnamed leaf helpers before it can be
-// written for real (leaf-first rule), the biggest being sub_46F1F0 (1176
-// bytes) and sub_46F6B0 (359 bytes); also sub_46D810, sub_46D620, sub_46E4D0,
-// sub_46DD40, none named or decompiled in the repo yet. Left as a
-// forward-to-original stub (functionally correct at runtime, already used by
-// the @Ok M3dColij_LineToItem/LineToItemZoned) rather than guessing the
-// bodies of ~1600 bytes of undecompiled leaf code; not touched further.
+// ===================================================================================
+// "Coarse GTE" per-item collision subsystem used only by M3dColij_LineToThisItem below.
+// Fully scoped and decompiled 2026-09-01 by cross-checking IDA's Hex-Rays decompile
+// against the raw disasm for every callee (Hex-Rays garbles some of this - one callee,
+// see gSetCoarseTranslationVector below, is flat-out mismapped in tools/names.json).
 //
-// Re-checked 2026-08-31, same session as M3dColij_LineToSphere above: verified via IDA
-// xrefs that sub_46F1F0 and sub_46F6B0 (the two big blockers) are still unnamed and are
-// used only by this function, so no shortcut appeared elsewhere in the repo. sub_46D810
-// is also called from two unrelated, large, still-unnamed functions (sub_4739A0, 0xdf2
-// bytes; sub_474C10, 0x1290 bytes) outside this file, so decompiling it here would need
-// checking those too. Still genuinely blocked; not attempted.
+// Layout confirmed via IDA: 0x00610B60 is a SECOND, distinct 3x3 i16 rotation matrix,
+// separate from gRotMatrix (0x00610B20, ps2funcs.cpp). It has its own small "load
+// matrix / load translation / transform point" trio mirroring gte_SetRotMatrix /
+// M3dAsm_SetTransVector / FixedXForm, plus its own per-face-vertex clip test
+// (ClipQuadAgainstCoarseMatrix, sub_0x0046F6B0) and per-face plane/cross-product hit
+// test (TestItemFaces, sub_0x0046F1F0). All addresses below are cross-checked against
+// both mcp decompile() and disasm() output; where the two matched exactly we call it
+// confirmed, not guessed.
 //
-// Re-re-checked 2026-08-31, later same session (after the GTE helper family in
-// ps2funcs.cpp/.h grew: gsub_46E990/gsub_46EA20/gsub_46EB30, gLineToSphereDirMatrix,
-// gTranslationVector at 0x00610B34, gRotMatrix at 0x00610B20). Confirmed via
-// names.json + tools/names.json grep + fresh IDA decompile that sub_46F1F0 and
-// sub_46F6B0 are STILL unnamed/unimplemented anywhere in the repo, so no shortcut has
-// appeared. Fresh decompile also shows the blocker is deeper than previously scoped:
-// 0x00610B60 is a SECOND, distinct 3x3 i16 rotation matrix (not gRotMatrix at
-// 0x00610B20), fed by its own small parallel "coarse GTE" pipeline used only by this
-// collision path:
-//   - sub_46D810 (0x0046D810, 47 bytes): copies a caller-supplied 3x3 matrix into the
-//     0x00610B60 matrix (a gte_SetRotMatrix analogue for the coarse matrix). Trivial,
-//     but has no purpose without the rest of the chain.
-//   - sub_46D620 (0x0046D620, 31 bytes): copies 3 dwords from a caller struct into
-//     dword_00610B34/38/3C (== gTranslationVector, already named in ps2funcs.cpp).
-//     Trivial.
-//   - sub_46DD40 (0x0046DD40, 168 bytes): dot-products a translation-like vector at
-//     dword_00610BB0/BB4/BB8 (NOT gTranslationVector, a third unnamed vector) against
-//     the 0x00610B60 coarse matrix, >>12, into dword_00610BA0/A4/A8 (+ a 4th field at
-//     0x00610BAC). This is the coarse-matrix equivalent of FixedXForm.
-//   - sub_46E4D0 (0x0046E4D0, 24 bytes): thin wrapper that calls sub_46CD90(&word_610B60,
-//     a1, a2) - sub_46CD90 is a NEW, previously unlisted unnamed function, not yet
-//     decompiled at all. Its size/behavior is unknown, so the true remaining leaf work
-//     is at least 5 functions deep (sub_46CD90, sub_46F1F0, sub_46F6B0, plus the three
-//     above), not the 4 previously scoped.
-//   - sub_46F1F0 (1176 bytes) itself does a per-face plane/cross-product test (uses the
-//     0x00610B60 matrix and a 3rd scratch vector region at 0x00610B40..0x00610B58,
-//     which physically overlaps gLineToSphereDirMatrix's memory - a different reuse of
-//     the same address range for this unrelated call path, same pattern as gRotMatrix's
-//     diagonal reuse in gsub_46E990/gsub_46EB30) to find the nearest hit face, writing
-//     results through dword_5FBD1C/5FBD20/5FBD38 (no idb_globals.txt entries) and a
-//     final small perspective-divide block at the end operating on fields of the CItem
-//     passed in (offsets +64/+68/+104/+108/+112/+116, none validated in validate.h yet).
-//   - sub_46F6B0 (359 bytes) transforms a small vertex array by the SAME 0x00610B60
-//     coarse matrix + gTranslationVector, computes PS1-GTE-style clip outcode flags
-//     (near/far/left/right/top/bottom against 0 and a caller-supplied bound), and
-//     returns the AND-reduce of all outcodes (classic trivial-reject test).
-// This is a genuine, self-contained "coarse GTE" subsystem (its own rotation matrix,
-// its own translation vector, its own transform+clip helpers) that nobody has started
-// decompiling yet, not a couple of simple leaves. Correctly naming/implementing it needs
-// several more IDA sessions (starting with sub_46CD90, which is not even sized yet) and
-// verified struct-field guesses for the CItem offsets sub_46F1F0 touches. Guessing any
-// of this would risk a silently-wrong collision system (no crash, no compile error, just
-// wrong hit results), which the task's "do not guess" rule forbids. Left as the
-// forward-to-original stub; still genuinely blocked, not attempted further this session.
+// The two originally-scoped "biggest blockers" turned out to touch NO unvalidated
+// CItem fields at all: every CItem/SLineInfo offset TestItemFaces reads or writes
+// (CItem::mModel at 0x1A, SLineInfo::Distance/Length/pItem/pFace/Model/
+// RecordTriggerZoneHits) is already a named, validated field in this file. The
+// "unvalidated CItem +64/+68/+104/+108/+112/+116 offsets" the previous stub worried
+// about were a misattribution: those offsets are on SLineInfo (a3 in the disasm, not
+// CItem), and they match SLineInfo::Distance(0x40)/Length(0x44)/pItem(0x68)/
+// pFace(0x80)/Model(0x84)/RecordTriggerZoneHits(0x88) exactly. The per-model "coarse
+// mesh" table (vertex/face records looked up via the already-named CItemRelatedList,
+// ob.h) is a genuinely separate, pre-existing game-data format; its field offsets are
+// confirmed byte-for-byte against the disasm but most individual fields' semantic
+// *meaning* (beyond what is used here) is not known, so we access it via raw offsets
+// rather than inventing a named struct for data we cannot fully verify.
+
+// address 0x00610B60 in the original. Plain repo global (no other file in this repo
+// touches this address, confirmed via grep), matching how ps2funcs.cpp's own
+// gRotMatrix/translationVector/gGeneralLongVector are plain globals rather than
+// address-bound pointers.
+static i16 gCoarseRotMatrix[3][3];
+
+// address 0x00610BB0..BB8 in the original: a translation-like vector distinct from
+// translationVector (0x00610B34, ps2funcs.cpp), fed by gSetCoarseTranslationVector and
+// consumed only by CoarseTransformPoint below. The original's setter also copies a 4th
+// dword (0x00610BBC) that is never read back by anything we can find (a harmless
+// over-read into whatever follows the caller's 3-dword vector in memory); we only keep
+// the 3 components that are actually used.
+static CVector gCoarseTranslationVector;
+
+// address 0x005FBE2C in the original: a 3-dword (CVector) scratch vector sitting
+// between gLineColijRotMatrix (0x5FBE18) and gLineInfo (0x5FBE38 = this + 0xC).
+// M3dColij_LineToThisItem computes the item's start-relative position here
+// (DropDown-aware axis handling) and round-trips it through the coarse GTE pipeline.
+// No idb_globals.txt entry, name/boundary are our guess (same evidence style as
+// gLineColijRotMatrix above).
+static CVector * const gLineColijRelPos = (CVector*)0x005FBE2C;
+
+// address 0x005FBDA8 in the original. Read-only input to TestItemFaces: a face is
+// rejected outright if its packed category bitfield (see TestItemFaces) intersects
+// this mask at all. Same family/role as the already-named M3dColij_OneMask/
+// M3dColij_ZeroMask (M3dColij_ZeroMask's real address, 0x5FBDDC, is also read by the
+// same code - confirmed via IDA and via the existing "gLineToSphereBestBody sits right
+// after M3dColij_ZeroMask" comment above) but not adjacent to either, so it is a third,
+// separate mask, presumably set by a caller further up the collision-query chain
+// (outside this file) before the per-item loop runs. No idb_globals.txt entry, name is
+// our guess. Declared volatile: nothing in this file ever writes it, so if it is meant
+// to vary per query it must be set by not-yet-decompiled code writing this exact
+// address at runtime (this function is only ever reached through the already-hooked
+// M3dColij_LineToItem/LineToItemZoned, i.e. running in-process against real game
+// memory).
+static volatile i32 * const gLineColijExcludeMask = (i32*)0x005FBDA8;
+
+// addresses 0x005FBD1C/0x005FBD20/0x005FBD38 in the original. TestItemFaces's "keep as
+// new nearest hit" branch writes these as a duplicate of pInfo->pFace / a pointer into
+// the per-model normal table / the found hit parameter, IN ADDITION to writing
+// pInfo->pFace/pInfo->Distance directly. This is a DIFFERENT reuse of the same address
+// range as gLineToSphereBestT (0x5FBD38, M3dColij_LineToSphere's own tracker above) -
+// same "same address, unrelated call path" pattern already documented on gRotMatrix's
+// diagonal reuse elsewhere in this repo. No reader for these three has turned up
+// anywhere in the current repo; kept only for fidelity (this runs in-process against
+// real game memory) in case other not-yet-decompiled code reads them.
+static i32 * const gLineColijLastFacePtr = (i32*)0x005FBD1C;
+static u8 ** const gLineColijLastNormalPtr = (u8**)0x005FBD20;
+static i32 * const gLineColijLastT = (i32*)0x005FBD38;
+
+// address 0x006AC20C in the original: per-environment array of u32 "trigger command
+// point id" tables, indexed [envIndex][pItem->mModel] (Spool_GetEnvIndex gives
+// envIndex). Consumed by TestItemFaces's "trigger zone" branch and
+// M3dColij_LineToThisItem's tail (Trig_TriggerCommandPoint takes a plain u32 id, per
+// trig.h, matching this table holding ids rather than pointers). No idb_globals.txt
+// entry, name is our guess.
+static u32 ** const gEnvTriggerCommandIds = (u32**)0x006AC20C;
+
+// address 0x006B2F00 in the original: written (never read anywhere we can find, in
+// this function or elsewhere in the repo) as envIndex^1 whenever a trigger-zone hit
+// resolves. Exact purpose unknown (a "last/other environment" cache guess would be
+// unverified), kept only for fidelity.
+static i32 * const gLastTriggerEnvIndexXor = (i32*)0x006B2F00;
+
+// sub_0x0046D810 (47 bytes): copies a caller-supplied 3x3 i16 matrix into
+// gCoarseRotMatrix - a gte_SetRotMatrix analogue restricted to the coarse matrix.
+// @Ok
+static void SetCoarseRotMatrix(const MATRIX *pSrc)
+{
+	const i16 *src = reinterpret_cast<const i16*>(pSrc);
+	i16 *dst = &gCoarseRotMatrix[0][0];
+
+	for (i32 i = 0; i < 9; i++)
+		dst[i] = src[i];
+}
+
+// sub_0x0046D620 (31 bytes): copies 3 dwords, at byte offsets 0x14/0x18/0x1C from the
+// caller-supplied pointer, into translationVector (ps2funcs.cpp's already-named GTE
+// translation register). Only call site passes &gLineColijRotMatrix, whose own byte
+// offsets 0x14/0x18/0x1C are exactly gLineColijRelPos (see the derivation on that
+// global above), so this is really "translationVector = *gLineColijRelPos" for the one
+// caller that exists; written generically (byte offset from a caller pointer) to match
+// the original's signature.
+// @Ok
+static void SetTranslationVectorFromOffset(const u8 *pBase)
+{
+	const i32 *p = reinterpret_cast<const i32*>(pBase + 0x14);
+	translationVector.vx = p[0];
+	translationVector.vy = p[1];
+	translationVector.vz = p[2];
+}
+
+// The REAL sub_0x0046D840 (24 bytes). WARNING: tools/names.json maps this address to
+// gte_ldlv0, but that is wrong - confirmed via raw disasm (not just Hex-Rays), this
+// function copies a1[0..3] into gCoarseTranslationVector (0x00610BB0..BBC), it does
+// NOT touch vertexRegister. Do not call the repo's existing gte_ldlv0() here; it is a
+// different function that happens to share a superficially similar "load a vector"
+// shape but writes somewhere else entirely.
+// @Ok
+static void SetCoarseTranslationVector(const CVector *pSrc)
+{
+	gCoarseTranslationVector.vx = pSrc->vx;
+	gCoarseTranslationVector.vy = pSrc->vy;
+	gCoarseTranslationVector.vz = pSrc->vz;
+}
+
+// sub_0x0046DD40 (168 bytes): dot-products gCoarseTranslationVector against each row
+// of gCoarseRotMatrix (>>12) into gGeneralLongVector (ps2funcs.cpp's GTE accumulator
+// register - confirmed via IDA: the real sub_0x0046D790, which tools/names.json
+// correctly maps to gte_stlvnl, reads its result straight back out of the SAME
+// dword_00610BA0/A4/A8 addresses gGeneralLongVector.vx/vy/vz already model). The
+// original also stores an uninitialized stack dword into gGeneralLongVector.pad's
+// address (0x00610BAC); we do not reproduce that (never-consumed garbage).
+// @Ok
+static void CoarseTransformPoint(void)
+{
+	i32 tx = gCoarseTranslationVector.vx;
+	i32 ty = gCoarseTranslationVector.vy;
+	i32 tz = gCoarseTranslationVector.vz;
+
+	gGeneralLongVector.vx = (tx * gCoarseRotMatrix[0][0] + ty * gCoarseRotMatrix[0][1] + tz * gCoarseRotMatrix[0][2]) >> 12;
+	gGeneralLongVector.vy = (tx * gCoarseRotMatrix[1][0] + ty * gCoarseRotMatrix[1][1] + tz * gCoarseRotMatrix[1][2]) >> 12;
+	gGeneralLongVector.vz = (tx * gCoarseRotMatrix[2][0] + ty * gCoarseRotMatrix[2][1] + tz * gCoarseRotMatrix[2][2]) >> 12;
+}
+
+// sub_0x0046E4D0 (24 bytes): thin wrapper, confirmed via IDA to just be
+// MulMatrix0(&gCoarseRotMatrix-as-MATRIX, a1, a2) (sub_0x0046CD90 is already decompiled
+// in ps2funcs.cpp as MulMatrix0). Both call sites pass the same pointer for a1 and a2
+// (&gLineColijRotMatrix), i.e. "gLineColijRotMatrix = gCoarseRotMatrix * gLineColijRotMatrix".
+// @Ok
+static void MulCoarseRotMatrix(MATRIX *a1, MATRIX *a2)
+{
+	MulMatrix0(reinterpret_cast<MATRIX*>(&gCoarseRotMatrix[0][0]), a1, a2);
+}
+
+// sub_0x0046F6B0 (359 bytes). For each of pFaceTable->vertCount local vertices
+// (8 bytes/vertex: i16 x,y,z + 1 pad i16, at pFaceTable+0x1C): adds the (i16-truncated)
+// fixedOffset, transforms by gCoarseRotMatrix, adds translationVector, computes a
+// PS1-GTE-style clip outcode (bit0 z<0, bit1 y<0, bit2 x<0, bit3 z>lengthBound,
+// bit9 y>0, bit10 x>0) and writes {x,y,z,outcode} into pScratchOut (same layout,
+// 8 bytes/vertex). Returns the AND-reduce of every vertex's outcode (classic
+// trivial-reject test: nonzero means every vertex shares an out-of-bounds side).
+// pFaceTable and pScratchOut are the SAME kind of pointer at different call sites
+// (pFaceTable's own header is only used here for its vertCount field at +2); pFaceTable
+// is looked up via CItemRelatedList (see TestItemFaces/M3dColij_LineToThisItem below),
+// pScratchOut is one of the two fixed scratch buffers M3dColij_LineToThisItem selects
+// by vertex count.
+// @Ok
+static i32 ClipQuadAgainstCoarseMatrix(const u8 *pFaceTable, i16 *pScratchOut, i32 lengthBound, const CVector *pFixedOffset)
+{
+	u16 vertCount = *reinterpret_cast<const u16*>(pFaceTable + 2);
+	const i16 *pLocalVert = reinterpret_cast<const i16*>(pFaceTable + 0x1C);
+
+	if (vertCount == 0)
+		return 1551; // 0x60F, matches the original's "no vertices" early-out value
+
+	i16 offX = static_cast<i16>(pFixedOffset->vx);
+	i16 offY = static_cast<i16>(pFixedOffset->vy);
+	i16 offZ = static_cast<i16>(pFixedOffset->vz);
+
+	i32 andAccum = 1551;
+
+	for (u16 i = 0; i < vertCount; i++)
+	{
+		i16 x = static_cast<i16>(offX + pLocalVert[0]);
+		i16 y = static_cast<i16>(offY + pLocalVert[1]);
+		i16 z = static_cast<i16>(offZ + pLocalVert[2]);
+
+		i16 tx = static_cast<i16>((x * gCoarseRotMatrix[0][0] + y * gCoarseRotMatrix[0][1] + z * gCoarseRotMatrix[0][2]) >> 12);
+		i16 ty = static_cast<i16>((x * gCoarseRotMatrix[1][0] + y * gCoarseRotMatrix[1][1] + z * gCoarseRotMatrix[1][2]) >> 12);
+		i16 tz = static_cast<i16>((x * gCoarseRotMatrix[2][0] + y * gCoarseRotMatrix[2][1] + z * gCoarseRotMatrix[2][2]) >> 12);
+
+		tx = static_cast<i16>(tx + translationVector.vx);
+		ty = static_cast<i16>(ty + translationVector.vy);
+		tz = static_cast<i16>(tz + translationVector.vz);
+
+		i32 outcode = 0;
+		if (tx < 0) outcode |= 4;
+		if (ty < 0) outcode |= 2;
+		if (tz < 0) outcode |= 1;
+		if (tz > lengthBound) outcode |= 8;
+		if (tx > 0) outcode |= 0x400;
+		if (ty > 0) outcode |= 0x200;
+
+		pScratchOut[0] = tx;
+		pScratchOut[1] = ty;
+		pScratchOut[2] = tz;
+		pScratchOut[3] = static_cast<i16>(outcode);
+
+		andAccum &= outcode;
+
+		pLocalVert += 4;
+		pScratchOut += 4;
+	}
+
+	return andAccum;
+}
+
+// sub_0x0046F1F0 (1176 bytes). Walks pFaceTable's face-record array (variable-length
+// records, own size field at +2 of each record, pFaceTable->faceCount records at +6),
+// testing each quad face (4 vertex indices at record+4/5/6/7, into pScratch, the SAME
+// {x,y,z,outcode} array ClipQuadAgainstCoarseMatrix just filled) against the line.
+// Per face: reject via gLineColijExcludeMask/M3dColij_ZeroMask/a fixed 0x30000 category
+// test on a packed dword at record+12; reject if all 4 vertices' outcodes share an
+// out-of-bounds bit; a 2D cross-product convexity test (falls back to the record+4
+// vertex substituted by the record+7 vertex when the "flags&0x10" bit allows it, exact
+// arithmetic confirmed against raw disasm, not just Hex-Rays) that must pass; then a
+// plane-distance test against the face's normal (looked up via (record+12 low 16
+// bits)>>3 into pFaceTable's normal table, right after its face-record array) that the
+// hit point's line-parameter must fall inside. A pass on a "trigger zone" face
+// (record+14 bit 2) records pItem->mModel into dword_5FBDBC when
+// pInfo->RecordTriggerZoneHits is set; otherwise it updates pInfo->Distance/pItem/
+// pFace/Model as the new nearest hit (all offsets already validated fields on this
+// file's own SLineInfo, see validate_SLineInfo below - the "unvalidated CItem offsets"
+// the old stub worried about turned out to be these, not CItem fields at all). Finally,
+// if a hit survived, interpolates pInfo->Position along the line using the found
+// Distance/Length ratio, same math idiom as M3dColij_LineInfoFixup above.
+// @Ok
+static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo, CItem *pItem, i32 *pFoundToken)
+{
+	if (pInfo->Length == 0)
+		return;
+
+	i32 excludeMask = *gLineColijExcludeMask;
+	i32 zeroMask = M3dColij_ZeroMask;
+
+	u16 vertCount = *reinterpret_cast<const u16*>(pFaceTable + 2);
+	u16 extraCount = *reinterpret_cast<const u16*>(pFaceTable + 4);
+	u16 faceCount = *reinterpret_cast<const u16*>(pFaceTable + 6);
+
+	const u8 *pNormalTable = pFaceTable + 0x1C + 8 * vertCount;
+	const u8 *pRecord = pNormalTable + 8 * extraCount;
+
+	for (u16 faceIdx = 0; faceIdx < faceCount; faceIdx++)
+	{
+		u16 recFlags = *reinterpret_cast<const u16*>(pRecord + 0);
+		u16 recSize = *reinterpret_cast<const u16*>(pRecord + 2);
+		u8 idx4 = pRecord[4];
+		u8 idx5 = pRecord[5];
+		u8 idx6 = pRecord[6];
+		u8 idx7 = pRecord[7];
+		u32 packed = *reinterpret_cast<const u32*>(pRecord + 12);
+		u8 triggerFlags = pRecord[14];
+
+		bool reject = false;
+
+		if ((packed & static_cast<u32>(excludeMask)) != 0)
+			reject = true;
+		else if ((static_cast<u32>(zeroMask) | packed) != 0xFFFFFFFFu)
+			reject = true;
+		else if (((packed ^ 0x10000u) & 0x30000u) == 0)
+			reject = true;
+
+		if (!reject)
+		{
+			const i16 *pV4 = pScratch + idx4 * 4;
+			const i16 *pV5 = pScratch + idx5 * 4;
+			const i16 *pV6 = pScratch + idx6 * 4;
+			const i16 *pV7 = pScratch + idx7 * 4;
+
+			u16 oc = static_cast<u16>(pV7[3] & pV4[3] & pV5[3] & pV6[3]);
+			if (oc & 0x60F)
+				reject = true;
+		}
+
+		if (!reject)
+		{
+			const i16 *pV4 = pScratch + idx4 * 4;
+			const i16 *pV5 = pScratch + idx5 * 4;
+			const i16 *pV6 = pScratch + idx6 * 4;
+			const i16 *pV7 = pScratch + idx7 * 4;
+
+			i32 v39 = static_cast<i32>(pV5[0]) * pV6[1] - static_cast<i32>(pV5[1]) * pV6[0];
+
+			i16 refX, refY;
+			if (v39 >= 0)
+			{
+				refX = pV4[0];
+				refY = pV4[1];
+			}
+			else if (!(recFlags & 0x10))
+			{
+				reject = true;
+				refX = refY = 0;
+			}
+			else
+			{
+				refX = pV7[0];
+				refY = pV7[1];
+			}
+
+			if (!reject)
+			{
+				i32 crossA = static_cast<i32>(pV6[0]) * refY - static_cast<i32>(pV6[1]) * refX;
+				i32 crossB = static_cast<i32>(pV5[0]) * refY - static_cast<i32>(pV5[1]) * refX;
+
+				if (crossA < 0 || crossB < 0)
+					reject = true;
+
+				if (!reject)
+				{
+					u32 normalIdx = (packed & 0xFFFFu) >> 3;
+					const i16 *pNormal = reinterpret_cast<const i16*>(pNormalTable + 8 * normalIdx);
+					i32 nx = pNormal[0];
+					i32 ny = pNormal[1];
+					i32 nz = pNormal[2];
+
+					i32 rowDot0 = (gCoarseRotMatrix[0][0] * nx + gCoarseRotMatrix[0][1] * ny + gCoarseRotMatrix[0][2] * nz) >> 12;
+					i32 rowDot1 = (gCoarseRotMatrix[1][0] * nx + gCoarseRotMatrix[1][1] * ny + gCoarseRotMatrix[1][2] * nz) >> 12;
+					i32 rowDot2 = (gCoarseRotMatrix[2][0] * nx + gCoarseRotMatrix[2][1] * ny + gCoarseRotMatrix[2][2] * nz) >> 12;
+
+					i32 p4x = pV4[0];
+					i32 p4y = pV4[1];
+					i32 p4z = pV4[2];
+
+					i32 numerator = p4x * rowDot0 + p4y * rowDot1 + p4z * rowDot2;
+					i32 denom = (pInfo->Length + 2) * rowDot2;
+
+					if (numerator > 0 || numerator < denom)
+						reject = true;
+
+					if (!reject)
+					{
+						if (triggerFlags & 2)
+						{
+							if (pInfo->RecordTriggerZoneHits)
+								*pFoundToken = pItem->mModel;
+						}
+						else
+						{
+							i32 planeZ = rowDot2;
+							if (my_abs(planeZ) < 5)
+								planeZ = -5;
+
+							i32 t = numerator / planeZ;
+
+							if (t < pInfo->Distance)
+							{
+								pInfo->pItem = pItem;
+								pInfo->Distance = t;
+								pInfo->pFace = reinterpret_cast<u32*>(const_cast<u8*>(pRecord));
+								pInfo->Model = pItem->mModel;
+
+								*gLineColijLastT = t;
+								*gLineColijLastNormalPtr = const_cast<u8*>(pNormalTable) + 8 * normalIdx;
+								*gLineColijLastFacePtr = reinterpret_cast<i32>(pInfo->pFace);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		pRecord += recSize;
+	}
+
+	if (pInfo->Distance != 0x7FFFFFFF)
+	{
+		i32 t = M3dMaths_MulDiv64(pInfo->Distance, 4096, pInfo->Length);
+		pInfo->Position.vx = pInfo->StartCoords.vx + M3dMaths_MulDiv64(pInfo->EndCoords.vx - pInfo->StartCoords.vx, t, 4096);
+		pInfo->Position.vy = pInfo->StartCoords.vy + M3dMaths_MulDiv64(pInfo->EndCoords.vy - pInfo->StartCoords.vy, t, 4096);
+		pInfo->Position.vz = pInfo->StartCoords.vz + M3dMaths_MulDiv64(pInfo->EndCoords.vz - pInfo->StartCoords.vz, t, 4096);
+	}
+}
+
+// Two fixed scratch buffers the original picks between by vertex count (>0x80 uses the
+// bigger one), reusing the SAME addresses other systems already use as general-purpose
+// scratch RAM elsewhere in this repo (0x614CD4 = bit.cpp's gGlowRingBase / weapons.cpp's
+// gGouraudRibbonScreenPoints scratch; 0x628618 holds a POINTER, set at init time in
+// init.cpp to &unk_628690, to the larger buffer - confirmed via disasm: the small buffer
+// is used as `offset dword_614CD4` [address-of], the large one as `dword_628618`
+// [value-of, i.e. a pointer variable]).
+static i16 * const gCoarseFaceScratchSmall = reinterpret_cast<i16*>(0x00614CD4);
+static i16 ** const gCoarseFaceScratchLargePtr = reinterpret_cast<i16**>(0x00628618);
+
+// @Ok
+// Original at 0x4529C0, 617 bytes. Fully decompiled 2026-09-01 after resolving the
+// "coarse GTE" subsystem above; see that block's comments for the evidence behind every
+// new helper/global it uses. Two shapes, both ending in the same shared tail
+// (ClipQuadAgainstCoarseMatrix then, unless trivially rejected, TestItemFaces):
+//  - "fast" shape (pItem->mAngles all zero AND !(mFlags&0x200)): skips building a real
+//    rotation matrix entirely, just uses (pItem->mPos - pInfo->StartCoords)>>12 as the
+//    fixed per-vertex offset and resets translationVector to 0.
+//  - "full" shape (rotation and/or the 0x200 scale flag): computes a DropDown-aware
+//    start-relative position vector, round-trips it through the coarse GTE pipeline to
+//    get translationVector, then builds gCoarseRotMatrix either as
+//    identity*(optional scale) or as the item's real YXZ rotation*(optional scale)
+//    depending on whether mAngles is actually zero (it can still reach the "full" shape
+//    via the 0x200 flag alone), and uses a zero fixed-offset vector (translationVector
+//    already carries the position).
+// A hit found by TestItemFaces (via *pFoundToken, only set on the "trigger zone"
+// branch) resolves through Spool_GetEnvIndex(pItem->mRegion)/gEnvTriggerCommandIds and
+// fires Trig_TriggerCommandPoint; the "nearest hit" branch already wrote
+// pInfo->pItem/Distance/pFace/Model/Position directly inside TestItemFaces.
 void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 {
-	typedef void (*func_ptr)(CItem*, SLineInfo*);
-	func_ptr func = (func_ptr)0x004529C0;
+	SetCoarseRotMatrix(reinterpret_cast<MATRIX*>(&pInfo->WorldCst));
 
-	func(pItem, pInfo);
+	const i32 *pModel = CItemRelatedList[pItem->mRegion * 17][pItem->mModel];
+	const u8 *pFaceTable = reinterpret_cast<const u8*>(pModel);
+
+	u16 vertCount = *reinterpret_cast<const u16*>(pFaceTable + 2);
+	print_if_false(vertCount != 0, "Collision check on a model with\tno\tvertices");
+
+	i16 *pScratch = (vertCount > 0x80) ? *gCoarseFaceScratchLargePtr : gCoarseFaceScratchSmall;
+
+	CVector fixedOffset(0, 0, 0);
+	i32 foundToken = -1;
+
+	bool hasGeometry = (pItem->mAngles.vx != 0) || (pItem->mAngles.vy != 0) || (pItem->mAngles.vz != 0)
+	                 || (pItem->mFlags & 0x200);
+
+	if (!hasGeometry)
+	{
+		fixedOffset.vx = (pItem->mPos.vx - pInfo->StartCoords.vx) >> 12;
+		fixedOffset.vy = (pItem->mPos.vy - pInfo->StartCoords.vy) >> 12;
+		fixedOffset.vz = (pItem->mPos.vz - pInfo->StartCoords.vz) >> 12;
+
+		m3d_ZeroTransVector();
+	}
+	else
+	{
+		if (pInfo->DropDown)
+		{
+			gLineColijRelPos->vx = (pItem->mPos.vx - pInfo->StartCoords.vx) >> 12;
+			gLineColijRelPos->vy = (pInfo->StartCoords.vz - pItem->mPos.vz) >> 12;
+			gLineColijRelPos->vz = (pItem->mPos.vy - pInfo->StartCoords.vy) >> 12;
+		}
+		else
+		{
+			gLineColijRelPos->vx = (pItem->mPos.vx - pInfo->StartCoords.vx) >> 12;
+			gLineColijRelPos->vy = (pItem->mPos.vy - pInfo->StartCoords.vy) >> 12;
+			gLineColijRelPos->vz = (pItem->mPos.vz - pInfo->StartCoords.vz) >> 12;
+		}
+
+		SetCoarseTranslationVector(gLineColijRelPos);
+		CoarseTransformPoint();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(gLineColijRelPos));
+
+		SetTranslationVectorFromOffset(reinterpret_cast<u8*>(gLineColijRotMatrix));
+
+		if (pItem->mAngles.vx == 0 && pItem->mAngles.vy == 0 && pItem->mAngles.vz == 0)
+		{
+			M3dMaths_SetIdentityRotation(gLineColijRotMatrix);
+		}
+		else
+		{
+			M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(&pItem->mAngles), gLineColijRotMatrix);
+		}
+
+		if (pItem->mFlags & 0x200)
+		{
+			M3dMaths_ScaleMatrix(pItem, gLineColijRotMatrix);
+		}
+
+		MulCoarseRotMatrix(gLineColijRotMatrix, gLineColijRotMatrix);
+		SetCoarseRotMatrix(gLineColijRotMatrix);
+
+		fixedOffset.vx = 0;
+		fixedOffset.vy = 0;
+		fixedOffset.vz = 0;
+	}
+
+	i32 outcodeMask = ClipQuadAgainstCoarseMatrix(pFaceTable, pScratch, pInfo->Length, &fixedOffset);
+
+	if (outcodeMask & 0x60F)
+		return;
+
+	TestItemFaces(pFaceTable, pScratch, pInfo, pItem, &foundToken);
+
+	if (foundToken == -1)
+		return;
+
+	i32 envIndex = Spool_GetEnvIndex(pItem->mRegion);
+	print_if_false(envIndex != -1, "Found a trigger\tzone not\tin\tthe environment");
+
+	TriggerCollisionCheck = 0;
+	*gLastTriggerEnvIndexXor = envIndex ^ 1;
+
+	u32 commandId = gEnvTriggerCommandIds[envIndex][foundToken];
+	Trig_TriggerCommandPoint(commandId, true);
 }
 
 // @Ok
