@@ -266,7 +266,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 	}
 }
 
-// @BIGTODO
+// @Ok
 // Original at 0x4B13F0, 0x72DA bytes / 7655 instructions / 1482 basic blocks,
 // the largest function in the game. Identity confirmed: the maintainer's IDB
 // (idbs/spideypc_names.txt line 1652) and the Mac build
@@ -274,18 +274,14 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 // Mac SpideyAI0 is the ONLY function in spid_ai0.cpp (the next symbol is
 // __sinit_spid_ai0_cpp).
 //
-// PARTIALLY PORTED, about 5000 of the 7655 instructions. What is real code
-// below:
+// FULLY PORTED. What is below:
 //   * the per-frame prologue, 0x4B13F0..0x4B211F
 //   * the state dispatch itself, 0x4B211F..0x4B215D
-//   * 21 of the 31 states (see the table)
+//   * all 31 states (see the table)
 //   * the shared tail def_4B215D, 0x4B6E8C..0x4B86B1, which every state's
 //     `break` falls into and which runs the camera, the torso aim, the move
 //     input, the platform ride, the baddy/power-up collisions, the pose build
 //     and the extra body parts
-// The 10 unported states just `break` into that tail, so the function is
-// syntactically whole and builds, but it must NOT be hooked until they are
-// written: a state that silently does nothing is a hang, not a glitch.
 //
 // STRUCTURE. A one-hot state machine on CPlayer::field_E1C, which holds a
 // single set bit, not a small ordinal. The dispatch at 0x4B211F is a chain of
@@ -351,8 +347,9 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 // The tiny functions at 0x4B8A00..0x4B8C70 are the out-of-line copies of this
 // translation unit's inline helpers, disassembled and inlined here rather than
 // called: 0x4B8B70 zeroes a CVector, 0x4B8B80 is CVector::CVector(x,y,z),
-// 0x4B8BB0 is abs(int), 0x4B8BC0 reads bit 3 of CManipOb+0x10C, 0x4B8BD0 reads
-// CWeb+0x102, 0x4B8BE0 sets the knockback timers, 0x4B8C00 sets CPowerUp+0x124,
+// 0x4B8BA0 sets CSuper::mAnimSpeed, 0x4B8BB0 is abs(int), 0x4B8BC0 reads bit 3
+// of CManipOb+0x10C, 0x4B8BD0 reads CWeb+0x102, 0x4B8BE0 sets the knockback
+// timers, 0x4B8C00 sets CPowerUp+0x124, 0x4B8C10 sets CCamera::field_12C to -1,
 // 0x4B8C20 zeroes SHitInfo::field_C, 0x4B8C30 zeroes an SLineInfo, 0x4B8C70
 // reads CCamera::mCameraMode. 0x4B8A00..0x4B8B60 are one-time initialisers for
 // globals this function never touches.
@@ -383,6 +380,9 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //     0x4B9390 GetPerpendicularisationRadius. Every one of these is already
 //     declared (and mostly implemented) in spidey.h under that name; the
 //     addresses were simply never recorded.
+//   * 0x4C8410 is CPlayer::SelectTargetBaddy. tools/names.json still calls it
+//     sub_4C8410 and the maintainer's IDB has no name for it, but spidey.cpp
+//     already decompiled it under that name; state 0x4000 calls it.
 //   * 0x4BFEC0 is CheckStickToWall, not CPlayer::DoPhysics. This confirms the
 //     correction PLAN.md already made against names.json and the IDB.
 //
@@ -4350,7 +4350,10 @@ void SpideyAI0(CPlayer *pPlayer)
 		default:
 			if ((u32)pPlayer->field_E1C > 0x10000)
 			{
-				// 0x4B50AE, remaining sub-states. Not ported yet.
+				// 0x4B50AE. Every state this compare chain dispatches
+				// (0x20000 and up) has its own case label above, so only a
+				// value that is not a state gets here, and the original's
+				// chain drops such a value into the tail the same way.
 			}
 			else if (pPlayer->field_E1C == 0x10000)
 			{
@@ -4431,7 +4434,9 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 			else if ((u32)pPlayer->field_E1C > 0x100)
 			{
-				// 0x4B307C, sub-states 0x200..0x8000. Not ported yet.
+				// 0x4B307C. Same as above for the 0x200..0x8000 chain: every
+				// state it dispatches has its own case label, so a value
+				// reaching here is not a state and falls into the tail.
 			}
 			break;
 	}
