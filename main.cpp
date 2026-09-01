@@ -128,88 +128,196 @@ void CalcPolyBufferEnd(void)
 }
 
 // @BIGTODO
-// Re-checked 2026-09-01 with idalib against the real exe (address
-// 0x455C90, WinMain is its only caller). 434 instructions, 77 basic
-// blocks, 45 unique callees. This is the top level game state
-// machine. Shape, confirmed from the real decompile:
-//   1. Boot: memset gMainStuff, Init_AtStart(1), PCTex_LoadPcIcons,
-//      4 boot movies (GameFMV_PlayMovie), Init_Cleanup(0), clear
-//      gRunCinemaRelated, busy-wait on gVlanksRelated. If a render
-//      test flag is set, go straight to model preview and shut down
-//      (this is the slice the current stub covers).
-//   2. Otherwise: load 3 fonts, PShell_NormalFont, then an infinite
-//      outer loop. Each pass: set fog params, maybe load "shell"
-//      through Reloc_Load/Reloc_CallUserFunction/Reloc_Unload,
-//      figure out the level code string, set the display mode
-//      (DXINIT_SetDisplayOptions) and mouse position, run the CD
-//      recheck (sub_515D80, the same helper documented elsewhere in
-//      this repo as the anti-piracy check tied to the
-//      SPIDEY_NO_CD_CHECK toggle; stay away from it), then call
-//      Front_LoadGame and enter an inner loop.
-//   3. Inner loop, every pass: call sub_4559D0 (unconditionally,
-//      once per pass), PCGfx_EndScene(1), reset a couple of flags,
-//      then switch on dword_60CFA4 (an end-code / next-state value,
-//      11 cases 0-10 plus default). The cases cover: reload save
-//      and restart (1), exit to shell with fade (2, 9), finish a
-//      level and unlock/save progress (3), cycle debug level index
-//      (4, 5), actually enter a level - Trig_ParseTRGFile, allocate
-//      and construct a CPlayer, Trig_ExecuteRestart, allocate and
-//      construct a CCamera (6), quit to shell or shut down (7),
-//      clear screen and reload save (8), set a "continue" flag and
-//      go to shell (10), plain go to shell (11), and an assert on
-//      an unrecognized code (default).
-//   4. Shutdown: busy-wait calling Pause(1), release two COM-style
-//      objects if set, a few cleanup calls, PCTex_FreePcIcons,
-//      Init_AtEnd, return.
+// Re-checked twice with idalib against the real exe. Address 0x00455C90, 4555
+// bytes of the poly HUD aside this is the top level game state machine: 434
+// instructions, 77 basic blocks, WinMain is its only caller. tools/names.json
+// does have it (SpideyMain), and so does the maintainer's IDB.
 //
-// Callee status (checked against tools/names.json and this repo's
-// tags, not guessed): most of the named leaf calls used above are
-// already @Ok (Init_AtStart, Init_AtEnd, Init_Cleanup [=sub_443AD0],
-// GameFMV_PlayMovie [=sub_470750, confirmed by matching its bytes
-// against tools/functions/4654928.bin], PCTex_LoadPcIcons,
-// PCTex_FreePcIcons, Mess_LoadFont, PShell_NormalFont,
-// M3dInit_SetFoggingParams, Reloc_Load, Reloc_CallUserFunction,
-// Utils_CompareStrings, Utils_CopyString, DXINIT_SetDisplayOptions,
-// PCINPUT_SetMousePosition, Trig_GetLevelID, Front_LoadGame,
-// PCGfx_EndScene, Screen_SepiaFade, Front_ClearScreen,
-// Trig_ParseTRGFile, CClass::operator new [the 3836/756-byte
-// allocator, =sub_455390], Trig_ExecuteRestart, CCamera::CCamera,
-// Front_GetLevelIndex, PShell_MaybeUnlockStuff, Front_FindLevel,
-// PShell_MaybeSaveGame, Pause, print_if_false, Spool_ClearAllPSXs,
-// PCGfx_DoModelPreview).
+// STATUS: still not implemented, on purpose, see "What actually blocks this"
+// at the bottom. Everything else below is now verified, so whoever picks this
+// up should not need IDA again except for the two missing callees.
 //
-// Real blockers, in order of size:
-//   - sub_4559D0 (0x4559D0): ~170 instructions, its own inner loop,
-//     about 28 further callees, almost none decompiled or even
-//     named. Called once per pass of the inner loop above, so this
-//     is really the per-frame driver / attract-mode tick, a whole
-//     separate subsystem on its own. This is the main reason
-//     SpideyMain is not a quick pass.
-//   - sub_47D830 (0x47D830, names.json calls it Front_ContinueExit):
-//     234 instructions, 29 callees. Not declared or stubbed
-//     anywhere in this repo yet, despite having a name in
-//     names.json.
-//   - CPlayer::CPlayer (spidey.cpp): still only a printf stub
-//     (@MEDIUMTODO), needed for case 6 (entering a level).
-//   - Six small never-named leaf helpers with no repo stub at all:
-//     0x50A6B0 (sets 4 render-region globals), 0x458C20 (thunk to
-//     0x43F6D0), 0x50C160 (releases a COM-style object via its
-//     vtable), 0x4305C0 (frees 4 slots through a shared 0x458210
-//     helper), 0x4553D0 (one-line wrapper of 0x458210),
-//     0x47D3A0 (linked-list unlink + dtor call by hash, names.json
-//     calls it Reloc_Unload_0). Small individually, but would still
-//     need names and real bodies before this function could even
-//     compile against them.
+// The 2026-08-31 pass listed "six small never-named leaf helpers with no repo
+// stub at all" as the main blocker. That was WRONG and is corrected here: five
+// of those six are named in tools/names.json AND already written in this repo.
+// The corrected map is:
+//   0x50A6B0 = PCINPUT_SetMouseBounds (PCInput.h, done)
+//   0x458C20 = Mess_UnloadAllFonts    (mess.h, done)
+//   0x50C160 = PCSHELL_Shutdown       (PCShell.h, done)
+//   0x4305C0 = Db_DeleteOTsAndPolyBuffers (db.h, done)
+//   0x47D3A0 = Reloc_Unload(char*)    (reloc.h, done)
+//   0x430880 = nullsub_3, a single 0xC3 (ret) in the shipped binary, takes one
+//              int, always the value Trig_GetLevelId just returned. A debug or
+//              telemetry hook the release build compiled away. No repo home:
+//              it sits between Db_DeleteOTsAndPolyBuffers (db.cpp) and
+//              FileIO_Init (dcfileio.cpp). Same class as panel.cpp's
+//              gsub_4015B0, so it can be a local empty stub.
 //
-// Given all of the above (a whole undecompiled subsystem as a
-// per-frame dependency, a missing 29-callee function, and a still-
-// stubbed CPlayer constructor), this is not tractable as a single
-// leaf-first pass. Leaving as @BIGTODO with this map for whoever
-// picks it up next. The stub below only reproduces the boot slice
-// (init, boot movies, model preview) and is not a faithful
-// implementation of the real function; do not confuse it with the
-// original, which never returns during normal play, it loops until
-// the game exits.
+// CALL GRAPH, all of it, with the repo name and header of each callee:
+//   Init_AtStart(init.h)             Init_Cleanup(init.h)  Init_AtEnd(init.h)
+//   PCTex_LoadPcIcons/FreePcIcons(PCTex.h)  GameFMV_PlayMovie(ps2gamefmv.h)
+//   Spool_ClearAllPSXs(spool.h)      PCGfx_DoModelPreview/EndScene(PCGfx.h)
+//   Mess_LoadFont/Mess_UnloadAllFonts(mess.h)  PShell_NormalFont(pshell.h)
+//   M3dInit_SetFoggingParams(m3dinit.h)        Utils_CopyString/
+//   Utils_CompareStrings(utils.h)    Reloc_Load/Reloc_CallUserFunction/
+//   Reloc_Unload(reloc.h)            DXINIT_SetDisplayOptions(DXinit.h)
+//   PCINPUT_SetMouseBounds/SetMousePosition(PCInput.h)
+//   Trig_GetLevelId/Trig_ParseTRGFile/Trig_ExecuteRestart(trig.h)
+//   Front_LoadGame/Front_GetLevelIndex/Front_FindLevel/Front_ClearScreen
+//   (front.h)                        Screen_SepiaFade(screen.h)
+//   PShell_MaybeUnlockStuff/PShell_MaybeSaveGame(pshell.h)  Pause(utils.h)
+//   PCSHELL_Shutdown(PCShell.h)      Db_DeleteOTsAndPolyBuffers(db.h)
+//   CClass::operator new(main.h)     CPlayer::CPlayer(spidey.h, still a stub)
+//   CCamera::CCamera(camera.h)       print_if_false(export.h)
+//   sub_515D80 (the periodic CD recheck, keep away from it, see
+//   SPIDEY_NO_CD_CHECK above)        PlayAway 0x4559D0 and Front_ContinueExit
+//   0x47D830 (the two that do not exist in the repo yet, see below).
+//
+// GLOBALS, all resolved. Already in the repo: gMainStuff(0x5FCE04),
+// gRenderTest(0x2E0988C), gRunCinemaRelated(0x6B470C), gVlanksRelated
+// (0x6B4C9C, the IDB calls it GameFade), gLevelStatus(0x60CFA4),
+// gWhatIf(0x60CFC5), DifficultyLevel(0x54D474), pYesNoMenu(0x5FAEAC),
+// M3d_FadeColour(0x652F38), gLowGraphics(0x6B78F8),
+// gBrightnessRelated(0x562D60), gSaveGame(0x682858).
+// Named in idb_globals.txt but not in the repo yet: gSpideyMainRelated
+// (0x54A510, set to 5 or 20 on the way out of a level), gBitServer(0x56EB50,
+// deleted through its vtable at shutdown), Levels(0x54A518, 20 byte entries,
+// the code string is field +4, which is why the disasm shows
+// off_54A51C[5*index]).
+// Still unnamed anywhere, would need tentative names:
+//   0x568FB0  start level index, -1 = none. When >= 0 the boot path copies
+//             Levels[it].code into gSaveGame and clears the restart point.
+//   0x60CF84  base of the debug level cycle table. Indexed as
+//             *(char**)(0x60CF84 + 192*index), first field is the level name;
+//             MSVC folded the field offset into the base, so 0x60CF84 is
+//             "name of record 0", not necessarily the array start (gLevelStatus
+//             at 0x60CFA4 sits inside what would otherwise be record 0).
+//   0x60CFA0  the index into that table, only its low byte is used.
+//   0x60CF88  byte, checked once at boot; nonzero means skip the whole game
+//             loop, Init_Cleanup(3) and shut down. Reads like a quit flag.
+//   0x6612A0  dword zeroed at the top of every inner loop pass (near
+//             Pad_IdleTime 0x66129C).
+//   0x5FAE9D  byte cleared whenever gLevelStatus != 0 (near gPostWaterEffect).
+//   0x2E096F8 / 0x2E0970C / 0x2E098E4  the width, height and bpp handed to
+//             DXINIT_SetDisplayOptions (confirmed against that function's own
+//             parameter names in DXinit.cpp).
+//
+// gSaveGame FIELDS THIS FUNCTION NEEDS. All the 0x6828xx addresses in the
+// disasm are gSaveGame (0x682858) plus an offset, so per the address audit rule
+// they must NOT get standalone names:
+//   0x68285C = +0x04  field_4      (the level code string, already in SSaveGame)
+//   0x682865 = +0x0D  mRestartPointName[0]                     (already there)
+//   0x6828AE = +0x56  field_56[index]  per area completion count, incremented
+//                     on level finish, clamped at 0xFF          (already there)
+//   0x6828A0 = +0x48  NOT A FIELD YET, inside PADDING(0x54-0x3F-1)
+//   0x6828A4 = +0x4C  NOT A FIELD YET, same padding block
+//   0x6828A8 = +0x50  NOT A FIELD YET, same padding block
+//   0x6828D1 = +0x79  NOT A FIELD YET, inside PADDING(0x7B-0x79)
+// The three at 0x48/0x4C/0x50 are written as dwords and the one at 0x79 as a
+// byte, all cleared to 0 together with mRestartPointName when a start level is
+// forced. Splitting those two PADDING runs in shell.h costs nothing (the struct
+// size does not move) but shell.h is shared, so it wants its own commit and its
+// own VALIDATE entries.
+//
+// BEHAVIOUR, exactly as the disassembly has it:
+//  1. Boot. print_if_false("xxx main"), fill gMainStuff with 'STAK' and put
+//     'HALT' in slot 0, Init_AtStart(1), PCTex_LoadPcIcons, the four boot
+//     movies GameFMV_PlayMovie(0..3, 1, 1, 2.5/1.0/1.0/1.0), Init_Cleanup(0),
+//     gRunCinemaRelated = 0, busy wait until gVlanksRelated hits 0. If
+//     gRenderTest & 8: Spool_ClearAllPSXs, PCGfx_DoModelPreview,
+//     Init_Cleanup(0), jump straight to shutdown. That is the slice the stub
+//     below already covers, and it is all of it.
+//  2. Otherwise load font_big.fnt, sp_fnt02.fnt and sp_fnt03.fnt through
+//     Mess_LoadFont(name,-1,-1,-1), then PShell_NormalFont.
+//  3. Outer loop head (the target of "go back to the shell"). Set
+//     M3d_FadeColour = 0xFFFFFF and M3dInit_SetFoggingParams(0, 6000, 2048).
+//     Then either
+//       a. gRenderTest & 4, or a start level index >= 0: if the index is >= 0,
+//          copy Levels[index] code into gSaveGame.field_4 with
+//          Utils_CopyString(...,9) and clear the four save fields listed above
+//          plus mRestartPointName[0]; or
+//       b. neither: run the shell. Reloc_Load("shell", 0),
+//          Reloc_CallUserFunction("shell", 0, params, 0) where params is a two
+//          entry u32 array holding two local flags (set by case 3 and case 10
+//          below, both cleared as they are copied in), then
+//          Reloc_Unload("shell"). If the level is "l1a2_t" and gWhatIf is set,
+//          rewrite it to "l1a2a_t". If the 0x60CF88 quit byte is set, do
+//          Init_Cleanup(3) and go to shutdown.
+//  4. DXINIT_SetDisplayOptions(width, height, bpp, gLowGraphics,
+//     gBrightnessRelated), PCINPUT_SetMouseBounds(0, 0, width-32, height-32),
+//     PCINPUT_SetMousePosition((width-32)>>1, (height-32)>>1) (unsigned shifts).
+//  5. Level entry point. sub_515D80 (CD recheck), the nullsub_3 hook with
+//     Trig_GetLevelId, then Front_LoadGame(&gSaveGame, 0, false).
+//  6. Inner loop, once per pass: PlayAway(), PCGfx_EndScene(1),
+//     0x6612A0 = 0, and if gLevelStatus is neither 2 nor 9 also
+//     gRunCinemaRelated = 0, and if gLevelStatus != 0 also 0x5FAE9D = 0. Then
+//     switch (gLevelStatus), 11 cases:
+//       1     Init_Cleanup(0), gSpideyMainRelated = 5, back to step 5.
+//       2, 9  gSpideyMainRelated = 20, Init_Cleanup(0), Screen_SepiaFade,
+//             gVlanksRelated = 10 and busy wait. Then Front_ContinueExit(): if
+//             it returns 0 fall into the case 7 tail (quit), else the level id
+//             hook again and Front_LoadGame(&gSaveGame, 1, false), stay in the
+//             inner loop.
+//       3     level finished. Init_Cleanup(0), Screen_SepiaFade. If the level
+//             is "l8a7_t": bump gSaveGame.field_56[Front_GetLevelIndex("l8a6_t")]
+//             (clamped at 0xFF), PShell_MaybeUnlockStuff, set the first shell
+//             flag and go back to step 3. Otherwise bump
+//             field_56[Front_GetLevelIndex(current) - 1] the same way (with a
+//             0 <= i < 34 assert), PShell_MaybeUnlockStuff, wait for
+//             gVlanksRelated, and unless gRenderTest & 0x80, call
+//             PShell_MaybeSaveGame when DifficultyLevel is 0 or when
+//             Front_FindLevel(current)->field_8 & 2. Then the level id hook and
+//             Front_LoadGame(&gSaveGame, 0, true).
+//       4, 5  Init_Cleanup(0), advance the debug level index by one byte and
+//             wrap to 0 when the next record's name string is empty, back to
+//             step 5.
+//       6     enter the level. Init_Cleanup(2), Trig_ParseTRGFile, then
+//             new CPlayer (CClass::operator new(3836) plus CPlayer::CPlayer,
+//             inside an EH cleanup frame), Trig_ExecuteRestart, then
+//             new CCamera(thatPlayer) (operator new(756) plus
+//             CCamera::CCamera, second EH frame). Stay in the inner loop.
+//       7     gSpideyMainRelated = 20, Init_Cleanup(0), Screen_SepiaFade, then
+//             the shared quit tail: if gRenderTest & 4 or a start level index
+//             is set, shut down, else go back to step 3.
+//       8     Front_ClearScreen, Init_Cleanup(0), clear
+//             gSaveGame.mRestartPointName[0], level id hook,
+//             Front_LoadGame(&gSaveGame, 0, false), stay in the inner loop.
+//       10    set the second shell flag, gSpideyMainRelated = 20,
+//             Init_Cleanup(0), Screen_SepiaFade, back to step 3.
+//       11    Init_Cleanup(0), back to step 3.
+//       other print_if_false(0, "Unknown EndCode") and shut down.
+//  7. Shutdown. Busy wait on gVlanksRelated calling Pause(1), delete pYesNoMenu
+//     and gBitServer through vtable slot 0 with arg 1 (the scalar deleting
+//     destructor), Mess_UnloadAllFonts, PCSHELL_Shutdown, PCTex_FreePcIcons,
+//     Db_DeleteOTsAndPolyBuffers, Init_AtEnd, return.
+// Note Screen_SepiaFade: the original pushes one argument at every call site,
+// but 0x48A820 never reads it and screen.cpp already declares it void. Same for
+// the extra unused argument DCDrawGouraudPoly gets in panel.cpp.
+//
+// WHAT ACTUALLY BLOCKS THIS (the only three things left):
+//   1. PlayAway, 0x4559D0. Called once per inner loop pass, so it IS the per
+//      frame driver: about 170 instructions and roughly 28 further callees,
+//      almost none of them decompiled. It sits squarely in main.cpp's own
+//      address range (CClass::operator new 0x455390, CItem::operator delete
+//      0x4553D0, CalcPolyBufferEnd 0x4553E0, Logic 0x455400, Display 0x4555A0,
+//      PlayAway 0x4559D0, SpideyMain 0x455C90), so it, Logic and Display all
+//      belong in main.cpp and none of the three exists here yet. The repo's own
+//      leaf first rule says do the same TU callees first, and MSVC would inline
+//      a printf stub of PlayAway straight into SpideyMain, so writing SpideyMain
+//      before PlayAway is the wrong order.
+//   2. Front_ContinueExit, 0x47D830, 234 instructions. Decompiled far enough to
+//      say what it is: it builds a CMenu (front.cpp's 0x43F9B0 constructor),
+//      runs its own input loop, and returns 1 when the player picks continue.
+//      Its address is past reloc.cpp's functions (Reloc_Load 0x47CEE0 ...
+//      Reloc_CallUserFunction 0x47D470) and its body is front end code, so its
+//      real home is probably front.cpp or pshell.cpp, not the file names.json's
+//      "Front_" prefix would suggest by address. Not declared anywhere yet.
+//   3. CPlayer::CPlayer is still a printf stub (@MEDIUMTODO in spidey.cpp), and
+//      case 6 is the only way into a level.
+// Order to do this in: PlayAway (with Logic and Display, they are its
+// neighbours and probably its callees), then Front_ContinueExit, then this.
+// The stub below only reproduces step 1 and the model preview branch; it is not
+// a faithful SpideyMain. The real one never returns during normal play.
 void SpideyMain(void)
 {
 	DXERR_printf("xxx main\n");
