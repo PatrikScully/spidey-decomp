@@ -566,6 +566,48 @@ i32 Web_GetGroundY(const CVector* a1)
 	return gLineInfo.Position.vy;
 }
 
+// @MEDIUMTODO
+// 0x4F7F40, 429 bytes. Scoped but not written out. What it does: chains
+// CNonRenderedBit::CNonRenderedBit, zeroes the first 6 bytes of 81 entries at
+// +0x48 (stride 8), stores Mem_MakeHandle(pSuper) in field_3C and Type in the
+// inherited mType, then writes a Mem_MakeHandle(this) back into the CSuper's
+// own slot (field_104 for Type 0, field_10C for Type 1; any other Type only
+// asserts). Then +0x424 = 400, +0x41E = 6, +0x41F = <a per-Type count> / 6,
+// and field_44 = new CGPolyLine(80) with its +0x3C cleared.
+//
+// Blocked on class layout, not on callees: the count written to +0x41F comes
+// from a byte at CSuper+0x13E, negated and randomised for Type 0 and divided
+// by three for Type 1, and +0x41E / +0x41F / +0x424 are fields this repo does
+// not have yet. Writing them would mean inventing three offsets inside the
+// existing field_48 padding block, which is exactly the guesswork PLAN.md
+// forbids.
+//
+// Layout finding while scoping this (NOT yet applied, because
+// CTrapWebEffect::Burst is already @Ok against the current declaration): the
+// zeroing loop runs 81 iterations of stride 8 over +0x48, i.e. 0x48..0x2D0,
+// so web.h's `SHook field_48[122]` (0x48..0x418) is too long. 0x2D0 onwards is
+// a separate i16 array, with a count at +0x374, a byte triple at +0x378 and a
+// pointer array at +0x37C, all read by AddAnotherStrand below.
+CTrapWebEffect::CTrapWebEffect(CSuper *, i32)
+{
+	printf("CTrapWebEffect::CTrapWebEffect(CSuper *,i32)");
+}
+
+// @MEDIUMTODO
+// 0x4F83C0, 435 bytes. Blocked leaf-first on two callees that do not exist
+// yet, CTrapWebEffect::MoveProjector (0x4F82A0) and CTrapWebEffect::CalcHook
+// (0x4F8190), and on the same unmapped fields as the constructor above.
+// What it does: while field_44's strand count (+0x3C) is under 80, advances
+// the projector, adds one hook, and then, once at least two hooks exist and
+// with a 1-in-4 chance and under 20 strands, picks the widest gap between the
+// newest hook and each earlier one, records the (newest, newest-1, widest)
+// index triple, and allocates a CQuadBit for the new strand
+// (SetTexture(0x35006853), SetSemiTransparent).
+void CTrapWebEffect::AddAnotherStrand(void)
+{
+	printf("CTrapWebEffect::AddAnotherStrand(void)");
+}
+
 // @Ok
 // Reverse engineered 2026-08-31 from the original disasm at 0x4F8600
 // (~570 bytes, SEH-protected the same way the CLAUDE.md "new T(...) SEH
@@ -1000,11 +1042,37 @@ void CWeb::Fire(CVector &, CVector &, CBody *, bool, CSVector &)
 	printf("CWeb::Fire(CVector &,CVector &,CBody *,bool,CSVector &)");
 }
 
-// @MEDIUMTODO
-// 0x4F8D10, 229 bytes. Called by CPlayer::FireWeb.
-void Web_Trap(CSuper *, i32)
+// @Ok
+// 0x4F8D10, 229 bytes. Called by CPlayer::FireWeb. Wraps a baddy in webbing:
+// reuses the CTrapWebEffect already hanging off the baddy's field_104 if
+// there is one, otherwise makes a fresh one (Type 0) and tells the player it
+// just landed a hit. Either way eight more strands go on.
+//
+// The original writes field_418 straight through the pointer `new` returned
+// without checking it, so an out-of-memory CBit::operator new dereferences
+// null here. That is the original's own defect and is left as written.
+//
+// The original emits eight straight-line AddAnotherStrand calls rather than a
+// loop; the loop below is the same eight calls.
+void Web_Trap(CSuper *pSuper, i32 a2)
 {
-	printf("Web_Trap(CSuper *,i32)");
+	print_if_false(pSuper != 0, "NULL pBaddy sent to Web_Trap");
+	print_if_false((pSuper->mFlags >> 1) & 1, "Non superitem sent to Web_Trap");
+
+	CTrapWebEffect *pEffect = reinterpret_cast<CTrapWebEffect*>(
+			Mem_RecoverPointer(&pSuper->field_104));
+
+	if (pEffect == 0)
+	{
+		pEffect = new CTrapWebEffect(pSuper, 0);
+		pEffect->field_418 = (u8)a2;
+
+		if (G_MECHLIST != 0)
+			reinterpret_cast<CPlayer*>(G_MECHLIST)->SetFirstContactDetails();
+	}
+
+	for (i32 i = 0; i < 8; i++)
+		pEffect->AddAnotherStrand();
 }
 
 // @Ok

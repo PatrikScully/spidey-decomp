@@ -263,6 +263,15 @@ class CWebFrag : public CGLine
 class CTrapWebEffect : public CNonRenderedBit
 {
 	public:
+		// 0x4F7F40. Type goes into the inherited CBit::mType and selects
+		// which CSuper handle slot points back at this effect (field_104
+		// for 0, field_10C for 1), the same split CTrapWebEffect::Burst
+		// already reads back.
+		EXPORT CTrapWebEffect(CSuper *pSuper, i32 Type);
+
+		// 0x4F83C0. Adds one strand of webbing to the effect.
+		EXPORT void AddAnotherStrand(void);
+
 		EXPORT void Burst(void);
 
 		SHandle field_3C;
