@@ -989,6 +989,8 @@ INLINE void CDomeShockWave::ResetHitFlags(CBody* body)
 void validate_CKnottedWebSplat(void){
 	VALIDATE_SIZE(CKnottedWebSplat, 0xB0);
 
+	VALIDATE(CKnottedWebSplat, field_84, 0x84);
+	VALIDATE(CKnottedWebSplat, field_88, 0x88);
 	VALIDATE(CKnottedWebSplat, field_8C, 0x8C);
 	VALIDATE(CKnottedWebSplat, field_98, 0x98);
 	VALIDATE(CKnottedWebSplat, field_A4, 0xA4);
@@ -1247,6 +1249,42 @@ CWeb::CWeb(void)
 	this->AttachTo(&WebList);
 
 	this->mType = 1;
+}
+
+// @Ok
+// 0x4A5E40, 400 bytes. Grows the splat and rebuilds its quad from the centre
+// and the two corner offsets the constructor worked out, then fades it away
+// once it is older than 30 frames and kills it when nothing is left of the
+// tint.
+//
+// The original scales the corner offsets through the (CVector, CVector)
+// operator* overload with a one-int CVector standing in for the left hand
+// side (that overload only reads lhs.vx), the same idiom vector.h's
+// explicit CVector(i32) constructor already exists for.
+void CKnottedWebSplat::Move(void)
+{
+	this->field_88 += (this->field_84 - this->field_88) >> 1;
+
+	CVector Scale(this->field_88);
+
+	CVector CornerB = Scale * this->field_98;
+	CVector CornerC = Scale * this->field_A4;
+
+	this->mPos = this->field_8C - CornerB - CornerC;
+	this->mPosB = this->field_8C + CornerB - CornerC;
+	this->mPosC = this->field_8C - CornerB + CornerC;
+	this->mPosD = this->field_8C + CornerB + CornerC;
+
+	this->mAge++;
+
+	if (this->mAge > 30)
+	{
+		this->SetSemiTransparent();
+		Bit_ReduceRGB(&this->mTint, 5);
+	}
+
+	if ((this->mTint & 0xFFFFFF) == 0)
+		this->Die();
 }
 
 // @MEDIUMTODO

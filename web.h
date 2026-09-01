@@ -126,7 +126,20 @@ class CKnottedWebSplat : public CQuadBit
 	public:
 		EXPORT CKnottedWebSplat(const CVector *pPos, const CVector *pNormal);
 
-		PADDING(0x8C - 0x84);
+		// 0x4A5E40. The linker folded this body together with
+		// CSimbyShotSplat::Move (which is the name tools/names.json has for
+		// that address), so the two classes share the same source; slot 1
+		// of this class's own vtable (off_53C760) points at it, and the
+		// constructor calls it once before it returns.
+		EXPORT virtual void Move(void) OVERRIDE;
+
+		// the size the splat grows to, set to 32 by the constructor
+		i32 field_84;
+
+		// current size. The constructor never writes it (CBit::operator new
+		// zeroes the whole allocation), so the splat starts at nothing and
+		// Move closes half the gap to field_84 every frame.
+		i32 field_88;
 
 		// splat centre: pPos pushed 10 units out along pNormal
 		CVector field_8C;
