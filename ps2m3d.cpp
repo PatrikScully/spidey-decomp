@@ -7,6 +7,7 @@
 #include "spool.h"
 #include "algebra.h"
 #include "screen.h"
+#include "decomp.h"
 #include <math.h>
 #include <string.h>
 
@@ -3012,88 +3013,486 @@ void ConvertSMatrixTomatrix4x4(SMatrix const* pIn, matrix4x4* pOut)
 	pOut->field_0[3].field_0[3] = 1.0f;
 }
 
-typedef void (*RenderSuperItem_fn)(CItem*, bool);
+typedef void (*gsub_46E4B0_fn)(MATRIX*, MATRIX*);
+typedef i32 (*ValidMATRIX_fn)(MATRIX*);
 
-// @BIGTODO
-// forward to original (0x474C10, ~4.7KB). RE-INVESTIGATED this session
-// with the new ConvertSMatrixTomatrix4x4 leaf above and a full fresh IDA
-// decompile (previous session only skimmed it). Good news first: the old
-// blocker comment was WRONG about needing to extend CSuper. Here is why,
-// traced concretely:
-//  - The disassembly's `*(_BYTE *)(a1 + 1513)` (the ">1500 bytes into
-//    CSuper" read that scared off the previous session) is gated behind
-//    `dword_6A9038 == a1` (maintainer's IDB names dword_6A9038
-//    "MechList"), i.e. it is ONLY reached when the CItem being rendered IS
-//    that one specific singleton global pointer, not any generic CSuper
-//    instance. Whatever object MechList actually points to is out of
-//    scope for CSuper's general layout (it is a completely different,
-//    presumably much larger, boss-specific object) -- CSuper itself does
-//    NOT need extending to cover this. All the OTHER offsets this function
-//    reads (a1+4, +8..+30, +31, +300, +342, +356..+368, +388) land exactly
-//    inside the already-declared CSuper/CItem fields once cross-checked
-//    against validate_CSuper/validate_CItem's physical offsets (mFlags,
-//    mPos, mAngles, mModel, mRegion, mExtraFlags, mTransform, mpPoseBuffer
-//    at 0x184=388 confirmed by the SAME `(mFlags&4)` gate
-//    M3dUtils_GetHookPosition already uses for mpPoseBuffer vs
-//    Decomp_GetAnimTransform).
-//  - One genuine NEW CSuper field found this session: physical offset
-//    0x156 (342 decimal) -- previously inside a PADDING(2) gap between
-//    field_154 and field_158 -- is actually read here as a real i16 (see
-//    CSuper::field_156, ob.h). Used only in a small block gated by
-//    `mExtraFlags & 8`: temporarily overrides the GTE geometry-offset W
-//    register (word_62860E, the SAME global M3d_RenderSetup already
-//    manages as gM3dGeomOffW) to `field_156 - (camera+8 as i16)` for the
-//    duration of this item's render, then restores the saved value
-//    afterward. Purpose beyond that one read site not confirmed (kept an
-//    unconfirmed name, per repo convention for such fields).
-//  - Most of the "9 still-undecompiled GTE/camera helper leaves" the
-//    previous session flagged turned out to already be implemented under
-//    different names once cross-checked against the maintainer's IDB
-//    (spideypc_names.txt): sub_46D7B0=gte_SetRotMatrix, sub_46D790=
-//    gte_stlvnl, sub_46DDF0=gte_rtv0, sub_46DA40=gte_rtir,
-//    sub_46CD90=MulMatrix0, sub_433D60=Decomp_GetAnimTransform,
-//    sub_476710=matrix4x4's 16-float ctor (already @Ok, this file),
-//    sub_476A00=gsub_476A00/matrix4x4_ml (already @Ok, this file),
-//    sub_402600=vector4d::operator= (already @Ok, this file),
-//    sub_4024A0=ConvertSMatrixTomatrix4x4 (now implemented, above).
-//  - What is STILL genuinely blocking a full reimplementation, confirmed
-//    this session: (1) sub_478140, a thiscall matrix-copy helper (decompiled,
-//    shape understood in principle -- copies a matrix4x4-shaped return
-//    value into a destination -- but its call site here shows a mismatched
-//    single-argument form vs. its real 2-argument signature, which smells
-//    like the SAME Hex-Rays return-value-passing confusion CLAUDE.md warns
-//    about, not a safe thing to guess at for rendering-critical code);
-//    (2) sub_470320 (decompiled, confirmed to be ValidMATRIX -- a
-//    row-magnitude sanity check -- but its result only feeds a
-//    print_if_false-style debug assert here, so it does not gate any real
-//    behaviour, not worth adding on its own); (3) three debug/preview
-//    color-tint blocks (gated by dword_2E09BF0/dword_2E09BF4/an "outline"
-//    flag + dword_6B4CA8) whose Hex-Rays decompile is corrupted --
-//    several float-constructor calls decode as bogus
-//    `QModelIndex::QModelIndex(...)` (a known decompiler misread class,
-//    CLAUDE.md/PLAN.md already document this happening on GTE/PSX code
-//    elsewhere in this codebase) -- reproducing these blocks would mean
-//    reconstructing the real float math from raw disasm bytes rather than
-//    trusting the pseudocode, which this pass did not have time to do
-//    safely; (4) the main per-part loop's LOD/model-select and
-//    matrix-compose shell itself is straightforward (mirrors M3d_Render's
-//    own LOD dispatch and DCModel_RenderModel/DC_PSXModel_RenderModel's
-//    already-@Ok render dispatch), but is intertwined with (1) and (3)
-//    above closely enough that splitting them out cleanly needs more room
-//    than this pass had.
-// Net effect: this function is meaningfully closer (the false CSuper
-// blocker is gone, the leaf list is almost entirely resolved, one real new
-// CSuper field is documented), but still left as an honest forward rather
-// than risk a wrong guess on the remaining color/matrix-copy pieces of a
-// per-bone character renderer -- CLAUDE.md is explicit that a wrong guess
-// here could silently misrender character models. A future session should
-// start from sub_478140's real 2-arg signature (cross-check its OTHER call
-// site in DC_PSXModel_RenderModel's history) and hand-disassemble (not
-// Hex-Rays) the three color blocks before attempting a full reimplement.
-EXPORT void RenderSuperItem(CItem *pItem, bool a2)
+// @Bogus
+// @FIXME forward to original: sub_46E4B0 (0x46E4B0). The PS2 source calls
+// this M3dMaths_MulRotMatrix(&src, &dest): multiplies src by the GTE's
+// current rotation matrix (set by gte_SetRotMatrix just before) and writes
+// the result to dest. Not in tools/names.json under any name and it lives
+// in ps2funcs.cpp's address range, which this branch does not own, so it is
+// forwarded here rather than implemented.
+static void gsub_46E4B0(MATRIX *pSrc, MATRIX *pDest) { gsub_46E4B0_fn f = (gsub_46E4B0_fn)0x0046E4B0; f(pSrc, pDest); }
+
+// @Bogus
+// @FIXME forward to original: ValidMATRIX (0x470320, named in
+// tools/names.json). Row-magnitude sanity check on a MATRIX; its result
+// only feeds a print_if_false here, so it gates no real behaviour.
+static i32 ValidMATRIX(MATRIX *pMatrix) { ValidMATRIX_fn f = (ValidMATRIX_fn)0x00470320; return f(pMatrix); }
+
+// ---------------------------------------------------------------------
+// RenderSuperItem (0x00474C10) globals. Same sourcing as the M3d_Render
+// block above: the PS2 original is thps2-stuff/m3d.mik line 2285, and the
+// maintainer's IDB (idbs/idb_globals.txt) confirms MechList,
+// gPsxSpArmorIndex, gTimerRelated, gFloatSuperRelated and
+// gSuperItemRelated at these addresses.
+// ---------------------------------------------------------------------
+
+static CItem ** const gM3dMechList        = (CItem**)0x006A9038; // IDB: MechList
+static u8 * const gM3dCostumeRegionIndex  = (u8*)0x006B4679;     // spidey.cpp: gCurrentCostumeRegionIndex
+static i32 * const gM3dPulsatingHead      = (i32*)0x0060CFF0;    // pshell.cpp: G_PULSATING_HEAD_FLAG
+static i32 * const gM3dArmorRegionIndex   = (i32*)0x0054AE18;    // IDB: gPsxSpArmorIndex
+static i32 * const gM3dPulseTimer         = (i32*)0x006B4CA8;    // IDB: gTimerRelated
+static i32 * const gM3dSuperScaleEnabled  = (i32*)0x005500A4;    // IDB: gSuperItemRelated
+static f32 * const gM3dSuperScale         = (f32*)0x0054FFE0;    // IDB: gFloatSuperRelated (ob.h)
+static f32 * const gM3dSuperScaleDist     = (f32*)0x0055009C;    // 55.0f in the image
+static f32 * const gM3dSuperScaleDistLow  = (f32*)0x005500A0;    // 20.0f in the image
+static i32 * const gM3dSuperFixedScale    = (i32*)0x00550074;    // == gDCFixedScaleConst
+static i32 * const gM3dUseSuperScale      = (i32*)0x00660F74;    // == gDCUseSuperScale
+static i32 * const gM3dFogEnabled         = (i32*)0x0054D384;    // == gM3dFogFlag / gDCFogEnabled
+static f32 * const gM3dFogDistScale       = (f32*)0x00550098;    // 1.1f in the image
+static i32 * const gM3dFogAlpha           = (i32*)0x00550060;    // 0..255, read by DCModel_RenderModel
+static i32 * const gM3dFogNear            = (i32*)0x0064E560;    // m3dinit.cpp: gFogNear
+static f32 * const gM3dLodScale           = (f32*)0x00550094;    // 1.0f in the image
+static i32 * const gM3dSubObjectMasked    = (i32*)0x0065DFAC;    // PS2: SubObjectMasked
+static i32 * const gM3dLightEveryPart     = (i32*)0x00660FF0;    // 0 = only part 0 gets the dynamic-light flag
+// Reset-per-superitem output cursors. DCModel_RenderModel declares three of
+// these addresses itself (gDCStitchPositionTable, gDCAttachPointCursor,
+// gDCLitColorOutCursor) as if they were the buffers; here they are clearly
+// POINTERS that get re-pointed at the buffers below, which matches the PS2
+// source's "FreeStitchVertex = &ProjectedVertices[MAXVERTICES-1]" reset.
+static u32 * const gM3dStitchVertexCursor = (u32*)0x0062861C;
+static u32 * const gM3dAttachPointCursor  = (u32*)0x0064F5CC;
+static u32 * const gM3dLitColourCursor    = (u32*)0x0065DFA8;
+static u32 * const gM3dStitchColourCursor = (u32*)0x0064E55C;
+static u32 * const gM3dStitchColourStart  = (u32*)0x00550028;   // holds 0x0064F5D8
+// Body-proportion cheats. Both default to 0 in the image and are only read
+// when the item is in the player's costume region. A scales every part DOWN
+// (head 0.7, limbs 0.35, rest 0.25), B scales the head/limbs UP (1.5) and
+// the rest down (part 1 0.6, rest 0.45). Named from what the maths does; I
+// could not find either address in the maintainer's IDB.
+static i32 * const gM3dBodyScaleCheatA    = (i32*)0x02E09BF4;
+static i32 * const gM3dBodyScaleCheatB    = (i32*)0x02E09BF0;
+
+// @Ok
+// (0x00474C10, 4752 bytes.) Renders one animated multi-part character:
+// per-part pose matrix, LOD, lighting and the final model submit.
+//
+// Reconstructed against the PS2 original (thps2-stuff/m3d.mik line 2285),
+// which lines up statement for statement with the disassembly apart from
+// the PC-specific parts noted below. Extra flag values recovered from that
+// pairing: EXTRAFLAGS_FLIPANIM 0x2, EXTRAFLAGS_OVERRIDEWATERLEVEL 0x8,
+// ITEMFLAGS_POSED 0x4. CSuper::field_156 is the PS2's mWaterLevel and
+// CSuper::field_194/field_198 are mSubObjectDisplayMask/2.
+//
+// Differences from the PS2 version, all confirmed in the disassembly:
+//  - the Fast path, the Dewibble (near-object x16) path, the reflection
+//    mapping branch, the ellipsoid/shadow pass and DrawModelOutline are all
+//    gone; the PC always builds a float matrix4x4 per part and submits it
+//    to DCModel_RenderModel / DC_PSXModel_RenderModel.
+//  - a PC-only distance fade replaces the PSX depth cue: past gFogNear the
+//    whole superitem is dropped (an early return that skips the flip-anim
+//    and water-level restores at the end -- reproduced as the original has
+//    it), and between the two limits a 0..255 alpha goes to 0x550060.
+//  - a PC-only "super scale" (0x54FFE0), a per-part LOD that steps ONCE
+//    using ppModels[0]->NextLOD as a fixed index stride (the PS2 walks a
+//    NextLOD chain instead), and the three body-proportion cheats.
+//  - lighting is converted to floats for the software/D3D renderer exactly
+//    the way M3d_Render does it (same tables, same transpose on the colour
+//    matrix).
+//
+// One thing I could not resolve from the disassembly: the matrix4x4
+// temporary that receives partMatrix*partScale is constructed with a `this`
+// register (ecx) that is never reloaded before the call, so it still holds
+// whatever the previous matrix4x4 constructor left there. The surrounding
+// code proves the 1/16 scale matrix must survive that construction (the
+// body-scale cheat paths reuse it afterwards without rebuilding it), so a
+// separate temporary is what the maths needs, and that is what is written
+// here.
+void RenderSuperItem(CItem *pItem, bool a2)
 {
-	RenderSuperItem_fn f = (RenderSuperItem_fn)0x00474C10;
-	f(pItem, a2);
+	CSuper *pSuper = static_cast<CSuper*>(pItem);
+	u16 itemFlags = pItem->mFlags;
+	bool isMechList = (pItem == *gM3dMechList);
+
+	f32 posX = static_cast<f32>(pItem->mPos.vx) * 0.00024414062f;
+	f32 posY = static_cast<f32>(pItem->mPos.vy) * 0.00024414062f;
+	f32 posZ = static_cast<f32>(pItem->mPos.vz) * 0.00024414062f;
+
+	*gM3dLitColourCursor    = 0x0064F5D8;
+	*gM3dStitchColourCursor = *gM3dStitchColourStart;
+
+	matrix4x4 itemTransform;
+	ConvertMATRIXTomatrix4x4_0(&pSuper->mTransform, &itemTransform);
+	itemTransform.field_0[3].field_0[0] = posX;
+	itemTransform.field_0[3].field_0[1] = posY;
+	itemTransform.field_0[3].field_0[2] = posZ;
+	itemTransform.field_0[3].field_0[3] = 1.0f;
+
+	i32 *pCamera = reinterpret_cast<i32*>(*gM3dCameraPtrEarly);
+
+	// PS2: symbiotes melting into the ground need their own water level, so
+	// the global gets overridden for this item and restored at the end.
+	i16 savedWaterNormalPad = 0;
+	if ((pSuper->mExtraFlags & 8) != 0)
+	{
+		savedWaterNormalPad = *gM3dWaterNormalPad;
+		*gM3dWaterNormalPad = static_cast<i16>(pSuper->field_156 - static_cast<i16>(pCamera[2]));
+	}
+
+	i32 region = pItem->mRegion;
+	bool isCostumeRegion = (region == static_cast<i32>(*gM3dCostumeRegionIndex));
+	bool pulsatingHead = false;
+	if (isCostumeRegion && *gM3dPulsatingHead != 0)
+		pulsatingHead = true;
+
+	// the armoured player costume lives in its own PSX region
+	if (isMechList && G_LOWGRAPHICS == 0 && *(reinterpret_cast<u8*>(pItem) + 1513) != 0)
+		region = *gM3dArmorRegionIndex;
+
+	print_if_false(G_PSXREGION[region].Usable != 0, "Tried to render superitem\twithout PSX");
+
+	if ((pSuper->mExtraFlags & 2) != 0)
+	{
+		pSuper->mTransform.m[0][0] = -pSuper->mTransform.m[0][0];
+		pSuper->mTransform.m[1][0] = -pSuper->mTransform.m[1][0];
+		pSuper->mTransform.m[2][0] = -pSuper->mTransform.m[2][0];
+		*gM3dScratchReflected = 1;
+	}
+	else
+	{
+		*gM3dScratchReflected = 0;
+	}
+
+	// superitem transform in eye coords, then its local origin
+	gte_SetRotMatrix(reinterpret_cast<MATRIX*>(pCamera + 29));
+
+	MATRIX superTransform;
+	gsub_46E4B0(&pSuper->mTransform, &superTransform);
+
+	VECTOR posnRelCam;
+	posnRelCam.vx = (pItem->mPos.vx >> 12) - pCamera[1];
+	posnRelCam.vy = (pItem->mPos.vy >> 12) - pCamera[2];
+	posnRelCam.vz = (pItem->mPos.vz >> 12) - pCamera[3];
+	gte_ldlvl(&posnRelCam);
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(superTransform.t));
+
+	i32 superDist = superTransform.t[2];
+
+	if (*gM3dFogEnabled != 0)
+	{
+		f32 dist = static_cast<f32>(superDist) * *gM3dFogDistScale;
+		if (dist > static_cast<f32>(*gM3dDpqMin))
+		{
+			if (dist <= static_cast<f32>(*gM3dFogNear))
+				return;
+
+			*gM3dNoFogFlagEarly = 1;
+
+			f32 range = static_cast<f32>(*gM3dFogNear - *gM3dDpqMin);
+			if (range < 1.0f)
+				*gM3dFogAlpha = 255;
+			else
+				*gM3dFogAlpha = static_cast<i32>((static_cast<f32>(*gM3dFogNear) - dist) * 255.0f / range);
+		}
+	}
+
+	*gM3dUseSuperScale = 1;
+	if (*gM3dSuperScaleEnabled != 0 && G_LOWGRAPHICS == 0)
+	{
+		f32 dist = static_cast<f32>(superDist);
+
+		if ((dist - *gM3dSuperScaleDist) < 10.0f || *gM3dSuperScaleDist < 1.0f)
+			*gM3dSuperScale = 1.0f;
+		else
+			*gM3dSuperScale = *gM3dSuperScaleDist / dist + 1.0f;
+
+		if (isMechList)
+		{
+			if (*(reinterpret_cast<u8*>(*gM3dMechList) + 2281) != 0 && posnRelCam.vy > 0)
+			{
+				if ((*gM3dSuperScaleDistLow + 10.0f) > dist || *gM3dSuperScaleDistLow < 1.0f)
+					*gM3dSuperScale = 1.0f;
+				else
+					*gM3dSuperScale = 1.0f - *gM3dSuperScaleDistLow / dist;
+			}
+			*gM3dSuperFixedScale = *reinterpret_cast<i32*>(gM3dSuperScale);
+		}
+	}
+
+	print_if_false(pItem->mModel == 0, "I thought the model number was always 0 for a superitem");
+
+	SModel **ppModels = G_PSXREGION[region].ppModels;
+	u32 numParts = G_PSXREGION[region].NumParts;
+
+	SMatrix *pAnimTransform;
+	if ((itemFlags & 4) != 0)
+		pAnimTransform = pSuper->mpPoseBuffer;
+	else
+		pAnimTransform = Decomp_GetAnimTransform(pSuper);
+	SMatrix *pFirstTransform = pAnimTransform;
+
+	// PS2: SuperLightTransform. The PC computes it and never reads it back
+	// (M3dAsm_SetSuperTransforms, its only consumer, is gone), kept because
+	// the original still makes the call.
+	MATRIX superLightTransform;
+	MulMatrix0(reinterpret_cast<MATRIX*>(pItem->mpLight), &pSuper->mTransform, &superLightTransform);
+
+	// PS2: Type = mEllipsoidRGB >> 24. The PC keeps only the top bit, as a
+	// "do not draw this superitem's parts" flag. CItem+0xB0 is inside a
+	// PADDING run in ob.h's CBody, so it is read through its raw offset.
+	u32 partType = *reinterpret_cast<u32*>(reinterpret_cast<u8*>(pItem) + 0xB0) >> 24;
+	f32 lodScale = *gM3dLodScale;
+
+	*gM3dStitchVertexCursor = 0x00654FB8;
+	*gM3dAttachPointCursor  = 0x00658E28;
+
+	// the player's pose has two pairs of parts swapped while it renders
+	SMatrix swapTemp;
+	if (isMechList)
+	{
+		swapTemp = pFirstTransform[5];
+		pFirstTransform[5] = pFirstTransform[6];
+		pFirstTransform[6] = swapTemp;
+		swapTemp = pFirstTransform[10];
+		pFirstTransform[10] = pFirstTransform[11];
+		pFirstTransform[11] = swapTemp;
+	}
+
+	for (u32 part = 0; part < numParts; part++, pAnimTransform++)
+	{
+		u32 modelIndex = part;
+
+		if (part <= 31)
+			*gM3dSubObjectMasked = ((pSuper->field_194 & (1 << part)) != 0) ? 1 : 0;
+		else
+			*gM3dSubObjectMasked = ((pSuper->field_198 & (1 << (part - 32))) != 0) ? 1 : 0;
+
+		SModel *pModel = ppModels[part];
+
+		if (G_LOWGRAPHICS == 0)
+		{
+			i32 zoom = *reinterpret_cast<u16*>(G_VIEW_CLIP_INFO + 0x0E);
+			i32 nearThreshold = static_cast<i32>(
+					static_cast<f32>(pModel->zMax * zoom / 191) * lodScale);
+
+			// one step only: for a superitem the lower-detail part models
+			// sit at a fixed index offset, held in part 0's NextLOD
+			if (static_cast<i16>(superDist) > static_cast<i16>(nearThreshold)
+					&& pModel->NextLOD != 0xFFFF)
+			{
+				modelIndex = part + ppModels[0]->NextLOD;
+				pModel = ppModels[modelIndex];
+			}
+
+			if (static_cast<i16>(superDist) > pModel->zMax * zoom / 191
+					&& pModel->NextLOD == 0xFFFF)
+				break;
+		}
+
+		MATRIX worldTransform;
+		MulMatrix0(&pSuper->mTransform, reinterpret_cast<MATRIX*>(pAnimTransform), &worldTransform);
+
+		*gM3dLightingEnabled = 0;
+		*gM3dLightsAreDynamic = 0;
+
+		if ((pModel->Flags & 4) != 0 || (itemFlags & 0x80) != 0)
+		{
+			M3dAsm_LoadClipTableB(pItem->mpLight->ColorMatrix);
+
+			SLight *pLight = pItem->mpLight;
+
+			*gM3dLightingEnabled = 1;
+			*gM3dLightsAreDynamic = (*gM3dDynamicLightSource != 0) ? 1 : 0;
+			if (part > 0 && *gM3dLightEveryPart == 0)
+				*gM3dLightsAreDynamic = 0;
+
+			MATRIX lightTransform;
+			MulMatrix0(reinterpret_cast<MATRIX*>(pLight), &worldTransform, &lightTransform);
+
+			for (i32 light = 0; light < 3; light++)
+			{
+				gM3dLightDirTable[3 * light + 0] = static_cast<f32>(lightTransform.m[light][0]) / 4096.0f;
+				gM3dLightDirTable[3 * light + 1] = static_cast<f32>(lightTransform.m[light][1]) / 4096.0f;
+				gM3dLightDirTable[3 * light + 2] = static_cast<f32>(lightTransform.m[light][2]) / 4096.0f;
+
+				// same transpose as in M3d_Render: read by column
+				gM3dLightColorTable[3 * light + 0] = static_cast<f32>(pLight->ColorMatrix[0][light]) / 4096.0f;
+				gM3dLightColorTable[3 * light + 1] = static_cast<f32>(pLight->ColorMatrix[1][light]) / 4096.0f;
+				gM3dLightColorTable[3 * light + 2] = static_cast<f32>(pLight->ColorMatrix[2][light]) / 4096.0f;
+			}
+
+			*gM3dAmbientB = static_cast<f32>(pLight->BackColor[2]) / 4096.0f;
+			*gM3dAmbientG = static_cast<f32>(pLight->BackColor[1]) / 4096.0f;
+			*gM3dLightCount = 3;
+			*gM3dAmbientR = static_cast<f32>(pLight->BackColor[0]) / 4096.0f;
+
+			if (*gM3dLightOverride != 0)
+			{
+				f32 backX = -gM3dLightDirTable[0];
+				f32 backY = -gM3dLightDirTable[1];
+				f32 backZ = -gM3dLightDirTable[2];
+
+				gM3dLightColorTable[0] = gM3dOverrideLightRgb[0];
+				gM3dLightColorTable[1] = gM3dOverrideLightRgb[1];
+				gM3dLightColorTable[2] = gM3dOverrideLightRgb[2];
+
+				gM3dLightDirTable[3] = backX;
+				gM3dLightDirTable[4] = backY;
+				gM3dLightDirTable[5] = backZ;
+				gM3dLightDirTable[6] = backX;
+				gM3dLightDirTable[7] = backY;
+				gM3dLightDirTable[8] = backZ;
+
+				gM3dLightColorTable[3] = 0.0f;
+				gM3dLightColorTable[4] = 0.0f;
+				gM3dLightColorTable[5] = 0.0f;
+				gM3dLightColorTable[6] = 0.0f;
+				gM3dLightColorTable[7] = 0.0f;
+				gM3dLightColorTable[8] = 0.0f;
+
+				*gM3dAmbientR = gM3dOverrideAmbient[0];
+				*gM3dAmbientG = gM3dOverrideAmbient[1];
+				*gM3dAmbientB = gM3dOverrideAmbient[2];
+			}
+		}
+
+		print_if_false(ValidMATRIX(reinterpret_cast<MATRIX*>(pAnimTransform)) != 0, "Invalid pAnimTransform.");
+
+		matrix4x4 partMatrix;
+		ConvertSMatrixTomatrix4x4(pAnimTransform, &partMatrix);
+
+		// the pose matrices are in 1/16 units
+		matrix4x4 partScale(
+				0.0625f, 0.0f, 0.0f, 0.0f,
+				0.0f, 0.0625f, 0.0f, 0.0f,
+				0.0f, 0.0f, 0.0625f, 0.0f,
+				0.0f, 0.0f, 0.0f, 1.0f);
+
+		matrix4x4 partWorld;
+		gsub_476A00(&partWorld, &partMatrix, &partScale);
+
+		if (isCostumeRegion)
+		{
+			if (*gM3dBodyScaleCheatA != 0)
+			{
+				f32 scale;
+				if (part == 7)
+					scale = 0.7f;
+				else if (part == 5 || part == 6 || part == 10 || part == 11 || part == 17 || part == 14)
+					scale = 0.35f;
+				else
+					scale = 0.25f;
+
+				matrix4x4 cheatScale(
+						scale, 0.0f, 0.0f, 0.0f,
+						0.0f, scale, 0.0f, 0.0f,
+						0.0f, 0.0f, scale, 0.0f,
+						0.0f, 0.0f, 0.0f, 1.0f);
+
+				matrix4x4 cheated;
+				gsub_476A00(&cheated, &cheatScale, &partMatrix);
+				gsub_476A00(&partWorld, &cheated, &partScale);
+			}
+			else if (*gM3dBodyScaleCheatB != 0)
+			{
+				f32 scale;
+				if (part == 7 || part == 5 || part == 6 || part == 10 || part == 11 || part == 17 || part == 14)
+					scale = 1.5f;
+				else if (part == 1)
+					scale = 0.6f;
+				else
+					scale = 0.45f;
+
+				matrix4x4 cheatScale(
+						scale, 0.0f, 0.0f, 0.0f,
+						0.0f, scale, 0.0f, 0.0f,
+						0.0f, 0.0f, scale, 0.0f,
+						0.0f, 0.0f, 0.0f, 1.0f);
+
+				matrix4x4 cheated;
+				gsub_476A00(&cheated, &cheatScale, &partMatrix);
+				gsub_476A00(&partWorld, &cheated, &partScale);
+			}
+
+			// pulsating head: part 7 breathes in and out on a timer
+			if (pulsatingHead && part == 7)
+			{
+				i32 phase = static_cast<i32>(*gM3dPulseTimer & 0xFF) - 128;
+				if (phase < 0)
+					phase = -phase;
+				f32 pulse = static_cast<f32>(phase) * 0.0046875002f + 1.4f;
+
+				for (i32 headRow = 0; headRow < 4; headRow++)
+				{
+					partMatrix.field_0[headRow].field_0[0] = partWorld.field_0[headRow].field_0[0];
+					partMatrix.field_0[headRow].field_0[1] = partWorld.field_0[headRow].field_0[1];
+					partMatrix.field_0[headRow].field_0[2] = partWorld.field_0[headRow].field_0[2];
+					partMatrix.field_0[headRow].field_0[3] = partWorld.field_0[headRow].field_0[3];
+				}
+
+				matrix4x4 headScale(
+						pulse, 0.0f, 0.0f, 0.0f,
+						0.0f, pulse, 0.0f, 0.0f,
+						0.0f, 0.0f, pulse, 0.0f,
+						0.0f, 0.0f, 0.0f, 1.0f);
+
+				gsub_476A00(&partWorld, &partMatrix, &headScale);
+
+				// keep the unscaled translation so the head does not move
+				partWorld.field_0[3].field_0[0] = partMatrix.field_0[3].field_0[0];
+				partWorld.field_0[3].field_0[1] = partMatrix.field_0[3].field_0[1];
+				partWorld.field_0[3].field_0[2] = partMatrix.field_0[3].field_0[2];
+				partWorld.field_0[3].field_0[3] = partMatrix.field_0[3].field_0[3];
+			}
+		}
+
+		matrix4x4 finalTransform;
+		gsub_476A00(&finalTransform, &partWorld, &itemTransform);
+
+		DCModelData *pModelData = reinterpret_cast<DCModelData*>(
+				gM3dRegionModelData[region] + 36 * modelIndex);
+		print_if_false(pModelData != 0, "no dc model data");
+
+		if ((partType & 0x80) == 0)
+		{
+			i32 modelDataFlags = pModelData->mFlags;
+			if ((modelDataFlags & 0x100) == 0)
+			{
+				if ((modelDataFlags & 0x4000) != 0)
+					DC_PSXModel_RenderModel(pModel, &finalTransform, 0, pModelData);
+				else
+					DCModel_RenderModel(pModel, pModelData, &finalTransform);
+			}
+		}
+	}
+
+	*gM3dSubObjectMasked = 0;
+	*gM3dLightingEnabled = 0;
+	*gM3dLightsAreDynamic = 0;
+	*gM3dUseSuperScale = 0;
+
+	if (isMechList)
+	{
+		swapTemp = pFirstTransform[5];
+		pFirstTransform[5] = pFirstTransform[6];
+		pFirstTransform[6] = swapTemp;
+		swapTemp = pFirstTransform[10];
+		pFirstTransform[10] = pFirstTransform[11];
+		pFirstTransform[11] = swapTemp;
+	}
+
+	if ((pSuper->mExtraFlags & 2) != 0)
+	{
+		pSuper->mTransform.m[0][0] = -pSuper->mTransform.m[0][0];
+		pSuper->mTransform.m[1][0] = -pSuper->mTransform.m[1][0];
+		pSuper->mTransform.m[2][0] = -pSuper->mTransform.m[2][0];
+	}
+
+	if ((pSuper->mExtraFlags & 8) != 0)
+		*gM3dWaterNormalPad = savedWaterNormalPad;
 }
 
 void validate_matrix4x4(void)
