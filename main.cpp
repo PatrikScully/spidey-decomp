@@ -109,6 +109,13 @@
 #include "dcfileio.h"
 #include "PCMovie.h"
 #include "flash.h"
+#include "screen.h"
+#include "post.h"
+#include "PCTimer.h"
+#include "music.h"
+#include "shatter.h"
+#include "tweak.h"
+#include "ps2redbook.h"
 
 
 #include "my_patch.h"
@@ -119,12 +126,245 @@ const i32 POLYBUFFERSIZE = 0x17000;
 
 EXPORT i32 gMainStuff[0x1000];
 
+// ---------------------------------------------------------------------------
+// Globals the game loop (Logic / Display / PlayAway / SpideyMain) needs and
+// that have no repo variable yet. File-local fixed-address pointers with
+// tentative descriptive names. Every address was checked against
+// ~/Documents/spidey-work/idbs/idb_globals.txt and against the known-size repo
+// objects first, so none of them names a slot inside a bigger global. Where
+// another file already invented a name for the same address the same name is
+// reused and that file is named in the comment.
+// ---------------------------------------------------------------------------
+
+// pshell.cpp uses this name for the same address. Logic skips the whole world
+// update while it is set, so it reads as "the level is frozen behind the
+// end-of-training screen".
+static i32 * const gEndTrainingFlag = reinterpret_cast<i32*>(0x0060CFB0);
+
+// pshell.cpp uses this name for the same address. Gates the two end of
+// training screen calls, PShell_EndTrainingUpdate and PShell_EndTrainingDisplay.
+static i32 * const gTrainingActive = reinterpret_cast<i32*>(0x00682950);
+
+// baddy.cpp uses this name for the same address.
+static u8 * const gSubmarinerDieRelated = reinterpret_cast<u8*>(0x0060CFC4);
+
+// only ever tested against zero, and when it is clear the code calls the empty
+// debug hook at 0x430880. A release build leftover.
+static i32 * const gLogicDebugHookFlag = reinterpret_cast<i32*>(0x0060CFE4);
+
+// Display draws this string in red at 256,60 when it is not null, so it is a
+// debug banner. Nothing in the repo writes it.
+static char ** const gDebugBanner = reinterpret_cast<char**>(0x0060CF9C);
+
+// ten dwords in a row, each one a "draw this list" switch that Display reads
+// once, right before the matching M3d_Render call. Kept as one indexed block
+// rather than ten names because they are contiguous and used identically:
+// 0 EnviroList, 1 EnvironmentalObjectList, 2 the player, 3 the player's extra
+// body parts, 4 MiscellaneousRenderingList, 5 MiscList, 6 BaddyList,
+// 7 BulletList, 8 PowerUpList, 9 BackgroundList.
+static i32 * const gRenderListFlags = reinterpret_cast<i32*>(0x0054D350);
+
+// idb_globals.txt: GrenadeExplosionRegion. A wibbly texture region id, only
+// preprocessed while g3DExplosions is set.
+static i32 * const gGrenadeExplosionRegion = reinterpret_cast<i32*>(0x0054A37C);
+
+// idb_globals.txt: gPsxRingIndex / FireRingRegion. Display picks between the
+// two for the fire ring depending on gFireRingObject's field_10C.
+static i32 * const gPsxRingIndex = reinterpret_cast<i32*>(0x0055AA34);
+static i32 * const gFireRingRegion = reinterpret_cast<i32*>(0x0055AA3C);
+
+// idb_globals.txt: FireDomeRegion, the matching region for gFireDomes.
+static i32 * const gFireDomeRegion = reinterpret_cast<i32*>(0x0055AA38);
+
+// idb_globals.txt: SymBurnRegion. simby.cpp already calls the counter at
+// 0x60CF94 gSymBurnCount; this is the region it turns on.
+static i32 * const gSymBurnCount = reinterpret_cast<i32*>(0x0060CF94);
+static i32 * const gSymBurnRegion = reinterpret_cast<i32*>(0x0054D388);
+
+// the live fire ring object. Tentative name: it sits two slots before
+// gFireDomes/gNumDomes (web.cpp) and Display only reads its field_10C to
+// choose which of the two ring regions to preprocess.
+static CSuper ** const gFireRingObject = reinterpret_cast<CSuper**>(0x006B559C);
+
+// ps2m3d.cpp calls these gM3dSuperScaleEnabled and gDCUseFixedScale. Display
+// turns the fixed vertex scale on around the player's extra body parts.
+static i32 * const gM3dSuperScaleEnabled = reinterpret_cast<i32*>(0x005500A4);
+static i32 * const gDCUseFixedScale = reinterpret_cast<i32*>(0x0060CF90);
+
+// front.cpp calls this gFrontDrawPolyFlag. It gates the ordering table walk at
+// the end of Display, the Mac build's CountPrimitives (inlined here on PC).
+static i32 * const gFrontDrawPolyFlag = reinterpret_cast<i32*>(0x0060CFE0);
+
+// where that walk leaves its result: how many ordering table entries carried a
+// primitive this frame.
+static i32 * const gOtPrimitiveCount = reinterpret_cast<i32*>(0x005FCD68);
+
+// how many bytes of the poly buffer the frame used, written at the very end of
+// Display.
+static i32 * const gPolyBufferUsed = reinterpret_cast<i32*>(0x0060D00C);
+
+// pshell.cpp calls this gFrontUseAltTriggerMask. PlayAway sets it on entry and
+// SpideyMain clears it again once the level ends.
+static u8 * const gFrontUseAltTriggerMask = reinterpret_cast<u8*>(0x005FAE9D);
+
+// pshell.cpp calls this gDoShellForceLevelExit, front.cpp calls it
+// gFrontShowTrainingTip. PlayAway reseeds the random generator from it.
+static i32 * const gDoShellForceLevelExit = reinterpret_cast<i32*>(0x0068293C);
+
+// pshell.cpp calls this gShellMenuAbort. When it is set PlayAway never starts
+// the frame loop at all: it just repaints the sky and reports end code 11,
+// which sends SpideyMain straight back to the shell. That is how the
+// storyboard and comic viewers get out of a "level".
+static i32 * const gShellMenuAbort = reinterpret_cast<i32*>(0x0054D38C);
+
+// cleared next to gWaterEffect at the top of PlayAway; purpose unknown, no
+// other reader found. Named after its neighbour.
+static i32 * const gWaterEffectTwo = reinterpret_cast<i32*>(0x0060FAA0);
+
+// cleared next to gAttackRelated at the top of PlayAway; purpose unknown.
+static i32 * const gPlayAwayCounter = reinterpret_cast<i32*>(0x005FCD18);
+
+// nonzero draws the frame rate readout in the top left corner.
+static i32 * const gShowFrameRate = reinterpret_cast<i32*>(0x0060CFFC);
+
+// idb_globals.txt: OTPushback. PlayAway forces it back to 1 when the level
+// ends. ps2m3d.cpp reads the same address as gM3dOtPushback[0..2].
+static i16 * const gOtPushback = reinterpret_cast<i16*>(0x00660F78);
+
+// post.cpp defines this one, it just has no header entry yet.
+EXPORT extern i32 gWaterEffect;
+
+
+// ---------------------------------------------------------------------------
+// Two callees of Logic that belong to ob.cpp, not here. The Mac build puts
+// both in its ob.cpp TU (tools/prototypes.json, "ob": "Ob_AI(CBody **,int)"
+// and "Ob_MaybeUnSuspendOrCull(void)"), and on PC they sit at 0x460FC0 and
+// 0x461160, right next to the other Ob_ functions. The repo has neither, and
+// ob.cpp/ob.h are owned by somebody else right now, so they are forwarded to
+// the original code from here to keep the call sites honest. Move them into
+// ob.cpp (and drop these) as soon as that file is free.
+// ---------------------------------------------------------------------------
+
+// Ob_AI: walks one object list, ages each item out to the suspended list when
+// it is further from the player than SuspendedDistance, and otherwise runs its
+// EveryFrame/AI pair.
+// @Bogus
+static void Ob_AI(CBody **ppList, i32 a2)
+{
+	typedef void (*func_ptr)(CBody**, i32);
+	func_ptr func = (func_ptr)0x00460FC0;
+	func(ppList, a2);
+}
+
+// Ob_MaybeUnSuspendOrCull: the other direction, walks the suspended list and
+// puts anything that came back inside SuspendedDistance on its home list again.
+// @Bogus
+static void Ob_MaybeUnSuspendOrCull(void)
+{
+	typedef void (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x00461160;
+	func();
+}
+
+
 // @Ok
 // @Matching
 void CalcPolyBufferEnd(void)
 {
 	PolyBufferEnd = reinterpret_cast<u8*>(
 			(reinterpret_cast<u32>(pDoubleBuffer->Polys) + POLYBUFFERSIZE - 0x100) & 0x7FFFFFFF);
+}
+
+// @Ok
+// 0x00455400, 416 bytes. One half of the per frame work (Display is the other
+// half); PlayAway calls both once a frame. gRenderTest bit 0x400 or 0x200 cuts
+// it down to nothing but a pad read, and bit 0x100 turns it into a single step
+// debugger that stops on key 57 (space) every frame.
+void Logic(void)
+{
+	if (gRenderTest & 0x600)
+	{
+		Pad_Update();
+		return;
+	}
+
+	if (gRenderTest & 0x100)
+	{
+		PCTIMER_Pause();
+
+		// wait for the key to come up, then for the next press. Both loops
+		// also give up if the single step bit is cleared while they spin.
+		do
+		{
+			PCINPUT_PollKeyboard();
+		}
+		while (PCINPUT_IsKeyPressed(57, 0) && (gRenderTest & 0x100));
+
+		do
+		{
+			PCINPUT_PollKeyboard();
+		}
+		while (!PCINPUT_IsKeyPressed(57, 0) && (gRenderTest & 0x100));
+
+		PCTIMER_Resume();
+	}
+
+	gAttackRelated++;
+	TTime++;
+
+	Pad_Update();
+
+	if (!G_POST_WATER_EFFECT && !*gEndTrainingFlag)
+	{
+		Flash_Update();
+
+		Trig_ResetCPCollisionFlags();
+		Ob_AI(reinterpret_cast<CBody**>(&MechList), 0);
+		Trig_ResetCPExecutedFlags();
+
+		Ob_AI(&PowerUpList, 0);
+		Ob_AI(&BulletList, 0);
+		Ob_AI(&MiscList, 0);
+		Ob_AI(&EnvironmentalObjectList, 0);
+		Ob_AI(reinterpret_cast<CBody**>(&BackgroundList), 0);
+		Ob_AI(reinterpret_cast<CBody**>(&BaddyList), 0);
+		Ob_AI(&ControlBaddyList, 0);
+
+		Ob_MaybeUnSuspendOrCull();
+
+		Bit_Move();
+		Bit_RemoveDeadBits();
+	}
+
+	Shatter_MaybeMakeGlassShatterSound();
+	Trig_DoPendingCommandLists();
+
+	if (*gSubmarinerDieRelated)
+		MechList->CutSceneSkipCleanup();
+
+	gsub_430880();
+
+	Front_Update();
+
+	if (*gTrainingActive)
+		PShell_EndTrainingUpdate();
+
+	Mess_Update();
+
+	if (!*gLogicDebugHookFlag)
+		gsub_430880();
+
+	// no null check on CameraList in this branch, the original does not have
+	// one either.
+	if (G_GAMESTATE[8])
+	{
+		G_GAMESTATE[8] = 1;
+		CameraList->SetMode(CAMERAMODE_ITSYLOOKDOWN);
+	}
+	else if (CameraList && CameraList->mCameraMode == CAMERAMODE_ITSYLOOKDOWN)
+	{
+		CameraList->SetMode(CAMERAMODE_DEMO);
+	}
 }
 
 // @BIGTODO

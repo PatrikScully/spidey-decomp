@@ -14,5 +14,6 @@ class CClass
 };
 
 EXPORT void SpideyMain(void);
+EXPORT void Logic(void);
 EXPORT void CalcPolyBufferEnd(void);
 #endif
