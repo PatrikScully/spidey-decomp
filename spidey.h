@@ -136,7 +136,10 @@ class CPlayer : public CSuper
 		// (offset 0x558, IDA disasm of 0x4C38A0).
 		CVector field_558;
 
-		PADDING(0x568-0x558-0xC);
+		// cleared by CPlayer::CheckSwitchToGrabbedMode when the grab starts
+		u8 field_564;
+
+		PADDING(0x568-0x564-1);
 
 		i32 field_568;
 		i32 field_56C;
@@ -187,7 +190,14 @@ class CPlayer : public CSuper
 		// SelectAutoAimTarget: current auto-aim target CBody (owned, deleted on switch)
 		CBody *field_878;
 
-		PADDING(0x89C-0x87C);
+		// both cleared by CPlayer::CheckSwitchToGrabbedMode
+		i32 field_87C;
+
+		PADDING(0x894-0x87C-4);
+
+		i32 field_894;
+
+		PADDING(0x89C-0x894-4);
 
 		MATRIX field_89C;
 
@@ -521,7 +531,13 @@ class CPlayer : public CSuper
 		// one qualifying baddy was found this pass
 		u8 field_EC0;
 
-		PADDING(0xEF0-0xEC0-1);
+		PADDING(0xEE0-0xEC0-1);
+
+		// position of the thing that grabbed the player, copied in by
+		// CPlayer::CheckSwitchToGrabbedMode
+		CVector field_EE0;
+
+		PADDING(0xEF0-0xEE0-0xC);
 
 		i32 mMaxHealth;
 
@@ -588,7 +604,7 @@ class CPlayer : public CSuper
 		EXPORT i32 CheckStickToCeiling(void);
 		EXPORT void CheckStickToWall(void);
 		EXPORT u8 CheckSwingWebAvailability(SLineInfo *);
-		EXPORT void CheckSwitchToGrabbedMode(CVector const *,CVector *);
+		EXPORT u8 CheckSwitchToGrabbedMode(CVector const *,CVector *);
 		EXPORT void CheckWebShot(void);
 		EXPORT u8 CheckZipWebAvailability(SLineInfo *,i32);
 		EXPORT void CollideWithObject(CBody *);

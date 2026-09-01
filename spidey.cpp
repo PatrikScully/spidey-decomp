@@ -1051,10 +1051,42 @@ u8 CPlayer::CheckSwingWebAvailability(SLineInfo *pLineInfo)
 	return 1;
 }
 
-// @SMALLTODO
-void CPlayer::CheckSwitchToGrabbedMode(CVector const *,CVector *)
+// @Ok
+u8 CPlayer::CheckSwitchToGrabbedMode(CVector const *pPos, CVector *pNormal)
 {
-    printf("CPlayer::CheckSwitchToGrabbedMode(CVector const *,CVector *)");
+	if (!(this->field_E1C & 1))
+		return 0;
+
+	if (this->field_AD4 != 0)
+		return 0;
+
+	this->field_E1C = 0x10000000;
+
+	this->field_EE0.vx = pPos->vx;
+	this->field_EE0.vy = pPos->vy;
+	this->field_EE0.vz = pPos->vz;
+
+	i32 *p = gSpideySFXEntry[0x96];
+	this->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(0x96, 0, -1);
+
+	this->field_564 = 0;
+	this->field_87C = 0;
+	this->field_894 = 0;
+
+	this->OrientToNormal(true, pNormal);
+
+	return 1;
 }
 
 // @MEDIUMTODO
@@ -6594,6 +6626,7 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_54C, 0x54C);
 	VALIDATE(CPlayer, field_54F, 0x54F);
 	VALIDATE(CPlayer, field_558, 0x558);
+	VALIDATE(CPlayer, field_564, 0x564);
 
 	VALIDATE(CPlayer, field_568, 0x568);
 	VALIDATE(CPlayer, field_56C, 0x56C);
@@ -6623,6 +6656,9 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_5E0, 0x5E0);
 
 	VALIDATE(CPlayer, field_5E8, 0x5E8);
+
+	VALIDATE(CPlayer, field_87C, 0x87C);
+	VALIDATE(CPlayer, field_894, 0x894);
 
 	VALIDATE(CPlayer, field_89C, 0x89C);
 
@@ -6736,6 +6772,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_EA4, 0xEA4);
 
 	VALIDATE(CPlayer, field_EA8, 0xEA8);
+
+	VALIDATE(CPlayer, field_EE0, 0xEE0);
 
 	VALIDATE(CPlayer, mMaxHealth, 0xEF0);
 }
