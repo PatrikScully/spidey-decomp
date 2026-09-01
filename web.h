@@ -94,8 +94,13 @@ class CWeb : public CBody
 
 		i32 field_130;
 
+		// SHandle (pWhatever/Id) of whatever this web is attached to; read
+		// back with Mem_RecoverPointer by CWeb::SwitchToBlob and by
+		// CPlayer::CalculateTugWebPathPoints (spidey.cpp).
 		i32 field_134;
 		i32 field_138;
+
+		EXPORT void SwitchToBlob(void);
 };
 
 // Fields at 0xF8/0xFC/0x17C reverse engineered 2026-08-31 while decompiling

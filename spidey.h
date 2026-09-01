@@ -8,6 +8,7 @@
 #include "ob.h"
 #include "manipob.h"
 #include "quat.h"
+#include "psx_types.h"
 
 struct SAnimFrame;
 
@@ -22,10 +23,16 @@ struct SIndicator
 
 	SHandle field_C;
 
-	// @FIXME - there's a POLY_F3 that should go in here but I have
-	// no idea how it works leaving it for future me
-	PADDING(0x64-0xC-sizeof(SHandle));
+	// The four flat triangles this indicator draws: index 0 is the arrow at
+	// its position this frame, 1..3 hold the three previous frames'
+	// positions, which CPlayer::DrawOffscreenSpideySenseIndicatorList shifts
+	// along every call to make a short motion trail. Only the vertex fields
+	// are shifted; the colour and code bytes live in entry 0.
+	POLY_F3 mPoly[4];
 
+	// age of this entry in frame ticks (CSuper::field_80 is added per draw).
+	// Below 30 the arrow fades/slides in, from 30 on it is parked and the
+	// trail is retired one triangle at a time.
 	i32 mInUse;
 };
 
@@ -102,13 +109,34 @@ class CPlayer : public CSuper
 		i32 field_364;
 		i32 field_368;
 
-		PADDING(0x528-0x368-4);
+		// CPlayer::Hit gate: any nonzero value makes the player immune (the
+		// hit is dropped before anything else happens).
+		i32 field_36C;
+
+		PADDING(0x500-0x36C-4);
+
+		// gTimerRelated at the moment of the last hit, and the field_E1C
+		// state the player was in when it landed. Both written by
+		// CPlayer::Hit, nothing in the repo reads them back yet.
+		u32 field_500;
+		i32 field_504;
+
+		// electrocution: set for hit type 26, with field_50C as the
+		// countdown (120) that goes with it.
+		u8 field_508;
+
+		PADDING(3);
+
+		i32 field_50C;
+
+		PADDING(0x528-0x50C-4);
 
 		i32 field_528;
 		i32 field_52C;
 		i32 field_530;
 
-		PADDING(0x538-0x530-4);
+		// set to 240 by CPlayer::Hit alongside field_52C.
+		i32 field_534;
 
 		u32 field_538;
 
@@ -600,7 +628,9 @@ class CPlayer : public CSuper
 		// CPlayer::CheckSwitchToGrabbedMode
 		CVector field_EE0;
 
-		PADDING(0xEF0-0xEE0-0xC);
+		// gTimerRelated when CPlayer::Hit last played a hurt grunt; the
+		// grunt only replays once more than 30 ticks have passed.
+		u32 field_EEC;
 
 		i32 mMaxHealth;
 
@@ -728,6 +758,10 @@ class CPlayer : public CSuper
 		EXPORT void nullsub_one(i32);
 		EXPORT void ResetSFXArrayEntry(u32);
 };
+
+// defined in spidey.cpp below CPlayer::SetArmor; declared here because
+// CPlayer::Hit, defined earlier in the same file, drops the armour too.
+EXPORT extern u8 gSpideyArmorSet;
 
 EXPORT extern CPlayer* MechList;
 EXPORT extern CItem* SpideyAdditionalBodyPartsList;

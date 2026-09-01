@@ -815,3 +815,29 @@ void CSwinger_SwingBack(CSwinger *a1)
 		pWeb->field_74 = a1->field_F8;
 	}
 }
+
+// Turns a live web into a blob: mode field_104 goes to 3 and, unless the
+// attached item is type 401, bit 3 of the attached item's flag word at 0x2A8
+// is cleared (the "web attached" flag on the target, going by the fact that
+// this is the only thing switching to blob mode does to it). Called by
+// CPlayer::Hit (0x4BD890) and CPlayer::SwitchToDeathMode when the player
+// loses a web mid-flight. Original address 0x4F6260.
+// @Ok
+void CWeb::SwitchToBlob(void)
+{
+	this->field_104 = 3;
+
+	CItem *pTarget = reinterpret_cast<CItem*>(
+			Mem_RecoverPointer(reinterpret_cast<SHandle*>(&this->field_134)));
+
+	if (pTarget == 0)
+		return;
+
+	if (pTarget->mType == 401)
+		return;
+
+	// offset 0x2A8 of the attached item. Which concrete class owns it is not
+	// known yet (CWeb only ever sees it through this handle), so it stays a
+	// raw offset rather than a guessed field name.
+	*reinterpret_cast<i32*>(reinterpret_cast<u8*>(pTarget) + 0x2A8) &= ~8;
+}

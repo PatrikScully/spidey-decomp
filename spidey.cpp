@@ -2515,10 +2515,287 @@ void CPlayer::DoShadowCheck(void)
 	}
 }
 
-// @MEDIUMTODO
+// Draws the offscreen spider-sense arrows that
+// BuildOffscreenSpideySenseIndicatorList/UpdateOffscreenSpideySenseIndicatorList
+// keep in field_5F0. Every slot owns four flat triangles: entry 0 is the
+// arrow where it is this frame, entries 1..3 are the three previous frames,
+// shifted along here to make a short motion trail. mInUse is the entry's age
+// in frame ticks: below 30 the arrow is semi transparent and slides in from
+// the screen edge (the "fade" term), from 30 on it turns opaque dark red,
+// parks at its final place and the trail is retired one triangle at a time
+// (at ages 33, 36 and 39). Which screen edge it sits on comes from the
+// direction vector: the top or bottom edge when
+// |x| <= |((y << 9) / 2) / 120|, the left or right edge otherwise. Each live
+// triangle is copied into the shared 0x56FB04 scratch buffer and drawn as a
+// degenerate quad (vertices 2 and 3 are the same point) through
+// PCGfx_DrawQPoly2D, the same way every other 2D draw in the repo does it.
+// @Ok
 void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
 {
-    printf("CPlayer::DrawOffscreenSpideySenseIndicatorList(void)");
+	// the shared bump allocated scratch record buffer, same addresses as
+	// flash.cpp's gEffectRecordBufPos/gEffectRecordBufEnd and bit.cpp's
+	// gFlatBitScratchBufPos/gFlatBitScratchBufEnd (pPoly/PolyBufferEnd in
+	// the idb). Kept function local so nothing else in this file sees it.
+	static u8 ** const gIndicatorBufPos = (u8**)0x0056FB04;
+	static u8 ** const gIndicatorBufEnd = (u8**)0x005FCD1C;
+
+	// the two ordering table slots this list submits through, handed to the
+	// addPrim stub exactly like flash.cpp hands it 0x56EB54. No idb name at
+	// either address, tentative names only.
+	static void * const gSpideySenseOT = (void*)0x006A9090;
+	static void * const gSpideySenseTPageOT = (void*)0x006A9094;
+
+	u8 drewAnything = 0;
+
+	for (i32 slot = 0; slot < 6; slot++)
+	{
+		SIndicator *ind = &this->field_5F0[slot];
+
+		if (ind->field_C.pWhatever == 0)
+			continue;
+
+		u32 age = static_cast<u32>(ind->mInUse);
+		i32 dirX = ind->mDirection.vx;
+		i32 dirY = ind->mDirection.vy;
+		i32 fade = 30 - static_cast<i32>(age);
+
+		POLY_F3 *poly = ind->mPoly;
+
+		bool shiftTrail = true;
+
+		if (age >= 30)
+		{
+			poly->code = static_cast<u8>(poly->code & 0xFD);
+
+			i32 retired = static_cast<i32>(age) - 30;
+
+			if (retired >= 9)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+				*reinterpret_cast<i32*>(&ind->mPoly[2].x0) = 0;
+				*reinterpret_cast<i32*>(&ind->mPoly[1].x0) = 0;
+				shiftTrail = false;
+			}
+			else if (retired >= 6)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+				*reinterpret_cast<i32*>(&ind->mPoly[2].x0) = 0;
+			}
+			else if (retired >= 3)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+			}
+		}
+		else
+		{
+			poly->code = static_cast<u8>(poly->code | 2);
+		}
+
+		if (shiftTrail)
+		{
+			for (i32 t = 3; t > 0; t--)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[t].x0) = *reinterpret_cast<i32*>(&ind->mPoly[t - 1].x0);
+				*reinterpret_cast<i32*>(&ind->mPoly[t].x1) = *reinterpret_cast<i32*>(&ind->mPoly[t - 1].x1);
+				*reinterpret_cast<i32*>(&ind->mPoly[t].x2) = *reinterpret_cast<i32*>(&ind->mPoly[t - 1].x2);
+			}
+		}
+
+		if (ind->mInUse == 0)
+		{
+			*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+			*reinterpret_cast<i32*>(&ind->mPoly[2].x0) = 0;
+			*reinterpret_cast<i32*>(&ind->mPoly[1].x0) = 0;
+		}
+
+		i32 absX = (dirX < 0) ? -dirX : dirX;
+		i32 limit = ((dirY << 9) / 2) / 120;
+		i32 absLimit = (limit < 0) ? -limit : limit;
+
+		if (absX <= absLimit)
+		{
+			if (dirY >= 0)
+			{
+				i32 x = 104 * dirX / dirY + 256;
+
+				if (age < 30)
+				{
+					i32 spread = (13 * fade) / 4;
+					i32 y = 4 * (58 - fade);
+					i32 yTrail = y - (11 * fade) / 4 - 16;
+
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - spread - 19);
+					poly->y0 = static_cast<i16>(y);
+					poly->x2 = static_cast<i16>(spread + x + 19);
+					poly->y1 = static_cast<i16>(yTrail);
+					poly->y2 = static_cast<i16>(yTrail);
+				}
+				else
+				{
+					poly->y0 = 232;
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - 19);
+					poly->y1 = 216;
+					poly->x2 = static_cast<i16>(x + 19);
+					poly->y2 = 216;
+				}
+			}
+			else
+			{
+				i32 x = -104 * dirX / dirY + 256;
+
+				if (age < 30)
+				{
+					i32 spread = (13 * fade) / 4;
+					i32 y = 4 * fade + 24;
+					i32 yTrail = (11 * fade) / 4 + y + 16;
+
+					poly->y0 = static_cast<i16>(y);
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - spread - 19);
+					poly->x2 = static_cast<i16>(spread + x + 19);
+					poly->y1 = static_cast<i16>(yTrail);
+					poly->y2 = static_cast<i16>(yTrail);
+				}
+				else
+				{
+					poly->y0 = 24;
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - 19);
+					poly->y1 = 40;
+					poly->x2 = static_cast<i16>(x + 19);
+					poly->y2 = 40;
+				}
+			}
+		}
+		else if (dirX < 0)
+		{
+			i32 y = -240 * dirY / dirX + 128;
+
+			if (age < 30)
+			{
+				i32 x = 6 * fade + 16;
+				i32 xTrail = (16 * fade) / 4 + x + 24;
+				i32 spread = (8 * fade) / 4;
+
+				poly->y0 = static_cast<i16>(y);
+				poly->x0 = static_cast<i16>(x);
+				poly->x1 = static_cast<i16>(xTrail);
+				poly->x2 = static_cast<i16>(xTrail);
+				poly->y1 = static_cast<i16>(y - spread - 12);
+				poly->y2 = static_cast<i16>(spread + y + 12);
+			}
+			else
+			{
+				poly->x0 = 16;
+				poly->y0 = static_cast<i16>(y);
+				poly->x1 = 40;
+				poly->y1 = static_cast<i16>(y - 12);
+				poly->x2 = 40;
+				poly->y2 = static_cast<i16>(y + 12);
+			}
+		}
+		else
+		{
+			i32 y = 240 * dirY / dirX + 128;
+
+			if (age >= 30)
+			{
+				poly->x0 = 496;
+				poly->y0 = static_cast<i16>(y);
+				poly->x1 = 472;
+				poly->y1 = static_cast<i16>(y - 12);
+				poly->x2 = 472;
+				poly->y2 = static_cast<i16>(y + 12);
+			}
+			else
+			{
+				i32 x = 496 - 6 * fade;
+				i32 xTrail = x - (16 * fade) / 4 - 24;
+				i32 spread = (8 * fade) / 4;
+
+				poly->y0 = static_cast<i16>(y);
+				poly->x0 = static_cast<i16>(x);
+				poly->x1 = static_cast<i16>(xTrail);
+				poly->y1 = static_cast<i16>(y - spread - 12);
+				poly->x2 = static_cast<i16>(xTrail);
+				poly->y2 = static_cast<i16>(spread + y + 12);
+			}
+		}
+
+		if (age >= 30)
+		{
+			u8 code = poly->code;
+			poly->r0 = 0x80;
+			poly->g0 = 0;
+			poly->b0 = 0;
+			poly->code = static_cast<u8>(code & 0xFD);
+		}
+
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+
+		u32 color = poly->b0 | ((poly->g0 | ((poly->r0 | 0xFFFF8000) << 8)) << 8);
+
+		i32 drawn = 0;
+		POLY_F3 *pPoly = poly;
+
+		while (*reinterpret_cast<u32*>(&pPoly->x0) != 0)
+		{
+			u8 *rec = *gIndicatorBufPos;
+
+			if (rec + 20 > *gIndicatorBufEnd)
+				return;
+
+			memcpy(rec, pPoly, 20);
+			*gIndicatorBufPos = rec + 20;
+
+			gsub_46CB90(gSpideySenseOT);
+
+			POLY_F3 *pRec = reinterpret_cast<POLY_F3*>(rec);
+
+			f32 scaleY = static_cast<f32>(gGameResolutionY) / static_cast<f32>(Yres);
+			f32 scaleX = static_cast<f32>(gGameResolutionX) / static_cast<f32>(Xres);
+
+			drewAnything = 1;
+
+			f32 x0 = pRec->x0 * scaleX;
+			f32 y0 = pRec->y0 * scaleY;
+			f32 x1 = pRec->x1 * scaleX;
+			f32 y1 = pRec->y1 * scaleY;
+			f32 x2 = pRec->x2 * scaleX;
+			f32 y2 = pRec->y2 * scaleY;
+
+			PCGfx_DrawQPoly2D(
+					x0, y0, 0.0f, 0.0f, color,
+					x1, y1, 1.0f, 0.0f, color,
+					x2, y2, 0.0f, 1.0f, color,
+					x2, y2, 1.0f, 1.0f, color,
+					5.0f);
+
+			drawn++;
+			pPoly++;
+
+			if (drawn >= 4)
+				break;
+		}
+
+		ind->mInUse += this->field_80;
+	}
+
+	if (drewAnything)
+	{
+		u8 *rec = *gIndicatorBufPos;
+
+		if (rec + 8 <= *gIndicatorBufEnd)
+		{
+			*gIndicatorBufPos = rec + 8;
+
+			setDrawTPage();
+
+			gsub_46CB90(gSpideySenseTPageOT);
+		}
+	}
 }
 
 // @Ok
@@ -2734,13 +3011,37 @@ void CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)
     printf("CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)");
 }
 
-// @SMALLTODO
+// @NotOk
+// No standalone code for this in the PC binary: MSVC6 inlined all three
+// combo-record accessors into their only caller, CPlayer::InitiateCombo
+// (0x4C87D0). The Mac build still has them out of line
+// (.GetComboFrameInfoPointer__7CPlayerFUs 0x122D10,
+// .GetEnterExitFrameInfoPointer__7CPlayerFUs 0x122DC0,
+// .GetComboPartsInfoPointer__7CPlayerFUs 0x122E60), and neither
+// tools/names.json nor idbs/spideypc_names.txt has a PC address for any of
+// them.
+// What the inlined bodies do (both recovered from inside InitiateCombo, and
+// both working off gComboMoves[id]->field_4, the pointer ParseFightData sets to
+// the first of the three 0xFF terminated byte streams that follow a move
+// record's parts array): one skips two streams and returns the third
+// (stored into CPlayer+0x950, later indexed by elapsed time / 2, so that one
+// is per-frame data), the other skips one stream and returns the second
+// (stored into CPlayer+0x954). The third accessor, which would just return
+// field_4 unchanged, has no call site left at all. Which of the three names
+// belongs to which of the three streams is not decidable from the PC binary
+// alone, so I am not guessing; implementing them would also mean changing
+// the return type in spidey.h (they are declared void here but really
+// return pointers).
 void CPlayer::GetComboFrameInfoPointer(u16)
 {
     printf("CPlayer::GetComboFrameInfoPointer(u16)");
 }
 
-// @SMALLTODO
+// @NotOk
+// Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
+// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
+// stream is not decidable from the PC binary. See that comment for the full
+// evidence.
 void CPlayer::GetComboPartsInfoPointer(u16)
 {
     printf("CPlayer::GetComboPartsInfoPointer(u16)");
@@ -2775,7 +3076,11 @@ i32 CPlayer::GetDamageInflictedFromDifficulty(i32 a2)
 	return a2;
 }
 
-// @SMALLTODO
+// @NotOk
+// Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
+// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
+// stream is not decidable from the PC binary. See that comment for the full
+// evidence.
 void CPlayer::GetEnterExitFrameInfoPointer(u16)
 {
     printf("CPlayer::GetEnterExitFrameInfoPointer(u16)");
@@ -3051,11 +3356,309 @@ void CPlayer::HandleControlsForSurfaceTransition(bool bAllowTransition)
 	this->field_AD8 = 0;
 }
 
-// @MEDIUMTODO
-i32 CPlayer::Hit(SHitInfo *)
+// The player's damage/knockback handler (the CBody::Hit override). It first
+// drops the hit outright in every state that makes Spidey untouchable: suit
+// 4, the symbiote sequence, a lock in progress (field_E18), field_1AC,
+// field_36C, and the field_E1C state bits 0x20000080 (or 0x800000 while the
+// current anim is not 285). Then it tears down what was in flight: the
+// looping SFX handle, both smoke trails, and any held object (smashed). The
+// state and the time of the hit are remembered in field_504/field_500.
+//
+// Bit 4 of SHitInfo::field_0 means "this hit does damage": armour
+// (field_5E9) soaks it first through field_5EC, and when that goes negative
+// the leftover comes off mHealth and the armour is dropped (VRAM textures
+// swapped back, save-game armour slots cleared); without armour the damage
+// comes straight off mHealth. Zero health runs the death path.
+//
+// Otherwise the reaction animation comes from the hit type: 0xB5 or 0xAA for
+// the plain knock, 0xBB when not wall-crawling and the type is 10, 0xB0 for
+// being peeled off a wall or floored, 0xAC for a directional knockback; hit
+// types 8 and 26 also push mVel along the hit direction (type 8 only if the
+// destination is in line of sight). Original address 0x4BD890.
+// @Ok
+i32 CPlayer::Hit(SHitInfo *a2)
 {
-    printf("CPlayer::Hit(SHitInfo *)");
-    return 0x04082024;
+	// 0x60CFC8, named gSymbioteRelated in baddy.cpp: while it is set the
+	// symbiote sequence owns the player, so hits are ignored.
+	static i32 * const gSymbioteRelated = (i32*)0x0060CFC8;
+
+	// 0x60D9D0, named gGlowZeroPos in baddy.cpp: a shared all-zero CVector,
+	// used here as the "flat" normal to stand the player back up with.
+	static CVector * const gGlowZeroPos = (CVector*)0x0060D9D0;
+
+	// gSaveGame (0x682858, front.h; SSaveGame in shell.h). This file does not
+	// include front.h, so the two slots cleared when the armour breaks are
+	// reached through the containing global instead of getting standalone
+	// names of their own: +0x50 is the stored armour amount, +0x79 the
+	// "armour active" flag (both also read back by CPlayer::CPlayer).
+	static u8 * const gSaveGameBytes = (u8*)0x00682858;
+
+	if (CurrentSuit == 4)
+		return 0;
+
+	if (*gSymbioteRelated != 0)
+		return 0;
+
+	if (this->field_E18 != 0)
+		return 0;
+
+	if (this->field_1AC != 0)
+		return 0;
+
+	if (this->field_36C != 0)
+		return 0;
+
+	i32 state = this->field_E1C;
+
+	if ((state & 0x20000080) != 0)
+		return 0;
+
+	if ((state & 0x800000) != 0 && this->mAnim != 285)
+		return 0;
+
+	u8 hitFlags = a2->field_0;
+	u8 isDirected = static_cast<u8>(hitFlags & 2);
+
+	if (isDirected && a2->field_4 == 10 && state == 2048)
+	{
+		SFX_PlayPos(17, &this->mPos, 0);
+		return 0;
+	}
+
+	if (this->field_5E4 != 0)
+	{
+		SFX_Stop(this->field_5E4);
+		this->field_5E4 = 0;
+	}
+
+	// CCamera + 0x180: a u8 flag that falls inside camera.h's
+	// PADDING(0x1A8-0x17C-4). Read by address here rather than reshaping
+	// CCamera for this one test.
+	if (*(reinterpret_cast<u8*>(CameraList) + 0x180) != 0 && this->field_AD4 == 0)
+	{
+		this->PutCameraBehind(0);
+	}
+
+	state = this->field_E1C;
+
+	if ((state & 0x10000000) != 0 && (!isDirected || a2->field_4 != 17))
+		return 0;
+
+	this->field_534 = 240;
+	this->field_52C = (this->field_528 + 11) << 10;
+
+	if (this->field_584)
+	{
+		this->field_584->mFadeAway = 1;
+		this->field_584 = 0;
+	}
+
+	if (this->field_588)
+	{
+		this->field_588->mFadeAway = 1;
+		this->field_588 = 0;
+	}
+
+	this->field_504 = state;
+	this->field_500 = gTimerRelated;
+
+	CManipOb *pHeld = this->mHeldObject;
+
+	if (pHeld)
+	{
+		this->mHeldObject = 0;
+		pHeld->Smash();
+	}
+
+	if (hitFlags & 4)
+	{
+		if (this->field_5E9)
+		{
+			i32 left = this->field_5EC - a2->field_8;
+			this->field_5EC = left;
+
+			if (left < 0)
+			{
+				u8 hadArmor = gSpideyArmorSet;
+
+				this->mHealth += static_cast<i16>(left);
+				gSpideyAnimTwo = 0;
+
+				if (hadArmor)
+				{
+					Spidey_DoArmorVRAMProcessing(false);
+					this->field_5E9 = 0;
+					gSpideyArmorSet = 0;
+				}
+
+				this->field_5EC = 0;
+				gSaveGameBytes[0x79] = 0;
+				*reinterpret_cast<i32*>(gSaveGameBytes + 0x50) = 0;
+			}
+		}
+		else
+		{
+			this->mHealth -= a2->field_8;
+		}
+
+		if (isDirected && a2->field_4 == 16)
+			return 1;
+
+		if (static_cast<u32>(gTimerRelated) > static_cast<u32>(this->field_EEC + 30))
+		{
+			SFX_Play(Rnd(3) + 18, 0x2000, 0);
+			this->field_EEC = gTimerRelated;
+		}
+
+		if (this->mHealth <= 0)
+		{
+			this->StopMyXA();
+
+			if (this->field_8EA)
+			{
+				this->ExitLookaroundMode();
+			}
+
+			if (this->field_E6C)
+			{
+				reinterpret_cast<CWeb*>(this->field_E6C)->SwitchToBlob();
+				this->field_E6C = 0;
+			}
+
+			this->SwitchToDeathMode(false);
+
+			return 1;
+		}
+	}
+
+	if (isDirected && a2->field_4 == 26)
+	{
+		this->field_508 = 1;
+		this->field_50C = 120;
+		Effects_Electrify(this);
+	}
+
+	state = this->field_E1C;
+
+	if (((state & 0x1000000) != 0 && this->field_8DC == 0) || (state & 0x10043606) != 0)
+		return 1;
+
+	if (this->field_AD4)
+	{
+		this->PlaySingleAnim(0xB5, 0, -1);
+	}
+	else
+	{
+		this->PlaySingleAnim(0xAA, 0, -1);
+	}
+
+	if (isDirected)
+	{
+		if (this->field_AD4 == 0 && a2->field_4 == 10)
+		{
+			this->PlaySingleAnim(0xBB, 0, -1);
+		}
+		else
+		{
+			i32 type = a2->field_4;
+
+			if (type == 8 && (hitFlags & 8) != 0)
+			{
+				i32 dirX = a2->field_C.vx;
+				i32 dirZ = a2->field_C.vz;
+				i32 speed = this->field_80;
+
+				CVector dest;
+				dest.vx = this->mPos.vx + 48 * speed * dirX;
+				dest.vy = this->mPos.vy;
+				dest.vz = this->mPos.vz + 48 * speed * dirZ;
+
+				if (Utils_LineOfSight(&this->mPos, &dest, 0, 0))
+				{
+					this->mVel.vx = 48 * dirX;
+					this->mVel.vz = 48 * dirZ;
+				}
+			}
+			else if (type == 9 || type == 14 || type == 11 || type == 15 || type == 26)
+			{
+				if (this->field_8E8 || this->field_8E9)
+				{
+					this->field_8E9 = 0;
+					this->field_8E8 = 0;
+					this->field_AD4 = 0;
+					this->field_A8.vx = 0;
+					this->field_A8.vy = -4096;
+					this->field_A8.vz = 0;
+					this->field_C6C.vy = 0;
+
+					VectorNormal(
+							reinterpret_cast<VECTOR*>(&this->field_C6C),
+							reinterpret_cast<VECTOR*>(&this->field_C6C));
+
+					this->OrientToNormal(1, &this->field_C6C);
+					this->PlaySingleAnim(0xB0, 0, -1);
+				}
+				else
+				{
+					i32 dirX = a2->field_C.vx;
+					i32 dirZ = a2->field_C.vz;
+
+					CVector normal;
+					normal.vx = dirX >> 12;
+					normal.vy = 0;
+					normal.vz = dirZ >> 12;
+
+					VectorNormal(
+							reinterpret_cast<VECTOR*>(&normal),
+							reinterpret_cast<VECTOR*>(&normal));
+
+					this->OrientToNormal(1, &normal);
+					this->PlaySingleAnim(0xAC, 0, -1);
+
+					this->field_DF8 = 0;
+
+					if (type == 26)
+					{
+						this->mVel.vx = 48 * dirX;
+						this->mVel.vz = 48 * dirZ;
+					}
+				}
+			}
+			else if (type == 12)
+			{
+				if (this->field_8E8 || this->field_8E9)
+				{
+					this->field_8E9 = 0;
+					this->field_8E8 = 0;
+					this->field_AD4 = 0;
+					this->field_A8.vx = 0;
+					this->field_A8.vy = -4096;
+					this->field_A8.vz = 0;
+
+					this->OrientToNormal(0, gGlowZeroPos);
+				}
+
+				this->mVel.vz = 0;
+				this->mVel.vx = 0;
+
+				this->PlaySingleAnim(0xB0, 0, -1);
+
+				this->mVel.vy = -524288;
+			}
+		}
+	}
+
+	i32 *pWeb = this->field_E6C;
+
+	this->field_E1C = 0x800000;
+
+	if (pWeb)
+	{
+		reinterpret_cast<CWeb*>(pWeb)->SwitchToBlob();
+		this->field_E6C = 0;
+	}
+
+	return 1;
 }
 
 // @Ok
@@ -3137,10 +3740,50 @@ void CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)
 	}
 }
 
-// @SMALLTODO
+// Installs the nine hard-coded SFX trigger lists (the ones that are not
+// pulled out of the animation data) into gSpideySFXEntry, then clears the
+// "already played" marker (the high word, see ProcessSFXArray) on every
+// element of every list in the table. Same clearing loop as
+// ResetSFXArrayEntry, run over all 300 slots.
+// @Ok
 void CPlayer::InitialiseSFXArray(void)
 {
-    printf("CPlayer::InitialiseSFXArray(void)");
+	// The nine built-in trigger lists, each a -1 terminated list of frame
+	// numbers. They stay at their original addresses because the game code
+	// that has not been hooked yet mutates the very same bytes.
+	static i32 * const gSfxListAnim21 = (i32*)0x005565A8;  // { 1, 11, -1 }
+	static i32 * const gSfxListAnim59 = (i32*)0x005565B4;  // { 4, -1 }
+	static i32 * const gSfxListAnim52 = (i32*)0x005565BC;  // { 7, 15, -1 }
+	static i32 * const gSfxListAnim50 = (i32*)0x005565C8;  // { 6, -1 }
+	static i32 * const gSfxListAnim51 = (i32*)0x005565D0;  // { 6, -1 }
+	static i32 * const gSfxListAnim60 = (i32*)0x005565D8;  // { 6, 15, -1 }
+	static i32 * const gSfxListAnim63 = (i32*)0x005565E4;  // { 7, 19, 26, -1 }
+	static i32 * const gSfxListAnim192 = (i32*)0x005565F4; // { 2, 14, -1 }
+	static i32 * const gSfxListAnim198 = (i32*)0x00556600; // { 1, 21, -1 }
+
+	gSpideySFXEntry[21] = gSfxListAnim21;
+	gSpideySFXEntry[59] = gSfxListAnim59;
+	gSpideySFXEntry[52] = gSfxListAnim52;
+	gSpideySFXEntry[50] = gSfxListAnim50;
+	gSpideySFXEntry[51] = gSfxListAnim51;
+	gSpideySFXEntry[60] = gSfxListAnim60;
+	gSpideySFXEntry[63] = gSfxListAnim63;
+	gSpideySFXEntry[192] = gSfxListAnim192;
+	gSpideySFXEntry[198] = gSfxListAnim198;
+
+	for (i32 i = 0; i < 300; i++)
+	{
+		i32 *pEntry = gSpideySFXEntry[i];
+
+		if (pEntry)
+		{
+			while (*pEntry != -1)
+			{
+				*pEntry = *pEntry & 0xFFFF;
+				pEntry++;
+			}
+		}
+	}
 }
 
 // @MEDIUMTODO
@@ -3354,10 +3997,120 @@ done:
 	(*gKillNotifyCallCount)++;
 }
 
-// @MEDIUMTODO
+// One-time parse of the static fight data. Sorts the follow-on and fists
+// tables into animation order, then builds the two id-indexed lookup
+// arrays the combo code uses: the distance definitions, from the blob at
+// 0x569194, and the move records, from the blob at 0x56929C. Each move
+// record also gets its variable-length tail resolved (a pointer to the byte
+// streams that follow the parts array, plus the length of the second
+// stream), and once every record is known each parts entry's move id is
+// rewritten in place into the pointer to that move's record. Both blobs use
+// the id 6666 as their terminator.
+// @Ok
 void CPlayer::ParseFightData(void)
 {
-    printf("CPlayer::ParseFightData(void)");
+	// set the first time the data is parsed, makes every later call a no-op.
+	static u8 * const gFightDataParsed = (u8*)0x006A9088;
+
+	// distance id -> pointer into the distance blob, 300 slots.
+	static u8 ** const gDistanceDefs = (u8**)0x006A8768;
+
+	// the distance blob: u16 id, then a 0xFF terminated byte stream, each
+	// record dword aligned.
+	static u16 * const gDistanceData = (u16*)0x00569194;
+
+	// move id -> pointer to a move record, 32 slots.
+	static u8 ** const gComboMoves = (u8**)0x006A8CB4;
+
+	// the move blob. A record is {u16 id, u16 anim, u8 *tail, ...,
+	// u16 tailLength at 0x1E, u16 partCount at 0x20, part[partCount] of 12
+	// bytes from 0x24}, followed by three 0xFF terminated byte streams.
+	static u8 * const gComboMoveData = (u8*)0x0056929C;
+
+	if (*gFightDataParsed)
+		return;
+
+	*gFightDataParsed = 1;
+
+	this->SortAnimationFollowOnData();
+	this->SortFistsData();
+
+	memset(gDistanceDefs, 0, 300 * sizeof(u8*));
+
+	u16 id = gDistanceData[0];
+	u8 *pData = reinterpret_cast<u8*>(gDistanceData + 1);
+
+	while (id != 6666)
+	{
+		print_if_false(gDistanceDefs[id] == 0, "Possible duplicate distance definition");
+
+		gDistanceDefs[id] = pData;
+
+		while (*pData != 0xFF)
+			pData++;
+
+		pData = reinterpret_cast<u8*>((reinterpret_cast<u32>(pData) + 4) & 0xFFFFFFFC);
+
+		id = *reinterpret_cast<u16*>(pData);
+		pData += 2;
+	}
+
+	memset(gComboMoves, 0, 32 * sizeof(u8*));
+
+	u8 *pMove = gComboMoveData;
+
+	for (;;)
+	{
+		u16 moveId = *reinterpret_cast<u16*>(pMove);
+
+		print_if_false(gComboMoves[moveId] == 0, "Possible duplicate move");
+
+		u16 partCount = *reinterpret_cast<u16*>(pMove + 0x20);
+
+		gComboMoves[moveId] = pMove;
+
+		u8 *pTail = pMove + (partCount + 3) * 12;
+		*reinterpret_cast<u8**>(pMove + 4) = pTail;
+
+		while (*pTail++ != 0xFF)
+			;
+
+		u8 length = 0;
+
+		while (*pTail++ != 0xFF)
+			length++;
+
+		*reinterpret_cast<u16*>(pMove + 0x1E) = length;
+
+		while (*pTail++ != 0xFF)
+			;
+
+		pTail = reinterpret_cast<u8*>((reinterpret_cast<u32>(pTail) + 3) & 0xFFFFFFFC);
+
+		if (*reinterpret_cast<u32*>(pTail) == 6666)
+			break;
+
+		pMove = pTail;
+	}
+
+	for (i32 i = 0; i < 32; i++)
+	{
+		u8 *pRecord = gComboMoves[i];
+
+		if (pRecord)
+		{
+			i32 partCount = *reinterpret_cast<u16*>(pRecord + 0x20);
+
+			for (i32 part = 0; part < partCount; part++)
+			{
+				u32 *pRef = reinterpret_cast<u32*>(pRecord + 0x24 + part * 12);
+
+				print_if_false(gComboMoves[*pRef] != 0, "Bad move reference");
+
+				*pRef = reinterpret_cast<u32>(gComboMoves[*pRef]);
+			}
+		}
+	}
 }
 
 // Walks the per-anim SFX trigger array (field_350). Each 32-bit element
@@ -4640,16 +5393,75 @@ u8 CPlayer::ShouldPlayerDropFlail(void)
 	return Utils_GetGroundHeight(&this->mPos, 0, 4096, 0) != -1;
 }
 
-// @SMALLTODO
+// Cycle-sorts the animation follow-on table into animation order so that
+// entry N describes animation N. Each record is a {u16 anim, u16 followOn}
+// pair; a record that does not sit in the slot named by its own anim id is
+// swapped towards that slot until it lands or until an empty (all zero)
+// record is pulled in. SpideyAI0 (0x4B204A) then indexes the sorted table
+// directly by anim id and runs the follow-on anim when the key is set.
+// @Ok
 void CPlayer::SortAnimationFollowOnData(void)
 {
-    printf("CPlayer::SortAnimationFollowOnData(void)");
+	// {u16 anim, u16 followOnAnim} x 200. Only this sort and SpideyAI0's
+	// follow-on lookup touch it, so it stays a local pointer into game
+	// memory rather than a shared global.
+	static u16 * const gAnimFollowOnData = (u16*)0x00555C6C;
+	static u16 * const gAnimFollowOnDataEnd = (u16*)0x00555F8C;
+
+	i32 slot = 0;
+	u16 *pEntry = gAnimFollowOnData;
+
+	do
+	{
+		while (pEntry[0] != slot && (pEntry[0] | pEntry[1]) != 0)
+		{
+			u16 *pDest = &gAnimFollowOnData[pEntry[0] * 2];
+
+			u16 anim = pDest[0];
+			u16 followOn = pDest[1];
+
+			pDest[0] = pEntry[0];
+			pDest[1] = pEntry[1];
+			pEntry[0] = anim;
+			pEntry[1] = followOn;
+		}
+
+		pEntry += 2;
+		slot++;
+	}
+	while (pEntry < gAnimFollowOnDataEnd);
 }
 
-// @SMALLTODO
+// Cycle-sorts the fists table into animation order, exactly like
+// SortAnimationFollowOnData above but over single u16 records: the low 12
+// bits hold the animation id, the top bits the fists variant. SpideyAI0
+// (0x4B8653) reads gFistsData[anim] >> 14 and hands that to
+// CPlayer::CreateFists. MSVC6 inlined this into ParseFightData.
+// @Ok
 void CPlayer::SortFistsData(void)
 {
-    printf("CPlayer::SortFistsData(void)");
+	// u16 x 200, low 12 bits = anim id, top 2 bits = fists variant.
+	static u16 * const gFistsData = (u16*)0x00555A14;
+	static u16 * const gFistsDataEnd = (u16*)0x00555BA4;
+
+	i32 slot = 0;
+	u16 *pEntry = gFistsData;
+
+	do
+	{
+		while ((pEntry[0] & 0xFFF) != slot && (pEntry[0] & 0xFFF) != 0)
+		{
+			u16 *pDest = &gFistsData[pEntry[0] & 0xFFF];
+
+			u16 entry = pDest[0];
+			pDest[0] = pEntry[0];
+			pEntry[0] = entry;
+		}
+
+		pEntry++;
+		slot++;
+	}
+	while (pEntry < gFistsDataEnd);
 }
 
 // helper for CPlayer::SwitchToDeathMode/SwitchToSynthesizedInput below: the
@@ -6411,7 +7223,18 @@ void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 	}
 }
 
-// @SMALLTODO
+// @NotOk
+// No code for this in the PC binary. The Mac build has a real body
+// (.spideyLog__FPce at 0x116BA0, 0x50 bytes, right before
+// .ReadAnalogueInput__7CPlayerFv), but the PC release build compiled the
+// logger away: neither tools/names.json nor the maintainer's IDB
+// (idbs/spideypc_names.txt) has an address for it, and the debug-print
+// helper it would sit next to, print_if_false (0x4015B0), is a bare `retn`
+// in the PC exe. Every debug-print call site I checked in this TU
+// (CPlayer::CPlayer 0x4B9EB0, CPlayer::InitiateCombo 0x4C87D0,
+// CPlayer::ParseFightData 0x4C8CC0) pushes two arguments and calls that
+// same empty 0x4015B0, i.e. print_if_false, never a one-argument logger.
+// Leaving the stub rather than inventing a body.
 void spideyLog(char *,...)
 {
     printf("spideyLog(char *,...)");
@@ -7237,6 +8060,32 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 }
 
 // @BIGTODO
+// Scoped 2026-09-01 but not implemented, because it is blocked leaf-first.
+// Original address 0x4B9420, 781 bytes, __thiscall taking the CVector by
+// value (the vector is only used as the normal for OrientToNormal(1, &v)).
+// It is the "clean everything up before the Venom distance attack" teardown:
+// deletes the auto-aim target (field_878, off MiscellaneousRenderingList),
+// clears field_ECC and gWaterEffect (0x60FA9C), stops the SFX handle in
+// field_ED0, deletes the body part held by the handle at field_ED4 (off
+// SpideyAdditionalBodyPartsList) and re-makes it as an empty handle, drops
+// mHeldObject at mPos-ish offset (-8 * field_C6C + 4 * field_C84) via
+// CManipOb::Drop, calls CSwinger_SwingBack then deletes field_E64, deletes
+// field_E6C, deletes the two body-part handles at CPlayer+0x5B8 and +0x5C0
+// the same way, clears field_5AC/field_5B0, bursts the dome behind the
+// handle at field_AB8 (CDome::Burst) and re-makes that handle empty, fades
+// all four smoke trails (field_584..field_590), clears
+// field_54C/field_AD4/field_8E8/field_8E9, resets field_A8 to (0,-4096,0),
+// re-orients to the passed normal, zeroes mVel/field_548/field_DF8, leaves
+// lookaround mode if field_8EA, sets CameraList->field_12C to -1 and, when
+// CameraList->mCameraMode == 3, restores the five camera tuning values
+// (gSpideySwingCam* / gSpideyWallCam*) and clears field_540, then
+// PutCameraBehind(0).
+// Blockers: CDome::Burst (0x4FAD50) has no declaration and no body in the
+// repo, and decompiling it first pulls in CDomeRing::CDomeRing (0x4F5510)
+// and CItem_Burst (0x45FDC0), neither of which is declared either. Doing
+// this function honestly means starting from those three. It also needs
+// seven new CPlayer fields (0x5AC, 0x5B0, an SHandle[2] at 0x5B8, 0xECC,
+// 0xED0, an SHandle at 0xED4 and a u8 at 0xEF4).
 void CPlayer::PriorToVenomDistanceAttack(CVector)
 {}
 
