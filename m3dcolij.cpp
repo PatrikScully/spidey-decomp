@@ -59,6 +59,15 @@ i32 gLineToSphereIgnoreRadius;
 // Words 2..4 are zero in the file. Count is 12, so the object is 4 + 12*12 = 148 bytes = 74 i16,
 // and the next global starts right after it at 0x00556578. Values below are the exe's bytes
 // verbatim. Not const: sub_453C50 writes word5 of every record back into this array.
+//
+// G_* WATCH (verified 2026-09-01): this is a WRITTEN global reached through an already-hooked
+// function (CSuper::ApplyPose, patched in ob.cpp). It is safe as a plain repo array ONLY because
+// none of its callers are hooked yet, so the hooked ApplyPose only ever receives the game's
+// pointer 0x005564E4 and never this copy. There is no patch_blackcat / patch_simby /
+// patch_spclone today. The moment any function containing an ApplyPose(gUnkPose) call site gets
+// hooked (blackcat.cpp:269, simby.cpp:52 and :85, spclone.cpp:212 and :246), this array must
+// become a G_* macro on 0x005564E4, or the game's copy and ours will hold separately resolved
+// parent indices. Same bug class as G_SPOOL_LOG_FAILED_TEXTURE_ACCESS in spool.cpp.
 i16 gUnkPose[74] = {
 	0, 12,
 
