@@ -586,7 +586,16 @@ class CPlayer : public CSuper
 		// @FIXME
 		i32* field_C30;
 
-		PADDING(0xC5C-0xC30-4);
+		PADDING(0xC54-0xC30-4);
+
+		// CPlayer::DoCrawlingPhysics: distance push-back for the "player ran
+		// into an interior surface" case, set to mLineInfo.Distance-8 (0 when
+		// the hit is 16 units or closer).
+		i32 field_C54;
+
+		// CPlayer::DoCrawlingPhysics: the same push-back for the sideways
+		// crawl ray, set to 88-mLineInfo.Distance (0 at 80 units or more).
+		i32 field_C58;
 
 		// CPlayer::AI: nonzero gate for the field_C64 accumulator update
 		// (0xC5C must be nonzero to run the clamp logic).
@@ -611,9 +620,14 @@ class CPlayer : public CSuper
 		PADDING(0xC6C-0xC69-1);
 
 		CVector field_C6C;
-		i32 field_C78;
-		i32 field_C7C;
-		i32 field_C80;
+
+		// the player's local "right" axis: CPlayer::UpdateFrameVectors fills
+		// it from the first column of mTransform (m[0][0]/m[1][0]/m[2][0]),
+		// and CPlayer::DoCrawlingPhysics (0x467FD0) passes &this[0xC78]
+		// straight into operator*(const CVector&, const int&). Was three
+		// separate i32 fields.
+		CVector field_C78;
+
 		CVector field_C84;
 		i32 field_C90;
 

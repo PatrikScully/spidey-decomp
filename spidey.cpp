@@ -755,9 +755,9 @@ CPlayer::CPlayer(void)
 	this->field_C6C.vx = 0;
 	this->field_C6C.vy = 0;
 	this->field_C6C.vz = 0;
-	this->field_C78 = 0;
-	this->field_C7C = 0;
-	this->field_C80 = 0;
+	this->field_C78.vx = 0;
+	this->field_C78.vy = 0;
+	this->field_C78.vz = 0;
 	this->field_C84.vx = 0;
 	this->field_C84.vy = 0;
 	this->field_C84.vz = 0;
@@ -1375,9 +1375,9 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 	}
 	else
 	{
-		i32 side = (-(nx * this->field_C78) >> 12)
-			+ (-(ny * this->field_C7C) >> 12)
-			+ (-(nz * this->field_C80) >> 12);
+		i32 side = (-(nx * this->field_C78.vx) >> 12)
+			+ (-(ny * this->field_C78.vy) >> 12)
+			+ (-(nz * this->field_C78.vz) >> 12);
 
 		if (side > 2048)
 			anim = bAlternative ? 70 : 64;
@@ -1814,9 +1814,9 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	}
 	else if (!bAligned)
 	{
-		i32 side = (-(this->mLineInfo.Normal.vx * this->field_C78) >> 12)
-			+ (-(this->mLineInfo.Normal.vy * this->field_C7C) >> 12)
-			+ (-(this->mLineInfo.Normal.vz * this->field_C80) >> 12);
+		i32 side = (-(this->mLineInfo.Normal.vx * this->field_C78.vx) >> 12)
+			+ (-(this->mLineInfo.Normal.vy * this->field_C78.vy) >> 12)
+			+ (-(this->mLineInfo.Normal.vz * this->field_C78.vz) >> 12);
 
 		if (side > 2048)
 			anim = bAlternative ? 68 : 62;
@@ -2565,11 +2565,11 @@ u8 CPlayer::CheckJumpingSwingWeb(void)
 			c = rcossin_tbl[narrowAngle & 0xFFF].cos;
 
 			lineInfo.EndCoords.vx = this->mPos.vx
-				+ ((((this->field_C78 * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+				+ ((((this->field_C78.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
 			lineInfo.EndCoords.vy = this->mPos.vy
-				+ (((((this->field_C7C * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+				+ (((((this->field_C78.vy * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
 			lineInfo.EndCoords.vz = this->mPos.vz
-				+ ((((this->field_C80 * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+				+ ((((this->field_C78.vz * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
 
 			M3dColij_InitLineInfo(&lineInfo);
 			M3dZone_LineToItem(&lineInfo, 1);
@@ -8605,7 +8605,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 				info.StartCoords.vz = start.vz;
 
 				CVector fwd128 = this->field_C6C * 128;
-				CVector right32 = *reinterpret_cast<const CVector*>(&this->field_C78) * 32;
+				CVector right32 = this->field_C78 * 32;
 
 				info.EndCoords = (start - right32) - fwd128;
 
@@ -10871,9 +10871,9 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 	this->field_C6C.vy = this->mTransform.m[1][2];
 	this->field_C6C.vz = this->mTransform.m[2][2];
 
-	this->field_C78 = this->mTransform.m[0][0];
-	this->field_C7C = this->mTransform.m[1][0];
-	this->field_C80 = this->mTransform.m[2][0];
+	this->field_C78.vx = this->mTransform.m[0][0];
+	this->field_C78.vy = this->mTransform.m[1][0];
+	this->field_C78.vz = this->mTransform.m[2][0];
 
 	this->field_C84.vx = -(i32)this->mTransform.m[0][1];
 	this->field_C84.vy = -(i32)this->mTransform.m[1][1];
@@ -11356,9 +11356,9 @@ void CPlayer::TidyUpZipWebLandingPosition(int a2)
 		int v7 = word_610C4A[v6];
 		int v8 = word_610C48[v6];
 
-		int v9 = v2 * (((this->field_C78 * v7) >> 12) + ((this->field_C6C.vx * v8) >> 12));
-		int v10 = this->field_C7C * v7;
-		int v11 = this->field_C80 * v7;
+		int v9 = v2 * (((this->field_C78.vx * v7) >> 12) + ((this->field_C6C.vx * v8) >> 12));
+		int v10 = this->field_C78.vy * v7;
+		int v11 = this->field_C78.vz * v7;
 
 		v21.StartCoords.vx = v9 + this->mPos.vx;
 		int v12 = (v10 >> 12) + ((this->field_C6C.vy * v8) >> 12);
@@ -11701,8 +11701,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_C6C, 0xC6C);
 
 	VALIDATE(CPlayer, field_C78, 0xC78);
-	VALIDATE(CPlayer, field_C7C, 0xC7C);
-	VALIDATE(CPlayer, field_C80, 0xC80);
+	VALIDATE(CPlayer, field_C54, 0xC54);
+	VALIDATE(CPlayer, field_C58, 0xC58);
 	VALIDATE(CPlayer, field_C84, 0xC84);
 
 	VALIDATE(CPlayer, field_C90, 0xC90);
