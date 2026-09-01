@@ -384,74 +384,279 @@ void Panel_CreateCompass(CVector * pVec)
 // (defined earlier in the file) can use it too.
 static i32 * const gPanelScreenY = (i32*)0x0060F76C;
 
-// Investigated further 2026-08-31 (second pass, after Panel_DisplayCompass/
-// Panel_DisplayHealthBar were solved below): its real address IS now known,
-// names.json still has no entry but it is sub_4658C0 (0x4658C0, 4555 bytes),
-// found via xrefs_to on Panel_DisplayCompass/Panel_DisplayHealthBar - this
-// function is their only caller, calling Panel_DisplayCompass unconditionally
-// near the top and Panel_DisplayHealthBar at the very end, exactly matching
-// a "top-level HUD dispatcher" shape. All of its OTHER callees turned out to
-// already be decompiled too, same story as the other two: sub_462BB0/462C30/
-// 462D60/462FB0/506440/507910 are Panel_DrawTexturedPoly/
-// Panel_SetStretchedScreenCoords(SAnimFrame overload)/DCPanel_DrawFlatShadedPoly/
-// DCDrawGouraudPoly(9-arg)/PCGfx_UseTexture/PCGfx_DrawQPoly2D (all in this
-// file or PCGfx.cpp, already @Ok - see Panel_DisplayHealthBar's comment for
-// how each was confirmed). sub_461D00 = Panel_DisplayTimer (already @Ok,
-// right below in this file). sub_458620/458610/458640/458670/458630/458700 =
-// Mess_SetScale/Mess_SetTextJustify/Mess_SetRGB/Mess_SetRGBBottom/
-// Mess_SetSort/Mess_DrawText (mess.h, already used the same way by
-// Panel_DisplayTimer above for its bomb-timer digit readout - this function
-// draws a similar 1-2 digit web-cartridge count next to the webcart icon).
-// dword_6A9038 = MechList (idb_globals.txt: 0x6A9038 MechList - the same
-// CPlayer* already used by Panel_DisplayTimer above, so despite the name
-// this whole function is about the PLAYER's own HUD, not a boss). Its field
-// offsets used here are all already-named CPlayer fields (spidey.h):
-// +0x1AC=field_1AC and +0xE18=field_E18 (both already read by
-// Panel_DisplayTimer's `MechList->field_E18==0 && field_1AC==0` gate - same
-// "player piloting a special mech" suppression check, reused here to hide
-// the normal panel while it is active), +0x5D4=mWebbing, +0x5D8=field_5D8
-// (looks like the actual web-cartridge ammo count, formatted into the 1-2
-// digit byte_54EA90/54EA91 text buffer exactly like Panel_DisplayTimer's
-// bomb-timer digits), +0x5DC/+0x5E0=field_5DC/field_5E0 (each compared
-// against gTimerRelated with a <32 threshold - "frames since this changed"
-// timers driving a shrink/brighten animation on the webcart icon and a
-// fade on a health-adjacent bar), +0x5E8=field_5E8 (char, a state flag
-// gating the webcart icon's color pulse and the final bar's color choice),
-// +0x5E9=field_5E9 (bool, gates one of the small gouraud bars),
-// +0x5EC=field_5EC and +0xEF0=mMaxHealth (used together as a
-// current/max pair the same shape as Panel_DisplayHealthBar's health-percent
-// math, but +0x5EC is compared against mMaxHealth rather than mHealth -
-// read as a second, animated/lagging health value rather than mWebbing
-// despite the offset's proximity to mWebbing; a SEPARATE calc right after
-// uses the real +0x226=mHealth against the same mMaxHealth for the
-// background bar, i.e. this looks like a two-layer "real health bar +
-// smoothed pulse overlay" the same way Panel_DisplayHealthBar draws a solid
-// background bar plus a gouraud highlight). None of these CPlayer field
-// guesses are confirmed beyond "the byte width/comparison shape fits";
-// left unconfirmed rather than committed to spidey.h.
+// Master HUD switch. pshell.cpp already reaches this same address through a
+// file-local macro under this same name; PShell_EndTrainingInit saves its value
+// and clears it, PShell_EndTrainingUpdate puts it back when the player leaves
+// the end-of-training results screen. Panel_Display below shows what it really
+// controls: 0 means draw no HUD at all (only the compass, and only when
+// gSynthInputScriptFlag asks for it). One address defined twice in two files is
+// not great, it should become one definition in a shared header the next time
+// panel.cpp and pshell.cpp are touched together.
+static i32 * const gScreenModeFlag = (i32*)0x0054D47C;
+
+// Same global spidey.cpp already declares under this name (0x0060F770). It is
+// written by CPlayer::CPlayer and by SynthesizeAnalogueInput's script opcode
+// 18. Panel_Display below is the only reader, and it uses it as "keep the
+// compass on screen even while the rest of the HUD is hidden", which is the
+// first real evidence of what the opcode is for.
+static u8 * const gSynthInputScriptFlag = (u8*)0x0060F770;
+
+// Two ASCII digits, plus the NUL that follows them at 0x0054EA92, holding the
+// web cartridge count drawn next to the webcart icon. The shipped .data
+// contents are "00". Only Panel_Display touches it (xrefs_to 0x0054EA90).
+static char * const gWebCartDigits = (char*)0x0054EA90;
+
+// Defined in spidey.cpp (EXPORT SAnimFrame *gSpideyAnim / *gSpideyAnimTwo;
+// 0x0060F750 / 0x0060F754 per idb_globals.txt, both written by
+// Spidey_LoadAlternativeHealthIcon and CPlayer::SetArmor). spidey.h does not
+// declare them, so declare them here; they belong in spidey.h once that header
+// is free to edit.
+EXPORT extern SAnimFrame *gSpideyAnim;
+EXPORT extern SAnimFrame *gSpideyAnimTwo;
+
+// Defined further down next to Panel_DisplayHealthBar, which is where it was
+// first factored out; Panel_Display needs it too and comes earlier in the file.
+static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMode blend, f32 zOffset);
+
+// Five of the sprites Panel_Display draws use the exact same three step
+// sequence in the original, with only the frame, position and size changing:
+// take a POLY_FT4 out of the poly buffer for the frame's texture, stretch it
+// over the given screen rect, then blit it. Blend mode 0 and zOffset 1.0 at all
+// five sites. Factored into one helper here; the original repeats it inline.
+// @Ok
+static void PanelDisp_DrawIcon(SAnimFrame *pFrame, i32 x, i32 y, i32 w, i32 h)
+{
+	POLY_FT4 *p = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(pFrame->pTexture, 0));
+	if (p == 0)
+		return;
+
+	Panel_SetStretchedScreenCoords(x, y, p, pFrame, w, h);
+	print_if_false(pFrame->pTexture != 0, "No spidey health bar texture.");
+	PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_0, 1.0f);
+}
+
+
+// Real translation, 0x004658C0 (4555 bytes). tools/names.json has NO entry for
+// this address; it was identified via xrefs_to on Panel_DisplayCompass
+// (0x463860) and Panel_DisplayHealthBar (0x464270) - this function is their
+// only caller, and the "Poly buffer overflowed before Panel_Display" string it
+// pushes at 0x4658D2 names it outright. Decompiled with Hex-Rays and checked
+// line by line against the raw disassembly.
 //
-// Not yet resolved, still genuinely blocking a safe implementation:
-// dword_5FCD1C (compared against pPoly for a "Poly buffer overflowed
-// before Panel_Display" debug check - likely PolyBufferEnd or a second
-// buffer-end marker, not yet confirmed which), dword_54D47C and
-// byte_60F772/byte_60F770 (gate the top-level early-return/branch shape
-// together with the MechList check above - unclear semantics),
-// dword_60F774/60F778/dword_54E8D4 (a decaying counter block right at the
-// top, structurally identical to the bomb-timer decay pattern in
-// Panel_DisplayTimer but for an unidentified HUD element), dword_60F754/
-// 60F750/60F760 (a 3-deep fallback chain "v18 = field_60F754, else
-// field_60F750, else gAnimSp/60F758" feeding the main webcart icon draw -
-// looks like gAnimWebcart's frame-selection state but not confirmed against
-// gAnimWebcart's real address), and the v9<32 icon-resize block (raw
-// POLY_FT4 field reshuffling under a fixed-point interpolation, same shape
-// as the two already-decompiled Panel_DisplayCompass needle-half blocks but
-// with different math not yet worked out). Given the callee tree is now
-// fully resolved, this is a good next target - the remaining unknowns are
-// about a dozen new globals/fields, not missing functions.
-// @BIGTODO
+// What it draws, top to bottom: it first decays the bomb countdown
+// (gBombAIRelated) by gBombRelated per elapsed tick, then runs
+// Panel_DisplayTimer. If the HUD is switched off (gScreenModeFlag == 0) or the
+// player is driving something (field_E18/field_1AC, the same "in a mech"
+// suppression pair Panel_DisplayTimer already uses), it stops there and only
+// draws the compass, and only if gSynthInputScriptFlag asked for it. Otherwise
+// it draws the compass plus the whole player HUD: the web cartridge icon with
+// its 1-2 digit count, a health icon (costume specific), two SP pips, an SP end
+// cap, the two web meter caps, the health bar (solid damage overlay plus a
+// gouraud highlight that pulses when health is low), and the vertical web meter.
+//
+// Callees, all already decompiled: sub_461D00/463860/464270 =
+// Panel_DisplayTimer/Panel_DisplayCompass/Panel_DisplayHealthBar (this file),
+// sub_462BB0 = Panel_DrawTexturedPoly(Texture*,int), sub_462C30 =
+// Panel_SetStretchedScreenCoords(...,SAnimFrame*,...), sub_462D60 =
+// DCPanel_DrawFlatShadedPoly, sub_462FB0 = the 9-arg DCDrawGouraudPoly,
+// sub_506440/507910 = PCGfx_UseTexture/PCGfx_DrawQPoly2D (PCGfx.cpp),
+// sub_458610/458620/458630/458640/458670/458700 = Mess_SetTextJustify/
+// Mess_SetScale/Mess_SetSort/Mess_SetRGB/Mess_SetRGBBottom/Mess_DrawText
+// (mess.h), nullsub_1 (0x4015B0) = print_if_false.
+//
+// Globals resolved: dword_6A9038 = MechList (the player, spidey.h),
+// dword_6B4CA8 = gTimerRelated (bit.h), byte_60F772 = gBombDieRelatedTwo,
+// dword_60F774 = gBombAIRelated, dword_60F778 = gBombDieTimerRelated,
+// dword_54E8D4 = gBombRelated (all l1a3bomb.h), dword_56FB04/dword_5FCD1C =
+// pPoly/PolyBufferEnd (db.h), dword_60F76C = gPanelScreenY (above),
+// dword_60F758/60F760 = gAnimSp/gAnimWebcart (top of this file),
+// dword_60F750/60F754 = gSpideyAnim/gSpideyAnimTwo (spidey.cpp, see the extern
+// block below), word_610C48 = rcossin_tbl (ps2funcs.h, read with the same
+// "2*i" u16 stride Panel_DisplayCompass already uses), dword_568158/568154/
+// 628614/61B5FC = gGameResolutionY/gGameResolutionX/Yres/Xres.
+//
+// dword_54E9B0..54E9FC are twenty read-only .data ints, each referenced exactly
+// once and only from here (xrefs_to), holding a small x/y/w/h nudge per icon.
+// They are not runtime state, so they are folded into the literals below; the
+// shipped values, read off the binary with IDA, are 2/0/0/0, 1/0/-1/-1,
+// 1/0/-1/0, 5/0/-2/0, 5/0/-2/0. Same treatment Panel_DisplayHealthBar already
+// gives its own 0x54E910..54E99C block.
+//
+// Two original defects reproduced, not fixed: the bomb decay block dereferences
+// MechList without the null check the line above it just made, and the poly
+// buffer check at the top only prints, it does not stop the function from
+// writing past the end.
+//
+// One fidelity note for later byte-matching work: every call site of
+// DCDrawGouraudPoly (0x462FB0) in the original, here and in
+// Panel_DisplayHealthBar, pushes TEN arguments (add esp, 28h) while the
+// function body only ever reads nine (arg_0..arg_20). So the real prototype has
+// a tenth, unused parameter, always passed as 0. panel.h declares nine; left
+// alone here since it changes nothing functionally, but it will matter when
+// somebody chases the bytes.
+// @Ok
 void Panel_Display(void)
 {
-    printf("Panel_Display(void)");
+	print_if_false(reinterpret_cast<u8*>(pPoly) <= PolyBufferEnd, "Poly buffer overflowed before Panel_Display");
+
+	i32 inMech = 0;
+	if (MechList != 0 && (MechList->field_E18 != 0 || MechList->field_1AC != 0))
+		inMech = 1;
+
+	if (gBombDieRelatedTwo != 0)
+	{
+		u32 decay;
+		if (MechList->field_E18 != 0 || MechList->field_1AC != 0)
+			decay = 0;
+		else
+			decay = (static_cast<u32>(gTimerRelated - gBombDieTimerRelated) * gBombRelated) >> 12;
+
+		if (gBombAIRelated <= decay)
+			gBombAIRelated = 0;
+		else
+			gBombAIRelated -= decay;
+	}
+	gBombDieTimerRelated = gTimerRelated;
+
+	Panel_DisplayTimer();
+
+	if (*gScreenModeFlag == 0 || inMech != 0)
+	{
+		if (*gSynthInputScriptFlag != 0)
+			Panel_DisplayCompass();
+		return;
+	}
+
+	Panel_DisplayCompass();
+
+	POLY_FT4 *pWebcart = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(gAnimWebcart->pTexture, 0));
+	if (pWebcart != 0)
+	{
+		Panel_SetStretchedScreenCoords(80, *gPanelScreenY + 58, pWebcart, gAnimWebcart, 20, 16);
+
+		u8 pulse;
+		if (MechList->field_5E8 != 0)
+			pulse = static_cast<u8>((abs(rcossin_tbl[(gTimerRelated << 5) & 0xFFF].sin) << 7) >> 12);
+		else
+			pulse = 0x80;
+		pWebcart->g0 = pulse;
+		pWebcart->b0 = pulse;
+
+		i32 cartridges = MechList->field_5D8;
+		if (cartridges >= 10)
+		{
+			gWebCartDigits[0] = '1';
+			gWebCartDigits[1] = static_cast<char>(cartridges + 38);
+		}
+		else
+		{
+			gWebCartDigits[0] = '0';
+			gWebCartDigits[1] = static_cast<char>(cartridges + 48);
+		}
+
+		Mess_SetScale(256);
+		Mess_SetTextJustify(1);
+		Mess_SetRGB(128, 128, 128, 0);
+		Mess_SetRGBBottom(69, 60, 107);
+		Mess_SetSort(4093);
+		Mess_DrawText(95, *gPanelScreenY + 56, gWebCartDigits, 0, 0x1000);
+		Mess_SetSort(0);
+
+		i32 age = gTimerRelated - MechList->field_5DC;
+		if (age < 32)
+		{
+			i16 x0 = pWebcart->x0;
+			i16 y0 = pWebcart->y0;
+			i16 x1 = pWebcart->x1;
+			i16 y2 = pWebcart->y2;
+			u8 flare = static_cast<u8>(255 - 4 * age);
+			pWebcart->r0 = flare;
+			pWebcart->g0 = flare;
+			pWebcart->b0 = flare;
+
+			i32 grow = (32 - age) << 7;
+			i32 dx = (grow * (x1 - x0)) >> 12;
+			i32 dy = (grow * (y2 - y0)) >> 12;
+
+			pWebcart->x2 -= static_cast<i16>(dx);
+			pWebcart->x3 += static_cast<i16>(dx);
+			pWebcart->x1 = static_cast<i16>(x1 + dx);
+			pWebcart->x0 = static_cast<i16>(x0 - dx);
+
+			pWebcart->y1 -= static_cast<i16>(dy);
+			pWebcart->y3 += static_cast<i16>(dy);
+			pWebcart->y2 = static_cast<i16>(y2 + dy);
+			pWebcart->y0 = static_cast<i16>(y0 - dy);
+
+			pWebcart->v2 = static_cast<u8>(pWebcart->v2 - 1);
+			pWebcart->v3 = static_cast<u8>(pWebcart->v3 - 1);
+		}
+
+		print_if_false(gAnimWebcart->pTexture != 0, "No WebCartAnim texture.");
+		PanelHB_DrawIconOverlay(pWebcart, gAnimWebcart->pTexture, DCGfx_BlendingMode_0, 6.0f);
+	}
+
+	SAnimFrame *pHealthIcon = gSpideyAnimTwo;
+	if (pHealthIcon == 0)
+	{
+		pHealthIcon = gSpideyAnim;
+		if (pHealthIcon == 0)
+			pHealthIcon = gAnimSp;
+	}
+	PanelDisp_DrawIcon(pHealthIcon, 67, *gPanelScreenY + 45, 28, 30);
+
+	for (i32 pip = 0; pip < 50; pip += 25)
+		PanelDisp_DrawIcon(&gAnimSp[3], pip + 85, *gPanelScreenY + 36, 15, 15);
+
+	PanelDisp_DrawIcon(&gAnimSp[4], 132, *gPanelScreenY + 36, 11, 16);
+	PanelDisp_DrawIcon(&gAnimSp[1], 53, *gPanelScreenY + 59, 14, 16);
+	PanelDisp_DrawIcon(&gAnimSp[2], 53, *gPanelScreenY + 73, 14, 12);
+
+	if (MechList->field_5E9 != 0)
+	{
+		i32 pulseFrac = ((MechList->mMaxHealth - MechList->field_5EC) << 7) / MechList->mMaxHealth;
+		i32 shade = 255 - 255 * pulseFrac / 128;
+		DCDrawGouraudPoly(2.0f, 58, *gPanelScreenY + 25, 61 - 61 * pulseFrac / 128, 6,
+				0xFF0000, 0xFF0000 | (shade << 8) | shade,
+				0xFF0000, 0xFF0000 | (shade << 8) | shade);
+	}
+
+	i32 damageFrac = ((MechList->mMaxHealth - MechList->mHealth) << 7) / MechList->mMaxHealth;
+	i32 damageWidth = 61 * damageFrac / 128;
+	if (damageWidth != 0)
+		DCPanel_DrawFlatShadedPoly(3.0f, 119 - damageWidth, *gPanelScreenY + 25, damageWidth, 6, 0, 0, 0, 0, 0);
+
+	i32 hitAge = gTimerRelated - MechList->field_5E0;
+	i32 flash = (hitAge >= 32) ? 0 : 255 - 8 * hitAge;
+
+	if (damageWidth <= 30)
+		DCDrawGouraudPoly(4.0f, 88, *gPanelScreenY + 25, 30, 6,
+				(flash << 16) | 0xFFFF, (flash << 16) | 0xFF00 | flash,
+				(flash << 16) | 0xFFFF, (flash << 16) | 0xFF00 | flash);
+
+	if (damageFrac > 76)
+	{
+		i32 wave = rcossin_tbl[(gTimerRelated * (175 * (damageFrac - 76) / 52 + 25)) & 0xFFF].sin;
+		u32 beat = static_cast<u32>(((wave * wave) | 0xFF00) >> 8);
+		DCDrawGouraudPoly(4.0f, 58, *gPanelScreenY + 25, 31, 6, beat, beat, beat, beat);
+	}
+	else
+	{
+		DCDrawGouraudPoly(4.0f, 58, *gPanelScreenY + 25, 31, 6,
+				(flash << 16) | (flash << 8) | 0xFF, (flash << 16) | 0xFFFF,
+				(flash << 16) | (flash << 8) | 0xFF, (flash << 16) | 0xFFFF);
+	}
+
+	i32 webEmpty = 26 * (((4096 - MechList->mWebbing) << 7) / 4096) / 128;
+	if (webEmpty != 0)
+		DCPanel_DrawFlatShadedPoly(3.0f, 31, *gPanelScreenY - webEmpty + 67, 11, webEmpty, 0, 0, 0, 0, 0);
+
+	if (MechList->field_5E8 != 0)
+		DCPanel_DrawFlatShadedPoly(4.0f, 31, *gPanelScreenY + 41, 11, 26, 255, 0, 0, 0, 0);
+	else
+		DCPanel_DrawFlatShadedPoly(4.0f, 31, *gPanelScreenY + 41, 11, 26, 64, 64, 160, 0, 0);
+
+	Panel_DisplayHealthBar();
 }
 
 // player-relative reference point (CVector) and rotation matrix (MATRIX)
