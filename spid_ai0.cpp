@@ -311,7 +311,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x1000000   0x4B631E   TODO   ~160 instructions
 //   0x2000000   0x4B6901   done   riding a zip-web dive onto a target
 //   0x4000000   0x4B6820   done   the punch that ends a zip-web dive
-//   0x8000000   0x4B65E4   TODO   ~140 instructions (the kick, anim 0x7D)
+//   0x8000000   0x4B65E4   done   the kick that ends a zip-web dive
 //   0x10000000  0x4B6B1E   TODO   ~145 instructions
 //   0x20000000  0x4B6DD8   done   held in a web dome
 //   0x40000000  0x4B6DCA   done   one store
@@ -2412,6 +2412,83 @@ void SpideyAI0(CPlayer *pPlayer)
 			pPlayer->field_534 = 0x168;
 			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
 			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
+		// 0x4B65E4. The kick that ends a zip-web dive (anim 0x7D), then the
+		// stomp its follow on animation 0x7E lands and the 0x80 hold.
+		case 0x8000000:
+		{
+			CBody *pTarget;
+			u8 *pPad;
+
+			if (pPlayer->mAnim == 0x7D)
+			{
+				pPlayer->field_2C1 = 0;
+				reinterpret_cast<u8*>(pPlayer->field_E0C)[0x101] = 0;
+			}
+
+			pPlayer->field_EA6 = 0;
+			pPlayer->field_A80 = 0;
+
+			pTarget = reinterpret_cast<CBody*>(Mem_RecoverPointer(&pPlayer->field_DD8));
+			print_if_false(pTarget != 0, "Lost grab target");
+
+			// Original defect, kept: mHealth is read straight after the
+			// print_if_false above without acting on a null target, so a lost
+			// target faults here.
+			if (pTarget->mHealth > 0
+				&& (u32)(gTimerRelated - pPlayer->field_DE0) <= 0x12C
+				&& reinterpret_cast<u8*>(pPlayer->field_E0C)[0x101] == 0)
+			{
+				if ((u16)animJustFinished == 0x7E)
+				{
+					if (pTarget != 0)
+					{
+						SHitInfo hit;
+						CVector dest;
+
+						hit.field_C.vx = 0;
+						hit.field_C.vy = 0;
+						hit.field_C.vz = 0;
+						hit.field_0 = 6;
+						hit.field_8 = (u16)pPlayer->GetDamageInflictedFromDifficulty(0x14);
+						hit.field_4 = 3;
+
+						pTarget->Hit(&hit);
+
+						pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
+						pPlayer->field_534 = 0x168;
+
+						dest = (pPlayer->mPos - (pPlayer->field_C6C * 0x20))
+							+ (pPlayer->field_C84 * 0x40);
+
+						pPlayer->CreateCombatImpactEffect(&dest, 0);
+						SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+					}
+				}
+				else if (pPlayer->mAnim == 0x80
+					&& reinterpret_cast<u8*>(pPlayer->field_E0C)[0x121] != 0)
+				{
+					pPlayer->PlaySingleAnim(0x7E, 0, -1);
+				}
+			}
+			else
+			{
+				// 0x4B67BB. Target dead, held too long, or the kick key came
+				// back up: throw the player off into the falling state.
+				pPlayer->field_A80 = 1;
+				pPlayer->field_E1C = 4;
+				pPlayer->PlaySingleAnim(0x7F, 0, -1);
+
+				pPlayer->mVel.vx += pPlayer->field_C6C.vx * 24;
+				pPlayer->mVel.vy += -0x40000;
+				pPlayer->mVel.vz += pPlayer->field_C6C.vz * 24;
+				pPlayer->field_DD8.pWhatever = 0;
+			}
+
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+			pPad[0x121] = 0;
 			break;
 		}
 
