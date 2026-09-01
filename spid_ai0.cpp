@@ -250,54 +250,134 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 }
 
 // @BIGTODO
-// Original at 0x4B13F0, 0x72DA bytes / 7655 instructions / 1482 basic blocks.
-// Identity confirmed: the maintainer's IDB (idbs/spideypc_names.txt line 1652)
-// and the Mac build (.SpideyAI0__FP7CPlayer, 0x109820) agree with
-// tools/names.json, and on the Mac SpideyAI0 is the ONLY function in
-// spid_ai0.cpp (the next symbol is __sinit_spid_ai0_cpp).
+// Original at 0x4B13F0, 0x72DA bytes / 7655 instructions / 1482 basic blocks,
+// the largest function in the game. Identity confirmed: the maintainer's IDB
+// (idbs/spideypc_names.txt line 1652) and the Mac build
+// (.SpideyAI0__FP7CPlayer, 0x109820) agree with tools/names.json, and on the
+// Mac SpideyAI0 is the ONLY function in spid_ai0.cpp (the next symbol is
+// __sinit_spid_ai0_cpp).
 //
-// PARTIALLY PORTED. What is real code below:
+// PARTIALLY PORTED, about 5000 of the 7655 instructions. What is real code
+// below:
 //   * the per-frame prologue, 0x4B13F0..0x4B211F
 //   * the state dispatch itself, 0x4B211F..0x4B215D
-// Everything else is still the original's job; each unported state is marked
-// with the address range it covers so the next pass can take them one at a
-// time. Nothing here is hooked, so the partial body cannot affect the running
-// game.
+//   * 21 of the 31 states (see the table)
+//   * the shared tail def_4B215D, 0x4B6E8C..0x4B86B1, which every state's
+//     `break` falls into and which runs the camera, the torso aim, the move
+//     input, the platform ride, the baddy/power-up collisions, the pose build
+//     and the extra body parts
+// The 10 unported states just `break` into that tail, so the function is
+// syntactically whole and builds, but it must NOT be hooked until they are
+// written: a state that silently does nothing is a hang, not a glitch.
 //
-// STRUCTURE. This is a one-hot state machine on CPlayer::field_E1C, which
-// holds a single set bit, not a small ordinal:
-//        > 0x10000  -> 0x4B50AE  (further dispatch, 1936 instructions)
-//       == 0x10000  -> 0x4B4E9B  (132 instructions)
-//        > 0x100    -> 0x4B307C  (further dispatch, 1871 instructions)
-//       == 0x100    -> 0x4B2F80  (58 instructions)
+// STRUCTURE. A one-hot state machine on CPlayer::field_E1C, which holds a
+// single set bit, not a small ordinal. The dispatch at 0x4B211F is a chain of
+// UNSIGNED compares (ja/je), which matters for 0x80000000:
+//        > 0x10000  -> 0x4B50AE   == 0x10000 -> 0x4B4E9B
+//        > 0x100    -> 0x4B307C   == 0x100   -> 0x4B2F80
 //   otherwise switch(field_E1C - 1) over jpt_4B86CC with the byte index table
-//   at 0x4B86EC. Read out of the exe, the eight jump-table slots are
-//       0 -> 0x4B2164   1 -> 0x4B274D   2 -> 0x4B28D9   3 -> 0x4B2BF3
-//       4 -> 0x4B2D43   5 -> 0x4B269B   6 -> 0x4B2892   7 -> 0x4B6E8C
-//   and the index table selects slot 7 (the default) for every value except
-//       1 -> 0x4B2164 (346 instr)    2 -> 0x4B274D  (80 instr)
-//       4 -> 0x4B28D9 (215 instr)    8 -> 0x4B2BF3  (77 instr)
-//      16 -> 0x4B2D43 (157 instr)   64 -> 0x4B269B  (39 instr)
-//     128 -> 0x4B2892 (15 instr)
-//   0x4B6E8C (def_4B215D) is both the default case and the shared `break`
-//   target every state jumps back to, which is why 130+ `jmp 0x4B6E8C` show up
-//   in the disassembly. It runs to the epilogue at 0x4B86B1 (1725 instructions)
-//   and contains a second switch at 0x4B7971 over CItem::mType 304..324
-//   (21 cases; 308, 309, 311, 316, 318, 319 and 321..323 fall to the default).
+//   at 0x4B86EC (read out of the exe: slots 0..7 are 0x4B2164, 0x4B274D,
+//   0x4B28D9, 0x4B2BF3, 0x4B2D43, 0x4B269B, 0x4B2892, 0x4B6E8C, and the index
+//   table picks slot 7 (the default) for everything except the powers of two).
+//   0x4B307C, 0x4B400D, 0x4B50AE, 0x4B5DBA, 0x4B65B2 and 0x4B6D68 are five
+//   more compare chains, not tables.
 //
-// ADDRESS FINDINGS made while mapping the prologue (see the report):
+//   state       entry      status
+//   ---------------------------------------------------------------
+//   1           0x4B2164   done   idle: lean anims, idle Redbook track,
+//                                 the idle web shot at the ceiling
+//   2           0x4B274D   done   airborne after a jump
+//   4           0x4B28D9   done   falling
+//   8           0x4B2BF3   done   on a wall
+//   16          0x4B2D43   done   on the ground
+//   64          0x4B269B   done   wall-jump wind up
+//   128         0x4B2892   done   dead, respawn countdown
+//   0x100       0x4B2F80   done   starting a swing
+//   0x200       0x4B3C33   done   swing web released, spawns the CSwinger
+//   0x400       0x4B329A   TODO   ~570 instructions, the biggest state
+//   0x800       0x4B30AE   done   punching / combo tracking
+//   0x1000      0x4B3DF9   done   landing out of a surface transition
+//   0x2000      0x4B4AAA   TODO   ~250 instructions
+//   0x4000      0x4B44C9   TODO   ~370 instructions
+//   0x8000      0x4B402E   TODO   ~290 instructions
+//   0x10000     0x4B4E9B   done   web-swing wind up (3 anims that fire a web)
+//   0x20000     0x4B58B4   TODO   ~270 instructions
+//   0x40000     0x4B51B2   TODO   ~440 instructions
+//   0x80000     0x4B50F1   done   end of a scripted "stand up here" move
+//   0x100000    0x4B5CFE   done   reaching down for a pickup
+//   0x200000    0x4B601F   TODO   ~190 instructions
+//   0x400000    0x4B5F4D   done   rolling
+//   0x800000    0x4B5DDB   done   knocked down / getting back up
+//   0x1000000   0x4B631E   TODO   ~160 instructions
+//   0x2000000   0x4B6901   done   riding a zip-web dive onto a target
+//   0x4000000   0x4B6820   done   the punch that ends a zip-web dive
+//   0x8000000   0x4B65E4   TODO   ~140 instructions (the kick, anim 0x7D)
+//   0x10000000  0x4B6B1E   TODO   ~145 instructions
+//   0x20000000  0x4B6DD8   done   held in a web dome
+//   0x40000000  0x4B6DCA   done   one store
+//   0x80000000  0x4B6D81   done   pulling a switch
+//
+// Small blocks several states jump into, all already inlined where used:
+//   0x4B4E56  mPos += field_C6C * 8;  field_C58 -= 8;  break
+//   0x4B4E7F  mPos += field_C6C * field_C58;  field_C58 = 0;  break
+//   0x4B509C  if (animJustFinished != 0xFFFF) SwitchToStandMode();  break
+//   0x4B6010  field_E1C = 0x10;  break
+//   0x4B6597  SwitchToStandMode();  break
+//   0x4B682F  SwitchToStandMode();  break
+//   0x4B4134  if (field_E6C) { field_E6C->SwitchToBlob(); field_E6C = 0; } break
+//
+// The tail also has a second switch at 0x4B7971 over CItem::mType 304..324
+// (jpt_4B7987 / byte_4B8778, both read out of the exe): types 305 and 315
+// pass through and the raycast is retried from the hit point; 308, 309, 311,
+// 316, 318, 319 and 321..323 do nothing; every other type takes the hit.
+//
+// The tiny functions at 0x4B8A00..0x4B8C70 are the out-of-line copies of this
+// translation unit's inline helpers, disassembled and inlined here rather than
+// called: 0x4B8B70 zeroes a CVector, 0x4B8B80 is CVector::CVector(x,y,z),
+// 0x4B8BB0 is abs(int), 0x4B8BC0 reads bit 3 of CManipOb+0x10C, 0x4B8BD0 reads
+// CWeb+0x102, 0x4B8BE0 sets the knockback timers, 0x4B8C00 sets CPowerUp+0x124,
+// 0x4B8C20 zeroes SHitInfo::field_C, 0x4B8C30 zeroes an SLineInfo, 0x4B8C70
+// reads CCamera::mCameraMode. 0x4B8A00..0x4B8B60 are one-time initialisers for
+// globals this function never touches.
+//
+// ADDRESS FINDINGS made while porting this (all cross-checked against Mac
+// symbol ORDER, since tools/names.json and the maintainer's IDB have neither):
 //   * 0x466CE0 is CPlayer::DoPhysics. PLAN.md records its PC address as
-//     unlocated. The Mac build orders Physics_SetGravity (0xA7270),
-//     DoPhysics (0xA7340), DoSwingingPhysics (0xA82A0), DoCrawlingPhysics
-//     (0xA8640); the PC has Physics_SetGravity (0x466C70), sub_466CE0,
-//     sub_467D20, CPlayer_DoCrawlingPhysics (0x467FD0) in the same order, and
-//     sub_466CE0's body tail-calls both sub_467D20 and 0x467FD0 exactly the
-//     way DoPhysics dispatches to the swinging and crawling variants.
+//     unlocated and spidey.cpp carries a printf stub for it. The Mac build
+//     orders Physics_SetGravity (0xA7270), DoPhysics (0xA7340),
+//     DoSwingingPhysics (0xA82A0), DoCrawlingPhysics (0xA8640); the PC has
+//     Physics_SetGravity (0x466C70), sub_466CE0, sub_467D20,
+//     CPlayer_DoCrawlingPhysics (0x467FD0) in the same order, and sub_466CE0
+//     dispatches to both sub_467D20 and 0x467FD0 exactly the way DoPhysics
+//     picks the swinging and crawling variants.
 //   * 0x467D20 is CPlayer::DoSwingingPhysics, by the same ordering.
 //   * 0x4BD510 is CPlayer::ReadAnalogueInput (already @Ok in spidey.cpp with
 //     no address recorded). Its first instructions copy field_E2D/field_E2E
-//     into field_E2F/field_E30, clear both, and bail on field_E18 with
-//     field_1AC, which is exactly what the implemented body does.
+//     into field_E2F/field_E30, clear both and bail on field_E18 with
+//     field_1AC, which is what the implemented body does.
+//   * 0x4C0EE0 CheckJumpingR1ZipWeb, 0x4C1460 CheckJumpingR2ZipWeb,
+//     0x4C18A0 CheckJumpingSwingWeb, 0x4C1EB0 CheckJumpingSmashKick,
+//     0x4C2090 CheckJump, 0x4C24E0 CheckLanded, 0x4C0510 CheckWebShot,
+//     0x4BF8A0 CheckForwards, 0x4BE8C0 CheckFenceSurfaceTransition,
+//     0x4BEA90 HandleControlsForSurfaceTransition,
+//     0x4BEB70 CheckInteriorSurfaceTransition,
+//     0x4BF070 CheckExteriorSurfaceTransition, 0x4C6960 LockTargetTorsoAngle,
+//     0x4C2B40 DoShadowCheck, 0x4C8F40 ProcessSFXArray,
+//     0x4B9390 GetPerpendicularisationRadius. Every one of these is already
+//     declared (and mostly implemented) in spidey.h under that name; the
+//     addresses were simply never recorded.
+//   * 0x4BFEC0 is CheckStickToWall, not CPlayer::DoPhysics. This confirms the
+//     correction PLAN.md already made against names.json and the IDB.
+//
+// SPIDEY.H ITEMS FOR ITS OWNER (all reached by byte offset below):
+//   CPlayer::UpdateAndTrackCombo returns i32, not void: state 0x800 switches
+//   on it (0 = combo ended, 2/3/6 = which follow-up move to start).
+//   Unnamed CPlayer fields this file uses: 0x231, 0x370, 0x510 (u8),
+//   0x514 (CVector), 0x520 (CSVector), 0x553, 0x54E, 0x8EB, 0x8EC, 0xA80,
+//   0xAB4, 0xAD6, 0xAE, 0xB84 (CSVector), 0xC58, 0xD7C, 0xDF0 (i16),
+//   0x1C1 (u8[20][16] stride 16), 0x2D1, 0xE24, 0xE28, 0xE3C, 0xE48 is
+//   mHeldObject already, 0xE4C (SHandle), 0xE54 (SHandle), 0xE70 (SHandle),
+//   0xE8E (u16), 0xEC8.
 void SpideyAI0(CPlayer *pPlayer)
 {
 	u32 keyMappingA;
