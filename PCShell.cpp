@@ -382,14 +382,16 @@ static char* FMT_DISPLAY_NUMBER = "%d";
 // address 0x2E098E4, tentative name. Nearest idb_globals.txt neighbours are
 // 0x2E09810 gDisplayDeviceIndex, 0x2E09814 gMMXSupport and 0x2E098E8
 // gMissingCD; this address does not fall inside any of them.
-static u32 gPendingColorDepth;
+// not static any more: SpideyMain (main.cpp) applies these three when the
+// shell returns, so they have to be reachable from another translation unit.
+EXPORT u32 gPendingColorDepth;
 
 // pending resolution chosen in the display options menu, applied on Confirm.
 // addresses 0x2E096F8 / 0x2E0970C, tentative names. They fall between
 // idb_globals.txt's 0x2E096D8 gLowGraphicsRelated and 0x2E09710 "Data"
 // (our gDisplayModeContext), not inside either.
-static u32 gPendingResolutionX;
-static u32 gPendingResolutionY;
+EXPORT u32 gPendingResolutionX;
+EXPORT u32 gPendingResolutionY;
 
 // @Ok
 void PCSHELL_DoDisplayOptions(void)

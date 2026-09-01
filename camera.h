@@ -144,8 +144,17 @@ public:
 
 	i32 field_178;
 	i32 field_17C;
+	i32 field_180;
 
-	PADDING(0x1A8-0x17C-4);
+	// eight CItem* the camera is currently holding on to (each of them has
+	// CItem flag 0x800 set). Display (main.cpp) walks the eight once a frame
+	// while a scorpion is on the baddy list and drops every entry that is not
+	// the player's mHeldObject, clearing 0x800 as it goes. Carved out of the
+	// blind PADDING that used to cover 0x180 to 0x1A8; same byte range, so
+	// nothing after it moves.
+	CItem* field_184[8];
+
+	i32 field_1A4;
 
 
 	i32 field_1A8;

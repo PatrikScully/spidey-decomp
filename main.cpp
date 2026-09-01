@@ -109,6 +109,14 @@
 #include "dcfileio.h"
 #include "PCMovie.h"
 #include "flash.h"
+#include "screen.h"
+#include "post.h"
+#include "PCTimer.h"
+#include "music.h"
+#include "shatter.h"
+#include "tweak.h"
+#include "ps2redbook.h"
+#include "rfront.h"
 
 
 #include "my_patch.h"
@@ -117,7 +125,197 @@ extern int FAIL_VALIDATION;
 
 const i32 POLYBUFFERSIZE = 0x17000;
 
-EXPORT i32 gMainStuff[0x1000];
+// 0x4000 dwords, not 0x1000: SpideyMain's rep stosd at 0x455CC5 clears
+// 0x4000 of them. Real address 0x5FCE04.
+EXPORT i32 gMainStuff[0x4000];
+
+// ---------------------------------------------------------------------------
+// Globals the game loop (Logic / Display / PlayAway / SpideyMain) needs and
+// that have no repo variable yet. File-local fixed-address pointers with
+// tentative descriptive names. Every address was checked against
+// ~/Documents/spidey-work/idbs/idb_globals.txt and against the known-size repo
+// objects first, so none of them names a slot inside a bigger global. Where
+// another file already invented a name for the same address the same name is
+// reused and that file is named in the comment.
+// ---------------------------------------------------------------------------
+
+// pshell.cpp uses this name for the same address. Logic skips the whole world
+// update while it is set, so it reads as "the level is frozen behind the
+// end-of-training screen".
+static i32 * const gEndTrainingFlag = reinterpret_cast<i32*>(0x0060CFB0);
+
+// pshell.cpp uses this name for the same address. Gates the two end of
+// training screen calls, PShell_EndTrainingUpdate and PShell_EndTrainingDisplay.
+static i32 * const gTrainingActive = reinterpret_cast<i32*>(0x00682950);
+
+// baddy.cpp uses this name for the same address.
+static u8 * const gSubmarinerDieRelated = reinterpret_cast<u8*>(0x0060CFC4);
+
+// only ever tested against zero, and when it is clear the code calls the empty
+// debug hook at 0x430880. A release build leftover.
+static i32 * const gLogicDebugHookFlag = reinterpret_cast<i32*>(0x0060CFE4);
+
+// Display draws this string in red at 256,60 when it is not null, so it is a
+// debug banner. Nothing in the repo writes it.
+static char ** const gDebugBanner = reinterpret_cast<char**>(0x0060CF9C);
+
+// ten dwords in a row, each one a "draw this list" switch that Display reads
+// once, right before the matching M3d_Render call. Kept as one indexed block
+// rather than ten names because they are contiguous and used identically:
+// 0 EnviroList, 1 EnvironmentalObjectList, 2 the player, 3 the player's extra
+// body parts, 4 MiscellaneousRenderingList, 5 MiscList, 6 BaddyList,
+// 7 BulletList, 8 PowerUpList, 9 BackgroundList.
+static i32 * const gRenderListFlags = reinterpret_cast<i32*>(0x0054D350);
+
+// idb_globals.txt: GrenadeExplosionRegion. A wibbly texture region id, only
+// preprocessed while g3DExplosions is set.
+static i32 * const gGrenadeExplosionRegion = reinterpret_cast<i32*>(0x0054A37C);
+
+// idb_globals.txt: gPsxRingIndex / FireRingRegion. Display picks between the
+// two for the fire ring depending on gFireRingObject's field_10C.
+static i32 * const gPsxRingIndex = reinterpret_cast<i32*>(0x0055AA34);
+static i32 * const gFireRingRegion = reinterpret_cast<i32*>(0x0055AA3C);
+
+// idb_globals.txt: FireDomeRegion, the matching region for gFireDomes.
+static i32 * const gFireDomeRegion = reinterpret_cast<i32*>(0x0055AA38);
+
+// idb_globals.txt: SymBurnRegion. simby.cpp already calls the counter at
+// 0x60CF94 gSymBurnCount; this is the region it turns on.
+static i32 * const gSymBurnCount = reinterpret_cast<i32*>(0x0060CF94);
+static i32 * const gSymBurnRegion = reinterpret_cast<i32*>(0x0054D388);
+
+// the live fire ring object. Tentative name: it sits two slots before
+// gFireDomes/gNumDomes (web.cpp) and Display only reads its field_10C to
+// choose which of the two ring regions to preprocess.
+static CSuper ** const gFireRingObject = reinterpret_cast<CSuper**>(0x006B559C);
+
+// ps2m3d.cpp calls these gM3dSuperScaleEnabled and gDCUseFixedScale. Display
+// turns the fixed vertex scale on around the player's extra body parts.
+static i32 * const gM3dSuperScaleEnabled = reinterpret_cast<i32*>(0x005500A4);
+static i32 * const gDCUseFixedScale = reinterpret_cast<i32*>(0x0060CF90);
+
+// front.cpp calls this gFrontDrawPolyFlag. It gates the ordering table walk at
+// the end of Display, the Mac build's CountPrimitives (inlined here on PC).
+static i32 * const gFrontDrawPolyFlag = reinterpret_cast<i32*>(0x0060CFE0);
+
+// where that walk leaves its result: how many ordering table entries carried a
+// primitive this frame.
+static i32 * const gOtPrimitiveCount = reinterpret_cast<i32*>(0x005FCD68);
+
+// how many bytes of the poly buffer the frame used, written at the very end of
+// Display.
+static i32 * const gPolyBufferUsed = reinterpret_cast<i32*>(0x0060D00C);
+
+// pshell.cpp calls this gFrontUseAltTriggerMask. PlayAway sets it on entry and
+// SpideyMain clears it again once the level ends.
+static u8 * const gFrontUseAltTriggerMask = reinterpret_cast<u8*>(0x005FAE9D);
+
+// pshell.cpp calls this gDoShellForceLevelExit, front.cpp calls it
+// gFrontShowTrainingTip. PlayAway reseeds the random generator from it.
+static i32 * const gDoShellForceLevelExit = reinterpret_cast<i32*>(0x0068293C);
+
+// pshell.cpp calls this gShellMenuAbort. When it is set PlayAway never starts
+// the frame loop at all: it just repaints the sky and reports end code 11,
+// which sends SpideyMain straight back to the shell. That is how the
+// storyboard and comic viewers get out of a "level".
+static i32 * const gShellMenuAbort = reinterpret_cast<i32*>(0x0054D38C);
+
+// cleared next to gWaterEffect at the top of PlayAway; purpose unknown, no
+// other reader found. Named after its neighbour.
+static i32 * const gWaterEffectTwo = reinterpret_cast<i32*>(0x0060FAA0);
+
+// cleared next to gAttackRelated at the top of PlayAway; purpose unknown.
+static i32 * const gPlayAwayCounter = reinterpret_cast<i32*>(0x005FCD18);
+
+// nonzero draws the frame rate readout in the top left corner.
+static i32 * const gShowFrameRate = reinterpret_cast<i32*>(0x0060CFFC);
+
+// idb_globals.txt: OTPushback. PlayAway forces it back to 1 when the level
+// ends. ps2m3d.cpp reads the same address as gM3dOtPushback[0..2].
+static i16 * const gOtPushback = reinterpret_cast<i16*>(0x00660F78);
+
+// post.cpp defines this one, it just has no header entry yet.
+EXPORT extern i32 gWaterEffect;
+
+// forced start level, -1 = none. gRenderTest bit 2 and this together decide
+// whether SpideyMain shows the shell at all. Not in idb_globals.txt; the next
+// named address is 0x568FB4 WindowName, so this is a standalone dword.
+static i32 * const gStartLevelIndex = reinterpret_cast<i32*>(0x00568FB0);
+
+// checked once, right after the shell returns: nonzero means quit the game.
+static u8 * const gQuitAfterShell = reinterpret_cast<u8*>(0x0060CF88);
+
+// the debug level cycle: gDebugLevelIndex is a dword but only its low byte is
+// ever touched, so it is typed u8 here. gDebugLevelNames is the name pointer
+// of record 0 of a table of
+// 192 byte records. MSVC folded the field offset into the base address, so
+// 0x60CF84 is "record 0's name", not necessarily the start of the table
+// (gLevelStatus at 0x60CFA4 sits inside what would be record 0).
+static u8 * const gDebugLevelIndex = reinterpret_cast<u8*>(0x0060CFA0);
+static char ** const gDebugLevelNames = reinterpret_cast<char**>(0x0060CF84);
+
+// zeroed once per pass of the level loop, right after PlayAway returns. Sits
+// immediately after Pad_IdleTime (0x66129C, pcdcPad.cpp) and before gPadInited
+// (0x6612AC), so it reads like a second idle counter. Tentative name.
+static i32 * const gLevelIdleTime = reinterpret_cast<i32*>(0x006612A0);
+
+// idb_globals.txt: gBitServer. Only used here, and only to delete it through
+// its vtable at shutdown, so all we know about the type is that it has a
+// virtual destructor. Modelled as CClass, which is what every deletable game
+// object in this repo derives from.
+static CClass ** const gBitServer = reinterpret_cast<CClass**>(0x0056EB50);
+
+// nullsub_1 (0x4015B0) is two folded empty bodies, print_if_false and trigLog.
+// One argument at the call site means trigLog. It is not declared in trig.h,
+// so declare it here the way other files declare MechList.
+extern void trigLog(const char *fmt, ...);
+
+
+// ---------------------------------------------------------------------------
+// Two callees of Logic that belong to ob.cpp, not here. The Mac build puts
+// both in its ob.cpp TU (tools/prototypes.json, "ob": "Ob_AI(CBody **,int)"
+// and "Ob_MaybeUnSuspendOrCull(void)"), and on PC they sit at 0x460FC0 and
+// 0x461160, right next to the other Ob_ functions. The repo has neither, and
+// ob.cpp/ob.h are owned by somebody else right now, so they are forwarded to
+// the original code from here to keep the call sites honest. Move them into
+// ob.cpp (and drop these) as soon as that file is free.
+// ---------------------------------------------------------------------------
+
+// Ob_AI: walks one object list, ages each item out to the suspended list when
+// it is further from the player than SuspendedDistance, and otherwise runs its
+// EveryFrame/AI pair.
+// @Bogus
+static void Ob_AI(CBody **ppList, i32 a2)
+{
+	typedef void (*func_ptr)(CBody**, i32);
+	func_ptr func = (func_ptr)0x00460FC0;
+	func(ppList, a2);
+}
+
+// Ob_MaybeUnSuspendOrCull: the other direction, walks the suspended list and
+// puts anything that came back inside SuspendedDistance on its home list again.
+// @Bogus
+static void Ob_MaybeUnSuspendOrCull(void)
+{
+	typedef void (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x00461160;
+	func();
+}
+
+// The periodic CD recheck, 0x515D80, in SpideyDX.cpp's address range. It runs
+// the disc test at 0x5163E0 behind an anti-tamper junk loop and, if the disc is
+// gone, posts WM_CLOSE and exits the process. Deliberately not decompiled: the
+// repo has a SPIDEY_NO_CD_CHECK dev toggle that patches 0x5163E0, and writing
+// the check out here would fight it. Forwarded so SpideyMain's call site is
+// honest.
+// @Bogus
+static void gsub_515D80(void)
+{
+	typedef void (*func_ptr)(void);
+	func_ptr func = (func_ptr)0x00515D80;
+	func();
+}
+
 
 // @Ok
 // @Matching
@@ -127,206 +325,492 @@ void CalcPolyBufferEnd(void)
 			(reinterpret_cast<u32>(pDoubleBuffer->Polys) + POLYBUFFERSIZE - 0x100) & 0x7FFFFFFF);
 }
 
-// @BIGTODO
-// Re-checked twice with idalib against the real exe. Address 0x00455C90, 4555
-// bytes of the poly HUD aside this is the top level game state machine: 434
-// instructions, 77 basic blocks, WinMain is its only caller. tools/names.json
-// does have it (SpideyMain), and so does the maintainer's IDB.
+// @Ok
+// 0x00455400, 416 bytes. One half of the per frame work (Display is the other
+// half); PlayAway calls both once a frame. gRenderTest bit 0x400 or 0x200 cuts
+// it down to nothing but a pad read, and bit 0x100 turns it into a single step
+// debugger that stops on key 57 (space) every frame.
+void Logic(void)
+{
+	if (gRenderTest & 0x600)
+	{
+		Pad_Update();
+		return;
+	}
+
+	if (gRenderTest & 0x100)
+	{
+		PCTIMER_Pause();
+
+		// wait for the key to come up, then for the next press. Both loops
+		// also give up if the single step bit is cleared while they spin.
+		do
+		{
+			PCINPUT_PollKeyboard();
+		}
+		while (PCINPUT_IsKeyPressed(57, 0) && (gRenderTest & 0x100));
+
+		do
+		{
+			PCINPUT_PollKeyboard();
+		}
+		while (!PCINPUT_IsKeyPressed(57, 0) && (gRenderTest & 0x100));
+
+		PCTIMER_Resume();
+	}
+
+	gAttackRelated++;
+	TTime++;
+
+	Pad_Update();
+
+	if (!G_POST_WATER_EFFECT && !*gEndTrainingFlag)
+	{
+		Flash_Update();
+
+		Trig_ResetCPCollisionFlags();
+		Ob_AI(reinterpret_cast<CBody**>(&MechList), 0);
+		Trig_ResetCPExecutedFlags();
+
+		Ob_AI(&PowerUpList, 0);
+		Ob_AI(&BulletList, 0);
+		Ob_AI(&MiscList, 0);
+		Ob_AI(&EnvironmentalObjectList, 0);
+		Ob_AI(reinterpret_cast<CBody**>(&BackgroundList), 0);
+		Ob_AI(reinterpret_cast<CBody**>(&BaddyList), 0);
+		Ob_AI(&ControlBaddyList, 0);
+
+		Ob_MaybeUnSuspendOrCull();
+
+		Bit_Move();
+		Bit_RemoveDeadBits();
+	}
+
+	Shatter_MaybeMakeGlassShatterSound();
+	Trig_DoPendingCommandLists();
+
+	if (*gSubmarinerDieRelated)
+		MechList->CutSceneSkipCleanup();
+
+	gsub_430880();
+
+	Front_Update();
+
+	if (*gTrainingActive)
+		PShell_EndTrainingUpdate();
+
+	Mess_Update();
+
+	if (!*gLogicDebugHookFlag)
+		gsub_430880();
+
+	// no null check on CameraList in this branch, the original does not have
+	// one either.
+	if (G_GAMESTATE[8])
+	{
+		G_GAMESTATE[8] = 1;
+		CameraList->SetMode(CAMERAMODE_ITSYLOOKDOWN);
+	}
+	else if (CameraList && CameraList->mCameraMode == CAMERAMODE_ITSYLOOKDOWN)
+	{
+		CameraList->SetMode(CAMERAMODE_DEMO);
+	}
+}
+
+// @Ok
+// 0x004555A0, 1072 bytes. The render half of the frame, called by PlayAway
+// right after Logic. The Mac build keeps CountPrimitives(void) as its own
+// function in main.cpp (tools/prototypes.json lists it at 184 bytes); the PC
+// build inlined it, so it is the gFrontDrawPolyFlag block near the bottom here
+// and has no separate body.
+void Display(void)
+{
+	if (*gDebugBanner)
+	{
+		Mess_SetRGB(255, 0, 0, 0);
+		Mess_SetScale(256);
+		Mess_SetTextJustify(0);
+		Mess_DrawText(256, 60, *gDebugBanner, 0, 0x1000);
+	}
+
+	if (!(gRenderTest & 0x400) || (gRenderTest & 0x200))
+		Ob_AI(reinterpret_cast<CBody**>(&CameraList), 0);
+
+	// no null check on CameraList, same as the original
+	gViewport.Zoom = static_cast<u16>(CameraList->GetZoom());
+
+	Screen_UpdateFades();
+	Panel_Display();
+
+	M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+
+	if (gRenderListFlags[9])
+		M3d_RenderBackground(BackgroundList);
+
+	if (g3DExplosions)
+		M3d_PreprocessWibblyTextures(*gGrenadeExplosionRegion);
+
+	if (*gFireRingObject)
+	{
+		if ((*gFireRingObject)->field_10C.pWhatever)
+		{
+			M3d_PreprocessWibblyTextures(*gFireRingRegion);
+			M3d_PreprocessPulsingColours(*gFireRingRegion);
+		}
+		else
+		{
+			M3d_PreprocessWibblyTextures(*gPsxRingIndex);
+		}
+	}
+
+	if (*gSymBurnCount)
+	{
+		M3d_PreprocessWibblyTextures(*gSymBurnRegion);
+		M3d_PreprocessPulsingColours(*gSymBurnRegion);
+	}
+
+	if (gFireDomes)
+	{
+		M3d_PreprocessWibblyTextures(*gFireDomeRegion);
+		M3d_PreprocessPulsingColours(*gFireDomeRegion);
+	}
+
+	Screen_DrawTarget();
+	Screen_DrawArrow();
+	Mess_Display();
+
+	if (*gTrainingActive)
+		PShell_EndTrainingDisplay();
+
+	if (gRenderListFlags[0])
+		M3d_Render(EnviroList);
+
+	if (gRenderListFlags[1])
+		M3d_Render(EnvironmentalObjectList);
+
+	Music_MusicUpdate();
+
+	if (gRenderListFlags[2])
+		M3d_Render(MechList);
+
+	if (*gM3dSuperScaleEnabled)
+		*gDCUseFixedScale = 1;
+
+	if (gRenderListFlags[3])
+		M3d_Render(SpideyAdditionalBodyPartsList);
+
+	*gDCUseFixedScale = 0;
+
+	MechList->RenderLookaroundReticle();
+
+	if (gRenderListFlags[4])
+		M3d_Render(MiscellaneousRenderingList);
+
+	if (gRenderListFlags[6])
+		M3d_Render(BaddyList);
+
+	// The two loops below go through CBody vtable slot 5 (offset 0x14) and
+	// CBaddy vtable slot 17 (offset 0x44) in the original. Slot 5 is modelled
+	// in the repo (CSearchlight::SpecialRenderer, CSniperTarget and
+	// CChopperMissile::DrawTargetRecticle are all virtual there), slot 17 is
+	// not: the repo's CBaddy declares 12 virtuals and the original has at
+	// least 16. Both slots are dispatched on mType here instead, which reaches
+	// the same three or four classes because the type ids are unique.
+	for (CBody *pControl = ControlBaddyList; pControl != 0;
+			pControl = reinterpret_cast<CBody*>(pControl->mNextItem))
+	{
+		u16 type = pControl->mType;
+
+		if (type == 322)
+			static_cast<CSearchlight*>(pControl)->SpecialRenderer();
+		else if (type == 323)
+			static_cast<CSniperTarget*>(pControl)->DrawTargetRecticle();
+	}
+
+	for (CBody *pBaddy = reinterpret_cast<CBody*>(BaddyList); pBaddy != 0;
+			pBaddy = reinterpret_cast<CBody*>(pBaddy->mNextItem))
+	{
+		u16 type = pBaddy->mType;
+
+		if (type == 321)
+		{
+			static_cast<CChopperMissile*>(pBaddy)->DrawTargetRecticle();
+			continue;
+		}
+
+		if (type == 310)
+		{
+			// scorpion fight housekeeping, folded into the render loop by the
+			// original: forget every object the camera is holding on to except
+			// the one the player is actually carrying.
+			CCamera *pCamera = CameraList;
+
+			if (pCamera)
+			{
+				if (pCamera->mCameraMode == CAMERAMODE_USER)
+				{
+					pCamera->field_F9 = 1;
+				}
+				else
+				{
+					pCamera->field_F9 = 0;
+
+					CPlayer *pPlayer = MechList;
+
+					for (u32 i = 0; i < 8; i++)
+					{
+						CItem *pHeld = pCamera->field_184[i];
+
+						if (pHeld == 0)
+							break;
+
+						if (pPlayer == 0
+								|| reinterpret_cast<CItem*>(pPlayer->mHeldObject) != pHeld)
+						{
+							pHeld->mFlags &= ~0x800;
+							pCamera->field_184[i] = 0;
+							pPlayer = MechList;
+						}
+					}
+				}
+			}
+		}
+		else if (type != 308 && type != 309)
+		{
+			continue;
+		}
+
+		if (type == 308)
+			static_cast<CDocOc*>(pBaddy)->RenderClaws();
+		else if (type == 309)
+			static_cast<CSuperDocOck*>(pBaddy)->RenderClaws();
+		else
+			static_cast<CScorpion*>(pBaddy)->TailRenderer();
+	}
+
+	if (gRenderListFlags[8])
+		M3d_Render(PowerUpList);
+
+	if (gRenderListFlags[5])
+		M3d_Render(MiscList);
+
+	if (gRenderListFlags[7])
+		M3d_Render(BulletList);
+
+	Post_PostProcessEffects();
+	M3d_RenderCleanup();
+	Music_MusicUpdate();
+
+	// the Mac build's CountPrimitives: walk the ordering table from the last
+	// entry and count how many links carried a primitive this frame.
+	if (*gFrontDrawPolyFlag)
+	{
+		*gOtPrimitiveCount = 0;
+
+		u32 *pEntry = reinterpret_cast<u32*>(pDoubleBuffer->OrderingTable[4095]);
+
+		while (pEntry != reinterpret_cast<u32*>(0xFFFFFF))
+		{
+			if (*pEntry & 0xFF000000)
+				(*gOtPrimitiveCount)++;
+
+			pEntry = reinterpret_cast<u32*>(*pEntry & 0xFFFFFF);
+
+			// always true, the pointer was just masked. Dead assert, kept.
+			print_if_false((reinterpret_cast<u32>(pEntry) & 0xFF000000) == 0, "eh?");
+		}
+	}
+
+	Bit_Display();
+
+	if (G_POST_WATER_EFFECT)
+		Post_DoPauseDisplayListProcessing();
+
+	Front_Display();
+	Flash_Display();
+
+	*gPolyBufferUsed = static_cast<i32>(
+			(reinterpret_cast<u32>(pPoly) & 0x7FFFFFFF)
+			- (reinterpret_cast<u32>(pDoubleBuffer->Polys) & 0x7FFFFFFF));
+}
+
+// @Ok
+// 0x004559D0, 704 bytes. One level, start to finish: it sets the frame loop
+// up, runs Logic and Display once per frame until something writes an end code
+// into gLevelStatus, then tears the audio down. SpideyMain's inner loop is
+// really "call this, then act on gLevelStatus".
+void PlayAway(void)
+{
+	FontManager::ResetCharMaps();
+
+	*gFrontUseAltTriggerMask = 1;
+
+	Bruce_Sync();
+	PCGfx_BeginScene(3, -1);
+
+	Vblanks = 0;
+	TTime = 0;
+
+	Pad_ClearAll();
+
+	gWaterEffect = 0;
+	*gWaterEffectTwo = 0;
+	gAttackRelated = 0;
+	*gPlayAwayCounter = 0;
+
+	if (*gShellMenuAbort)
+	{
+		// storyboard and comic viewers: no frame loop at all, just repaint the
+		// sky and report end code 11, which sends SpideyMain back to the shell.
+		M3d_FadeColour = 0xFFFFFF;
+		M3dInit_SetFoggingParams(0, 6000, 2048);
+
+		Db_SkyColor = 0;
+		gBFoggingRelated = 1;
+		Db_UpdateSky();
+
+		gLevelStatus = 11;
+		return;
+	}
+
+	gLevelStatus = 0;
+
+	if (*gDoShellForceLevelExit)
+		Utils_InitialRand(0x12A6CC58);
+
+	Pause(1);
+	Screen_StartCircularFadeIn(32, 8);
+
+	while (gLevelStatus == 0)
+	{
+		u32 frameStart = Vblanks;
+
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		Logic();
+
+		if (gLevelStatus)
+			break;
+
+		Music_MusicUpdate();
+		Display();
+		gsub_430880();
+
+		if (*gShowFrameRate)
+		{
+			char fps[8];
+			strcpy(fps, "XX FPS");
+
+			i32 rate = 60 / MechList->field_80;
+
+			if (rate <= 9)
+			{
+				fps[0] = '0';
+				fps[1] = static_cast<char>(rate + '0');
+			}
+			else
+			{
+				fps[0] = static_cast<char>(rate / 10 + '0');
+				fps[1] = static_cast<char>(rate % 10 + '0');
+			}
+
+			Mess_SetScale(192);
+			Mess_SetTextJustify(1);
+			Mess_DrawText(90, 104, fps, 0, 0x1000);
+		}
+
+		// if no vblank happened while the frame was being built, burn one so
+		// the game never runs faster than 60Hz.
+		if (Vblanks == frameStart)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+
+		DrawSync();
+
+		print_if_false(
+				(reinterpret_cast<u32>(pPoly) & 0x7FFFFFFF)
+					<= (reinterpret_cast<u32>(PolyBufferEnd) & 0x7FFFFFFF),
+				"Undetected Poly Buffer Overflow");
+
+		gsub_430680();
+
+		if (!DoVblankProcessing)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCGfx_EndScene(1);
+
+		if (MechList->IsDead())
+		{
+			gLevelStatus = 2;
+			break;
+		}
+	}
+
+	Db_SkyColor = 0;
+	Db_UpdateSky();
+
+	if (gSceneRelated)
+		PCGfx_EndScene(1);
+
+	Spool_Sync();
+
+	*gOtPushback = 1;
+
+	if (gLevelStatus == 3)
+		Front_SaveGameState();
+
+	SFX_StopAll();
+	Redbook_XAStop();
+}
+
+// @Ok
+// 0x00455C90, 4555 bytes, 434 instructions. WinMain is its only caller. The
+// top level state machine: boot, then a shell/level loop driven by the end
+// code PlayAway leaves in gLevelStatus, then shutdown. It normally never
+// returns while the game is running.
 //
-// STATUS: still not implemented, on purpose, see "What actually blocks this"
-// at the bottom. Everything else below is now verified, so whoever picks this
-// up should not need IDA again except for the two missing callees.
+// Three loop heads, which is why this uses gotos: the outer one (the shell and
+// the display mode), the level entry one (the CD recheck and Front_LoadGame)
+// and the inner one (PlayAway plus the end code switch). The original is built
+// the same way, with the same three jump targets.
 //
-// The 2026-08-31 pass listed "six small never-named leaf helpers with no repo
-// stub at all" as the main blocker. That was WRONG and is corrected here: five
-// of those six are named in tools/names.json AND already written in this repo.
-// The corrected map is:
-//   0x50A6B0 = PCINPUT_SetMouseBounds (PCInput.h, done)
-//   0x458C20 = Mess_UnloadAllFonts    (mess.h, done)
-//   0x50C160 = PCSHELL_Shutdown       (PCShell.h, done)
-//   0x4305C0 = Db_DeleteOTsAndPolyBuffers (db.h, done)
-//   0x47D3A0 = Reloc_Unload(char*)    (reloc.h, done)
-//   0x430880 = nullsub_3, a single 0xC3 (ret) in the shipped binary, takes one
-//              int, always the value Trig_GetLevelId just returned. A debug or
-//              telemetry hook the release build compiled away. No repo home:
-//              it sits between Db_DeleteOTsAndPolyBuffers (db.cpp) and
-//              FileIO_Init (dcfileio.cpp). Same class as panel.cpp's
-//              gsub_4015B0, so it can be a local empty stub.
+// Two things in here are still reached by raw byte offset instead of by name:
+// gSaveGame's fields at 0x48, 0x4C, 0x50 and 0x79 are inside PADDING runs in
+// shell.h (trig.cpp already does the same thing for other fields of it), and
+// the debug level cycle table at 0x60CF84 has no struct. Both need a shell.h /
+// trig side change to fix properly.
 //
-// CALL GRAPH, all of it, with the repo name and header of each callee:
-//   Init_AtStart(init.h)             Init_Cleanup(init.h)  Init_AtEnd(init.h)
-//   PCTex_LoadPcIcons/FreePcIcons(PCTex.h)  GameFMV_PlayMovie(ps2gamefmv.h)
-//   Spool_ClearAllPSXs(spool.h)      PCGfx_DoModelPreview/EndScene(PCGfx.h)
-//   Mess_LoadFont/Mess_UnloadAllFonts(mess.h)  PShell_NormalFont(pshell.h)
-//   M3dInit_SetFoggingParams(m3dinit.h)        Utils_CopyString/
-//   Utils_CompareStrings(utils.h)    Reloc_Load/Reloc_CallUserFunction/
-//   Reloc_Unload(reloc.h)            DXINIT_SetDisplayOptions(DXinit.h)
-//   PCINPUT_SetMouseBounds/SetMousePosition(PCInput.h)
-//   Trig_GetLevelId/Trig_ParseTRGFile/Trig_ExecuteRestart(trig.h)
-//   Front_LoadGame/Front_GetLevelIndex/Front_FindLevel/Front_ClearScreen
-//   (front.h)                        Screen_SepiaFade(screen.h)
-//   PShell_MaybeUnlockStuff/PShell_MaybeSaveGame(pshell.h)  Pause(utils.h)
-//   PCSHELL_Shutdown(PCShell.h)      Db_DeleteOTsAndPolyBuffers(db.h)
-//   CClass::operator new(main.h)     CPlayer::CPlayer(spidey.h, still a stub)
-//   CCamera::CCamera(camera.h)       print_if_false(export.h)
-//   sub_515D80 (the periodic CD recheck, keep away from it, see
-//   SPIDEY_NO_CD_CHECK above)        PlayAway 0x4559D0 and Front_ContinueExit
-//   0x47D830 (the two that do not exist in the repo yet, see below).
-//
-// GLOBALS, all resolved. Already in the repo: gMainStuff(0x5FCE04),
-// gRenderTest(0x2E0988C), gRunCinemaRelated(0x6B470C), gVlanksRelated
-// (0x6B4C9C, the IDB calls it GameFade), gLevelStatus(0x60CFA4),
-// gWhatIf(0x60CFC5), DifficultyLevel(0x54D474), pYesNoMenu(0x5FAEAC),
-// M3d_FadeColour(0x652F38), gLowGraphics(0x6B78F8),
-// gBrightnessRelated(0x562D60), gSaveGame(0x682858).
-// Named in idb_globals.txt but not in the repo yet: gSpideyMainRelated
-// (0x54A510, set to 5 or 20 on the way out of a level), gBitServer(0x56EB50,
-// deleted through its vtable at shutdown), Levels(0x54A518, 20 byte entries,
-// the code string is field +4, which is why the disasm shows
-// off_54A51C[5*index]).
-// Still unnamed anywhere, would need tentative names:
-//   0x568FB0  start level index, -1 = none. When >= 0 the boot path copies
-//             Levels[it].code into gSaveGame and clears the restart point.
-//   0x60CF84  base of the debug level cycle table. Indexed as
-//             *(char**)(0x60CF84 + 192*index), first field is the level name;
-//             MSVC folded the field offset into the base, so 0x60CF84 is
-//             "name of record 0", not necessarily the array start (gLevelStatus
-//             at 0x60CFA4 sits inside what would otherwise be record 0).
-//   0x60CFA0  the index into that table, only its low byte is used.
-//   0x60CF88  byte, checked once at boot; nonzero means skip the whole game
-//             loop, Init_Cleanup(3) and shut down. Reads like a quit flag.
-//   0x6612A0  dword zeroed at the top of every inner loop pass (near
-//             Pad_IdleTime 0x66129C).
-//   0x5FAE9D  byte cleared whenever gLevelStatus != 0 (near gPostWaterEffect).
-//   0x2E096F8 / 0x2E0970C / 0x2E098E4  the width, height and bpp handed to
-//             DXINIT_SetDisplayOptions (confirmed against that function's own
-//             parameter names in DXinit.cpp).
-//
-// gSaveGame FIELDS THIS FUNCTION NEEDS. All the 0x6828xx addresses in the
-// disasm are gSaveGame (0x682858) plus an offset, so per the address audit rule
-// they must NOT get standalone names:
-//   0x68285C = +0x04  field_4      (the level code string, already in SSaveGame)
-//   0x682865 = +0x0D  mRestartPointName[0]                     (already there)
-//   0x6828AE = +0x56  field_56[index]  per area completion count, incremented
-//                     on level finish, clamped at 0xFF          (already there)
-//   0x6828A0 = +0x48  NOT A FIELD YET, inside PADDING(0x54-0x3F-1)
-//   0x6828A4 = +0x4C  NOT A FIELD YET, same padding block
-//   0x6828A8 = +0x50  NOT A FIELD YET, same padding block
-//   0x6828D1 = +0x79  NOT A FIELD YET, inside PADDING(0x7B-0x79)
-// The three at 0x48/0x4C/0x50 are written as dwords and the one at 0x79 as a
-// byte, all cleared to 0 together with mRestartPointName when a start level is
-// forced. Splitting those two PADDING runs in shell.h costs nothing (the struct
-// size does not move) but shell.h is shared, so it wants its own commit and its
-// own VALIDATE entries.
-//
-// BEHAVIOUR, exactly as the disassembly has it:
-//  1. Boot. print_if_false("xxx main"), fill gMainStuff with 'STAK' and put
-//     'HALT' in slot 0, Init_AtStart(1), PCTex_LoadPcIcons, the four boot
-//     movies GameFMV_PlayMovie(0..3, 1, 1, 2.5/1.0/1.0/1.0), Init_Cleanup(0),
-//     gRunCinemaRelated = 0, busy wait until gVlanksRelated hits 0. If
-//     gRenderTest & 8: Spool_ClearAllPSXs, PCGfx_DoModelPreview,
-//     Init_Cleanup(0), jump straight to shutdown. That is the slice the stub
-//     below already covers, and it is all of it.
-//  2. Otherwise load font_big.fnt, sp_fnt02.fnt and sp_fnt03.fnt through
-//     Mess_LoadFont(name,-1,-1,-1), then PShell_NormalFont.
-//  3. Outer loop head (the target of "go back to the shell"). Set
-//     M3d_FadeColour = 0xFFFFFF and M3dInit_SetFoggingParams(0, 6000, 2048).
-//     Then either
-//       a. gRenderTest & 4, or a start level index >= 0: if the index is >= 0,
-//          copy Levels[index] code into gSaveGame.field_4 with
-//          Utils_CopyString(...,9) and clear the four save fields listed above
-//          plus mRestartPointName[0]; or
-//       b. neither: run the shell. Reloc_Load("shell", 0),
-//          Reloc_CallUserFunction("shell", 0, params, 0) where params is a two
-//          entry u32 array holding two local flags (set by case 3 and case 10
-//          below, both cleared as they are copied in), then
-//          Reloc_Unload("shell"). If the level is "l1a2_t" and gWhatIf is set,
-//          rewrite it to "l1a2a_t". If the 0x60CF88 quit byte is set, do
-//          Init_Cleanup(3) and go to shutdown.
-//  4. DXINIT_SetDisplayOptions(width, height, bpp, gLowGraphics,
-//     gBrightnessRelated), PCINPUT_SetMouseBounds(0, 0, width-32, height-32),
-//     PCINPUT_SetMousePosition((width-32)>>1, (height-32)>>1) (unsigned shifts).
-//  5. Level entry point. sub_515D80 (CD recheck), the nullsub_3 hook with
-//     Trig_GetLevelId, then Front_LoadGame(&gSaveGame, 0, false).
-//  6. Inner loop, once per pass: PlayAway(), PCGfx_EndScene(1),
-//     0x6612A0 = 0, and if gLevelStatus is neither 2 nor 9 also
-//     gRunCinemaRelated = 0, and if gLevelStatus != 0 also 0x5FAE9D = 0. Then
-//     switch (gLevelStatus), 11 cases:
-//       1     Init_Cleanup(0), gSpideyMainRelated = 5, back to step 5.
-//       2, 9  gSpideyMainRelated = 20, Init_Cleanup(0), Screen_SepiaFade,
-//             gVlanksRelated = 10 and busy wait. Then Front_ContinueExit(): if
-//             it returns 0 fall into the case 7 tail (quit), else the level id
-//             hook again and Front_LoadGame(&gSaveGame, 1, false), stay in the
-//             inner loop.
-//       3     level finished. Init_Cleanup(0), Screen_SepiaFade. If the level
-//             is "l8a7_t": bump gSaveGame.field_56[Front_GetLevelIndex("l8a6_t")]
-//             (clamped at 0xFF), PShell_MaybeUnlockStuff, set the first shell
-//             flag and go back to step 3. Otherwise bump
-//             field_56[Front_GetLevelIndex(current) - 1] the same way (with a
-//             0 <= i < 34 assert), PShell_MaybeUnlockStuff, wait for
-//             gVlanksRelated, and unless gRenderTest & 0x80, call
-//             PShell_MaybeSaveGame when DifficultyLevel is 0 or when
-//             Front_FindLevel(current)->field_8 & 2. Then the level id hook and
-//             Front_LoadGame(&gSaveGame, 0, true).
-//       4, 5  Init_Cleanup(0), advance the debug level index by one byte and
-//             wrap to 0 when the next record's name string is empty, back to
-//             step 5.
-//       6     enter the level. Init_Cleanup(2), Trig_ParseTRGFile, then
-//             new CPlayer (CClass::operator new(3836) plus CPlayer::CPlayer,
-//             inside an EH cleanup frame), Trig_ExecuteRestart, then
-//             new CCamera(thatPlayer) (operator new(756) plus
-//             CCamera::CCamera, second EH frame). Stay in the inner loop.
-//       7     gSpideyMainRelated = 20, Init_Cleanup(0), Screen_SepiaFade, then
-//             the shared quit tail: if gRenderTest & 4 or a start level index
-//             is set, shut down, else go back to step 3.
-//       8     Front_ClearScreen, Init_Cleanup(0), clear
-//             gSaveGame.mRestartPointName[0], level id hook,
-//             Front_LoadGame(&gSaveGame, 0, false), stay in the inner loop.
-//       10    set the second shell flag, gSpideyMainRelated = 20,
-//             Init_Cleanup(0), Screen_SepiaFade, back to step 3.
-//       11    Init_Cleanup(0), back to step 3.
-//       other print_if_false(0, "Unknown EndCode") and shut down.
-//  7. Shutdown. Busy wait on gVlanksRelated calling Pause(1), delete pYesNoMenu
-//     and gBitServer through vtable slot 0 with arg 1 (the scalar deleting
-//     destructor), Mess_UnloadAllFonts, PCSHELL_Shutdown, PCTex_FreePcIcons,
-//     Db_DeleteOTsAndPolyBuffers, Init_AtEnd, return.
-// Note Screen_SepiaFade: the original pushes one argument at every call site,
-// but 0x48A820 never reads it and screen.cpp already declares it void. Same for
-// the extra unused argument DCDrawGouraudPoly gets in panel.cpp.
-//
-// WHAT ACTUALLY BLOCKS THIS (the only three things left):
-//   1. PlayAway, 0x4559D0. Called once per inner loop pass, so it IS the per
-//      frame driver: about 170 instructions and roughly 28 further callees,
-//      almost none of them decompiled. It sits squarely in main.cpp's own
-//      address range (CClass::operator new 0x455390, CItem::operator delete
-//      0x4553D0, CalcPolyBufferEnd 0x4553E0, Logic 0x455400, Display 0x4555A0,
-//      PlayAway 0x4559D0, SpideyMain 0x455C90), so it, Logic and Display all
-//      belong in main.cpp and none of the three exists here yet. The repo's own
-//      leaf first rule says do the same TU callees first, and MSVC would inline
-//      a printf stub of PlayAway straight into SpideyMain, so writing SpideyMain
-//      before PlayAway is the wrong order.
-//   2. Front_ContinueExit, 0x47D830, 234 instructions. Decompiled far enough to
-//      say what it is: it builds a CMenu (front.cpp's 0x43F9B0 constructor),
-//      runs its own input loop, and returns 1 when the player picks continue.
-//      Its address is past reloc.cpp's functions (Reloc_Load 0x47CEE0 ...
-//      Reloc_CallUserFunction 0x47D470) and its body is front end code, so its
-//      real home is probably front.cpp or pshell.cpp, not the file names.json's
-//      "Front_" prefix would suggest by address. Not declared anywhere yet.
-//   3. CPlayer::CPlayer is still a printf stub (@MEDIUMTODO in spidey.cpp), and
-//      case 6 is the only way into a level.
-// Order to do this in: PlayAway (with Logic and Display, they are its
-// neighbours and probably its callees), then Front_ContinueExit, then this.
-// The stub below only reproduces step 1 and the model preview branch; it is not
-// a faithful SpideyMain. The real one never returns during normal play.
+// The stub this replaces only covered the boot slice and the model preview
+// branch. The MODEL_PREVIEW toggle is kept exactly as it was.
 void SpideyMain(void)
 {
-	DXERR_printf("xxx main\n");
-	for (i32 i = 0; i < 0x1000; i++)
+	trigLog("xxx main\n");
+
+	for (i32 i = 0; i < 0x4000; i++)
 	{
 		gMainStuff[i] = 0x4B415453;
 	}
 
 	gMainStuff[0] = 0x544C4148;
+
+	// the two flags the shell reads back through its parameter block. Case 3
+	// (finished the last area) sets the second, case 10 sets the first, and
+	// both are cleared as they are handed over.
+	u32 shellParamOne = 0;
+	u32 shellParamTwo = 0;
+
+	u32 shellParams[2];
+	u8 *pSaveBytes;
+	i32 levelIndex;
+	SLevel *pLevel;
+	CPlayer *pPlayer;
+	char *pNextLevelName;
+	i32 endCode;
 
 	Init_AtStart(1);
 	PCTex_LoadPcIcons();
@@ -350,10 +834,256 @@ void SpideyMain(void)
 		Spool_ClearAllPSXs();
 		PCGfx_DoModelPreview();
 		Init_Cleanup(0);
+		goto shutdown;
 	}
-	else
+
+	Mess_LoadFont("font_big.fnt", -1, -1, -1);
+	Mess_LoadFont("sp_fnt02.fnt", -1, -1, -1);
+	Mess_LoadFont("sp_fnt03.fnt", -1, -1, -1);
+
+	PShell_NormalFont();
+
+outerLoop:
+	M3d_FadeColour = 0xFFFFFF;
+	M3dInit_SetFoggingParams(0, 6000, 2048);
+
+	if (!(gRenderTest & 4) && *gStartLevelIndex == -1)
 	{
+		// normal path: hand control to the shell module and take the level
+		// name it leaves in gSaveGame
+		((void(*)(i32))gsub_430880)(0);
+
+		Reloc_Load("shell", 1);
+
+		shellParams[0] = shellParamOne;
+		shellParamOne = 0;
+		shellParams[1] = shellParamTwo;
+		shellParamTwo = 0;
+
+		Reloc_CallUserFunction("shell", 0, shellParams, 0);
+		Reloc_Unload("shell");
+
+		// the "what if" version of level 1 area 2
+		if (Utils_CompareStrings("l1a2_t", gSaveGame.field_4) && gWhatIf)
+			Utils_CopyString("l1a2a_t", gSaveGame.field_4, 9);
+
+		if (*gQuitAfterShell)
+		{
+			Init_Cleanup(3);
+			goto shutdown;
+		}
 	}
+	else if (*gStartLevelIndex >= 0)
+	{
+		// a level was forced from the command line: take its name straight out
+		// of the level table and throw the restart point away
+		Utils_CopyString(Levels[*gStartLevelIndex].mName, gSaveGame.field_4, 9);
+
+		pSaveBytes = reinterpret_cast<u8*>(&gSaveGame);
+
+		gSaveGame.mRestartPointName[0] = 0;
+		*reinterpret_cast<i32*>(pSaveBytes + 0x50) = 0;
+		pSaveBytes[0x79] = 0;
+		*reinterpret_cast<i32*>(pSaveBytes + 0x48) = 0;
+		*reinterpret_cast<i32*>(pSaveBytes + 0x4C) = 0;
+	}
+
+	DXINIT_SetDisplayOptions(gPendingResolutionX, gPendingResolutionY,
+			gPendingColorDepth, gLowGraphics, gBrightnessRelated);
+
+	PCINPUT_SetMouseBounds(0, 0, gPendingResolutionX - 32, gPendingResolutionY - 32);
+	PCINPUT_SetMousePosition((gPendingResolutionX - 32) >> 1,
+			(gPendingResolutionY - 32) >> 1);
+
+levelEntry:
+	gsub_515D80();
+	((void(*)(i32))gsub_430880)(Trig_GetLevelId());
+	Front_LoadGame(&gSaveGame, 0, false);
+
+innerLoop:
+	PlayAway();
+	PCGfx_EndScene(1);
+
+	endCode = gLevelStatus;
+	*gLevelIdleTime = 0;
+
+	if (endCode != 2 && endCode != 9)
+		gRunCinemaRelated = 0;
+
+	if (endCode != 0)
+		*gFrontUseAltTriggerMask = 0;
+
+	switch (endCode)
+	{
+	case 1:
+		// restart the same level from the top
+		Init_Cleanup(0);
+		gSpideyMainRelated = 5;
+		goto levelEntry;
+
+	case 2:
+	case 9:
+		// the player died or asked to leave: offer retry or quit
+		gSpideyMainRelated = 20;
+		Init_Cleanup(0);
+		Screen_SepiaFade();
+
+		gVlanksRelated = 10;
+
+		while (gVlanksRelated)
+			;
+
+		if (!Front_ContinueExit())
+			goto quitTail;
+
+		((void(*)(i32))gsub_430880)(Trig_GetLevelId());
+		Front_LoadGame(&gSaveGame, 1, false);
+		goto innerLoop;
+
+	case 3:
+		// the level was finished
+		Init_Cleanup(0);
+		Screen_SepiaFade();
+
+		if (Utils_CompareStrings(gSaveGame.field_4, "l8a7_t"))
+		{
+			// the last area of level 8 counts as l8a6_t. No -1 check on the
+			// index here, only the assert, same as the original.
+			levelIndex = Front_GetLevelIndex("l8a6_t");
+
+			print_if_false(levelIndex != -1, "Could not find l8a6_t ???");
+
+			if (gSaveGame.field_56[levelIndex] < 0xFF)
+				gSaveGame.field_56[levelIndex]++;
+
+			PShell_MaybeUnlockStuff();
+
+			shellParamTwo = 1;
+			goto outerLoop;
+		}
+
+		levelIndex = Front_GetLevelIndex(gSaveGame.field_4);
+
+		if (levelIndex != -1)
+		{
+			levelIndex--;
+
+			print_if_false(levelIndex >= 0 && levelIndex < 34, "Bad LevelIndex");
+
+			if (gSaveGame.field_56[levelIndex] < 0xFF)
+				gSaveGame.field_56[levelIndex]++;
+		}
+
+		PShell_MaybeUnlockStuff();
+
+		while (gVlanksRelated)
+			;
+
+		if (!(gRenderTest & 0x80))
+		{
+			// autosave on the easy difficulties, or when the level itself asks
+			// for it through SLevel::field_8 bit 1
+			if (G_DIFFICULTY_LEVEL == 0)
+			{
+				PShell_MaybeSaveGame();
+			}
+			else
+			{
+				pLevel = Front_FindLevel(gSaveGame.field_4);
+
+				if (pLevel && (pLevel->field_8 & 2))
+					PShell_MaybeSaveGame();
+			}
+		}
+
+		((void(*)(i32))gsub_430880)(Trig_GetLevelId());
+		Front_LoadGame(&gSaveGame, 0, true);
+		goto innerLoop;
+
+	case 4:
+	case 5:
+		// debug level cycle: step one record on and wrap when the next record
+		// has an empty name
+		Init_Cleanup(0);
+
+		(*gDebugLevelIndex)++;
+
+		pNextLevelName = *reinterpret_cast<char**>(
+				reinterpret_cast<u8*>(gDebugLevelNames) + *gDebugLevelIndex * 192);
+
+		if (*pNextLevelName == 0)
+			*gDebugLevelIndex = 0;
+
+		goto levelEntry;
+
+	case 6:
+		// enter the level for real
+		Init_Cleanup(2);
+		Trig_ParseTRGFile();
+
+		pPlayer = new CPlayer();
+
+		Trig_ExecuteRestart();
+
+		// the camera attaches itself to CameraList, nothing keeps this pointer
+		new CCamera(pPlayer);
+
+		goto innerLoop;
+
+	case 7:
+		gSpideyMainRelated = 20;
+		Init_Cleanup(0);
+		Screen_SepiaFade();
+
+quitTail:
+		// leaving for good if the shell was skipped, otherwise back to it
+		if (gRenderTest & 4)
+			goto shutdown;
+
+		if (*gStartLevelIndex >= 0)
+			goto shutdown;
+
+		goto outerLoop;
+
+	case 8:
+		// restart from the beginning of the level, dropping the restart point
+		Front_ClearScreen();
+		Init_Cleanup(0);
+
+		gSaveGame.mRestartPointName[0] = 0;
+
+		((void(*)(i32))gsub_430880)(Trig_GetLevelId());
+		Front_LoadGame(&gSaveGame, 0, false);
+		goto innerLoop;
+
+	case 10:
+		shellParamOne = 1;
+		gSpideyMainRelated = 20;
+		Init_Cleanup(0);
+		Screen_SepiaFade();
+		goto outerLoop;
+
+	case 11:
+		Init_Cleanup(0);
+		goto outerLoop;
+
+	default:
+		print_if_false(0, "Unknown EndCode");
+		goto shutdown;
+	}
+
+shutdown:
+	while (gVlanksRelated)
+		Pause(1);
+
+	delete pYesNoMenu;
+	delete *gBitServer;
+
+	Mess_UnloadAllFonts();
+	PCSHELL_Shutdown();
+	PCTex_FreePcIcons();
+	Db_DeleteOTsAndPolyBuffers();
+	Init_AtEnd();
 }
 
 // @Ok
