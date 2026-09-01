@@ -327,15 +327,24 @@ public:
 	i32 field_2CC;
 
 
-	// Second dynamically built geometry buffer, the one that belongs to field_288, in the same
-	// role mpTailGeometry has for field_240. Only ~CDummy touches it (Mem_Delete for the
-	// Scorpion, mType 310), so nothing confirms its layout; kept untyped.
+	// Second dynamically built geometry buffer, the one that belongs to field_288.
+	// InitialiseTailSweepPSX builds it: an SModel header, 92 vertices, no normals and 132
+	// untextured quads (the tail sweep trail). Kept untyped because the vertex data is
+	// variable length, the same way spool.h leaves SModel's own arrays untyped.
 	void* field_2D0;
 
 
+	// the four control points BuildTail reads out of the model's bones, two curves' worth
 	CVector field_2D4[4];
+
+	// the 23 tail node positions, tesselated out of field_2D4 by BuildTail and turned into
+	// tail geometry by TailRenderer
 	CVector field_304[23];
-	CVector field_418[128];
+
+	// Four generations of the tail node positions, oldest last, rolled along one frame at a
+	// time by BuildTail. The banks are 32 CVectors apart and BuildTail copies 24 of each,
+	// which is what fixes the shape as [4][32] rather than a flat [128].
+	CVector field_418[4][32];
 };
 
 // Reverse engineered 2026-08-31 (CheckForPadUnplugged chain, functional decompile session).

@@ -9540,6 +9540,75 @@ void CDummy::DocOckUniformCurveTesselator(CVector* pControl, u32 numPoints,
 	}
 }
 
+// @Ok
+// 0x4960C0, 528 bytes. Mac symbol .BuildTail__6CDummyFv (0xE8420). Rebuilds the Scorpion
+// preview's 23 tail nodes every frame out of the model's own bones: hooks 17 to 20 give the
+// four control points of the first half of the tail, hooks 20 to 23 the second half (the
+// two halves share hook 20, so the tail is one smooth curve), and each half is tesselated
+// into 12 nodes that overlap at node 11. Then the sweep history rolls along by a frame.
+void CDummy::BuildTail(void)
+{
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	hook.Offset = 17;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[0]), this, &hook);
+	this->field_2D4[0] >>= 12;
+
+	hook.Offset = 18;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[1]), this, &hook);
+	this->field_2D4[1] >>= 12;
+
+	hook.Offset = 19;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[2]), this, &hook);
+	this->field_2D4[2] >>= 12;
+
+	hook.Offset = 20;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[3]), this, &hook);
+	this->field_2D4[3] >>= 12;
+
+	this->ScorpionUniformCurveTesselator(this->field_2D4, 12, &this->field_304[0]);
+
+	// the second half starts where the first one ended
+	hook.Offset = 21;
+	this->field_2D4[0] = this->field_2D4[3];
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[1]), this, &hook);
+	this->field_2D4[1] >>= 12;
+
+	hook.Offset = 22;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[2]), this, &hook);
+	this->field_2D4[2] >>= 12;
+
+	hook.Offset = 23;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[3]), this, &hook);
+	this->field_2D4[3] >>= 12;
+
+	this->ScorpionUniformCurveTesselator(this->field_2D4, 12, &this->field_304[11]);
+
+	// Roll the four sweep generations along, oldest one dropped. The original shifts 24
+	// slots although there are only 23 tail nodes: the last pass reads one CVector past
+	// field_304, which is field_418[0][0], and by then that slot already holds
+	// field_304[0]. Reproduced as written. The extra column is never drawn, the sweep mesh
+	// only uses 23 of each generation.
+	CVector* pNodes = this->field_304;
+	for (i32 i = 0; i < 24; i++)
+	{
+		this->field_418[3][i] = this->field_418[2][i];
+		this->field_418[2][i] = this->field_418[1][i];
+		this->field_418[1][i] = this->field_418[0][i];
+		this->field_418[0][i] = pNodes[i];
+	}
+}
+
 // @BIGTODO
 // 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
 // vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
