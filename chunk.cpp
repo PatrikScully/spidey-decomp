@@ -3,64 +3,170 @@
 #include "mem.h"
 #include "bit.h"
 #include "utils.h"
+#include "spool.h"
+#include "dcmodel.h"
+#include "trig.h"
 
 #include "validate.h"
 
 
 extern CBody* ControlBaddyList;
 
-// @MEDIUMTODO
-// Investigated 2026-08-31, left as a stub, not attempted. Real Mac size is
-// 940 bytes (tools/prototypes.json) vs 911 on PC (address 0x4273D0), so
-// this is genuinely this size, not an inlining artifact. Findings for
-// whoever picks this up next:
-// - The function looks up an item by checksum (sub_4C9230, still unnamed,
-//   likely "get item by checksum" given the debug strings it feeds:
-//   "Bad checksum" / "Checksum not found"), then walks a per-region table
-//   at dword_6B2474 with a "17 * region" stride, the same family CLAUDE.md
-//   and m3dinit.cpp already document as opaque (dword_6B2454 in that same
-//   family is ob.h's already-named CItemRelatedList; dword_6B2474 is 4
-//   bytes further into what looks like the SAME row of tables, still
-//   undocumented). It also reaches into gDCRegionItems (m3dinit.cpp,
-//   0x5F6764, SDCRegionItem, 0x24 bytes/entry) but writes fields the
-//   current SDCRegionItem struct does not name yet: a flag/byte at +0xC
-//   (m3dinit.cpp's field_C, known) plus at least one more byte at +0xD
-//   (masked with 0xBE then ORed with 0x40, currently inside
-//   SDCRegionItem's PADDING(0x17)) and a count-like field at +0x14
-//   (compared against a NumFaces value from a second table, also inside
-//   the current padding).
-// - It also walks two more record lists, one tagged "RuinModel" and one
-//   "RuinChunk" in the debug strings ("Null DCModel for RuinModel.",
-//   "NumFaces mismatch for RuinModel.", same pair for RuinChunk), each a
-//   28 i16-element-stride array with completely unknown per-element
-//   layout (only a 0xC0 flag-bits check and an 0x80 flag-set are used
-//   here) plus a companion pointer array walked with a variable stride
-//   (>> 18 of a packed field) that is not documented anywhere in the repo.
-// - This touches the SAME family of undocumented struct-of-pointers
-//   tables that m3dinit.cpp's M3dInit_ParsePSX comment already flags as
-//   "a lot more risk than the tag suggests", spanning platform.cpp,
-//   mysterio.cpp, shatter.cpp, spidey.cpp, shell.cpp, switch.cpp and now
-//   this file. Getting SDCRegionItem's hidden fields and both RuinModel/
-//   RuinChunk record layouts right needs a struct reverse-engineering
-//   pass this session's scope did not cover. Left as a stub rather than
-//   guess field roles inside a struct several other @Ok functions already
-//   depend on the current (incomplete) layout of.
-// Re-verified 2026-09-01: fresh idalib decompile/disasm confirms the above and adds
-// one more data point. dword_6B2474 is set by the big level/model-section loader at
-// 0x4C9A60 (a huge tag-dispatch switch keyed on 4-char magic constants), specifically
-// in the branch for tag 0x6B6E6843 which decodes (little-endian bytes) to "Chnk" --
-// i.e. dword_6B2474 really is a per-region "chunk section" pointer table, consistent
-// with the CItemRelatedList-family naming here, but that loader only proves the
-// table's PURPOSE, not the byte layout of what it points to (still need
-// SDCRegionItem's +0xD/+0x14 fields and the RuinModel/RuinChunk 28-i16-stride record
-// shape, neither of which any other @Ok function in the repo has pinned down yet).
-// dword_6B2474 also has exactly one other caller in the whole binary (that same
-// loader), so there is no second independent usage site to cross-check a guessed
-// layout against. Still leaving this as a stub rather than guess; not attempting an
-// implementation under this session's "do not invent unconfirmed struct fields" rule.
+// Same table m3dinit.cpp calls gDCRegionItems: one DCModelData block per region,
+// 36 bytes per model piece. Declared i32* (not DCModelData**) for the same reason
+// m3dinit.cpp gives, MSVC6 will not fold a pointer-to-pointer literal address into
+// an immediate. Kept file-local, like the copy in m3dinit.cpp.
+static i32 * const gDCRegionItems = (i32 *)0x5F6764;
+
+// Turns one named environment item into rubble.
+//
+// SPSXRegion::pChunkData (0x6B2474, filled by the "Chnk" branch of ProcessNewPSX
+// at 0x4C9A60) is the region's chunk table. Layout, worked out from this function:
+// a dword count, then that many {item checksum, byte offset} pairs, then the data
+// area the offsets point into. Each data record starts with a packed dword, low
+// half is how many "RuinModel" checksums follow and high half how many "RuinChunk"
+// checksums follow, then the two checksum lists back to back.
+//
+// A RuinModel is a static piece that just gets swapped in (made visible, marked
+// for the PSX renderer). A RuinChunk is the same but also handed to a fresh
+// CChunkControl so it flies off and disappears. Both cases do the same three edits
+// per piece: clear some CItem flags, clear the matching SModel flags, then walk the
+// model's faces turning on the "draw" bit in both the source SModel face records
+// and the runtime DCFace records the PC renderer actually uses.
+//
+// The original does not null check the CChunkControl before calling AddChunk on it,
+// so a failed allocation with a non-zero chunk count would call a member on NULL.
+// Kept as is, that is the original behaviour.
+//
+// Codegen residue (functional bar, not byte matched): 279 instructions/881 bytes
+// against the original's 290/911. Every constant, flag mask, stride and branch
+// matches; the difference is register allocation in three spots. Our checksum
+// search loop compares in place and steps the pointer by 8 once (cmp [ebx],ebp /
+// add ebx,8) where the original loads through a post-incremented pointer twice,
+// our CChunkControl construction copies mPos through a shifted pointer (add esi,8
+// then [esi],[esi+4],[esi+8]) where the original reads [esi+8],[esi+0Ch],[esi+10h]
+// and spills them, and MSVC merges the "is the chunk count non zero" test with the
+// same test inside the inlined CChunkControl constructor.
+// @Ok
 void Chunk_ChunkItemByChecksum(u32 Checksum)
 {
-	printf("void Chunk_ChunkItemByChecksum(u32 Checksum)");
+	Trig_TriggerCommandPoint(Checksum, false);
+
+	CItem *pItem = Spool_FindEnviroItem(Checksum);
+	print_if_false(pItem != NULL, "Bad checksum");
+
+	Chunk_MakeItemDisappear(pItem);
+
+	u32 *pChunkData = G_PSXREGION[pItem->mRegion].pChunkData;
+
+	u32 Count = pChunkData[0];
+	u32 *pEntry = pChunkData + 1;
+	u32 *pRecords = pChunkData + 2 * Count + 1;
+
+	while (Count != 0)
+	{
+		if (pEntry[0] == Checksum)
+			break;
+
+		pEntry += 2;
+		Count--;
+	}
+
+	print_if_false(Count != 0, "Checksum not found");
+
+	if (Count == 0)
+		return;
+
+	u32 *pRecord = &pRecords[pEntry[1] >> 2];
+
+	u32 NumModels = pRecord[0] & 0xFFFF;
+	u32 NumChunks = pRecord[0] >> 16;
+
+	u32 *pList = pRecord + 1;
+
+	CChunkControl *pControl = NULL;
+
+	if (NumChunks != 0)
+		pControl = new CChunkControl(&pItem->mPos, static_cast<u16>(NumChunks));
+
+	while (NumModels != 0)
+	{
+		CItem *pRuin = Spool_FindEnviroItem(*pList);
+		pList++;
+
+		print_if_false(pRuin != NULL, "Bad checksum");
+
+		pRuin->mFlags &= 0xEFDE;
+
+		SModel *pModel = G_PSXREGION[pRuin->mRegion].ppModels[pRuin->mModel];
+		pModel->Flags &= 0xFFCF;
+
+		DCModelData *pData = reinterpret_cast<DCModelData*>(gDCRegionItems[pRuin->mRegion] + 36 * pRuin->mModel);
+
+		print_if_false(pData != NULL, "Null DCModel for RuinModel.");
+		if (pData)
+			pData->mFlags = (pData->mFlags & ~0x100) | 0x4000;
+
+		DCFace *pDCFace = pData->pFaces;
+		print_if_false(pModel->NumFaces == pData->mNumFaces, "NumFaces mismatch for RuinModel.");
+
+		u32 *pFace = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pModel) + 0x1C + 8 * (pModel->NumNormals + pModel->NumVertices));
+
+		for (u32 i = 0; i < pModel->NumFaces; i++)
+		{
+			if ((pDCFace->mFlags & 0xC0) == 0)
+				pDCFace->mFlags |= 0x80;
+
+			u32 Word = pFace[0];
+			pDCFace++;
+
+			pFace[0] = Word | 0x80;
+			pFace[3] &= ~0x10000;
+
+			pFace += Word >> 18;
+		}
+
+		NumModels--;
+	}
+
+	while (NumChunks != 0)
+	{
+		CItem *pRuin = Spool_FindEnviroItem(*pList);
+		pList++;
+
+		pControl->AddChunk(pRuin);
+
+		pRuin->mFlags &= 0xEFFE;
+
+		SModel *pModel = G_PSXREGION[pRuin->mRegion].ppModels[pRuin->mModel];
+		pModel->Flags &= 0xFFDF;
+
+		DCModelData *pData = reinterpret_cast<DCModelData*>(gDCRegionItems[pRuin->mRegion] + 36 * pRuin->mModel);
+
+		print_if_false(pData != NULL, "Null DCModel for RuinChunk.");
+		if (pData)
+			pData->mFlags = (pData->mFlags & ~0x100) | 0x4000;
+
+		DCFace *pDCFace = pData->pFaces;
+		print_if_false(pModel->NumFaces == pData->mNumFaces, "NumFaces mismatch for RuinChunk.");
+
+		u32 *pFace = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pModel) + 0x1C + 8 * (pModel->NumNormals + pModel->NumVertices));
+
+		for (u32 i = 0; i < pModel->NumFaces; i++)
+		{
+			if ((pDCFace->mFlags & 0xC0) == 0)
+				pDCFace->mFlags |= 0x80;
+
+			u32 Word = pFace[0];
+			pDCFace++;
+
+			pFace[0] = Word | 0x80;
+
+			pFace += Word >> 18;
+		}
+
+		NumChunks--;
+	}
 }
 
 // @Ok
