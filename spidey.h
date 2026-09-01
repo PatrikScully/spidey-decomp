@@ -253,7 +253,11 @@ class CPlayer : public CSuper
 
 		u8 field_AD4;
 
-		PADDING(0xAD7-0xAD4-1);
+		// CheckInteriorSurfaceTransition: picks the "hard"/alternative set of
+		// surface transition animations when set.
+		u8 field_AD5;
+
+		u8 field_AD6;
 
 		u8 field_AD7;
 
@@ -272,13 +276,21 @@ class CPlayer : public CSuper
 		u8 field_AE5;
 		u8 field_AE6;
 
-		PADDING(0xB09-0xAE6-1);
+		PADDING(0xB08-0xAE6-1);
+
+		// blocks CheckInteriorSurfaceTransition when set
+		u8 field_B08;
 
 		// gate for CPlayer::CheckFenceSurfaceTransition: the player is
 		// standing on/near a fence surface
 		u8 field_B09;
 
-		PADDING(0xB74-0xB09-1);
+		PADDING(0xB4C-0xB09-1);
+
+		// CheckInteriorSurfaceTransition bails out when this is negative
+		i32 field_B4C;
+
+		PADDING(0xB74-0xB4C-4);
 
 		i32 field_B74;
 		i32 field_B78;
@@ -603,7 +615,7 @@ class CPlayer : public CSuper
 		EXPORT i32 CheckFenceSurfaceTransition(void);
 		EXPORT void CheckForwards(bool);
 		EXPORT i32 CheckGroundGone(void);
-		EXPORT void CheckInteriorSurfaceTransition(void);
+		EXPORT i32 CheckInteriorSurfaceTransition(void);
 		EXPORT void CheckJump(void);
 		EXPORT void CheckJumpingR1ZipWeb(void);
 		EXPORT void CheckJumpingR2ZipWeb(void);

@@ -812,10 +812,148 @@ i32 CPlayer::CheckGroundGone(void)
 	return 0;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckInteriorSurfaceTransition(void)
+// @Ok
+i32 CPlayer::CheckInteriorSurfaceTransition(void)
 {
-    printf("CPlayer::CheckInteriorSurfaceTransition(void)");
+	if (this->field_B74 == 0)
+		return 0;
+
+	if (this->field_B08 != 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+		return 0;
+
+	if (this->field_B4C < 0)
+		return 0;
+
+	i16 ax = this->field_A8.vx;
+	i16 nx = this->field_B84.vx;
+	i16 ny = this->field_B84.vy;
+
+	u8 bToFloor = 0;
+	u8 bToWall = 0;
+
+	bool bAligned = ((this->field_B84.vz * this->field_A8.vz) >> 12)
+		+ ((ny * this->field_A8.vy) >> 12)
+		+ ((nx * ax) >> 12) >= 1567;
+
+	u8 bToCeiling = 0;
+
+	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+
+	u16 anim = bAligned ? 72 : 60;
+
+	if (this->field_8E8 != 0)
+	{
+		this->HandleControlsForSurfaceTransition(false);
+
+		i16 vy = this->field_B84.vy;
+		if (vy > 3400)
+			bToCeiling = 1;
+		else if (vy < -2600)
+			bToFloor = 1;
+	}
+	else if (this->field_8E9 != 0)
+	{
+		this->HandleControlsForSurfaceTransition(false);
+
+		if (this->field_B84.vy <= 3400)
+			bToWall = 1;
+	}
+	else if (ny <= 3400 && ny >= -2600)
+	{
+		bToWall = 1;
+	}
+
+	if (bAlternative)
+		anim = bAligned ? 78 : 66;
+
+	if (bToFloor)
+	{
+		CVector down;
+		down.vx = 0;
+		down.vy = -4096;
+		down.vz = 0;
+		this->OrientToNormal(true, &down);
+
+		anim = (u16)(87 + (this->field_AD5 != 0));
+	}
+	else if (!bAligned)
+	{
+		i32 side = (-(this->field_B84.vx * this->field_C78) >> 12)
+			+ (-(this->field_B84.vy * this->field_C7C) >> 12)
+			+ (-(this->field_B84.vz * this->field_C80) >> 12);
+
+		if (side > 2048)
+			anim = bAlternative ? 68 : 62;
+		else if (side < -2048)
+			anim = bAlternative ? 67 : 61;
+	}
+
+	this->field_AD6 = 0;
+
+	// low word of the animation table entry for this region and animation
+	// is its frame count
+	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 8 * anim + 8) & 0xFFFF;
+
+	if (this->gCamAngleLock == 0 && bToFloor == 0 && bToWall == 0 && bToCeiling == 0)
+	{
+		i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+		CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(2 * frames));
+	}
+
+	i32 *p = gSpideySFXEntry[anim];
+	this->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->mFrame = (i16)(frames - 1);
+	this->ApplyPose(gUnkPose);
+
+	CVector hookPos;
+	hookPos.vx = 0;
+	hookPos.vy = 0;
+	hookPos.vz = 0;
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
+
+	CameraList->SetTripodMotion(hookPos, frames * 2);
+
+	if (bToFloor)
+		this->SetFloorCamera(16);
+	else if (bToWall)
+		this->SetWallCamera(16);
+	else if (bToCeiling)
+		this->SetCeilingCamera(16);
+
+	i32 *p2 = gSpideySFXEntry[anim];
+	this->field_E1C = 4096;
+	this->field_350 = p2;
+
+	if (p2)
+	{
+		while (p2[0] != -1)
+		{
+			p2[0] &= 0xFFFF;
+			p2++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->field_DF8 = 0;
+	this->field_AE5 = 0;
+
+	return 1;
 }
 
 // @MEDIUMTODO
@@ -6813,6 +6951,8 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_AD4, 0xAD4);
 
+	VALIDATE(CPlayer, field_AD5, 0xAD5);
+	VALIDATE(CPlayer, field_AD6, 0xAD6);
 	VALIDATE(CPlayer, field_AD7, 0xAD7);
 
 	VALIDATE(CPlayer, field_ADA, 0xADA);
@@ -6823,7 +6963,9 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_AE6, 0xAE6);
 
 
+	VALIDATE(CPlayer, field_B08, 0xB08);
 	VALIDATE(CPlayer, field_B09, 0xB09);
+	VALIDATE(CPlayer, field_B4C, 0xB4C);
 
 	VALIDATE(CPlayer, field_B74, 0xB74);
 	VALIDATE(CPlayer, field_B84, 0xB84);
