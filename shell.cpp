@@ -9898,6 +9898,121 @@ CScorpExplosion::CScorpExplosion(CVector* pPos)
 	}
 }
 
+// @Ok
+// 0x48FD50. names.json calls it CShellSimbySlimeBase_SetQuadCoords. Spreads the four outer
+// corners in field_C0 over the four quads of the puddle. Each quad gets one outer corner, the
+// midpoints of the two edges that meet there, and the centre of the whole patch, so the four
+// of them tile the square without a seam.
+void CShellSimbySlimeBase::SetQuadCoords(void)
+{
+	this->mPos = this->field_C0[0];
+	this->field_B4->mPosB = this->field_C0[1];
+	this->field_B8->mPosC = this->field_C0[2];
+	this->field_BC->mPosD = this->field_C0[3];
+
+	CVector midAB = (this->field_C0[0] + this->field_C0[1]) >> 1;
+	CVector midBD = (this->field_C0[1] + this->field_C0[3]) >> 1;
+	CVector midCD = (this->field_C0[2] + this->field_C0[3]) >> 1;
+	CVector midAC = (this->field_C0[0] + this->field_C0[2]) >> 1;
+	CVector centre = (midBD + midAC) >> 1;
+
+	this->mPosD = centre;
+	this->field_B4->mPosC = centre;
+	this->field_B8->mPosB = centre;
+	this->field_BC->mPos = centre;
+
+	this->mPosB = midAB;
+	this->field_B4->mPos = midAB;
+
+	this->field_B4->mPosD = midBD;
+	this->field_BC->mPosB = midBD;
+
+	this->field_BC->mPosC = midCD;
+	this->field_B8->mPosD = midCD;
+
+	this->mPosC = midAC;
+	this->field_B8->mPos = midAC;
+}
+
+// @Ok
+// 0x48F8A0. names.json calls it CShellSimbySlimeBase_CShellSimbySlimeBase. Builds the slime
+// puddle under the symbiote costume preview (mType 324): four "Effects" quads (this one plus
+// three it owns), with the outer corners laid out 80 units either way along the two axes the
+// given yaw points down, then handed to SetQuadCoords.
+CShellSimbySlimeBase::CShellSimbySlimeBase(CVector* pPos, CSVector* pAngles, i32 a4)
+{
+	this->field_84.vx = 0;
+	this->field_84.vy = 0;
+	this->field_84.vz = 0;
+	this->field_90.vx = 0;
+	this->field_90.vy = 0;
+	this->field_90.vz = 0;
+
+	for (i32 c = 0; c < 4; c++)
+	{
+		this->field_C0[c].vx = 0;
+		this->field_C0[c].vy = 0;
+		this->field_C0[c].vz = 0;
+	}
+
+	SAnimFrame* pAnim = Spool_FindAnim("Effects", 1);
+
+	this->SetTexture(pAnim[8].pTexture);
+	this->SetOpaque();
+
+	this->field_B4 = new CQuadBit();
+	this->field_B4->mProtected = 1;
+	this->field_B4->SetTexture(pAnim[9].pTexture);
+	this->field_B4->SetOpaque();
+	this->field_B4->mType = 39;
+
+	this->field_B8 = new CQuadBit();
+	this->field_B8->mProtected = 1;
+	this->field_B8->SetTexture(pAnim[10].pTexture);
+	this->field_B8->SetOpaque();
+	this->field_B8->mType = 39;
+
+	this->field_BC = new CQuadBit();
+	this->field_BC->mProtected = 1;
+	this->field_BC->SetTexture(pAnim[11].pTexture);
+	this->field_BC->SetOpaque();
+	this->field_BC->mType = 39;
+
+	this->field_9C = a4;
+
+	// the two 80 unit axes of the patch, worked out from the yaw alone
+	i32 yaw = pAngles->vy;
+	i32 cosYaw = rcossin_tbl[yaw & 0xFFF].cos;
+	i32 sinNegYaw = rcossin_tbl[(-yaw) & 0xFFF].sin;
+
+	CVector axisU;
+	CVector axisV;
+	axisU.vx = 80 * sinNegYaw;
+	axisU.vy = 0;
+	axisU.vz = -80 * cosYaw;
+	axisV.vx = 80 * cosYaw;
+	axisV.vy = 0;
+	axisV.vz = axisU.vx;
+
+	this->field_C0[0] = (*pPos - axisU) - axisV;
+	this->field_C0[1] = (*pPos + axisU) - axisV;
+	this->field_C0[2] = (*pPos - axisU) + axisV;
+	this->field_C0[3] = (*pPos + axisU) + axisV;
+
+	this->SetQuadCoords();
+
+	this->field_84 = *pPos;
+	this->field_90 = *pAngles;
+
+	for (i32 p = 0; p < 4; p++)
+		this->field_F0[p] = Rnd(4096);
+
+	for (i32 q = 0; q < 4; q++)
+		this->field_100[q] = Rnd(120) + 30;
+
+	this->mType = 11;
+}
+
 // @BIGTODO
 // 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
 // vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
@@ -10624,6 +10739,7 @@ void validate_CDummy(void){
 	// touch main.cpp, so the three classes added with CDummy::AI are checked from here.
 	validate_CTailRing();
 	validate_CScorpExplosion();
+	validate_CShellSimbySlimeBase();
 }
 
 void validate_CTailRing(void)
@@ -10647,6 +10763,21 @@ void validate_CScorpExplosion(void)
 
 	VALIDATE(CScorpExplosion, field_3C, 0x3C);
 	VALIDATE(CScorpExplosion, field_44, 0x44);
+}
+
+void validate_CShellSimbySlimeBase(void)
+{
+	VALIDATE_SIZE(CShellSimbySlimeBase, 0x110);
+
+	VALIDATE(CShellSimbySlimeBase, field_84, 0x84);
+	VALIDATE(CShellSimbySlimeBase, field_90, 0x90);
+	VALIDATE(CShellSimbySlimeBase, field_9C, 0x9C);
+	VALIDATE(CShellSimbySlimeBase, field_B4, 0xB4);
+	VALIDATE(CShellSimbySlimeBase, field_B8, 0xB8);
+	VALIDATE(CShellSimbySlimeBase, field_BC, 0xBC);
+	VALIDATE(CShellSimbySlimeBase, field_C0, 0xC0);
+	VALIDATE(CShellSimbySlimeBase, field_F0, 0xF0);
+	VALIDATE(CShellSimbySlimeBase, field_100, 0x100);
 }
 
 

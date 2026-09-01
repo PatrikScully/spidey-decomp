@@ -584,6 +584,43 @@ class CScorpExplosion : public CNonRenderedBit
 		SHandle field_44;
 };
 
+// Reverse engineered from the constructor at 0x48F8A0 and SetQuadCoords at 0x48FD50 (both
+// named that way in names.json). The slime puddle under the symbiote costume preview (mType
+// 324). It is one CQuadBit itself plus three more it owns, so the puddle is a 2x2 grid of
+// quads sharing a centre point; the four outer corners live in field_C0 and SetQuadCoords
+// spreads them and their midpoints over the four quads.
+class CShellSimbySlimeBase : public CQuadBit
+{
+	public:
+		EXPORT CShellSimbySlimeBase(CVector* pPos, CSVector* pAngles, i32 a4);
+		EXPORT void SetQuadCoords(void);
+
+		// the puddle centre and the angles it was built at, both copies of the constructor
+		// arguments
+		CVector field_84;
+		CSVector field_90;
+
+		PADDING(6);
+
+		// constructor argument a4 (CDummy::AI passes 256). Not read by the constructor or by
+		// SetQuadCoords, so it must be for the Move that is not decompiled yet.
+		i32 field_9C;
+
+		PADDING(0xB4 - 0x9C - 4);
+
+		// the other three quads of the puddle
+		CQuadBit* field_B4;
+		CQuadBit* field_B8;
+		CQuadBit* field_BC;
+
+		// the four outer corners, in the order (-u-v, +u-v, -u+v, +u+v) around the centre
+		CVector field_C0[4];
+
+		// per-corner wobble phase (Rnd(4096)) and speed (Rnd(120) + 30)
+		i32 field_F0[4];
+		i32 field_100[4];
+};
+
 class CShellGoldFish : public CBody
 {
 	public:
@@ -905,6 +942,7 @@ void validate_CShellSimbyMeltSplat(void);
 void validate_CShellSimbyFireDeath(void);
 void validate_CTailRing(void);
 void validate_CScorpExplosion(void);
+void validate_CShellSimbySlimeBase(void);
 void validate_CShellGoldFish(void);
 void validate_CShellMysterioHeadCircle(void);
 void validate_SCharacterEntry(void);
