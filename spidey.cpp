@@ -2193,11 +2193,309 @@ void CPlayer::HandleControlsForSurfaceTransition(bool)
     printf("CPlayer::HandleControlsForSurfaceTransition(bool)");
 }
 
-// @MEDIUMTODO
-i32 CPlayer::Hit(SHitInfo *)
+// The player's damage/knockback handler (the CBody::Hit override). It first
+// drops the hit outright in every state that makes Spidey untouchable: suit
+// 4, the symbiote sequence, a lock in progress (field_E18), field_1AC,
+// field_36C, and the field_E1C state bits 0x20000080 (or 0x800000 while the
+// current anim is not 285). Then it tears down what was in flight: the
+// looping SFX handle, both smoke trails, and any held object (smashed). The
+// state and the time of the hit are remembered in field_504/field_500.
+//
+// Bit 4 of SHitInfo::field_0 means "this hit does damage": armour
+// (field_5E9) soaks it first through field_5EC, and when that goes negative
+// the leftover comes off mHealth and the armour is dropped (VRAM textures
+// swapped back, save-game armour slots cleared); without armour the damage
+// comes straight off mHealth. Zero health runs the death path.
+//
+// Otherwise the reaction animation comes from the hit type: 0xB5 or 0xAA for
+// the plain knock, 0xBB when not wall-crawling and the type is 10, 0xB0 for
+// being peeled off a wall or floored, 0xAC for a directional knockback; hit
+// types 8 and 26 also push mVel along the hit direction (type 8 only if the
+// destination is in line of sight). Original address 0x4BD890.
+// @Ok
+i32 CPlayer::Hit(SHitInfo *a2)
 {
-    printf("CPlayer::Hit(SHitInfo *)");
-    return 0x04082024;
+	// 0x60CFC8, named gSymbioteRelated in baddy.cpp: while it is set the
+	// symbiote sequence owns the player, so hits are ignored.
+	static i32 * const gSymbioteRelated = (i32*)0x0060CFC8;
+
+	// 0x60D9D0, named gGlowZeroPos in baddy.cpp: a shared all-zero CVector,
+	// used here as the "flat" normal to stand the player back up with.
+	static CVector * const gGlowZeroPos = (CVector*)0x0060D9D0;
+
+	// gSaveGame (0x682858, front.h; SSaveGame in shell.h). This file does not
+	// include front.h, so the two slots cleared when the armour breaks are
+	// reached through the containing global instead of getting standalone
+	// names of their own: +0x50 is the stored armour amount, +0x79 the
+	// "armour active" flag (both also read back by CPlayer::CPlayer).
+	static u8 * const gSaveGameBytes = (u8*)0x00682858;
+
+	if (CurrentSuit == 4)
+		return 0;
+
+	if (*gSymbioteRelated != 0)
+		return 0;
+
+	if (this->field_E18 != 0)
+		return 0;
+
+	if (this->field_1AC != 0)
+		return 0;
+
+	if (this->field_36C != 0)
+		return 0;
+
+	i32 state = this->field_E1C;
+
+	if ((state & 0x20000080) != 0)
+		return 0;
+
+	if ((state & 0x800000) != 0 && this->mAnim != 285)
+		return 0;
+
+	u8 hitFlags = a2->field_0;
+	u8 isDirected = static_cast<u8>(hitFlags & 2);
+
+	if (isDirected && a2->field_4 == 10 && state == 2048)
+	{
+		SFX_PlayPos(17, &this->mPos, 0);
+		return 0;
+	}
+
+	if (this->field_5E4 != 0)
+	{
+		SFX_Stop(this->field_5E4);
+		this->field_5E4 = 0;
+	}
+
+	// CCamera + 0x180: a u8 flag that falls inside camera.h's
+	// PADDING(0x1A8-0x17C-4). Read by address here rather than reshaping
+	// CCamera for this one test.
+	if (*(reinterpret_cast<u8*>(CameraList) + 0x180) != 0 && this->field_AD4 == 0)
+	{
+		this->PutCameraBehind(0);
+	}
+
+	state = this->field_E1C;
+
+	if ((state & 0x10000000) != 0 && (!isDirected || a2->field_4 != 17))
+		return 0;
+
+	this->field_534 = 240;
+	this->field_52C = (this->field_528 + 11) << 10;
+
+	if (this->field_584)
+	{
+		this->field_584->mFadeAway = 1;
+		this->field_584 = 0;
+	}
+
+	if (this->field_588)
+	{
+		this->field_588->mFadeAway = 1;
+		this->field_588 = 0;
+	}
+
+	this->field_504 = state;
+	this->field_500 = gTimerRelated;
+
+	CManipOb *pHeld = this->mHeldObject;
+
+	if (pHeld)
+	{
+		this->mHeldObject = 0;
+		pHeld->Smash();
+	}
+
+	if (hitFlags & 4)
+	{
+		if (this->field_5E9)
+		{
+			i32 left = this->field_5EC - a2->field_8;
+			this->field_5EC = left;
+
+			if (left < 0)
+			{
+				u8 hadArmor = gSpideyArmorSet;
+
+				this->mHealth += static_cast<i16>(left);
+				gSpideyAnimTwo = 0;
+
+				if (hadArmor)
+				{
+					Spidey_DoArmorVRAMProcessing(false);
+					this->field_5E9 = 0;
+					gSpideyArmorSet = 0;
+				}
+
+				this->field_5EC = 0;
+				gSaveGameBytes[0x79] = 0;
+				*reinterpret_cast<i32*>(gSaveGameBytes + 0x50) = 0;
+			}
+		}
+		else
+		{
+			this->mHealth -= a2->field_8;
+		}
+
+		if (isDirected && a2->field_4 == 16)
+			return 1;
+
+		if (static_cast<u32>(gTimerRelated) > static_cast<u32>(this->field_EEC + 30))
+		{
+			SFX_Play(Rnd(3) + 18, 0x2000, 0);
+			this->field_EEC = gTimerRelated;
+		}
+
+		if (this->mHealth <= 0)
+		{
+			this->StopMyXA();
+
+			if (this->field_8EA)
+			{
+				this->ExitLookaroundMode();
+			}
+
+			if (this->field_E6C)
+			{
+				reinterpret_cast<CWeb*>(this->field_E6C)->SwitchToBlob();
+				this->field_E6C = 0;
+			}
+
+			this->SwitchToDeathMode(false);
+
+			return 1;
+		}
+	}
+
+	if (isDirected && a2->field_4 == 26)
+	{
+		this->field_508 = 1;
+		this->field_50C = 120;
+		Effects_Electrify(this);
+	}
+
+	state = this->field_E1C;
+
+	if (((state & 0x1000000) != 0 && this->field_8DC == 0) || (state & 0x10043606) != 0)
+		return 1;
+
+	if (this->field_AD4)
+	{
+		this->PlaySingleAnim(0xB5, 0, -1);
+	}
+	else
+	{
+		this->PlaySingleAnim(0xAA, 0, -1);
+	}
+
+	if (isDirected)
+	{
+		if (this->field_AD4 == 0 && a2->field_4 == 10)
+		{
+			this->PlaySingleAnim(0xBB, 0, -1);
+		}
+		else
+		{
+			i32 type = a2->field_4;
+
+			if (type == 8 && (hitFlags & 8) != 0)
+			{
+				i32 dirX = a2->field_C.vx;
+				i32 dirZ = a2->field_C.vz;
+				i32 speed = this->field_80;
+
+				CVector dest;
+				dest.vx = this->mPos.vx + 48 * speed * dirX;
+				dest.vy = this->mPos.vy;
+				dest.vz = this->mPos.vz + 48 * speed * dirZ;
+
+				if (Utils_LineOfSight(&this->mPos, &dest, 0, 0))
+				{
+					this->mVel.vx = 48 * dirX;
+					this->mVel.vz = 48 * dirZ;
+				}
+			}
+			else if (type == 9 || type == 14 || type == 11 || type == 15 || type == 26)
+			{
+				if (this->field_8E8 || this->field_8E9)
+				{
+					this->field_8E9 = 0;
+					this->field_8E8 = 0;
+					this->field_AD4 = 0;
+					this->field_A8.vx = 0;
+					this->field_A8.vy = -4096;
+					this->field_A8.vz = 0;
+					this->field_C6C.vy = 0;
+
+					VectorNormal(
+							reinterpret_cast<VECTOR*>(&this->field_C6C),
+							reinterpret_cast<VECTOR*>(&this->field_C6C));
+
+					this->OrientToNormal(1, &this->field_C6C);
+					this->PlaySingleAnim(0xB0, 0, -1);
+				}
+				else
+				{
+					i32 dirX = a2->field_C.vx;
+					i32 dirZ = a2->field_C.vz;
+
+					CVector normal;
+					normal.vx = dirX >> 12;
+					normal.vy = 0;
+					normal.vz = dirZ >> 12;
+
+					VectorNormal(
+							reinterpret_cast<VECTOR*>(&normal),
+							reinterpret_cast<VECTOR*>(&normal));
+
+					this->OrientToNormal(1, &normal);
+					this->PlaySingleAnim(0xAC, 0, -1);
+
+					this->field_DF8 = 0;
+
+					if (type == 26)
+					{
+						this->mVel.vx = 48 * dirX;
+						this->mVel.vz = 48 * dirZ;
+					}
+				}
+			}
+			else if (type == 12)
+			{
+				if (this->field_8E8 || this->field_8E9)
+				{
+					this->field_8E9 = 0;
+					this->field_8E8 = 0;
+					this->field_AD4 = 0;
+					this->field_A8.vx = 0;
+					this->field_A8.vy = -4096;
+					this->field_A8.vz = 0;
+
+					this->OrientToNormal(0, gGlowZeroPos);
+				}
+
+				this->mVel.vz = 0;
+				this->mVel.vx = 0;
+
+				this->PlaySingleAnim(0xB0, 0, -1);
+
+				this->mVel.vy = -524288;
+			}
+		}
+	}
+
+	i32 *pWeb = this->field_E6C;
+
+	this->field_E1C = 0x800000;
+
+	if (pWeb)
+	{
+		reinterpret_cast<CWeb*>(pWeb)->SwitchToBlob();
+		this->field_E6C = 0;
+	}
+
+	return 1;
 }
 
 // @Ok

@@ -95,13 +95,34 @@ class CPlayer : public CSuper
 		i32 field_364;
 		i32 field_368;
 
-		PADDING(0x528-0x368-4);
+		// CPlayer::Hit gate: any nonzero value makes the player immune (the
+		// hit is dropped before anything else happens).
+		i32 field_36C;
+
+		PADDING(0x500-0x36C-4);
+
+		// gTimerRelated at the moment of the last hit, and the field_E1C
+		// state the player was in when it landed. Both written by
+		// CPlayer::Hit, nothing in the repo reads them back yet.
+		u32 field_500;
+		i32 field_504;
+
+		// electrocution: set for hit type 26, with field_50C as the
+		// countdown (120) that goes with it.
+		u8 field_508;
+
+		PADDING(3);
+
+		i32 field_50C;
+
+		PADDING(0x528-0x50C-4);
 
 		i32 field_528;
 		i32 field_52C;
 		i32 field_530;
 
-		PADDING(0x538-0x530-4);
+		// set to 240 by CPlayer::Hit alongside field_52C.
+		i32 field_534;
 
 		u32 field_538;
 
@@ -528,7 +549,11 @@ class CPlayer : public CSuper
 		// one qualifying baddy was found this pass
 		u8 field_EC0;
 
-		PADDING(0xEF0-0xEC0-1);
+		PADDING(0xEEC-0xEC0-1);
+
+		// gTimerRelated when CPlayer::Hit last played a hurt grunt; the
+		// grunt only replays once more than 30 ticks have passed.
+		u32 field_EEC;
 
 		i32 mMaxHealth;
 
@@ -656,6 +681,10 @@ class CPlayer : public CSuper
 		EXPORT void nullsub_one(i32);
 		EXPORT void ResetSFXArrayEntry(u32);
 };
+
+// defined in spidey.cpp below CPlayer::SetArmor; declared here because
+// CPlayer::Hit, defined earlier in the same file, drops the armour too.
+EXPORT extern u8 gSpideyArmorSet;
 
 EXPORT extern CPlayer* MechList;
 EXPORT extern CItem* SpideyAdditionalBodyPartsList;
