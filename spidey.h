@@ -537,7 +537,10 @@ class CPlayer : public CSuper
 		CBody *field_DCC;
 
 		// SelectAutoAimTarget: cleared at the start of each auto-aim pass
-		i32 field_DD0;
+		// the auto-aim target position of the switch CPlayer::FireWeb picked,
+		// straight out of SelectTargetSwitch's return value. Cleared at the
+		// start of every SelectAutoAimTarget pass.
+		CVector *field_DD0;
 
 		PADDING(0xDD8-0xDD0-4);
 
@@ -763,7 +766,7 @@ class CPlayer : public CSuper
 		EXPORT void DrawOffscreenSpideySenseIndicatorList(void);
 		EXPORT void DrawReticle(u16,u16,u32);
 		EXPORT void EnterLookaroundMode(void);
-		EXPORT void FireWeb(bool,i32,CVector *,bool,CSVector *);
+		EXPORT i32 FireWeb(bool,i32,CVector *,bool,CSVector *);
 		EXPORT void GetComboFrameInfoPointer(u16);
 		EXPORT void GetComboPartsInfoPointer(u16);
 		EXPORT i32 GetDamageInflictedFromDifficulty(i32);
@@ -788,7 +791,7 @@ class CPlayer : public CSuper
 		EXPORT void ReadAnalogueInput(void);
 		EXPORT u8 SelectAutoAimTarget(void);
 		EXPORT CBody *SelectTargetBaddy(i32,i32,i32,i32);
-		EXPORT void SelectTargetSwitch(i32,i32,SHandle *,i32,i32);
+		EXPORT CVector *SelectTargetSwitch(i32,i32,SHandle *,i32,i32);
 		EXPORT u8 SetArmor(bool);
 		EXPORT void SetCeilingCamera(i32);
 		EXPORT void SetFallingCamera(i32);

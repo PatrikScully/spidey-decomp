@@ -3516,10 +3516,280 @@ void CPlayer::EnterLookaroundMode(void)
 	}
 }
 
-// @MEDIUMTODO
-void CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)
+// @Ok
+// verified against the IDA disasm of 0x4C5DD0 (1729 bytes). Returns the
+// result code the caller stores, so the header's void return was wrong and
+// is fixed. Codes: 0 nothing happened, 1 not enough webbing, 2 the target
+// was trapped or tugged, 4 a switch was flicked, 8 the web missed and was
+// turned into a blob.
+//
+// bUseHeldTarget picks where the web is aimed:
+//   false -> at *pTarget, exactly as the caller passed it.
+//   true  -> at the held object if there is one, else at the auto-picked
+//            switch, else along a ray from the hand: the ray is traced with
+//            LineOfSightCheck on so a hit sets *pNormal and moves the aim
+//            point onto the surface. Hitting a face flagged 0x2000000 that
+//            belongs to a live switch makes that switch the target.
+//
+// Then, if a CWeb was already allocated (field_E6C, done by
+// CheckJumpingR1ZipWeb / CheckJumpingR2ZipWeb), it is fired and the pad
+// rumbles; a switch target gets flicked, a baddy gets trapped (shot 1) or
+// tugged (shot 2), and anything else turns the web into a blob. With no
+// CWeb the shot is just a wall splat (CImpactWeb), or a "simby" relocatable
+// effect when field_5E8 is set.
+i32 CPlayer::FireWeb(bool bUseHeldTarget, i32 cost, CVector *pTarget, bool bHitSomething, CSVector *pNormal)
 {
-    printf("CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)");
+	// gSaveGame + 0x7B, the "vibration on" option flag; see CheckLanded.
+	static u8 * const gSaveGameVibration = (u8*)0x006828D3;
+
+	CVector aim;
+	aim.vx = 0;
+	aim.vy = 0;
+	aim.vz = 0;
+
+	CVector hook;
+	hook.vx = 0;
+	hook.vy = 0;
+	hook.vz = 0;
+
+	i32 result = 0;
+
+	CBody *held = this->field_DCC;
+
+	CSwitch *pSwitchTarget = 0;
+
+	if (held != 0 && held->mType == 407)
+		pSwitchTarget = reinterpret_cast<CSwitch*>(held);
+
+	if (!bUseHeldTarget)
+	{
+		aim = *pTarget;
+	}
+	else if (held != 0)
+	{
+		bHitSomething = false;
+		aim = held->mPos;
+	}
+	else
+	{
+		SHandle hSwitch;
+
+		CVector *pAutoAim = this->SelectTargetSwitch(3072, 2896, &hSwitch, 4096, 4096);
+		this->field_DD0 = pAutoAim;
+
+		CVector rayEnd;
+
+		if (pAutoAim != 0)
+		{
+			CVector aimPoint(pAutoAim->vx, pAutoAim->vy, pAutoAim->vz);
+
+			aim = aimPoint - this->mPos;
+
+			i32 shift = 4;
+			rayEnd = (this->mPos + aim) + (aim >> shift);
+		}
+		else
+		{
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hook), this, 2);
+
+			i32 scale = 2048;
+			rayEnd = hook - (this->field_C6C * scale);
+		}
+
+		aim = rayEnd;
+
+		SLineInfo lineInfo;
+		lineInfo.StartCoords = this->mPos;
+		lineInfo.EndCoords = aim;
+		lineInfo.MinCoords.vx = 0;
+		lineInfo.MinCoords.vy = 0;
+		lineInfo.MinCoords.vz = 0;
+		lineInfo.MaxCoords.vx = 0;
+		lineInfo.MaxCoords.vy = 0;
+		lineInfo.MaxCoords.vz = 0;
+		lineInfo.Position.vx = 0;
+		lineInfo.Position.vy = 0;
+		lineInfo.Position.vz = 0;
+		lineInfo.Normal.vx = 0;
+		lineInfo.Normal.vy = 0;
+		lineInfo.Normal.vz = 0;
+
+		M3dColij_InitLineInfo(&lineInfo);
+		LineOfSightCheck = 1;
+		M3dZone_LineToItem(&lineInfo, 1);
+		LineOfSightCheck = 0;
+
+		if (lineInfo.pItem != 0)
+		{
+			bHitSomething = true;
+
+			pNormal->vx = lineInfo.Normal.vx;
+			pNormal->vy = lineInfo.Normal.vy;
+			pNormal->vz = lineInfo.Normal.vz;
+
+			aim = lineInfo.Position;
+
+			if ((lineInfo.pFace[3] & 0x2000000) != 0)
+			{
+				CSwitch *pSwitch = Switch_GetCSwitchObjectFromItem(lineInfo.pItem);
+
+				pSwitchTarget = pSwitch;
+
+				if (pSwitch->field_100 == 0)
+					pSwitchTarget = 0;
+			}
+		}
+		else
+		{
+			bHitSomething = false;
+		}
+	}
+
+	if (this->field_E6C != 0)
+	{
+		if (this->DecreaseWebbing(cost) == 0)
+			return 1;
+
+		CWeb *pWeb = reinterpret_cast<CWeb*>(this->field_E6C);
+
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hook), this, pWeb->field_102);
+
+		CBody *pAttachTo;
+
+		if (this->field_8F8 == 8 || this->field_DCC == 0)
+			pAttachTo = 0;
+		else
+			pAttachTo = (this->field_DCC->mType != 407) ? this->field_DCC : 0;
+
+		pWeb->Fire(hook, aim, pAttachTo, bHitSomething, *pNormal);
+
+		if (*gSaveGameVibration != 0)
+		{
+			if (this->field_8F8 == 1)
+			{
+				if (Pad_GetActuatorTime(0, 1) <= 2)
+					Pad_ActuatorOn(0, 4, 1, 120);
+			}
+			else if (this->field_8F8 == 2 && Pad_GetActuatorTime(0, 1) <= 2)
+			{
+				Pad_ActuatorOn(0, 8, 1, 160);
+			}
+		}
+
+		if (pSwitchTarget != 0)
+		{
+			result = 4;
+			pSwitchTarget->Flick();
+
+			SFX_PlayPos(21, &this->mPos, 0);
+			return result;
+		}
+
+		CBody *pHit = this->field_DCC;
+
+		if (pHit != 0)
+		{
+			if (this->field_8F8 == 1)
+			{
+				if (reinterpret_cast<CBaddy*>(pHit)->TrapWeb() != 0)
+				{
+					result = 2;
+					Web_Trap(reinterpret_cast<CSuper*>(pHit), (u8)this->field_5E8);
+
+					if (this->field_5E4 == 0)
+					{
+						SFX_PlayPos(21, &this->mPos, 0);
+						this->field_5E4 = SFX_PlayPos(33, &this->mPos, 0);
+					}
+				}
+
+				return result;
+			}
+
+			if (this->field_8F8 != 2)
+			{
+				SFX_PlayPos(21, &this->mPos, 0);
+				return result;
+			}
+
+			if (reinterpret_cast<CBaddy*>(pHit)->TugWeb() == 1)
+			{
+				result = 2;
+				reinterpret_cast<CBaddy*>(pHit)->field_2A8 |= 8;
+
+				SFX_PlayPos(21, &this->mPos, 0);
+				return result;
+			}
+		}
+		else if (this->field_8F8 != 2)
+		{
+			SFX_PlayPos(21, &this->mPos, 0);
+			return result;
+		}
+
+		pWeb->SwitchToBlob();
+		this->field_E6C = 0;
+		SFX_Play(22, 0x2000, 0);
+		return 8;
+	}
+
+	// no CWeb was allocated: this is a plain splat shot
+	bool bShortShot = (this->mAnim == 139);
+
+	if (this->DecreaseWebbing(bShortShot ? 300 : 900) == 0)
+		return 1;
+
+	if (*gSaveGameVibration != 0 && Pad_GetActuatorTime(0, 0) <= 2)
+		Pad_ActuatorOn(0, 4, 0, 1);
+
+	CVector hand;
+	hand.vx = 0;
+	hand.vy = 0;
+	hand.vz = 0;
+
+	CVector otherHand;
+	otherHand.vx = 0;
+	otherHand.vy = 0;
+	otherHand.vz = 0;
+
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hand), this, 0);
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&otherHand), this, 1);
+
+	i32 half = 1;
+	hand += (otherHand - hand) >> half;
+
+	CSVector ang;
+	ang.vx = 0;
+	ang.vy = 0;
+	ang.vz = 0;
+
+	Utils_CalcAim(&ang, &hand, &aim);
+
+	if (this->field_5E8 == 0)
+	{
+		if (bShortShot)
+			new CImpactWeb(hand, ang, 32, 50, 30);
+		else
+			new CImpactWeb(hand, ang, 32, 50, 120);
+
+		SFX_PlayPos(21, &this->mPos, 0);
+		return result;
+	}
+
+	u32 params[7];
+	params[0] = hand.vx;
+	params[1] = hand.vy;
+	params[2] = hand.vz;
+	params[3] = (i32)ang.vx;
+	params[4] = (i32)ang.vy;
+	params[5] = (i32)ang.vz;
+	params[6] = 50;
+
+	Reloc_CallUserFunction("simby", 2, params, 0);
+
+	SFX_PlayPos(0x80DC, &this->mPos, 0);
+
+	return result;
 }
 
 // @NotOk
@@ -4912,8 +5182,13 @@ CBody *CPlayer::SelectTargetBaddy(i32 maxDist, i32 coneThreshold, i32 distWeight
 // attempts.md finding) are all confirmed correct against the raw
 // disassembly. 3 attempts this session (see spidey.attempts.md), below
 // the 15-hypothesis bar for a 595-byte function, left @NotOk.
-void CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 weight, i32 facingWeight)
+CVector *CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 weight, i32 facingWeight)
 {
+	// the winner's auto-aim point. The original returns it (eax) and
+	// CPlayer::FireWeb stores it in field_DD0, so this function was not
+	// void; fixed 2026-09-01 while decompiling FireWeb.
+	CVector *bestTarget = 0;
+
 	CItem *best = 0;
 	i32 bestScore = 0;
 
@@ -4973,11 +5248,14 @@ void CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 w
 			{
 				bestScore = score;
 				best = node;
+				bestTarget = target;
 			}
 		}
 	}
 
 	*out = Mem_MakeHandle(best);
+
+	return bestTarget;
 }
 
 // @Ok
