@@ -125,6 +125,14 @@ void L5A7LSC_RelocatableModuleInit(reloc_mod *pMod)
 // L5A7LSC_MonitorSpideyinWater (the Pool object search loop there). Mac has
 // it as its own function (obtainWaterLevelInPool, 176 bytes), PC does not.
 // Leaving this stub as is, same as downloadTexture in PCTex.cpp.
+// Re-verified 2026-09-01: idalib lookup_funcs on both "obtainWaterLevelInPoolA7"
+// and "obtainWaterLevelInPool" returns "Not found" against the live SpideyPC.exe
+// database, and a text search for "obtainWaterLevel" over the whole binary
+// (search_text, code+comments, no bounds) returns zero hits. tools/prototypes.json
+// also has no entry for either name. Confirms there is no standalone PC address to
+// implement; the "A7" in this stub's name is just this file's naming convention
+// (l5a7lsc.cpp), not evidence of a separate level-specific variant, since Mac's
+// name for the one real function has no such suffix either. Stub left as is.
 // @SMALLTODO
 EXPORT void obtainWaterLevelInPoolA7(i32)
 {
