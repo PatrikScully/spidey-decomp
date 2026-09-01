@@ -7314,9 +7314,27 @@ INLINE void Shell_VerySmallFont(void)
 }
 
 
-// @BIGTODO
-// fill these
-EXPORT SpideyIconRelated SpideyIcons[8];
+// @Ok
+// Read straight out of the original at 0x552AB8 (named SpideyIcons in the maintainer's
+// IDB). Element stride 0x28 confirmed from Spidey_CIcon::SetIcon's index scaling.
+// Entry 3 has IconModel -1, so SetIcon bails before touching its Name; the original
+// Name pointer there is 0x56EB54, a zeroed slot at the tail of .data, i.e. an empty
+// string, so "" is used here.
+// The original table stops at 0x552BE8: the last entry only has its first 0x18 bytes,
+// the bytes after that are a different global (a 0x38-stride table of camera/light
+// setups, referenced from 0x490FC5 and 0x493EF0). Nothing reads SpideyIcons past
+// offset 0x14, so the last entry's tail is written as zero here.
+EXPORT SpideyIconRelated SpideyIcons[8] =
+{
+	{ "items",  5, 0, 0, 0, 0,     0,     0, 0x056, 0x062, "new game",    1 },
+	{ "items",  5, 0, 0, 0, 0,  0x14, 0x200, 0x056, 0x099, "options",     4 },
+	{ "icons",  1, 0, 0, 0, 0,     0, 0x2BC, 0x078, 0x0CA, "quit",     0x12 },
+	{ "",      -1, 0, 0, 0, 0,     0,     0, 0x190, 0x02E, "training",    5 },
+	{ "items",  5, 0, 0, 0, 0,   -30, 0x200, 0x1AE, 0x062, "High Scores", 6 },
+	{ "icons",  1, 0, 0, 0, 0,     0, 0x2BC, 0x1AE, 0x099, "special",  0x0D },
+	{ "icons",  2, 0, 0, 0, 0,    -4, 0x1EA, 0x190, 0x0CA, "gallery",     7 },
+	{ "icons",  0, 0, 0, 0x100, 0, -16, 0x2BC,   0,     0, 0,             0 },
+};
 
 
 const i32 NUM_LEVELS = 34;
@@ -9158,6 +9176,9 @@ void validate_SpideyIconRelated(void)
 	VALIDATE(SpideyIconRelated, field_10, 0x10);
 	VALIDATE(SpideyIconRelated, field_14, 0x14);
 	VALIDATE(SpideyIconRelated, field_18, 0x18);
+	VALIDATE(SpideyIconRelated, field_1C, 0x1C);
+	VALIDATE(SpideyIconRelated, field_20, 0x20);
+	VALIDATE(SpideyIconRelated, field_24, 0x24);
 }
 
 void validate_SSaveGame(void)

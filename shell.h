@@ -518,23 +518,28 @@ class CShellMysterioHeadCircle : public CQuadBit
 		i32 field_90;
 };
 
+// Element size 0x28 is proven by Spidey_CIcon::SetIcon (0x493860), which scales the
+// index with "lea edi,[edi+edi*4]; shl edi,3" (index * 5 * 8). The two i16 fields are
+// read 16 bits at a time there ("mov cx,[edi+552AC0h]"), so the halves above them are
+// alignment padding; they are zero in every entry of the real table at 0x552AB8.
+// The four fields from 0x18 on are never read anywhere in the PC build (no code
+// reference to any address inside 0x552AB8..0x552BE8 other than offsets 0x0..0x14),
+// but the table does carry data there: an x/y screen position, a menu caption string
+// and a menu option id. Kept as field_* because nothing confirms that reading.
 struct SpideyIconRelated
 {
 	char *Name;
 	i32 IconModel;
 	i16 field_8;
-
-	PADDING(2);
-
+	i16 pad_A;
 	i16 field_C;
-
-	PADDING(2);
-
+	i16 pad_E;
 	i32 field_10;
 	i32 field_14;
 	i32 field_18;
-
-	PADDING(0x28-0x18-4);
+	i32 field_1C;
+	char *field_20;
+	i32 field_24;
 };
 
 // Size 0x10 confirmed by PShell_EndTrainingDisplay (pshell.cpp): the game's
