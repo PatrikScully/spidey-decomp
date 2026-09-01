@@ -172,6 +172,44 @@ static void gCWeb_SetFirePos(CWeb *pWeb, CVector &pos)
 	(reinterpret_cast<SWebFirePosAdapter*>(pWeb)->*u.m)(pos);
 }
 
+// spidey.h declares CPlayer::UpdateAndTrackCombo as returning void, but the
+// original (0x004C7120) returns the combo state that state 0x800 switches on
+// (0 = the combo ended, 2/3/6 = which follow-up move to start). The repo's
+// copy is still a printf stub, so this forwards to the original rather than
+// invent a return value. spidey.h's owner should change the declaration to
+// `i32 UpdateAndTrackCombo(void)`.
+struct SUpdateComboAdapter
+{
+	i32 UpdateAndTrackCombo(void);
+};
+
+// @Bogus
+static i32 gCPlayer_UpdateAndTrackCombo(CPlayer *pPlayer)
+{
+	typedef i32 (SUpdateComboAdapter::*memfn)(void);
+	union { memfn m; void *p; } u;
+	u.p = (void*)0x004C7120;
+	return (reinterpret_cast<SUpdateComboAdapter*>(pPlayer)->*u.m)();
+}
+
+// CSwinger's constructor (0x004F6F00, real name from tools/names.json) is not
+// declared in web.h, so the allocation is spelled out and the constructor
+// reached through an adapter, the same way the two web helpers above are.
+struct SSwingerCtorAdapter
+{
+	void Construct(CVector *pAnchor, i32 length, CSVector *pAngles, CVector *pEnd);
+};
+
+// @Bogus
+static void gCSwinger_ctor(void *pSwinger, CVector *pAnchor, i32 length,
+	CSVector *pAngles, CVector *pEnd)
+{
+	typedef void (SSwingerCtorAdapter::*memfn)(CVector*, i32, CSVector*, CVector*);
+	union { memfn m; void *p; } u;
+	u.p = (void*)0x004F6F00;
+	(reinterpret_cast<SSwingerCtorAdapter*>(pSwinger)->*u.m)(pAnchor, length, pAngles, pEnd);
+}
+
 // @Bogus
 static u8 gCPowerUp_TakeEffect(CBody *pPowerUp, CPlayer *pPlayer)
 {
@@ -1872,6 +1910,283 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 
 			pPlayer->field_E20++;
+			break;
+		}
+
+		// 0x4B3C33. The frame a swing web is released on: spawn the CSwinger
+		// that actually carries the player.
+		case 0x200:
+		{
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->field_E20 == 0)
+			{
+				CameraList->field_12C = 2;
+				pPlayer->PutCameraBehind(0x10);
+				pPlayer->field_E20++;
+			}
+
+			if ((pPlayer->field_504 & 0x200) != 0
+				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+			{
+				if (pPlayer->ShouldPlayerDropFlail() != 0)
+				{
+					pPlayer->PlaySingleAnim(0xAF, 0, -1);
+					pPlayer->mVel.vz = 0;
+					pPlayer->mVel.vx = 0;
+					pPlayer->field_E1C = 0x800000;
+					PLR_U8(pPlayer, 0x54E) = 0;
+				}
+				else
+				{
+					pPlayer->PlaySingleAnim(0xD8, 0, -1);
+					pPlayer->field_E1C = 4;
+				}
+				pPlayer->field_54D = 0;
+			}
+
+			if (pPlayer->CheckStickToCeiling() != 0) break;
+
+			if (pPlayer->mVel.vy < 0)
+			{
+				pPlayer->field_E2D = (char)0x81;
+				pPlayer->field_E2E = 0;
+				pPlayer->field_EBC = 0x10;
+				break;
+			}
+
+			pPlayer->field_E1C = 0x400;
+			pPlayer->PlaySingleAnim(0x113, 0, -1);
+			SFX_PlayPos(0x19, &pPlayer->mPos, 0);
+			pPlayer->DecreaseWebbing(0x80);
+
+			PLR_I32(pPlayer, 0xD7C) = (i32)Utils_Dist(pPlayer->mPos, pPlayer->field_D64);
+			pPlayer->CalculateSwingWebParameters(&pPlayer->field_D64);
+
+			print_if_false(pPlayer->field_E64 == 0, "already swinging");
+
+			{
+				void *pMem = CItem::operator new(0x190);
+
+				if (pMem != 0)
+				{
+					gCSwinger_ctor(pMem, &pPlayer->field_D64,
+						PLR_I32(pPlayer, 0xD7C), &pPlayer->field_D80,
+						&pPlayer->field_DA0);
+				}
+
+				pPlayer->field_E64 = reinterpret_cast<i32*>(pMem);
+				// the original writes this even when the allocation failed
+				*reinterpret_cast<i32*>(reinterpret_cast<char*>(pMem) + 0xF8) =
+					(u8)pPlayer->field_5E8;
+			}
+
+			SFX_Play(Rnd(3) + 0x15, 0x2000, 0);
+			break;
+		}
+
+		// 0x4B30AE. Punching: hand the tick to the combo tracker and start
+		// whatever follow-up move it picks.
+		case 0x800:
+		{
+			u16 attackKind;
+			i32 comboState;
+			CBody *pAimAt;
+
+			pPlayer->field_EA6 = 0;
+			if (pPlayer->CheckGroundGone() != 0) break;
+			if (pPlayer->CheckJump() != 0) break;
+
+			attackKind = pPlayer->field_8FC;
+			if (attackKind == 0 || attackKind == 1)
+			{
+				u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+
+				if (pPad[0x110] != 0
+					&& (pPad[0x120] != 0 || pPad[0x130] != 0)
+					&& (u32)(gTimerRelated - pPlayer->field_898) <= 4)
+				{
+					CBody *pTarget = pPlayer->SelectTargetBaddy(0xBE, -0x1000, 0x1000, 0);
+
+					pPlayer->field_DD8 = Mem_MakeHandle(pTarget);
+					pPlayer->field_DE0 = (i32)gTimerRelated;
+					pPlayer->field_E1C = 0x2000000;
+					pPlayer->PlaySingleAnim(0x78, 0, -1);
+					break;
+				}
+			}
+
+			comboState = gCPlayer_UpdateAndTrackCombo(pPlayer);
+			if (comboState == 0)
+			{
+				pPlayer->field_548 = 0;
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (comboState == 2)
+			{
+				pAimAt = pPlayer->field_DCC;
+				pPlayer->field_8F8 = 1;
+				pPlayer->field_552 = 0;
+				pPlayer->field_E1C = 0x4000;
+				pPlayer->field_8ED = 0;
+			}
+			else if (comboState == 3)
+			{
+				pAimAt = pPlayer->field_DCC;
+				pPlayer->field_8F8 = 2;
+				pPlayer->field_552 = 0;
+				pPlayer->field_E1C = 0x8000;
+
+				if (pPlayer->field_E2E > 0)
+				{
+					pPlayer->field_544 = 2;
+				}
+				else if (pPlayer->field_E2E < 0)
+				{
+					pPlayer->field_544 = 1;
+				}
+				else
+				{
+					pPlayer->field_544 = 0;
+				}
+				pPlayer->field_8ED = 0;
+			}
+			else if (comboState == 6)
+			{
+				pAimAt = pPlayer->field_DCC;
+				pPlayer->field_8F8 = 2;
+				pPlayer->field_552 = 0;
+				pPlayer->field_E1C = 0x10000;
+				pPlayer->field_8ED = 0;
+			}
+			else
+			{
+				break;
+			}
+
+			if (pAimAt == 0)
+			{
+				pPlayer->LockTargetTorsoAngle();
+			}
+			else
+			{
+				pPlayer->SetTargetTorsoAngleToThisPoint(&pAimAt->mPos);
+			}
+			PLR_U8(pPlayer, 0xAE) &= 0xFE;
+			break;
+		}
+
+		// 0x4B3DF9. Landing out of a surface transition: snap to hook 2 and
+		// then slide the stored distance along field_C84.
+		case 0x1000:
+		{
+			u16 lastAnim = (u16)animJustFinished;
+			i32 slide;
+			i16 nx;
+			i16 ny;
+			i16 nz;
+			CVector hook;
+			CVector normal;
+
+			pPlayer->field_EA6 = 0;
+
+			if (lastAnim == 0xFFFF)
+			{
+				// 0x4B3FB8: eat the queued slide 8 units at a time
+				i32 left = PLR_I32(pPlayer, 0xC58);
+
+				if (left == 0) break;
+
+				if (left >= 8)
+				{
+					pPlayer->mPos += (pPlayer->field_C6C * 8);
+					PLR_I32(pPlayer, 0xC58) = left - 8;
+				}
+				else
+				{
+					pPlayer->mPos += (pPlayer->field_C6C * left);
+					PLR_I32(pPlayer, 0xC58) = 0;
+				}
+				break;
+			}
+
+			if (lastAnim == 0x57)
+			{
+				slide = 0xC;
+			}
+			else if (lastAnim == 0x58)
+			{
+				slide = 0x10;
+			}
+			else
+			{
+				slide = (lastAnim == 0x3C) ? 0x42 : 0x37;
+			}
+
+			nx = PLR_I16(pPlayer, 0xB84);
+			ny = PLR_I16(pPlayer, 0xB86);
+			nz = PLR_I16(pPlayer, 0xB88);
+
+			PLR_U8(pPlayer, 0xAD6) = 1;
+			pPlayer->field_A8.vx = nx;
+			pPlayer->field_A8.vy = ny;
+			pPlayer->field_A8.vz = nz;
+
+			if (ny < (i16)0xF5D8)
+			{
+				pPlayer->field_8E9 = 0;
+				pPlayer->field_8E8 = 0;
+				pPlayer->field_AD4 = 0;
+				pPlayer->SwitchToStandMode();
+
+				if (lastAnim != 0x57 && lastAnim != 0x58)
+				{
+					pPlayer->PlaySingleAnim(0x14, 0, -1);
+					pPlayer->field_E1C = 1;
+				}
+			}
+			else
+			{
+				pPlayer->field_E1C = 0x10;
+
+				if (ny > 0xD48)
+				{
+					if (pPlayer->field_ADA == 0)
+					{
+						pPlayer->field_AD8 = 1;
+					}
+					pPlayer->field_8E8 = 0;
+					pPlayer->field_8E9 = 1;
+				}
+				else
+				{
+					if (pPlayer->field_8E8 == 0 && pPlayer->field_ADB != 0)
+					{
+						pPlayer->field_AD9 = 1;
+					}
+					pPlayer->field_8E8 = 1;
+					pPlayer->field_8E9 = 0;
+				}
+			}
+
+			hook.vx = 0;
+			hook.vy = 0;
+			hook.vz = 0;
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hook), pPlayer, 2);
+			pPlayer->mPos = hook;
+
+			normal.vx = -pPlayer->field_C84.vx;
+			pPlayer->field_AC8.vx = normal.vx;
+			normal.vy = -pPlayer->field_C84.vy;
+			pPlayer->field_AC8.vy = normal.vy;
+			normal.vz = -pPlayer->field_C84.vz;
+			pPlayer->field_AC8.vz = normal.vz;
+
+			pPlayer->OrientToNormal(true, &normal);
+			pPlayer->LockTargetTorsoAngle();
+			pPlayer->mPos += (pPlayer->field_C84 * slide);
 			break;
 		}
 
