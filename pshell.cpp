@@ -555,7 +555,7 @@ static STrainingMission* const gChallenges = reinterpret_cast<STrainingMission*>
 #define gEndTrainingFlag (*reinterpret_cast<i32*>(0x0060CFB0))
 // Read once, then cleared to 0 alongside gWideScreen (0x00660F80,
 // idb_globals.txt); guess: a paired display-mode flag.
-#define gScreenModeFlag (*reinterpret_cast<i32*>(0x0054D47C))
+// gScreenModeFlag now lives in pshell.h as G_SCREEN_MODE_FLAG (shared with panel.cpp).
 // Sentinel/insertion-position scratch for the high-score insert (-1 = "no
 // room", else 0-4 = the row that was written).
 #define gTrainingScratch (*reinterpret_cast<i32*>(0x005513D4))
@@ -570,8 +570,8 @@ static STrainingMission* const gChallenges = reinterpret_cast<STrainingMission*>
 // showed what it actually is).
 #define gTrainingMenuEase (*reinterpret_cast<i32*>(0x005512EC))
 // Found 2026-08-27 via IDA on PShell_EndTrainingInit's own disassembly:
-// holds gScreenModeFlag's pre-clear value (set once in EndTrainingInit,
-// restored into gScreenModeFlag once in EndTrainingUpdate when the player
+// holds G_SCREEN_MODE_FLAG's pre-clear value (set once in EndTrainingInit,
+// restored into G_SCREEN_MODE_FLAG once in EndTrainingUpdate when the player
 // exits the training screen). A SEPARATE global from gTrainingScratch
 // (0x5513D4, 4 bytes earlier): EndTrainingInit's own source used to alias
 // gTrainingScratch for this store, which was a bug (wrote the saved value
@@ -704,7 +704,7 @@ void PShell_EndTrainingDisplay(void)
 // PShell_EndTrainingUpdate).
 //
 // Globals with no idb_globals.txt entry are all tentative (see their own
-// comments above): gTrainingActive, gEndTrainingFlag, gScreenModeFlag,
+// comments above): gTrainingActive, gEndTrainingFlag, G_SCREEN_MODE_FLAG,
 // gTrainingScratch, gTrainingMenuEase, gTrainingSavedScreenMode,
 // gTrainingSeconds. String literals
 // passed to print_if_false are placeholders (relocated string addresses
@@ -740,12 +740,12 @@ void PShell_EndTrainingInit(void)
 	SFX_StopAll();
 	Redbook_XAStop();
 
-	i32 oldScreenMode = gScreenModeFlag;
+	i32 oldScreenMode = G_SCREEN_MODE_FLAG;
 
 	gTrainingActive = 1;
 	gEndTrainingFlag = 1;
 	gTrainingSavedScreenMode = oldScreenMode;
-	gScreenModeFlag = 0;
+	G_SCREEN_MODE_FLAG = 0;
 	*(i32*)0x00660F80 = 0;  // gWideScreen (ps2m3d.cpp), fixed game address; see gSaveGame note in CLAUDE.md
 
 	if (MechList)
@@ -933,7 +933,7 @@ void PShell_EndTrainingInit(void)
 // mouse-over or by PCSHELL_CheckTriggers(0x50110, ...), clear the two pad
 // trigger flags used to open this screen (G_SCONTROL[0].X/.Start, matching
 // PShell_MaybeSaveGame's clear pair), turn off the training-active flags,
-// restore gScreenModeFlag from gTrainingSavedScreenMode, translate the
+// restore G_SCREEN_MODE_FLAG from gTrainingSavedScreenMode, translate the
 // chosen line (0/1/2) into gLevelStatus (already a real repo global,
 // trig.cpp, idb_globals.txt names 0x60CFA4 the same way), and tear down
 // both widgets.
@@ -1019,7 +1019,7 @@ void PShell_EndTrainingUpdate(void)
 		G_SCONTROL[0].Start.Triggered = 0;
 		gTrainingActive = 0;
 		gEndTrainingFlag = 0;
-		gScreenModeFlag = savedScreenMode;
+		G_SCREEN_MODE_FLAG = savedScreenMode;
 
 		switch (gTrainingMenu->mLine)
 		{

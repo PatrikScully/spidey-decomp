@@ -68,4 +68,17 @@ static const i32 NUM_CHEATS = 24;
 EXPORT extern SCheat gCheats[NUM_CHEATS];
 
 void patch_pshell(void);
+
+// The HUD/screen master switch at 0x0054D47C. 0 means "draw no HUD at all":
+// Panel_Display reads it to bail out to just the compass, and PShell training
+// clears it and restores it around the end-of-training screens
+// (PShell_EndTrainingInit / PShell_EndTrainingUpdate).
+//
+// Defined once here rather than per-file: it is used by both pshell.cpp and
+// panel.cpp, and the two previously carried separate definitions of the same
+// address under the same name but with DIFFERENT types (pshell.cpp an i32
+// lvalue macro, panel.cpp an i32* pointer), which is a trap.
+//#define G_SCREEN_MODE_FLAG (gScreenModeFlag)
+#define G_SCREEN_MODE_FLAG (*reinterpret_cast<i32*>(0x0054D47C))
+
 #endif

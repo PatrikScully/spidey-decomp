@@ -2,6 +2,7 @@
 
 #include "psx_types.h"
 #include "panel.h"
+#include "pshell.h"
 #include "spool.h"
 #include "l1a3bomb.h"
 #include "spidey.h"
@@ -392,7 +393,7 @@ static i32 * const gPanelScreenY = (i32*)0x0060F76C;
 // gSynthInputScriptFlag asks for it). One address defined twice in two files is
 // not great, it should become one definition in a shared header the next time
 // panel.cpp and pshell.cpp are touched together.
-static i32 * const gScreenModeFlag = (i32*)0x0054D47C;
+// gScreenModeFlag now lives in pshell.h as G_SCREEN_MODE_FLAG (shared with pshell.cpp).
 
 // Same global spidey.cpp already declares under this name (0x0060F770). It is
 // written by CPlayer::CPlayer and by SynthesizeAnalogueInput's script opcode
@@ -445,7 +446,7 @@ static void PanelDisp_DrawIcon(SAnimFrame *pFrame, i32 x, i32 y, i32 w, i32 h)
 //
 // What it draws, top to bottom: it first decays the bomb countdown
 // (gBombAIRelated) by gBombRelated per elapsed tick, then runs
-// Panel_DisplayTimer. If the HUD is switched off (gScreenModeFlag == 0) or the
+// Panel_DisplayTimer. If the HUD is switched off (G_SCREEN_MODE_FLAG == 0) or the
 // player is driving something (field_E18/field_1AC, the same "in a mech"
 // suppression pair Panel_DisplayTimer already uses), it stops there and only
 // draws the compass, and only if gSynthInputScriptFlag asked for it. Otherwise
@@ -520,7 +521,7 @@ void Panel_Display(void)
 
 	Panel_DisplayTimer();
 
-	if (*gScreenModeFlag == 0 || inMech != 0)
+	if (G_SCREEN_MODE_FLAG == 0 || inMech != 0)
 	{
 		if (*gSynthInputScriptFlag != 0)
 			Panel_DisplayCompass();
