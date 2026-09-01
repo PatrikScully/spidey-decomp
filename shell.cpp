@@ -1434,45 +1434,388 @@ void Shell_DrawComicHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amount)
 
 // Address confirmed real this session: 0x49B270, 3882 bytes (names.json).
 // Called from Shell_DoShell's (0x4A1A80) "Special" menu dispatch (case 7,
-// sub_49CCB0's menu-code loop, code 10). Shell_DrawComicHighlightBox
-// (0x49B1F0) and Shell_CopyMatrixRows (0x478140) above are @Ok. The
-// off_53BFC0 class blocker described in earlier revisions of this comment
-// is RESOLVED (see CShellPreviewIcon in shell.h for the full writeup):
-// off_53BFC0 only overrides two of CSuper's five inherited virtual slots
-// (the destructor and AI; Die/Hit/DeleteStuff are unchanged), confirmed by
-// grepping ob.h for CBody/CItem's actual `virtual` methods (there are only
-// five) and independently confirmed by CShellPreviewIcon::AI compiling to
-// an EXACT (0 mnemonic diff) match against 0x493970 -- see the commit
-// history for CShellPreviewIcon and Shell_GameCovers, which fully
-// implements the same construction idiom this function needs (six
-// `new CShellPreviewIcon(x, y, z)` there vs. one here, called once per grid
-// cell as it becomes fully selected). The earlier note about "entries past
-// slot 4 point into 0x4A2xxx-0x4A3xxx" was a misread of unrelated adjacent
-// .rdata (both off_53BBE8 and off_53BFC0 have byte-identical filler
-// immediately after their real 5-slot arrays; not vtable entries).
+// sub_49CCB0's menu-code loop, code 10). Same idiom as Shell_GameCovers
+// (same file): a CExpandingBox loading overlay, a grid of comic covers (8x4
+// = 32 cells at 58x40 spacing, 45x34 each), one CShellPreviewIcon, pad
+// input (up/down/left/right cycling with repeat), and a full-screen BMP
+// viewer with left/right paging over the unlocked comics. The comic unlock
+// mask is gSaveGame.field_8C (0x6828E4, bit i = comic i unlocked; same
+// address as powerup.cpp's gCheatUnlockFlags).
 //
-// Remaining blocker, NOT the class: when a grid cell's highlight amount
-// reaches 256 (fully selected), the original rebuilds a one-off perspective
-// matrix from gMikeCamera/gViewport fields (xL/yB/xR/yT/vpHither/vpYon/Zoom,
-// per the comment on M3d_RenderSetup in ps2m3d.cpp) via a 16-float
-// matrix4x4(...) constructor call and a matrix4x4_ml multiply, then feeds
-// the result through Shell_CopyMatrixRows before M3d_Render. The individual
-// terms are identifiable (aspect-ratio-scaled screen-space offset, GTE-style
-// depth bias -Yon*vpHither/(Yon-vpHither)) but mapping each of the ~16
-// stack locals to its exact matrix4x4(...) argument slot, in order, needs
-// more care than this session had budget for; guessing the slot order wrong
-// would silently produce a wrong render matrix with no compile-time signal.
-// Left as a stub rather than risk a confidently-wrong @Ok on the one truly
-// novel piece of math left in this function. The rest of the body (the
-// per-cell grid loop over 32 cells at 58x40 spacing, CExpandingBox loading
-// overlay, pad input incl. up/down/left/right cycling, disc-swap "please
-// insert" bmp paging, confirm/cancel) is the same idiom as the now-complete
-// Shell_GameCovers and is comparatively mechanical once someone nails the
-// matrix block above.
-// @BIGTODO
+// The one novel piece: when a cell's highlight amount reaches 256 (fully
+// selected), the original builds a one-off perspective matrix from gViewport
+// and temporarily swaps it into the render matrices, M3d_Renders the preview
+// icon, then restores. The matrix (row-major, row-vector convention, matching
+// gsub_476A00) is:
+//   [ halfW*s   0        0  0 ]
+//   [ 0         halfW*s  0  0 ]
+//   [ cx        cy       A  1 ]
+//   [ 0         0        B  0 ]
+// where s = flt_550064*4096/Zoom, halfW = 0.5*(xR-xL)*aspectX,
+// cx = (x-233)*aspectX + halfW, A = Yon/(Yon-Hither), B = -A*Hither.
+// A is the perspective depth term (verified against the raw FPU at 0x49b7c3:
+// fdivr with numerator Yon and denominator Yon-Hither). stru_56E6F8 (the
+// final projection) is recomputed as stru_56E778 * stru_56E570 via
+// gsub_476A00 before the render.
+//
+// File-local globals used by the matrix block: 0x56E570 = view, 0x56E6F8 =
+// final projection (the same global ps2m3d.cpp calls gDCFinalProjMatrix),
+// 0x56E778 = camera transform. flt_550064 = the projection constant
+// (ps2m3d.cpp's gM3dProjConst). 0x555124 holds the two-byte "bc" prefix of
+// the comic cover BMP names ("bc00.bmp".."bc31.bmp").
+static matrix4x4 * const gComicViewMatrix = (matrix4x4*)0x0056E570;
+static matrix4x4 * const gComicProjMatrix = (matrix4x4*)0x0056E6F8;
+static matrix4x4 * const gComicCamMatrix = (matrix4x4*)0x0056E778;
+static volatile f32 * const gM3dProjConst = (f32*)0x00550064;
+static u16 * const gComicBmpNamePrefix = (u16*)0x00555124;
+
+// @Ok
 void Shell_ComicCollection(void)
 {
-    printf("Shell_ComicCollection(void)");
+	print_if_false(gShellInitialized != 0, "Called Shell_ComicCollection() without shell initialised");
+
+	i32 selected = 0;
+
+	CExpandingBox *pLoadingBox = new CExpandingBox(32, 50, 45, 34, 0, 0, 30, 15, 0);
+
+	i32 repeatDelay = 0;
+	SAnimFrame *pFrames = Spool_FindAnim("comics", 1);
+
+	i32 cellAmount[32];
+	for (i32 i = 0, v = 0; v > -1920; i++, v -= 60)
+		cellAmount[i] = v;
+
+	CShellPreviewIcon *pIcon = new CShellPreviewIcon(0, 0, 500);
+	pIcon->mScale.vx = 1024;
+	pIcon->mScale.vy = 1024;
+	pIcon->mScale.vz = 1024;
+
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	i32 titleScrollX = 0;
+	gShellMenuEase = 384;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 startVblanks = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1, -1);
+
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+
+		Shell_DrawTitleBar(titleScrollX, 38, "comic collection", 1, 0, 150, -21, 29);
+
+		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+
+		if (pLoadingBox != 0)
+		{
+			pLoadingBox->Display();
+		}
+		else
+		{
+			SAnimFrame *pFrame = pFrames;
+			for (i32 i = 0; i < 32; i++)
+			{
+				i32 x = 58 * (i & 7) + 32;
+				i32 y = 40 * (i >> 3) + 50;
+
+				if (i == selected)
+					PShell_DrawMenuBox(x, y, 45, 34, 0, 0, 0, 0);
+
+				if (gSaveGame.field_8C & (1 << i))
+				{
+					Shell_DrawComicHighlightBox((i16)(x + 3), (i16)(y + 1), pFrame, cellAmount[i]);
+				}
+				else
+				{
+					i32 amount = cellAmount[i];
+					if (amount >= 0)
+					{
+						DCPanel_DrawFlatShadedPoly(
+							-2.0f,
+							x - ((45 * amount) >> 9) + 22,
+							y - ((34 * amount) >> 9) + 17,
+							2 * ((45 * amount) >> 9),
+							2 * ((34 * amount) >> 9),
+							5, 5, 15, 4094, 1);
+
+						if (amount == 256)
+						{
+							matrix4x4 savedView = *gComicViewMatrix;
+							matrix4x4 savedProj = *gComicProjMatrix;
+							matrix4x4 savedCam = *gComicCamMatrix;
+							SViewport savedViewport = gViewport;
+
+							u16 xL = *(u16*)((char*)&gViewport + 0);
+							u16 yB = *(u16*)((char*)&gViewport + 2);
+							u16 xR = *(u16*)((char*)&gViewport + 4);
+							u16 yT = *(u16*)((char*)&gViewport + 6);
+							u16 hither = *(u16*)((char*)&gViewport + 8);
+							u16 yon = *(u16*)((char*)&gViewport + 10);
+							u16 zoom = *(u16*)((char*)&gViewport + 12);
+
+							f32 aspectX = (f32)gGameResolutionX / (f32)Xres;
+							f32 aspectY = (f32)gGameResolutionY / (f32)Yres;
+							i32 offX = (i32)((f32)(x - 233) * aspectX);
+							i32 offY = (i32)((f32)(y - 89) * aspectY);
+							i32 wX = (i32)((f32)(xR - xL) * aspectX);
+							i32 wY = (i32)((f32)(yB - yT) * aspectY);
+							f32 halfW = (f32)wX * 0.5f;
+							f32 halfH = (f32)wY * 0.5f;
+							f32 cx = (f32)offX + halfW;
+							f32 cy = (f32)offY + halfH;
+							f64 v81 = (f64)*gM3dProjConst * 4096.0 / (f64)zoom;
+							f32 scale = (f32)(halfW * v81);
+							f32 A = (f32)yon / ((f32)yon - (f32)hither);
+							f32 B = -(A * (f32)hither);
+
+							matrix4x4 m(scale, 0, 0, 0,
+							            0, scale, 0, 0,
+							            cx, cy, A, 1,
+							            0, 0, B, 0);
+
+							i32 r;
+							for (r = 0; r < 4; r++)
+								gComicViewMatrix->field_0[r] = m.field_0[r];
+
+							matrix4x4 result;
+							gsub_476A00(&result, gComicCamMatrix, gComicViewMatrix);
+							for (r = 0; r < 4; r++)
+								gComicProjMatrix->field_0[r] = result.field_0[r];
+
+							M3d_Render(pIcon);
+
+							for (r = 0; r < 4; r++)
+							{
+								gComicViewMatrix->field_0[r] = savedView.field_0[r];
+								gComicProjMatrix->field_0[r] = savedProj.field_0[r];
+								gComicCamMatrix->field_0[r] = savedCam.field_0[r];
+							}
+							gViewport = savedViewport;
+						}
+					}
+				}
+
+				pFrame++;
+			}
+		}
+
+		M3d_RenderCleanup();
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 160);
+
+		for (i32 i = 0; i < 32; i++)
+		{
+			cellAmount[i] += 60;
+			if (cellAmount[i] > 256)
+				cellAmount[i] = 256;
+		}
+
+		if (selected < 0)
+			Pad_ClearTriggers(G_SCONTROL);
+
+		Pad_Update();
+
+		if (*gShellMenuAbort)
+			return;
+
+		if (PCSHELL_MouseMoved())
+		{
+			for (i32 i = 0; i < 32; i++)
+			{
+				i32 x = 58 * (i & 7) + 32;
+				i32 y = 40 * (i >> 3) + 50;
+
+				if ((gSaveGame.field_8C & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 45, y + 34))
+					selected = i;
+			}
+		}
+
+		CheckForPadUnplugged();
+
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+		{
+			G_SCONTROL[0].Circle.Triggered = 0;
+			SFX_Play(35, 0x2000, 0);
+
+			if (pLoadingBox != 0)
+				delete pLoadingBox;
+			if (pIcon != 0)
+				delete pIcon;
+
+			Pause(1);
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+			gsub_430680();
+			if (!gPrintStubbed)
+				gsub_46CB90((void*)"stubbed out: DrawSync");
+
+			Pad_ClearTriggers(G_SCONTROL);
+			return;
+		}
+
+		if (pLoadingBox != 0)
+		{
+			if (pLoadingBox->field_30 == 0)
+				goto tail;
+
+			delete pLoadingBox;
+			pLoadingBox = 0;
+		}
+
+		{
+			i32 prevSelected = selected;
+
+			if (PCSHELL_CheckTriggers(61455, 0, 0))
+			{
+				if (repeatDelay == 0 || (repeatDelay > 20 && (repeatDelay & 1) == 0))
+				{
+					i32 col = selected & 7;
+					i32 row = selected >> 3;
+					if (PCSHELL_CheckTriggers(16388, 0, 0) && (selected & 7) != 0)
+						selected--;
+					if (PCSHELL_CheckTriggers(32776, 0, 0) && col != 7)
+						selected++;
+					if (PCSHELL_CheckTriggers(4097, 0, 0) && row != 0)
+						selected -= 8;
+					if (PCSHELL_CheckTriggers(8194, 0, 0) && row != 3)
+						selected += 8;
+				}
+				repeatDelay++;
+				if (prevSelected != selected)
+					SFX_Play(41, 0x3FFF, 0);
+			}
+			else
+			{
+				repeatDelay = 0;
+			}
+		}
+
+		{
+			i32 mouseOverSelected = 0;
+
+			if (PCSHELL_CheckTriggers(256, 1, 1) && (gSaveGame.field_8C & (1 << selected)))
+				mouseOverSelected = PCSHELL_IsMouseOver(
+					58 * (selected & 7) + 32,
+					40 * (selected >> 3) + 50,
+					58 * (selected & 7) + 77,
+					40 * (selected >> 3) + 84);
+
+			if (selected >= 0 && (mouseOverSelected || PCSHELL_CheckTriggers(65552, 1, 1)))
+			{
+				i32 viewCell = selected;
+				G_SCONTROL[0].Start.Triggered = 0;
+				G_SCONTROL[0].X.Triggered = 0;
+
+				do
+				{
+					if ((1 << viewCell) & gSaveGame.field_8C)
+					{
+						SFX_Play(31, 0x2000, 0);
+
+						char bmpName[8];
+						*(u16*)bmpName = *gComicBmpNamePrefix;
+						bmpName[2] = (char)(viewCell / 10 + 48);
+						bmpName[3] = (char)(viewCell % 10 + 48);
+						strcpy(bmpName + 4, ".bmp");
+						bmpName[7] = 0;
+						BMP_Draw(bmpName);
+
+						i32 paged = 0;
+						Pad_ClearTriggers(G_SCONTROL);
+
+						while (1)
+						{
+							Pad_Update();
+							if (*gShellMenuAbort)
+								return;
+							if (PCSHELL_CheckTriggers(197424, 1, 1))
+								break;
+							if (PCSHELL_CheckTriggers(32776, 1, 1))
+							{
+								viewCell++;
+								G_SCONTROL[0].Right.Triggered = 0;
+								selected = viewCell;
+								if (viewCell < 32 && ((1 << viewCell) & gSaveGame.field_8C))
+								{
+									paged = 1;
+									break;
+								}
+								selected = --viewCell;
+								SFX_Play(27, 0x2000, 0);
+							}
+							if (PCSHELL_CheckTriggers(16388, 1, 1))
+							{
+								viewCell--;
+								G_SCONTROL[0].Left.Triggered = 0;
+								selected = viewCell;
+								if (viewCell >= 0 && (gSaveGame.field_8C & (1 << viewCell)))
+								{
+									paged = 1;
+									break;
+								}
+								selected = ++viewCell;
+								SFX_Play(27, 0x2000, 0);
+							}
+							Pause(2);
+						}
+
+						G_SCONTROL[0].Circle.Triggered = 0;
+						G_SCONTROL[0].X.Triggered = 0;
+						G_SCONTROL[0].Start.Triggered = 0;
+						Pad_ClearTriggers(G_SCONTROL);
+
+						if (paged != 0)
+							continue;
+
+						SFX_Play(35, 0x2000, 0);
+						goto tail;
+					}
+					break;
+				} while (1);
+
+				SFX_Play(27, 0x2000, 0);
+			}
+		}
+
+tail:
+		pIcon->AI();
+
+		if (Vblanks == startVblanks)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
 }
 
 // Address confirmed real this session: 0x49DBC0, 2514 bytes (names.json).
