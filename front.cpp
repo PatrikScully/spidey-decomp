@@ -465,12 +465,20 @@ INLINE SLevel* Front_FindLevel(char* pTRGName)
 	return 0;
 }
 
-// @SMALLTODO
-// Investigated 2026-08-31, left stubbed: this function does not exist in
-// the PC binary. tools/names.json has no address for it, tools/functions/
-// has no matching .bin, and a full-text search of the maintainer's IDA
-// database (idalib, both name list and string list) for "GetButtons" finds
-// nothing. The only trace of it anywhere is the PSX THPS2 demo source
+// @NotOk
+// Investigated 2026-08-31, re-verified 2026-09-01 (idalib session
+// 0dc9741d): this function does not exist in the PC binary. tools/names.json
+// has no address for it, tools/functions/ has no matching .bin, and a
+// full-text search of the maintainer's IDA database (idalib, both name list
+// and string list) for "GetButtons" finds nothing. Re-check this session:
+// listed every function IDA knows about (func_query) across the whole
+// front.cpp address range (0x440000-0x442300) and the whole DXsound.cpp
+// range (0x4fbdc0-0x50f6d0+size) - every byte in both ranges is already
+// claimed by a function IDA has a size for (named or sub_XXXXXX), so there
+// is no gap hiding an unnamed copy of this function under a different name.
+// Also checked Front_Update's (0x440ef0) full callee list: none of them read
+// pad state as Activated/GoBack/AnyButton/Start the way this signature
+// implies. The only trace of it anywhere is the PSX THPS2 demo source
 // (thps2-stuff/decls.h: `Front_GetButtons__FRiN30(int *Activated, int
 // *GoBack, int *AnyButton, int *Start)`, body not included in that dump)
 // and the Mac prototype list (tools/prototypes.json: 240 bytes). Nothing
@@ -481,7 +489,7 @@ INLINE SLevel* Front_FindLevel(char* pTRGName)
 // file (see CMenu::Update), so the linker never pulled this function in.
 // Writing a body from the Mac param names alone, with zero PC bytes and
 // zero PC callers to check logic against, would be invention, not
-// decompilation - leaving it stubbed rather than guessing.
+// decompilation - tagging @NotOk honestly rather than guessing an @Ok body.
 void Front_GetButtons(i32 *,i32 *,i32 *,i32 *)
 {
     printf("Front_GetButtons(i32 *,i32 *,i32 *,i32 *)");
