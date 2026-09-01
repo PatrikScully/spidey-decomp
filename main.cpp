@@ -367,6 +367,223 @@ void Logic(void)
 	}
 }
 
+// @Ok
+// 0x004555A0, 1072 bytes. The render half of the frame, called by PlayAway
+// right after Logic. The Mac build keeps CountPrimitives(void) as its own
+// function in main.cpp (tools/prototypes.json lists it at 184 bytes); the PC
+// build inlined it, so it is the gFrontDrawPolyFlag block near the bottom here
+// and has no separate body.
+void Display(void)
+{
+	if (*gDebugBanner)
+	{
+		Mess_SetRGB(255, 0, 0, 0);
+		Mess_SetScale(256);
+		Mess_SetTextJustify(0);
+		Mess_DrawText(256, 60, *gDebugBanner, 0, 0x1000);
+	}
+
+	if (!(gRenderTest & 0x400) || (gRenderTest & 0x200))
+		Ob_AI(reinterpret_cast<CBody**>(&CameraList), 0);
+
+	// no null check on CameraList, same as the original
+	gViewport.Zoom = static_cast<u16>(CameraList->GetZoom());
+
+	Screen_UpdateFades();
+	Panel_Display();
+
+	M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+
+	if (gRenderListFlags[9])
+		M3d_RenderBackground(BackgroundList);
+
+	if (g3DExplosions)
+		M3d_PreprocessWibblyTextures(*gGrenadeExplosionRegion);
+
+	if (*gFireRingObject)
+	{
+		if ((*gFireRingObject)->field_10C.pWhatever)
+		{
+			M3d_PreprocessWibblyTextures(*gFireRingRegion);
+			M3d_PreprocessPulsingColours(*gFireRingRegion);
+		}
+		else
+		{
+			M3d_PreprocessWibblyTextures(*gPsxRingIndex);
+		}
+	}
+
+	if (*gSymBurnCount)
+	{
+		M3d_PreprocessWibblyTextures(*gSymBurnRegion);
+		M3d_PreprocessPulsingColours(*gSymBurnRegion);
+	}
+
+	if (gFireDomes)
+	{
+		M3d_PreprocessWibblyTextures(*gFireDomeRegion);
+		M3d_PreprocessPulsingColours(*gFireDomeRegion);
+	}
+
+	Screen_DrawTarget();
+	Screen_DrawArrow();
+	Mess_Display();
+
+	if (*gTrainingActive)
+		PShell_EndTrainingDisplay();
+
+	if (gRenderListFlags[0])
+		M3d_Render(EnviroList);
+
+	if (gRenderListFlags[1])
+		M3d_Render(EnvironmentalObjectList);
+
+	Music_MusicUpdate();
+
+	if (gRenderListFlags[2])
+		M3d_Render(MechList);
+
+	if (*gM3dSuperScaleEnabled)
+		*gDCUseFixedScale = 1;
+
+	if (gRenderListFlags[3])
+		M3d_Render(SpideyAdditionalBodyPartsList);
+
+	*gDCUseFixedScale = 0;
+
+	MechList->RenderLookaroundReticle();
+
+	if (gRenderListFlags[4])
+		M3d_Render(MiscellaneousRenderingList);
+
+	if (gRenderListFlags[6])
+		M3d_Render(BaddyList);
+
+	// The two loops below go through CBody vtable slot 5 (offset 0x14) and
+	// CBaddy vtable slot 17 (offset 0x44) in the original. Slot 5 is modelled
+	// in the repo (CSearchlight::SpecialRenderer, CSniperTarget and
+	// CChopperMissile::DrawTargetRecticle are all virtual there), slot 17 is
+	// not: the repo's CBaddy declares 12 virtuals and the original has at
+	// least 16. Both slots are dispatched on mType here instead, which reaches
+	// the same three or four classes because the type ids are unique.
+	for (CBody *pControl = ControlBaddyList; pControl != 0;
+			pControl = reinterpret_cast<CBody*>(pControl->mNextItem))
+	{
+		u16 type = pControl->mType;
+
+		if (type == 322)
+			static_cast<CSearchlight*>(pControl)->SpecialRenderer();
+		else if (type == 323)
+			static_cast<CSniperTarget*>(pControl)->DrawTargetRecticle();
+	}
+
+	for (CBody *pBaddy = reinterpret_cast<CBody*>(BaddyList); pBaddy != 0;
+			pBaddy = reinterpret_cast<CBody*>(pBaddy->mNextItem))
+	{
+		u16 type = pBaddy->mType;
+
+		if (type == 321)
+		{
+			static_cast<CChopperMissile*>(pBaddy)->DrawTargetRecticle();
+			continue;
+		}
+
+		if (type == 310)
+		{
+			// scorpion fight housekeeping, folded into the render loop by the
+			// original: forget every object the camera is holding on to except
+			// the one the player is actually carrying.
+			CCamera *pCamera = CameraList;
+
+			if (pCamera)
+			{
+				if (pCamera->mCameraMode == CAMERAMODE_USER)
+				{
+					pCamera->field_F9 = 1;
+				}
+				else
+				{
+					pCamera->field_F9 = 0;
+
+					CPlayer *pPlayer = MechList;
+
+					for (u32 i = 0; i < 8; i++)
+					{
+						CItem *pHeld = pCamera->field_184[i];
+
+						if (pHeld == 0)
+							break;
+
+						if (pPlayer == 0
+								|| reinterpret_cast<CItem*>(pPlayer->mHeldObject) != pHeld)
+						{
+							pHeld->mFlags &= ~0x800;
+							pCamera->field_184[i] = 0;
+							pPlayer = MechList;
+						}
+					}
+				}
+			}
+		}
+		else if (type != 308 && type != 309)
+		{
+			continue;
+		}
+
+		if (type == 308)
+			static_cast<CDocOc*>(pBaddy)->RenderClaws();
+		else if (type == 309)
+			static_cast<CSuperDocOck*>(pBaddy)->RenderClaws();
+		else
+			static_cast<CScorpion*>(pBaddy)->TailRenderer();
+	}
+
+	if (gRenderListFlags[8])
+		M3d_Render(PowerUpList);
+
+	if (gRenderListFlags[5])
+		M3d_Render(MiscList);
+
+	if (gRenderListFlags[7])
+		M3d_Render(BulletList);
+
+	Post_PostProcessEffects();
+	M3d_RenderCleanup();
+	Music_MusicUpdate();
+
+	// the Mac build's CountPrimitives: walk the ordering table from the last
+	// entry and count how many links carried a primitive this frame.
+	if (*gFrontDrawPolyFlag)
+	{
+		*gOtPrimitiveCount = 0;
+
+		u32 *pEntry = reinterpret_cast<u32*>(pDoubleBuffer->OrderingTable[4095]);
+
+		while (pEntry != reinterpret_cast<u32*>(0xFFFFFF))
+		{
+			if (*pEntry & 0xFF000000)
+				(*gOtPrimitiveCount)++;
+
+			pEntry = reinterpret_cast<u32*>(*pEntry & 0xFFFFFF);
+
+			// always true, the pointer was just masked. Dead assert, kept.
+			print_if_false((reinterpret_cast<u32>(pEntry) & 0xFF000000) == 0, "eh?");
+		}
+	}
+
+	Bit_Display();
+
+	if (G_POST_WATER_EFFECT)
+		Post_DoPauseDisplayListProcessing();
+
+	Front_Display();
+	Flash_Display();
+
+	*gPolyBufferUsed = static_cast<i32>(
+			(reinterpret_cast<u32>(pPoly) & 0x7FFFFFFF)
+			- (reinterpret_cast<u32>(pDoubleBuffer->Polys) & 0x7FFFFFFF));
+}
+
 // @BIGTODO
 // Re-checked twice with idalib against the real exe. Address 0x00455C90, 4555
 // bytes of the poly HUD aside this is the top level game state machine: 434

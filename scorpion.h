@@ -29,6 +29,14 @@ class CScorpion : public CBaddy {
 		EXPORT void TargetPlayer(i32);
 		EXPORT i32 GetEnvironmentalObjectTarget(void);
 
+		// CBaddy vtable slot 17 (byte offset 0x44), the per frame "draw my own
+		// extra geometry" hook. Display (main.cpp) calls it for every scorpion
+		// on the baddy list, the same slot CDocOc and CSuperDocOck fill with
+		// RenderClaws. The repo's CBaddy does not declare that slot yet (it
+		// has 12 virtuals, the original has at least 16), so this is a plain
+		// member for now.
+		EXPORT void TailRenderer(void);
+
 
 		i32 field_324;
 

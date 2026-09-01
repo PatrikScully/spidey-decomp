@@ -767,6 +767,18 @@ INLINE void CConstantLaser::SetRGB(
 }
 
 
+// @MEDIUMTODO
+// 0x00489810, 1872 bytes. CBaddy vtable slot 17 for CScorpion, confirmed from
+// the class vtable at 0x0053BE2C (slot 17 = 0x489810, the same slot CDocOc
+// fills with RenderClaws). Draws the scorpion's segmented tail. Needs
+// CScorpion::BuildTail (0x488370), InitialiseTailPSX (0x489050) and
+// UniformCurveTesselator (0x489660), none of which are in the repo yet, so it
+// is only stubbed here to give Display (main.cpp) a real call site.
+void CScorpion::TailRenderer(void)
+{
+	printf("CScorpion::TailRenderer(void)");
+}
+
 void validate_CScorpion(void){
 	VALIDATE_SIZE(CScorpion, 0xC28);
 
