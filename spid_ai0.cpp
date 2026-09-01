@@ -42,6 +42,9 @@ extern i32 gWaterEffect;
 // init.cpp's global, no header declares it yet.
 extern i32 gInitRelatedTwo;
 
+// baddy.cpp's global (real IDB name, 0x0060D9E0), no header declares it yet.
+extern CSVector gTrajectoryVector;
+
 // Death/respawn countdown, tentative name. The only cross reference in the
 // whole binary is SpideyAI0's state 128 case (a scan of every
 // tools/functions/*.bin for the little endian address finds this function and
@@ -1531,7 +1534,80 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 			else if (pPlayer->field_E1C == 0x10000)
 			{
-				// 0x4B4E9B, 132 instructions. Not ported yet.
+				// 0x4B4E9B. Web-swing/attach wind up: three animations that
+				// each fire a web on their release frame and drip webbing.
+				u16 anim = pPlayer->mAnim;
+
+				pPlayer->field_EA6 = 0;
+
+				if (anim == 0x8B)
+				{
+					if (pPlayer->mAnimFinished != 0)
+					{
+						// 0x4B6597
+						pPlayer->SwitchToStandMode();
+						break;
+					}
+
+					// ebp still holds the 3 loaded at 0x4B2124
+					if (pPlayer->mFrame < 3) break;
+
+					if (pPlayer->field_552 == 0)
+					{
+						pPlayer->field_552 = 1;
+						if (pPlayer->field_8ED != 0)
+						{
+							pPlayer->FireWeb(false, 0x384, &pPlayer->field_DC0, false, &gTrajectoryVector);
+						}
+						else
+						{
+							pPlayer->FireWeb(true, 0x384, &ZeroVector, false, &gTrajectoryVector);
+						}
+					}
+					else if (pPlayer->CheckJump() != 0)
+					{
+						break;
+					}
+
+					if (pPlayer->mFrame > 5) break;
+					pPlayer->CreateWebDrips(true, false);
+					break;
+				}
+
+				if (anim == 0xFF || anim == 0x109)
+				{
+					if (pPlayer->mFrame < 5) break;
+
+					if (pPlayer->field_552 == 0)
+					{
+						pPlayer->field_552 = 1;
+						if (pPlayer->field_8ED != 0)
+						{
+							pPlayer->FireWeb(false, 0x384, &pPlayer->field_DC0, false, &gTrajectoryVector);
+						}
+						else
+						{
+							pPlayer->FireWeb(true, 0x384, &ZeroVector, false, &gTrajectoryVector);
+						}
+					}
+
+					if (pPlayer->mFrame <= 0xB)
+					{
+						pPlayer->CreateWebDrips(true, true);
+					}
+
+					if (pPlayer->mAnimFinished == 0) break;
+
+					pPlayer->PlaySingleAnim(anim == 0xFF ? 0x100 : 0x10A, 0, -1);
+					break;
+				}
+
+				if (anim == 0x100 || anim == 0x10A)
+				{
+					if (pPlayer->CheckJump() != 0) break;
+					if (pPlayer->mAnimFinished == 0) break;
+					pPlayer->SwitchToStandMode();
+				}
 			}
 			else if (pPlayer->field_E1C > 0x100)
 			{
