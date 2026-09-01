@@ -172,6 +172,23 @@ static void gCWeb_SetFirePos(CWeb *pWeb, CVector &pos)
 	(reinterpret_cast<SWebFirePosAdapter*>(pWeb)->*u.m)(pos);
 }
 
+// CWeb::SwitchToSnap (0x004F69F0, real name in the maintainer's IDB, and the
+// Mac symbol .SwitchToSnap__4CWebFR7CVectorP7CVector gives the arguments) is
+// not declared in web.h either, so it uses the same adapter.
+struct SWebSwitchToSnapAdapter
+{
+	void SwitchToSnap(CVector &dir, CVector *pPath);
+};
+
+// @Bogus
+static void gCWeb_SwitchToSnap(CWeb *pWeb, CVector &dir, CVector *pPath)
+{
+	typedef void (SWebSwitchToSnapAdapter::*memfn)(CVector&, CVector*);
+	union { memfn m; void *p; } u;
+	u.p = (void*)0x004F69F0;
+	(reinterpret_cast<SWebSwitchToSnapAdapter*>(pWeb)->*u.m)(dir, pPath);
+}
+
 // spidey.h declares CPlayer::UpdateAndTrackCombo as returning void, but the
 // original (0x004C7120) returns the combo state that state 0x800 switches on
 // (0 = the combo ended, 2/3/6 = which follow-up move to start). The repo's
@@ -301,7 +318,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x4000      0x4B44C9   TODO   ~370 instructions
 //   0x8000      0x4B402E   TODO   ~290 instructions
 //   0x10000     0x4B4E9B   done   web-swing wind up (3 anims that fire a web)
-//   0x20000     0x4B58B4   TODO   ~270 instructions
+//   0x20000     0x4B58B4   done   the tug-web attacks
 //   0x40000     0x4B51B2   TODO   ~440 instructions
 //   0x80000     0x4B50F1   done   end of a scripted "stand up here" move
 //   0x100000    0x4B5CFE   done   reaching down for a pickup
@@ -2412,6 +2429,125 @@ void SpideyAI0(CPlayer *pPlayer)
 			pPlayer->field_534 = 0x168;
 			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
 			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
+		// 0x4B58B4. The tug-web attacks: each animation snaps its web off on
+		// a given frame, and the wind up animations 0xFE and 0x108 pick one
+		// of three follow ups from field_544.
+		case 0x20000:
+		{
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->field_E20 != 0 && pPlayer->CheckJump() != 0) break;
+
+			if (pPlayer->field_E6C != 0)
+			{
+				CVector dir;
+				CVector *pPath = 0;
+				u16 anim = pPlayer->mAnim;
+				u8 snap = 0;
+
+				if (anim == 0x94)
+				{
+					if (pPlayer->mFrame >= 0xE)
+					{
+						pPath = reinterpret_cast<CVector*>(
+							pPlayer->CalculateTugWebPathPoints());
+						dir = (pPlayer->field_C6C * 0x20)
+							+ (pPlayer->field_C84 * 0x10);
+						snap = 1;
+					}
+				}
+				else if (anim == 0x102 || anim == 0x10C)
+				{
+					if (pPlayer->mFrame >= 9)
+					{
+						dir = ((*reinterpret_cast<CVector*>(&pPlayer->field_C78) * 0x18)
+							+ (pPlayer->field_C84 * 0x10))
+							+ (pPlayer->field_C6C * 0x18);
+						snap = 1;
+					}
+				}
+				else if (anim == 0x101 || anim == 0x10B)
+				{
+					if (pPlayer->mFrame >= 9)
+					{
+						dir = ((*reinterpret_cast<CVector*>(&pPlayer->field_C78) * -0x18)
+							+ (pPlayer->field_C84 * 0x10))
+							+ (pPlayer->field_C6C * 0x18);
+						snap = 1;
+					}
+				}
+				else if (anim == 0x103 || anim == 0x10D)
+				{
+					if (pPlayer->mFrame >= 9)
+					{
+						dir = (pPlayer->field_C6C * 0x20)
+							+ (pPlayer->field_C84 * 0x10);
+						snap = 1;
+					}
+				}
+
+				if (snap != 0)
+				{
+					// 0x4B5BF2
+					gCWeb_SwitchToSnap(reinterpret_cast<CWeb*>(pPlayer->field_E6C),
+						dir, pPath);
+					pPlayer->field_E6C = 0;
+					pPlayer->field_E20 = 1;
+				}
+			}
+
+			// 0x4B5C0A
+			if (pPlayer->mAnimFinished == 0) break;
+
+			if (pPlayer->mAnim == 0x94)
+			{
+				CVector back;
+
+				back.vx = -pPlayer->field_C6C.vx;
+				back.vy = -pPlayer->field_C6C.vy;
+				back.vz = -pPlayer->field_C6C.vz;
+				pPlayer->OrientToNormal(true, &back);
+			}
+
+			if (pPlayer->mAnim == 0xFE)
+			{
+				if (pPlayer->field_544 == 0)
+				{
+					pPlayer->PlaySingleAnim(0x103, 0, -1);
+				}
+				else if (pPlayer->field_544 == 1)
+				{
+					pPlayer->PlaySingleAnim(0x102, 0, -1);
+				}
+				else
+				{
+					pPlayer->PlaySingleAnim(0x101, 0, -1);
+				}
+				break;
+			}
+
+			if (pPlayer->mAnim != 0x108)
+			{
+				// 0x4B682F
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (pPlayer->field_544 == 0)
+			{
+				pPlayer->PlaySingleAnim(0x10D, 0, -1);
+			}
+			else if (pPlayer->field_544 == 1)
+			{
+				pPlayer->PlaySingleAnim(0x10C, 0, -1);
+			}
+			else
+			{
+				pPlayer->PlaySingleAnim(0x10B, 0, -1);
+			}
 			break;
 		}
 
