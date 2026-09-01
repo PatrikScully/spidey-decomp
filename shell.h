@@ -202,6 +202,11 @@ public:
 	EXPORT void SelectNewTrack(i32);
 	EXPORT void SelectNewAnim(void);
 
+	// The Scorpion preview costume (mType 310). Mac symbols
+	// .InitialiseTailPSX__6CDummyFv / .InitialiseTailSweepPSX__6CDummyFv /
+	// .BuildTail__6CDummyFv / .ScorpionUniformCurveTesselator__6CDummyFP7CVectorUiP7CVector.
+	EXPORT void InitialiseTailPSX(void);
+
 	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).
 	u16* field_1A4;
 	u16* field_1A8;
@@ -289,7 +294,11 @@ public:
 
 	CItem field_240;
 
-	PADDING(0x284 - 0x240 - sizeof(CItem));
+	// InitialiseTailPSX sets this to 1 immediately before it points the region's ppModels
+	// at mpTailGeometry below. Nothing in the repo reads it. It sits right in front of the
+	// model pointer, so it looks like a one entry model list count.
+	i32 field_280;
+
 
 	// Tail geometry buffer for the Scorpion preview model (mType 310), rebuilt every frame by
 	// TailRenderer. Exactly the same buffer layout CScorpion::mpTailGeometry uses (scorpion.h).

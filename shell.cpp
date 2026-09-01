@@ -9128,6 +9128,154 @@ CDummy::~CDummy(void)
 	// field_240 / field_288 (CItem) and the base class are destructed automatically.
 }
 
+// The face records the two hand built tail models are made of. The layout is confirmed by
+// DCModel_CreateFromSModel (dcmodel.cpp), which parses exactly these fields back out of an
+// SModel: a dword whose low word is the poly type and whose high word is the record size,
+// four byte vertex indices, four colour bytes, then per-type data.
+struct STailFace
+{
+	// 0x887: textured (bits 0x3 set), quad (bit 0x10 clear), colours already converted
+	// (bit 0x800)
+	u16 mFlags;
+	u16 mSize;
+
+	// low byte the first index, high byte the second
+	u16 mVertices01;
+	u16 mVertices23;
+
+	u16 mColour01;
+	u16 mColour23;
+
+	// never written here, and never read back for this poly type
+	PADDING(4);
+
+	Texture* mpTexture;
+
+	// low byte u, high byte v, one per corner
+	u16 mUV[4];
+};
+
+// @Ok
+// 0x4953C0, 768 bytes. Mac symbol .InitialiseTailPSX__6CDummyFv (0xE72B0). The PC body is
+// the same code as CScorpion::InitialiseTailPSX (0x489050, still a stub in scorpion.cpp)
+// with CDummy's own offsets: field_240 is the tail item where CScorpion has field_3F8,
+// exactly 0x1B8 lower, and the light differs (gLightScorpion here, M3d_ScorpionLight
+// there). Everything else matches instruction for instruction.
+//
+// Takes the first free PSX region, names it "S" and fills it with a one part model built by
+// hand: an SModel header, 92 vertices and 92 normals (rewritten every frame by
+// TailRenderer), a flat grey 256 entry colour table, and 88 textured quads, four per ring
+// for the 22 gaps between the 23 tail nodes. The quads are mapped onto a 4x4 grid of the
+// "new_scorp_tail" texture, the column from the corner index and the row from the ring
+// index mod 4.
+void CDummy::InitialiseTailPSX(void)
+{
+	i32 region = 0;
+	while (region < MAXPSX && PSXRegion[region].Filename[0] != 0)
+		region++;
+
+	// if every region is taken the original falls straight through here, leaving mRegion
+	// at the 0xFF the constructor put there
+	if (region < MAXPSX)
+	{
+		this->field_240.mRegion = static_cast<u8>(region);
+
+		SPSXRegion* pRegion = &PSXRegion[region];
+		pRegion->Filename[0] = 'S';
+		pRegion->Filename[1] = 0;
+		pRegion->IsSuper = 0;
+		pRegion->Usable = 1;
+		pRegion->Protected = 1;
+		pRegion->pPSX = 0;
+		pRegion->pAnimFile = 0;
+		pRegion->pHierarchy = 0;
+		pRegion->pTexWibData = 0;
+		pRegion->pColourPulseData = 0;
+		pRegion->NumParts = 1;
+		pRegion->Pad = 0;
+		pRegion->pHooks = 0;
+	}
+
+	print_if_false(this->field_240.mRegion != 0xFF, "No free region");
+
+	this->field_240.mFlags = 0x480;
+	this->field_240.mAngles.vz = 0;
+	this->field_240.mAngles.vy = 0;
+	this->field_240.mAngles.vx = 0;
+	this->field_240.mModel = 0;
+	this->field_240.mNextItem = 0;
+	this->field_240.mpLight = gLightScorpion;
+
+	u32* pClut = static_cast<u32*>(DCMem_New(1024, 0, 1, 0, true));
+	PSXRegion[this->field_240.mRegion].pColourTable = pClut;
+	for (i32 c = 0; c < 256; c++)
+		pClut[c] = 0x808080;
+
+	// 28 byte SModel header + 92 vertices + 92 normals of 8 bytes each (1500 bytes, which
+	// is exactly STailGeometry) + 88 face records of 28 bytes = 3964. The original asks for
+	// eight bytes more than it uses; kept as the literal it passes.
+	STailGeometry* pGeom = static_cast<STailGeometry*>(DCMem_New(3972, 0, 1, 0, true));
+	this->field_280 = 1;
+	this->mpTailGeometry = pGeom;
+	PSXRegion[this->field_240.mRegion].ppModels =
+			reinterpret_cast<SModel**>(&this->mpTailGeometry);
+
+	// the first 28 bytes of STailGeometry are an SModel header
+	SModel* pModel = reinterpret_cast<SModel*>(pGeom);
+	pModel->Flags = 8;
+	pModel->NumVertices = 92;
+	pModel->NumNormals = 92;
+	pModel->NumFaces = 88;
+	pModel->Radius = 0x200000;
+	pModel->zMax = 0x7FFF;
+	pModel->NextLOD = 0xFFFF;
+
+	Texture* pTexture = Spool_FindTextureEntry("new_scorp_tail");
+	print_if_false(pTexture != 0, "No texture");
+
+	i32 uOrigin = pTexture->u0;
+	// the original works the u step out unsigned (shr) and the v step signed (sar)
+	i32 uStep = static_cast<i32>(static_cast<u32>(pTexture->u3 - pTexture->u0) >> 2);
+	i32 vStep = (pTexture->v3 - pTexture->v0) / 4;
+
+	STailFace* pFace = reinterpret_cast<STailFace*>(
+			reinterpret_cast<u8*>(pGeom) + 1500);
+
+	for (i32 ring = 0; ring < 22; ring++)
+	{
+		i32 row = ring & 3;
+		i32 vLo = row * vStep;
+		i32 vHi = (row + 1) * vStep;
+
+		for (i32 corner = 0; corner < 4; corner++)
+		{
+			pFace->mFlags = 0x887;
+			pFace->mSize = 28;
+
+			// this corner of the ring and the same corner one ring along, then the next
+			// corner of both rings, wrapping back to corner 0 on the last quad
+			i32 thisCorner = corner + 4 * ring;
+			i32 nextCorner = (corner == 3) ? (4 * ring) : (thisCorner + 1);
+
+			pFace->mVertices01 = static_cast<u16>(thisCorner | ((thisCorner + 4) << 8));
+			pFace->mVertices23 = static_cast<u16>(nextCorner | ((nextCorner + 4) << 8));
+			pFace->mColour01 = 0;
+			pFace->mColour23 = 0;
+			pFace->mpTexture = pTexture;
+
+			i32 uLo = uOrigin + corner * uStep;
+			i32 uHi = uOrigin + (corner + 1) * uStep;
+
+			pFace->mUV[0] = static_cast<u16>(uLo | ((pTexture->v0 + vLo) << 8));
+			pFace->mUV[1] = static_cast<u16>(uLo | ((pTexture->v0 + vHi) << 8));
+			pFace->mUV[2] = static_cast<u16>(uHi | ((pTexture->v0 + vLo) << 8));
+			pFace->mUV[3] = static_cast<u16>(uHi | ((pTexture->v0 + vHi) << 8));
+
+			pFace++;
+		}
+	}
+}
+
 // @BIGTODO
 // 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
 // vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
@@ -9839,6 +9987,7 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_234, 0x234);
 	VALIDATE(CDummy, field_238, 0x238);
 
+	VALIDATE(CDummy, field_280, 0x280);
 	VALIDATE(CDummy, mpTailGeometry, 0x284);
 	VALIDATE(CDummy, field_240, 0x240);
 	VALIDATE(CDummy, field_288, 0x288);
