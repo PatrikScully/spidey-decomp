@@ -422,6 +422,130 @@ CDome::~CDome(void)
 	gNumDomes--;
 }
 
+// The single live CDomeRing. Written by CDomeRing's constructor (which
+// deletes the previous ring first) and cleared by its destructor, which also
+// asserts it still points at itself. Only web.cpp touches 0x6B559C, apart
+// from a level-teardown reset at 0x45566A, so it stays file-local here. No
+// idb_globals.txt entry, the name is ours.
+static CDomeRing ** const gpCurrentDomeRing = (CDomeRing**)0x006B559C;
+
+// @Ok
+// 0x4F5510, 494 bytes. Builds the expanding shockwave ring that a dome leaves
+// behind when it pops. Only one may exist, so any previous one is deleted
+// first. Saves the ring model's vertices into field_F8 (the destructor puts
+// them back, because CDomeRing animates the SHARED region model in place) and
+// precomputes a per-vertex outward direction into field_FC.
+//
+// Original defect kept: field_FC[3*i + 1] (the y component of the direction)
+// is never written, so every ring runs off whatever the freshly allocated
+// block happened to hold there.
+CDomeRing::CDomeRing(const CVector *pPos, i32 bFire)
+{
+	if (*gpCurrentDomeRing != 0)
+		delete *gpCurrentDomeRing;
+
+	*gpCurrentDomeRing = this;
+
+	this->field_10C = bFire;
+
+	if (bFire != 0)
+		this->InitItem("firering");
+	else
+		this->InitItem("ring");
+
+	this->AttachTo(&MiscList);
+
+	if (this->field_10C != 0)
+		this->mFlags |= 0x200;
+	else
+		this->mFlags |= 0x600;
+
+	this->mRGB = 0x808080;
+
+	this->mPos = *pPos;
+	this->field_104 = 100;
+	this->mPos.vy -= 0x5A000;
+	this->field_108 = 3;
+
+	SModel *pModel = G_PSXREGION[this->mRegion].ppModels[0];
+	this->field_100 = pModel;
+
+	this->field_F8 = reinterpret_cast<i16*>(Mem_New(6 * pModel->NumVertices));
+	this->field_FC = reinterpret_cast<i16*>(Mem_New(6 * pModel->NumVertices));
+
+	i16 *pSaved = this->field_F8;
+	i16 *pDir = this->field_FC;
+	SVECTOR *pVert = reinterpret_cast<SVECTOR*>(reinterpret_cast<u8*>(pModel) + 28);
+
+	i32 i = 0;
+
+	if (pModel->NumVertices != 0)
+	{
+		do
+		{
+			pSaved[0] = pVert->vx;
+			pSaved[1] = pVert->vy;
+			pSaved[2] = pVert->vz;
+
+			i32 length = M3dMaths_SquareRoot0(pVert->vz * pVert->vz + pVert->vx * pVert->vx);
+			print_if_false(length != 0, "Divide by zero in CDomeRing!");
+
+			pDir[0] = (i16)(pVert->vx * this->field_104 / length);
+			pDir[2] = (i16)(pVert->vz * this->field_104 / length);
+
+			pSaved += 3;
+			pDir += 3;
+			pVert++;
+			i++;
+		}
+		while (i < this->field_100->NumVertices);
+	}
+}
+
+// @Ok
+// 0x4F5720, 215 bytes. Puts the shared region model's vertices back the way
+// CDomeRing's constructor found them, frees the two scratch buffers and drops
+// the singleton.
+//
+// Note: CDomeRing's own virtual overrides (vtable 0x53C73C slots 2, 5, 6 and
+// 7 -- sub_4F5800 animates the model vertices outwards each frame, sub_4F58B0
+// / sub_4F5960 / sub_4F9040 are three class-specific virtuals) are still not
+// decompiled, so a repo-built CDomeRing gets CBody's vtable and never
+// animates. The constructor and destructor above are faithful; the rest of
+// the class is open work.
+CDomeRing::~CDomeRing(void)
+{
+	this->DeleteFrom(&MiscList);
+
+	SModel *pModel = this->field_100;
+	i16 *pSaved = this->field_F8;
+	SVECTOR *pVert = reinterpret_cast<SVECTOR*>(reinterpret_cast<u8*>(pModel) + 28);
+
+	i32 i = 0;
+
+	if (pModel->NumVertices != 0)
+	{
+		do
+		{
+			pVert->vx = pSaved[0];
+			pVert->vy = pSaved[1];
+			pVert->vz = pSaved[2];
+
+			pSaved += 3;
+			pVert++;
+			i++;
+		}
+		while (i < this->field_100->NumVertices);
+	}
+
+	Mem_Delete(this->field_F8);
+	Mem_Delete(this->field_FC);
+
+	print_if_false(*gpCurrentDomeRing == this, "Eh?");
+
+	*gpCurrentDomeRing = 0;
+}
+
 // @Ok
 // @AlmostMatching: vector assignment is different, this one doesn't use esi either
 i32 Web_GetGroundY(const CVector* a1)
@@ -440,6 +564,48 @@ i32 Web_GetGroundY(const CVector* a1)
 		return gLineInfo.EndCoords.vy;
 
 	return gLineInfo.Position.vy;
+}
+
+// @MEDIUMTODO
+// 0x4F7F40, 429 bytes. Scoped but not written out. What it does: chains
+// CNonRenderedBit::CNonRenderedBit, zeroes the first 6 bytes of 81 entries at
+// +0x48 (stride 8), stores Mem_MakeHandle(pSuper) in field_3C and Type in the
+// inherited mType, then writes a Mem_MakeHandle(this) back into the CSuper's
+// own slot (field_104 for Type 0, field_10C for Type 1; any other Type only
+// asserts). Then +0x424 = 400, +0x41E = 6, +0x41F = <a per-Type count> / 6,
+// and field_44 = new CGPolyLine(80) with its +0x3C cleared.
+//
+// Blocked on class layout, not on callees: the count written to +0x41F comes
+// from a byte at CSuper+0x13E, negated and randomised for Type 0 and divided
+// by three for Type 1, and +0x41E / +0x41F / +0x424 are fields this repo does
+// not have yet. Writing them would mean inventing three offsets inside the
+// existing field_48 padding block, which is exactly the guesswork PLAN.md
+// forbids.
+//
+// Layout finding while scoping this (NOT yet applied, because
+// CTrapWebEffect::Burst is already @Ok against the current declaration): the
+// zeroing loop runs 81 iterations of stride 8 over +0x48, i.e. 0x48..0x2D0,
+// so web.h's `SHook field_48[122]` (0x48..0x418) is too long. 0x2D0 onwards is
+// a separate i16 array, with a count at +0x374, a byte triple at +0x378 and a
+// pointer array at +0x37C, all read by AddAnotherStrand below.
+CTrapWebEffect::CTrapWebEffect(CSuper *, i32)
+{
+	printf("CTrapWebEffect::CTrapWebEffect(CSuper *,i32)");
+}
+
+// @MEDIUMTODO
+// 0x4F83C0, 435 bytes. Blocked leaf-first on two callees that do not exist
+// yet, CTrapWebEffect::MoveProjector (0x4F82A0) and CTrapWebEffect::CalcHook
+// (0x4F8190), and on the same unmapped fields as the constructor above.
+// What it does: while field_44's strand count (+0x3C) is under 80, advances
+// the projector, adds one hook, and then, once at least two hooks exist and
+// with a 1-in-4 chance and under 20 strands, picks the widest gap between the
+// newest hook and each earlier one, records the (newest, newest-1, widest)
+// index triple, and allocates a CQuadBit for the new strand
+// (SetTexture(0x35006853), SetSemiTransparent).
+void CTrapWebEffect::AddAnotherStrand(void)
+{
+	printf("CTrapWebEffect::AddAnotherStrand(void)");
 }
 
 // @Ok
@@ -623,6 +789,14 @@ INLINE void CDomeShockWave::ResetHitFlags(CBody* body)
 {
 	for(CBody *cur = body; cur; cur = reinterpret_cast<CBody*>(cur->mNextItem))
 		cur->mCBodyFlags &= 0xFEFF;
+}
+
+void validate_CKnottedWebSplat(void){
+	VALIDATE_SIZE(CKnottedWebSplat, 0xB0);
+
+	VALIDATE(CKnottedWebSplat, field_8C, 0x8C);
+	VALIDATE(CKnottedWebSplat, field_98, 0x98);
+	VALIDATE(CKnottedWebSplat, field_A4, 0xA4);
 }
 
 void validate_CImpactWeb(void){
@@ -870,51 +1044,221 @@ CWeb::CWeb(void)
 }
 
 // @MEDIUMTODO
-// 0x4F5ED0, 662 bytes. Called by CPlayer::FireWeb.
-void CWeb::Fire(CVector &, CVector &, CBody *, bool, CSVector &)
+// 0x4F5BC0, 420 bytes. Scoped but not written out. What it does: chains
+// CQuadBit::CQuadBit, zeroes its own 0x8C..0xAC fields, SetTexture(0x3AF20073)
+// + SetSemiTransparent, sets field_84 (inherited) to 32 and mType to 40, puts
+// field_8C at pPos + pNormal * 10, calls CQuadBit::OrientUsing with a CSVector
+// rebuilt from the low words of pNormal's three i32s and a Rnd(4096) angle,
+// then stores (mPosB - mPos) >> 1 and (mPosC - mPos) >> 1 into field_98 /
+// field_A4 and runs one Move().
+//
+// Left as a stub because two of its steps cannot be written honestly yet: the
+// texture id 0x3AF20073 has no name in this repo, and the final call is
+// link-folded onto CSimbyShotSplat::Move (0x4A5E40, simby.cpp), so which class
+// really owns that Move body (and therefore what CKnottedWebSplat's vtable
+// should look like) is unresolved. Its caller CWeb::Fire below is complete.
+CKnottedWebSplat::CKnottedWebSplat(const CVector *, const CVector *)
 {
-	printf("CWeb::Fire(CVector &,CVector &,CBody *,bool,CSVector &)");
-}
-
-// @MEDIUMTODO
-// 0x4F8D10, 229 bytes. Called by CPlayer::FireWeb.
-void Web_Trap(CSuper *, i32)
-{
-	printf("Web_Trap(CSuper *,i32)");
+	printf("CKnottedWebSplat::CKnottedWebSplat(const CVector *,const CVector *)");
 }
 
 // @Ok
-// 0x4F9940, 604 bytes. Called by CPlayer::FireWeb. The web splat left on a
-// surface when a web shot misses. Fires a line from Pos along the Normal
-// direction at speed a4 for a6 frames; if it hits an env object it records
-// the hit item/face/position/normal and caps the lifetime at the hit distance.
-CImpactWeb::CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 a4, i32 a5, i32 a6)
+// 0x4F5ED0, 662 bytes. Called by CPlayer::FireWeb. Anchors the web between
+// Hook and Target, optionally drops a splat where it landed, and (only the
+// first time, while field_12C is still empty) builds the drawn strand: a
+// CKnottedWeb whose extra dangling segments start at the base line's own
+// segment ends.
+//
+// The tail branches on which web shot the player is running (CPlayer
+// field_8F8: 1 forward, 2 yank), except that a web fired at the player
+// himself always counts as the yank shot. The yank path bursts any
+// CTrapWebEffect already on the target's field_10C slot and puts a fresh
+// Type 1 one on with 16 strands.
+//
+// Original defects kept: both `new`s are used without a null check (the
+// original calls SetTint / SetStartAndEnd straight through the returned
+// pointer), and the "mhYankWebContact not gone?" check calls
+// Mem_RecoverPointer purely to feed print_if_false, which is a no-op here.
+void CWeb::Fire(
+		CVector &Hook,
+		CVector &Target,
+		CBody *pTarget,
+		bool bSplat,
+		CSVector &Normal)
 {
-	CFlatBit::CFlatBit();
+	this->field_108 = Hook;
+	this->field_114 = Target;
 
-	field_78.vx = 0;
-	field_78.vy = 0;
-	field_78.vz = 0;
-	field_84.vx = 0;
-	field_84.vy = 0;
-	field_84.vz = 0;
+	if (bSplat)
+	{
+		// the original sign-extends the CSVector into three i32s here and
+		// hands the splat a CVector; the splat's own constructor reads the
+		// low word of each i32 back out when it needs the angles again
+		CVector SplatNormal(Normal.vx, Normal.vy, Normal.vz);
 
-	if (MechList != 0)
-		field_68 = MechList->GetDamageInflictedFromDifficulty(a5);
+		CKnottedWebSplat *pSplat = new CKnottedWebSplat(&Target, &SplatNormal);
+
+		if (this->field_F8 != 0)
+			pSplat->SetTint(0xFF, 0x7B, 0);
+		else
+			pSplat->SetTint(0x80, 0x80, 0x80);
+	}
+
+	if (this->field_12C == 0)
+	{
+		*reinterpret_cast<SHandle*>(&this->field_134) = Mem_MakeHandle(pTarget);
+
+		CKnottedWeb *pWeb = new CKnottedWeb(this->field_114, this->field_108);
+
+		this->field_12C = pWeb;
+
+		pWeb->SetStartAndEnd(&this->field_114, &this->field_108);
+
+		Utils_CalcUnitFacingCamera(&this->field_114, &this->field_108,
+				reinterpret_cast<CVector*>(&pWeb->field_58));
+
+		SLineSeg *pSeg = pWeb->mSegs;
+		SKnottedWebSeg *pExtra = pWeb->mpExtraSegs;
+
+		for (i32 i = 0; i < pWeb->mNumSegs; i++)
+		{
+			pExtra->mPos.vx = pSeg->End.vx;
+			pExtra->mPos.vy = pSeg->End.vy;
+			pExtra->mPos.vz = pSeg->End.vz;
+
+			pSeg++;
+			pExtra++;
+		}
+
+		this->field_12C->field_74 = this->field_F8;
+
+		print_if_false(G_MECHLIST != 0, "No spidey?");
+
+		i32 WebShot;
+
+		if (pTarget == G_MECHLIST)
+			WebShot = 2;
+		else
+			WebShot = reinterpret_cast<CPlayer*>(G_MECHLIST)->field_8F8;
+
+		if (WebShot == 1)
+		{
+			this->field_12C->field_6C = 1;
+		}
+		else if (WebShot == 2)
+		{
+			if (pTarget != 0)
+			{
+				CSuper *pSuper = reinterpret_cast<CSuper*>(pTarget);
+
+				print_if_false((pSuper->mFlags >> 1) & 1, "Tried to yank a non superitem");
+
+				CTrapWebEffect *pOld = reinterpret_cast<CTrapWebEffect*>(
+						Mem_RecoverPointer(&pSuper->field_10C));
+
+				if (pOld != 0)
+					pOld->Burst();
+
+				print_if_false(Mem_RecoverPointer(&pSuper->field_10C) == 0,
+						"mhYankWebContact not gone?");
+
+				CTrapWebEffect *pEffect = new CTrapWebEffect(pSuper, 1);
+
+				for (i32 j = 16; j != 0; j--)
+					pEffect->AddAnotherStrand();
+			}
+
+			this->field_12C->field_6E = 1;
+		}
+	}
+
+	this->field_104 = 1;
+}
+
+// @Ok
+// 0x4F8D10, 229 bytes. Called by CPlayer::FireWeb. Wraps a baddy in webbing:
+// reuses the CTrapWebEffect already hanging off the baddy's field_104 if
+// there is one, otherwise makes a fresh one (Type 0) and tells the player it
+// just landed a hit. Either way eight more strands go on.
+//
+// The original writes field_418 straight through the pointer `new` returned
+// without checking it, so an out-of-memory CBit::operator new dereferences
+// null here. That is the original's own defect and is left as written.
+//
+// The original emits eight straight-line AddAnotherStrand calls rather than a
+// loop; the loop below is the same eight calls.
+void Web_Trap(CSuper *pSuper, i32 a2)
+{
+	print_if_false(pSuper != 0, "NULL pBaddy sent to Web_Trap");
+	print_if_false((pSuper->mFlags >> 1) & 1, "Non superitem sent to Web_Trap");
+
+	CTrapWebEffect *pEffect = reinterpret_cast<CTrapWebEffect*>(
+			Mem_RecoverPointer(&pSuper->field_104));
+
+	if (pEffect == 0)
+	{
+		pEffect = new CTrapWebEffect(pSuper, 0);
+		pEffect->field_418 = (u8)a2;
+
+		if (G_MECHLIST != 0)
+			reinterpret_cast<CPlayer*>(G_MECHLIST)->SetFirstContactDetails();
+	}
+
+	for (i32 i = 0; i < 8; i++)
+		pEffect->AddAnotherStrand();
+}
+
+// @Ok
+// 0x4F9940, 604 bytes. Called by CPlayer::FireWeb. The web projectile itself:
+// a CFlatBit that flies from Pos along Normal at Speed. The constructor casts
+// the whole flight path as one line up front (gLineInfo + M3dZone_LineToItem)
+// and, if it will hit something, shortens mLifetime to the number of frames
+// that takes and remembers the impact point, so the sprite stops exactly on
+// the surface instead of being tested every frame.
+//
+// LineOfSightCheck (m3dcolij.h) is raised around the M3dZone_LineToItem call,
+// the same "this is a sight/trace query, not a real collision" flag the rest
+// of the collision code uses.
+//
+// mHitPos / mHitNormal are zeroed before the body runs by CVector's and
+// CSVector's own default constructors (vector.h), which is exactly the six
+// zero stores the original emits before its vtable store; writing them out
+// again here would double them.
+//
+// Original defects kept: mpHitItem / mpHitFace are only written on a hit,
+// while the six fields after them are pre-zeroed, so a miss leaves those two
+// holding whatever the freshly allocated block had; and the "Not in list"
+// walk over EnviroList computes a result that only ever feeds print_if_false,
+// which is a no-op in this build.
+CImpactWeb::CImpactWeb(
+		const CVector &Pos,
+		const CSVector &Normal,
+		i32 Speed,
+		i32 Damage,
+		i32 Lifetime)
+{
+	CPlayer *pPlayer = reinterpret_cast<CPlayer*>(G_MECHLIST);
+
+	if (pPlayer != 0)
+		this->mDamage = pPlayer->GetDamageInflictedFromDifficulty(Damage);
 	else
-		field_68 = a5;
+		this->mDamage = Damage;
 
-	mPos = Pos;
-	field_6C = gTimerRelated;
-	print_if_false(a4 != 0, "Zero speed sent to CImpactWeb");
-	Utils_GetVecFromMagDir(&mVel, a4, (CSVector*)&Normal);
+	this->mPos = Pos;
+	this->mStartTime = gTimerRelated;
 
-	mLifetime = a6;
+	print_if_false(Speed != 0, "Zero speed sent to CImpactWeb");
 
-	gLineInfo.StartCoords = mPos;
-	gLineInfo.EndCoords.vx = mPos.vx + mVel.vx * mLifetime;
-	gLineInfo.EndCoords.vy = mPos.vy + mVel.vy * mLifetime;
-	gLineInfo.EndCoords.vz = mPos.vz + mVel.vz * mLifetime;
+	Utils_GetVecFromMagDir(&this->mVel, Speed, const_cast<CSVector*>(&Normal));
+
+	this->mLifetime = (u16)Lifetime;
+
+	gLineInfo.StartCoords = this->mPos;
+
+	gLineInfo.EndCoords.vx = this->mPos.vx + this->mLifetime * this->mVel.vx;
+	gLineInfo.EndCoords.vy = this->mPos.vy + this->mLifetime * this->mVel.vy;
+	gLineInfo.EndCoords.vz = this->mPos.vz + this->mLifetime * this->mVel.vz;
+
 	M3dColij_InitLineInfo(&gLineInfo);
 
 	LineOfSightCheck = 1;
@@ -923,42 +1267,70 @@ CImpactWeb::CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 a4, i32 a
 
 	if (gLineInfo.pItem != 0)
 	{
-		CItem *pNode = EnviroList;
-		while (pNode != 0 && pNode != gLineInfo.pItem)
-			pNode = pNode->mNextItem;
-		print_if_false(pNode != 0, "Not in list");
+		CItem *pItem = EnviroList;
 
-		field_70 = gLineInfo.pItem;
-		field_74 = gLineInfo.pFace;
-		field_78 = gLineInfo.Position;
-		field_84 = gLineInfo.Normal;
-		mLifetime = gLineInfo.Distance / a4;
-		print_if_false((field_70->mFlags & 0x10) == 0, "Hit env obj!");
+		while (pItem != 0 && pItem != gLineInfo.pItem)
+			pItem = pItem->mNextItem;
+
+		print_if_false(pItem != 0, "Not in list");
+
+		this->mpHitItem = gLineInfo.pItem;
+		this->mpHitFace = gLineInfo.pFace;
+
+		this->mHitPos.vx = gLineInfo.Position.vx;
+		this->mHitPos.vy = gLineInfo.Position.vy;
+		this->mHitPos.vz = gLineInfo.Position.vz;
+
+		this->mHitNormal.vx = gLineInfo.Normal.vx;
+		this->mHitNormal.vy = gLineInfo.Normal.vy;
+		this->mHitNormal.vz = gLineInfo.Normal.vz;
+
+		this->mLifetime = (u16)(gLineInfo.Distance / Speed);
+
+		print_if_false((this->mpHitItem->mFlags & 0x10) == 0, "Hit env obj!");
 	}
 
-	if (mLifetime > a6)
-		mLifetime = a6;
+	if ((i32)this->mLifetime > Lifetime)
+		this->mLifetime = (u16)Lifetime;
 
-	SetAnim(9);
-	SetFrame(0);
-	SetScale(0);
-	mPostScale = 0x0A001000;
-	field_5A = (Rnd(2) != 0) ? 768 : -768;
+	this->SetAnim(9);
+	this->SetFrame(0);
+	this->SetScale(0);
+
+	this->mPostScale = 0x0A001000;
+
+	this->field_5A = Rnd(2) != 0 ? 768 : -768;
 }
 
-// @MEDIUMTODO
-// 0x4FAD50, 205 bytes. Called by CPlayer::PriorToVenomDistanceAttack.
-// Behaviour recovered from IDA but not written out, because it needs three
-// things the repo does not have yet: CItem::Burst (0x45FDC0, 607 bytes, a
-// thiscall member of CItem so it belongs in ob.h/ob.cpp, not here),
-// CDomeRing::CDomeRing (0x4F5510, 494 bytes, CClass::operator new(0x110))
-// and a check that CDomeShockWave::CDomeShockWave in this file really is
-// the 0x4FAE20 the original calls with CBit::operator new(0x98).
-// What it does: if field_104 is 0 (a web dome, not a fire dome), clear bit
-// 0x400 of field_110's mFlags and call field_110->Burst(30, 30); set
-// field_100 to 3; new CDomeShockWave(field_104); new CDomeRing(&mPos,
-// field_104); then this->Die().
+// @Ok
+// 0x4FAD50, 205 bytes. Called by CPlayer::PriorToVenomDistanceAttack. Pops
+// the dome: a web dome (field_104 == 0) shatters the item it trapped, then
+// the dome switches to mode 3, spawns the shockwave and the ring, and dies.
+//
+// field_110 is typed CClass* like the dome's other four sub-objects, but the
+// original treats this one as a CItem here (it clears mFlags bit 0x400 at
+// +4 and makes a thiscall to CItem::Burst), so it is cast, exactly as
+// written. Both allocations are plain `new`: the original's
+// CBit::operator new(0x98) / CClass::operator new(0x110) plus null check is
+// what MSVC6 emits for `new CDomeShockWave` / `new CDomeRing` (CItem's
+// operator new is link-folded onto CClass's).
 void CDome::Burst(void)
 {
-	printf("CDome::Burst(void)");
+	if (this->field_104 == 0)
+	{
+		CItem *pTrapped = reinterpret_cast<CItem*>(this->field_110);
+
+		if (pTrapped != 0)
+		{
+			pTrapped->mFlags &= ~0x400;
+			pTrapped->Burst(30, 30);
+		}
+	}
+
+	this->field_100 = 3;
+
+	new CDomeShockWave(this->field_104);
+	new CDomeRing(&this->mPos, this->field_104);
+
+	this->Die();
 }

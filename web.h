@@ -9,6 +9,8 @@
 #include "spidey.h"
 #include "m3dutils.h"
 
+struct SModel;
+
 EXPORT extern i32 gFireDomes;
 EXPORT extern i32 gNumDomes;
 EXPORT extern CBody* WebList;
@@ -24,14 +26,27 @@ class CImpactWeb : public CFlatBit
 		// Original 0x4F9940. Mac mangled name
 		// __ct__10CImpactWebFRC7CVectorRC8CSVectoriii gives the parameter
 		// list. The web splat left on a wall when a web shot misses.
-		EXPORT CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 a4, i32 a5, i32 a6);
+		EXPORT CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 Speed, i32 Damage, i32 Lifetime);
 
-		i32 field_68;
-		i32 field_6C;
-		CItem *field_70;
-		u32 *field_74;
-		CVector field_78;
-		CSVector field_84;
+		// Fields recovered from the constructor's own stores (0x4F9940),
+		// which is the only decompiled user of this class so far.
+
+		// the Damage argument, run through
+		// CPlayer::GetDamageInflictedFromDifficulty when a player exists
+		i32 mDamage;
+
+		// gTimerRelated at spawn time
+		i32 mStartTime;
+
+		// the item the forward ray hit, and the face on it. Both left
+		// uninitialised when the ray misses (original defect: only the six
+		// fields below are pre-zeroed).
+		CItem *mpHitItem;
+		u32 *mpHitFace;
+
+		CVector mHitPos;
+		CSVector mHitNormal;
+
 		PADDING(2);
 };
 
@@ -73,17 +88,54 @@ class CDome : public CBody
 class CDomeRing : public CBody {
 	public:
 
+		// 0x4F5510 / 0x4F5720. Only one CDomeRing exists at a time; the
+		// constructor deletes the previous one (gpCurrentDomeRing, web.cpp).
+		EXPORT CDomeRing(const CVector *pPos, i32 bFire);
+		EXPORT virtual ~CDomeRing(void) OVERRIDE;
+
 		PADDING(4);
 
-		i32 field_F8;
-		i32 field_FC;
-		i32 field_100;
+		// saved copy of the ring model's vertices, 3 i16 per vertex, so the
+		// destructor can put the shared SModel geometry back
+		i16 *field_F8;
+
+		// per-vertex outward direction, also 3 i16 per vertex. Only [0] and
+		// [2] are ever written; [1] is left uninitialised by the original
+		// (original defect, kept).
+		i16 *field_FC;
+
+		// the ring's SModel (region model 0), whose vertices get animated
+		// outwards in place
+		SModel *field_100;
+
 		i32 field_104;
 		i32 field_108;
 
-		PADDING(1);
+		// nonzero for the fire dome variant ("firering" instead of "ring")
+		i32 field_10C;
 };
 
+
+// 0x4F5BC0. The blob of webbing left where a web shot lands. Only CWeb::Fire
+// makes one. Base is CQuadBit (0x84), confirmed by the constructor's first
+// call being CQuadBit::CQuadBit and by its SetTexture / SetSemiTransparent /
+// OrientUsing calls; own fields start at 0x8C and the class ends at 0xB0,
+// which is the size the original passes to CBit::operator new.
+class CKnottedWebSplat : public CQuadBit
+{
+	public:
+		EXPORT CKnottedWebSplat(const CVector *pPos, const CVector *pNormal);
+
+		PADDING(0x8C - 0x84);
+
+		// splat centre: pPos pushed 10 units out along pNormal
+		CVector field_8C;
+
+		// the two corner offsets the constructor derives from the quad's
+		// own mPosB / mPosC after OrientUsing
+		CVector field_98;
+		CVector field_A4;
+};
 
 class CWeb : public CBody
 {
@@ -115,7 +167,8 @@ class CWeb : public CBody
 		i32 field_120;
 		i32 field_124;
 		i32 field_128;
-		u8 *field_12C;
+		// the drawn strand, made by CWeb::Fire
+		CKnottedWeb *field_12C;
 
 		i32 field_130;
 
@@ -232,6 +285,15 @@ class CWebFrag : public CGLine
 class CTrapWebEffect : public CNonRenderedBit
 {
 	public:
+		// 0x4F7F40. Type goes into the inherited CBit::mType and selects
+		// which CSuper handle slot points back at this effect (field_104
+		// for 0, field_10C for 1), the same split CTrapWebEffect::Burst
+		// already reads back.
+		EXPORT CTrapWebEffect(CSuper *pSuper, i32 Type);
+
+		// 0x4F83C0. Adds one strand of webbing to the effect.
+		EXPORT void AddAnotherStrand(void);
+
 		EXPORT void Burst(void);
 
 		SHandle field_3C;
@@ -269,6 +331,7 @@ EXPORT i32 Web_CollideWithSuper(CSuper *,CVector const *,CVector const *,SHook *
 
 
 void validate_CImpactWeb(void);
+void validate_CKnottedWebSplat(void);
 void validate_CDomePiece(void);
 void validate_CDome(void);
 void validate_CDomeRing(void);

@@ -480,6 +480,7 @@ extern "C" EXPORT int run_assertions(void)
 	validate_CRudeWordHitterSpidey();
 	validate_CBulletFrag();
 	validate_CImpactWeb();
+	validate_CKnottedWebSplat();
 	validate_CDomePiece();
 	validate_CDome();
 	validate_CDomeRing();
