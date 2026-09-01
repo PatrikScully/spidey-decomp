@@ -36,6 +36,9 @@
 #include "scorpion.h"
 #include "bullet.h"
 #include "bit.h"
+#include "bit2.h"
+#include "exp.h"
+#include "bit.h"
 
 #include <cstring>
 
@@ -9810,6 +9813,48 @@ void CDummy::DocOckBuildArms(void)
 	}
 }
 
+
+// 0x0056EFE4, the CBody list every effect and projectile object attaches itself to. Named
+// gEffectBodyList in carnage.cpp, which holds the same file-local pointer; the maintainer's IDB
+// calls the same address BulletList.
+static CBody ** const gEffectBodyList = reinterpret_cast<CBody**>(0x0056EFE4);
+
+// @Ok
+// 0x48ED80, 310 bytes. names.json calls it CTailRing_CTailRing. One ring of the Scorpion
+// stinger explosion. It is a plain CBody on the "scimpact" region, put on the shared effect
+// list, with the growth parameters CScorpExplosion picks stored straight into its own fields.
+// The odd one out is the last: the caller's duration is turned into a per-frame step by
+// scaling it into 12.12 over 450.
+CTailRing::CTailRing(CVector* pPos, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7,
+		u8 a8, u8 a9, i32 a10, i32 a11)
+{
+	this->AttachTo(gEffectBodyList);
+	this->InitItem("scimpact");
+
+	// The region's first face carries the poly flags (the face list starts after the 28 byte
+	// SModel header, the vertices and the normals, 8 bytes each). If it is not marked semi
+	// transparent yet, mask the flag in across the whole region.
+	SModel* pModel = PSXRegion[this->mRegion].ppModels[0];
+	u32* pWords = reinterpret_cast<u32*>(pModel);
+	if ((pWords[2 * (pModel->NumVertices + pModel->NumNormals) + 7] & 0x200) == 0)
+		Spool_MaskFaceFlags(this->mRegion, 0x200, 0xFFFFEFFF);
+
+	this->mPos = *pPos;
+
+	this->field_108 = a9;
+	this->field_10C = a10;
+	this->field_104 = a8;
+	this->field_F8 = a3;
+	this->field_100 = a7;
+	this->field_110 = a11;
+	this->field_11C = a5;
+	this->field_118 = a4;
+
+	this->mFlags |= 0x601;
+
+	this->field_120 = (a6 << 12) / 450;
+}
+
 // @BIGTODO
 // 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
 // vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
@@ -10531,7 +10576,27 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_2D4, 0x2D4);
 	VALIDATE(CDummy, field_304, 0x304);
 	VALIDATE(CDummy, field_418, 0x418);
+
+	// main.cpp holds the list of validate functions the game calls, and this branch does not
+	// touch main.cpp, so the three classes added with CDummy::AI are checked from here.
+	validate_CTailRing();
 }
+
+void validate_CTailRing(void)
+{
+	VALIDATE_SIZE(CTailRing, 0x124);
+
+	VALIDATE(CTailRing, field_F8, 0xF8);
+	VALIDATE(CTailRing, field_100, 0x100);
+	VALIDATE(CTailRing, field_104, 0x104);
+	VALIDATE(CTailRing, field_108, 0x108);
+	VALIDATE(CTailRing, field_10C, 0x10C);
+	VALIDATE(CTailRing, field_110, 0x110);
+	VALIDATE(CTailRing, field_118, 0x118);
+	VALIDATE(CTailRing, field_11C, 0x11C);
+	VALIDATE(CTailRing, field_120, 0x120);
+}
+
 
 
 void validate_CDropDownController(void)

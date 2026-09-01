@@ -540,6 +540,37 @@ class CShellSimbyFireDeath : public CNonRenderedBit
 		PADDING(0xC);
 };
 
+// Reverse engineered from the constructor at 0x48ED80 (names.json calls it
+// CTailRing_CTailRing). One ring of the Scorpion stinger explosion CScorpExplosion builds: a
+// plain CBody on the "scimpact" region whose own AI (vtable off_53BF10, not decompiled here)
+// grows it. Every field below is written by that constructor; the two gaps are not.
+class CTailRing : public CBody
+{
+	public:
+		EXPORT CTailRing(CVector* pPos, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7,
+				u8 a8, u8 a9, i32 a10, i32 a11);
+
+		PADDING(4);
+
+		i32 field_F8;
+
+		PADDING(4);
+
+		i32 field_100;
+		i32 field_104;
+		i32 field_108;
+		i32 field_10C;
+		i32 field_110;
+
+		PADDING(4);
+
+		i32 field_118;
+		i32 field_11C;
+
+		// (a6 << 12) / 450, the only value the constructor computes rather than copies
+		i32 field_120;
+};
+
 class CShellGoldFish : public CBody
 {
 	public:
@@ -859,6 +890,7 @@ void validate_CShellRhinoNasalSteam(void);
 void validate_CShellEmber(void);
 void validate_CShellSimbyMeltSplat(void);
 void validate_CShellSimbyFireDeath(void);
+void validate_CTailRing(void);
 void validate_CShellGoldFish(void);
 void validate_CShellMysterioHeadCircle(void);
 void validate_SCharacterEntry(void);
