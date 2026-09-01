@@ -1182,7 +1182,10 @@ void SpideyAI0(CPlayer *pPlayer)
 					true,
 					*reinterpret_cast<CSVector*>(reinterpret_cast<char*>(pPlayer) + 0x520));
 
-				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->field_12C[0x6C] = 0;
+				// field_12C was retyped u8* -> CKnottedWeb* while this was being
+				// written; the original stores a byte at field_12C+0x6C, which is
+				// CKnottedWeb::field_6C (bit2.h). Same address, same width.
+				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->field_12C->field_6C = 0;
 				SFX_PlayPos(0x15, &pPlayer->mPos, 0);
 			}
 
