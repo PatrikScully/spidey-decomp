@@ -2002,10 +2002,50 @@ void CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)
 	}
 }
 
-// @SMALLTODO
+// Installs the nine hard-coded SFX trigger lists (the ones that are not
+// pulled out of the animation data) into gSpideySFXEntry, then clears the
+// "already played" marker (the high word, see ProcessSFXArray) on every
+// element of every list in the table. Same clearing loop as
+// ResetSFXArrayEntry, run over all 300 slots.
+// @Ok
 void CPlayer::InitialiseSFXArray(void)
 {
-    printf("CPlayer::InitialiseSFXArray(void)");
+	// The nine built-in trigger lists, each a -1 terminated list of frame
+	// numbers. They stay at their original addresses because the game code
+	// that has not been hooked yet mutates the very same bytes.
+	static i32 * const gSfxListAnim21 = (i32*)0x005565A8;  // { 1, 11, -1 }
+	static i32 * const gSfxListAnim59 = (i32*)0x005565B4;  // { 4, -1 }
+	static i32 * const gSfxListAnim52 = (i32*)0x005565BC;  // { 7, 15, -1 }
+	static i32 * const gSfxListAnim50 = (i32*)0x005565C8;  // { 6, -1 }
+	static i32 * const gSfxListAnim51 = (i32*)0x005565D0;  // { 6, -1 }
+	static i32 * const gSfxListAnim60 = (i32*)0x005565D8;  // { 6, 15, -1 }
+	static i32 * const gSfxListAnim63 = (i32*)0x005565E4;  // { 7, 19, 26, -1 }
+	static i32 * const gSfxListAnim192 = (i32*)0x005565F4; // { 2, 14, -1 }
+	static i32 * const gSfxListAnim198 = (i32*)0x00556600; // { 1, 21, -1 }
+
+	gSpideySFXEntry[21] = gSfxListAnim21;
+	gSpideySFXEntry[59] = gSfxListAnim59;
+	gSpideySFXEntry[52] = gSfxListAnim52;
+	gSpideySFXEntry[50] = gSfxListAnim50;
+	gSpideySFXEntry[51] = gSfxListAnim51;
+	gSpideySFXEntry[60] = gSfxListAnim60;
+	gSpideySFXEntry[63] = gSfxListAnim63;
+	gSpideySFXEntry[192] = gSfxListAnim192;
+	gSpideySFXEntry[198] = gSfxListAnim198;
+
+	for (i32 i = 0; i < 300; i++)
+	{
+		i32 *pEntry = gSpideySFXEntry[i];
+
+		if (pEntry)
+		{
+			while (*pEntry != -1)
+			{
+				*pEntry = *pEntry & 0xFFFF;
+				pEntry++;
+			}
+		}
+	}
 }
 
 // @MEDIUMTODO
