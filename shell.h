@@ -297,7 +297,12 @@ public:
 
 	CItem field_288;
 
-	PADDING(0x2d4 - 0x288 - sizeof(CItem));
+	PADDING(0x2d0 - 0x288 - sizeof(CItem));
+
+	// Second dynamically built geometry buffer, the one that belongs to field_288, in the same
+	// role mpTailGeometry has for field_240. Only ~CDummy touches it (Mem_Delete for the
+	// Scorpion, mType 310), so nothing confirms its layout; kept untyped.
+	void* field_2D0;
 
 
 	CVector field_2D4[4];

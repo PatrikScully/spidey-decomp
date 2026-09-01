@@ -9013,18 +9013,16 @@ void CDummy::TailRenderer(void)
 	*gM3dNoDcModelData = 0;
 }
 
-// @NotOk
-// sub_491560 (entered via the scalar-deleting-destructor thunk at 0x491540). The vtable reset,
-// the nine polymorphic member deletes and the CItem/CSuper base cleanup below are a faithful
-// translation (cross-checked field-for-field against CDummy_ctor and Shell_CharacterViewer's own
-// per-mType switch, see shell.h for the field evidence). NOT translated: the original's
-// mType 0x134/0x135/0x136/0x137 per-costume cleanup block (zeroing entries in the
-// PSXRegion-adjacent active-flag tables at 0x6B2440/0x6B244A/0x6B244B/0x6B2468/0x6B2478 and the
-// field_214[]/field_224[] pointer-pair delete loop for 0x134/0x135) and the CurrentSuit/gWhatIf
-// sound-swap block at the very top of the function (sub_4E6560/sub_4CA640, sound-stop/select-
-// by-name helpers not investigated this session). Left out rather than guessed; does not affect
-// the 4 shell.cpp menu functions this session's callers care about (none of them read those
-// tables), but a future session should finish this before relying on ~CDummy for full parity.
+// spool.cpp owns both of these but spool.h does not declare them, so they are declared here the
+// same way effects.cpp and spidey.cpp already declare CurrentSuit.
+extern i32 CurrentSuit;
+EXPORT extern char SuitNames[11][32];
+
+// @Ok
+// sub_491560, entered through the scalar-deleting-destructor thunk at 0x491540. Drops the nine
+// polymorphic members, then unloads whatever the preview model pulled in: the model's own PSX
+// region (unless it is the one the player's current suit still needs) and, per mType, the extra
+// regions and sub-items each costume spawned.
 CDummy::~CDummy(void)
 {
 	if (this->field_1E0) delete reinterpret_cast<CBit*>(this->field_1E0);
@@ -9037,10 +9035,97 @@ CDummy::~CDummy(void)
 	if (this->field_1F0) delete reinterpret_cast<CBit*>(this->field_1F0);
 	if (this->field_1F4) delete reinterpret_cast<CBit*>(this->field_1F4);
 
+	if (this->field_1D4 != 0)
+	{
+		const char* pRegionName = PSXRegion[this->mRegion].Filename;
+
+		// on the normal path the suit the player is wearing must stay loaded; on low graphics
+		// the test is against plain "spidey" instead. The original does not fall through from
+		// one test to the other, each side has its own answer
+		if (gLowGraphics == 0)
+		{
+			if (!Utils_CompareStrings(pRegionName, SuitNames[CurrentSuit]))
+			{
+				Spool_ClearPSX(pRegionName);
+				gsub_430880();
+			}
+		}
+		else if (!Utils_CompareStrings(pRegionName, "spidey"))
+		{
+			Spool_ClearPSX(pRegionName);
+			gsub_430880();
+		}
+	}
+
+	switch (this->mType)
+	{
+		case 308:
+		case 309:
+		{
+			// Doc Ock and monster-Ock: the claws and the four tentacle item pairs
+			Spool_ClearPSX("claw");
+			for (i32 i = 0; i < 4; i++)
+			{
+				if (this->field_224[i])
+					delete reinterpret_cast<CBit*>(this->field_224[i]);
+				if (this->field_214[i])
+					delete reinterpret_cast<CBit*>(this->field_214[i]);
+			}
+			break;
+		}
+
+		case 310:
+		{
+			// the Scorpion built two PSX regions by hand (the tail and the stinger), so they
+			// are torn back down field by field instead of through Spool_ClearPSX
+			u8 tailRegion = this->field_240.mRegion;
+			if (tailRegion != 0xFF)
+			{
+				PSXRegion[tailRegion].Filename[0] = 0;
+				PSXRegion[tailRegion].Usable = 0;
+				PSXRegion[tailRegion].Protected = 0;
+				Mem_Delete(this->mpTailGeometry);
+				PSXRegion[tailRegion].ppModels = 0;
+				Mem_Delete(PSXRegion[tailRegion].pColourTable);
+				PSXRegion[tailRegion].pColourTable = 0;
+				PSXRegion[tailRegion].NumParts = 0;
+			}
+
+			u8 stingerRegion = this->field_288.mRegion;
+			if (stingerRegion != 0xFF)
+			{
+				PSXRegion[stingerRegion].Filename[0] = 0;
+				PSXRegion[stingerRegion].Usable = 0;
+				PSXRegion[stingerRegion].Protected = 0;
+				Mem_Delete(this->field_2D0);
+				PSXRegion[stingerRegion].ppModels = 0;
+				Mem_Delete(PSXRegion[stingerRegion].pColourTable);
+				PSXRegion[stingerRegion].pColourTable = 0;
+				PSXRegion[stingerRegion].NumParts = 0;
+			}
+
+			Spool_ClearPSX("scimpact");
+			break;
+		}
+
+		case 311:
+			// Mysterio only loaded the goldfish in the what-if mode
+			if (gWhatIf)
+				Spool_ClearPSX("goldfish");
+			break;
+
+		case 324:
+			Spool_ClearPSX("fire");
+			break;
+
+		default:
+			break;
+	}
+
 	if (this->field_1C4)
 		Redbook_XAStop();
 
-	// field_240 / field_288 (CItem) and the CSuper base are destructed automatically.
+	// field_240 / field_288 (CItem) and the base class are destructed automatically.
 }
 
 // @BIGTODO
@@ -9729,6 +9814,7 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, mpTailGeometry, 0x284);
 	VALIDATE(CDummy, field_240, 0x240);
 	VALIDATE(CDummy, field_288, 0x288);
+	VALIDATE(CDummy, field_2D0, 0x2D0);
 
 	VALIDATE(CDummy, field_2D4, 0x2D4);
 	VALIDATE(CDummy, field_304, 0x304);
