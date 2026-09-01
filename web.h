@@ -116,6 +116,27 @@ class CDomeRing : public CBody {
 };
 
 
+// 0x4F5BC0. The blob of webbing left where a web shot lands. Only CWeb::Fire
+// makes one. Base is CQuadBit (0x84), confirmed by the constructor's first
+// call being CQuadBit::CQuadBit and by its SetTexture / SetSemiTransparent /
+// OrientUsing calls; own fields start at 0x8C and the class ends at 0xB0,
+// which is the size the original passes to CBit::operator new.
+class CKnottedWebSplat : public CQuadBit
+{
+	public:
+		EXPORT CKnottedWebSplat(const CVector *pPos, const CVector *pNormal);
+
+		PADDING(0x8C - 0x84);
+
+		// splat centre: pPos pushed 10 units out along pNormal
+		CVector field_8C;
+
+		// the two corner offsets the constructor derives from the quad's
+		// own mPosB / mPosC after OrientUsing
+		CVector field_98;
+		CVector field_A4;
+};
+
 class CWeb : public CBody
 {
 	public:
@@ -146,7 +167,8 @@ class CWeb : public CBody
 		i32 field_120;
 		i32 field_124;
 		i32 field_128;
-		u8 *field_12C;
+		// the drawn strand, made by CWeb::Fire
+		CKnottedWeb *field_12C;
 
 		i32 field_130;
 
@@ -309,6 +331,7 @@ EXPORT i32 Web_CollideWithSuper(CSuper *,CVector const *,CVector const *,SHook *
 
 
 void validate_CImpactWeb(void);
+void validate_CKnottedWebSplat(void);
 void validate_CDomePiece(void);
 void validate_CDome(void);
 void validate_CDomeRing(void);

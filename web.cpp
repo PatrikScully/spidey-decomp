@@ -791,6 +791,14 @@ INLINE void CDomeShockWave::ResetHitFlags(CBody* body)
 		cur->mCBodyFlags &= 0xFEFF;
 }
 
+void validate_CKnottedWebSplat(void){
+	VALIDATE_SIZE(CKnottedWebSplat, 0xB0);
+
+	VALIDATE(CKnottedWebSplat, field_8C, 0x8C);
+	VALIDATE(CKnottedWebSplat, field_98, 0x98);
+	VALIDATE(CKnottedWebSplat, field_A4, 0xA4);
+}
+
 void validate_CImpactWeb(void){
 	VALIDATE_SIZE(CImpactWeb, 0x8C);
 }
@@ -1036,10 +1044,135 @@ CWeb::CWeb(void)
 }
 
 // @MEDIUMTODO
-// 0x4F5ED0, 662 bytes. Called by CPlayer::FireWeb.
-void CWeb::Fire(CVector &, CVector &, CBody *, bool, CSVector &)
+// 0x4F5BC0, 420 bytes. Scoped but not written out. What it does: chains
+// CQuadBit::CQuadBit, zeroes its own 0x8C..0xAC fields, SetTexture(0x3AF20073)
+// + SetSemiTransparent, sets field_84 (inherited) to 32 and mType to 40, puts
+// field_8C at pPos + pNormal * 10, calls CQuadBit::OrientUsing with a CSVector
+// rebuilt from the low words of pNormal's three i32s and a Rnd(4096) angle,
+// then stores (mPosB - mPos) >> 1 and (mPosC - mPos) >> 1 into field_98 /
+// field_A4 and runs one Move().
+//
+// Left as a stub because two of its steps cannot be written honestly yet: the
+// texture id 0x3AF20073 has no name in this repo, and the final call is
+// link-folded onto CSimbyShotSplat::Move (0x4A5E40, simby.cpp), so which class
+// really owns that Move body (and therefore what CKnottedWebSplat's vtable
+// should look like) is unresolved. Its caller CWeb::Fire below is complete.
+CKnottedWebSplat::CKnottedWebSplat(const CVector *, const CVector *)
 {
-	printf("CWeb::Fire(CVector &,CVector &,CBody *,bool,CSVector &)");
+	printf("CKnottedWebSplat::CKnottedWebSplat(const CVector *,const CVector *)");
+}
+
+// @Ok
+// 0x4F5ED0, 662 bytes. Called by CPlayer::FireWeb. Anchors the web between
+// Hook and Target, optionally drops a splat where it landed, and (only the
+// first time, while field_12C is still empty) builds the drawn strand: a
+// CKnottedWeb whose extra dangling segments start at the base line's own
+// segment ends.
+//
+// The tail branches on which web shot the player is running (CPlayer
+// field_8F8: 1 forward, 2 yank), except that a web fired at the player
+// himself always counts as the yank shot. The yank path bursts any
+// CTrapWebEffect already on the target's field_10C slot and puts a fresh
+// Type 1 one on with 16 strands.
+//
+// Original defects kept: both `new`s are used without a null check (the
+// original calls SetTint / SetStartAndEnd straight through the returned
+// pointer), and the "mhYankWebContact not gone?" check calls
+// Mem_RecoverPointer purely to feed print_if_false, which is a no-op here.
+void CWeb::Fire(
+		CVector &Hook,
+		CVector &Target,
+		CBody *pTarget,
+		bool bSplat,
+		CSVector &Normal)
+{
+	this->field_108 = Hook;
+	this->field_114 = Target;
+
+	if (bSplat)
+	{
+		// the original sign-extends the CSVector into three i32s here and
+		// hands the splat a CVector; the splat's own constructor reads the
+		// low word of each i32 back out when it needs the angles again
+		CVector SplatNormal(Normal.vx, Normal.vy, Normal.vz);
+
+		CKnottedWebSplat *pSplat = new CKnottedWebSplat(&Target, &SplatNormal);
+
+		if (this->field_F8 != 0)
+			pSplat->SetTint(0xFF, 0x7B, 0);
+		else
+			pSplat->SetTint(0x80, 0x80, 0x80);
+	}
+
+	if (this->field_12C == 0)
+	{
+		*reinterpret_cast<SHandle*>(&this->field_134) = Mem_MakeHandle(pTarget);
+
+		CKnottedWeb *pWeb = new CKnottedWeb(this->field_114, this->field_108);
+
+		this->field_12C = pWeb;
+
+		pWeb->SetStartAndEnd(&this->field_114, &this->field_108);
+
+		Utils_CalcUnitFacingCamera(&this->field_114, &this->field_108,
+				reinterpret_cast<CVector*>(&pWeb->field_58));
+
+		SLineSeg *pSeg = pWeb->mSegs;
+		SKnottedWebSeg *pExtra = pWeb->mpExtraSegs;
+
+		for (i32 i = 0; i < pWeb->mNumSegs; i++)
+		{
+			pExtra->mPos.vx = pSeg->End.vx;
+			pExtra->mPos.vy = pSeg->End.vy;
+			pExtra->mPos.vz = pSeg->End.vz;
+
+			pSeg++;
+			pExtra++;
+		}
+
+		this->field_12C->field_74 = this->field_F8;
+
+		print_if_false(G_MECHLIST != 0, "No spidey?");
+
+		i32 WebShot;
+
+		if (pTarget == G_MECHLIST)
+			WebShot = 2;
+		else
+			WebShot = reinterpret_cast<CPlayer*>(G_MECHLIST)->field_8F8;
+
+		if (WebShot == 1)
+		{
+			this->field_12C->field_6C = 1;
+		}
+		else if (WebShot == 2)
+		{
+			if (pTarget != 0)
+			{
+				CSuper *pSuper = reinterpret_cast<CSuper*>(pTarget);
+
+				print_if_false((pSuper->mFlags >> 1) & 1, "Tried to yank a non superitem");
+
+				CTrapWebEffect *pOld = reinterpret_cast<CTrapWebEffect*>(
+						Mem_RecoverPointer(&pSuper->field_10C));
+
+				if (pOld != 0)
+					pOld->Burst();
+
+				print_if_false(Mem_RecoverPointer(&pSuper->field_10C) == 0,
+						"mhYankWebContact not gone?");
+
+				CTrapWebEffect *pEffect = new CTrapWebEffect(pSuper, 1);
+
+				for (i32 j = 16; j != 0; j--)
+					pEffect->AddAnotherStrand();
+			}
+
+			this->field_12C->field_6E = 1;
+		}
+	}
+
+	this->field_104 = 1;
 }
 
 // @Ok

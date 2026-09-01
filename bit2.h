@@ -89,7 +89,10 @@ public:
 	SKnottedWebSeg *mpExtraSegs;
 	CGPolyLine *mpInnerLine;
 
-	PADDING(0x1);
+	// CWeb::Fire (0x4F5ED0, web.cpp) sets this to 1 when the player's current web shot is
+	// the forward one (CPlayer::field_8F8 == 1), the same way it sets field_6E for the yank
+	// shot. Was the head of a blanket PADDING(0x2).
+	u8 field_6C;
 
 	// Was the tail of a blanket PADDING(0x2). CSwinger_SwingBack (0x4F7550, web.cpp) writes
 	// byte 1 here (`mov byte ptr [esi+6Dh], 1`) on a CKnottedWeb-shaped object it built and
