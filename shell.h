@@ -17,6 +17,7 @@ class CVertexWobble;
 // defined in scorpion.h; only used here as a pointer member of CDummy.
 struct STailGeometry;
 struct SSimpleRibbonParams;
+class CSimpleTexturedRibbon;
 
 struct SRecordRelated
 {
@@ -217,6 +218,7 @@ public:
 	// UniformCurveTesselator overloads, which the PC linker folded onto one body.
 	EXPORT void DocOckUniformCurveTesselator(CVector* pControl, u32 numPoints,
 			SSimpleRibbonParams* pOut);
+	EXPORT void SuperOckBuildArms(void);
 
 	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).
 	u16* field_1A4;
@@ -289,11 +291,12 @@ public:
 	// Mysterio costume (mType 311) glow effect. Deleted polymorphically in ~CDummy.
 	CShellMysterioHeadGlow* field_210;
 
-	// 8 more polymorphic pointers (two parallel 4-element arrays; ~CDummy's mType 0x134/0x135
-	// case deletes field_214[i] and field_224[i] together, Shell_CharacterViewer's own switch
-	// reads field_214[0..3] directly for the same two mTypes). Not set by the constructor.
-	void* field_214[4];
-	void* field_224[4];
+	// The four claws and the four tentacle ribbons of the Doc Ock (mType 308) and monster-Ock
+	// (mType 309) costumes, built by DocOckBuildArms / SuperOckBuildArms and deleted together
+	// by ~CDummy. The claws are chained through mNextItem, so Shell_CharacterViewer renders
+	// the whole set from field_214[0]. Not set by the constructor.
+	CBody* field_214[4];
+	CSimpleTexturedRibbon* field_224[4];
 
 	// constant 455, written for the Scorpion-claw (mType 308) and SuperOck (mType 309)
 	// costumes. It is the bezier parameter step DocOckUniformCurveTesselator adds per
