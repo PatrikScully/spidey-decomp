@@ -678,7 +678,14 @@ void alloc_dc_models(i32,i32)
     printf("alloc_dc_models(i32,i32)");
 }
 
-// @SMALLTODO
+// Same situation as alloc_dc_models above. The colour-pulsing packet walk it would
+// hold (check the packet tag is 7, then step the packet list writing each entry id
+// into gPulseColorList and terminating with -1, asserting on "Zero list length" and
+// "More 'Pulse' colors than planned for") is inlined at the top of M3dInit_ParsePSX
+// (0x4534A0), verified 2026-09-01 by IDA decompile: those two assert strings are
+// referenced from inside ParsePSX itself, not from any separate function. Mac only
+// (spiderman_names.txt, 0x8e530, 236 bytes). Cannot become @Ok.
+// @NotOk
 void setup_pulsing_colors(i32)
 {
     printf("setup_pulsing_colors(i32)");
