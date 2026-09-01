@@ -465,9 +465,10 @@ INLINE SLevel* Front_FindLevel(char* pTRGName)
 	return 0;
 }
 
-// @NotOk
-// Investigated 2026-08-31, re-verified 2026-09-01 (idalib session
-// 0dc9741d): this function does not exist in the PC binary. tools/names.json
+// @Bogus
+// Investigated 2026-08-31, re-verified twice on 2026-09-01 (idalib
+// sessions 0dc9741d and 7fdcc76e): this function does not exist in the PC
+// binary. tools/names.json
 // has no address for it, tools/functions/ has no matching .bin, and a
 // full-text search of the maintainer's IDA database (idalib, both name list
 // and string list) for "GetButtons" finds nothing. Re-check this session:
@@ -487,9 +488,17 @@ INLINE SLevel* Front_FindLevel(char* pTRGName)
 // face button did what) and the PC port replaced it outright with the
 // PCSHELL_CheckTriggers-based input system used everywhere else in this
 // file (see CMenu::Update), so the linker never pulled this function in.
+// Third check (2026-09-01 audit): idalib lookup_funcs "Front_GetButtons"
+// returns Not found against SpideyPC.exe, and the name is in
+// idbs/spiderman_names.txt (0007b8c0 .Front_GetButtons__FRiRiRiRi) but has
+// zero hits in idbs/spideypc_names.txt (the maintainer's PC IDB, 8950
+// names).
 // Writing a body from the Mac param names alone, with zero PC bytes and
 // zero PC callers to check logic against, would be invention, not
-// decompilation - tagging @NotOk honestly rather than guessing an @Ok body.
+// decompilation. Retagged @NotOk -> @Bogus in that audit: there is no PC
+// code to be equivalent to, so this can never become @Ok and does not
+// belong in the remaining-work count. Flip it back if the project would
+// rather keep Mac-only stubs in the backlog.
 void Front_GetButtons(i32 *,i32 *,i32 *,i32 *)
 {
     printf("Front_GetButtons(i32 *,i32 *,i32 *,i32 *)");

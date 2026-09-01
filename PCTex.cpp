@@ -2103,9 +2103,21 @@ INLINE ClutPC* clutToClutPc(const u16* pClut)
 // (0x0050F6D0) still shows the row-by-row `qmemcpy(dst, src, rowBytes); src
 // += srcPitch; dst += dstPitch;` loop inlined directly (no call), and
 // idbs/spideypc_names.txt (the maintainer's PC IDB dump) still has no
-// "copyBitmap" entry anywhere, only spiderman_names.txt (Mac). Confirmed
-// still not a real PC function; stub left as is.
-// @SMALLTODO
+// "copyBitmap" entry anywhere, only spiderman_names.txt (Mac,
+// 001747d0 .copyBitmap__FPCviPviiii, 112 bytes). Confirmed still not a real
+// PC function; stub left as is.
+// Audited again 2026-09-01 (idalib session 7fdcc76e): lookup_funcs
+// "copyBitmap" returns Not found. Considered reconstructing it the way
+// renderScene (DXsound.cpp) was reconstructed from its inlining parent, and
+// decided against it: renderScene takes no arguments so its body could be
+// lifted with no ambiguity, while this one takes 7 (void const*, int, void*,
+// int, int, int, int) and the PC call site is gone, so the roles of the last
+// three ints cannot be established from the PC binary at all. Inventing a
+// parameter split and tagging it @Ok would be a guess. Retagged @SMALLTODO
+// -> @Bogus: no PC code exists, so it can never become @Ok and should not
+// sit in the remaining-work count. If the Mac binary itself (not just the
+// name list) ever becomes readable, this can be reconstructed properly.
+// @Bogus
 void copyBitmap(void const *,i32,void *,i32,i32,i32,i32)
 {
     printf("copyBitmap(void const *,i32,void *,i32,i32,i32,i32)");
@@ -2233,9 +2245,17 @@ INLINE i32 countLeadingZeroBits(u32 num)
 // the row-by-row qmemcpy loop when the source/dest formats already match,
 // and a direct call to sub_50F4A0 (== our @Ok copyConvertBitmap) when they
 // don't, with no separate out-of-line call in between. idbs/spideypc_names.txt
-// still has no "downloadTexture" entry, only spiderman_names.txt (Mac).
+// still has no "downloadTexture" entry, only spiderman_names.txt (Mac,
+// 00174870 .downloadTexture__FP9PCTexturePUsii, 964 bytes).
 // Confirmed still not a real PC function; stub left as is.
-// @MEDIUMTODO
+// Audited again 2026-09-01 (idalib session 7fdcc76e): lookup_funcs
+// "downloadTexture" returns Not found. Same call as copyBitmap above: the
+// inlined block appears TWICE in PCTex_CreateTexturePVRInId (software
+// renderer path and D3D system-memory path) and both copies are already
+// translated there under @Ok, so there is nothing left to decompile, only a
+// Mac-shaped wrapper to invent. Retagged @MEDIUMTODO -> @Bogus for the same
+// reason as copyBitmap.
+// @Bogus
 void downloadTexture(SPCTexture *,u16 *,i32,i32)
 {
     printf("downloadTexture(PCTexture *,u16 *,i32,i32)");

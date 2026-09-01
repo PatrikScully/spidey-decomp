@@ -45,9 +45,36 @@ i32 TriggerCollisionCheck;
 // idb_globals.txt entry, name is our guess.
 i32 gLineToSphereIgnoreRadius;
 
-// @NotOk
-// @FIXME - check ppc version to address this
-i16 gUnkPose[1];
+// @Ok
+// Real object at 0x005564E4 in the PC binary (name confirmed by the maintainer's IDB:
+// idbs/idb_globals.txt "0x005564E4 gUnkPose"), pushed as the argument of every
+// CSuper::ApplyPose(gUnkPose) call site (14 data xrefs, e.g. SpideyAI_WaitForSimbyGrab
+// 0x4A8737 "push offset unk_5564E4"). It was a 1 entry placeholder before; the real size and
+// contents are read straight out of the exe here.
+//
+// Layout comes from CSuper::ApplyPose (0x460E80) -> sub_453C50, which reads the u16 at +2 as a
+// joint count, treats the bytes from +4 on as that many 12 byte (6 x i16) joint records, and
+// resolves the records in place: word0 is a joint id, word1 is the parent joint's id, and word5
+// gets the parent's INDEX (or -1 when word1 matches no record's word0, which is the root case).
+// Words 2..4 are zero in the file. Count is 12, so the object is 4 + 12*12 = 148 bytes = 74 i16,
+// and the next global starts right after it at 0x00556578. Values below are the exe's bytes
+// verbatim. Not const: sub_453C50 writes word5 of every record back into this array.
+i16 gUnkPose[74] = {
+	0, 12,
+
+	 0, -1, 0, 0, 0, 0,
+	 2,  0, 0, 0, 0, 0,
+	 1,  2, 0, 0, 0, 0,
+	 7,  1, 0, 0, 0, 0,
+	 4,  1, 0, 0, 0, 0,
+	 3,  4, 0, 0, 0, 0,
+	 6,  3, 0, 0, 0, 0,
+	 5,  3, 0, 0, 0, 0,
+	 9,  1, 0, 0, 0, 0,
+	 8,  9, 0, 0, 0, 0,
+	11,  8, 0, 0, 0, 0,
+	10,  8, 0, 0, 0, 0
+};
 
 // guess: scratch rotation matrix, sits right before gLineInfo in the binary (0x5FBE18,
 // gLineInfo is 0x5FBE38, exactly sizeof(MATRIX)=0x20 apart) but is not part of the

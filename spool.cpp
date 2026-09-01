@@ -1569,7 +1569,7 @@ i32 Spool_TextureAccess(
 	return -1;
 }
 
-// @MEDIUMTODO
+// @Bogus
 // Not in the PC binary. Checked tools/names.json and the maintainer's PC
 // IDB name list (idbs/spideypc_names.txt, ~3970 code names) for
 // "SwapPSXFile": no match. No caller anywhere in the PC source tree
@@ -1581,30 +1581,40 @@ i32 Spool_TextureAccess(
 // loading, while PC (x86, also little-endian) does not, so the original
 // source almost certainly compiles this out on PC with an #ifdef on
 // platform endianness. Left as a stub: there is no PC address to verify
-// against, so any implementation here would be unverifiable guesswork.
+// against, so any implementation here would be unverifiable guesswork, and
+// a working byte swap would actively CORRUPT data on this little-endian
+// build if anything ever called it.
+// Re-verified in the 2026-09-01 audit (idalib session 7fdcc76e):
+// lookup_funcs "SwapPSXFile" returns Not found, and the whole PC binary
+// contains ZERO bswap instructions (search_text over .text), so no endian
+// swapping of any kind was compiled into this build. Retagged
+// @MEDIUMTODO -> @Bogus: no PC code exists, so it can never become @Ok and
+// should not sit in the remaining-work count.
 void SwapPSXFile(u32 *)
 {
     printf("SwapPSXFile(u32 *)");
 }
 
-// @MEDIUMTODO
+// @Bogus
 // Same situation as SwapPSXFile above: not in names.json, not in the PC
 // IDB name list, no PC caller, only present on Mac
 // (idbs/spiderman_names.txt: 00123e70 SwapPSXPacketData__FPUl, 1296 bytes
 // on Mac). Byte-swap routine, dead on a little-endian PC build. Left as a
-// stub, no PC address to verify against.
+// stub, no PC address to verify against. Re-verified and retagged in the
+// 2026-09-01 audit, see SwapPSXFile above for the evidence.
 void SwapPSXPacketData(u32 *)
 {
     printf("SwapPSXPacketData(u32 *)");
 }
 
-// @SMALLTODO
+// @Bogus
 // Same situation as SwapPSXFile/SwapPSXPacketData: not in names.json, not
 // in the PC IDB name list, no PC caller, only present on Mac
 // (idbs/spiderman_names.txt: 001243b0
 // SwapPSXTextureData__FPUlPP7TexturePUl, 196 bytes on Mac). Byte-swap
 // routine, dead on a little-endian PC build. Left as a stub, no PC
-// address to verify against.
+// address to verify against. Re-verified and retagged in the 2026-09-01
+// audit, see SwapPSXFile above for the evidence.
 void SwapPSXTextureData(u32 *,Texture **,u32 *)
 {
     printf("SwapPSXTextureData(u32 *,Texture **,u32 *)");

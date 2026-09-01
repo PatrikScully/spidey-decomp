@@ -2400,9 +2400,30 @@ void ParseWavHeader(char *fileName, tWAVEFORMATEX **ppwfx, long *pSize, u8 **ppD
 #endif
 }
 
-// @NotOk
-// Investigated, not attempted, re-verified 2026-09-01 (idalib session
-// 0dc9741d): no PC address, no caller anywhere in this file, and unlike
+// @Bogus
+// SOLVED in the 2026-09-01 audit: this is not a separate function in the PC
+// build, its body is inlined into DXPOLY_Init and is already translated
+// there (DXPOLY_Init above, @Ok). Evidence: on Mac the two sit next to each
+// other (idbs/spiderman_names.txt 00164630 DXINPUT_GetNumControllerButtons,
+// 00164670 initialSettings, 00164990 renderScene, 00164b10 DXPOLY_Init at
+// only 80 bytes, i.e. a wrapper that calls it); on PC there is no gap at all
+// between DXINPUT_GetNumControllerButtons (0x502210) and DXPOLY_Init
+// (0x502220), and PC's DXPOLY_Init is 1424 bytes holding the entire render
+// state block (the ~60 SetRenderState / SetTextureStageState calls plus the
+// 16 global stores) with no call out to a helper. idalib lookup_funcs
+// "initialSettings" returns Not found; the name has zero hits in
+// idbs/spideypc_names.txt.
+// Not reconstructed as its own function (which is what was done for
+// renderScene, the sibling in the same Mac file that is also PC-inlined,
+// see @Ok renderScene below) because the PC binary gives no way to tell
+// which of DXPOLY_Init's stores belonged to initialSettings and which to
+// DXPOLY_Init itself, and Mac sizes cannot settle it either (the Mac
+// renderer is not D3D7, so its 748 bytes are a different implementation).
+// Splitting @Ok code on that guess would be worse than leaving this stub.
+// Retagged @NotOk -> @Bogus: there is no PC code left to decompile here.
+//
+// Earlier notes from the sessions that scoped it, kept for the record:
+// no PC address, no caller anywhere in this file, and unlike
 // loadWAV/ParseWavHeader there is no sibling function to tie its logic to
 // either (checked every CALL in the 0x500000-0x520000 range against
 // tools/names.json, nothing unnamed calls in from outside that range points
@@ -2415,9 +2436,9 @@ void ParseWavHeader(char *fileName, tWAVEFORMATEX **ppwfx, long *pSize, u8 **ppD
 // 0x50f6d0): every byte is already claimed by a function IDA has a size for
 // (named or sub_XXXXXX), so there is no unnamed gap hiding this code under a
 // different name. The Mac source has it at spiderman_names.txt 0x164670, so
-// it is real on that platform, but with no PC code and no call site to infer
-// behaviour from, writing a body here would be a guess dressed up as a
-// translation. Tagging @NotOk honestly rather than guessing an @Ok body.
+// it is real on that platform. Those earlier checks were right that there is
+// no separate PC function; what they missed is where the body went, which the
+// DXPOLY_Init size comparison above now answers.
 void initialSettings(void)
 {
     printf("initialSettings(void)");
