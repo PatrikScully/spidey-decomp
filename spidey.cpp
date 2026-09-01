@@ -2312,81 +2312,33 @@ void CPlayer::DoMGSShadow(void)
 	}
 }
 
-// @Ok
+// @NotOk
+// This was an @Ok decompile of 0x4BFEC0 under the wrong name, and the body has
+// now been re-done correctly as CPlayer::CheckStickToWall above. Address
+// identity, verified 2026-09-01: the Mac build orders CPlayer as
+// CheckStickToCeiling 0x1194B0, CheckStickToWall 0x1196B0, CheckKick 0x1198B0;
+// the PC build has CheckStickToCeiling 0x4BFCE0, <this> 0x4BFEC0, CheckKick
+// 0x4C00B0 - the same three slots in the same order, so 0x4BFEC0 is
+// CheckStickToWall. The real CPlayer::DoPhysics is Mac 0xA7340, a different
+// translation unit entirely, and has no located PC address: the only PC name
+// for it is the wrong 0x4BFEC0 entry, in BOTH tools/names.json and the
+// maintainer's own IDB (idbs/spideypc_names.txt "004bfec0: CPlayer_DoPhysics").
+// Worth reporting upstream, both name sources agree and both are wrong.
+//
+// The removed body also carried two real defects, which is what exposed it:
+//   - "if (vy > 0xD48 || vy < 0xF5D8)" with vy an i16. The i16 promotes to int,
+//     so "vy < 62936" is always true and the function could only ever return 0.
+//     The original is a signed 16-bit compare, i.e. "vy < -2600".
+//   - it walked &gSpideySFXEntry[0xEA] (the address of the slot) instead of
+//     gSpideySFXEntry[0xEA] (the -1-terminated list the slot points at), and
+//     skipped the null check the original has.
+// Nothing calls it and it is not hooked, so the wrong body was inert. Stubbed
+// rather than deleted because the declaration is in spidey.h and the function
+// does exist in the game; it just needs its real PC address found first.
 i32 CPlayer::DoPhysics(void)
 {
-	if (!(this->field_E1C & 4))
-		return 0;
-	if (!(*((u8*)((char*)this + 0xE0)) & 1))
-		return 0;
-	if (!this->field_B74)
-		return 0;
-
-	i16 vy = this->field_B84.vy;
-	if (vy > 0xD48 || vy < 0xF5D8)
-		return 0;
-
-	if (this->field_B8C && (this->field_B8C[3] & 0x40000))
-		return 0;
-
-	if (Utils_GetGroundHeight(&this->mPos, 0, 0xB4, 0) != -1)
-		return 0;
-
-	i16 nx = this->field_B84.vx;
-	i16 ny = this->field_B84.vy;
-	i16 nz = this->field_B84.vz;
-
-	print_if_false(!((nx | ny | nz) & 0xFFFF), "Bad normal");
-
-	this->field_A8.vx = nx;
-	this->field_A8.vy = ny;
-	this->field_A8.vz = nz;
-	this->field_AD4 = 1;
-
-	CVector normal;
-	normal.vx = 0;
-	normal.vy = 4096;
-	normal.vz = 0;
-	this->OrientToNormal(true, &normal);
-
-	this->mVel.vx = 0;
-	this->mVel.vy = 0;
-	this->mVel.vz = 0;
-	this->field_DF8 = 0;
-
-	this->mPos.vx = this->field_A8.vx * this->field_EA8 + this->field_B78;
-	this->mPos.vy = this->field_A8.vy * this->field_EA8 + this->field_B7C;
-	this->mPos.vz = this->field_A8.vz * this->field_EA8 + this->field_B80;
-
-	i32 **sfxEntry;
-	i32 anim;
-	if (this->mAnim == 0xE8)
-	{
-		sfxEntry = &gSpideySFXEntry[0xEA];
-		anim = 0xEA;
-	}
-	else
-	{
-		sfxEntry = &gSpideySFXEntry[0xE3];
-		anim = 0xE3;
-	}
-
-	this->field_350 = (i32*)sfxEntry;
-
-	i32 **p = sfxEntry;
-	while ((i32)*p != -1)
-	{
-		*p = (i32*)((i32)*p & 0xFFFF);
-		p++;
-	}
-
-	this->RunAnim(anim, 0, -1);
-
-	SFX_Play(9, 0x2000, 0);
-
-	this->field_E1C = 1;
-
-	return 1;
+    printf("CPlayer::DoPhysics(void)");
+    return 0;
 }
 
 // @Ok
@@ -7223,7 +7175,16 @@ void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 	}
 }
 
-// @NotOk
+// @Bogus
+// Tag note (2026-09-01): @NotOk -> @Bogus, same convention as Front_GetButtons,
+// SwapPSX*, downloadTexture, copyBitmap, initialSettings, obtainWaterLevelInPoolA7,
+// alloc_dc_models and setup_pulsing_colors. Rule used: @Bogus when the logic is
+// either absent from the PC build entirely (this case: the logger was compiled
+// away, print_if_false at 0x4015B0 is a bare retn) or already covered by an
+// implemented @Ok parent. It stays @NotOk when the logic is inlined into a parent
+// that is ITSELF still a stub, since @Bogus there would hide unwritten work -
+// that is why GetComboFrameInfoPointer / GetComboPartsInfoPointer /
+// GetEnterExitFrameInfoPointer keep @NotOk while CPlayer::InitiateCombo is a stub.
 // No code for this in the PC binary. The Mac build has a real body
 // (.spideyLog__FPce at 0x116BA0, 0x50 bytes, right before
 // .ReadAnalogueInput__7CPlayerFv), but the PC release build compiled the
