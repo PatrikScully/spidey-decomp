@@ -1513,10 +1513,201 @@ void CPlayer::CheckJumpingSwingWeb(void)
     printf("CPlayer::CheckJumpingSwingWeb(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckKick(void)
+// @Ok
+i32 CPlayer::CheckKick(void)
 {
-    printf("CPlayer::CheckKick(void)");
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[289] == 0 && pInput[305] == 0)
+		return 0;
+
+	if (this->field_AD4 != 0)
+		return 0;
+
+	if (this->field_8EA != 0)
+		return 0;
+
+	u8 punch = pInput[305];
+	pInput[289] = 0;
+	this->field_2E1 = 0;
+	bool bPunch = punch != 0;
+	pInput[305] = 0;
+	this->field_2F1 = 0;
+
+	if (bPunch && this->mHeldObject != 0)
+		return 0;
+
+	if (this->mHeldObject != 0 && !bPunch)
+	{
+		i32 objFlags = this->mHeldObject->field_10C;
+		this->field_E1C = 0x200000;
+
+		if (objFlags & 8)
+		{
+			i32 *p = gSpideySFXEntry[201];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(201, 0, -1);
+		}
+		else
+		{
+			i32 *p = gSpideySFXEntry[195];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(195, 0, -1);
+		}
+
+		CBody *pTarget = this->field_DCC;
+		if (pTarget)
+			this->SetTargetTorsoAngleToThisPoint(&pTarget->mPos);
+
+		return 1;
+	}
+
+	bool bFoundBaddy = false;
+	i32 bestDist = 512;
+
+	this->field_E5C.pWhatever = 0;
+
+	CBody *pBaddy = BaddyList;
+	if (pBaddy)
+	{
+		do
+		{
+			i32 dist = Utils_CrapDist(this->mPos, pBaddy->mPos);
+			if (dist < bestDist)
+			{
+				u16 type = (u16)pBaddy->mType;
+				if (type != 305 && type != 316)
+				{
+					bFoundBaddy = true;
+					bestDist = dist;
+					this->field_E5C = Mem_MakeHandle(pBaddy);
+				}
+			}
+
+			pBaddy = reinterpret_cast<CBody*>(pBaddy->mNextItem);
+		}
+		while (pBaddy != 0);
+	}
+
+	if (!bFoundBaddy)
+	{
+		if (!bPunch)
+		{
+			bool bAltAnim = bPunch;
+
+			this->field_E4C.pWhatever = 0;
+
+			CBody *pObject = EnvironmentalObjectList;
+			while (pObject != 0)
+			{
+				if (pObject->mType == 401 && (i32)Utils_CrapDist(this->mPos, pObject->mPos) < 768)
+				{
+					i32 facing = ((this->mPos.vx - pObject->mPos.vx) >> 12) * this->field_C6C.vx
+						+ ((this->mPos.vy - pObject->mPos.vy) >> 12) * this->field_C6C.vy
+						+ ((this->mPos.vz - pObject->mPos.vz) >> 12) * this->field_C6C.vz;
+
+					if (facing > 0)
+					{
+						SLineInfo lineInfo;
+						lineInfo.StartCoords = this->mPos;
+						lineInfo.EndCoords = pObject->mPos;
+						memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+						memset(&lineInfo.Position, 0, sizeof(CVector));
+						lineInfo.Normal.vx = 0;
+						lineInfo.Normal.vy = 0;
+						lineInfo.Normal.vz = 0;
+
+						M3dColij_InitLineInfo(&lineInfo);
+						M3dZone_LineToItem(&lineInfo, 1);
+
+						if (lineInfo.pItem == reinterpret_cast<CItem*>(pObject) && lineInfo.Distance <= 256)
+						{
+							this->field_E4C = Mem_MakeHandle(pObject);
+							bAltAnim = ((reinterpret_cast<CManipOb*>(pObject)->field_10C >> 3) & 1) != 0;
+							break;
+						}
+					}
+				}
+
+				pObject = reinterpret_cast<CBody*>(pObject->mNextItem);
+			}
+
+			if (this->field_E4C.pWhatever != 0)
+			{
+				this->field_E1C = 0x100000;
+
+				i32 anim = bAltAnim ? 196 : 190;
+
+				i32 *p = gSpideySFXEntry[anim];
+				this->field_350 = p;
+
+				if (p)
+				{
+					while (p[0] != -1)
+					{
+						p[0] &= 0xFFFF;
+						p++;
+					}
+				}
+
+				this->RunAnim(anim, 0, -1);
+
+				this->field_DF8 = 0;
+				return 1;
+			}
+		}
+
+		this->SelectTargetSwitch(256, 2896, &this->field_E54, 4096, 4096);
+
+		if (this->field_E54.pWhatever != 0)
+		{
+			i32 *p = gSpideySFXEntry[37];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(37, 0, -1);
+
+			this->field_E1C = (i32)0x80000000;
+			this->field_E20 = 0;
+			return 1;
+		}
+	}
+
+	this->field_E1C = 0x800;
+	this->field_898 = gTimerRelated;
+	this->field_DF8 = 0;
+
+	this->InitiateCombo(bPunch ? 1 : 0, 0);
+
+	return 1;
 }
 
 // @MEDIUMTODO
@@ -7409,6 +7600,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_1BC, 0x1BC);
 
 	VALIDATE(CPlayer, field_2C1, 0x2C1);
+	VALIDATE(CPlayer, field_2E1, 0x2E1);
+	VALIDATE(CPlayer, field_2F1, 0x2F1);
 
 	VALIDATE(CPlayer, field_350, 0x350);
 
@@ -7463,6 +7656,7 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_87C, 0x87C);
 	VALIDATE(CPlayer, field_894, 0x894);
+	VALIDATE(CPlayer, field_898, 0x898);
 
 	VALIDATE(CPlayer, field_89C, 0x89C);
 
@@ -7585,6 +7779,10 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_EBC, 0xEBC);
 
 	VALIDATE(CPlayer, mHeldObject, 0xE48);
+	VALIDATE(CPlayer, field_E4C, 0xE4C);
+	VALIDATE(CPlayer, field_E54, 0xE54);
+	VALIDATE(CPlayer, field_E5C, 0xE5C);
+	VALIDATE(CPlayer, field_E20, 0xE20);
 	VALIDATE(CPlayer, field_E64, 0xE64);
 
 	VALIDATE(CPlayer, field_EA4, 0xEA4);

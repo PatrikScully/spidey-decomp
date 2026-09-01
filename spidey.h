@@ -72,7 +72,16 @@ class CPlayer : public CSuper
 		// cleared at the top of CheckJump on every jump-button edge
 		u8 field_2C1;
 
-		PADDING(0x34C-0x2C1-1);
+		PADDING(0x2E1-0x2C1-1);
+
+		// both cleared by CheckKick on the kick/punch button edge
+		u8 field_2E1;
+
+		PADDING(0x2F1-0x2E1-1);
+
+		u8 field_2F1;
+
+		PADDING(0x34C-0x2F1-1);
 
 		// ProcessSFXArray: non-zero selects the (Rnd(4)+80)|0x8000 SFX range,
 		// zero selects the Rnd(4)+1 range, in the mAnim 0x15/0xC0/0xC6 case.
@@ -207,7 +216,8 @@ class CPlayer : public CSuper
 
 		i32 field_894;
 
-		PADDING(0x89C-0x894-4);
+		// gTimerRelated stamp taken by CheckKick when it starts a combo
+		i32 field_898;
 
 		MATRIX field_89C;
 
@@ -500,7 +510,9 @@ class CPlayer : public CSuper
 		i32 field_E18;
 		i32 field_E1C;
 
-		PADDING(0xE2D-0xE1C-4);
+		i32 field_E20;
+
+		PADDING(0xE2D-0xE20-4);
 
 		char field_E2D;
 		char field_E2E;
@@ -526,7 +538,10 @@ class CPlayer : public CSuper
 
 		CManipOb* mHeldObject;
 
-		PADDING(0xE64-0xE48-4);
+		// CheckKick targets: environmental object, auto-aim switch, baddy
+		SHandle field_E4C;
+		SHandle field_E54;
+		SHandle field_E5C;
 
 		// @FIXME guess the type, used as a scalar-deleting-destructor
 		// pointer (vtable[0](1)) in CPlayer::SwitchToDeathMode
@@ -644,7 +659,7 @@ class CPlayer : public CSuper
 		EXPORT void CheckJumpingR2ZipWeb(void);
 		EXPORT u8 CheckJumpingSmashKick(void);
 		EXPORT void CheckJumpingSwingWeb(void);
-		EXPORT void CheckKick(void);
+		EXPORT i32 CheckKick(void);
 		EXPORT void CheckLanded(void);
 		EXPORT i32 CheckRunIntoWall(void);
 		EXPORT i32 CheckStickToCeiling(void);
