@@ -883,11 +883,67 @@ void Web_Trap(CSuper *, i32)
 	printf("Web_Trap(CSuper *,i32)");
 }
 
-// @MEDIUMTODO
-// 0x4F9940, 604 bytes. Called by CPlayer::FireWeb.
-CImpactWeb::CImpactWeb(const CVector &, const CSVector &, i32, i32, i32)
+// @Ok
+// 0x4F9940, 604 bytes. Called by CPlayer::FireWeb. The web splat left on a
+// surface when a web shot misses. Fires a line from Pos along the Normal
+// direction at speed a4 for a6 frames; if it hits an env object it records
+// the hit item/face/position/normal and caps the lifetime at the hit distance.
+CImpactWeb::CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 a4, i32 a5, i32 a6)
 {
-	printf("CImpactWeb::CImpactWeb(const CVector &,const CSVector &,i32,i32,i32)");
+	CFlatBit::CFlatBit();
+
+	field_78.vx = 0;
+	field_78.vy = 0;
+	field_78.vz = 0;
+	field_84.vx = 0;
+	field_84.vy = 0;
+	field_84.vz = 0;
+
+	if (MechList != 0)
+		field_68 = MechList->GetDamageInflictedFromDifficulty(a5);
+	else
+		field_68 = a5;
+
+	mPos = Pos;
+	field_6C = gTimerRelated;
+	print_if_false(a4 != 0, "Zero speed sent to CImpactWeb");
+	Utils_GetVecFromMagDir(&mVel, a4, (CSVector*)&Normal);
+
+	mLifetime = a6;
+
+	gLineInfo.StartCoords = mPos;
+	gLineInfo.EndCoords.vx = mPos.vx + mVel.vx * mLifetime;
+	gLineInfo.EndCoords.vy = mPos.vy + mVel.vy * mLifetime;
+	gLineInfo.EndCoords.vz = mPos.vz + mVel.vz * mLifetime;
+	M3dColij_InitLineInfo(&gLineInfo);
+
+	LineOfSightCheck = 1;
+	M3dZone_LineToItem(&gLineInfo, 0);
+	LineOfSightCheck = 0;
+
+	if (gLineInfo.pItem != 0)
+	{
+		CItem *pNode = EnviroList;
+		while (pNode != 0 && pNode != gLineInfo.pItem)
+			pNode = pNode->mNextItem;
+		print_if_false(pNode != 0, "Not in list");
+
+		field_70 = gLineInfo.pItem;
+		field_74 = gLineInfo.pFace;
+		field_78 = gLineInfo.Position;
+		field_84 = gLineInfo.Normal;
+		mLifetime = gLineInfo.Distance / a4;
+		print_if_false((field_70->mFlags & 0x10) == 0, "Hit env obj!");
+	}
+
+	if (mLifetime > a6)
+		mLifetime = a6;
+
+	SetAnim(9);
+	SetFrame(0);
+	SetScale(0);
+	mPostScale = 0x0A001000;
+	field_5A = (Rnd(2) != 0) ? 768 : -768;
 }
 
 // @MEDIUMTODO

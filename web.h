@@ -26,7 +26,13 @@ class CImpactWeb : public CFlatBit
 		// list. The web splat left on a wall when a web shot misses.
 		EXPORT CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 a4, i32 a5, i32 a6);
 
-		PADDING(0x24);
+		i32 field_68;
+		i32 field_6C;
+		CItem *field_70;
+		u32 *field_74;
+		CVector field_78;
+		CSVector field_84;
+		PADDING(2);
 };
 
 
