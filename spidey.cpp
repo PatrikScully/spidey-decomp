@@ -53,7 +53,7 @@ i32 *gSpideySFXEntry[300];
 // in it to 16 bits, then start the animation. The original inlines this
 // (six copies inside CPlayer::CheckLanded alone), so it was a helper in
 // the real source too.
-static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
+static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim, i32 frame)
 {
 	i32 *p = gSpideySFXEntry[anim];
 
@@ -68,7 +68,15 @@ static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
 		}
 	}
 
-	pPlayer->RunAnim(anim, 0, -1);
+	pPlayer->RunAnim(anim, frame, -1);
+}
+
+// @Bogus
+// Same thing starting at frame 0, which is what almost every call site
+// wants.
+static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
+{
+	RunAnimWithSFX(pPlayer, anim, 0);
 }
 
 // raw accumulated yaw offset (relative to body heading) driven by look
@@ -1471,16 +1479,244 @@ i32 CPlayer::CheckJump(void)
 	return 0;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJumpingR1ZipWeb(void)
+// @Ok
+// verified against the IDA disasm of 0x4C0EE0 (1408 bytes). Returns 1 when
+// a zip web was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// The R1 variant fires straight ahead: the probe line runs from the player
+// to mPos + field_C84 * 3072 and the hit has to pass CheckZipWebAvailability
+// with a 3072 range. Faces flagged 0x40000 whose normal points up are
+// rejected. On a hit the surface point goes into field_DC0, the normal into
+// field_DA0, and then either the plain web-shot animation runs (when
+// field_E1C bit 0 is set, i.e. the player is on the ground) or a real CWeb
+// is allocated and fired at the surface point.
+u8 CPlayer::CheckJumpingR1ZipWeb(void)
 {
-    printf("CPlayer::CheckJumpingR1ZipWeb(void)");
+	if (this->field_8EA != 0)
+		return 0;
+
+	if (this->mHeldObject != 0)
+		return 0;
+
+	if (this->field_550 != 0)
+		return 0;
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[0x60] == 0)
+		return 0;
+
+	i32 reach = 3072;
+	CVector rayEnd = this->mPos + (this->field_C84 * reach);
+
+	SLineInfo lineInfo;
+	lineInfo.StartCoords = this->mPos;
+	lineInfo.EndCoords = rayEnd;
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (lineInfo.pItem == 0)
+		return 0;
+
+	if ((lineInfo.pFace[3] & 0x40000) != 0 && lineInfo.Normal.vy >= -2600)
+		return 0;
+
+	if (this->CheckZipWebAvailability(&lineInfo, 3072) == 0)
+		return 0;
+
+	this->field_DC0.vx = lineInfo.Position.vx;
+	this->field_DC0.vy = lineInfo.Position.vy;
+	this->field_DC0.vz = lineInfo.Position.vz;
+
+	this->field_DA0.vx = lineInfo.Normal.vx;
+	this->field_DA0.vy = lineInfo.Normal.vy;
+	this->field_DA0.vz = lineInfo.Normal.vz;
+
+	this->field_8ED = 0;
+
+	this->field_558.vx = this->mPos.vx;
+	this->field_558.vy = this->mPos.vy;
+	this->field_558.vz = this->mPos.vz;
+
+	this->field_DF8 = 0;
+
+	if ((this->field_E1C & 1) != 0)
+	{
+		if (this->field_AD4 != 0)
+			RunAnimWithSFX(this, 0x104);
+		else
+			RunAnimWithSFX(this, 0xFA);
+	}
+	else
+	{
+		// drop whatever the lookaround/lock-on owned first
+		i32 *pOld = this->field_E64;
+
+		if (pOld != 0)
+		{
+			(*(void(**)(i32*, i32))*pOld)(pOld, 1);
+			this->field_E64 = 0;
+			this->field_54C = 0;
+			CameraList->field_12C = -1;
+		}
+
+		CWeb *pWeb = new CWeb();
+		this->field_E6C = reinterpret_cast<i32*>(pWeb);
+
+		pWeb->field_102 = 0;
+		pWeb->field_F8 = (u8)this->field_5E8;
+
+		CSVector normal;
+		normal.vx = lineInfo.Normal.vx;
+		normal.vy = lineInfo.Normal.vy;
+		normal.vz = lineInfo.Normal.vz;
+
+		this->field_8F8 = 8;
+		this->field_E10 = 1;
+
+		this->FireWeb(false, 128, &this->field_DC0, true, &normal);
+
+		this->field_E10 = 0;
+
+		RunAnimWithSFX(this, 0x10E, 13);
+	}
+
+	this->field_E1C = 0x40000;
+
+	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJumpingR2ZipWeb(void)
+// @Ok
+// verified against the IDA disasm of 0x4C1460 (1020 bytes). Returns 1 when
+// a zip web was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// Same idea as CheckJumpingR1ZipWeb but this is the swing button (0x70,
+// plus the practice-mode auto fire, exactly the gate CheckJumpingSwingWeb
+// uses) and the probe aims up and forward: from the player to
+// mPos - field_C6C * 2048 + field_C84 * reach, where reach is 512, or a
+// random 256 - Rnd(512) while the player is already swinging or zipping
+// (field_E1C bits 1 and 2). The range passed to CheckZipWebAvailability is
+// 2048 here, and the CWeb branch is the same as R1's except that it does
+// not have to drop a lock-on first.
+u8 CPlayer::CheckJumpingR2ZipWeb(void)
 {
-    printf("CPlayer::CheckJumpingR2ZipWeb(void)");
+	// gPracticeDifficultyFlag, 0x60CFC7, same file-local pointer pshell.cpp
+	// uses; see CheckJumpingSwingWeb.
+	static u8 * const gPracticeDifficultyFlag = (u8*)0x0060CFC7;
+
+	if (this->field_8EA != 0 || this->mHeldObject != 0 || this->field_550 != 0)
+		return 0;
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if ((pInput[0x70] == 0 || (*gPracticeDifficultyFlag != 0 && this->field_1AC == 0))
+		&& (*gPracticeDifficultyFlag == 0
+			|| (this->field_E1C & 6) == 0
+			|| this->field_E8D == 0
+			|| pInput[0x100] == 0))
+		return 0;
+
+	i32 reach = 512;
+
+	if ((this->field_E1C & 6) != 0)
+		reach = 256 - Rnd(512);
+
+	i32 up = 2048;
+
+	CVector rayEnd = (this->mPos - (this->field_C6C * up)) + (this->field_C84 * reach);
+
+	SLineInfo lineInfo;
+	lineInfo.StartCoords = this->mPos;
+	lineInfo.EndCoords = rayEnd;
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (lineInfo.pItem == 0)
+		return 0;
+
+	if ((lineInfo.pFace[3] & 0x40000) != 0 && lineInfo.Normal.vy >= -2600)
+		return 0;
+
+	if (this->CheckZipWebAvailability(&lineInfo, 2048) == 0)
+		return 0;
+
+	this->field_DC0.vx = lineInfo.Position.vx;
+	this->field_DC0.vy = lineInfo.Position.vy;
+	this->field_DC0.vz = lineInfo.Position.vz;
+
+	this->field_DA0.vx = lineInfo.Normal.vx;
+	this->field_DA0.vy = lineInfo.Normal.vy;
+	this->field_DA0.vz = lineInfo.Normal.vz;
+
+	this->field_8ED = 0;
+
+	this->field_558.vx = this->mPos.vx;
+	this->field_558.vy = this->mPos.vy;
+	this->field_558.vz = this->mPos.vz;
+
+	this->field_DF8 = 0;
+
+	if ((this->field_E1C & 1) != 0)
+	{
+		if (this->field_AD4 != 0)
+			RunAnimWithSFX(this, 0x104);
+		else
+			RunAnimWithSFX(this, 0xFA);
+	}
+	else
+	{
+		CWeb *pWeb = new CWeb();
+		this->field_E6C = reinterpret_cast<i32*>(pWeb);
+
+		pWeb->field_102 = 0;
+		pWeb->field_F8 = (u8)this->field_5E8;
+
+		CSVector normal;
+		normal.vx = lineInfo.Normal.vx;
+		normal.vy = lineInfo.Normal.vy;
+		normal.vz = lineInfo.Normal.vz;
+
+		this->field_8F8 = 8;
+		this->field_E10 = 1;
+
+		this->FireWeb(false, 128, &this->field_DC0, true, &normal);
+
+		this->field_E10 = 0;
+
+		RunAnimWithSFX(this, 0x10E, 13);
+	}
+
+	this->field_E1C = 0x40000;
+
+	return 1;
 }
 
 // @Ok
@@ -3516,43 +3752,324 @@ void CPlayer::EnterLookaroundMode(void)
 	}
 }
 
-// @MEDIUMTODO
-void CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)
+// @Ok
+// verified against the IDA disasm of 0x4C5DD0 (1729 bytes). Returns the
+// result code the caller stores, so the header's void return was wrong and
+// is fixed. Codes: 0 nothing happened, 1 not enough webbing, 2 the target
+// was trapped or tugged, 4 a switch was flicked, 8 the web missed and was
+// turned into a blob.
+//
+// bUseHeldTarget picks where the web is aimed:
+//   false -> at *pTarget, exactly as the caller passed it.
+//   true  -> at the held object if there is one, else at the auto-picked
+//            switch, else along a ray from the hand: the ray is traced with
+//            LineOfSightCheck on so a hit sets *pNormal and moves the aim
+//            point onto the surface. Hitting a face flagged 0x2000000 that
+//            belongs to a live switch makes that switch the target.
+//
+// Then, if a CWeb was already allocated (field_E6C, done by
+// CheckJumpingR1ZipWeb / CheckJumpingR2ZipWeb), it is fired and the pad
+// rumbles; a switch target gets flicked, a baddy gets trapped (shot 1) or
+// tugged (shot 2), and anything else turns the web into a blob. With no
+// CWeb the shot is just a wall splat (CImpactWeb), or a "simby" relocatable
+// effect when field_5E8 is set.
+i32 CPlayer::FireWeb(bool bUseHeldTarget, i32 cost, CVector *pTarget, bool bHitSomething, CSVector *pNormal)
 {
-    printf("CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)");
+	// gSaveGame + 0x7B, the "vibration on" option flag; see CheckLanded.
+	static u8 * const gSaveGameVibration = (u8*)0x006828D3;
+
+	CVector aim;
+	aim.vx = 0;
+	aim.vy = 0;
+	aim.vz = 0;
+
+	CVector hook;
+	hook.vx = 0;
+	hook.vy = 0;
+	hook.vz = 0;
+
+	i32 result = 0;
+
+	CBody *held = this->field_DCC;
+
+	CSwitch *pSwitchTarget = 0;
+
+	if (held != 0 && held->mType == 407)
+		pSwitchTarget = reinterpret_cast<CSwitch*>(held);
+
+	if (!bUseHeldTarget)
+	{
+		aim = *pTarget;
+	}
+	else if (held != 0)
+	{
+		bHitSomething = false;
+		aim = held->mPos;
+	}
+	else
+	{
+		SHandle hSwitch;
+
+		CVector *pAutoAim = this->SelectTargetSwitch(3072, 2896, &hSwitch, 4096, 4096);
+		this->field_DD0 = pAutoAim;
+
+		CVector rayEnd;
+
+		if (pAutoAim != 0)
+		{
+			CVector aimPoint(pAutoAim->vx, pAutoAim->vy, pAutoAim->vz);
+
+			aim = aimPoint - this->mPos;
+
+			i32 shift = 4;
+			rayEnd = (this->mPos + aim) + (aim >> shift);
+		}
+		else
+		{
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hook), this, 2);
+
+			i32 scale = 2048;
+			rayEnd = hook - (this->field_C6C * scale);
+		}
+
+		aim = rayEnd;
+
+		SLineInfo lineInfo;
+		lineInfo.StartCoords = this->mPos;
+		lineInfo.EndCoords = aim;
+		lineInfo.MinCoords.vx = 0;
+		lineInfo.MinCoords.vy = 0;
+		lineInfo.MinCoords.vz = 0;
+		lineInfo.MaxCoords.vx = 0;
+		lineInfo.MaxCoords.vy = 0;
+		lineInfo.MaxCoords.vz = 0;
+		lineInfo.Position.vx = 0;
+		lineInfo.Position.vy = 0;
+		lineInfo.Position.vz = 0;
+		lineInfo.Normal.vx = 0;
+		lineInfo.Normal.vy = 0;
+		lineInfo.Normal.vz = 0;
+
+		M3dColij_InitLineInfo(&lineInfo);
+		LineOfSightCheck = 1;
+		M3dZone_LineToItem(&lineInfo, 1);
+		LineOfSightCheck = 0;
+
+		if (lineInfo.pItem != 0)
+		{
+			bHitSomething = true;
+
+			pNormal->vx = lineInfo.Normal.vx;
+			pNormal->vy = lineInfo.Normal.vy;
+			pNormal->vz = lineInfo.Normal.vz;
+
+			aim = lineInfo.Position;
+
+			if ((lineInfo.pFace[3] & 0x2000000) != 0)
+			{
+				CSwitch *pSwitch = Switch_GetCSwitchObjectFromItem(lineInfo.pItem);
+
+				pSwitchTarget = pSwitch;
+
+				if (pSwitch->field_100 == 0)
+					pSwitchTarget = 0;
+			}
+		}
+		else
+		{
+			bHitSomething = false;
+		}
+	}
+
+	if (this->field_E6C != 0)
+	{
+		if (this->DecreaseWebbing(cost) == 0)
+			return 1;
+
+		CWeb *pWeb = reinterpret_cast<CWeb*>(this->field_E6C);
+
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hook), this, pWeb->field_102);
+
+		CBody *pAttachTo;
+
+		if (this->field_8F8 == 8 || this->field_DCC == 0)
+			pAttachTo = 0;
+		else
+			pAttachTo = (this->field_DCC->mType != 407) ? this->field_DCC : 0;
+
+		pWeb->Fire(hook, aim, pAttachTo, bHitSomething, *pNormal);
+
+		if (*gSaveGameVibration != 0)
+		{
+			if (this->field_8F8 == 1)
+			{
+				if (Pad_GetActuatorTime(0, 1) <= 2)
+					Pad_ActuatorOn(0, 4, 1, 120);
+			}
+			else if (this->field_8F8 == 2 && Pad_GetActuatorTime(0, 1) <= 2)
+			{
+				Pad_ActuatorOn(0, 8, 1, 160);
+			}
+		}
+
+		if (pSwitchTarget != 0)
+		{
+			result = 4;
+			pSwitchTarget->Flick();
+
+			SFX_PlayPos(21, &this->mPos, 0);
+			return result;
+		}
+
+		CBody *pHit = this->field_DCC;
+
+		if (pHit != 0)
+		{
+			if (this->field_8F8 == 1)
+			{
+				if (reinterpret_cast<CBaddy*>(pHit)->TrapWeb() != 0)
+				{
+					result = 2;
+					Web_Trap(reinterpret_cast<CSuper*>(pHit), (u8)this->field_5E8);
+
+					if (this->field_5E4 == 0)
+					{
+						SFX_PlayPos(21, &this->mPos, 0);
+						this->field_5E4 = SFX_PlayPos(33, &this->mPos, 0);
+					}
+				}
+
+				return result;
+			}
+
+			if (this->field_8F8 != 2)
+			{
+				SFX_PlayPos(21, &this->mPos, 0);
+				return result;
+			}
+
+			if (reinterpret_cast<CBaddy*>(pHit)->TugWeb() == 1)
+			{
+				result = 2;
+				reinterpret_cast<CBaddy*>(pHit)->field_2A8 |= 8;
+
+				SFX_PlayPos(21, &this->mPos, 0);
+				return result;
+			}
+		}
+		else if (this->field_8F8 != 2)
+		{
+			SFX_PlayPos(21, &this->mPos, 0);
+			return result;
+		}
+
+		pWeb->SwitchToBlob();
+		this->field_E6C = 0;
+		SFX_Play(22, 0x2000, 0);
+		return 8;
+	}
+
+	// no CWeb was allocated: this is a plain splat shot
+	bool bShortShot = (this->mAnim == 139);
+
+	if (this->DecreaseWebbing(bShortShot ? 300 : 900) == 0)
+		return 1;
+
+	if (*gSaveGameVibration != 0 && Pad_GetActuatorTime(0, 0) <= 2)
+		Pad_ActuatorOn(0, 4, 0, 1);
+
+	CVector hand;
+	hand.vx = 0;
+	hand.vy = 0;
+	hand.vz = 0;
+
+	CVector otherHand;
+	otherHand.vx = 0;
+	otherHand.vy = 0;
+	otherHand.vz = 0;
+
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hand), this, 0);
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&otherHand), this, 1);
+
+	i32 half = 1;
+	hand += (otherHand - hand) >> half;
+
+	CSVector ang;
+	ang.vx = 0;
+	ang.vy = 0;
+	ang.vz = 0;
+
+	Utils_CalcAim(&ang, &hand, &aim);
+
+	if (this->field_5E8 == 0)
+	{
+		if (bShortShot)
+			new CImpactWeb(hand, ang, 32, 50, 30);
+		else
+			new CImpactWeb(hand, ang, 32, 50, 120);
+
+		SFX_PlayPos(21, &this->mPos, 0);
+		return result;
+	}
+
+	u32 params[7];
+	params[0] = hand.vx;
+	params[1] = hand.vy;
+	params[2] = hand.vz;
+	params[3] = (i32)ang.vx;
+	params[4] = (i32)ang.vy;
+	params[5] = (i32)ang.vz;
+	params[6] = 50;
+
+	Reloc_CallUserFunction("simby", 2, params, 0);
+
+	SFX_PlayPos(0x80DC, &this->mPos, 0);
+
+	return result;
 }
 
-// @NotOk
+// @Bogus
 // No standalone code for this in the PC binary: MSVC6 inlined all three
 // combo-record accessors into their only caller, CPlayer::InitiateCombo
-// (0x4C87D0). The Mac build still has them out of line
+// (0x4C87D0), which is now implemented and @Ok, so the logic is covered.
+// The Mac build still has them out of line
 // (.GetComboFrameInfoPointer__7CPlayerFUs 0x122D10,
 // .GetEnterExitFrameInfoPointer__7CPlayerFUs 0x122DC0,
 // .GetComboPartsInfoPointer__7CPlayerFUs 0x122E60), and neither
 // tools/names.json nor idbs/spideypc_names.txt has a PC address for any of
 // them.
-// What the inlined bodies do (both recovered from inside InitiateCombo, and
-// both working off gComboMoves[id]->field_4, the pointer ParseFightData sets to
-// the first of the three 0xFF terminated byte streams that follow a move
-// record's parts array): one skips two streams and returns the third
-// (stored into CPlayer+0x950, later indexed by elapsed time / 2, so that one
-// is per-frame data), the other skips one stream and returns the second
-// (stored into CPlayer+0x954). The third accessor, which would just return
-// field_4 unchanged, has no call site left at all. Which of the three names
-// belongs to which of the three streams is not decidable from the PC binary
-// alone, so I am not guessing; implementing them would also mean changing
-// the return type in spidey.h (they are declared void here but really
-// return pointers).
+//
+// All three work off gComboMoves[id]->field_4, the pointer ParseFightData
+// sets to the first of the three 0xFF terminated byte streams that follow a
+// move record's parts array. Mapping resolved 2026-09-01 from how the two
+// surviving results are used in CPlayer::UpdateAndTrackCombo (0x4C7120):
+//  - skip two streams, keep the third -> CPlayer+0x950. UpdateAndTrackCombo
+//    indexes it by elapsed time / 2 and writes the byte straight into
+//    CSuper::mFrame, so it is the per frame animation frame list. That is
+//    GetComboFrameInfoPointer.
+//  - skip one stream, keep the second -> CPlayer+0x954. UpdateAndTrackCombo
+//    asserts it non null with the message "Bad collision parts info"
+//    (0x556B78) and then walks it as the collision part list. That is
+//    GetComboPartsInfoPointer.
+//  - the third accessor would return field_4 unchanged. It has no call site
+//    left in the PC build at all, so by elimination it is
+//    GetEnterExitFrameInfoPointer. That last step is elimination, not direct
+//    evidence, so treat the name-to-stream link for that one as likely
+//    rather than proven.
+// Implementing them would also mean changing the return type in spidey.h
+// (they are declared void here but really return pointers), and nothing
+// would call them.
 void CPlayer::GetComboFrameInfoPointer(u16)
 {
     printf("CPlayer::GetComboFrameInfoPointer(u16)");
 }
 
-// @NotOk
+// @Bogus
 // Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
-// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
-// stream is not decidable from the PC binary. See that comment for the full
-// evidence.
+// into CPlayer::InitiateCombo (0x4C87D0), which is implemented and @Ok.
+// This is the accessor that skips one stream and returns the second, the
+// one UpdateAndTrackCombo checks with "Bad collision parts info". See that
+// comment for the full evidence.
 void CPlayer::GetComboPartsInfoPointer(u16)
 {
     printf("CPlayer::GetComboPartsInfoPointer(u16)");
@@ -3587,11 +4104,12 @@ i32 CPlayer::GetDamageInflictedFromDifficulty(i32 a2)
 	return a2;
 }
 
-// @NotOk
-// Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
-// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
-// stream is not decidable from the PC binary. See that comment for the full
-// evidence.
+// @Bogus
+// No standalone PC code and, unlike the other two accessors, no call site
+// left either: the stream it would return (the first of the three, i.e.
+// gComboMoves[id]->field_4 unchanged) is never read on PC. See the
+// GetComboFrameInfoPointer comment above for the full evidence, including
+// why this is the accessor that is left over.
 void CPlayer::GetEnterExitFrameInfoPointer(u16)
 {
     printf("CPlayer::GetEnterExitFrameInfoPointer(u16)");
@@ -4297,10 +4815,189 @@ void CPlayer::InitialiseSFXArray(void)
 	}
 }
 
-// @MEDIUMTODO
-void CPlayer::InitiateCombo(u16,i32)
+// @Ok
+// verified against the IDA disasm of 0x4C87D0 (816 bytes). Starts move
+// `move` (an index into gComboMoves) and rewinds the combo clock by
+// `headStart` animation ticks.
+//
+// It turns the player towards the nearest baddy in front, clears every
+// button latch so the follow-on window starts clean, copies the six frame
+// windows out of the move record, and resolves the record's three 0xFF
+// terminated byte streams: the third one (per frame animation frames) into
+// field_950, the second one (collision parts) into field_954. The record's
+// parts array is expanded into field_95C, one SComboPart per part plus the
+// null terminator UpdateAndTrackCombo stops on. Finally the move's
+// animation is started at the frame the per-frame stream asks for, with one
+// of four random grunts.
+//
+// The three accessor names in the Mac build (GetComboFrameInfoPointer,
+// GetComboPartsInfoPointer, GetEnterExitFrameInfoPointer) are all inlined
+// into this function on PC, see their own comments.
+void CPlayer::InitiateCombo(u16 move, i32 headStart)
 {
-    printf("CPlayer::InitiateCombo(u16,i32)");
+	// move id -> pointer to a move record, 32 slots; filled by
+	// CPlayer::ParseFightData, which documents the record layout.
+	static u8 ** const gComboMoves = (u8**)0x006A8CB4;
+
+	// 0x60D9D0, named gGlowZeroPos in baddy.cpp: a shared all-zero CVector.
+	static CVector * const gGlowZeroPos = (CVector*)0x0060D9D0;
+
+	print_if_false(gComboMoves[move] != 0, "Bad move");
+
+	this->field_A6C[0] = 0;
+	this->field_A6C[1] = 0;
+	this->field_A6C[2] = 0;
+	this->field_A6C[3] = 0;
+	this->field_A7C = 0;
+
+	this->field_378 = 1;
+
+	CBody *pTarget = this->SelectTargetBaddy(1024, -4096, 4096, 0);
+
+	if (pTarget != 0)
+	{
+		i16 heading = (i16)((1024 - ratan2(
+				-((pTarget->mPos.vz - this->mPos.vz) >> 12),
+				-((pTarget->mPos.vx - this->mPos.vx) >> 12))) & 0xFFF);
+
+		this->field_548 = (heading - this->GetEffectiveHeading()) & 0xFFF;
+		this->OrientToNormal(0, gGlowZeroPos);
+		this->field_548 = 0;
+	}
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	this->field_8FC = move;
+
+	pInput[0x11] = 0;
+	pInput[0x01] = 0;
+	pInput[0x21] = 0;
+	pInput[0x31] = 0;
+	pInput[0x101] = 0;
+	pInput[0x111] = 0;
+	pInput[0x121] = 0;
+	pInput[0x131] = 0;
+
+	u8 *pMove = gComboMoves[move];
+
+	reinterpret_cast<u8*>(this)[0x1D1] = 0;
+	reinterpret_cast<u8*>(this)[0x1C1] = 0;
+	reinterpret_cast<u8*>(this)[0x1E1] = 0;
+	reinterpret_cast<u8*>(this)[0x1F1] = 0;
+	reinterpret_cast<u8*>(this)[0x2C1] = 0;
+	reinterpret_cast<u8*>(this)[0x2D1] = 0;
+	reinterpret_cast<u8*>(this)[0x2E1] = 0;
+	reinterpret_cast<u8*>(this)[0x2F1] = 0;
+
+	this->field_8FE = *reinterpret_cast<u16*>(pMove + 0x0C);
+	this->field_900 = *reinterpret_cast<u16*>(pMove + 0x0E);
+	this->field_902 = *reinterpret_cast<u16*>(pMove + 0x12);
+	this->field_904 = *reinterpret_cast<u16*>(pMove + 0x14);
+	this->field_906 = *reinterpret_cast<u16*>(pMove + 0x16);
+	this->field_908 = *reinterpret_cast<u16*>(pMove + 0x18);
+
+	this->field_914 = 0;
+	this->field_916 = 0;
+	this->field_94D = 1;
+
+	this->field_910 = this->field_84 - headStart;
+	this->field_918 = gTimerRelated;
+	this->field_958 = 0;
+
+	print_if_false(pMove != 0, "Bad move");
+
+	// GetComboFrameInfoPointer: skip the first two byte streams and keep the
+	// third
+	u8 *p = *reinterpret_cast<u8**>(gComboMoves[move] + 4);
+
+	if (*p++ != 0xFF)
+	{
+		while (*p++ != 0xFF)
+			;
+	}
+
+	if (*p++ != 0xFF)
+	{
+		while (*p++ != 0xFF)
+			;
+	}
+
+	this->field_950 = p;
+
+	print_if_false(gComboMoves[move] != 0, "Bad move");
+
+	pMove = gComboMoves[move];
+
+	// GetComboPartsInfoPointer: skip the first byte stream and keep the
+	// second
+	p = *reinterpret_cast<u8**>(pMove + 4);
+
+	if (*p++ != 0xFF)
+	{
+		while (*p++ != 0xFF)
+			;
+	}
+
+	this->field_954 = p;
+
+	i32 partCount = *reinterpret_cast<u16*>(pMove + 0x20);
+
+	if (partCount != 0)
+	{
+		this->field_94C = 1;
+
+		if (partCount > 16)
+			partCount = 16;
+
+		i32 *pPart = reinterpret_cast<i32*>(pMove + 0x24);
+
+		for (i32 i = 0; i < partCount; i++)
+		{
+			u8 *pPartMove = reinterpret_cast<u8*>(pPart[0]);
+
+			i32 flags = 0;
+
+			if (((u32)pPart[2] >> 16) != 0)
+				flags = 768;
+
+			pPart += 3;
+
+			this->field_95C[i].mActive = 1;
+			this->field_95C[i].mWaitingFirst = 1;
+			this->field_95C[i].mUseLateWindow = (*reinterpret_cast<u16*>(pPartMove + 0x22) != 0);
+			this->field_95C[i].mStarted = 0;
+			this->field_95C[i].mFlags = flags;
+			this->field_95C[i].mInput = *reinterpret_cast<u8**>(pPartMove + 4);
+
+			// leaves the slot behind the last part null, which is what
+			// UpdateAndTrackCombo stops the walk on
+			this->field_95C[i + 1].mInput = 0;
+		}
+	}
+	else
+	{
+		this->field_94C = 0;
+	}
+
+	u16 anim = *reinterpret_cast<u16*>(pMove + 2);
+
+	i32 frame = this->field_950[(this->field_84 - this->field_910) / 2];
+
+	i32 *pSFX = gSpideySFXEntry[anim];
+	this->field_350 = pSFX;
+
+	if (pSFX)
+	{
+		while (pSFX[0] != -1)
+		{
+			pSFX[0] &= 0xFFFF;
+			pSFX++;
+		}
+	}
+
+	this->RunAnim(anim, frame, -1);
+
+	SFX_Play(Rnd(4) + 10, 0x2000, 0);
 }
 
 // @Ok
@@ -4912,8 +5609,13 @@ CBody *CPlayer::SelectTargetBaddy(i32 maxDist, i32 coneThreshold, i32 distWeight
 // attempts.md finding) are all confirmed correct against the raw
 // disassembly. 3 attempts this session (see spidey.attempts.md), below
 // the 15-hypothesis bar for a 595-byte function, left @NotOk.
-void CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 weight, i32 facingWeight)
+CVector *CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 weight, i32 facingWeight)
 {
+	// the winner's auto-aim point. The original returns it (eax) and
+	// CPlayer::FireWeb stores it in field_DD0, so this function was not
+	// void; fixed 2026-09-01 while decompiling FireWeb.
+	CVector *bestTarget = 0;
+
 	CItem *best = 0;
 	i32 bestScore = 0;
 
@@ -4973,11 +5675,14 @@ void CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i32 w
 			{
 				bestScore = score;
 				best = node;
+				bestTarget = target;
 			}
 		}
 	}
 
 	*out = Mem_MakeHandle(best);
+
+	return bestTarget;
 }
 
 // @Ok
@@ -7246,10 +7951,201 @@ void CPlayer::UpdateTrails(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// verified against the IDA disasm of 0x4BAA30 (the real destructor; the
+// vtable slot 0 entry at 0x4C9210 is only MSVC's scalar deleting thunk,
+// which is why Hex-Rays refuses that address).
+//
+// Order of business: stash the webbing/armour numbers back into gSaveGame
+// so they survive the level change, stop the looping SFX, free every owned
+// object (lock-on target, the two shadows, the extra body parts, the
+// auto-aim target, every live web, every command block, the two hand
+// trails), unlink from MechList and drop the reticle target.
 CPlayer::~CPlayer(void)
 {
-    printf("CPlayer::~CPlayer(void)");
+	// gSaveGame is 0x682858 (front.h, SSaveGame in shell.h) and this file
+	// does not include front.h, so the four slots the player carries across
+	// a level change are reached through the containing global, the same way
+	// CPlayer::Hit does it. +0x48 is the webbing amount, +0x4C the webbing
+	// upgrade level, +0x50 the armour amount, +0x79 "armour unlocked" and
+	// +0x7A "armour is on".
+	static u8 * const gSaveGameBytes = (u8*)0x00682858;
+
+	// 0x6A9058..0x6A9068: where the destructor pushes the previous gSaveGame
+	// values before overwriting them with the live ones. No idb_globals.txt
+	// entry (nearest named are gSpideyHeadModel 0x6A9054 and gTextureEntries
+	// 0x6A90B8), tentative names from usage. Nothing in the repo reads them
+	// back yet.
+	static i32 * const gPrevSavedWebbing = (i32*)0x006A9058;
+	static i32 * const gPrevSavedWebbingLevel = (i32*)0x006A905C;
+	static u8 * const gPrevSavedArmourUnlocked = (u8*)0x006A9060;
+	static i32 * const gPrevSavedArmour = (i32*)0x006A9064;
+	static u8 * const gPrevSavedArmourOn = (u8*)0x006A9068;
+
+	// 0x6A9034, right in front of MechList (0x6A9038): how many players are
+	// on that list. CPlayer::CPlayer increments it, this decrements it. No
+	// idb_globals.txt entry, tentative name.
+	static i32 * const gMechListCount = (i32*)0x006A9034;
+
+	// 0x60F76C, the screen y offset panel.cpp already calls gPanelScreenY;
+	// cleared here along with gWideScreen when the player goes away.
+	static i32 * const gPanelScreenY = (i32*)0x0060F76C;
+
+	if (gLevelStatus == 3 || gLevelStatus == 0)
+	{
+		*gPrevSavedWebbing = *reinterpret_cast<i32*>(gSaveGameBytes + 0x48);
+		*gPrevSavedWebbingLevel = *reinterpret_cast<i32*>(gSaveGameBytes + 0x4C);
+		*gPrevSavedArmour = *reinterpret_cast<i32*>(gSaveGameBytes + 0x50);
+		*gPrevSavedArmourOn = gSaveGameBytes[0x7A];
+		*gPrevSavedArmourUnlocked = gSaveGameBytes[0x79];
+
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x4C) = this->field_5D8;
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x48) = this->mWebbing;
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x50) = this->field_5EC;
+		gSaveGameBytes[0x79] = (gSpideyArmorSet != 0);
+		gSaveGameBytes[0x7A] = (this->field_57C != 0);
+	}
+	else if (gLevelStatus == 2)
+	{
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x48) = 0;
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x4C) = 0;
+	}
+
+	u32 hSfx = this->field_538;
+
+	this->field_52C = 0;
+	this->field_528 = 0;
+
+	if (hSfx != 0)
+	{
+		SFX_Stop(hSfx);
+		this->field_538 = 0;
+	}
+
+	i32 *pLockOn = this->field_E64;
+
+	if (pLockOn != 0)
+		(*(void(**)(i32*, i32))*pLockOn)(pLockOn, 1);
+
+	CQuadBit *pShadow = this->field_AC0;
+
+	if (pShadow != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pShadow);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	CQuadBit *pCeilingShadow = this->field_AC4;
+
+	this->field_AC0 = 0;
+
+	if (pCeilingShadow != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pCeilingShadow);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	this->field_AC4 = 0;
+
+	CBody *pPart = reinterpret_cast<CBody*>(Mem_RecoverPointer(&this->field_ED4));
+
+	if (pPart != 0)
+	{
+		pPart->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+		i32 *v = reinterpret_cast<i32*>(pPart);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	SHandle *pHandle = this->field_5B8;
+
+	for (i32 i = 2; i != 0; --i)
+	{
+		CBody *pFist = reinterpret_cast<CBody*>(Mem_RecoverPointer(pHandle));
+
+		if (pFist != 0)
+		{
+			pFist->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+			i32 *v = reinterpret_cast<i32*>(pFist);
+			(*(void(**)(i32*, i32))*v)(v, 1);
+		}
+
+		pHandle++;
+	}
+
+	if (gSpideyArmorSet != 0)
+	{
+		print_if_false(gSpideyArmorSet, "Error");
+
+		if (gLowGraphics != 0 && gSpideyVramProcessing != 0)
+		{
+			Spidey_SwapSuitTextures(0, CurrentSuit);
+			gSpideyVramProcessing = (gSpideyVramProcessing == 0);
+		}
+
+		gSpideyArmorSet = 0;
+	}
+
+	CBody *pAutoAim = this->field_878;
+
+	*gWideScreen = 0;
+	*gPanelScreenY = 0;
+
+	if (pAutoAim != 0)
+	{
+		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&MiscellaneousRenderingList));
+
+		i32 *v = reinterpret_cast<i32*>(pAutoAim);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+
+		this->field_878 = 0;
+	}
+
+	CBody *pWeb = WebList;
+
+	while (pWeb != 0)
+	{
+		CBody *pNext = reinterpret_cast<CBody*>(pWeb->mNextItem);
+
+		if (pWeb != 0)
+		{
+			i32 *v = reinterpret_cast<i32*>(pWeb);
+			(*(void(**)(i32*, i32))*v)(v, 1);
+		}
+
+		pWeb = pNext;
+	}
+
+	this->KillAllCommandBlocks();
+
+	CSmokeTrail *pTrail = this->field_58C;
+
+	if (pTrail != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pTrail);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	CSmokeTrail *pTrail2 = this->field_590;
+
+	if (pTrail2 != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pTrail2);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	this->DeleteFrom(reinterpret_cast<CBody**>(&MechList));
+
+	(*gMechListCount)--;
+
+	Screen_TargetOn(0);
+
+	if (this->field_C90 != 0)
+	{
+		Mem_Delete(reinterpret_cast<void*>(this->field_C90));
+		this->field_C90 = 0;
+	}
 }
 
 // globals for Spidey_BagHead below (no idb_globals.txt entry, tentative
@@ -7742,8 +8638,10 @@ void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 // away, print_if_false at 0x4015B0 is a bare retn) or already covered by an
 // implemented @Ok parent. It stays @NotOk when the logic is inlined into a parent
 // that is ITSELF still a stub, since @Bogus there would hide unwritten work -
-// that is why GetComboFrameInfoPointer / GetComboPartsInfoPointer /
-// GetEnterExitFrameInfoPointer keep @NotOk while CPlayer::InitiateCombo is a stub.
+// GetComboFrameInfoPointer / GetComboPartsInfoPointer /
+// GetEnterExitFrameInfoPointer were @NotOk under that rule while
+// CPlayer::InitiateCombo was a stub; InitiateCombo is implemented and @Ok
+// now, so they moved to @Bogus on 2026-09-01.
 // No code for this in the PC binary. The Mac build has a real body
 // (.spideyLog__FPce at 0x116BA0, 0x50 bytes, right before
 // .ReadAnalogueInput__7CPlayerFv), but the PC release build compiled the

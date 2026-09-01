@@ -36,6 +36,42 @@ struct SIndicator
 	i32 mInUse;
 };
 
+// One entry of CPlayer's active-combo part list (CPlayer+0x95C). Built by
+// CPlayer::InitiateCombo from the parts array of the move record and walked
+// every tick by CPlayer::UpdateAndTrackCombo, which matches the player's
+// button presses against each part's input stream. The list is terminated
+// by an entry whose mInput is null, which is why the array has one slot
+// more than the 16 parts a move can have.
+struct SComboPart
+{
+	// entry is in use (InitiateCombo sets it, UpdateAndTrackCombo clears it
+	// when the part is dropped).
+	u8 mActive;
+
+	// still waiting for the first press of this part's input stream.
+	u8 mWaitingFirst;
+
+	// the part's move record has a nonzero field at 0x22; picks which of the
+	// two frame windows (field_902/field_904 or field_906/field_908) the
+	// press has to fall in.
+	u8 mUseLateWindow;
+
+	// set once the part's first input has been matched.
+	u8 mStarted;
+
+	// field_84 (the animation clock) at the last accepted press.
+	i32 mLastPressTime;
+
+	// 0, or 768 when the parts entry had its high word set. Purpose not
+	// confirmed; InitiateCombo is the only writer found so far.
+	i32 mFlags;
+
+	// cursor into the part's input byte stream (the move record's tail
+	// pointer to start with), 0xFF terminated. Null marks the end of the
+	// list.
+	u8 *mInput;
+};
+
 class CPlayer : public CSuper 
 {
 	public:
@@ -123,7 +159,12 @@ class CPlayer : public CSuper
 		// gTimerRelated when the web dome was thrown (CheckWebShot).
 		i32 field_374;
 
-		PADDING(0x500-0x374-4);
+		// set to 1 by CPlayer::InitiateCombo and cleared again by the first
+		// UpdateAndTrackCombo tick of the move: while it is set the collision
+		// parts snapshot their current position instead of sweeping.
+		u8 field_378;
+
+		PADDING(0x500-0x378-1);
 
 		// gTimerRelated at the moment of the last hit, and the field_E1C
 		// state the player was in when it landed. Both written by
@@ -234,7 +275,10 @@ class CPlayer : public CSuper
 		// again until more than 30 ticks have passed.
 		i32 field_5B4;
 
-		PADDING(0x5C8-0x5B4-4);
+		// two extra body parts (the fists, created by CPlayer::CreateFists)
+		// hanging off SpideyAdditionalBodyPartsList; ~CPlayer unlinks and
+		// deletes both.
+		SHandle field_5B8[2];
 
 		// round-robin cursors into the two swing-web probe angle tables,
 		// see CPlayer::CheckJumpingSwingWeb. Both count 0..5 and wrap.
@@ -332,7 +376,87 @@ class CPlayer : public CSuper
 		// (CheckWebShot, CPlayer::FireWeb).
 		u8 field_8F8;
 
-		PADDING(0xAB8-0x8F8-1);
+		PADDING(3);
+
+		// --- active combo state, all set up by CPlayer::InitiateCombo and
+		// --- driven by CPlayer::UpdateAndTrackCombo.
+
+		// id of the move being played, an index into gComboMoves.
+		u16 field_8FC;
+
+		// frame windows copied out of the move record (offsets 0x0C, 0x0E,
+		// 0x12, 0x14, 0x16 and 0x18 of the record), all in the same units as
+		// field_910, i.e. animation clock ticks since the move started.
+		// 8FE..900 is the collision window, 902..904 and 906..908 the two
+		// follow-on input windows.
+		u16 field_8FE;
+		u16 field_900;
+		u16 field_902;
+		u16 field_904;
+		u16 field_906;
+		u16 field_908;
+
+		// frame and move id of the follow-on the player has queued up.
+		u16 field_90A;
+		u16 field_90C;
+
+		PADDING(2);
+
+		// field_84 (the animation clock) when the move started, minus the
+		// caller's head start. Elapsed time is field_84 - field_910.
+		i32 field_910;
+
+		// animation the follow-on will switch to, and how far into the
+		// distance byte stream UpdateAndTrackCombo has already walked.
+		u16 field_914;
+		u16 field_916;
+
+		// gTimerRelated of the last accepted button press.
+		i32 field_918;
+
+		// hook offsets subtracted from the four slide hook positions
+		// (UpdateAndTrackCombo's case 1..4), three i32 each.
+		i32 field_91C;
+		i32 field_920;
+		i32 field_924;
+		i32 field_928;
+		i32 field_92C;
+		i32 field_930;
+		i32 field_934;
+		i32 field_938;
+		i32 field_93C;
+		i32 field_940;
+		i32 field_944;
+		i32 field_948;
+
+		// the move has parts to track at all.
+		u8 field_94C;
+
+		// the move is still running.
+		u8 field_94D;
+
+		PADDING(2);
+
+		// per-frame animation frame numbers, indexed by elapsed time / 2 and
+		// 0xFF terminated. GetComboFrameInfoPointer's result.
+		u8 *field_950;
+
+		// collision parts byte stream, 0xFF terminated.
+		// GetComboPartsInfoPointer's result.
+		u8 *field_954;
+
+		// the parts entry that matched, i.e. the move record of the
+		// follow-on InitiateCombo will start next.
+		u16 *field_958;
+
+		SComboPart field_95C[17];
+
+		// up to four bodies already hit by this move, so one swing cannot
+		// hit the same baddy twice, and how many of the four are used.
+		CBody *field_A6C[4];
+		i32 field_A7C;
+
+		PADDING(0xAB8-0xA7C-4);
 
 		SHandle field_AB8;
 
@@ -537,7 +661,10 @@ class CPlayer : public CSuper
 		CBody *field_DCC;
 
 		// SelectAutoAimTarget: cleared at the start of each auto-aim pass
-		i32 field_DD0;
+		// the auto-aim target position of the switch CPlayer::FireWeb picked,
+		// straight out of SelectTargetSwitch's return value. Cleared at the
+		// start of every SelectAutoAimTarget pass.
+		CVector *field_DD0;
 
 		PADDING(0xDD8-0xDD0-4);
 
@@ -676,7 +803,13 @@ class CPlayer : public CSuper
 		// one qualifying baddy was found this pass
 		u8 field_EC0;
 
-		PADDING(0xEE0-0xEC0-1);
+		PADDING(0xED4-0xEC0-1);
+
+		// another body part on SpideyAdditionalBodyPartsList, unlinked and
+		// deleted by ~CPlayer the same way as field_5B8.
+		SHandle field_ED4;
+
+		PADDING(0xEE0-0xED4-sizeof(SHandle));
 
 		// position of the thing that grabbed the player, copied in by
 		// CPlayer::CheckSwitchToGrabbedMode
@@ -741,8 +874,8 @@ class CPlayer : public CSuper
 		EXPORT i32 CheckGroundGone(void);
 		EXPORT i32 CheckInteriorSurfaceTransition(void);
 		EXPORT i32 CheckJump(void);
-		EXPORT void CheckJumpingR1ZipWeb(void);
-		EXPORT void CheckJumpingR2ZipWeb(void);
+		EXPORT u8 CheckJumpingR1ZipWeb(void);
+		EXPORT u8 CheckJumpingR2ZipWeb(void);
 		EXPORT u8 CheckJumpingSmashKick(void);
 		EXPORT u8 CheckJumpingSwingWeb(void);
 		EXPORT i32 CheckKick(void);
@@ -763,7 +896,7 @@ class CPlayer : public CSuper
 		EXPORT void DrawOffscreenSpideySenseIndicatorList(void);
 		EXPORT void DrawReticle(u16,u16,u32);
 		EXPORT void EnterLookaroundMode(void);
-		EXPORT void FireWeb(bool,i32,CVector *,bool,CSVector *);
+		EXPORT i32 FireWeb(bool,i32,CVector *,bool,CSVector *);
 		EXPORT void GetComboFrameInfoPointer(u16);
 		EXPORT void GetComboPartsInfoPointer(u16);
 		EXPORT i32 GetDamageInflictedFromDifficulty(i32);
@@ -788,7 +921,7 @@ class CPlayer : public CSuper
 		EXPORT void ReadAnalogueInput(void);
 		EXPORT u8 SelectAutoAimTarget(void);
 		EXPORT CBody *SelectTargetBaddy(i32,i32,i32,i32);
-		EXPORT void SelectTargetSwitch(i32,i32,SHandle *,i32,i32);
+		EXPORT CVector *SelectTargetSwitch(i32,i32,SHandle *,i32,i32);
 		EXPORT u8 SetArmor(bool);
 		EXPORT void SetCeilingCamera(i32);
 		EXPORT void SetFallingCamera(i32);

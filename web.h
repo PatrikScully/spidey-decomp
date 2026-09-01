@@ -92,10 +92,10 @@ class CWeb : public CBody
 
 		// Written as a u16 (0) by CPlayer::CheckJumpingR1ZipWeb and
 		// CheckJumpingR2ZipWeb right after the web is allocated, and read
-		// back as a u16 by CPlayer::FireWeb, which passes it on to
-		// CPlayer::DecreaseWebbing as the cost of the shot. field_100 was
-		// an i32 covering 0x100..0x104 before that was found; nothing in
-		// the repo used it, so it is split into two u16 here.
+		// back as a u16 by CPlayer::FireWeb, which passes it to
+		// M3dUtils_GetHookPosition as the hook index the web leaves from.
+		// field_100 was an i32 covering 0x100..0x104 before that was found;
+		// nothing in the repo used it, so it is split into two u16 here.
 		u16 field_102;
 
 		i32 field_104;
