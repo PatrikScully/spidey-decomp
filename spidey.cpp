@@ -4028,37 +4028,48 @@ i32 CPlayer::FireWeb(bool bUseHeldTarget, i32 cost, CVector *pTarget, bool bHitS
 	return result;
 }
 
-// @NotOk
+// @Bogus
 // No standalone code for this in the PC binary: MSVC6 inlined all three
 // combo-record accessors into their only caller, CPlayer::InitiateCombo
-// (0x4C87D0). The Mac build still has them out of line
+// (0x4C87D0), which is now implemented and @Ok, so the logic is covered.
+// The Mac build still has them out of line
 // (.GetComboFrameInfoPointer__7CPlayerFUs 0x122D10,
 // .GetEnterExitFrameInfoPointer__7CPlayerFUs 0x122DC0,
 // .GetComboPartsInfoPointer__7CPlayerFUs 0x122E60), and neither
 // tools/names.json nor idbs/spideypc_names.txt has a PC address for any of
 // them.
-// What the inlined bodies do (both recovered from inside InitiateCombo, and
-// both working off gComboMoves[id]->field_4, the pointer ParseFightData sets to
-// the first of the three 0xFF terminated byte streams that follow a move
-// record's parts array): one skips two streams and returns the third
-// (stored into CPlayer+0x950, later indexed by elapsed time / 2, so that one
-// is per-frame data), the other skips one stream and returns the second
-// (stored into CPlayer+0x954). The third accessor, which would just return
-// field_4 unchanged, has no call site left at all. Which of the three names
-// belongs to which of the three streams is not decidable from the PC binary
-// alone, so I am not guessing; implementing them would also mean changing
-// the return type in spidey.h (they are declared void here but really
-// return pointers).
+//
+// All three work off gComboMoves[id]->field_4, the pointer ParseFightData
+// sets to the first of the three 0xFF terminated byte streams that follow a
+// move record's parts array. Mapping resolved 2026-09-01 from how the two
+// surviving results are used in CPlayer::UpdateAndTrackCombo (0x4C7120):
+//  - skip two streams, keep the third -> CPlayer+0x950. UpdateAndTrackCombo
+//    indexes it by elapsed time / 2 and writes the byte straight into
+//    CSuper::mFrame, so it is the per frame animation frame list. That is
+//    GetComboFrameInfoPointer.
+//  - skip one stream, keep the second -> CPlayer+0x954. UpdateAndTrackCombo
+//    asserts it non null with the message "Bad collision parts info"
+//    (0x556B78) and then walks it as the collision part list. That is
+//    GetComboPartsInfoPointer.
+//  - the third accessor would return field_4 unchanged. It has no call site
+//    left in the PC build at all, so by elimination it is
+//    GetEnterExitFrameInfoPointer. That last step is elimination, not direct
+//    evidence, so treat the name-to-stream link for that one as likely
+//    rather than proven.
+// Implementing them would also mean changing the return type in spidey.h
+// (they are declared void here but really return pointers), and nothing
+// would call them.
 void CPlayer::GetComboFrameInfoPointer(u16)
 {
     printf("CPlayer::GetComboFrameInfoPointer(u16)");
 }
 
-// @NotOk
+// @Bogus
 // Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
-// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
-// stream is not decidable from the PC binary. See that comment for the full
-// evidence.
+// into CPlayer::InitiateCombo (0x4C87D0), which is implemented and @Ok.
+// This is the accessor that skips one stream and returns the second, the
+// one UpdateAndTrackCombo checks with "Bad collision parts info". See that
+// comment for the full evidence.
 void CPlayer::GetComboPartsInfoPointer(u16)
 {
     printf("CPlayer::GetComboPartsInfoPointer(u16)");
@@ -4093,11 +4104,12 @@ i32 CPlayer::GetDamageInflictedFromDifficulty(i32 a2)
 	return a2;
 }
 
-// @NotOk
-// Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
-// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
-// stream is not decidable from the PC binary. See that comment for the full
-// evidence.
+// @Bogus
+// No standalone PC code and, unlike the other two accessors, no call site
+// left either: the stream it would return (the first of the three, i.e.
+// gComboMoves[id]->field_4 unchanged) is never read on PC. See the
+// GetComboFrameInfoPointer comment above for the full evidence, including
+// why this is the accessor that is left over.
 void CPlayer::GetEnterExitFrameInfoPointer(u16)
 {
     printf("CPlayer::GetEnterExitFrameInfoPointer(u16)");
@@ -8435,8 +8447,10 @@ void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 // away, print_if_false at 0x4015B0 is a bare retn) or already covered by an
 // implemented @Ok parent. It stays @NotOk when the logic is inlined into a parent
 // that is ITSELF still a stub, since @Bogus there would hide unwritten work -
-// that is why GetComboFrameInfoPointer / GetComboPartsInfoPointer /
-// GetEnterExitFrameInfoPointer keep @NotOk while CPlayer::InitiateCombo is a stub.
+// GetComboFrameInfoPointer / GetComboPartsInfoPointer /
+// GetEnterExitFrameInfoPointer were @NotOk under that rule while
+// CPlayer::InitiateCombo was a stub; InitiateCombo is implemented and @Ok
+// now, so they moved to @Bogus on 2026-09-01.
 // No code for this in the PC binary. The Mac build has a real body
 // (.spideyLog__FPce at 0x116BA0, 0x50 bytes, right before
 // .ReadAnalogueInput__7CPlayerFv), but the PC release build compiled the
