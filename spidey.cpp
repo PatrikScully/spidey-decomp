@@ -4803,10 +4803,189 @@ void CPlayer::InitialiseSFXArray(void)
 	}
 }
 
-// @MEDIUMTODO
-void CPlayer::InitiateCombo(u16,i32)
+// @Ok
+// verified against the IDA disasm of 0x4C87D0 (816 bytes). Starts move
+// `move` (an index into gComboMoves) and rewinds the combo clock by
+// `headStart` animation ticks.
+//
+// It turns the player towards the nearest baddy in front, clears every
+// button latch so the follow-on window starts clean, copies the six frame
+// windows out of the move record, and resolves the record's three 0xFF
+// terminated byte streams: the third one (per frame animation frames) into
+// field_950, the second one (collision parts) into field_954. The record's
+// parts array is expanded into field_95C, one SComboPart per part plus the
+// null terminator UpdateAndTrackCombo stops on. Finally the move's
+// animation is started at the frame the per-frame stream asks for, with one
+// of four random grunts.
+//
+// The three accessor names in the Mac build (GetComboFrameInfoPointer,
+// GetComboPartsInfoPointer, GetEnterExitFrameInfoPointer) are all inlined
+// into this function on PC, see their own comments.
+void CPlayer::InitiateCombo(u16 move, i32 headStart)
 {
-    printf("CPlayer::InitiateCombo(u16,i32)");
+	// move id -> pointer to a move record, 32 slots; filled by
+	// CPlayer::ParseFightData, which documents the record layout.
+	static u8 ** const gComboMoves = (u8**)0x006A8CB4;
+
+	// 0x60D9D0, named gGlowZeroPos in baddy.cpp: a shared all-zero CVector.
+	static CVector * const gGlowZeroPos = (CVector*)0x0060D9D0;
+
+	print_if_false(gComboMoves[move] != 0, "Bad move");
+
+	this->field_A6C[0] = 0;
+	this->field_A6C[1] = 0;
+	this->field_A6C[2] = 0;
+	this->field_A6C[3] = 0;
+	this->field_A7C = 0;
+
+	this->field_378 = 1;
+
+	CBody *pTarget = this->SelectTargetBaddy(1024, -4096, 4096, 0);
+
+	if (pTarget != 0)
+	{
+		i16 heading = (i16)((1024 - ratan2(
+				-((pTarget->mPos.vz - this->mPos.vz) >> 12),
+				-((pTarget->mPos.vx - this->mPos.vx) >> 12))) & 0xFFF);
+
+		this->field_548 = (heading - this->GetEffectiveHeading()) & 0xFFF;
+		this->OrientToNormal(0, gGlowZeroPos);
+		this->field_548 = 0;
+	}
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	this->field_8FC = move;
+
+	pInput[0x11] = 0;
+	pInput[0x01] = 0;
+	pInput[0x21] = 0;
+	pInput[0x31] = 0;
+	pInput[0x101] = 0;
+	pInput[0x111] = 0;
+	pInput[0x121] = 0;
+	pInput[0x131] = 0;
+
+	u8 *pMove = gComboMoves[move];
+
+	reinterpret_cast<u8*>(this)[0x1D1] = 0;
+	reinterpret_cast<u8*>(this)[0x1C1] = 0;
+	reinterpret_cast<u8*>(this)[0x1E1] = 0;
+	reinterpret_cast<u8*>(this)[0x1F1] = 0;
+	reinterpret_cast<u8*>(this)[0x2C1] = 0;
+	reinterpret_cast<u8*>(this)[0x2D1] = 0;
+	reinterpret_cast<u8*>(this)[0x2E1] = 0;
+	reinterpret_cast<u8*>(this)[0x2F1] = 0;
+
+	this->field_8FE = *reinterpret_cast<u16*>(pMove + 0x0C);
+	this->field_900 = *reinterpret_cast<u16*>(pMove + 0x0E);
+	this->field_902 = *reinterpret_cast<u16*>(pMove + 0x12);
+	this->field_904 = *reinterpret_cast<u16*>(pMove + 0x14);
+	this->field_906 = *reinterpret_cast<u16*>(pMove + 0x16);
+	this->field_908 = *reinterpret_cast<u16*>(pMove + 0x18);
+
+	this->field_914 = 0;
+	this->field_916 = 0;
+	this->field_94D = 1;
+
+	this->field_910 = this->field_84 - headStart;
+	this->field_918 = gTimerRelated;
+	this->field_958 = 0;
+
+	print_if_false(pMove != 0, "Bad move");
+
+	// GetComboFrameInfoPointer: skip the first two byte streams and keep the
+	// third
+	u8 *p = *reinterpret_cast<u8**>(gComboMoves[move] + 4);
+
+	if (*p++ != 0xFF)
+	{
+		while (*p++ != 0xFF)
+			;
+	}
+
+	if (*p++ != 0xFF)
+	{
+		while (*p++ != 0xFF)
+			;
+	}
+
+	this->field_950 = p;
+
+	print_if_false(gComboMoves[move] != 0, "Bad move");
+
+	pMove = gComboMoves[move];
+
+	// GetComboPartsInfoPointer: skip the first byte stream and keep the
+	// second
+	p = *reinterpret_cast<u8**>(pMove + 4);
+
+	if (*p++ != 0xFF)
+	{
+		while (*p++ != 0xFF)
+			;
+	}
+
+	this->field_954 = p;
+
+	i32 partCount = *reinterpret_cast<u16*>(pMove + 0x20);
+
+	if (partCount != 0)
+	{
+		this->field_94C = 1;
+
+		if (partCount > 16)
+			partCount = 16;
+
+		i32 *pPart = reinterpret_cast<i32*>(pMove + 0x24);
+
+		for (i32 i = 0; i < partCount; i++)
+		{
+			u8 *pPartMove = reinterpret_cast<u8*>(pPart[0]);
+
+			i32 flags = 0;
+
+			if (((u32)pPart[2] >> 16) != 0)
+				flags = 768;
+
+			pPart += 3;
+
+			this->field_95C[i].mActive = 1;
+			this->field_95C[i].mWaitingFirst = 1;
+			this->field_95C[i].mUseLateWindow = (*reinterpret_cast<u16*>(pPartMove + 0x22) != 0);
+			this->field_95C[i].mStarted = 0;
+			this->field_95C[i].mFlags = flags;
+			this->field_95C[i].mInput = *reinterpret_cast<u8**>(pPartMove + 4);
+
+			// leaves the slot behind the last part null, which is what
+			// UpdateAndTrackCombo stops the walk on
+			this->field_95C[i + 1].mInput = 0;
+		}
+	}
+	else
+	{
+		this->field_94C = 0;
+	}
+
+	u16 anim = *reinterpret_cast<u16*>(pMove + 2);
+
+	i32 frame = this->field_950[(this->field_84 - this->field_910) / 2];
+
+	i32 *pSFX = gSpideySFXEntry[anim];
+	this->field_350 = pSFX;
+
+	if (pSFX)
+	{
+		while (pSFX[0] != -1)
+		{
+			pSFX[0] &= 0xFFFF;
+			pSFX++;
+		}
+	}
+
+	this->RunAnim(anim, frame, -1);
+
+	SFX_Play(Rnd(4) + 10, 0x2000, 0);
 }
 
 // @Ok
