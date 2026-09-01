@@ -9,6 +9,21 @@
 #include "exp.h"
 #include "my_assert.h"
 #include "dcfileio.h"
+#include "camera.h"
+#include "bit.h"
+#include "cinema.h"
+#include "reloc.h"
+#include "mess.h"
+#include "backgrnd.h"
+#include "db.h"
+#include "m3dinit.h"
+#include "ps2lowsfx.h"
+#include "ps2redbook.h"
+#include "ob.h"
+#include "init.h"
+#include "ps2m3d.h"
+#include "PCInput.h"
+#include "DXsound.h"
 
 // Object classes Trig_CreateObject below can spawn. Only headers, no
 // other .cpp in these files is touched by this change.
@@ -1169,90 +1184,1789 @@ void Trig_DeleteTrigFile(void)
 	Trig_ZeroPendingList();
 }
 
-// @BIGTODO
-// Re-investigated 2026-08-31 with IDA (decompile + raw disassembly, not
-// just the earlier Hex-Rays-only pass). Original at 0x4E0210, confirmed
-// 3041 x86 instructions (0x299E = 10654 bytes; the "12160 bytes" and
-// "SendKillFromNode at 0x4E3190" in the previous note were off, probably
-// measured against a stale names.json entry). This is the trigger
-// command-list interpreter: a single big switch on a u16 opcode word
-// (case range 2..305, ~110 of those 304 slots are real handled cases,
-// the rest fall to a shared "Unknown command" default that does NOT
-// advance the read cursor at all -- confirmed dead code in practice,
-// since a real .trg file never emits an unhandled opcode or the retail
-// game would spin on it forever too). Each case reads a
-// command-specific number of argument bytes right after the opcode and
-// advances the cursor by exactly that many before looping to the next
-// opcode, so a correct partial port needs the EXACT byte-length of every
-// opcode it handles, known ones and skipped ones alike -- getting one
-// wrong desyncs the cursor for every remaining command in that node's
-// list, silently corrupting the rest of that level's scripting. That is
-// why this is intentionally still the forward-to-original stub rather
-// than a partial/guessed port: at this size (110 real opcodes) with the
-// wrong-opcode risk this high, a rushed partial implementation is worse
-// than an honest gap. The stub itself calls the real 0x4E0210 code, so
-// it is fully correct at runtime, just not yet a from-source translation.
+// ---------------------------------------------------------------------------
+// ExecuteCommandList support: globals, tables and helpers
+// ---------------------------------------------------------------------------
+
+// gWaterEffect (0x0060FA9C) and TimeAttackComplete (0x0060CFC6): real
+// names from idb_globals.txt, no repo header owns them yet.
+static i32 * const gWaterEffect = reinterpret_cast<i32*>(0x0060FA9C);
+static u8 * const gTimeAttackComplete = reinterpret_cast<u8*>(0x0060CFC6);
+
+// gSimpleMessageRelated (0x0060D594) and gSimpleMessageTextWidth
+// (0x0060D230): real names from idb_globals.txt. The TextBox command
+// uses them to place the box next to the simple-message text.
+static i32 * const gSimpleMessageRelated = reinterpret_cast<i32*>(0x0060D594);
+static i32 * const gSimpleMessageTextWidth = reinterpret_cast<i32*>(0x0060D230);
+
+// 0x0060F76C: written with the same value as gWideScreen (ps2m3d.h) by
+// the WideScreen command, and cleared next to it in CPlayer::~CPlayer
+// (0x4BAA30). baddy.cpp already calls this address gWideScreenShadow;
+// spidey.cpp instead reads it as gAnimWebcart+0xC and panel.cpp as
+// gPanelScreenY, so the repo does not agree on it yet. Kept file-local
+// with baddy.cpp's name because that is the reading that matches how
+// this function uses it.
+static i32 * const gWideScreenShadow = reinterpret_cast<i32*>(0x0060F76C);
+
+// OTPushback (0x00660F78) is a real idb_globals.txt name. The word right
+// after it is written by the SetOTPushback2 command; the IDB does not
+// name it, so this is a guess based only on that debug string. They may
+// well be one two-element array in the original source.
+static i16 * const gOTPushback = reinterpret_cast<i16*>(0x00660F78);
+static i16 * const gOTPushback2 = reinterpret_cast<i16*>(0x00660F7A);
+
+// Db_SkyColor (0x0056FC74, db.h) has a second dword right after it that
+// the SetSkyColor command writes with the same value (SpideyAI0 writes it
+// too). Not named in the IDB; tentative name, the "requested/target" half
+// of a current+target colour pair is only a guess.
+static u32 * const gDbSkyColorTarget = reinterpret_cast<u32*>(0x0056FC78);
+
+// Written by the SetGameLevel command and read nowhere else in the
+// binary (single xref). Tentative name.
+static i32 * const gTrigGameLevel = reinterpret_cast<i32*>(0x005FCD14);
+
+// 0x005498FC holds a char* scratch buffer that SpoolIn loads SkipLib.txt
+// into (the original does "mov esi, [5498FC]", a pointer load, not an
+// address). idb_globals.txt calls the slot gSpoolSystemMemory, but
+// dcmodel.cpp and bit.cpp treat the same address as the buffer itself
+// rather than a pointer to one, so one of the two readings is wrong.
+static char ** const gSpoolSystemMemory = reinterpret_cast<char**>(0x005498FC);
+
+// char* holding "Checkpoint", shown by Mess_Message when a SetRestart
+// command moves the restart node. Part of a string table; tentative name.
+static const char * const * const gCheckpointMessage =
+	reinterpret_cast<const char* const*>(0x0054B88C);
+
+// Five globals CPlayer::~CPlayer (0x4BAA30) swaps with gSaveGame fields
+// 0x48/0x4C/0x50/0x79/0x7A so player state survives a level load. The
+// LoadNewTrg command copies them back the other way when it reloads the
+// level that is already running. What each field means is not known yet;
+// the names describe the mechanism only.
+static i32 * const gCarriedPlayerStat0 = reinterpret_cast<i32*>(0x006A9058);
+static i32 * const gCarriedPlayerStat1 = reinterpret_cast<i32*>(0x006A905C);
+static u8  * const gCarriedPlayerFlag0 = reinterpret_cast<u8*>(0x006A9060);
+static i32 * const gCarriedPlayerStat2 = reinterpret_cast<i32*>(0x006A9064);
+static u8  * const gCarriedPlayerFlag1 = reinterpret_cast<u8*>(0x006A9068);
+
+// Text templates the TextMessage command substitutes control names into.
+// Original tables: patterns+formats at 0x00558054 (9 entries, 8 bytes
+// each), the action ids at 0x0055809C (9 entries, two i16 each), and the
+// 9 x 256 byte output buffers at 0x006B3914. Reproduced as real arrays
+// because nothing else in the binary touches them.
+struct STrigTextSubst
+{
+	const char* mPattern;   // '?' matches any single character
+	const char* mFormat;
+};
+
+static const STrigTextSubst gTrigTextSubst[9] =
+{
+	{ "?? to Punch and ?? to Kick",           "%s to Punch and %s to Kick"  },
+	{ "?? to fire webs",                      "%s to fire webs"             },
+	{ "Press Trigger R while",                "Press %s while in"           },
+	{ "in mid-air to Swing",                  "mid-air to Swing"            },
+	{ "Hold Trigger L For Target Mode",       "Hold %s For Target Mode"     },
+	{ "Press Trigger L + ?? to Zip line up",  "Press %s to Zip line up"     },
+	{ "Press ?? to pick Objects up",          "Press %s to pick Objects up" },
+	{ "Hold L trigger to go",                 "Hold %s to go"               },
+	{ "Press ",                               "Press %s in mid-air to swing"}
+};
+
+struct STrigTextSubstActions
+{
+	i16 mAction0;
+	i16 mAction1;
+};
+
+static const STrigTextSubstActions gTrigTextSubstActions[9] =
+{
+	{ 0x0040, 0x0020 },
+	{ 0x0080, 0x0000 },
+	{ 0x0400, 0x0000 },
+	{ 0x0000, 0x0000 },
+	{ 0x0100, 0x0000 },
+	{ 0x0200, 0x0000 },
+	{ 0x0040, 0x0000 },
+	{ 0x0100, 0x0000 },
+	{ 0x0010, 0x0000 }
+};
+
+static char gTrigTextSubstBuffers[9][256];
+
+// The CPlayer fields the trigger commands poke are not named in spidey.h
+// yet (that file belongs to another change), so they are reached by byte
+// offset here. Offsets read straight off the original: 0x1A4 cutscene
+// skip flag, 0x34C footstep bank, 0x574 shadow RGB, 0x578 body RGB,
+// 0xC60 fight music time, 0xC68/0xC69 fight music fade down/up, 0xE34
+// motion angle offset, 0xE40/0xE44 drop damage range, 0xEC8/0xECC spidey
+// sense buzz.
+// @Bogus
+static INLINE i32* TrigFieldI32(void* pObject, u32 offset)
+{
+	return reinterpret_cast<i32*>(reinterpret_cast<u8*>(pObject) + offset);
+}
+
+// @Bogus
+static INLINE i16* TrigFieldI16(void* pObject, u32 offset)
+{
+	return reinterpret_cast<i16*>(reinterpret_cast<u8*>(pObject) + offset);
+}
+
+// @Bogus
+static INLINE u8* TrigFieldU8(void* pObject, u32 offset)
+{
+	return reinterpret_cast<u8*>(pObject) + offset;
+}
+
+// The original calls _strlwr, which only exists in the MSVC runtime.
+// @Bogus
+static char* TrigToLower(char* pText)
+{
+	for (char* p = pText; *p; p++)
+	{
+		if (*p >= 'A' && *p <= 'Z')
+			*p = static_cast<char>(*p + 32);
+	}
+
+	return pText;
+}
+
+// @Ok
+static INLINE u16* TrigAlign4(u16* pCommands)
+{
+	return reinterpret_cast<u16*>((reinterpret_cast<u32>(pCommands) + 3) & ~3u);
+}
+
+// Six 12-bit fixed point values (a min/max box), 4-byte aligned first.
+// @Ok
+static u16* TrigReadBox(u16* pCommands, CVector* pMin, CVector* pMax)
+{
+	i32* pRaw = reinterpret_cast<i32*>(TrigAlign4(pCommands));
+
+	pMin->vx = pRaw[0] << 12;
+	pMin->vy = pRaw[1] << 12;
+	pMin->vz = pRaw[2] << 12;
+	pMax->vx = pRaw[3] << 12;
+	pMax->vy = pRaw[4] << 12;
+	pMax->vz = pRaw[5] << 12;
+
+	return reinterpret_cast<u16*>(pRaw + 6);
+}
+
+// Walks past a cutscene script: words until a zero word, repeated until
+// the word after the zero is 0xFF, then one more word. Same walk
+// CPlayer::SwitchToSynthesizedInput (0x4BC1A0) does internally and
+// returns the end of; spidey.h declares that method void, so the cursor
+// is recomputed here instead.
+// @Ok
+static u16* TrigSkipCutSceneScript(u16* pCommands)
+{
+	do
+	{
+		while (*pCommands++ != 0)
+			;
+	}
+	while (*pCommands != 0xFF);
+
+	return pCommands + 1;
+}
+
+// Wildcard compare used by the TextMessage command: '?' in the pattern
+// matches any single character, everything else must match exactly and
+// both strings must end together.
+// @Ok
+static i32 TrigTextMatches(const char* pPattern, const char* pText)
+{
+	char patternChar = *pPattern;
+
+	while (patternChar != 0)
+	{
+		if (*pText == 0)
+			break;
+
+		if (patternChar != '?' && patternChar != *pText)
+			break;
+
+		pPattern++;
+		pText++;
+		patternChar = *pPattern;
+	}
+
+	return (*pPattern == 0) && (*pText == 0);
+}
+
+// @Ok
+// Reads one command and returns the start of the next one, WITHOUT
+// executing it. In the original this is a separate function (its assert
+// says "Unknown command, need to update SkipCommand") that MSVC inlined
+// into the IfPulseCount case of ExecuteCommandList; the argument sizes
+// below were read off that inlined switch at 0x4E1595 / 0x4E1613.
+// Faithful to two original bugs: commands 193/194 (SendPushback) and
+// 303/304 (FadePalettesUp/Down) are missing from the table even though
+// ExecuteCommandList itself handles them, so skipping over one of those
+// inside an IfPulseCount block desyncs the cursor.
+static u16* SkipCommand(u16* pCommands)
+{
+	u32 command = *pCommands++;
+
+	switch (command)
+	{
+		// SetCheatRestarts: a list of strings ended by an empty one.
+		case 2:
+			if (*reinterpret_cast<char*>(pCommands) != 0)
+			{
+				do
+				{
+					pCommands = SkipString(reinterpret_cast<char*>(pCommands));
+				}
+				while (*reinterpret_cast<char*>(pCommands) != 0);
+			}
+			pCommands++;
+			break;
+
+		// No arguments.
+		case 3: case 4: case 5: case 10: case 11: case 12:
+		case 102: case 103: case 110: case 121: case 122: case 129:
+		case 136: case 137: case 149: case 150: case 162: case 173:
+		case 175:
+		case 205: case 215: case 216: case 218: case 219: case 220:
+		case 300: case 301:
+		case 305:
+			break;
+
+		// One word.
+		case 13: case 105: case 106: case 131: case 132: case 134:
+		case 138: case 147: case 148: case 151: case 153: case 154:
+		case 155: case 156: case 160: case 163: case 164: case 165:
+		case 166: case 168: case 169: case 170: case 172:
+		case 177: case 185: case 186: case 187: case 190: case 195:
+		case 197: case 203: case 204: case 206: case 207: case 211:
+		case 213: case 217: case 222: case 223:
+		case 302:
+			pCommands++;
+			break;
+
+		// Two words.
+		case 130: case 135: case 143: case 144: case 145: case 146:
+		case 167: case 174:
+		case 188: case 196: case 200: case 202: case 210: case 212:
+		case 221:
+			pCommands += 2;
+			break;
+
+		// Three words.
+		case 104: case 139:
+		case 182: case 183: case 184:
+			pCommands += 3;
+			break;
+
+		// Five words, 4-byte aligned first (BackgroundCreate).
+		case 171:
+			pCommands = TrigAlign4(pCommands) + 5;
+			break;
+
+		// Five words, no alignment.
+		case 180: case 214:
+			pCommands += 5;
+			break;
+
+		// Eight words (TextBox).
+		case 208:
+			pCommands += 8;
+			break;
+
+		// One string.
+		case 115: case 119: case 126: case 127: case 128: case 140:
+		case 142:
+		case 176: case 181: case 189:
+			pCommands = SkipString(reinterpret_cast<char*>(pCommands));
+			break;
+
+		// One string then three words.
+		case 191: case 198:
+			pCommands = SkipString(reinterpret_cast<char*>(pCommands)) + 3;
+			break;
+
+		// A cutscene script.
+		case 199:
+			pCommands = TrigSkipCutSceneScript(pCommands);
+			break;
+
+		// Two words then a list of boxes.
+		case 141: case 192: case 209:
+			pCommands += 2;
+			// fall through
+		// A list of 24 byte boxes ended by a 0xFF word.
+		case 133:
+			if (*pCommands != 0xFF)
+			{
+				do
+				{
+					pCommands = TrigAlign4(pCommands) + 12;
+				}
+				while (*pCommands != 0xFF);
+			}
+			pCommands++;
+			break;
+
+		// End of the command list. The original zeroes the cursor here.
+		case 0xFFFF:
+			pCommands = 0;
+			break;
+
+		default:
+			print_if_false(0, "Unknown command, need to update SkipCommand");
+			break;
+	}
+
+	return pCommands;
+}
+
+// @Ok
+// The level trigger/script interpreter, from the original at 0x4E0210
+// (0x299E bytes, 3041 instructions, a 304 case jump table at 0x4E02BE
+// plus a shared default). Session bar is functional parity, not a byte
+// match. Every opcode below was read off the raw disassembly, and the
+// per-command argument sizes were cross-checked against the inlined
+// SkipCommand table above, so the read cursor stays in step even for the
+// commands that only log and do nothing.
 //
-// What changed since the last note, and is now confirmed (not guessed):
-//   - Trig_CreateObject (0x4DEE70), this function's other stated
-//     blocker, is fully decompiled above as of this session.
-//   - Of the "several more per-node global tables" the old note flagged
-//     as undocumented, all but one turn out to already be correctly
-//     named and used by OTHER already-decompiled functions in this same
-//     file: dword_6B466C = G_OFFSETLIST, dword_6B4708 = G_COMMANDPOINTS,
-//     dword_6B4664 = G_NUMCHEATRESTARTS, dword_6B4614 =
-//     gCheatRestartNames, word_6B4688 = G_PENDINGLISTARRAY, dword_6B470C
-//     = G_ISRESTARTDEATH (confirmed by its use in the RunCinema opcode
-//     below: cinema triggers on autoexec-type nodes are skipped while
-//     G_ISRESTARTDEATH is set, i.e. don't replay a cutscene when
-//     respawning after death). Only dword_6B468C is still unidentified;
-//     our best guess (not confirmed) is gLevelStatus (front.cpp/trig.h),
-//     which has no fixed game address yet.
-//   - A cluster of small trigger-system helpers sitting immediately
-//     before this function in the binary (0x4DE7F0..0x4DFD30) are ALSO
-//     already decompiled here under their real names:
-//     Trig_DoPendingCommandLists, Trig_DeleteCommandPoints,
-//     Trig_TriggerCommandPoint, Trig_ExecuteRestart, Trig_DeleteTrigFile,
-//     Trig_LoadTRG, Trig_SendPulseToNode, Trig_SendPulse, Trig_SetRestart
-//     -- so this function's own callees into that neighbourhood are not
-//     a blocker either.
+// Differences from the original that are deliberate:
+//   - The original inlines Trig_GetLinksPointer, Trig_SendPulse,
+//     Trig_SendPulseToNode, Trig_SendSignalToLinks, Trig_SetRestart,
+//     SkipString and SkipCommand into this function. They are all
+//     already decompiled in this file, so they are called here instead
+//     of being pasted in again; the behaviour is the same.
+//   - Two walks of a list that throw the result away (pSimpleMessages in
+//     TextMessage, TextBoxList in TextBox) are dropped, they have no
+//     effect.
+//   - Debug logging goes through trigLog / print_if_false, both empty in
+//     this build, exactly as in the original (the linker folded the two
+//     empty bodies into one address, 0x4015B0).
 //
-// A representative sample of opcodes read off the game's own debug
-// strings (not guessed -- these strings are compiled into the retail
-// binary right next to each case, e.g. `push offset aSetcheatrestar;
-// "SetCheatRestarts"`), covering roughly the first quarter of the
-// switch (instructions 0..~700 of 3041 read so far): 2 SetCheatRestarts
-// (writes gCheatRestartNames[]/G_NUMCHEATRESTARTS), 110 ClearAllPSXs
-// (calls sub_4CA750), 126/127/128 SpoolIn/SpoolOut/SpoolEnv (string arg,
-// calls sub_4CA640/sub_4CAC20), 129 SpoolLock, 133 KillEverythingInBox
-// (six 12-bit fixed-point floats, calls sub_4E69D0), 140/176 SetRestart
-// (string node-name lookup via Trig_GetPosition, writes G_RESTARTNODE),
-// 142 SetObjFile, 151 SetDualBufferSize (unimplemented no-op), 159
-// SpoolMidi, 162 ClearAllCodeModules, 189 SpoolCodeModule, 190 RunCinema
-// (gated on G_ISRESTARTDEATH, see above), 193/194 SendPushback, 195
-// WideScreen, 196 BuzzSpideySense, 197 SetMotionAngleOffset, 214/300/301
-// NightSky/AllowSpeedup/DisallowSpeedup (unimplemented no-ops), 217
-// AllowCamLOSCheck, 302 EndLevelNode, 303/304 FadePalettesUp/Down
-// (mysterio-specific, calls sub_47D470), 305 KillEverything (calls
-// sub_4437E0). Several of these are simple field pokes into already-
-// known globals and would be safe to port on their own; others (133,
-// 140/176, 141/192/209) involve floating point, strtok-based string
-// matching, or checksum node lookups on a par with a whole separate
-// small function each. The remaining ~three quarters of the switch is
-// unread. Whoever continues this: read the rest via disasm at the case
-// addresses (the jmp table refs at 0x4E02BE list every case target),
-// implement opcodes one at a time the way Trig_CreateObject's cases were
-// ported above, and keep this stub (or a default-case call into it,
-// were that ever wired up per-opcode -- not attempted here, see above)
-// for whatever remains unfinished when done.
+// Original bugs kept on purpose:
+//   - The default case does not advance the cursor, so an unknown
+//     command spins forever. Real .trg files never emit one.
+//   - Command 115 (Text) logs "Command no longer supported" and does not
+//     skip its string argument, unlike SkipCommand.
+//   - SetRestart sets IsRestartDeath when the restart point is NOT
+//     called "re_start_death" (the already decompiled Trig_SetRestart
+//     above has the same inverted test, it is what the binary does).
 void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 {
+	SCommandPoint* pCommandPoint = 0;
 
-	typedef void (*func_ptr)(u16*, i32, i32);
+	if (Node != 0xFFFF && *G_OFFSETLIST[Node] == 6)
+	{
+		for (SCommandPoint* pSearch = G_COMMANDPOINTS; pSearch; pSearch = pSearch->pNext)
+		{
+			if (pSearch->NodeIndex == Node)
+			{
+				pCommandPoint = pSearch;
+				break;
+			}
+		}
+	}
 
-	func_ptr func = (func_ptr)0x004E0210;
+	trigLog("** Executing Command-List: %8.8X, Node: %i **", pCommands, Node);
 
-	func(pCommands, Node, WaitForSpooling);
+	i32 ifDepth = 0;
+	i32 fogChanged = 0;
+	i32 fogNear = 0;
+	i32 fogFar = 0;
+	i32 fogValue = 0;
+
+	u16* p = pCommands;
+	u16 command = *p;
+
+	while (command != 0xFFFF)
+	{
+		p++;
+
+		switch (command)
+		{
+			// SetCheatRestarts (0x4E051A)
+			case 2:
+			{
+				trigLog("SetCheatRestarts");
+				G_NUMCHEATRESTARTS = 0;
+
+				while (*reinterpret_cast<char*>(p) != 0)
+				{
+					print_if_false(G_NUMCHEATRESTARTS < 20, "Too many strings in SetCheatRestarts");
+
+					gCheatRestartNames[G_NUMCHEATRESTARTS] = reinterpret_cast<char*>(p);
+					G_NUMCHEATRESTARTS++;
+
+					p = SkipString(reinterpret_cast<char*>(p));
+
+					trigLog("\tCheatRestart[%i] = %s",
+							G_NUMCHEATRESTARTS - 1,
+							gCheatRestartNames[G_NUMCHEATRESTARTS - 1]);
+				}
+
+				p++;
+				break;
+			}
+
+			// SendPulse (0x4E1747)
+			case 3:
+			{
+				trigLog("SendPulse");
+				print_if_false(Node != 0xFFFF,
+						"SendPulse command requires the command list to be associated with a node.");
+
+				if (pCommandPoint)
+				{
+					if (pCommandPoint->NumPulses == 0)
+						break;
+
+					Trig_SendPulse(Trig_GetLinksPointer(Node));
+
+					if (pCommandPoint->NumPulses != 0xFFFF)
+						pCommandPoint->NumPulses--;
+				}
+				else
+				{
+					Trig_SendPulse(Trig_GetLinksPointer(Node));
+				}
+				break;
+			}
+
+			// SendActivate (4) / SendSuspend (5) (0x4E1B14)
+			case 4:
+			case 5:
+			{
+				if (command == 5)
+					trigLog("SendSuspend");
+				else
+					trigLog("SendActivate");
+
+				print_if_false(Node != 0xFFFF,
+						"SendSuspend or SendActivate require the command list to be associated with a node.");
+
+				SendSuspendOrActivate(Trig_GetLinksPointer(Node), command);
+				break;
+			}
+
+			// SendSignal (0x4E1C07)
+			case 10:
+			{
+				trigLog("SendSignal");
+				print_if_false(Node != 0xFFFF,
+						"SendSignal command requires the command list to be associated with a node.");
+
+				Trig_SendSignalToLinks(Trig_GetLinksPointer(Node));
+				break;
+			}
+
+			// SendKill (0x4E1ED8)
+			case 11:
+				trigLog("SendKill");
+				SendKillFromNode(Node, 0);
+				break;
+
+			// SendKillLoudly (0x4E1EF5)
+			case 12:
+				trigLog("SendKillLoudly");
+				SendKillFromNode(Node, 1);
+				break;
+
+			// SendVisible (0x4E1D7C)
+			case 13:
+			{
+				trigLog("SendVisible");
+
+				u16 hide = *p;
+
+				print_if_false(Node >= 0 && Node < G_NUMNODES, "Bad node sent to SendVisible");
+
+				u16* pLinks = Trig_GetLinksPointer(Node);
+				u16 numLinks = *pLinks;
+				u16* pLink = pLinks + 1;
+
+				for (i32 i = 0; i < numLinks; i++)
+				{
+					i16* pNode = reinterpret_cast<i16*>(G_OFFSETLIST[pLink[i]]);
+
+					if (*pNode == 2 || *pNode == 9)
+					{
+						u32 pChecksum = reinterpret_cast<u32>(&pNode[pNode[1] + 2]);
+						if (pChecksum & 2)
+							pChecksum += 2;
+
+						CItem* pItem = Spool_FindEnviroItem(*reinterpret_cast<u32*>(pChecksum));
+						if (pItem)
+						{
+							if (hide)
+								pItem->mFlags &= 0xFFFE;
+							else
+								pItem->mFlags |= 1;
+						}
+					}
+					else
+					{
+						print_if_false(0, "SendVisible to non-crate");
+					}
+				}
+
+				p++;
+				break;
+			}
+
+			// WaterEffectOn (0x4E111D)
+			case 102:
+				trigLog("WaterEffectOn");
+				*gWaterEffect = 1;
+				break;
+
+			// WaterEffectOff (0x4E1139)
+			case 103:
+				trigLog("WaterEffectOff");
+				*gWaterEffect = 0;
+				break;
+
+			// SetFoggingParams (0x4E1203), applied once at the end.
+			case 104:
+				trigLog("Trigger file changes zYon plane!\r\n");
+				trigLog("SetFoggingParams");
+				fogNear = *p++;
+				fogFar = *p++;
+				fogValue = *p++;
+				fogChanged = 1;
+				break;
+
+			// PlaySound (0x4E1373)
+			case 105:
+				trigLog("PlaySound(%i)", *p);
+				SFX_Play(*p, 0x2000, 0);
+				p++;
+				break;
+
+			// StopSound (0x4E13A0)
+			case 106:
+				trigLog("StopSound(%i)", *p);
+				SFX_Stop(*p);
+				p++;
+				break;
+
+			// ClearAllPSXs (0x4E03F2)
+			case 110:
+				trigLog("ClearAllPSXs");
+				Spool_ClearAllPSXs();
+				break;
+
+			// Text (0x4E1F12). Does not skip its string, unlike SkipCommand.
+			case 115:
+				trigLog("Text (unimplemented)");
+				print_if_false(0, "Command no longer supported");
+				break;
+
+			// DebugText (0x4E1F30)
+			case 119:
+				trigLog("DebugText(%s)", reinterpret_cast<char*>(p));
+				p = SkipString(reinterpret_cast<char*>(p));
+				break;
+
+			// CamFollowPath (0x4E1F5B)
+			case 121:
+				trigLog("CamFollowPath (unimplemented)");
+				print_if_false(0, "CamFollowPath not currently supported");
+				break;
+
+			// ClearOtherRegion (0x4E1518)
+			case 122:
+				trigLog("ClearOtherRegion (unimplemented)");
+				print_if_false(0, "Clear other region not done yet");
+				break;
+
+			// SpoolIn (0x4E06C9)
+			case 126:
+			{
+				char* pName = reinterpret_cast<char*>(p);
+				trigLog("SpoolIn(%s)\r\n", pName);
+				TrigToLower(pName);
+
+				i32 skipIt = 0;
+
+				if (*gTrigLoadedLowRes == 0)
+				{
+					char Delimiter[6] = "\r \t\n";
+
+					FileIO_Open("SkipLib.txt");
+
+					char* pSkipLib = *gSpoolSystemMemory;
+					FileIO_Load(pSkipLib);
+					FileIO_Sync();
+
+					for (char* pToken = strtok(pSkipLib, Delimiter);
+							pToken;
+							pToken = strtok(0, Delimiter))
+					{
+						TrigToLower(pToken);
+
+						if (strcmp(pToken, pName) == 0)
+						{
+							skipIt = 1;
+							break;
+						}
+					}
+				}
+
+				if (!skipIt)
+				{
+					Spool_PSX(pName, 0);
+
+					if (WaitForSpooling)
+						Spool_Sync();
+				}
+
+				p = SkipString(pName);
+				break;
+			}
+
+			// SpoolOut (0x4E07B8)
+			case 127:
+				trigLog("SpoolOut(%s)", reinterpret_cast<char*>(p));
+				Spool_ClearPSX(reinterpret_cast<char*>(p));
+				p = SkipString(reinterpret_cast<char*>(p));
+				break;
+
+			// SpoolEnv (0x4E07E9)
+			case 128:
+			{
+				char* pName = reinterpret_cast<char*>(p);
+				trigLog("SpoolEnv(%s)", pName);
+				Spool_PSX(pName, 1);
+
+				if (WaitForSpooling)
+					Spool_Sync();
+
+				p = SkipString(pName);
+				break;
+			}
+
+			// SpoolLock (0x4E0872)
+			case 129:
+				trigLog("SpoolLock");
+				Spool_Sync();
+				break;
+
+			// SetCamAngle (0x4E23B0)
+			case 130:
+				trigLog("SetCamAngle");
+				if (CameraList)
+					CameraList->SetCamAngle(static_cast<i16>(p[0]), p[1]);
+				p += 2;
+				break;
+
+			// BackgroundOn (0x4E11CD)
+			case 131:
+				trigLog("BackgroundOn");
+				Backgrnd_On(*p);
+				p++;
+				break;
+
+			// BackgroundOff (0x4E11E8)
+			case 132:
+				trigLog("BackgroundOff");
+				Backgrnd_Off(*p);
+				p++;
+				break;
+
+			// KillEverythingInBox (0x4E08FB)
+			case 133:
+			{
+				CVector boxMin;
+				CVector boxMax;
+				boxMin.vx = 0; boxMin.vy = 0; boxMin.vz = 0;
+				boxMax.vx = 0; boxMax.vy = 0; boxMax.vz = 0;
+
+				while (*p != 0xFF)
+				{
+					p = TrigReadBox(p, &boxMin, &boxMax);
+
+					trigLog("KillEverythingInBox (%f,%f,%f) - (%f,%f,%f)",
+							boxMin.vx / 4096.0f, boxMin.vy / 4096.0f, boxMin.vz / 4096.0f,
+							boxMax.vx / 4096.0f, boxMax.vy / 4096.0f, boxMax.vz / 4096.0f);
+
+					Utils_KillEverythingInBox(&boxMin, &boxMax);
+				}
+
+				p++;
+				break;
+			}
+
+			// SetInitialPulses (0x4E170C)
+			case 134:
+				trigLog("SetInitialPulses");
+				print_if_false(pCommandPoint != 0,
+						"SetInitialPulses command requires a command point");
+
+				if (!pCommandPoint->NumPulsesSet)
+				{
+					pCommandPoint->NumPulsesSet = 1;
+					pCommandPoint->NumPulses = *p;
+				}
+
+				p++;
+				break;
+
+			// SetCamDistXZ (0x4E2405)
+			case 135:
+				trigLog("SetCamDistXZ");
+				if (CameraList)
+					CameraList->SetCamXZDistance(p[0], p[1]);
+				p += 2;
+				break;
+
+			// AllowXA (0x4E2778)
+			case 136:
+				trigLog("AllowXA");
+				Redbook_XAAllow(true);
+				break;
+
+			// DisallowXA (0x4E278E)
+			case 137:
+				trigLog("DisallowXA");
+				Redbook_XAAllow(false);
+				break;
+
+			// SeekXA (0x4E27A4). The seek helper is an empty function in
+			// this build (0x430880), so nothing is called here.
+			case 138:
+				trigLog("SeekXA");
+				p++;
+				break;
+
+			// PlayXA (0x4E27C4)
+			case 139:
+				trigLog("PlayXA(%i)", p[0]);
+				Redbook_XAPlay(p[0], p[1], p[2]);
+				p += 3;
+				break;
+
+			// SetRestart (0x4E05B7)
+			case 140:
+			case 176:
+			{
+				char* pName = reinterpret_cast<char*>(p);
+				trigLog("SetRestart = %s", pName);
+
+				i32 previousRestart = G_RESTARTNODE;
+
+				Trig_SetRestart(pName);
+
+				p = SkipString(pName);
+
+				if (previousRestart != 0xFFFF && G_RESTARTNODE != previousRestart)
+				{
+					if (command != 176)
+					{
+						Mess_DeleteAll();
+						Mess_Message(*gCheckpointMessage, 0);
+					}
+
+					Front_SaveGameState();
+				}
+				break;
+			}
+
+			// SetVisibilityInBox (141) / SetBaddyVisibilityInBox (192) /
+			// SetObjectVisibilityInBox (209) (0x4E0ACE)
+			case 141:
+			case 192:
+			case 209:
+			{
+				u16 visible = p[0];
+				u16 inside = p[1];
+				p += 2;
+
+				CVector boxMin;
+				CVector boxMax;
+				boxMin.vx = 0; boxMin.vy = 0; boxMin.vz = 0;
+				boxMax.vx = 0; boxMax.vy = 0; boxMax.vz = 0;
+
+				while (*p != 0xFF)
+				{
+					p = TrigReadBox(p, &boxMin, &boxMax);
+
+					if (command == 192)
+					{
+						trigLog("SetBaddyVisibilityInBox (%f,%f,%f) - (%f,%f,%f), %s, %s",
+								boxMin.vx / 4096.0f, boxMin.vy / 4096.0f, boxMin.vz / 4096.0f,
+								boxMax.vx / 4096.0f, boxMax.vy / 4096.0f, boxMax.vz / 4096.0f,
+								visible ? "Visible" : "Invisible",
+								inside ? "Inside" : "Outside");
+
+						Utils_SetBaddyVisibilityInBox(&boxMin, &boxMax,
+								visible != 0, inside != 0, reinterpret_cast<CBody*>(BaddyList));
+					}
+					else if (command == 209)
+					{
+						trigLog("SetObjectVisibilityInBox (%f,%f,%f) - (%f,%f,%f), %s, %s",
+								boxMin.vx / 4096.0f, boxMin.vy / 4096.0f, boxMin.vz / 4096.0f,
+								boxMax.vx / 4096.0f, boxMax.vy / 4096.0f, boxMax.vz / 4096.0f,
+								visible ? "Visible" : "Invisible",
+								inside ? "Inside" : "Outside");
+
+						Utils_SetBaddyVisibilityInBox(&boxMin, &boxMax,
+								visible != 0, inside != 0, EnvironmentalObjectList);
+						Utils_SetBaddyVisibilityInBox(&boxMin, &boxMax,
+								visible != 0, inside != 0, PowerUpList);
+					}
+					else
+					{
+						trigLog("SetVisibilityInBox (%f,%f,%f) - (%f,%f,%f), %s, %s",
+								boxMin.vx / 4096.0f, boxMin.vy / 4096.0f, boxMin.vz / 4096.0f,
+								boxMax.vx / 4096.0f, boxMax.vy / 4096.0f, boxMax.vz / 4096.0f,
+								visible ? "Visible" : "Invisible",
+								inside ? "Inside" : "Outside");
+
+						Utils_SetVisibilityInBox(&boxMin, &boxMax, visible != 0, inside != 0);
+					}
+				}
+
+				p++;
+				break;
+			}
+
+			// SetObjFile (0x4E08BA)
+			case 142:
+			{
+				char* pName = reinterpret_cast<char*>(p);
+				trigLog("SetObjFile(%s)", pName);
+
+				gObjFile = pName;
+				p = SkipString(pName);
+				gObjFileRegion = static_cast<u8>(Spool_FindRegion(pName));
+				break;
+			}
+
+			// SetCamDistY (0x4E2432)
+			case 143:
+				trigLog("SetCamDistY");
+				if (CameraList)
+					CameraList->SetCamYDistance(static_cast<i16>(p[0]), p[1]);
+				p += 2;
+				break;
+
+			// SetCamOffsetX (0x4E245F)
+			case 144:
+				trigLog("SetCamOffsetX");
+				if (CameraList)
+					CameraList->SetCamXOffset(static_cast<i16>(p[0]), p[1]);
+				p += 2;
+				break;
+
+			// SetCamOffsetY (0x4E248C)
+			case 145:
+				trigLog("SetCamOffsetY");
+				if (CameraList)
+					CameraList->SetCamYOffset(static_cast<i16>(p[0]), p[1]);
+				p += 2;
+				break;
+
+			// SetCamOffsetZ (0x4E24B9)
+			case 146:
+				trigLog("SetCamOffsetZ");
+				if (CameraList)
+					CameraList->SetCamZOffset(static_cast<i16>(p[0]), p[1]);
+				p += 2;
+				break;
+
+			// SetGameLevel (0x4E2759)
+			case 147:
+				trigLog("SetGameLevel");
+				*gTrigGameLevel = *p;
+				p++;
+				break;
+
+			// IfPulseCount (0x4E1536)
+			case 148:
+			{
+				print_if_false(pCommandPoint != 0,
+						"IfPulseCount command only valid for a command point");
+
+				u16 pulses = pCommandPoint->PulsesReceived;
+				u16 wanted = *p++;
+
+				if (pulses == wanted)
+				{
+					ifDepth++;
+					break;
+				}
+
+				while (*p != 0x95)
+				{
+					print_if_false(*p != 0x94, "Cannot nest IfPulseCount");
+					p = SkipCommand(p);
+				}
+
+				p++;
+				break;
+			}
+
+			// Endif (0x4E16EB)
+			case 149:
+				print_if_false(ifDepth != 0, "Endif without if");
+				ifDepth--;
+				break;
+
+			// TimeAttackComplete (0x4E13C6)
+			case 150:
+				trigLog("TimeAttackComplete");
+				*gTimeAttackComplete = 1;
+				break;
+
+			// SetDualBufferSize (0x4E05A2)
+			case 151:
+				trigLog("SetDualBufferSize (unimplemented)");
+				p++;
+				break;
+
+			// KillBruce (0x4E145E)
+			case 152:
+				trigLog("KillBruce");
+				if (G_MECHLIST)
+					reinterpret_cast<CPlayer*>(G_MECHLIST)->SwitchToDeathMode(true);
+				break;
+
+			// SetCamColijSide (0x4E268F)
+			case 153:
+				trigLog("SetCamColijSide");
+				if (CameraList)
+					CameraList->SetCollisionRayLR(*reinterpret_cast<i16*>(p));
+				p++;
+				break;
+
+			// SetCamColijBack (0x4E26B7)
+			case 154:
+				trigLog("SetCamColijBack");
+				if (CameraList)
+					CameraList->SetCollisionRayBack(*reinterpret_cast<i16*>(p));
+				p++;
+				break;
+
+			// SetReverbType (0x4E13DF)
+			case 157:
+				trigLog("SetReverbType");
+				SFX_SetReverbType(*reinterpret_cast<u8*>(p));
+				p++;
+				break;
+
+			// EndLevel (0x4E13F9)
+			case 158:
+				trigLog("EndLevel");
+				gLevelStatus = 3;
+				break;
+
+			// SpoolMidi (0x4E0889). The midi spooler is an empty function
+			// in this build (0x430880).
+			case 159:
+				trigLog("SpoolMidi(%s)", reinterpret_cast<char*>(p));
+				p = SkipString(reinterpret_cast<char*>(p));
+				break;
+
+			// SetCamMode (0x4E272F)
+			case 160:
+				trigLog("SetCamMode");
+				if (CameraList)
+					CameraList->SetMode(static_cast<ECameraMode>(*p));
+				p++;
+				break;
+
+			// ClearAllCodeModules (0x4E085B)
+			case 162:
+				trigLog("ClearAllCodeModules");
+				Reloc_UnloadAll();
+				break;
+
+			// IgnoreBruceInput (0x4E1415). Original bug kept: the cursor
+			// only moves when there is a player, so this command desyncs
+			// the rest of the list when MechList is null.
+			case 163:
+				trigLog("IgnoreBruceInput(%u)", *p);
+				if (G_MECHLIST)
+				{
+					reinterpret_cast<CPlayer*>(G_MECHLIST)->SetIgnoreInputTimer(*p);
+					p++;
+				}
+				break;
+
+			// SetCamColijAngleSide (0x4E26DF)
+			case 164:
+				trigLog("SetCamColijAngleSide");
+				if (CameraList)
+					CameraList->SetCollisionAngLR(static_cast<i16>(*p));
+				p++;
+				break;
+
+			// SetCamColijAngleBack (0x4E2707)
+			case 165:
+				trigLog("SetCamColijAngleBack");
+				if (CameraList)
+					CameraList->SetCollisionAngBack(static_cast<i16>(*p));
+				p++;
+				break;
+
+			// SetOTPushback (0x4E1F9F)
+			case 166:
+				trigLog("SetOTPushback = %i", *reinterpret_cast<i16*>(p));
+				*gOTPushback = static_cast<i16>(*p);
+				p++;
+				break;
+
+			// SetCamZoom (0x4E2331)
+			case 167:
+				trigLog("SetCamZoom");
+				if (CameraList)
+					CameraList->SetZoom(p[0], p[1]);
+				p += 2;
+				break;
+
+			// SetCamPitchDamp (0x4E2360)
+			case 168:
+				trigLog("SetCamPitchDamp");
+				if (CameraList)
+					CameraList->field_1CC = static_cast<i16>(*p);
+				p++;
+				break;
+
+			// SetOTPushback2 (0x4E1FC2)
+			case 169:
+				trigLog("SetOTPushback2 = %i", *reinterpret_cast<i16*>(p));
+				*gOTPushback2 = static_cast<i16>(*p);
+				p++;
+				break;
+
+			// SetSuspendDistance (0x4E1F79)
+			case 170:
+				trigLog("SetSuspendDistance(%i)", *p);
+				SuspendedDistance = *p;
+				p++;
+				break;
+
+			// BackgroundCreate (0x4E1155)
+			case 171:
+			{
+				trigLog("BackgroundCreate");
+
+				p = TrigAlign4(p);
+
+				u32 backgroundId = *reinterpret_cast<u32*>(p);
+
+				CSVector pos;
+				pos.vx = static_cast<i16>(p[2]);
+				pos.vy = static_cast<i16>(p[3]);
+				pos.vz = static_cast<i16>(p[4]);
+				p += 5;
+
+				new CBackground(backgroundId, &pos);
+				break;
+			}
+
+			// SetCamYDamp (0x4E2388)
+			case 172:
+				trigLog("SetCamYDamp");
+				if (CameraList)
+					CameraList->field_1CE = static_cast<i16>(*p);
+				p++;
+				break;
+
+			// SetCamFocusEqualsTripod (0x4E2306)
+			case 173:
+				trigLog("SetCamFocusEqualsTripod");
+				if (CameraList)
+					CameraList->field_13C = CameraList->mTripod;
+				break;
+
+			// SetDropDamageOn (0x4E27F8)
+			case 174:
+				trigLog("SetDropDamageOn");
+				if (G_MECHLIST)
+				{
+					CPlayer* pPlayer = reinterpret_cast<CPlayer*>(G_MECHLIST);
+					*TrigFieldI32(pPlayer, 0xE40) = p[0];
+					*TrigFieldI32(pPlayer, 0xE44) = p[1];
+				}
+				p += 2;
+				break;
+
+			// SetDropDamageOff (0x4E282E)
+			case 175:
+				trigLog("SetDropDamageOff");
+				if (G_MECHLIST)
+					*TrigFieldI32(G_MECHLIST, 0xE40) = 0;
+				break;
+
+			// IgnoreBruceInputFreeze (0x4E1449)
+			case 177:
+				trigLog("IgnoreBruceInputFreeze (unimplemented)");
+				p++;
+				break;
+
+			// SetSpideyCamValue (0x4E24E6)
+			case 180:
+				trigLog("SetSpideyCamValue");
+				if (G_MECHLIST)
+				{
+					reinterpret_cast<CPlayer*>(G_MECHLIST)->SetSpideyCamValue(
+							p[0], p[1], static_cast<i16>(p[2]), p[3], p[4]);
+				}
+				p += 5;
+				break;
+
+			// LoadNewTrg (0x4E2857)
+			case 181:
+			{
+				char* pName = reinterpret_cast<char*>(p);
+				trigLog("LoadNewTrg(%s)", pName);
+
+				u8* pSaveBytes = reinterpret_cast<u8*>(&gSaveGame);
+
+				if (Utils_CompareStrings(pName, gSaveGame.field_4))
+				{
+					if (gLevelStatus == 0 && G_MECHLIST == 0)
+					{
+						*reinterpret_cast<i32*>(pSaveBytes + 0x48) = *gCarriedPlayerStat0;
+						*reinterpret_cast<i32*>(pSaveBytes + 0x4C) = *gCarriedPlayerStat1;
+						pSaveBytes[0x79] = *gCarriedPlayerFlag0;
+						*reinterpret_cast<i32*>(pSaveBytes + 0x50) = *gCarriedPlayerStat2;
+						pSaveBytes[0x7A] = *gCarriedPlayerFlag1;
+					}
+
+					gLevelStatus = 9;
+				}
+				else
+				{
+					gLevelStatus = 3;
+				}
+
+				Utils_CopyString(pName, gSaveGame.field_4, 9);
+
+				p = SkipString(pName);
+
+				Init_KillAll();
+				break;
+			}
+
+			// SetSpideyRGB (0x4E1254)
+			case 182:
+				trigLog("SetSpideyRGB");
+				*TrigFieldI32(G_MECHLIST, 0x578) = *p;
+				p += 3;
+				break;
+
+			// SetSpideyLookAroundCamValue (0x4E265D)
+			case 183:
+				trigLog("SetSpideyLookAroundCamValue");
+				if (G_MECHLIST)
+				{
+					reinterpret_cast<CPlayer*>(G_MECHLIST)->SetSpideyLookaroundCamValue(
+							p[0], p[1], static_cast<i16>(p[2]));
+				}
+				p += 3;
+				break;
+
+			// SetSpideyShadowRGB (0x4E1279)
+			case 184:
+				trigLog("SetSpideyShadowRGB");
+				*TrigFieldI32(G_MECHLIST, 0x574) = *p;
+				p += 3;
+				break;
+
+			// SetCamFixedPos (185) / with angles (186) (0x4E1FE4)
+			case 185:
+			case 186:
+			{
+				trigLog("SetCamFixedPos");
+				print_if_false(CameraList != 0, "No camera for SETCAM...");
+
+				if (CameraList == 0)
+				{
+					p++;
+					break;
+				}
+
+				u16* pLinks = Trig_GetLinksPointer(Node);
+				print_if_false(*pLinks != 0, "SETCAMFIXEDPOS with no linked nodes");
+
+				u16 numLinks = *pLinks++;
+				if (numLinks == 0)
+				{
+					p++;
+					break;
+				}
+
+				u16 camNode = 0;
+				i32 found = 0;
+
+				do
+				{
+					camNode = *pLinks++;
+
+					if (*G_OFFSETLIST[camNode] == 0x0C)
+					{
+						found = 1;
+						break;
+					}
+
+					numLinks--;
+				}
+				while (numLinks != 0);
+
+				if (!found)
+				{
+					p++;
+					break;
+				}
+
+				CVector pos;
+				pos.vx = 0; pos.vy = 0; pos.vz = 0;
+
+				u16* pAngles = Trig_GetPosition(&pos, camNode);
+
+				if (command == 185)
+				{
+					CameraList->SetFixedPosMode(pos, *p);
+				}
+				else
+				{
+					CQuat angles;
+					angles.x = *reinterpret_cast<i16*>(&pAngles[0]);
+					angles.y = *reinterpret_cast<i16*>(&pAngles[1]);
+					angles.z = *reinterpret_cast<i16*>(&pAngles[2]);
+					angles.w = *reinterpret_cast<i16*>(&pAngles[3]);
+
+					CameraList->SetFixedPosAnglesMode(&pos, &angles, *p);
+				}
+
+				p++;
+				break;
+			}
+
+			// SetCamAngleLock (0x4E23DD)
+			case 187:
+				trigLog("SetCamAngleLock");
+				if (G_MECHLIST)
+					reinterpret_cast<CPlayer*>(G_MECHLIST)->SetCamAngleLock(*p);
+				p++;
+				break;
+
+			// SetCamFixedFocus (0x4E21A2)
+			case 188:
+			{
+				trigLog("SetCamFixedFocus");
+				print_if_false(CameraList != 0, "No camera for SETCAM...");
+
+				if (CameraList == 0)
+				{
+					p += 2;
+					break;
+				}
+
+				u16* pLinks = Trig_GetLinksPointer(Node);
+				print_if_false(*pLinks != 0, "SETCAMFIXEDPOS with no linked nodes");
+
+				u16 numLinks = *pLinks++;
+				if (numLinks == 0)
+				{
+					p += 2;
+					break;
+				}
+
+				u16 camNode = 0;
+				i32 found = 0;
+
+				do
+				{
+					camNode = *pLinks++;
+
+					if (*G_OFFSETLIST[camNode] == 0x0C)
+					{
+						found = 1;
+						break;
+					}
+
+					numLinks--;
+				}
+				while (numLinks != 0);
+
+				if (found)
+				{
+					CVector pos;
+					pos.vx = 0; pos.vy = 0; pos.vz = 0;
+
+					Trig_GetPosition(&pos, camNode);
+
+					CameraList->SetFixedFocusMode(&pos, p[0], p[1]);
+				}
+
+				p += 2;
+				break;
+			}
+
+			// SpoolCodeModule (0x4E0828)
+			case 189:
+				trigLog("SpoolCodeModule(%s)", reinterpret_cast<char*>(p));
+				Reloc_Load(reinterpret_cast<char*>(p), 1);
+				p = SkipString(reinterpret_cast<char*>(p));
+				break;
+
+			// RunCinema (0x4E0409)
+			case 190:
+			{
+				i16 nodeType = *G_OFFSETLIST[Node];
+
+				if ((nodeType == 4 || nodeType == 15) && G_ISRESTARTDEATH)
+				{
+					trigLog("RunCinema (ignored)");
+					G_ISRESTARTDEATH = 0;
+				}
+				else
+				{
+					trigLog("RunCinema(%i)", *p);
+					Cinema_Run(*p);
+				}
+
+				p++;
+				break;
+			}
+
+			// SetVisibilityByName (0x4E109C)
+			case 191:
+			{
+				char* pName = reinterpret_cast<char*>(p);
+				p = SkipString(pName);
+
+				u16 first = p[0];
+				u16 count = p[1];
+				p += 2;
+
+				u16 visible = *p++;
+
+				Utils_SetVisibilityByName(pName, first, count, visible != 0);
+
+				trigLog("SetVisibilityByName: %s, %u, %u, %s",
+						pName, first, count, visible ? "Visible" : "Invisible");
+				break;
+			}
+
+			// SendPushback (193) / SendPushback2 (194) (0x4E0A57)
+			case 193:
+			case 194:
+			{
+				trigLog("SendPushback = %i", *reinterpret_cast<i16*>(p));
+
+				u16 value = *p++;
+				u16 count = *p;
+
+				p = reinterpret_cast<u16*>((reinterpret_cast<u32>(p) + 5) & ~3u);
+
+				for (i32 i = 0; i < count; i++)
+				{
+					u32 checksum = *reinterpret_cast<u32*>(p);
+					p += 2;
+
+					CItem* pItem = Spool_FindEnviroItem(checksum);
+					print_if_false(pItem != 0, "Bad checksum in SENDPUSHBACK command");
+
+					if (pItem)
+					{
+						if (command == 193)
+							pItem->mDummyFrame = static_cast<u8>(value);
+						else
+							pItem->mDummyAnim = static_cast<u8>(value);
+					}
+				}
+				break;
+			}
+
+			// WideScreen (0x4E0488)
+			case 195:
+				trigLog("WideScreen = %i", *p);
+				gWideScreen = *p;
+				*gWideScreenShadow = *p;
+				p++;
+				break;
+
+			// BuzzSpideySense (0x4E04B2)
+			case 196:
+				trigLog("BuzzSpideySense(%i,%i)", p[0], p[1]);
+				{
+					CPlayer* pPlayer = reinterpret_cast<CPlayer*>(G_MECHLIST);
+					*TrigFieldI32(pPlayer, 0xEC8) = p[0];
+					*TrigFieldI32(pPlayer, 0xECC) = p[1];
+				}
+				p += 2;
+				break;
+
+			// SetMotionAngleOffset (0x4E04F1)
+			case 197:
+				trigLog("SetMotionAngleOffset(%i)", *reinterpret_cast<i16*>(p));
+				*TrigFieldI16(G_MECHLIST, 0xE34) =
+					static_cast<i16>(*p);
+				p++;
+				break;
+
+			// TextMessage (0x4E0E70)
+			case 198:
+			{
+				char* pMessage = reinterpret_cast<char*>(p);
+				trigLog("TextMessage(%s)", pMessage);
+
+				p = SkipString(pMessage);
+
+				u16 messageArg0 = p[0];
+				u16 messageArg1 = p[1];
+				p += 2;
+				u16 messageArg2 = *p++;
+
+				trigLog("\t\tOLD MESSAGE: %s\r\n", pMessage);
+
+				i32 substIndex = 0;
+				while (substIndex < 9)
+				{
+					if (TrigTextMatches(gTrigTextSubst[substIndex].mPattern, pMessage))
+						break;
+
+					substIndex++;
+				}
+
+				if (substIndex < 9 && gTrigTextSubst[substIndex].mPattern != 0)
+				{
+					u32 keyCode0 = 0;
+					u32 keyCode1 = 0;
+
+					PCINPUT_GetKeyboardMappingForAction(
+							gTrigTextSubstActions[substIndex].mAction0, &keyCode0);
+					PCINPUT_GetKeyboardMappingForAction(
+							gTrigTextSubstActions[substIndex].mAction1, &keyCode1);
+
+					char keyName0[16];
+					char keyName1[16];
+
+					DXINPUT_GetKeyName(static_cast<u8>(keyCode0), keyName0);
+					DXINPUT_GetKeyName(static_cast<u8>(keyCode1), keyName1);
+
+					char* pBuffer = gTrigTextSubstBuffers[substIndex];
+
+					if (keyCode1 != 0x4000)
+					{
+						sprintf(pBuffer, gTrigTextSubst[substIndex].mFormat, keyName0, keyName1);
+					}
+					else if (keyCode0 != 0x4000)
+					{
+						sprintf(pBuffer, gTrigTextSubst[substIndex].mFormat, keyName0);
+					}
+					else
+					{
+						strcpy(pBuffer, gTrigTextSubst[substIndex].mFormat);
+					}
+
+					pMessage = pBuffer;
+				}
+
+				trigLog("\t\tNEW MESSAGE: %s\r\n", pMessage);
+
+				Mess_SimpleMessage(pMessage, messageArg0, messageArg1, messageArg2);
+				break;
+			}
+
+			// CutSceneScript (0x4E1485)
+			case 199:
+				trigLog("CutSceneScript");
+				reinterpret_cast<CPlayer*>(G_MECHLIST)->SwitchToSynthesizedInput(
+						reinterpret_cast<i16*>(p));
+				p = TrigSkipCutSceneScript(p);
+				break;
+
+			// SetFadeColor (0x4E129F)
+			case 200:
+				trigLog("SetFadeColor");
+				M3d_FadeColour = (static_cast<u32>(p[0]) << 16) + p[1];
+				p += 2;
+				break;
+
+			// SetSkyColor (0x4E12CC)
+			case 202:
+				trigLog("SetSkyColor");
+				{
+					u32 skyColour = (static_cast<u32>(p[0]) << 16) + p[1];
+					*gDbSkyColorTarget = skyColour;
+					Db_SkyColor = skyColour;
+				}
+				p += 2;
+				Db_UpdateSky();
+				break;
+
+			// SetChopperAngle (0x4E296B)
+			case 203:
+			{
+				trigLog("SetChopperAngle");
+
+				CChopper* pChopper = reinterpret_cast<CChopper*>(FindBaddyOfType(0x13E));
+				if (pChopper)
+					*TrigFieldI32(pChopper, 0x358) = (*p * 182) >> 4;
+
+				p++;
+				break;
+			}
+
+			// ChopperFollowWayPoints (0x4E2A00)
+			case 204:
+			{
+				trigLog("ChopperFollowWayPoints");
+
+				CChopper* pChopper = reinterpret_cast<CChopper*>(FindBaddyOfType(0x13E));
+				if (pChopper)
+				{
+					i32* pFlags = TrigFieldI32(pChopper, 0x218);
+					*pFlags |= 1;
+					*TrigFieldI32(pChopper, 0x1F4) = *p;
+				}
+
+				p++;
+				break;
+			}
+
+			// ChopperContinue (0x4E29A7)
+			case 205:
+			{
+				trigLog("ChopperContinue");
+
+				CChopper* pChopper = reinterpret_cast<CChopper*>(FindBaddyOfType(0x13E));
+				if (pChopper)
+					*TrigFieldI32(pChopper, 0x218) |= 4;
+
+				break;
+			}
+
+			// ChopperVelocity (0x4E29D2)
+			case 206:
+			{
+				trigLog("ChopperVelocity");
+
+				CChopper* pChopper = reinterpret_cast<CChopper*>(FindBaddyOfType(0x13E));
+				if (pChopper)
+					*TrigFieldI32(pChopper, 0x348) = *p;
+
+				p++;
+				break;
+			}
+
+			// ChopperMinHeight (0x4E2AD4)
+			case 207:
+			{
+				trigLog("ChopperMinHeight");
+
+				CChopper* pChopper = reinterpret_cast<CChopper*>(FindBaddyOfType(0x13E));
+				if (pChopper)
+				{
+					CVector pos;
+					pos.vx = 0; pos.vy = 0; pos.vz = 0;
+
+					Trig_GetPosition(&pos, *p);
+
+					*TrigFieldI32(pChopper, 0x350) = pos.vy;
+				}
+
+				p++;
+				break;
+			}
+
+			// TextBox (0x4E2522)
+			case 208:
+			{
+				trigLog("TextBox");
+
+				u8* pRaw = reinterpret_cast<u8*>(p);
+
+				char colour[6];
+				colour[0] = pRaw[0x0A];
+				colour[1] = pRaw[0x0C];
+				colour[2] = pRaw[0x0E];
+
+				colour[0] = static_cast<char>(static_cast<i32>(
+							static_cast<u8>(colour[0]) * 0.4f));
+				colour[1] = static_cast<char>(static_cast<i32>(
+							static_cast<u8>(colour[1]) * 0.4f));
+				colour[2] = static_cast<char>(static_cast<i32>(
+							static_cast<u8>(colour[2]) * 0.4f));
+
+				i32 x = *reinterpret_cast<i16*>(p);
+				i32 y = *reinterpret_cast<i16*>(p + 1);
+
+				i32 offset = *gSimpleMessageRelated - x;
+				if (offset < 0)
+					offset = -offset;
+
+				new CTextBox(
+						x - 2,
+						y,
+						*gSimpleMessageTextWidth + offset * 2 - 2,
+						*reinterpret_cast<i16*>(p + 3) - 2,
+						static_cast<u32>(*reinterpret_cast<i16*>(p + 4)),
+						reinterpret_cast<CFriction*>(colour));
+
+				p += 8;
+				break;
+			}
+
+			// SetFightMusicTime (0x4E1303)
+			case 213:
+				trigLog("SetFightMusicTime");
+				*TrigFieldI32(G_MECHLIST, 0xC60) = *p;
+				p++;
+				break;
+
+			// NightSky (0x4E03DD)
+			case 214:
+				trigLog("NIghtSky (unimplemented)");
+				p += 5;
+				break;
+
+			// SetFightMusicFadeDown (0x4E1329)
+			case 215:
+			{
+				trigLog("SetFightMusicFadeDown");
+				CPlayer* pPlayer = reinterpret_cast<CPlayer*>(G_MECHLIST);
+				*TrigFieldU8(pPlayer, 0xC68) = 1;
+				*TrigFieldU8(pPlayer, 0xC69) = 0;
+				break;
+			}
+
+			// SetFightMusicFadeUp (0x4E134E)
+			case 216:
+			{
+				trigLog("SetFightMusicFadeUp");
+				CPlayer* pPlayer = reinterpret_cast<CPlayer*>(G_MECHLIST);
+				*TrigFieldU8(pPlayer, 0xC69) = 1;
+				*TrigFieldU8(pPlayer, 0xC68) = 0;
+				break;
+			}
+
+			// AllowCamLOSCheck (0x4E0372)
+			case 217:
+				trigLog("AllowCamLOSCheck(%i)", *p);
+				*TrigFieldU8(CameraList, 0xF9) = (*p != 0) ? 1 : 0;
+				p++;
+				break;
+
+			// ClearTextMessages (0x4E1085)
+			case 218:
+				trigLog("ClearTextMessages");
+				Mess_ClearSimpleMessages();
+				break;
+
+			// ClearTextBoxes (0x4E2646)
+			case 219:
+				trigLog("ClearTextBoxes");
+				Bit_ClearTextBoxes();
+				break;
+
+			// VenomEnterWaitState (220) / VenomExitWaitState (221) (0x4E290B)
+			case 220:
+			case 221:
+			{
+				CVenom* pVenom = reinterpret_cast<CVenom*>(FindBaddyOfType(0x139));
+				if (pVenom == 0)
+					break;
+
+				if (command == 220)
+				{
+					trigLog("VenomEnterWaitState");
+					pVenom->EnterWaitState();
+				}
+				else
+				{
+					trigLog("VenomExitWaitState");
+					pVenom->ExitWaitState(p[0], p[1]);
+					p += 2;
+				}
+				break;
+			}
+
+			// CutSceneSkipAllow (0x4E14A5)
+			case 222:
+				trigLog("CutSceneSkipAllow(%i)", *p);
+				*TrigFieldU8(G_MECHLIST, 0x1A4) =
+					(*p != 0) ? 1 : 0;
+				p++;
+				break;
+
+			// SetSpideyFootStepBank (0x4E14EC)
+			case 223:
+				trigLog("SetSpideyFootStepBank(%i)", *p);
+				*TrigFieldI32(G_MECHLIST, 0x34C) = *p;
+				p++;
+				break;
+
+			// AllowSpeedup (0x4E03B9)
+			case 300:
+				trigLog("AllowSpeedup (unimplemented)");
+				break;
+
+			// DisallowSpeedup (0x4E03CB)
+			case 301:
+				trigLog("DisallowSpeedup (unimplemented)");
+				break;
+
+			// EndLevelNode (0x4E0355)
+			case 302:
+				EndLevelNode = *p++;
+				trigLog("EndLevelNode = %i", EndLevelNode);
+				break;
+
+			// FadePalettesUp (0x4E02C5)
+			case 303:
+			{
+				u32 fade[3];
+				fade[0] = p[1];
+				fade[1] = p[1] >> 8;
+				fade[2] = p[0];
+
+				trigLog("FadePalettesUp(%u,%u,%u)", fade[0], fade[1], fade[2]);
+
+				u32 result;
+				Reloc_CallUserFunction("mysterio", 1, fade, &result);
+
+				p += 2;
+				break;
+			}
+
+			// FadePalettesDown (0x4E0327)
+			case 304:
+			{
+				trigLog("FadePalettesDown");
+
+				u32 arg;
+				u32 result;
+				Reloc_CallUserFunction("mysterio", 2, &arg, &result);
+				break;
+			}
+
+			// KillEverything (0x4E0471)
+			case 305:
+				trigLog("KillEverything");
+				Init_KillAll();
+				break;
+
+			// Unknown commands do NOT advance the cursor in the original,
+			// so a bad .trg file hangs the game here. Kept as is.
+			default:
+				print_if_false(0, "Unknown command\n ");
+				break;
+		}
+
+		command = *p;
+	}
+
+	if (fogChanged && !G_LOWGRAPHICS)
+		M3dInit_SetFoggingParams(fogNear, fogFar, fogValue);
+
+	print_if_false(ifDepth == 0, "Missing Endif");
 }
 
 // @Ok
