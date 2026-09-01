@@ -261,7 +261,12 @@ class CPlayer : public CSuper
 		u8 field_AD8;
 		u8 field_AD9;
 
-		PADDING(0xAE4-0xAD9-1);
+		// HandleControlsForSurfaceTransition: "player is pushing away from
+		// this surface" flags, one per transition direction.
+		u8 field_ADA;
+		u8 field_ADB;
+
+		PADDING(0xAE4-0xADB-1);
 
 		u8 field_AE4;
 		u8 field_AE5;

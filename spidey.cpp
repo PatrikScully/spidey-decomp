@@ -1942,10 +1942,62 @@ u8 CPlayer::GrabUpdate(CVector *out, i16 *outAngle)
 	return 1;
 }
 
-// @SMALLTODO
-void CPlayer::HandleControlsForSurfaceTransition(bool)
+// @Ok
+void CPlayer::HandleControlsForSurfaceTransition(bool bAllowTransition)
 {
-    printf("CPlayer::HandleControlsForSurfaceTransition(bool)");
+	if (this->field_8E8 != 0)
+	{
+		i16 vy = this->field_B84.vy;
+
+		if (vy > 0xD48)
+		{
+			if ((this->field_AD9 == 0 && this->field_E2D > 0) ||
+				(this->field_AD9 != 0 && this->field_E2D < 0))
+			{
+				this->field_ADA = 1;
+				this->field_AD9 = 0;
+				return;
+			}
+
+			this->field_ADA = 0;
+
+			if (bAllowTransition)
+				this->field_AD8 = 1;
+
+			this->field_AD9 = 0;
+			return;
+		}
+
+		if (vy < -2600)
+			this->field_AD9 = 0;
+
+		return;
+	}
+
+	if (this->field_8E9 == 0)
+		return;
+
+	if (this->field_B84.vy > 0xD48)
+		return;
+
+	if ((this->field_AD8 == 0 && this->field_E2D < 0) ||
+		(this->field_AD8 != 0 && this->field_E2D > 0))
+	{
+		this->field_ADB = 1;
+
+		if (bAllowTransition)
+		{
+			this->field_AD9 = 1;
+			this->field_AD8 = 0;
+			return;
+		}
+	}
+	else
+	{
+		this->field_ADB = 0;
+	}
+
+	this->field_AD8 = 0;
 }
 
 // @MEDIUMTODO
@@ -6684,6 +6736,9 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_AD4, 0xAD4);
 
 	VALIDATE(CPlayer, field_AD7, 0xAD7);
+
+	VALIDATE(CPlayer, field_ADA, 0xADA);
+	VALIDATE(CPlayer, field_ADB, 0xADB);
 
 	VALIDATE(CPlayer, field_AE4, 0xAE4);
 	VALIDATE(CPlayer, field_AE5, 0xAE5);
