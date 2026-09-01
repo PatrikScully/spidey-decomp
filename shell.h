@@ -16,6 +16,24 @@ class CVertexWobble;
 
 // defined in scorpion.h; only used here as a pointer member of CDummy.
 struct STailGeometry;
+struct SSimpleRibbonParams;
+class CSimpleTexturedRibbon;
+class CKnottedWeb;
+class CShellVenomElectrified;
+class CShellCarnageElectrified;
+class CShellSuperDocOckElectrified;
+class CShellSimbyFireDeath;
+class CShellSimbySlimeBase;
+
+// One row of the XA track table a CDummy is built with (constructor parameter a13, kept in
+// field_1DC). CDummy::AI plays row 0 on the square button, row 1 on the triangle button, and
+// picks one of rows 2..6 at random whenever the idle timer runs out. A row of two zeroes means
+// "no track", which is what the random picker skips over.
+struct SDummyXATrack
+{
+	i32 TrackA;
+	i32 TrackB;
+};
 
 struct SRecordRelated
 {
@@ -188,9 +206,9 @@ public:
 	              u16* pTrackA, u16* pTrackB, u16* pTrackC, u16* pTrackD, u16* pTrackE,
 	              i32 a12, i32 a13);
 	EXPORT virtual ~CDummy(void) OVERRIDE;
-	// @BIGTODO: 0x491A10, 0x123E bytes, not attempted this session (only reached through the
-	// vtable -- no direct caller in the binary -- so it does not block CDummy_ctor or any of the
-	// menu functions that construct a CDummy).
+	// 0x491A10, 0x123E bytes. Reached only through the vtable (off_53BFAC slot 2), never by a
+	// direct call, so the item list the costume viewer and the main menu previews run is the
+	// only way in.
 	EXPORT virtual void AI(void) OVERRIDE;
 
 	// 0x495970, the CDummy copy of CScorpion::TailRenderer (Mac symbol
@@ -201,6 +219,23 @@ public:
 	EXPORT void FadeAway(void);
 	EXPORT void SelectNewTrack(i32);
 	EXPORT void SelectNewAnim(void);
+
+	// The Scorpion preview costume (mType 310). Mac symbols
+	// .InitialiseTailPSX__6CDummyFv / .InitialiseTailSweepPSX__6CDummyFv /
+	// .BuildTail__6CDummyFv / .ScorpionUniformCurveTesselator__6CDummyFP7CVectorUiP7CVector.
+	EXPORT void InitialiseTailPSX(void);
+	EXPORT void InitialiseTailSweepPSX(void);
+	EXPORT void BuildTail(void);
+	EXPORT void ScorpionUniformCurveTesselator(CVector* pControl, u32 numPoints,
+			CVector* pOut);
+
+	// Doc Ock (mType 308) and monster-Ock (mType 309). Mac symbols
+	// .DocOckBuildArms__6CDummyFv / .SuperOckBuildArms__6CDummyFv and the two
+	// UniformCurveTesselator overloads, which the PC linker folded onto one body.
+	EXPORT void DocOckUniformCurveTesselator(CVector* pControl, u32 numPoints,
+			SSimpleRibbonParams* pOut);
+	EXPORT void DocOckBuildArms(void);
+	EXPORT void SuperOckBuildArms(void);
 
 	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).
 	u16* field_1A4;
@@ -220,12 +255,17 @@ public:
 	// default/idle animation id, used when no track list exists (SelectNewTrack, SelectNewAnim).
 	i32 field_1C0;
 
-	// constructor parameter a12. Boolean-ish; if nonzero, ~CDummy calls Redbook_XAStop().
+	// Constructor parameter a12. The costume's intro XA track, packed as (TrackA << 16) |
+	// TrackB: CDummy::AI hands the two halves straight to Redbook_XAPlay once the model has
+	// been on screen for 30 vblanks. Zero means the costume has no intro track, which is also
+	// why ~CDummy only calls Redbook_XAStop() when it is nonzero.
 	i32 field_1C4;
 	// Vblanks value at construction time (spawn timestamp).
 	i32 field_1C8;
 
-	PADDING(4); // not written by the constructor; unconfirmed.
+	// set to 1 by CDummy::AI once the intro track above has been started, so it only fires
+	// once. The button-triggered tracks also check it, so nothing plays before the intro.
+	i32 field_1CC;
 
 	// Rnd(300) + 300 (a randomised 300..599 value; likely a decay/idle timer, not read by any
 	// currently-decompiled CDummy method).
@@ -238,14 +278,20 @@ public:
 	// idiom as Front_Init's pYesNoMenu->field_1E poke. Purpose unconfirmed beyond that one
 	// caller; the other 3 bytes of this dword are still unconfirmed padding.
 	u8 field_1D8;
-	PADDING(3);
 
-	// constructor parameter a13, stored as-is. Not read by any currently-decompiled CDummy method.
+	// L1+L2+R1+R2 latch. CDummy::AI sets it while all four shoulder buttons are held and
+	// clears it when any of them comes up, so the outline fade toggles once per press.
+	u8 field_1D9;
+
+	PADDING(2);
+
+	// Constructor parameter a13, stored as-is. It is an SDummyXATrack table (see above);
+	// CDummy::AI casts it and reads rows 0, 1 and 2..6 out of it.
 	i32 field_1DC;
 
-	// polymorphic pointer, deleted in ~CDummy via its vtable slot 0; not set by the constructor
-	// (set elsewhere -- CDummy::AI or similar -- not decompiled this session).
-	void* field_1E0;
+	// The web strand the spidey preview (mType 50) hangs from during anims 290/291. Created
+	// and re-aimed every frame by CDummy::AI, deleted as soon as the anim ends.
+	CKnottedWeb* field_1E0;
 
 	// "symbi_02" region CVertexWobble effects spawned for the fire/symbiote costume (mType 324);
 	// null for every other costume. Deleted polymorphically in ~CDummy.
@@ -255,41 +301,55 @@ public:
 	// sound/spool handle, -1 by default; set to Spool_PSX("fire", 0) for the fire/symbiote costume.
 	i32 field_1EC;
 
-	// polymorphic pointers, deleted in ~CDummy; not set by the constructor (set elsewhere, not
-	// decompiled this session).
-	void* field_1F0;
-	void* field_1F4;
+	// The symbiote costume's (mType 324) death effect and the slime puddle under it, both run
+	// by CDummy::AI: the puddle exists whenever the death effect does not, and the death
+	// effect reports back through its own field_50 when it is finished.
+	CShellSimbyFireDeath* field_1F0;
+	CShellSimbySlimeBase* field_1F4;
 
 	// FadeAway()/FadeBack() flags, already established before this session.
 	i32 field_1F8;
 	i32 field_1FC;
 
-	// polymorphic pointers, deleted in ~CDummy; not set by the constructor.
-	void* field_200;
-	void* field_204;
+	// Venom (mType 313) and Carnage (mType 314) electrified effects, both run by CDummy::AI.
+	CShellVenomElectrified* field_200;
+	CShellCarnageElectrified* field_204;
 
-	PADDING(8); // not written by the constructor; unconfirmed.
+	// Carnage's electrified countdown. While it is nonzero the effect above exists and the
+	// counter runs down; at zero the effect is dropped and Rnd(200) decides when to restart it.
+	i32 field_208;
+
+	// Rhino's (mType 307) one-shot latch for the foot stomp on anim 19 frame 19.
+	i32 field_20C;
 
 	// Mysterio costume (mType 311) glow effect. Deleted polymorphically in ~CDummy.
 	CShellMysterioHeadGlow* field_210;
 
-	// 8 more polymorphic pointers (two parallel 4-element arrays; ~CDummy's mType 0x134/0x135
-	// case deletes field_214[i] and field_224[i] together, Shell_CharacterViewer's own switch
-	// reads field_214[0..3] directly for the same two mTypes). Not set by the constructor.
-	void* field_214[4];
-	void* field_224[4];
+	// The four claws and the four tentacle ribbons of the Doc Ock (mType 308) and monster-Ock
+	// (mType 309) costumes, built by DocOckBuildArms / SuperOckBuildArms and deleted together
+	// by ~CDummy. The claws are chained through mNextItem, so Shell_CharacterViewer renders
+	// the whole set from field_214[0]. Not set by the constructor.
+	CBody* field_214[4];
+	CSimpleTexturedRibbon* field_224[4];
 
-	// constant 455, written for the Scorpion-claw (mType 308) and SuperOck (mType 309) costumes.
+	// constant 455, written for the Scorpion-claw (mType 308) and SuperOck (mType 309)
+	// costumes. It is the bezier parameter step DocOckUniformCurveTesselator adds per
+	// output point, in 12.12 (455 * 9 == 4095, one short of a whole curve, so the last
+	// interior point stops just before the end control point).
 	i32 field_234;
 
-	// polymorphic pointer, deleted in ~CDummy; not set by the constructor.
-	void* field_238;
-
-	PADDING(4); // not written by the constructor; unconfirmed.
+	// monster-Ock's (mType 309) electrified effect, and its countdown. Same shape as Carnage's
+	// field_204/field_208 pair above.
+	CShellSuperDocOckElectrified* field_238;
+	i32 field_23C;
 
 	CItem field_240;
 
-	PADDING(0x284 - 0x240 - sizeof(CItem));
+	// InitialiseTailPSX sets this to 1 immediately before it points the region's ppModels
+	// at mpTailGeometry below. Nothing in the repo reads it. It sits right in front of the
+	// model pointer, so it looks like a one entry model list count.
+	i32 field_280;
+
 
 	// Tail geometry buffer for the Scorpion preview model (mType 310), rebuilt every frame by
 	// TailRenderer. Exactly the same buffer layout CScorpion::mpTailGeometry uses (scorpion.h).
@@ -297,17 +357,36 @@ public:
 
 	CItem field_288;
 
-	PADDING(0x2d0 - 0x288 - sizeof(CItem));
+	// Set by CDummy::AI for the Scorpion preview (mType 310): 1 while the current anim is one
+	// of the seven that swing the tail, 0 otherwise. Nothing in the repo reads it yet; the
+	// tail sweep renderer is the obvious consumer.
+	u8 field_2C8;
 
-	// Second dynamically built geometry buffer, the one that belongs to field_288, in the same
-	// role mpTailGeometry has for field_240. Only ~CDummy touches it (Mem_Delete for the
-	// Scorpion, mType 310), so nothing confirms its layout; kept untyped.
+	PADDING(3);
+
+	// the same "1" InitialiseTailPSX writes at field_280, written by
+	// InitialiseTailSweepPSX in front of field_2D0.
+	i32 field_2CC;
+
+
+	// Second dynamically built geometry buffer, the one that belongs to field_288.
+	// InitialiseTailSweepPSX builds it: an SModel header, 92 vertices, no normals and 132
+	// untextured quads (the tail sweep trail). Kept untyped because the vertex data is
+	// variable length, the same way spool.h leaves SModel's own arrays untyped.
 	void* field_2D0;
 
 
+	// the four control points BuildTail reads out of the model's bones, two curves' worth
 	CVector field_2D4[4];
+
+	// the 23 tail node positions, tesselated out of field_2D4 by BuildTail and turned into
+	// tail geometry by TailRenderer
 	CVector field_304[23];
-	CVector field_418[128];
+
+	// Four generations of the tail node positions, oldest last, rolled along one frame at a
+	// time by BuildTail. The banks are 32 CVectors apart and BuildTail copies 24 of each,
+	// which is what fixes the shape as [4][32] rather than a flat [128].
+	CVector field_418[4][32];
 };
 
 // Reverse engineered 2026-08-31 (CheckForPadUnplugged chain, functional decompile session).
@@ -494,9 +573,93 @@ class CShellSimbyFireDeath : public CNonRenderedBit
 		SHandle field_3C;
 		CVector *field_44;
 
-		// tail unknown, ctor at 0x4908E0 never touches it. total size
-		// (0x54) confirmed by VALIDATE_SIZE below.
-		PADDING(0xC);
+		PADDING(8);
+
+		// "finished" flag. The constructor at 0x4908E0 never touches it (so its Move, which is
+		// not decompiled yet, must set it); CDummy::AI polls it every frame and deletes the
+		// effect as soon as it goes nonzero. Was the tail of a blanket PADDING(0xC).
+		i32 field_50;
+};
+
+// Reverse engineered from the constructor at 0x48ED80 (names.json calls it
+// CTailRing_CTailRing). One ring of the Scorpion stinger explosion CScorpExplosion builds: a
+// plain CBody on the "scimpact" region whose own AI (vtable off_53BF10, not decompiled here)
+// grows it. Every field below is written by that constructor; the two gaps are not.
+class CTailRing : public CBody
+{
+	public:
+		EXPORT CTailRing(CVector* pPos, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7,
+				u8 a8, u8 a9, i32 a10, i32 a11);
+
+		PADDING(4);
+
+		i32 field_F8;
+
+		PADDING(4);
+
+		i32 field_100;
+		i32 field_104;
+		i32 field_108;
+		i32 field_10C;
+		i32 field_110;
+
+		PADDING(4);
+
+		i32 field_118;
+		i32 field_11C;
+
+		// (a6 << 12) / 450, the only value the constructor computes rather than copies
+		i32 field_120;
+};
+
+// Reverse engineered from the constructor at 0x48F040 (names.json calls it
+// CScorpExplosion_CScorpExplosion_0). The burst CDummy::AI fires for the Scorpion preview
+// (mType 310) on anim 29 frame 4: two CTailRings, a CGrenadeWave and ten CPingLines thrown out
+// in random directions. It keeps handles to the two rings and nothing else.
+class CScorpExplosion : public CNonRenderedBit
+{
+	public:
+		EXPORT CScorpExplosion(CVector* pPos);
+
+		SHandle field_3C;
+		SHandle field_44;
+};
+
+// Reverse engineered from the constructor at 0x48F8A0 and SetQuadCoords at 0x48FD50 (both
+// named that way in names.json). The slime puddle under the symbiote costume preview (mType
+// 324). It is one CQuadBit itself plus three more it owns, so the puddle is a 2x2 grid of
+// quads sharing a centre point; the four outer corners live in field_C0 and SetQuadCoords
+// spreads them and their midpoints over the four quads.
+class CShellSimbySlimeBase : public CQuadBit
+{
+	public:
+		EXPORT CShellSimbySlimeBase(CVector* pPos, CSVector* pAngles, i32 a4);
+		EXPORT void SetQuadCoords(void);
+
+		// the puddle centre and the angles it was built at, both copies of the constructor
+		// arguments
+		CVector field_84;
+		CSVector field_90;
+
+		PADDING(6);
+
+		// constructor argument a4 (CDummy::AI passes 256). Not read by the constructor or by
+		// SetQuadCoords, so it must be for the Move that is not decompiled yet.
+		i32 field_9C;
+
+		PADDING(0xB4 - 0x9C - 4);
+
+		// the other three quads of the puddle
+		CQuadBit* field_B4;
+		CQuadBit* field_B8;
+		CQuadBit* field_BC;
+
+		// the four outer corners, in the order (-u-v, +u-v, -u+v, +u+v) around the centre
+		CVector field_C0[4];
+
+		// per-corner wobble phase (Rnd(4096)) and speed (Rnd(120) + 30)
+		i32 field_F0[4];
+		i32 field_100[4];
 };
 
 class CShellGoldFish : public CBody
@@ -818,6 +981,9 @@ void validate_CShellRhinoNasalSteam(void);
 void validate_CShellEmber(void);
 void validate_CShellSimbyMeltSplat(void);
 void validate_CShellSimbyFireDeath(void);
+void validate_CTailRing(void);
+void validate_CScorpExplosion(void);
+void validate_CShellSimbySlimeBase(void);
 void validate_CShellGoldFish(void);
 void validate_CShellMysterioHeadCircle(void);
 void validate_SCharacterEntry(void);

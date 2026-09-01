@@ -35,6 +35,9 @@
 #include "DXinit.h"
 #include "scorpion.h"
 #include "bullet.h"
+#include "bit.h"
+#include "bit2.h"
+#include "exp.h"
 
 #include <cstring>
 
@@ -9128,43 +9131,1519 @@ CDummy::~CDummy(void)
 	// field_240 / field_288 (CItem) and the base class are destructed automatically.
 }
 
-// @BIGTODO
-// 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
-// vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
-// leaf-first on five CDummy helpers that are still unnamed in names.json and absent from this
-// repo. The Mac build names them (idbs/spiderman_names.txt lists the whole CDummy method set),
-// and the call sites below pin four of the five down by the mType they run for:
+// The face records the two hand built tail models are made of. The layout is confirmed by
+// DCModel_CreateFromSModel (dcmodel.cpp), which parses exactly these fields back out of an
+// SModel: a dword whose low word is the poly type and whose high word is the record size,
+// four byte vertex indices, four colour bytes, then per-type data.
+struct STailFace
+{
+	// 0x887: textured (bits 0x3 set), quad (bit 0x10 clear), colours already converted
+	// (bit 0x800)
+	u16 mFlags;
+	u16 mSize;
+
+	// low byte the first index, high byte the second
+	u16 mVertices01;
+	u16 mVertices23;
+
+	u16 mColour01;
+	u16 mColour23;
+
+	// never written here, and never read back for this poly type
+	PADDING(4);
+
+	Texture* mpTexture;
+
+	// low byte u, high byte v, one per corner
+	u16 mUV[4];
+};
+
+struct STailSweepFace
+{
+	// 0x8C0: untextured (bits 0x3 clear), quad, colours already converted
+	u16 mFlags;
+	u16 mSize;
+
+	u16 mVertices01;
+	u16 mVertices23;
+
+	u16 mColour01;
+	u16 mColour23;
+
+	PADDING(4);
+};
+
+// @Ok
+// 0x4953C0, 768 bytes. Mac symbol .InitialiseTailPSX__6CDummyFv (0xE72B0). The PC body is
+// the same code as CScorpion::InitialiseTailPSX (0x489050, still a stub in scorpion.cpp)
+// with CDummy's own offsets: field_240 is the tail item where CScorpion has field_3F8,
+// exactly 0x1B8 lower, and the light differs (gLightScorpion here, M3d_ScorpionLight
+// there). Everything else matches instruction for instruction.
 //
-//   0x494280  2016 b  CDummy::SuperOckBuildArms      called for mType 309 (monster-Ock)
-//   0x494A60   384 b  (unnamed, sits between the two BuildArms bodies)
-//   0x494BE0  2016 b  CDummy::DocOckBuildArms        called for mType 308 (Doc Ock)
-//   0x4953C0   768 b  CDummy::InitialiseTailPSX      mType 310, when field_240.mRegion == 0xFF
-//   0x4956C0   688 b  CDummy::InitialiseTailSweepPSX mType 310, when field_288.mRegion == 0xFF
-//   0x4960C0   528 b  CDummy::BuildTail              called for mType 310 (Scorpion)
+// Takes the first free PSX region, names it "S" and fills it with a one part model built by
+// hand: an SModel header, 92 vertices and 92 normals (rewritten every frame by
+// TailRenderer), a flat grey 256 entry colour table, and 88 textured quads, four per ring
+// for the 22 gaps between the 23 tail nodes. The quads are mapped onto a 4x4 grid of the
+// "new_scorp_tail" texture, the column from the corner index and the row from the ring
+// index mod 4.
+void CDummy::InitialiseTailPSX(void)
+{
+	i32 region = 0;
+	while (region < MAXPSX && PSXRegion[region].Filename[0] != 0)
+		region++;
+
+	// if every region is taken the original falls straight through here, leaving mRegion
+	// at the 0xFF the constructor put there
+	if (region < MAXPSX)
+	{
+		this->field_240.mRegion = static_cast<u8>(region);
+
+		SPSXRegion* pRegion = &PSXRegion[region];
+		pRegion->Filename[0] = 'S';
+		pRegion->Filename[1] = 0;
+		pRegion->IsSuper = 0;
+		pRegion->Usable = 1;
+		pRegion->Protected = 1;
+		pRegion->pPSX = 0;
+		pRegion->pAnimFile = 0;
+		pRegion->pHierarchy = 0;
+		pRegion->pTexWibData = 0;
+		pRegion->pColourPulseData = 0;
+		pRegion->NumParts = 1;
+		pRegion->Pad = 0;
+		pRegion->pHooks = 0;
+	}
+
+	print_if_false(this->field_240.mRegion != 0xFF, "No free region");
+
+	this->field_240.mFlags = 0x480;
+	this->field_240.mAngles.vz = 0;
+	this->field_240.mAngles.vy = 0;
+	this->field_240.mAngles.vx = 0;
+	this->field_240.mModel = 0;
+	this->field_240.mNextItem = 0;
+	this->field_240.mpLight = gLightScorpion;
+
+	u32* pClut = static_cast<u32*>(DCMem_New(1024, 0, 1, 0, true));
+	PSXRegion[this->field_240.mRegion].pColourTable = pClut;
+	for (i32 c = 0; c < 256; c++)
+		pClut[c] = 0x808080;
+
+	// 28 byte SModel header + 92 vertices + 92 normals of 8 bytes each (1500 bytes, which
+	// is exactly STailGeometry) + 88 face records of 28 bytes = 3964. The original asks for
+	// eight bytes more than it uses; kept as the literal it passes.
+	STailGeometry* pGeom = static_cast<STailGeometry*>(DCMem_New(3972, 0, 1, 0, true));
+	this->field_280 = 1;
+	this->mpTailGeometry = pGeom;
+	PSXRegion[this->field_240.mRegion].ppModels =
+			reinterpret_cast<SModel**>(&this->mpTailGeometry);
+
+	// the first 28 bytes of STailGeometry are an SModel header
+	SModel* pModel = reinterpret_cast<SModel*>(pGeom);
+	pModel->Flags = 8;
+	pModel->NumVertices = 92;
+	pModel->NumNormals = 92;
+	pModel->NumFaces = 88;
+	pModel->Radius = 0x200000;
+	pModel->zMax = 0x7FFF;
+	pModel->NextLOD = 0xFFFF;
+
+	Texture* pTexture = Spool_FindTextureEntry("new_scorp_tail");
+	print_if_false(pTexture != 0, "No texture");
+
+	i32 uOrigin = pTexture->u0;
+	// the original works the u step out unsigned (shr) and the v step signed (sar)
+	i32 uStep = static_cast<i32>(static_cast<u32>(pTexture->u3 - pTexture->u0) >> 2);
+	i32 vStep = (pTexture->v3 - pTexture->v0) / 4;
+
+	STailFace* pFace = reinterpret_cast<STailFace*>(
+			reinterpret_cast<u8*>(pGeom) + 1500);
+
+	for (i32 ring = 0; ring < 22; ring++)
+	{
+		i32 row = ring & 3;
+		i32 vLo = row * vStep;
+		i32 vHi = (row + 1) * vStep;
+
+		for (i32 corner = 0; corner < 4; corner++)
+		{
+			pFace->mFlags = 0x887;
+			pFace->mSize = 28;
+
+			// this corner of the ring and the same corner one ring along, then the next
+			// corner of both rings, wrapping back to corner 0 on the last quad
+			i32 thisCorner = corner + 4 * ring;
+			i32 nextCorner = (corner == 3) ? (4 * ring) : (thisCorner + 1);
+
+			pFace->mVertices01 = static_cast<u16>(thisCorner | ((thisCorner + 4) << 8));
+			pFace->mVertices23 = static_cast<u16>(nextCorner | ((nextCorner + 4) << 8));
+			pFace->mColour01 = 0;
+			pFace->mColour23 = 0;
+			pFace->mpTexture = pTexture;
+
+			i32 uLo = uOrigin + corner * uStep;
+			i32 uHi = uOrigin + (corner + 1) * uStep;
+
+			pFace->mUV[0] = static_cast<u16>(uLo | ((pTexture->v0 + vLo) << 8));
+			pFace->mUV[1] = static_cast<u16>(uLo | ((pTexture->v0 + vHi) << 8));
+			pFace->mUV[2] = static_cast<u16>(uHi | ((pTexture->v0 + vLo) << 8));
+			pFace->mUV[3] = static_cast<u16>(uHi | ((pTexture->v0 + vHi) << 8));
+
+			pFace++;
+		}
+	}
+}
+
+// @Ok
+// 0x4956C0, 688 bytes. Mac symbol .InitialiseTailSweepPSX__6CDummyFv (0xE76E0), again the
+// same code as the CScorpion version with CDummy's offsets. Builds the second hand made PSX
+// region, named "SW", for the trail the tail sweeps behind it: a 4 by 23 grid of vertices
+// (the four generations of tail nodes BuildTail keeps in field_418), no normals, and 132
+// untextured quads. Each of the three strips gets its 22 quads twice, wound both ways, so
+// the sweep is visible from either side. The colour table is a green ramp and the corner
+// colours fade the strips out from 0x60 down to 0x00 along the sweep.
+void CDummy::InitialiseTailSweepPSX(void)
+{
+	i32 region = 0;
+	while (region < MAXPSX && PSXRegion[region].Filename[0] != 0)
+		region++;
+
+	if (region < MAXPSX)
+	{
+		this->field_288.mRegion = static_cast<u8>(region);
+
+		SPSXRegion* pRegion = &PSXRegion[region];
+		pRegion->Filename[0] = 'S';
+		pRegion->Filename[1] = 'W';
+		pRegion->Filename[2] = 0;
+		pRegion->IsSuper = 0;
+		pRegion->Usable = 1;
+		pRegion->Protected = 1;
+		pRegion->pPSX = 0;
+		pRegion->pAnimFile = 0;
+		pRegion->pHierarchy = 0;
+		pRegion->pTexWibData = 0;
+		pRegion->pColourPulseData = 0;
+		pRegion->NumParts = 1;
+		pRegion->Pad = 0;
+		pRegion->pHooks = 0;
+	}
+
+	print_if_false(this->field_288.mRegion != 0xFF, "No free region");
+
+	this->field_288.mFlags = 0;
+	this->field_288.mAngles.vz = 0;
+	this->field_288.mAngles.vy = 0;
+	this->field_288.mAngles.vx = 0;
+	this->field_288.mModel = 0;
+	this->field_288.mNextItem = 0;
+	this->field_288.mpLight = 0;
+
+	u32* pClut = static_cast<u32*>(DCMem_New(1024, 0, 1, 0, true));
+	PSXRegion[this->field_288.mRegion].pColourTable = pClut;
+
+	// (r, g, b) = (c / 2, c, c / 2): a green ramp. The blue term is written as
+	// (c & 0xFFFFFFFE) << 15, which is the same as (c >> 1) << 16 for every c.
+	for (u32 c = 0; c < 256; c++)
+		pClut[c] = (c >> 1) | (c << 8) | ((c & 0xFFFFFFFE) << 15);
+
+	// 28 byte header + 92 vertices of 8 bytes + 132 face records of 16 = 2876, and again
+	// the original asks for eight bytes more than it uses.
+	void* pSweep = DCMem_New(2884, 0, 1, 0, true);
+	this->field_2CC = 1;
+	this->field_2D0 = pSweep;
+	PSXRegion[this->field_288.mRegion].ppModels =
+			reinterpret_cast<SModel**>(&this->field_2D0);
+
+	SModel* pModel = static_cast<SModel*>(pSweep);
+	pModel->Flags = 8;
+	pModel->NumVertices = 92;
+	pModel->NumNormals = 0;
+	pModel->NumFaces = 132;
+	pModel->Radius = 0x200000;
+	pModel->zMax = 0x7FFF;
+	pModel->NextLOD = 0xFFFF;
+
+	// 28 byte header plus 92 vertices, and no normals this time
+	STailSweepFace* pFace = reinterpret_cast<STailSweepFace*>(
+			static_cast<u8*>(pSweep) + 764);
+
+	for (i32 strip = 0; strip < 3; strip++)
+	{
+		i32 base = 23 * strip;
+
+		u16 colour01;
+		u16 colour23;
+		if (strip == 0)
+		{
+			colour01 = 0x6060;
+			colour23 = 0x4040;
+		}
+		else if (strip == 1)
+		{
+			colour01 = 0x4040;
+			colour23 = 0x2020;
+		}
+		else
+		{
+			colour01 = 0x2020;
+			colour23 = 0;
+		}
+
+		for (i32 quad = 0; quad < 22; quad++)
+		{
+			pFace->mFlags = 0x8C0;
+			pFace->mSize = 16;
+			pFace->mVertices01 =
+					static_cast<u16>((base + quad) | ((base + quad + 1) << 8));
+			pFace->mVertices23 =
+					static_cast<u16>((base + quad + 23) | ((base + quad + 24) << 8));
+			pFace->mColour01 = colour01;
+			pFace->mColour23 = colour23;
+			pFace++;
+		}
+
+		// the same 22 quads again with the two index pairs swapped, so they face the
+		// other way
+		for (i32 back = 0; back < 22; back++)
+		{
+			pFace->mFlags = 0x8C0;
+			pFace->mSize = 16;
+			pFace->mVertices01 =
+					static_cast<u16>((base + back + 1) | ((base + back) << 8));
+			pFace->mVertices23 =
+					static_cast<u16>((base + back + 24) | ((base + back + 23) << 8));
+			pFace->mColour01 = colour01;
+			pFace->mColour23 = colour23;
+			pFace++;
+		}
+	}
+}
+
+// @Ok
+// 0x489660. The PC linker folded two identical bodies onto this one address:
+// CDummy::ScorpionUniformCurveTesselator (Mac 0xE7B50) and CScorpion::UniformCurveTesselator
+// (Mac 0xD8890, which is the name tools/names.json carries for it). Neither of them reads
+// its own object, which is why the two bodies came out the same. Kept here as the CDummy
+// method because CDummy::BuildTail is its only decompiled caller; CScorpion::BuildTail, when
+// somebody writes it, gets the identical body under the CScorpion name.
 //
-// The two Initialise* helpers are the exact counterparts of the teardown block in ~CDummy
-// above (same two regions, same fields), which is what confirms their identity. The Mac build
-// also has DeleteTailPSX and DeleteTailSweepPSX; on PC those two are inlined into ~CDummy.
-// The Mac UniformCurveTesselator helpers have no separate PC bodies either, they are inlined
-// into their BuildArms/BuildTail callers (which is why the PC bodies are bigger than the Mac
-// ones). One more callee, sub_43A300 (256 b, effects.cpp range, takes a CVector), is also
-// still a stub.
+// Walks a cubic bezier through the four control points and writes numPoints evenly spaced
+// positions into pOut. The two ends come straight from the outer control points; every point
+// in between is a GTE weighted sum of all four with the Bernstein weights held in 12.12.
+// The control points come in shifted down 12, so the shift back up is what puts the output
+// in world units.
+void CDummy::ScorpionUniformCurveTesselator(CVector* pControl, u32 numPoints, CVector* pOut)
+{
+	u32 step = 4096 / (numPoints - 1);
+
+	pOut[0] = pControl[0] << 12;
+	pOut[numPoints - 1] = pControl[3] << 12;
+
+	u32 remaining = numPoints - 1;
+	if (remaining > 1)
+	{
+		CVector* pPoint = &pOut[1];
+		i32 t = static_cast<i32>(step);
+		i32 s = 4096 - static_cast<i32>(step);
+
+		for (u32 left = remaining - 1; left != 0; left--)
+		{
+			i32 x = 0;
+			i32 y = 0;
+			i32 z = 0;
+
+			i32 weight = (s * ((s * s) >> 12)) >> 12;
+
+			for (u32 c = 0; c < 4; c++)
+			{
+				gte_ldlvl(reinterpret_cast<VECTOR*>(&pControl[c]));
+				gte_lddp(weight);
+				gte_gpf0();
+
+				// the weight for the NEXT control point, worked out while the GTE runs
+				if (c == 0)
+					weight = (3 * t * ((s * s) >> 12)) >> 12;
+				else if (c == 1)
+					weight = (t * ((3 * t * s) >> 12)) >> 12;
+				else if (c == 2)
+					weight = (t * ((t * t) >> 12)) >> 12;
+
+				CVector scaled;
+				gte_stlvnl(reinterpret_cast<VECTOR*>(&scaled));
+				x += scaled.vx;
+				y += scaled.vy;
+				z += scaled.vz;
+			}
+
+			pPoint->vx = x;
+			pPoint->vy = y;
+			pPoint->vz = z;
+			pPoint++;
+
+			t += static_cast<i32>(step);
+			s -= static_cast<i32>(step);
+		}
+	}
+}
+
+// @Ok
+// 0x494A60, 384 bytes. The same fold again: CDummy::DocOckUniformCurveTesselator (Mac
+// 0xE6970) and CDummy::SuperOckUniformCurveTesselator (Mac 0xE6030) have identical bodies,
+// so the PC build has one copy, called eight times each from DocOckBuildArms (0x494BE0) and
+// SuperOckBuildArms (0x494280). Same cubic bezier as ScorpionUniformCurveTesselator above,
+// but it does the weighting in plain integer maths instead of the GTE, writes into a ribbon
+// spine (28 byte SSimpleRibbonParams, position first) instead of bare CVectors, and takes
+// its parameter step from field_234 rather than working it out from numPoints.
+void CDummy::DocOckUniformCurveTesselator(CVector* pControl, u32 numPoints,
+		SSimpleRibbonParams* pOut)
+{
+	pOut[0].mPos = pControl[0] << 12;
+	pOut[numPoints - 1].mPos = pControl[3] << 12;
+
+	u32 remaining = numPoints - 1;
+	if (remaining > 1)
+	{
+		SSimpleRibbonParams* pPoint = &pOut[1];
+		i32 t = 0;
+
+		for (u32 left = remaining - 1; left != 0; left--)
+		{
+			i32 x = 0;
+			i32 y = 0;
+			i32 z = 0;
+
+			t += this->field_234;
+
+			i32 s = 4096 - t;
+			i32 s2 = (s * s) >> 12;
+			i32 weight = ((4096 - t) * s2) >> 12;
+
+			for (u32 c = 0; c < 4; c++)
+			{
+				CVector* pPos = &pControl[c];
+				x += pPos->vx * weight;
+				z += pPos->vz * weight;
+				y += pPos->vy * weight;
+
+				if (c == 0)
+					weight = (3 * t * s2) >> 12;
+				else if (c == 1)
+					weight = (t * ((3 * t * s) >> 12)) >> 12;
+				else if (c == 2)
+					weight = (t * ((t * t) >> 12)) >> 12;
+			}
+
+			pPoint->mPos.vx = x;
+			pPoint->mPos.vy = y;
+			pPoint->mPos.vz = z;
+			pPoint++;
+		}
+	}
+}
+
+// @Ok
+// 0x4960C0, 528 bytes. Mac symbol .BuildTail__6CDummyFv (0xE8420). Rebuilds the Scorpion
+// preview's 23 tail nodes every frame out of the model's own bones: hooks 17 to 20 give the
+// four control points of the first half of the tail, hooks 20 to 23 the second half (the
+// two halves share hook 20, so the tail is one smooth curve), and each half is tesselated
+// into 12 nodes that overlap at node 11. Then the sweep history rolls along by a frame.
+void CDummy::BuildTail(void)
+{
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	hook.Offset = 17;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[0]), this, &hook);
+	this->field_2D4[0] >>= 12;
+
+	hook.Offset = 18;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[1]), this, &hook);
+	this->field_2D4[1] >>= 12;
+
+	hook.Offset = 19;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[2]), this, &hook);
+	this->field_2D4[2] >>= 12;
+
+	hook.Offset = 20;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[3]), this, &hook);
+	this->field_2D4[3] >>= 12;
+
+	this->ScorpionUniformCurveTesselator(this->field_2D4, 12, &this->field_304[0]);
+
+	// the second half starts where the first one ended
+	hook.Offset = 21;
+	this->field_2D4[0] = this->field_2D4[3];
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[1]), this, &hook);
+	this->field_2D4[1] >>= 12;
+
+	hook.Offset = 22;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[2]), this, &hook);
+	this->field_2D4[2] >>= 12;
+
+	hook.Offset = 23;
+	M3dUtils_GetDynamicHookPosition(
+			reinterpret_cast<VECTOR*>(&this->field_2D4[3]), this, &hook);
+	this->field_2D4[3] >>= 12;
+
+	this->ScorpionUniformCurveTesselator(this->field_2D4, 12, &this->field_304[11]);
+
+	// Roll the four sweep generations along, oldest one dropped. The original shifts 24
+	// slots although there are only 23 tail nodes: the last pass reads one CVector past
+	// field_304, which is field_418[0][0], and by then that slot already holds
+	// field_304[0]. Reproduced as written. The extra column is never drawn, the sweep mesh
+	// only uses 23 of each generation.
+	CVector* pNodes = this->field_304;
+	for (i32 i = 0; i < 24; i++)
+	{
+		this->field_418[3][i] = this->field_418[2][i];
+		this->field_418[2][i] = this->field_418[1][i];
+		this->field_418[1][i] = this->field_418[0][i];
+		this->field_418[0][i] = pNodes[i];
+	}
+}
+
+
+// The hook (bone) offsets each of monster-Ock's four arms is built from: the four control
+// points of the first half of the arm, then the three more that finish the second half.
+// The two halves share the fourth hook, so each arm is one smooth curve. Read straight out
+// of the unrolled original at 0x494280. The arms are not in bone order: arm 1 uses the
+// higher block and arm 2 the lower one.
+static const i16 gSuperOckArmHooks[4][7] = {
+	{ 17, 18, 19, 20, 21, 22, 23 },
+	{ 31, 32, 33, 34, 35, 36, 37 },
+	{ 24, 25, 26, 27, 28, 29, 30 },
+	{ 38, 39, 40, 41, 42, 43, 44 }
+};
+
+// Doc Ock's own list (0x494BE0). It is the SuperOck list with one added to every entry,
+// nothing else differs between the two functions.
+static const i16 gDocOckArmHooks[4][7] = {
+	{ 18, 19, 20, 21, 22, 23, 24 },
+	{ 32, 33, 34, 35, 36, 37, 38 },
+	{ 25, 26, 27, 28, 29, 30, 31 },
+	{ 39, 40, 41, 42, 43, 44, 45 }
+};
+
+// The texture both arm builders put on the ribbons, by checksum.
+static const u32 gOckArmTextureChecksum = 0x9809FFF5;
+
+// @Ok
+// 0x494280, 2016 bytes. Mac symbol .SuperOckBuildArms__6CDummyFv (0xE6230). Builds the four
+// tentacles of the monster-Ock preview costume (mType 309). Each arm is a
+// CSimpleTexturedRibbon of 18 faces (19 spine points, all 10 units wide) whose spine is a
+// pair of cubic beziers through seven of the model's bones, and a "claw" CBody sitting on
+// the last spine point, aimed along the last segment. The four claws are chained through
+// mNextItem so CDummy's renderer can draw them from field_214[0] in one M3d_Render call,
+// the same way CDocOc::RenderClaws draws its own field_570[0].
 //
-// Shape of the function itself, for whoever picks it up:
-//  - a flat per-frame prologue (0x491A10..0x491E4C): restart the character's XA music track
-//    after 30 vblanks (field_1C4/field_1C8/field_1CC), run down the field_1D0 idle timer and
-//    pick a new random XA track out of the shuffled table at 0x550DF8, advance the current
-//    animation track (field_1B8) and call SelectNewTrack/RunAnim at its 0xFFFF terminator,
-//    the FadeAway/FadeBack outline ramp (field_1F8/field_1FC driving OutlineOn/OutlineOff and
-//    SetOutlineRGB), the mType 310 tail-region setup, then M3d_BuildTransform.
-//  - a dispatch on mType at 0x491E4C: 50 spidey, 307 Rhino, 308 Doc Ock, 309 monster-Ock,
-//    310 Scorpion, 311 Mysterio, then a jump table at 0x492C74 for 312 Henchman, 313 Venom,
-//    314 Carnage and 324 symbiote. Everything else falls into the shared tail at 0x492C3B.
-//    The 308/309/310 arms are short: they just call the BuildArms/BuildTail helper above and
-//    return, so those three become one-liners once the helpers exist.
+// The original writes the whole thing out unrolled, four arms by two halves by three or
+// four hooks. It is written as a loop over gSuperOckArmHooks above, which is the same work
+// in the same order.
+void CDummy::SuperOckBuildArms(void)
+{
+	for (i32 ribbon = 0; ribbon < 4; ribbon++)
+	{
+		if (this->field_224[ribbon] == 0)
+		{
+			this->field_224[ribbon] = new CSimpleTexturedRibbon(18);
+			this->field_224[ribbon]->SetTexture(
+					Spool_FindTextureEntry(gOckArmTextureChecksum));
+			this->field_224[ribbon]->SetOpaque();
+			this->field_224[ribbon]->SetRGB(128, 128, 128);
+
+			for (i32 point = 0; point < 19; point++)
+				this->field_224[ribbon]->field_44[point].mWidth = 10;
+		}
+	}
+
+	CVector control[4];
+	for (i32 c = 0; c < 4; c++)
+	{
+		control[c].vx = 0;
+		control[c].vy = 0;
+		control[c].vz = 0;
+	}
+
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	for (i32 arm = 0; arm < 4; arm++)
+	{
+		const i16* pArmHooks = gSuperOckArmHooks[arm];
+		SSimpleRibbonParams* pSpine = this->field_224[arm]->field_44;
+
+		for (i32 h = 0; h < 4; h++)
+		{
+			hook.Offset = pArmHooks[h];
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&control[h]), this, &hook);
+			control[h] >>= 12;
+		}
+
+		this->DocOckUniformCurveTesselator(control, 10, pSpine);
+
+		// the second half starts where the first one ended
+		control[0] = control[3];
+
+		for (i32 h2 = 0; h2 < 3; h2++)
+		{
+			hook.Offset = pArmHooks[h2 + 4];
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&control[h2 + 1]), this, &hook);
+			control[h2 + 1] >>= 12;
+		}
+
+		this->DocOckUniformCurveTesselator(control, 10, &pSpine[9]);
+	}
+
+	// backwards, because each claw points at the next one and the last one ends the chain
+	for (i32 claw = 3; claw >= 0; claw--)
+	{
+		if (this->field_214[claw] == 0)
+		{
+			this->field_214[claw] = new CBody();
+			this->field_214[claw]->InitItem("claw");
+			this->field_214[claw]->mFlags &= ~2u;
+
+			if (claw == 3)
+				this->field_214[3]->mNextItem = 0;
+			else
+				this->field_214[claw]->mNextItem = this->field_214[claw + 1];
+		}
+
+		SSimpleRibbonParams* pClawSpine = this->field_224[claw]->field_44;
+		this->field_214[claw]->mPos = pClawSpine[18].mPos;
+		Utils_CalcAim(&this->field_214[claw]->mAngles,
+				&pClawSpine[17].mPos, &pClawSpine[18].mPos);
+	}
+}
+
+// @Ok
+// 0x494BE0, 2016 bytes. Mac symbol .DocOckBuildArms__6CDummyFv (0xE6B70). Instruction for
+// instruction the same as SuperOckBuildArms above, for the Doc Ock preview costume (mType
+// 308); the only difference in the whole function is that every hook offset is one higher.
+void CDummy::DocOckBuildArms(void)
+{
+	for (i32 ribbon = 0; ribbon < 4; ribbon++)
+	{
+		if (this->field_224[ribbon] == 0)
+		{
+			this->field_224[ribbon] = new CSimpleTexturedRibbon(18);
+			this->field_224[ribbon]->SetTexture(
+					Spool_FindTextureEntry(gOckArmTextureChecksum));
+			this->field_224[ribbon]->SetOpaque();
+			this->field_224[ribbon]->SetRGB(128, 128, 128);
+
+			for (i32 point = 0; point < 19; point++)
+				this->field_224[ribbon]->field_44[point].mWidth = 10;
+		}
+	}
+
+	CVector control[4];
+	for (i32 c = 0; c < 4; c++)
+	{
+		control[c].vx = 0;
+		control[c].vy = 0;
+		control[c].vz = 0;
+	}
+
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	for (i32 arm = 0; arm < 4; arm++)
+	{
+		const i16* pArmHooks = gDocOckArmHooks[arm];
+		SSimpleRibbonParams* pSpine = this->field_224[arm]->field_44;
+
+		for (i32 h = 0; h < 4; h++)
+		{
+			hook.Offset = pArmHooks[h];
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&control[h]), this, &hook);
+			control[h] >>= 12;
+		}
+
+		this->DocOckUniformCurveTesselator(control, 10, pSpine);
+
+		control[0] = control[3];
+
+		for (i32 h2 = 0; h2 < 3; h2++)
+		{
+			hook.Offset = pArmHooks[h2 + 4];
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&control[h2 + 1]), this, &hook);
+			control[h2 + 1] >>= 12;
+		}
+
+		this->DocOckUniformCurveTesselator(control, 10, &pSpine[9]);
+	}
+
+	for (i32 claw = 3; claw >= 0; claw--)
+	{
+		if (this->field_214[claw] == 0)
+		{
+			this->field_214[claw] = new CBody();
+			this->field_214[claw]->InitItem("claw");
+			this->field_214[claw]->mFlags &= ~2u;
+
+			if (claw == 3)
+				this->field_214[3]->mNextItem = 0;
+			else
+				this->field_214[claw]->mNextItem = this->field_214[claw + 1];
+		}
+
+		SSimpleRibbonParams* pClawSpine = this->field_224[claw]->field_44;
+		this->field_214[claw]->mPos = pClawSpine[18].mPos;
+		Utils_CalcAim(&this->field_214[claw]->mAngles,
+				&pClawSpine[17].mPos, &pClawSpine[18].mPos);
+	}
+}
+
+
+// 0x0056EFE4, the CBody list every effect and projectile object attaches itself to. Named
+// gEffectBodyList in carnage.cpp, which holds the same file-local pointer; the maintainer's IDB
+// calls the same address BulletList.
+static CBody ** const gEffectBodyList = reinterpret_cast<CBody**>(0x0056EFE4);
+
+// @Ok
+// 0x48ED80, 310 bytes. names.json calls it CTailRing_CTailRing. One ring of the Scorpion
+// stinger explosion. It is a plain CBody on the "scimpact" region, put on the shared effect
+// list, with the growth parameters CScorpExplosion picks stored straight into its own fields.
+// The odd one out is the last: the caller's duration is turned into a per-frame step by
+// scaling it into 12.12 over 450.
+CTailRing::CTailRing(CVector* pPos, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7,
+		u8 a8, u8 a9, i32 a10, i32 a11)
+{
+	this->AttachTo(gEffectBodyList);
+	this->InitItem("scimpact");
+
+	// The region's first face carries the poly flags (the face list starts after the 28 byte
+	// SModel header, the vertices and the normals, 8 bytes each). If it is not marked semi
+	// transparent yet, mask the flag in across the whole region.
+	SModel* pModel = PSXRegion[this->mRegion].ppModels[0];
+	u32* pWords = reinterpret_cast<u32*>(pModel);
+	if ((pWords[2 * (pModel->NumVertices + pModel->NumNormals) + 7] & 0x200) == 0)
+		Spool_MaskFaceFlags(this->mRegion, 0x200, 0xFFFFEFFF);
+
+	this->mPos = *pPos;
+
+	this->field_108 = a9;
+	this->field_10C = a10;
+	this->field_104 = a8;
+	this->field_F8 = a3;
+	this->field_100 = a7;
+	this->field_110 = a11;
+	this->field_11C = a5;
+	this->field_118 = a4;
+
+	this->mFlags |= 0x601;
+
+	this->field_120 = (a6 << 12) / 450;
+}
+
+// @Ok
+// 0x48F040. names.json calls it CScorpExplosion_CScorpExplosion_0. The burst CDummy::AI fires
+// for the Scorpion preview (mType 310) at the end of the sting anim: two CTailRings (kept as
+// handles so whatever runs the explosion can find them again), a CGrenadeWave shock ring, and
+// ten CPingLines thrown out around the impact point at random yaws.
+CScorpExplosion::CScorpExplosion(CVector* pPos)
+{
+	CVector pos = *pPos;
+
+	this->field_3C = Mem_MakeHandle(
+			new CTailRing(&pos, 0, 4096, 2048, 350, 6, 0, 8, 30, 105));
+	this->field_44 = Mem_MakeHandle(
+			new CTailRing(&pos, 0, 4096, 2048, 199, 7, 0, 8, 30, 105));
+
+	CGrenadeWave* pWave = new CGrenadeWave(&pos, 255, 200, 0, 250, 7);
+	pWave->mMask = 0xFFFFFFC0;
+	pWave->mAngle = 1024;
+
+	// the ping line direction. Its vy doubles as the scratch the random yaw is kept in, so it
+	// changes every time round the loop below; the original reuses the same stack slot for both.
+	CSVector dir;
+	dir.vy = 0;
+	dir.vx = -312;
+
+	CVector spot;
+	spot.vx = 0;
+	spot.vz = 0;
+	spot.vy = pos.vy;
+
+	for (i32 i = 10; i != 0; i--)
+	{
+		dir.vy = static_cast<i16>(Rnd(4096));
+
+		i32 sinYaw = rcossin_tbl[dir.vy & 0xFFF].sin;
+		i32 cosYaw = 5 * rcossin_tbl[dir.vy & 0xFFF].cos;
+
+		spot.vx = pPos->vx - 80 * sinYaw;
+		spot.vz = pPos->vz - 16 * cosYaw;
+
+		new CPingLine(&spot, &dir, 255, 128, 0, 50, 200, Rnd(50) + 30);
+	}
+}
+
+// @Ok
+// 0x48FD50. names.json calls it CShellSimbySlimeBase_SetQuadCoords. Spreads the four outer
+// corners in field_C0 over the four quads of the puddle. Each quad gets one outer corner, the
+// midpoints of the two edges that meet there, and the centre of the whole patch, so the four
+// of them tile the square without a seam.
+void CShellSimbySlimeBase::SetQuadCoords(void)
+{
+	this->mPos = this->field_C0[0];
+	this->field_B4->mPosB = this->field_C0[1];
+	this->field_B8->mPosC = this->field_C0[2];
+	this->field_BC->mPosD = this->field_C0[3];
+
+	CVector midAB = (this->field_C0[0] + this->field_C0[1]) >> 1;
+	CVector midBD = (this->field_C0[1] + this->field_C0[3]) >> 1;
+	CVector midCD = (this->field_C0[2] + this->field_C0[3]) >> 1;
+	CVector midAC = (this->field_C0[0] + this->field_C0[2]) >> 1;
+	CVector centre = (midBD + midAC) >> 1;
+
+	this->mPosD = centre;
+	this->field_B4->mPosC = centre;
+	this->field_B8->mPosB = centre;
+	this->field_BC->mPos = centre;
+
+	this->mPosB = midAB;
+	this->field_B4->mPos = midAB;
+
+	this->field_B4->mPosD = midBD;
+	this->field_BC->mPosB = midBD;
+
+	this->field_BC->mPosC = midCD;
+	this->field_B8->mPosD = midCD;
+
+	this->mPosC = midAC;
+	this->field_B8->mPos = midAC;
+}
+
+// @Ok
+// 0x48F8A0. names.json calls it CShellSimbySlimeBase_CShellSimbySlimeBase. Builds the slime
+// puddle under the symbiote costume preview (mType 324): four "Effects" quads (this one plus
+// three it owns), with the outer corners laid out 80 units either way along the two axes the
+// given yaw points down, then handed to SetQuadCoords.
+CShellSimbySlimeBase::CShellSimbySlimeBase(CVector* pPos, CSVector* pAngles, i32 a4)
+{
+	this->field_84.vx = 0;
+	this->field_84.vy = 0;
+	this->field_84.vz = 0;
+	this->field_90.vx = 0;
+	this->field_90.vy = 0;
+	this->field_90.vz = 0;
+
+	for (i32 c = 0; c < 4; c++)
+	{
+		this->field_C0[c].vx = 0;
+		this->field_C0[c].vy = 0;
+		this->field_C0[c].vz = 0;
+	}
+
+	SAnimFrame* pAnim = Spool_FindAnim("Effects", 1);
+
+	this->SetTexture(pAnim[8].pTexture);
+	this->SetOpaque();
+
+	this->field_B4 = new CQuadBit();
+	this->field_B4->mProtected = 1;
+	this->field_B4->SetTexture(pAnim[9].pTexture);
+	this->field_B4->SetOpaque();
+	this->field_B4->mType = 39;
+
+	this->field_B8 = new CQuadBit();
+	this->field_B8->mProtected = 1;
+	this->field_B8->SetTexture(pAnim[10].pTexture);
+	this->field_B8->SetOpaque();
+	this->field_B8->mType = 39;
+
+	this->field_BC = new CQuadBit();
+	this->field_BC->mProtected = 1;
+	this->field_BC->SetTexture(pAnim[11].pTexture);
+	this->field_BC->SetOpaque();
+	this->field_BC->mType = 39;
+
+	this->field_9C = a4;
+
+	// the two 80 unit axes of the patch, worked out from the yaw alone
+	i32 yaw = pAngles->vy;
+	i32 cosYaw = rcossin_tbl[yaw & 0xFFF].cos;
+	i32 sinNegYaw = rcossin_tbl[(-yaw) & 0xFFF].sin;
+
+	CVector axisU;
+	CVector axisV;
+	axisU.vx = 80 * sinNegYaw;
+	axisU.vy = 0;
+	axisU.vz = -80 * cosYaw;
+	axisV.vx = 80 * cosYaw;
+	axisV.vy = 0;
+	axisV.vz = axisU.vx;
+
+	this->field_C0[0] = (*pPos - axisU) - axisV;
+	this->field_C0[1] = (*pPos + axisU) - axisV;
+	this->field_C0[2] = (*pPos - axisU) + axisV;
+	this->field_C0[3] = (*pPos + axisU) + axisV;
+
+	this->SetQuadCoords();
+
+	this->field_84 = *pPos;
+	this->field_90 = *pAngles;
+
+	for (i32 p = 0; p < 4; p++)
+		this->field_F0[p] = Rnd(4096);
+
+	for (i32 q = 0; q < 4; q++)
+		this->field_100[q] = Rnd(120) + 30;
+
+	this->mType = 11;
+}
+
+// 0x682934, the cursor into gDummyTrackShuffle below. CDummy::AI steps it once per idle
+// timeout and reshuffles the table every time it wraps past 5. It sits four bytes before
+// gPshellArmorRealted (0x682940) and is not in the maintainer's IDB, so the name is my guess.
+static u8 * const gDummyTrackShuffleCursor = reinterpret_cast<u8*>(0x682934);
+
+// 0x682770, nonzero while an XA track is already playing. spidey.cpp holds the same address
+// under the name gRedbookXaPlayingMaybe; the maintainer's IDB names the byte right after it
+// (0x682771) Redbook_XAPaused, so this is part of the redbook state block.
+static u8 * const gRedbookXaPlaying = reinterpret_cast<u8*>(0x682770);
+
+// The two CDummy animation tracks CDummy::AI recognises by address for Venom (mType 313), and
+// the one it recognises for the symbiote costume (mType 324). All three are 0xFFFF terminated
+// u16 lists in the original .rdata; the AI only compares field_1BC against them, it never
+// reads them here.
+//  - 0x553714 { 0x1f 0x20 0x20 0x20 0x21 0x28 0x29 0xffff }: the wrap track, the one Venom is
+//    electrified during.
+//  - 0x553724 { 0x01 0x0d 0x0c 0x0a 0x04 0x05 0x07 0x0b 0x09 0x0d 0x0c 0x02 0xffff }: the
+//    fade track. Step 1 of it is anim 13 and step 10 is anim 12, which is exactly what the
+//    two print_if_false checks below assert.
+//  - 0x5537E4 { 0x2c 0x2d 0x2d 0x2d 0x2d 0x2d 0x2d 0x2d 0xffff }: the symbiote death track.
+static const u16 * const gDummyVenomWrapTrack = reinterpret_cast<const u16*>(0x553714);
+static const u16 * const gDummyVenomFadeTrack = reinterpret_cast<const u16*>(0x553724);
+static const u16 * const gDummySymbioteDeathTrack = reinterpret_cast<const u16*>(0x5537E4);
+
+// @Ok
+// 0x491A10, 0x123E bytes (4670). CDummy's vtable slot 2 (off_53BFAC), so the only way in is the
+// item list the costume viewer and the main menu previews run every frame. It is the whole per
+// frame behaviour of a preview model, in four parts: the XA music the costume plays, the
+// animation track the player steps through with triangle and square, the outline fade toggle on
+// L1+L2+R1+R2, and then one arm per mType for whatever effects that costume owns.
+//
+// The original inlines CDummy::SelectNewAnim, FadeAway, FadeBack and the constructors of the
+// four CShell* effect classes that live in this same file. They are written as calls here.
 void CDummy::AI(void)
 {
-	printf("CDummy::AI");
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	// --- the costume's own intro track, once the model has been up for 30 vblanks ---
+	if (this->field_1C4 != 0 && this->field_1CC == 0
+			&& static_cast<u32>(Vblanks - this->field_1C8) > 30)
+	{
+		Redbook_XAPlay(this->field_1C4 >> 16, static_cast<u16>(this->field_1C4), 0);
+		this->field_1CC = 1;
+	}
+
+	// --- idle timer: every 300..599 frames, another random track out of the shuffle ---
+	if (this->field_1D0 != 0)
+	{
+		this->field_1D0--;
+		if (this->field_1D0 == 0)
+		{
+			this->field_1D0 = Rnd(300) + 300;
+
+			if (this->field_1DC != 0 && *gRedbookXaPlaying == 0)
+			{
+				const SDummyXATrack* pTracks =
+						reinterpret_cast<const SDummyXATrack*>(this->field_1DC);
+
+				u8 cursor = *gDummyTrackShuffleCursor;
+				i32 trackA = 0;
+				i32 trackB = 0;
+				i32 tries = 0;
+
+				while (trackB == 0)
+				{
+					cursor++;
+					*gDummyTrackShuffleCursor = cursor;
+					if (cursor >= 5)
+					{
+						*gDummyTrackShuffleCursor = 0;
+						Utils_Jumble(gDummyTrackShuffle, 5);
+						cursor = *gDummyTrackShuffleCursor;
+					}
+
+					tries++;
+
+					i32 slot = gDummyTrackShuffle[cursor];
+					trackA = pTracks[slot + 2].TrackA;
+					trackB = pTracks[slot + 2].TrackB;
+
+					// ten goes at finding a row that has anything in it, then give up
+					if (tries > 10)
+						break;
+					if (trackA != 0)
+						break;
+				}
+
+				if (trackA != 0 || trackB != 0)
+					Redbook_XAPlay(trackA, trackB, 0);
+			}
+		}
+	}
+
+	if (this->mAnimFinished != 0)
+		this->SelectNewAnim();
+
+	// --- triangle and square step to the next track; the symbiote death effect locks it out ---
+	if (this->field_1F0 == 0)
+	{
+		if (G_SCONTROL[0].Triangle.Triggered != 0)
+		{
+			G_SCONTROL[0].Triangle.Triggered = 0;
+
+			u16* pTrack = this->field_1B0;
+			if (pTrack != 0 && *pTrack != 0xFFFF)
+			{
+				this->field_1B8 = pTrack;
+				this->field_1BC = pTrack;
+				this->RunAnim(*pTrack, 0, -1);
+			}
+
+			if (this->field_1DC != 0 && this->field_1CC != 0 && *gRedbookXaPlaying == 0)
+			{
+				const SDummyXATrack* pTracks =
+						reinterpret_cast<const SDummyXATrack*>(this->field_1DC);
+				if (pTracks[1].TrackA != 0 || pTracks[1].TrackB != 0)
+					Redbook_XAPlay(pTracks[1].TrackA, pTracks[1].TrackB, 0);
+			}
+		}
+
+		if (this->mType != 324 && G_SCONTROL[0].Square.Triggered != 0)
+		{
+			G_SCONTROL[0].Square.Triggered = 0;
+
+			u16* pTrack = this->field_1B4;
+			if (pTrack != 0 && *pTrack != 0xFFFF)
+			{
+				this->field_1B8 = pTrack;
+				this->field_1BC = pTrack;
+				this->RunAnim(*pTrack, 0, -1);
+			}
+
+			const SDummyXATrack* pTracks =
+					reinterpret_cast<const SDummyXATrack*>(this->field_1DC);
+			if (pTracks != 0 && this->field_1CC != 0 && *gRedbookXaPlaying == 0
+					&& (pTracks[0].TrackA != 0 || pTracks[0].TrackB != 0))
+				Redbook_XAPlay(pTracks[0].TrackA, pTracks[0].TrackB, 0);
+		}
+	}
+
+	this->UpdateFrame();
+
+	// --- L1+L2+R1+R2 toggles the outline fade, once per press ---
+	if (this->field_1D8 != 0)
+	{
+		if (G_SCONTROL[0].LeftOne.Pressed != 0 && G_SCONTROL[0].LeftTwo.Pressed != 0
+				&& G_SCONTROL[0].RightOne.Pressed != 0 && G_SCONTROL[0].RightTwo.Pressed != 0)
+		{
+			if (this->field_1D9 == 0)
+			{
+				// only these seven costumes have an outline to fade; everything else just
+				// takes the latch and does nothing
+				u16 type = this->mType;
+				bool canFade;
+				if (type <= 319)
+					canFade = (type == 319 || type == 50 || type == 303 || type == 316);
+				else
+					canFade = (type == 700 || type == 704 || type == 719);
+
+				if (canFade)
+				{
+					if (this->field_1F8 != 0)
+						this->FadeBack();
+					else
+						this->FadeAway();
+				}
+			}
+
+			this->field_1D9 = 1;
+		}
+		else
+		{
+			this->field_1D9 = 0;
+		}
+	}
+
+	// --- the two fade ramps, one step per frame ---
+	if (this->field_1F8 != 0)
+	{
+		i32 level = static_cast<u8>(this->mRGB);
+		if (level != 0)
+			level--;
+
+		this->mRGB = level | ((level | (level << 8)) << 8);
+
+		// the original only clears the low byte of this when it goes negative, which comes to
+		// the same thing because SetOutlineRGB takes it a byte at a time
+		i32 outline = 128 - 4 * level;
+		if (outline < 0)
+			outline = 0;
+
+		this->SetOutlineRGB(static_cast<u8>(outline), static_cast<u8>(outline),
+				static_cast<u8>(outline));
+	}
+
+	if (this->field_1FC != 0)
+	{
+		i32 level = static_cast<u8>(this->mRGB);
+		if (level == 32)
+		{
+			this->field_1FC = 0;
+			this->mFlags = static_cast<u16>((this->mFlags & 0xF7FF) | 0x80);
+			this->OutlineOff();
+		}
+		else
+		{
+			level++;
+			if (level > 32)
+				level = 32;
+
+			this->mRGB = level | ((level | (level << 8)) << 8);
+
+			i32 outline = 128 - 4 * level;
+			if (outline < 0)
+				outline = 0;
+
+			this->SetOutlineRGB(static_cast<u8>(outline), static_cast<u8>(outline),
+					static_cast<u8>(outline));
+		}
+	}
+
+	// the Scorpion builds its two hand made regions the first frame it runs
+	if (this->mType == 310)
+	{
+		if (this->field_240.mRegion == 0xFF)
+			this->InitialiseTailPSX();
+
+		if (this->field_288.mRegion == 0xFF)
+			this->InitialiseTailSweepPSX();
+	}
+
+	M3d_BuildTransform(this);
+
+	// --- one arm per costume. The original splits this into an "above 311" jump table, a
+	// separate test for 311, a pair for 309/310 and an if chain for the rest; it is one switch
+	// here because the arms do not share any code.
+	switch (this->mType)
+	{
+		case 50:
+		{
+			// the spidey preview hangs off a web strand for the two hanging anims
+			u16 anim = this->mAnim;
+			if ((anim == 290 && this->mFrame >= 4) || anim == 291)
+			{
+				CVector top;
+				CVector bottom;
+				top.vx = 0;
+				top.vy = 0;
+				top.vz = 0;
+				bottom.vx = 0;
+				bottom.vy = 0;
+				bottom.vz = 0;
+
+				hook.Offset = 11;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&top), this, &hook);
+
+				bottom.vy = top.vy - 1978368;
+				bottom.vx = top.vx;
+				bottom.vz = top.vz;
+
+				if (this->field_1E0 == 0)
+				{
+					this->field_1E0 = new CKnottedWeb(top, bottom);
+					this->field_1E0->mProtected = 1;
+					this->field_1E0->field_6E = 1;
+				}
+
+				this->field_1E0->SetStartAndEnd(&top, &bottom);
+			}
+			else if (this->field_1E0 != 0)
+			{
+				delete this->field_1E0;
+				this->field_1E0 = 0;
+			}
+			break;
+		}
+
+		case 307:
+		{
+			// the Rhino: one foot stomp per landing, then steam out of both nostrils while he
+			// is snorting
+			if (this->mAnim == 19 && this->mFrame == 19)
+			{
+				if (this->field_20C == 0)
+				{
+					CVector stomp;
+					stomp.vx = this->mPos.vx;
+					stomp.vy = this->mPos.vy + 450560;
+					stomp.vz = this->mPos.vz;
+
+					Effects_FootStomp(&stomp, 0x0F2354AC);
+					this->field_20C = 1;
+				}
+			}
+			else
+			{
+				this->field_20C = 0;
+			}
+
+			u16 anim = this->mAnim;
+			if ((anim == 0 && this->mFrame >= 21 && this->mFrame <= 38)
+					|| (anim == 9 && static_cast<u16>(this->mFrame) < 10)
+					|| (anim == 15 && this->mFrame >= 1 && this->mFrame <= 12))
+			{
+				CVector nostril;
+				CVector puff;
+				nostril.vx = 0;
+				nostril.vy = 0;
+				nostril.vz = 0;
+				puff.vx = 0;
+				puff.vy = 0;
+				puff.vz = 0;
+
+				// left nostril: the hook itself is the position, and the step from it to a
+				// second hook a little further out is the puff's velocity
+				hook.Part.vx = -32;
+				hook.Part.vy = 128;
+				hook.Part.vz = -640;
+				hook.Offset = 15;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&nostril), this, &hook);
+
+				hook.Part.vy += 48;
+				hook.Part.vz -= 32;
+				hook.Part.vx = -48;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&puff), this, &hook);
+
+				puff -= nostril;
+				new CShellRhinoNasalSteam(&nostril, &puff);
+
+				// right nostril, mirrored
+				hook.Part.vx = 32;
+				hook.Part.vy = 128;
+				hook.Part.vz = -640;
+				hook.Offset = 15;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&nostril), this, &hook);
+
+				hook.Part.vz -= 32;
+				hook.Part.vy += 48;
+				hook.Part.vx = 48;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&puff), this, &hook);
+
+				puff -= nostril;
+				new CShellRhinoNasalSteam(&nostril, &puff);
+			}
+			break;
+		}
+
+		case 308:
+			this->DocOckBuildArms();
+			break;
+
+		case 309:
+		{
+			this->SuperOckBuildArms();
+
+			// the electrified crackle comes and goes on a random timer
+			if (this->field_23C != 0)
+			{
+				this->field_23C--;
+				if (this->field_238 == 0)
+					this->field_238 = new CShellSuperDocOckElectrified(this);
+			}
+			else
+			{
+				if (this->field_238 != 0)
+				{
+					delete this->field_238;
+					this->field_238 = 0;
+				}
+
+				if (Rnd(200) == 0)
+					this->field_23C = Rnd(30) + 40;
+			}
+			break;
+		}
+
+		case 310:
+		{
+			this->BuildTail();
+
+			switch (this->mAnim)
+			{
+				case 5:
+				case 6:
+				case 8:
+				case 9:
+				case 25:
+				case 27:
+				case 29:
+					this->field_2C8 = 1;
+					break;
+				default:
+					this->field_2C8 = 0;
+					break;
+			}
+
+			// the sting lands on anim 29 frame 4
+			if (this->mAnim == 29 && this->mFrame == 4)
+			{
+				CVector impact;
+				impact.vx = 0;
+				impact.vy = 0;
+				impact.vz = 0;
+
+				hook.Part.vx = 0;
+				hook.Part.vy = 0;
+				hook.Part.vz = 0;
+				hook.Offset = 23;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&impact), this, &hook);
+
+				impact.vy = this->mPos.vy + 471040;
+
+				new CScorpExplosion(&impact);
+			}
+			break;
+		}
+
+		case 311:
+			// Mysterio's head glow rides a hook inside the helmet
+			hook.Part.vx = 0;
+			hook.Part.vy = -11000;
+			hook.Part.vz = -2500;
+			hook.Offset = 1;
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&this->field_210->mPos), this, &hook);
+			break;
+
+		case 312:
+		{
+			// the henchman: a muzzle flash on the two firing anims, and a spray of sparks off
+			// the gun on the reload
+			CVector muzzle;
+			muzzle.vx = 0;
+			muzzle.vy = 0;
+			muzzle.vz = 0;
+
+			if (this->mAnim == 8)
+			{
+				if (this->mFrame == 6)
+				{
+					hook.Offset = 14;
+					hook.Part.vx = 0;
+					hook.Part.vy = 1000;
+					hook.Part.vz = -160;
+					M3dUtils_GetDynamicHookPosition(
+							reinterpret_cast<VECTOR*>(&muzzle), this, &hook);
+
+					new CGlowFlash(&muzzle, 6, 255, 255, 255, 0, 255, 128, 0, 0,
+							7, 0, 1, 10, 32, 5, 16, 1, 1);
+				}
+
+				if (this->mFrame == 15)
+				{
+					hook.Offset = 9;
+					hook.Part.vx = 0;
+					hook.Part.vy = 1000;
+					hook.Part.vz = -160;
+					M3dUtils_GetDynamicHookPosition(
+							reinterpret_cast<VECTOR*>(&muzzle), this, &hook);
+
+					new CGlowFlash(&muzzle, 6, 255, 255, 255, 0, 255, 128, 0, 0,
+							7, 0, 1, 10, 32, 5, 16, 1, 1);
+				}
+			}
+
+			if (this->mAnim == 21 && this->mFrame == 30)
+			{
+				hook.Part.vx = -120;
+				hook.Part.vy = 200;
+				hook.Part.vz = -400;
+				hook.Offset = 13;
+
+				// a unit step 90 degrees off the way he is facing
+				CSVector aim;
+				aim.vx = this->mAngles.vx;
+				aim.vy = static_cast<i16>(this->mAngles.vy + 0x400);
+				aim.vz = this->mAngles.vz;
+
+				CVector step;
+				step.vx = 0;
+				step.vy = 0;
+				step.vz = 0;
+				Utils_GetVecFromMagDir(&step, -256, &aim);
+				step >>= 8;
+
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&muzzle), this, &hook);
+
+				for (i32 spark = 6; spark != 0; spark--)
+				{
+					CVector vel;
+					vel.vx = 0;
+					vel.vy = 0;
+					vel.vz = 0;
+
+					i32 speed = Rnd(3) + 4;
+					vel.vx = step.vx * speed;
+					vel.vy = 0;
+					vel.vz = speed * step.vz;
+
+					CGLineParticle* pSpark = new CGLineParticle(muzzle, vel, 20, 1);
+					pSpark->SetRGB0(48, 96, 48);
+					pSpark->SetRGB1(0, 0, 0);
+					pSpark->mCodeBGR0 |= 0x2000000;
+				}
+			}
+			break;
+		}
+
+		case 313:
+		{
+			// Venom: electrified for as long as the wrap track is running
+			if (this->field_1BC == gDummyVenomWrapTrack)
+			{
+				if (this->field_200 == 0)
+					this->field_200 = new CShellVenomElectrified(this);
+			}
+			else if (this->field_200 != 0)
+			{
+				delete this->field_200;
+				this->field_200 = 0;
+			}
+
+			// the fade track drives the outline by hand instead of through the button toggle
+			if (this->field_1BC == gDummyVenomFadeTrack)
+			{
+				i32 step = this->field_1B8 - this->field_1BC;
+				if (step == 0)
+				{
+					this->field_1FC = 0;
+					this->mFlags = static_cast<u16>((this->mFlags & 0xF7FF) | 0x80);
+					this->mRGB = 0x202020;
+					this->OutlineOff();
+				}
+				else if (step == 1)
+				{
+					print_if_false(this->mAnim == 13, "Unexpected anim for venom");
+					if (this->mFrame == 45)
+						this->FadeAway();
+				}
+				else if (step == 10)
+				{
+					print_if_false(this->mAnim == 12, "Unexpected anim for venom");
+					if (this->mFrame == 2)
+						this->FadeBack();
+				}
+			}
+			else
+			{
+				this->FadeBack();
+			}
+			break;
+		}
+
+		case 314:
+		{
+			// Carnage: the tendril bits switch between two sets, and the electrified effect
+			// comes and goes on the same random timer monster-Ock uses
+			if (this->mAnim == 13)
+				this->field_194 = (this->field_194 & 0xFFF99FFF) | 0x22000;
+			else
+				this->field_194 = (this->field_194 & 0xFFF99FFF) | 0x44000;
+
+			if (this->field_208 != 0)
+			{
+				this->field_208--;
+				if (this->field_204 == 0)
+					this->field_204 = new CShellCarnageElectrified(this);
+			}
+			else
+			{
+				if (this->field_204 != 0)
+				{
+					delete this->field_204;
+					this->field_204 = 0;
+				}
+
+				if (Rnd(200) == 0)
+					this->field_208 = Rnd(30) + 40;
+			}
+			break;
+		}
+
+		case 324:
+		{
+			// the symbiote costume: a slime puddle underneath it until the death track starts,
+			// then the fire death effect instead
+			if (this->field_1BC == gDummySymbioteDeathTrack && this->field_1F0 == 0)
+				this->field_1F0 = new CShellSimbyFireDeath(this);
+
+			if (this->field_1F0 != 0)
+			{
+				if (this->field_1F0->field_50 != 0)
+				{
+					delete this->field_1F0;
+					this->field_1F0 = 0;
+					this->SelectNewTrack(0);
+					G_SCONTROL[0].Circle.Triggered = 0;
+					G_SCONTROL[0].Square.Triggered = 0;
+				}
+
+				if (this->field_1F4 != 0)
+				{
+					delete this->field_1F4;
+					this->field_1F4 = 0;
+				}
+			}
+			else if (this->field_1F4 == 0)
+			{
+				CVector base;
+				base.vx = this->mPos.vx;
+				base.vy = this->mPos.vy + 409600;
+				base.vz = this->mPos.vz;
+
+				this->field_1F4 = new CShellSimbySlimeBase(&base, &this->mAngles, 256);
+				this->field_1F4->mProtected = 1;
+			}
+			break;
+		}
+
+		default:
+			break;
+	}
 }
 
 // @Ok
@@ -9827,26 +11306,78 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_1F0, 0x1F0);
 	VALIDATE(CDummy, field_1F4, 0x1F4);
 
+	VALIDATE(CDummy, field_1CC, 0x1CC);
+	VALIDATE(CDummy, field_1D9, 0x1D9);
 	VALIDATE(CDummy, field_1F8, 0x1F8);
 	VALIDATE(CDummy, field_1FC, 0x1FC);
 
 	VALIDATE(CDummy, field_200, 0x200);
 	VALIDATE(CDummy, field_204, 0x204);
 
+	VALIDATE(CDummy, field_208, 0x208);
+	VALIDATE(CDummy, field_20C, 0x20C);
 	VALIDATE(CDummy, field_210, 0x210);
 	VALIDATE(CDummy, field_214, 0x214);
 	VALIDATE(CDummy, field_224, 0x224);
 	VALIDATE(CDummy, field_234, 0x234);
 	VALIDATE(CDummy, field_238, 0x238);
+	VALIDATE(CDummy, field_23C, 0x23C);
 
+	VALIDATE(CDummy, field_280, 0x280);
 	VALIDATE(CDummy, mpTailGeometry, 0x284);
 	VALIDATE(CDummy, field_240, 0x240);
 	VALIDATE(CDummy, field_288, 0x288);
+	VALIDATE(CDummy, field_2C8, 0x2C8);
+	VALIDATE(CDummy, field_2CC, 0x2CC);
 	VALIDATE(CDummy, field_2D0, 0x2D0);
 
 	VALIDATE(CDummy, field_2D4, 0x2D4);
 	VALIDATE(CDummy, field_304, 0x304);
 	VALIDATE(CDummy, field_418, 0x418);
+
+	// main.cpp holds the list of validate functions the game calls, and this branch does not
+	// touch main.cpp, so the three classes added with CDummy::AI are checked from here.
+	validate_CTailRing();
+	validate_CScorpExplosion();
+	validate_CShellSimbySlimeBase();
+}
+
+void validate_CTailRing(void)
+{
+	VALIDATE_SIZE(CTailRing, 0x124);
+
+	VALIDATE(CTailRing, field_F8, 0xF8);
+	VALIDATE(CTailRing, field_100, 0x100);
+	VALIDATE(CTailRing, field_104, 0x104);
+	VALIDATE(CTailRing, field_108, 0x108);
+	VALIDATE(CTailRing, field_10C, 0x10C);
+	VALIDATE(CTailRing, field_110, 0x110);
+	VALIDATE(CTailRing, field_118, 0x118);
+	VALIDATE(CTailRing, field_11C, 0x11C);
+	VALIDATE(CTailRing, field_120, 0x120);
+}
+
+void validate_CScorpExplosion(void)
+{
+	VALIDATE_SIZE(CScorpExplosion, 0x4C);
+
+	VALIDATE(CScorpExplosion, field_3C, 0x3C);
+	VALIDATE(CScorpExplosion, field_44, 0x44);
+}
+
+void validate_CShellSimbySlimeBase(void)
+{
+	VALIDATE_SIZE(CShellSimbySlimeBase, 0x110);
+
+	VALIDATE(CShellSimbySlimeBase, field_84, 0x84);
+	VALIDATE(CShellSimbySlimeBase, field_90, 0x90);
+	VALIDATE(CShellSimbySlimeBase, field_9C, 0x9C);
+	VALIDATE(CShellSimbySlimeBase, field_B4, 0xB4);
+	VALIDATE(CShellSimbySlimeBase, field_B8, 0xB8);
+	VALIDATE(CShellSimbySlimeBase, field_BC, 0xBC);
+	VALIDATE(CShellSimbySlimeBase, field_C0, 0xC0);
+	VALIDATE(CShellSimbySlimeBase, field_F0, 0xF0);
+	VALIDATE(CShellSimbySlimeBase, field_100, 0x100);
 }
 
 
