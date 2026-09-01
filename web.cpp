@@ -1220,6 +1220,11 @@ void Web_Trap(CSuper *pSuper, i32 a2)
 // the same "this is a sight/trace query, not a real collision" flag the rest
 // of the collision code uses.
 //
+// mHitPos / mHitNormal are zeroed before the body runs by CVector's and
+// CSVector's own default constructors (vector.h), which is exactly the six
+// zero stores the original emits before its vtable store; writing them out
+// again here would double them.
+//
 // Original defects kept: mpHitItem / mpHitFace are only written on a hit,
 // while the six fields after them are pre-zeroed, so a miss leaves those two
 // holding whatever the freshly allocated block had; and the "Not in list"
@@ -1232,16 +1237,10 @@ CImpactWeb::CImpactWeb(
 		i32 Damage,
 		i32 Lifetime)
 {
-	this->mHitPos.vx = 0;
-	this->mHitPos.vy = 0;
-	this->mHitPos.vz = 0;
+	CPlayer *pPlayer = reinterpret_cast<CPlayer*>(G_MECHLIST);
 
-	this->mHitNormal.vx = 0;
-	this->mHitNormal.vy = 0;
-	this->mHitNormal.vz = 0;
-
-	if (G_MECHLIST != 0)
-		this->mDamage = reinterpret_cast<CPlayer*>(G_MECHLIST)->GetDamageInflictedFromDifficulty(Damage);
+	if (pPlayer != 0)
+		this->mDamage = pPlayer->GetDamageInflictedFromDifficulty(Damage);
 	else
 		this->mDamage = Damage;
 
