@@ -862,9 +862,9 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 	i32 *p = gSpideySFXEntry[0x5D];
 	this->field_350 = p;
 
-	// low word of the animation table entry for this region is the frame
-	// count of the fence dismount animation
-	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 0x2F0) & 0xFFFF;
+	// low word of the animation table entry for this region and animation
+	// is its frame count
+	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 8 * 0x5D + 8) & 0xFFFF;
 
 	if (p)
 	{
@@ -890,16 +890,7 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 
 	this->field_AD9 = 0;
 
-	CCamera *pCamera = CameraList;
-	if (pCamera && pCamera->mCameraMode == 3)
-	{
-		pCamera->SetCamXOffset(gSpideyFloorCamXOffset, 16);
-		pCamera->SetCamYOffset(gSpideyFloorCamYOffset, 16);
-		pCamera->SetCamZOffset(gSpideyFloorCamZOffset, 16);
-		pCamera->SetCamXZDistance(gSpideyFloorCamXZDistance, 16);
-		pCamera->SetCamYDistance(gSpideyFloorCamYDistance, 16);
-		this->field_540 = 0;
-	}
+	this->SetFloorCamera(16);
 
 	this->field_B84.vz = 0;
 	this->field_B84.vx = 0;
