@@ -1937,8 +1937,8 @@ void CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)
 // .GetComboPartsInfoPointer__7CPlayerFUs 0x122E60), and neither
 // tools/names.json nor idbs/spideypc_names.txt has a PC address for any of
 // them.
-// What the inlined bodies do (recovered from 0x4C8B0C and 0x4C8B4E, both
-// working off gComboMoves[id]->field_4, the pointer ParseFightData sets to
+// What the inlined bodies do (both recovered from inside InitiateCombo, and
+// both working off gComboMoves[id]->field_4, the pointer ParseFightData sets to
 // the first of the three 0xFF terminated byte streams that follow a move
 // record's parts array): one skips two streams and returns the third
 // (stored into CPlayer+0x950, later indexed by elapsed time / 2, so that one
