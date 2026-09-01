@@ -1232,10 +1232,183 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJump(void)
+// @Ok
+i32 CPlayer::CheckJump(void)
 {
-    printf("CPlayer::CheckJump(void)");
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[257] == 0)
+		return 0;
+
+	pInput[257] = 0;
+
+	u8 blocked = this->field_8EA;
+	this->field_2C1 = 0;
+
+	if (blocked != 0)
+		return 0;
+
+	if (this->mHeldObject != 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+	{
+		CBody *pGround = this->field_DBC;
+		this->field_E80 = -245760;
+
+		if (pGround)
+		{
+			i32 groundVel = pGround->mVel.vy;
+			if (groundVel >= -262144)
+				this->field_E80 = groundVel - 245760;
+			else
+				this->field_E80 = 2 * groundVel - 245760;
+		}
+
+		u8 flags = (u8)this->field_E1C;
+		this->field_AE6 = 0;
+
+		if (flags & 0x10)
+		{
+			i32 *p = gSpideySFXEntry[0xDF];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0xDF, 5, -1);
+			this->field_E8C = 1;
+		}
+		else
+		{
+			i32 *p = gSpideySFXEntry[0xD2];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0xD2, 4, -1);
+			this->field_E8C = 0;
+		}
+
+		u8 collision = (u8)this->mCollision;
+		this->field_AE5 = 0;
+		this->field_E1C = 64;
+
+		if (collision & 1)
+			this->field_EBC = 0;
+
+		SFX_PlayPos(9, &this->mPos, 0);
+
+		this->field_E8D = 0;
+		return 1;
+	}
+
+	if (this->field_8E8 != 0)
+	{
+		i32 *p = gSpideySFXEntry[0xD8];
+
+		this->mCollision &= ~2;
+		this->field_AE5 = 1;
+		this->field_AE6 = 0;
+		this->field_AD4 = 0;
+		this->field_E1C = 4;
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xD8, 0, -1);
+
+		bool noInput = *reinterpret_cast<u16*>(&this->field_E2D) == 0;
+
+		this->field_A8.vx = 0;
+		this->field_A8.vy = -4096;
+		this->field_A8.vz = 0;
+
+		i16 aim;
+		if (noInput || (aim = this->field_E32) <= 512 || aim >= 3584)
+		{
+			this->OrientToNormal(true, &this->field_C84);
+		}
+		else if (aim < 1536 || aim > 2560)
+		{
+			this->OrientToNormal(true, &this->field_C84);
+		}
+		else
+		{
+			CVector away;
+			away.vx = -this->field_C84.vx;
+			away.vy = -this->field_C84.vy;
+			away.vz = -this->field_C84.vz;
+			this->OrientToNormal(true, &away);
+		}
+
+		this->field_8E8 = 0;
+
+		SFX_PlayPos(9, &this->mPos, 0);
+
+		this->field_E8D = 0;
+		return 1;
+	}
+
+	if (this->field_8E9 != 0)
+	{
+		i32 *p = gSpideySFXEntry[0xD4];
+
+		this->mCollision &= ~2;
+		this->field_AE5 = 0;
+		this->field_AE6 = 0;
+		this->field_AD4 = 0;
+		this->field_E1C = 4;
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xD4, 0, -1);
+
+		this->field_E8C = 0;
+
+		this->field_A8.vx = 0;
+		this->field_A8.vy = -4096;
+		this->field_A8.vz = 0;
+
+		this->OrientToNormal(true, &this->field_C6C);
+
+		this->field_8E9 = 0;
+
+		SFX_PlayPos(9, &this->mPos, 0);
+
+		this->field_E8D = 0;
+		return 1;
+	}
+
+	return 0;
 }
 
 // @MEDIUMTODO
@@ -7235,6 +7408,8 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_1BC, 0x1BC);
 
+	VALIDATE(CPlayer, field_2C1, 0x2C1);
+
 	VALIDATE(CPlayer, field_350, 0x350);
 
 	VALIDATE(CPlayer, field_354, 0x354);
@@ -7372,6 +7547,7 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_DAC, 0xDAC);
 
 	VALIDATE(CPlayer, field_DB8, 0xDB8);
+	VALIDATE(CPlayer, field_DBC, 0xDBC);
 
 	VALIDATE(CPlayer, field_DC0, 0xDC0);
 	VALIDATE(CPlayer, field_DCC, 0xDCC);
@@ -7401,9 +7577,12 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, hLockTarget, 0xE70);
 
+	VALIDATE(CPlayer, field_E80, 0xE80);
 	VALIDATE(CPlayer, field_E84, 0xE84);
 	VALIDATE(CPlayer, field_E88, 0xE88);
 	VALIDATE(CPlayer, field_E8C, 0xE8C);
+	VALIDATE(CPlayer, field_E8D, 0xE8D);
+	VALIDATE(CPlayer, field_EBC, 0xEBC);
 
 	VALIDATE(CPlayer, mHeldObject, 0xE48);
 	VALIDATE(CPlayer, field_E64, 0xE64);

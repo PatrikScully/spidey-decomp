@@ -67,7 +67,12 @@ class CPlayer : public CSuper
 		// while field_AD8 was pending.
 		u8 field_211;
 
-		PADDING(0x34C-0x211-1);
+		PADDING(0x2C1-0x211-1);
+
+		// cleared at the top of CheckJump on every jump-button edge
+		u8 field_2C1;
+
+		PADDING(0x34C-0x2C1-1);
 
 		// ProcessSFXArray: non-zero selects the (Rnd(4)+80)|0x8000 SFX range,
 		// zero selects the Rnd(4)+1 range, in the mAnim 0x15/0xC0/0xC6 case.
@@ -436,7 +441,9 @@ class CPlayer : public CSuper
 
 		i32 field_DB8;
 
-		PADDING(0xDC0-0xDB8-4);
+		// body the player is standing on; CheckJump adds its mVel.vy into
+		// the take-off velocity
+		CBody *field_DBC;
 
 		CVector field_DC0;
 
@@ -534,14 +541,18 @@ class CPlayer : public CSuper
 
 		SHandle hLockTarget;
 
-		PADDING(0xE84-0xE70-sizeof(SHandle));
+		PADDING(0xE80-0xE70-sizeof(SHandle));
+
+		// jump take-off vertical velocity, set by CheckJump
+		i32 field_E80;
 
 		i32 field_E84;
 		i32 field_E88;
 
 		u8 field_E8C;
+		u8 field_E8D;
 
-		PADDING(0xEA0-0xE8C-1);
+		PADDING(0xEA0-0xE8D-1);
 
 		// ReadAnalogueInput: aim correction ratio (field_EA0/field_EA2).
 		u16 field_EA0;
@@ -557,7 +568,10 @@ class CPlayer : public CSuper
 
 		u16 field_EA8;
 
-		PADDING(0xEC0-0xEAA);
+		PADDING(0xEBC-0xEAA);
+
+		// cleared by CheckJump when the player was touching something
+		i32 field_EBC;
 
 		// set to 1 in BuildOffscreenSpideySenseIndicatorList when at least
 		// one qualifying baddy was found this pass
@@ -625,7 +639,7 @@ class CPlayer : public CSuper
 		EXPORT i32 CheckForwards(bool);
 		EXPORT i32 CheckGroundGone(void);
 		EXPORT i32 CheckInteriorSurfaceTransition(void);
-		EXPORT void CheckJump(void);
+		EXPORT i32 CheckJump(void);
 		EXPORT void CheckJumpingR1ZipWeb(void);
 		EXPORT void CheckJumpingR2ZipWeb(void);
 		EXPORT u8 CheckJumpingSmashKick(void);
