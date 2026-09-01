@@ -138,7 +138,13 @@ void L5A7LSC_RelocatableModuleInit(reloc_mod *pMod)
 // 0x192 pool item of the current region and read its water level) is already present,
 // inlined, inside L5A7LSC_MonitorSpideyinWater above, which is @Ok. Keeping the stub
 // only because the name is referenced in the Mac symbol list.
-// @NotOk
+// @Bogus
+// Tag note (2026-09-01): @NotOk -> @Bogus for consistency with the other
+// provably-absent functions closed in the same sweep (Front_GetButtons,
+// SwapPSX*, downloadTexture, copyBitmap, initialSettings). @NotOk means
+// "not equivalent yet", which is wrong for code that has no PC body to be
+// equivalent to; @Bogus is defined as excluded-from-progress. Flip both
+// groups together if the maintainer prefers @NotOk.
 EXPORT void obtainWaterLevelInPoolA7(i32)
 {
     printf("obtainWaterLevelInPool(i32)");

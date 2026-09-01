@@ -672,7 +672,13 @@ INLINE void M3dInit_SetResolution(u32 X,u32 Y)
 // DCModel_CreateFromSModel at 0x431430 for it) sits inlined in ParsePSX, and ParsePSX
 // makes no call to any separate helper of this shape. Only the Mac build has it as a
 // real symbol (spiderman_names.txt, 0x8e650, 296 bytes). Cannot become @Ok.
-// @NotOk
+// @Bogus
+// Tag note (2026-09-01): @NotOk -> @Bogus for consistency with the other
+// provably-absent functions closed in the same sweep (Front_GetButtons,
+// SwapPSX*, downloadTexture, copyBitmap, initialSettings). @NotOk means
+// "not equivalent yet", which is wrong for code that has no PC body to be
+// equivalent to; @Bogus is defined as excluded-from-progress. Flip both
+// groups together if the maintainer prefers @NotOk.
 void alloc_dc_models(i32,i32)
 {
     printf("alloc_dc_models(i32,i32)");
@@ -685,7 +691,9 @@ void alloc_dc_models(i32,i32)
 // (0x4534A0), verified 2026-09-01 by IDA decompile: those two assert strings are
 // referenced from inside ParsePSX itself, not from any separate function. Mac only
 // (spiderman_names.txt, 0x8e530, 236 bytes). Cannot become @Ok.
-// @NotOk
+// @Bogus
+// Tag note: @NotOk -> @Bogus in the same 2026-09-01 sweep, same reasoning as
+// alloc_dc_models above.
 void setup_pulsing_colors(i32)
 {
     printf("setup_pulsing_colors(i32)");
