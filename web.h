@@ -9,6 +9,8 @@
 #include "spidey.h"
 #include "m3dutils.h"
 
+struct SModel;
+
 EXPORT extern i32 gFireDomes;
 EXPORT extern i32 gNumDomes;
 EXPORT extern CBody* WebList;
@@ -67,15 +69,31 @@ class CDome : public CBody
 class CDomeRing : public CBody {
 	public:
 
+		// 0x4F5510 / 0x4F5720. Only one CDomeRing exists at a time; the
+		// constructor deletes the previous one (gpCurrentDomeRing, web.cpp).
+		EXPORT CDomeRing(const CVector *pPos, i32 bFire);
+		EXPORT virtual ~CDomeRing(void) OVERRIDE;
+
 		PADDING(4);
 
-		i32 field_F8;
-		i32 field_FC;
-		i32 field_100;
+		// saved copy of the ring model's vertices, 3 i16 per vertex, so the
+		// destructor can put the shared SModel geometry back
+		i16 *field_F8;
+
+		// per-vertex outward direction, also 3 i16 per vertex. Only [0] and
+		// [2] are ever written; [1] is left uninitialised by the original
+		// (original defect, kept).
+		i16 *field_FC;
+
+		// the ring's SModel (region model 0), whose vertices get animated
+		// outwards in place
+		SModel *field_100;
+
 		i32 field_104;
 		i32 field_108;
 
-		PADDING(1);
+		// nonzero for the fire dome variant ("firering" instead of "ring")
+		i32 field_10C;
 };
 
 

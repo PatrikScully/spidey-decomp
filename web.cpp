@@ -422,6 +422,130 @@ CDome::~CDome(void)
 	gNumDomes--;
 }
 
+// The single live CDomeRing. Written by CDomeRing's constructor (which
+// deletes the previous ring first) and cleared by its destructor, which also
+// asserts it still points at itself. Only web.cpp touches 0x6B559C, apart
+// from a level-teardown reset at 0x45566A, so it stays file-local here. No
+// idb_globals.txt entry, the name is ours.
+static CDomeRing ** const gpCurrentDomeRing = (CDomeRing**)0x006B559C;
+
+// @Ok
+// 0x4F5510, 494 bytes. Builds the expanding shockwave ring that a dome leaves
+// behind when it pops. Only one may exist, so any previous one is deleted
+// first. Saves the ring model's vertices into field_F8 (the destructor puts
+// them back, because CDomeRing animates the SHARED region model in place) and
+// precomputes a per-vertex outward direction into field_FC.
+//
+// Original defect kept: field_FC[3*i + 1] (the y component of the direction)
+// is never written, so every ring runs off whatever the freshly allocated
+// block happened to hold there.
+CDomeRing::CDomeRing(const CVector *pPos, i32 bFire)
+{
+	if (*gpCurrentDomeRing != 0)
+		delete *gpCurrentDomeRing;
+
+	*gpCurrentDomeRing = this;
+
+	this->field_10C = bFire;
+
+	if (bFire != 0)
+		this->InitItem("firering");
+	else
+		this->InitItem("ring");
+
+	this->AttachTo(&MiscList);
+
+	if (this->field_10C != 0)
+		this->mFlags |= 0x200;
+	else
+		this->mFlags |= 0x600;
+
+	this->mRGB = 0x808080;
+
+	this->mPos = *pPos;
+	this->field_104 = 100;
+	this->mPos.vy -= 0x5A000;
+	this->field_108 = 3;
+
+	SModel *pModel = G_PSXREGION[this->mRegion].ppModels[0];
+	this->field_100 = pModel;
+
+	this->field_F8 = reinterpret_cast<i16*>(Mem_New(6 * pModel->NumVertices));
+	this->field_FC = reinterpret_cast<i16*>(Mem_New(6 * pModel->NumVertices));
+
+	i16 *pSaved = this->field_F8;
+	i16 *pDir = this->field_FC;
+	SVECTOR *pVert = reinterpret_cast<SVECTOR*>(reinterpret_cast<u8*>(pModel) + 28);
+
+	i32 i = 0;
+
+	if (pModel->NumVertices != 0)
+	{
+		do
+		{
+			pSaved[0] = pVert->vx;
+			pSaved[1] = pVert->vy;
+			pSaved[2] = pVert->vz;
+
+			i32 length = M3dMaths_SquareRoot0(pVert->vz * pVert->vz + pVert->vx * pVert->vx);
+			print_if_false(length != 0, "Divide by zero in CDomeRing!");
+
+			pDir[0] = (i16)(pVert->vx * this->field_104 / length);
+			pDir[2] = (i16)(pVert->vz * this->field_104 / length);
+
+			pSaved += 3;
+			pDir += 3;
+			pVert++;
+			i++;
+		}
+		while (i < this->field_100->NumVertices);
+	}
+}
+
+// @Ok
+// 0x4F5720, 215 bytes. Puts the shared region model's vertices back the way
+// CDomeRing's constructor found them, frees the two scratch buffers and drops
+// the singleton.
+//
+// Note: CDomeRing's own virtual overrides (vtable 0x53C73C slots 2, 5, 6 and
+// 7 -- sub_4F5800 animates the model vertices outwards each frame, sub_4F58B0
+// / sub_4F5960 / sub_4F9040 are three class-specific virtuals) are still not
+// decompiled, so a repo-built CDomeRing gets CBody's vtable and never
+// animates. The constructor and destructor above are faithful; the rest of
+// the class is open work.
+CDomeRing::~CDomeRing(void)
+{
+	this->DeleteFrom(&MiscList);
+
+	SModel *pModel = this->field_100;
+	i16 *pSaved = this->field_F8;
+	SVECTOR *pVert = reinterpret_cast<SVECTOR*>(reinterpret_cast<u8*>(pModel) + 28);
+
+	i32 i = 0;
+
+	if (pModel->NumVertices != 0)
+	{
+		do
+		{
+			pVert->vx = pSaved[0];
+			pVert->vy = pSaved[1];
+			pVert->vz = pSaved[2];
+
+			pSaved += 3;
+			pVert++;
+			i++;
+		}
+		while (i < this->field_100->NumVertices);
+	}
+
+	Mem_Delete(this->field_F8);
+	Mem_Delete(this->field_FC);
+
+	print_if_false(*gpCurrentDomeRing == this, "Eh?");
+
+	*gpCurrentDomeRing = 0;
+}
+
 // @Ok
 // @AlmostMatching: vector assignment is different, this one doesn't use esi either
 i32 Web_GetGroundY(const CVector* a1)
@@ -890,19 +1014,35 @@ CImpactWeb::CImpactWeb(const CVector &, const CSVector &, i32, i32, i32)
 	printf("CImpactWeb::CImpactWeb(const CVector &,const CSVector &,i32,i32,i32)");
 }
 
-// @MEDIUMTODO
-// 0x4FAD50, 205 bytes. Called by CPlayer::PriorToVenomDistanceAttack.
-// Behaviour recovered from IDA but not written out, because it needs three
-// things the repo does not have yet: CItem::Burst (0x45FDC0, 607 bytes, a
-// thiscall member of CItem so it belongs in ob.h/ob.cpp, not here),
-// CDomeRing::CDomeRing (0x4F5510, 494 bytes, CClass::operator new(0x110))
-// and a check that CDomeShockWave::CDomeShockWave in this file really is
-// the 0x4FAE20 the original calls with CBit::operator new(0x98).
-// What it does: if field_104 is 0 (a web dome, not a fire dome), clear bit
-// 0x400 of field_110's mFlags and call field_110->Burst(30, 30); set
-// field_100 to 3; new CDomeShockWave(field_104); new CDomeRing(&mPos,
-// field_104); then this->Die().
+// @Ok
+// 0x4FAD50, 205 bytes. Called by CPlayer::PriorToVenomDistanceAttack. Pops
+// the dome: a web dome (field_104 == 0) shatters the item it trapped, then
+// the dome switches to mode 3, spawns the shockwave and the ring, and dies.
+//
+// field_110 is typed CClass* like the dome's other four sub-objects, but the
+// original treats this one as a CItem here (it clears mFlags bit 0x400 at
+// +4 and makes a thiscall to CItem::Burst), so it is cast, exactly as
+// written. Both allocations are plain `new`: the original's
+// CBit::operator new(0x98) / CClass::operator new(0x110) plus null check is
+// what MSVC6 emits for `new CDomeShockWave` / `new CDomeRing` (CItem's
+// operator new is link-folded onto CClass's).
 void CDome::Burst(void)
 {
-	printf("CDome::Burst(void)");
+	if (this->field_104 == 0)
+	{
+		CItem *pTrapped = reinterpret_cast<CItem*>(this->field_110);
+
+		if (pTrapped != 0)
+		{
+			pTrapped->mFlags &= ~0x400;
+			pTrapped->Burst(30, 30);
+		}
+	}
+
+	this->field_100 = 3;
+
+	new CDomeShockWave(this->field_104);
+	new CDomeRing(&this->mPos, this->field_104);
+
+	this->Die();
 }
