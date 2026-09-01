@@ -4,14 +4,19 @@
 #include "camera.h"
 #include "db.h"
 #include "effects.h"
+#include "flash.h"
 #include "m3dcolij.h"
 #include "mem.h"
 #include "ob.h"
+#include "manipob.h"
 #include "PCInput.h"
 #include "ps2lowsfx.h"
 #include "ps2pad.h"
 #include "tweak.h"
+#include "ps2funcs.h"
+#include "trig.h"
 #include "utils.h"
+#include "vector.h"
 
 // ---------------------------------------------------------------------------
 // CPlayer fields this file needs that spidey.h does not name yet. They all sit
@@ -30,6 +35,16 @@
 // address 0x0060FA9C for the same thing; the two readings disagree and should
 // be unified once post.h grows a declaration.
 extern i32 gWaterEffect;
+
+// init.cpp's global, no header declares it yet.
+extern i32 gInitRelatedTwo;
+
+// Death/respawn countdown, tentative name. The only cross reference in the
+// whole binary is SpideyAI0's state 128 case (a scan of every
+// tools/functions/*.bin for the little endian address finds this function and
+// nothing else): it accumulates field_80 once the death animation has
+// finished, and at 0x78 or more resets the flash and sets gLevelStatus to 2.
+static i32 * const gSpideyDeathTimer = reinterpret_cast<i32*>(0x006A7F98);
 
 // The dword right after Db_SkyColor (db.h, 0x0056FC74). SpideyAI0 copies it
 // into Db_SkyColor when the pending water effect fires, which is the same pair
@@ -150,6 +165,14 @@ void SpideyAI0(CPlayer *pPlayer)
 {
 	u32 keyMappingA;
 	u32 keyMappingB;
+
+	// var_49C: mVel.vy as it was before DoPhysics ran, compared against the
+	// post-physics value by state 4.
+	i32 velYBeforePhysics = 0;
+
+	// var_4A0: the animation whose follow-on was just resolved, 0xFFFF when
+	// no animation finished this tick. Only ever read 16 bits wide.
+	i32 animJustFinished = 0xFFFF;
 
 	pPlayer->field_AE4 = 1;
 
@@ -449,8 +472,8 @@ void SpideyAI0(CPlayer *pPlayer)
 	pPlayer->mFlags |= 4;
 	pPlayer->field_E8 = pPlayer->mPos;
 
-	// var_49C also caches mVel.vy here for the state code further down; that
-	// part is not ported yet, so the cache is left out.
+	velYBeforePhysics = pPlayer->mVel.vy;
+
 	if ((pPlayer->field_E1C & 0x83000) == 0)
 	{
 		// 0x466CE0, identified as CPlayer::DoPhysics (see the note above).
@@ -764,57 +787,520 @@ void SpideyAI0(CPlayer *pPlayer)
 
 		if (gAnimFollowOnData[anim * 2] != 0)
 		{
+			animJustFinished = anim;
 			pPlayer->PlaySingleAnim(gAnimFollowOnData[anim * 2 + 1], 0, -1);
 		}
 		else if (anim == 0)
 		{
+			animJustFinished = 0;
 			pPlayer->PlaySingleAnim(0, 0, -1);
 		}
 		else if (anim == 0x32)
 		{
+			animJustFinished = 0x32;
 			pPlayer->PlaySingleAnim(Rnd(2) != 0 ? 0x33 : 0x55, 0, -1);
 		}
 		else if (anim == 0x33 || anim == 0x55)
 		{
+			animJustFinished = anim;
 			pPlayer->PlaySingleAnim(0x32, 0, -1);
 		}
 		else if (anim == 0x39)
 		{
+			animJustFinished = 0x39;
 			pPlayer->PlaySingleAnim(pPlayer->mAnimDir == 1 ? 0x32 : 0x13, 0, -1);
 		}
 		else if (anim == 0x3A)
 		{
+			animJustFinished = 0x3A;
 			pPlayer->PlaySingleAnim(pPlayer->mAnimDir == 1 ? 0x34 : 0x13, 0, -1);
 		}
 	}
 
 	// -----------------------------------------------------------------------
-	// state dispatch, 0x4B211F..0x4B215D. Not ported yet, see the note above.
+	// state dispatch, 0x4B211F..0x4B215D. Every case's `break` is the
+	// original's `jmp def_4B215D`, the shared tail at 0x4B6E8C, which is not
+	// ported yet.
 	// -----------------------------------------------------------------------
 	switch (pPlayer->field_E1C)
 	{
-		case 1:     // 0x4B2164, 346 instructions
-		case 2:     // 0x4B274D,  80 instructions
-		case 4:     // 0x4B28D9, 215 instructions
-		case 8:     // 0x4B2BF3,  77 instructions
-		case 16:    // 0x4B2D43, 157 instructions
-		case 64:    // 0x4B269B,  39 instructions
-		case 128:   // 0x4B2892,  15 instructions
-		case 0x100: // 0x4B2F80,  58 instructions
+		// 0x4B2164, 346 instructions. Not ported yet.
+		case 1:
 			break;
+
+		// 0x4B274D. Airborne after a jump: the whole "can I grab something"
+		// chain, then the landing timeout.
+		case 2:
+		{
+			u8 *pPad;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->CheckStickToCeiling() != 0) break;
+			if (pPlayer->CheckJumpingSmashKick() != 0) break;
+			if (pPlayer->CheckJumpingSwingWeb() != 0) break;
+			if (pPlayer->CheckJumpingR1ZipWeb() != 0) break;
+			if (pPlayer->CheckJumpingR2ZipWeb() != 0) break;
+
+			if (pPlayer->mAnimFinished != 0)
+			{
+				if (pPlayer->mAnim == 0xE7)
+				{
+					pPlayer->PlaySingleAnim(0xE8, 0, -1);
+				}
+				else if (pPlayer->mAnim == 0xD7)
+				{
+					pPlayer->PlaySingleAnim(0xD8, 0, -1);
+				}
+			}
+
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+			if (pPad[0x100] == 0
+				&& (DifficultyLevel != 0 || Trig_GetLevelId() != 0x705))
+			{
+				pPlayer->field_E88 = 0;
+			}
+
+			if ((pPlayer->field_504 & 2) != 0
+				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+			{
+				if (pPlayer->ShouldPlayerDropFlail() == 0) break;
+
+				pPlayer->PlaySingleAnim(0xAF, 0, -1);
+				pPlayer->mVel.vz = 0;
+				pPlayer->mVel.vx = 0;
+				pPlayer->field_E1C = 0x800000;
+				// 0x54E: cleared with every flail drop.
+				PLR_U8(pPlayer, 0x54E) = 0;
+				break;
+			}
+
+			if (pPlayer->field_E84 > 0) break;
+			if (pPlayer->field_E88 > 0) break;
+
+			pPlayer->field_E1C = 4;
+			break;
+		}
+
+		// 0x4B28D9. Falling.
+		case 4:
+		{
+			i32 velY;
+			u16 anim;
+			bool retarget;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->mHealth <= 0)
+			{
+				if (pPlayer->CheckLanded() != 0)
+				{
+					pPlayer->SwitchToDeathMode(false);
+				}
+				break;
+			}
+
+			if (pPlayer->CheckLanded() != 0) break;
+			if (pPlayer->CheckStickToWall() != 0) break;
+			if (pPlayer->CheckStickToCeiling() != 0) break;
+			if (pPlayer->CheckJumpingSmashKick() != 0) break;
+			if (pPlayer->CheckJumpingSwingWeb() != 0) break;
+			if (pPlayer->CheckJumpingR1ZipWeb() != 0) break;
+			if (pPlayer->CheckJumpingR2ZipWeb() != 0) break;
+
+			// fallen out of the world for long enough
+			if (PLR_U16(pPlayer, 0xE8E) > 0x1E0)
+			{
+				gLevelStatus = 8;
+			}
+
+			if (pPlayer->mAnimFinished != 0 && pPlayer->mAnim == 0xD7)
+			{
+				pPlayer->PlaySingleAnim(0xD8, 0, -1);
+			}
+			if (pPlayer->mAnimFinished != 0 && pPlayer->mAnim == 0x7F)
+			{
+				pPlayer->PlaySingleAnim(0xD8, 0, -1);
+			}
+
+			if ((pPlayer->field_504 & 4) != 0
+				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6
+				&& pPlayer->ShouldPlayerDropFlail() != 0)
+			{
+				pPlayer->PlaySingleAnim(0xAF, 0, -1);
+				pPlayer->field_E1C = 0x800000;
+				PLR_U8(pPlayer, 0x54E) = 0;
+			}
+
+			velY = pPlayer->mVel.vy;
+			anim = pPlayer->mAnim;
+			retarget = true;
+
+			if (((velY ^ velYBeforePhysics) & 0x80000000) == 0
+				&& (anim == 0xD3 || anim == 0xD4 || anim == 0xE0 || anim == 0xE1
+					|| anim == 0xE7 || anim == 0xE8 || anim == 0xE2 || anim == 0xE4
+					|| anim == 0xE9 || anim == 0xEB || anim == 0xAF || anim == 0xB0
+					|| anim == 0x7F || anim == 0xEE || anim == 0xF1 || anim == 0xF0
+					|| anim == 0xEF || anim == 0xD7 || anim == 0xD8 || anim == 0xDD
+					|| anim == 0xDA || anim == 0xDE || anim == 0xDB || anim == 0x116
+					|| anim == 0x114))
+			{
+				retarget = (pPlayer->field_54D != 0 && velY > 0);
+			}
+
+			if (retarget)
+			{
+				pPlayer->field_E38 = pPlayer->mPos.vy;
+				// 0xE3C: gTimerRelated stamp of the last fall retarget.
+				PLR_I32(pPlayer, 0xE3C) = (i32)gTimerRelated;
+
+				anim = pPlayer->mAnim;
+				if (anim != 0xAF && anim != 0xB0)
+				{
+					if (pPlayer->field_54D != 0)
+					{
+						pPlayer->PlaySingleAnim(anim == 0x118 ? 0x116 : 0x114, 0, -1);
+						pPlayer->field_54D = 0;
+					}
+					else if (anim == 0xE7)
+					{
+						pPlayer->PlaySingleAnim(0xE8, 0, -1);
+					}
+					else if (anim == 0xE0)
+					{
+						pPlayer->PlaySingleAnim(0xE1, 0, -1);
+					}
+					else if (anim == 0xDA)
+					{
+						pPlayer->PlaySingleAnim(0xDB, 0, -1);
+					}
+					else if (anim == 0xDD)
+					{
+						pPlayer->PlaySingleAnim(0xDE, 0, -1);
+					}
+					else if (anim == 0xD7)
+					{
+						pPlayer->PlaySingleAnim(0xD8, 0, -1);
+					}
+					else if (anim != 0xE8 && anim != 0xD8)
+					{
+						pPlayer->PlaySingleAnim(0xD4, 0, -1);
+					}
+				}
+			}
+
+			if (pPlayer->field_AE5 != 0
+				&& (u32)(gTimerRelated - PLR_I32(pPlayer, 0xE3C)) > 0x1E)
+			{
+				pPlayer->field_AE5 = 0;
+				pPlayer->field_AE6 = 0;
+			}
+			break;
+		}
+
+		// 0x4B2BF3. On a wall.
+		case 8:
+		{
+			u8 senseFlag;
+			u8 *pPad;
+			CBody *pTarget;
+			i32 e84;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->CheckGroundGone() != 0) break;
+
+			if (pPlayer->mAnim != 0xB2 && pPlayer->mAnim != 0xB4)
+			{
+				if (pPlayer->CheckForwards(true) != 0) break;
+				if (pPlayer->CheckJump() != 0) break;
+				if (pPlayer->CheckKick() != 0) break;
+				if (pPlayer->CheckJumpingSwingWeb() != 0) break;
+				if (pPlayer->CheckJumpingR1ZipWeb() != 0) break;
+				if (pPlayer->CheckJumpingR2ZipWeb() != 0) break;
+			}
+
+			senseFlag = pPlayer->field_E8C;
+			pPlayer->field_AE4 = (u8)(senseFlag != 0);
+
+			if ((u16)animJustFinished == 0xFFFF) break;
+			if ((u16)animJustFinished == 0xB2) break;
+
+			if (senseFlag == 0)
+			{
+				// 0x4B682F
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+			if (pPad[0x100] == 0)
+			{
+				// 0x4B6010
+				pPlayer->field_E1C = 0x10;
+				break;
+			}
+
+			pTarget = pPlayer->field_DBC;
+			pPlayer->field_E80 = (i32)0xFFFC4000;
+			if (pTarget != 0)
+			{
+				i32 targetVelY = pTarget->mVel.vy;
+
+				if (targetVelY >= (i32)0xFFFC0000)
+				{
+					pPlayer->field_E80 = targetVelY + (i32)0xFFFC4000;
+				}
+				else
+				{
+					pPlayer->field_E80 = targetVelY * 2 - 0x3C000;
+				}
+			}
+
+			pPlayer->PlaySingleAnim(0xDF, 0, -1);
+
+			e84 = pPlayer->field_E84;
+			pPlayer->field_E8D = 0;
+			pPlayer->field_E1C = 0x40;
+			pPlayer->field_E88 = (e84 >> 1) + e84;
+
+			if ((pPlayer->mCollision & 1) != 0)
+			{
+				pPlayer->field_EBC = 0;
+			}
+			break;
+		}
+
+		// 0x4B2D43. Standing / running on the ground.
+		case 16:
+		{
+			u16 followOn;
+			i32 aimDelta;
+			i16 heading;
+			u16 anim;
+			i32 newAnim;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->mHeldObject != 0 && (pPlayer->mCollision & 0x40) != 0)
+			{
+				CManipOb *pHeld;
+
+				pPlayer->PlaySingleAnim(0x15, 0, -1);
+				pHeld = pPlayer->mHeldObject;
+				pPlayer->mHeldObject = 0;
+				pHeld->Smash();
+			}
+
+			if (pPlayer->CheckGroundGone() != 0) break;
+			if (pPlayer->CheckWebShot() != 0) break;
+			if (pPlayer->CheckJump() != 0) break;
+			if (pPlayer->CheckCeilingJumpingSmashPunch() != 0) break;
+			if (pPlayer->CheckKick() != 0) break;
+			if (pPlayer->CheckWebShot() != 0) break;
+			if (pPlayer->CheckRunIntoWall() != 0) break;
+
+			if (pPlayer->field_AD4 == 0)
+			{
+				if (pPlayer->CheckJumpingSwingWeb() != 0) break;
+				if (pPlayer->CheckJumpingR1ZipWeb() != 0) break;
+				if (pPlayer->CheckJumpingR2ZipWeb() != 0) break;
+			}
+
+			if (pPlayer->CheckInteriorSurfaceTransition() != 0
+				|| pPlayer->CheckExteriorSurfaceTransition() != 0
+				|| pPlayer->CheckFenceSurfaceTransition() != 0)
+			{
+				// the original calls the out of line CVector zero helper at
+				// 0x4B8B70 on mVel here
+				pPlayer->mVel.vx = 0;
+				pPlayer->mVel.vy = 0;
+				pPlayer->mVel.vz = 0;
+				break;
+			}
+
+			if (pPlayer->field_8EA != 0)
+			{
+				// 0x4B682F
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if ((u8)(pPlayer->field_E2E | pPlayer->field_E2D) == 0)
+			{
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			followOn = (u16)animJustFinished;
+			if (followOn == 0x34)
+			{
+				if (pPlayer->field_AD5 == 0)
+				{
+					pPlayer->PlaySingleAnim(0x32, 0, -1);
+				}
+			}
+			else if (followOn == 0x33 || followOn == 0x55)
+			{
+				if (pPlayer->field_AD5 != 0)
+				{
+					pPlayer->PlaySingleAnim(0x34, 0, -1);
+				}
+			}
+
+			if (pPlayer->field_8E8 != 0)
+			{
+				heading = pPlayer->GetEffectiveHeading();
+				aimDelta = ((u16)pPlayer->field_E32 - (i32)(u16)heading) & 0xFFF;
+			}
+			else
+			{
+				i32 turned = ((u16)pPlayer->field_E32 + (i32)CameraList->field_23A) & 0xFFF;
+
+				heading = pPlayer->GetEffectiveHeading();
+				aimDelta = (turned - (i32)(u16)heading) & 0xFFF;
+			}
+
+			if (aimDelta <= 0x600) break;
+			if (aimDelta >= 0xA00) break;
+
+			anim = pPlayer->mAnim;
+			if (anim == 0x15)
+			{
+				newAnim = 0x19;
+			}
+			else if (anim == 0x34)
+			{
+				newAnim = 0x5B;
+			}
+			else if (anim == 0x32 || anim == 0x33)
+			{
+				newAnim = 0x59;
+			}
+			else
+			{
+				break;
+			}
+
+			pPlayer->PlaySingleAnim(newAnim, 0, -1);
+			pPlayer->mVel.vx = 0;
+			pPlayer->mVel.vy = 0;
+			pPlayer->mVel.vz = 0;
+			pPlayer->LockTargetTorsoAngle();
+			pPlayer->field_E1C = 0x400000;
+			break;
+		}
+
+		// 0x4B269B. Wall jump wind up.
+		case 64:
+		{
+			u16 anim = pPlayer->mAnim;
+
+			pPlayer->field_EA6 = 0;
+
+			if (anim == 0xD2)
+			{
+				if (pPlayer->mAnimFinished == 0) break;
+				pPlayer->PlaySingleAnim(0xD3, 0, -1);
+			}
+			else if (anim == 0xDF)
+			{
+				if (pPlayer->mAnimFinished == 0) break;
+				pPlayer->PlaySingleAnim(Rnd(2) != 0 ? 0xE7 : 0xE0, 0, -1);
+			}
+			else
+			{
+				break;
+			}
+
+			pPlayer->field_E84 = 0x70000;
+			pPlayer->field_E80 = (i32)0xFFFC4000;
+			if (pPlayer->field_DBC != 0)
+			{
+				pPlayer->field_E80 = pPlayer->field_DBC->mVel.vy - 0x3C000;
+			}
+			pPlayer->field_E1C = 2;
+			pPlayer->field_E88 = 0xA8000;
+			break;
+		}
+
+		// 0x4B2892. Dead, waiting out the respawn countdown.
+		case 128:
+		{
+			i32 elapsed = 0;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->mAnimFinished != 0)
+			{
+				if (*gSpideyDeathTimer >= 0x78)
+				{
+					gInitRelatedTwo = 0;
+					gLevelStatus = 2;
+					Flash_Reset();
+				}
+				elapsed = *gSpideyDeathTimer + pPlayer->field_80;
+			}
+
+			*gSpideyDeathTimer = elapsed;
+			break;
+		}
+
+		// 0x4B2F80. Starting a swing.
+		case 0x100:
+		{
+			pPlayer->field_EA6 = 0;
+			pPlayer->field_54C = 1;
+
+			// ebx still holds the 13 loaded at 0x4B211A here
+			if (pPlayer->mFrame < 13) break;
+
+			pPlayer->field_E80 = (i32)0xFFFC4000;
+			if (pPlayer->field_DBC != 0)
+			{
+				pPlayer->field_E80 = pPlayer->field_DBC->mVel.vy - 0x3C000;
+			}
+
+			pPlayer->field_E1C = 0x200;
+			pPlayer->field_E20 = 0;
+			SFX_PlayPos(9, &pPlayer->mPos, 0);
+
+			pPlayer->field_E84 = 0x70000;
+			pPlayer->field_E88 = 0xA8000;
+			pPlayer->field_A8.vx = 0;
+			pPlayer->field_A8.vy = (i16)0xF000;
+			pPlayer->field_A8.vz = 0;
+
+			if ((pPlayer->field_DAC.vx | pPlayer->field_DAC.vy | pPlayer->field_DAC.vz) != 0)
+			{
+				CVector normal;
+
+				normal.vx = (pPlayer->mPos.vx - pPlayer->field_DAC.vx) >> 12;
+				normal.vy = 0;
+				normal.vz = (pPlayer->mPos.vz - pPlayer->field_DAC.vz) >> 12;
+				VectorNormal(reinterpret_cast<VECTOR*>(&normal), reinterpret_cast<VECTOR*>(&normal));
+				pPlayer->OrientToNormal(true, &normal);
+				pPlayer->field_8E8 = 0;
+			}
+			else
+			{
+				pPlayer->OrientToNormal(false, &ZeroVector);
+			}
+			break;
+		}
 
 		default:
 			if (pPlayer->field_E1C > 0x10000)
 			{
-				// 0x4B50AE, 1936 instructions
+				// 0x4B50AE, 1936 instructions. Not ported yet.
 			}
 			else if (pPlayer->field_E1C == 0x10000)
 			{
-				// 0x4B4E9B, 132 instructions
+				// 0x4B4E9B, 132 instructions. Not ported yet.
 			}
 			else if (pPlayer->field_E1C > 0x100)
 			{
-				// 0x4B307C, 1871 instructions
+				// 0x4B307C, 1871 instructions. Not ported yet.
 			}
 			break;
 	}
