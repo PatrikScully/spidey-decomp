@@ -308,7 +308,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x200000    0x4B601F   TODO   ~190 instructions
 //   0x400000    0x4B5F4D   done   rolling
 //   0x800000    0x4B5DDB   done   knocked down / getting back up
-//   0x1000000   0x4B631E   TODO   ~160 instructions
+//   0x1000000   0x4B631E   done   the jumping smash kick
 //   0x2000000   0x4B6901   done   riding a zip-web dive onto a target
 //   0x4000000   0x4B6820   done   the punch that ends a zip-web dive
 //   0x8000000   0x4B65E4   done   the kick that ends a zip-web dive
@@ -2412,6 +2412,112 @@ void SpideyAI0(CPlayer *pPlayer)
 			pPlayer->field_534 = 0x168;
 			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
 			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
+		// 0x4B631E. The jumping smash kick: anims 0x81/0x85 trail a smoke
+		// ribbon, and the kick ends either by slamming into a surface
+		// (0x82/0x86) or by being bounced off it (0xAF).
+		case 0x1000000:
+		{
+			CVector normal;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->field_8DC != 0)
+			{
+				if (pPlayer->mAnim != 0) break;
+
+				pPlayer->field_8DC = 0;
+				// 0x4B6589
+				pPlayer->field_AE4 = 1;
+				pPlayer->field_AE5 = 0;
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if ((pPlayer->mAnim == 0x81 || pPlayer->mAnim == 0x85)
+				&& pPlayer->mAnimFinished != 0
+				&& pPlayer->field_584 == 0)
+			{
+				pPlayer->CreateJumpingSmashKickTrail();
+			}
+
+			if ((pPlayer->field_504 & 0x1000000) != 0
+				&& (u32)(gTimerRelated - pPlayer->field_500) < 6)
+			{
+				// bounced off: flip upright, play the recover animation and
+				// drop into the falling state.
+				pPlayer->field_A8.vx = 0;
+				pPlayer->field_A8.vy = (i16)0xF000;
+				pPlayer->field_A8.vz = 0;
+				pPlayer->OrientToNormal(false, &ZeroVector);
+				pPlayer->PlaySingleAnim(0xAF, 0, -1);
+				pPlayer->DestroyJumpingSmashKickTrail();
+				pPlayer->mVel.vx = 0;
+				pPlayer->mVel.vy = 0;
+				pPlayer->mVel.vz = 0;
+				pPlayer->field_E8C = 0;
+				pPlayer->field_E1C = 4;
+				break;
+			}
+
+			normal = (pPlayer->field_8CC - pPlayer->mPos) >> 12;
+
+			if ((pPlayer->mCollision & 2) == 0 && normal.vy > 0)
+			{
+				// still flying at the target: steer straight at it.
+				CVector up(-normal.vx, 0, -normal.vz);
+
+				VectorNormal(reinterpret_cast<VECTOR*>(&normal),
+					reinterpret_cast<VECTOR*>(&normal));
+				VectorNormal(reinterpret_cast<VECTOR*>(&up),
+					reinterpret_cast<VECTOR*>(&up));
+
+				pPlayer->field_A8.vx = (i16)-normal.vx;
+				pPlayer->field_A8.vy = (i16)-normal.vy;
+				pPlayer->field_A8.vz = (i16)-normal.vz;
+				pPlayer->OrientToNormal(true, &up);
+
+				if (pPlayer->field_8D8 != 0)
+				{
+					pPlayer->mVel.vx = 0;
+					pPlayer->mVel.vy = 0x30000;
+					pPlayer->mVel.vz = 0;
+					break;
+				}
+
+				{
+					CVector vel = normal * 0x60;
+					pPlayer->mVel.vx = vel.vx;
+					pPlayer->mVel.vy = vel.vy;
+					pPlayer->mVel.vz = vel.vz;
+				}
+				break;
+			}
+
+			// 0x4B651B. Arrived (or hit something): land the kick.
+			pPlayer->field_A8.vx = 0;
+			pPlayer->field_A8.vy = (i16)0xF000;
+			pPlayer->field_A8.vz = 0;
+			pPlayer->OrientToNormal(false, &ZeroVector);
+			pPlayer->mVel.vx = 0;
+			pPlayer->mVel.vy = 0;
+			pPlayer->mVel.vz = 0;
+			pPlayer->DestroyJumpingSmashKickTrail();
+			pPlayer->PlaySingleAnim(pPlayer->mAnim == 0x81 ? 0x82 : 0x86, 0, -1);
+
+			if (pPlayer->field_8C4 - pPlayer->field_8C8 < 0x78)
+			{
+				pPlayer->field_8DC = 0x29A;
+				break;
+			}
+
+			pPlayer->field_8DC = 0;
+			// 0x4B6589
+			pPlayer->field_AE4 = 1;
+			pPlayer->field_AE5 = 0;
+			pPlayer->SwitchToStandMode();
 			break;
 		}
 
