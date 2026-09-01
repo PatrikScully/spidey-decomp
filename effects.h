@@ -5,6 +5,7 @@
 #define EFFECTS_H
 
 #include "ob.h"
+#include "bit2.h"
 #include "m3dcolij.h"
 #include "export.h"
 
@@ -32,6 +33,26 @@ class CChunkSmoke : public CFlatBit
 		i32 field_74;
 		i32 field_78;
 		i32 field_7C;
+};
+
+// Short coloured line particle, used for the dust puffs a heavy foot throws
+// up. mStart is the spawn point, mEnd is that point pushed along a direction,
+// and both move by mVel every frame. The line fades out by dropping mFadeRate
+// from each channel of the CGLine end colour (mPadBGR1) per frame, and the bit
+// kills itself once that colour reaches black. Layout from the two
+// constructors (0x439E20, 0x439F20) and Move (0x43A040): only one new field,
+// the fade rate byte at 0x5C, and CBit::operator new is called with 96 bytes
+// at every call site, which matches sizeof 0x60 after padding.
+class CPingLine : public CGLine
+{
+	public:
+		EXPORT CPingLine(CVector*, CSVector*, i32, i32, i32, i32, i32, i32);
+		EXPORT CPingLine(CVector*, CVector*, i32, i32, i32, i32, i32, i32);
+		EXPORT virtual ~CPingLine(void) OVERRIDE;
+
+		EXPORT virtual void Move(void) OVERRIDE;
+
+		u8 mFadeRate;
 };
 
 class CFootprint : public CQuadBit
@@ -231,6 +252,7 @@ void validate_SSkinGooSource2(void);
 void validate_SSkinGooParams(void);
 void validate_CRhinoWallImpact(void);
 void validate_CFootprint(void);
+void validate_CPingLine(void);
 void validate_CChunkSmoke(void);
 void validate_CBouncingRock(void);
 void validate_CElectro(void);
