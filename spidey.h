@@ -270,7 +270,11 @@ class CPlayer : public CSuper
 		u8 field_ADA;
 		u8 field_ADB;
 
-		PADDING(0xAE4-0xADB-1);
+		// CheckExteriorSurfaceTransition: same "pushing away" flag as
+		// field_ADA, for the wall transition.
+		u8 field_ADC;
+
+		PADDING(0xAE4-0xADC-1);
 
 		u8 field_AE4;
 		u8 field_AE5;
@@ -611,7 +615,7 @@ class CPlayer : public CSuper
 		EXPORT void CalculateSwingWebParameters(CVector *);
 		EXPORT i32 *CalculateTugWebPathPoints(void);
 		EXPORT u8 CheckCeilingJumpingSmashPunch(void);
-		EXPORT void CheckExteriorSurfaceTransition(void);
+		EXPORT i32 CheckExteriorSurfaceTransition(void);
 		EXPORT i32 CheckFenceSurfaceTransition(void);
 		EXPORT void CheckForwards(bool);
 		EXPORT i32 CheckGroundGone(void);

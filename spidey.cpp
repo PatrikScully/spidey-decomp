@@ -670,10 +670,176 @@ u8 CPlayer::CheckCeilingJumpingSmashPunch(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckExteriorSurfaceTransition(void)
+// @Ok
+i32 CPlayer::CheckExteriorSurfaceTransition(void)
 {
-    printf("CPlayer::CheckExteriorSurfaceTransition(void)");
+	if (this->field_B74 == 0)
+		return 0;
+
+	if (this->field_B08 == 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+		return 0;
+
+	i16 nx = this->field_B84.vx;
+	i16 ny = this->field_B84.vy;
+	i16 nz = this->field_B84.vz;
+
+	bool bAligned = ((nz * this->field_A8.vz) >> 12)
+		+ ((ny * this->field_A8.vy) >> 12)
+		+ ((nx * this->field_A8.vx) >> 12) >= 1567;
+
+	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+
+	u16 anim = bAligned ? 75 : 63;
+
+	if (bAlternative)
+		anim = bAligned ? 81 : 69;
+
+	if (this->field_8E8 != 0 && this->field_B84.vy < -2600)
+	{
+		CVector up;
+		up.vx = 0;
+		up.vy = 4096;
+		up.vz = 0;
+		this->OrientToNormal(true, &up);
+
+		anim = bAlternative ? 86 : 59;
+	}
+	else
+	{
+		i32 side = (-(nx * this->field_C78) >> 12)
+			+ (-(ny * this->field_C7C) >> 12)
+			+ (-(nz * this->field_C80) >> 12);
+
+		if (side > 2048)
+			anim = bAlternative ? 70 : 64;
+		else if (side < -2048)
+			anim = bAlternative ? 71 : 65;
+	}
+
+	i32 *p = gSpideySFXEntry[anim];
+	this->field_350 = p;
+
+	// low word of the animation table entry for this region and animation
+	// is its frame count
+	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 8 * anim + 8) & 0xFFFF;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->mFrame = (i16)(frames - 1);
+	this->ApplyPose(gUnkPose);
+
+	CVector hookPos;
+	hookPos.vx = 0;
+	hookPos.vy = 0;
+	hookPos.vz = 0;
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
+
+	CameraList->SetTripodMotion(hookPos, frames * 2);
+
+	if (this->field_8E8 != 0)
+	{
+		i16 vy = this->field_B84.vy;
+
+		if (vy > 3400)
+		{
+			if ((this->field_AD9 == 0 && this->field_E2D > 0) ||
+				(this->field_AD9 != 0 && this->field_E2D < 0))
+				this->field_ADA = 1;
+			else
+				this->field_ADA = 0;
+
+			this->field_AD9 = 0;
+			this->SetCeilingCamera(16);
+		}
+		else if (vy < -2600)
+		{
+			this->field_AD9 = 0;
+			this->SetFloorCamera(16);
+		}
+		else
+		{
+			u8 lock = this->gCamAngleLock;
+			this->field_AD6 = 0;
+
+			if (lock == 0)
+			{
+				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+			}
+		}
+	}
+	else if (this->field_8E9 != 0)
+	{
+		if (this->field_B84.vy <= 3400)
+		{
+			this->field_AD6 = 0;
+
+			if ((this->field_AD8 == 0 && this->field_E2D > 0) ||
+				(this->field_AD8 != 0 && this->field_E2D < 0))
+				this->field_ADC = 1;
+			else
+				this->field_ADC = 0;
+
+			u8 lock = this->gCamAngleLock;
+			this->field_AD8 = 0;
+
+			if (lock == 0)
+			{
+				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+			}
+
+			this->SetWallCamera(16);
+		}
+	}
+	else if (this->field_B84.vy <= 3400)
+	{
+		u8 lock = this->gCamAngleLock;
+		this->field_AD6 = 0;
+
+		if (lock == 0)
+		{
+			i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+			CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+		}
+
+		this->SetWallCamera(16);
+	}
+
+	i32 *p2 = gSpideySFXEntry[anim];
+	this->field_E1C = 0x2000;
+	this->field_350 = p2;
+
+	if (p2)
+	{
+		while (p2[0] != -1)
+		{
+			p2[0] &= 0xFFFF;
+			p2++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->field_DF8 = 0;
+	this->mVel.vz = 0;
+	this->mVel.vy = 0;
+	this->mVel.vx = 0;
+	this->field_AE5 = 0;
+
+	return 1;
 }
 
 // @Ok
@@ -6957,6 +7123,7 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_ADA, 0xADA);
 	VALIDATE(CPlayer, field_ADB, 0xADB);
+	VALIDATE(CPlayer, field_ADC, 0xADC);
 
 	VALIDATE(CPlayer, field_AE4, 0xAE4);
 	VALIDATE(CPlayer, field_AE5, 0xAE5);
