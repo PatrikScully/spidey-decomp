@@ -1954,7 +1954,11 @@ void CPlayer::GetComboFrameInfoPointer(u16)
     printf("CPlayer::GetComboFrameInfoPointer(u16)");
 }
 
-// @SMALLTODO
+// @NotOk
+// Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
+// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
+// stream is not decidable from the PC binary. See that comment for the full
+// evidence.
 void CPlayer::GetComboPartsInfoPointer(u16)
 {
     printf("CPlayer::GetComboPartsInfoPointer(u16)");
