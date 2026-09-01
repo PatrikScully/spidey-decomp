@@ -1523,10 +1523,235 @@ u8 CPlayer::CheckJumpingSmashKick(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJumpingSwingWeb(void)
+// @Ok
+// verified against the IDA disasm of 0x4C18A0 (1533 bytes). Returns 1 when
+// a swing web was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// What it does: cast a probe line up from the player and ask
+// CheckSwingWebAvailability whether that hit point can carry a web. Up to
+// three probes are tried, in this order.
+//  1. straight along field_C6C (the player's up axis), one unit long.
+//  2. field_C84 tilted by the next angle out of the wide fan table, then,
+//     if that hits something usable, the angle is walked back towards zero
+//     in 57 unit steps for as long as it keeps hitting (the last good hit
+//     is the one that is used).
+//  3. field_C78 tilted by the next angle out of the narrow fan table.
+// A hit on a face flagged 0x40000 whose normal points up (vy >= -2600) is
+// rejected, the game does not let the player web those.
+//
+// The two fan tables live in the original's .rdata at 0x556590 and
+// 0x556578, six i32 each, and both cursors (field_5CC, field_5C8) walk
+// them round robin so repeated swings do not all aim at the same angle.
+u8 CPlayer::CheckJumpingSwingWeb(void)
 {
-    printf("CPlayer::CheckJumpingSwingWeb(void)");
+	// gPracticeDifficultyFlag, 0x60CFC7, same file-local pointer pshell.cpp
+	// uses. Set while the training/practice mode assists the player.
+	static u8 * const gPracticeDifficultyFlag = (u8*)0x0060CFC7;
+
+	// probe angle tables, original addresses 0x556590 and 0x556578.
+	static const i32 gSwingWebWideFanAngles[6] = { -171, 171, -341, 341, -512, 512 };
+	static const i32 gSwingWebNarrowFanAngles[6] = { 57, -57, 114, -114, 171, -171 };
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[0x70] == 0 || (*gPracticeDifficultyFlag != 0 && this->field_1AC == 0))
+	{
+		// no button, but practice mode can still fire the swing for you
+		if (*gPracticeDifficultyFlag == 0)
+			return 0;
+
+		if ((this->field_E1C & 6) == 0)
+			return 0;
+
+		if (this->field_E8D == 0)
+			return 0;
+
+		if (pInput[0x100] == 0)
+			return 0;
+	}
+
+	if (this->field_8EA != 0)
+		return 0;
+
+	if (this->mHeldObject != 0)
+		return 0;
+
+	if (this->field_550 != 0)
+		return 0;
+
+	bool bFound = false;
+
+	SLineInfo lineInfo;
+
+	i32 one = 4096;
+	CVector probe = this->mPos - (this->field_C6C * one);
+
+	lineInfo.StartCoords.vx = this->mPos.vx;
+	lineInfo.StartCoords.vy = this->mPos.vy - 0x40000;
+	lineInfo.StartCoords.vz = this->mPos.vz;
+
+	lineInfo.EndCoords.vx = probe.vx;
+	lineInfo.EndCoords.vy = probe.vy;
+	lineInfo.EndCoords.vz = probe.vz;
+
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (lineInfo.pFace != 0 && (lineInfo.pFace[3] & 0x40000) != 0
+		&& lineInfo.Normal.vy >= -2600)
+	{
+		lineInfo.pItem = 0;
+	}
+	else if (lineInfo.pItem != 0)
+	{
+		bFound = this->CheckSwingWebAvailability(&lineInfo) != 0;
+	}
+
+	if ((this->field_E1C & 0x40006) != 0 && !bFound)
+	{
+		i16 angle = (i16)gSwingWebWideFanAngles[this->field_5CC];
+
+		this->field_5CC++;
+		if (this->field_5CC > 5)
+			this->field_5CC = 0;
+
+		i32 s = rcossin_tbl[angle & 0xFFF].sin;
+		i32 c = rcossin_tbl[angle & 0xFFF].cos;
+
+		lineInfo.EndCoords.vx = this->mPos.vx
+			+ ((((this->field_C84.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+		lineInfo.EndCoords.vy = this->mPos.vy
+			+ (((((this->field_C84.vy * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+		lineInfo.EndCoords.vz = this->mPos.vz
+			+ ((((this->field_C84.vz * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+
+		M3dColij_InitLineInfo(&lineInfo);
+		M3dZone_LineToItem(&lineInfo, 1);
+
+		if (lineInfo.pFace != 0 && (lineInfo.pFace[3] & 0x40000) != 0
+			&& lineInfo.Normal.vy >= -2600)
+		{
+			lineInfo.pItem = 0;
+		}
+		else if (lineInfo.pItem != 0 && this->CheckSwingWebAvailability(&lineInfo) != 0)
+		{
+			// keep straightening the probe while it still finds a hook
+			while (angle <= -57)
+			{
+				angle = (i16)(angle + 57);
+
+				s = rcossin_tbl[angle & 0xFFF].sin;
+				c = rcossin_tbl[angle & 0xFFF].cos;
+
+				lineInfo.EndCoords.vx = this->mPos.vx
+					+ ((((this->field_C84.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+				lineInfo.EndCoords.vy = this->mPos.vy
+					+ (((((this->field_C84.vy * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+				lineInfo.EndCoords.vz = this->mPos.vz
+					+ ((((this->field_C84.vz * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+
+				M3dColij_InitLineInfo(&lineInfo);
+				M3dZone_LineToItem(&lineInfo, 1);
+
+				if (lineInfo.pItem == 0)
+					break;
+
+				if ((lineInfo.pFace[3] & 0x40000) != 0 && lineInfo.Normal.vy >= -2600)
+				{
+					lineInfo.pItem = 0;
+					break;
+				}
+
+				if (this->CheckSwingWebAvailability(&lineInfo) == 0)
+					break;
+			}
+
+			bFound = true;
+		}
+
+		if (!bFound)
+		{
+			i32 narrowAngle = gSwingWebNarrowFanAngles[this->field_5C8];
+
+			this->field_5C8++;
+			if (this->field_5C8 > 5)
+				this->field_5C8 = 0;
+
+			s = rcossin_tbl[narrowAngle & 0xFFF].sin;
+			c = rcossin_tbl[narrowAngle & 0xFFF].cos;
+
+			lineInfo.EndCoords.vx = this->mPos.vx
+				+ ((((this->field_C78 * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+			lineInfo.EndCoords.vy = this->mPos.vy
+				+ (((((this->field_C7C * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+			lineInfo.EndCoords.vz = this->mPos.vz
+				+ ((((this->field_C80 * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (lineInfo.pFace != 0 && (lineInfo.pFace[3] & 0x40000) != 0
+				&& lineInfo.Normal.vy >= -2600)
+				return 0;
+
+			if (lineInfo.pItem == 0)
+				return 0;
+
+			bFound = this->CheckSwingWebAvailability(&lineInfo) != 0;
+		}
+	}
+
+	if (!bFound)
+		return 0;
+
+	print_if_false(this->field_E64 == 0, "Error");
+
+	this->field_DC0.vx = lineInfo.Position.vx;
+	this->field_DAC.vx = lineInfo.Position.vx;
+	this->field_DC0.vy = lineInfo.Position.vy;
+	this->field_DC0.vz = lineInfo.Position.vz;
+	this->field_DAC.vy = lineInfo.Position.vy;
+	this->field_DAC.vz = lineInfo.Position.vz;
+
+	this->field_8ED = 0;
+	this->field_AD4 = 0;
+	this->field_DF8 = 0;
+
+	if ((this->field_E1C & 9) != 0)
+	{
+		this->field_E1C = 0x100;
+		RunAnimWithSFX(this, 0x111);
+	}
+	else
+	{
+		this->field_54C = 1;
+		this->field_E1C = 0x200;
+		this->field_E20 = 0;
+		RunAnimWithSFX(this, 0x11A);
+
+		if (this->mVel.vy > 0)
+			this->mVel.vy = 0;
+	}
+
+	this->field_201 = 1;
+	reinterpret_cast<u8*>(this->field_E0C)[0x41] = 1;
+
+	return 1;
 }
 
 // @Ok

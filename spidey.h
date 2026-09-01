@@ -68,7 +68,12 @@ class CPlayer : public CSuper
 
 		i32* field_1BC;
 
-		PADDING(0x211-0x1BC-4);
+		PADDING(0x201-0x1BC-4);
+
+		// set to 1 by CheckJumpingSwingWeb once a swing web is committed.
+		u8 field_201;
+
+		PADDING(0x211-0x201-1);
 
 		// set by ReadAnalogueInput when the move input returns to centre
 		// while field_AD8 was pending.
@@ -171,7 +176,8 @@ class CPlayer : public CSuper
 		// (0x4C38A0), "cmp [ebp+54Fh], bl" / "mov [ebp+54Fh], bl".
 		u8 field_54F;
 
-		PADDING(0x551-0x54F-1);
+		// blocks CheckJumpingSwingWeb while set.
+		u8 field_550;
 
 		// cleared by CheckForwards whenever it retargets the torso angle
 		u8 field_551;
@@ -212,7 +218,12 @@ class CPlayer : public CSuper
 		// compute intermediate trail steps. [0] = hook 1, [1] = hook 0.
 		CVector field_594[2];
 
-		PADDING(0x5D0-0x594-0x18);
+		PADDING(0x5C8-0x594-0x18);
+
+		// round-robin cursors into the two swing-web probe angle tables,
+		// see CPlayer::CheckJumpingSwingWeb. Both count 0..5 and wrap.
+		i32 field_5C8;
+		i32 field_5CC;
 
 
 		i32 field_5D0;
@@ -701,7 +712,7 @@ class CPlayer : public CSuper
 		EXPORT void CheckJumpingR1ZipWeb(void);
 		EXPORT void CheckJumpingR2ZipWeb(void);
 		EXPORT u8 CheckJumpingSmashKick(void);
-		EXPORT void CheckJumpingSwingWeb(void);
+		EXPORT u8 CheckJumpingSwingWeb(void);
 		EXPORT i32 CheckKick(void);
 		EXPORT i32 CheckLanded(void);
 		EXPORT i32 CheckRunIntoWall(void);
