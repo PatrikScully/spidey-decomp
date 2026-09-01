@@ -572,7 +572,61 @@ nextBaddy:;
 		this->field_354 = 0;
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Scoped 2026-09-01 but not implemented. Original address 0x4B9EB0, 2807
+// bytes. It is a plain (very long) field initialiser, and every function it
+// calls already exists in the repo, so nothing blocks it leaf-first. What
+// stops it is the CPlayer layout: it writes about 200 offsets and roughly
+// 35 of them are still inside PADDING blocks. Adding them wrong shifts
+// everything after, so whoever does this should add one VALIDATE entry per
+// new field in validate_CPlayer and let tobey_validator check the lot.
+//
+// What it does, in order:
+//  - CSuper::CSuper, then zero two 16 x CVector arrays at 0x37C and 0x43C
+//    (the current and previous collision part positions
+//    UpdateAndTrackCombo sweeps between), the CVector/CSVector pair at
+//    0x514/0x520, field_558, both halves of field_594, the six
+//    SIndicator::mDirection vectors from 0x5F0 on (stride 104), and a long
+//    run of vectors, quats and scalars from 0x8CC up to 0xEE8. The nonzero
+//    seeds are: 0x570/0x574/0x578 = 208/160/256, the identity w components
+//    (4096) of the quats at 0xC94, 0xCA4, 0xCC4, 0xCD4, field_C5C = 1,
+//    field_C60 = 300, field_C64 = 4096, field_A80 = 1, field_8EB = 1.
+//  - vptr, field_554 = SpideyAI0, field_194 = (field_194 & 0xFFFFF39F) |
+//    0x840, then ParseFightData().
+//  - patches nine gSpideySFXEntry slots (0x6A830C, 0x6A83A4, 0x6A8388,
+//    0x6A8380, 0x6A8384, 0x6A83A8, 0x6A83B4, 0x6A85B8, 0x6A85D0) to point
+//    at the .rdata blobs at 0x5565A8..0x556600, then walks the WHOLE
+//    gSpideySFXEntry array (0x6A82B8 up to gDistanceDefs at 0x6A8768) and
+//    masks every entry of every script to 16 bits.
+//  - Trig_GetLevelId(): a fixed list of level ids clears field_C5C.
+//  - field_360 = field_364 = 2, field_DEC = Spool_FindAnim("Reticle").
+//  - resets the whole camera tuning global block (gSpideyFloorCam*,
+//    gSpideyWallCam*, 0x6A81xx / 0x6A82xx / 0x6A8Cxx) to its defaults.
+//  - AttachTo(&MechList) and ++(the count at 0x6A9034).
+//  - difficulty (gDifficultyLevel at 0x54D474) picks mHealth and field_5D8;
+//    levels 6, 9 and 10 clamp field_5D8 to 2; gSaveGame+0x48/+0x4C restore
+//    mWebbing and field_5D8 when either is set; Trig_GetLevelId() above
+//    0x800 clamps field_5D8 to 2 again.
+//  - field_E0C = gSControl (0x661100), mpLight = 0x5559E0, InitItem
+//    ("spidey"), mFric = (1,4,1), mType = 50, mAngFric = (5,1,5),
+//    SwitchToStandMode(), M3dUtils_ReadHooksPacket(this, 0x55644C).
+//  - mTransform = identity-ish, then M3dMaths_RotMatrixYXZ((0,2048,0)) and
+//    MulMatrix into mTransform.
+//  - if gSaveGame+0x79 is set and gSaveGame+0xE8 is clear: load the
+//    "costarm" anim, seed field_5EC from difficulty then overwrite it with
+//    gSaveGame+0x50, and swap the suit textures once
+//    (Spidey_SwapSuitTextures + gSpideyVramProcessing, the same handshake
+//    ~CPlayer undoes).
+//  - Spidey_BagHead(4096, ...), then the SIndicator poly setup loop
+//    (6 x 4 POLY_F3, writing the dword at mPoly[j]+4 with 96 - j*24 and
+//    zeroing the one after; the setPolyF3/setSemiTrans calls next to it are
+//    the stubbed_printf pair, so they do nothing on PC). NOTE: this loop is
+//    the one part of the function I could not pin down cleanly, because the
+//    dword it writes lands on POLY_F3::r0..code rather than on the tag;
+//    check it against the disasm again before writing it out.
+//  - gSaveGame+0x7C picks field_580 (the hand trail colour).
+//  - field_E18 = 15, field_E12 = (i16)mAnimSpeed, and if field_8EA is set,
+//    ExitLookaroundMode().
 CPlayer::CPlayer(void)
 {
     printf("CPlayer::CPlayer(void)");
@@ -7730,7 +7784,53 @@ void CPlayer::SynthesizeAnalogueInput(void)
 	}
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Scoped 2026-09-01 but not implemented. Original address 0x4C7120, 4839
+// bytes, by far the largest function left in this file. Every callee it has
+// already exists in the repo (M3dColij_LineToSphere, M3dZone_LineToItem,
+// M3dUtils_GetHookPosition / GetDynamicHookPosition, M3d_BuildTransform,
+// Web_CollideWithSuper, Utils_CrapDist, CSuper::ApplyPose, VectorNormal,
+// CPlayer::CreateCombatImpactEffect, SFX_PlayPos, InitiateCombo), and the
+// combo state it drives is now fully declared in spidey.h (field_8FC up to
+// field_A7C plus SComboPart), so this is a big but unblocked job.
+//
+// Elapsed time is field_84 - field_910; the byte at field_950[elapsed / 2]
+// is written straight into CSuper::mFrame, and hitting 0xFF in that stream
+// ends the move: everything is cleared and, if a follow-on was queued in
+// field_958, InitiateCombo(*field_958, field_90C) starts it (the
+// "exit frame incorrectly defined" assert fires on that path).
+//
+// The four blocks, in order:
+//  1. Distance. gDistanceDefs[mAnim] (0x6A8768, built by ParseFightData) is
+//     a byte stream walked with field_916 as the cursor: bytes 0x80..0x83
+//     and 0x84..0x87 select one of four slide hooks (and whether the y
+//     component is kept), anything else accumulates into a plain forward
+//     slide. The chosen slide is then swept with M3dColij_LineToSphere plus
+//     two M3dZone_LineToItem probes so the player does not slide into
+//     geometry, and the surviving offset is added to mPos with
+//     CVector::operator+=.
+//  2. Input latching. field_E2D / field_E2E against field_E2F / field_E30
+//     set the four direction latches at 0x241/0x251/0x261/0x271 and their
+//     pad mirrors, then the four attack buttons are packed into a 4 bit
+//     mask.
+//  3. Part matching. Walks field_95C while mInput is non null: a part only
+//     accepts a press inside its frame window (field_902/904 or
+//     field_906/908 depending on mUseLateWindow), advances mInput by 1 or 2
+//     depending on whether the press was inside the part's own timeout
+//     (the byte at mInput[1]), and when mInput reaches 0xFF the part wins:
+//     field_958, field_914, field_90A and field_90C are filled in from the
+//     move record's parts array and field_94C is cleared.
+//  4. Collision. Between field_8FE and field_900 the collision parts stream
+//     at field_954 is walked, each entry feeding
+//     M3dUtils_GetDynamicHookPosition into the 0x37C array (with the 0x43C
+//     array holding the previous frame, or the same position on the first
+//     tick, which is what field_378 gates). Every CBody in the baddy list
+//     that is not already in field_A6C and is within 700 units gets swept
+//     with Web_CollideWithSuper; on a hit it builds the SHitInfo (damage
+//     from the move record scaled by GetDamageInflictedFromDifficulty, the
+//     random slide distance from record+26/+28, the impact direction from
+//     Utils_CalcAim), calls the target's virtual Hit, plays one of three
+//     impact effects, and records the body in field_A6C.
 void CPlayer::UpdateAndTrackCombo(void)
 {
     printf("CPlayer::UpdateAndTrackCombo(void)");
@@ -9477,35 +9577,186 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 	}
 }
 
-// @BIGTODO
-// Scoped 2026-09-01 but not implemented, because it is blocked leaf-first.
-// Original address 0x4B9420, 781 bytes, __thiscall taking the CVector by
-// value (the vector is only used as the normal for OrientToNormal(1, &v)).
-// It is the "clean everything up before the Venom distance attack" teardown:
-// deletes the auto-aim target (field_878, off MiscellaneousRenderingList),
-// clears field_ECC and gWaterEffect (0x60FA9C), stops the SFX handle in
-// field_ED0, deletes the body part held by the handle at field_ED4 (off
-// SpideyAdditionalBodyPartsList) and re-makes it as an empty handle, drops
-// mHeldObject at mPos-ish offset (-8 * field_C6C + 4 * field_C84) via
-// CManipOb::Drop, calls CSwinger_SwingBack then deletes field_E64, deletes
-// field_E6C, deletes the two body-part handles at CPlayer+0x5B8 and +0x5C0
-// the same way, clears field_5AC/field_5B0, bursts the dome behind the
-// handle at field_AB8 (CDome::Burst) and re-makes that handle empty, fades
-// all four smoke trails (field_584..field_590), clears
-// field_54C/field_AD4/field_8E8/field_8E9, resets field_A8 to (0,-4096,0),
-// re-orients to the passed normal, zeroes mVel/field_548/field_DF8, leaves
-// lookaround mode if field_8EA, sets CameraList->field_12C to -1 and, when
-// CameraList->mCameraMode == 3, restores the five camera tuning values
-// (gSpideySwingCam* / gSpideyWallCam*) and clears field_540, then
-// PutCameraBehind(0).
-// Blockers: CDome::Burst (0x4FAD50) has no declaration and no body in the
-// repo, and decompiling it first pulls in CDomeRing::CDomeRing (0x4F5510)
-// and CItem_Burst (0x45FDC0), neither of which is declared either. Doing
-// this function honestly means starting from those three. It also needs
-// seven new CPlayer fields (0x5AC, 0x5B0, an SHandle[2] at 0x5B8, 0xECC,
-// 0xED0, an SHandle at 0xED4 and a u8 at 0xEF4).
-void CPlayer::PriorToVenomDistanceAttack(CVector)
-{}
+// @Ok
+// verified against the IDA disasm of 0x4B9420 (781 bytes). The "clean
+// everything up before the Venom distance attack" teardown: every object
+// the player owns is dropped or deleted, the physics state is reset and the
+// player is stood back up along the passed normal.
+//
+// Caveat: the one call it makes that is not real yet is CDome::Burst
+// (web.cpp, still a stub), so the dome the player was holding is not
+// actually popped at runtime until that is written.
+void CPlayer::PriorToVenomDistanceAttack(CVector a2)
+{
+	// gWaterEffect (0x60FA9C) lives in post.cpp and has no header
+	// declaration, so it is pulled in the same way CurrentSuit is above.
+	extern i32 gWaterEffect;
+
+	CBody *pAutoAim = this->field_878;
+
+	this->field_EF4 = 0;
+
+	if (pAutoAim != 0)
+	{
+		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&MiscellaneousRenderingList));
+
+		i32 *v = reinterpret_cast<i32*>(pAutoAim);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+
+		this->field_878 = 0;
+	}
+
+	u32 hSfx = this->field_ED0;
+
+	this->field_ECC = 0;
+	gWaterEffect = 0;
+
+	if (hSfx != 0)
+	{
+		SFX_Stop(hSfx);
+		this->field_ED0 = 0;
+	}
+
+	CBody *pPart = reinterpret_cast<CBody*>(Mem_RecoverPointer(&this->field_ED4));
+
+	if (pPart != 0)
+	{
+		pPart->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+		i32 *v = reinterpret_cast<i32*>(pPart);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+
+		this->field_ED4 = Mem_MakeHandle(0);
+	}
+
+	CManipOb *pHeld = this->mHeldObject;
+
+	this->field_E88 = 0;
+	this->field_E84 = 0;
+
+	if (pHeld != 0)
+	{
+		i32 forward = 4;
+		i32 down = -8;
+
+		CVector dropPos = (down * this->field_C6C) + (forward * this->field_C84);
+
+		pHeld->Drop(&dropPos);
+		this->mHeldObject = 0;
+	}
+
+	i32 *pSwinger = this->field_E64;
+
+	if (pSwinger != 0)
+	{
+		CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+		(*(void(**)(i32*, i32))*pSwinger)(pSwinger, 1);
+		this->field_E64 = 0;
+	}
+
+	i32 *pWeb = this->field_E6C;
+
+	if (pWeb != 0)
+	{
+		(*(void(**)(i32*, i32))*pWeb)(pWeb, 1);
+		this->field_E6C = 0;
+	}
+
+	SHandle *pHandle = this->field_5B8;
+
+	for (i32 i = 2; i != 0; --i)
+	{
+		CBody *pFist = reinterpret_cast<CBody*>(Mem_RecoverPointer(pHandle));
+
+		if (pFist != 0)
+		{
+			pFist->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+			i32 *v = reinterpret_cast<i32*>(pFist);
+			(*(void(**)(i32*, i32))*v)(v, 1);
+
+			pHandle->pWhatever = 0;
+		}
+
+		pHandle++;
+	}
+
+	this->field_5B0 = 0;
+	this->field_5AC = 0;
+
+	CDome *pDome = reinterpret_cast<CDome*>(Mem_RecoverPointer(&this->field_AB8));
+
+	if (pDome != 0)
+	{
+		pDome->Burst();
+		this->field_AB8 = Mem_MakeHandle(0);
+	}
+
+	if (this->field_584 != 0)
+	{
+		this->field_584->mFadeAway = 1;
+		this->field_584 = 0;
+	}
+
+	if (this->field_588 != 0)
+	{
+		this->field_588->mFadeAway = 1;
+		this->field_588 = 0;
+	}
+
+	if (this->field_58C != 0)
+	{
+		this->field_58C->mFadeAway = 1;
+		this->field_58C = 0;
+	}
+
+	if (this->field_590 != 0)
+	{
+		this->field_590->mFadeAway = 1;
+		this->field_590 = 0;
+	}
+
+	this->field_54C = 0;
+	this->field_AD4 = 0;
+	this->field_8E9 = 0;
+	this->field_8E8 = 0;
+
+	this->field_A8.vx = 0;
+	this->field_A8.vy = -4096;
+	this->field_A8.vz = 0;
+
+	this->OrientToNormal(1, &a2);
+
+	u8 bLookaround = this->field_8EA;
+
+	this->mVel.vz = 0;
+	this->mVel.vy = 0;
+	this->mVel.vx = 0;
+	this->field_548 = 0;
+	this->field_DF8 = 0;
+
+	if (bLookaround != 0)
+		this->ExitLookaroundMode();
+
+	// the original writes through CameraList before checking it for null,
+	// kept as is
+	CCamera *pCamera = CameraList;
+
+	CameraList->field_12C = -1;
+
+	if (pCamera != 0 && pCamera->mCameraMode == 3)
+	{
+		pCamera->SetCamXOffset(gSpideyFloorCamXOffset, 0);
+		pCamera->SetCamYOffset(gSpideyFloorCamYOffset, 0);
+		pCamera->SetCamZOffset(gSpideyFloorCamZOffset, 0);
+		pCamera->SetCamXZDistance(gSpideyFloorCamXZDistance, 0);
+		pCamera->SetCamYDistance(gSpideyFloorCamYDistance, 0);
+
+		this->field_540 = 0;
+	}
+
+	this->PutCameraBehind(0);
+}
 
 // Transitions back to the stand (idle) animation from a finishing move.
 // Picks the stand anim + SFX entry to play based on the current mAnim (and

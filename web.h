@@ -59,6 +59,9 @@ class CDome : public CBody
 		CClass *field_110;
 		CClass *field_114;
 		CClass *field_118;
+
+		// Original 0x4FAD50. Pops the dome: see the stub in web.cpp.
+		EXPORT void Burst(void);
 };
 
 class CDomeRing : public CBody {
