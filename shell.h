@@ -14,6 +14,9 @@ EXPORT extern CBody *MiscList;
 // defined in effects.h (CBit-derived); only used here as a pointer member of CDummy.
 class CVertexWobble;
 
+// defined in scorpion.h; only used here as a pointer member of CDummy.
+struct STailGeometry;
+
 struct SRecordRelated
 {
 	char* pName;
@@ -190,6 +193,10 @@ public:
 	// menu functions that construct a CDummy).
 	EXPORT virtual void AI(void) OVERRIDE;
 
+	// 0x495970, the CDummy copy of CScorpion::TailRenderer (Mac symbol
+	// .TailRenderer__6CDummyFv). Only caller is Shell_CharacterViewer's per-mType switch.
+	EXPORT void TailRenderer(void);
+
 	EXPORT void FadeBack(void);
 	EXPORT void FadeAway(void);
 	EXPORT void SelectNewTrack(i32);
@@ -282,7 +289,11 @@ public:
 
 	CItem field_240;
 
-	PADDING(0x288 - 0x240 - sizeof(CItem));
+	PADDING(0x284 - 0x240 - sizeof(CItem));
+
+	// Tail geometry buffer for the Scorpion preview model (mType 310), rebuilt every frame by
+	// TailRenderer. Exactly the same buffer layout CScorpion::mpTailGeometry uses (scorpion.h).
+	STailGeometry* mpTailGeometry;
 
 	CItem field_288;
 

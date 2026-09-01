@@ -33,6 +33,7 @@
 #include "dcmemcard.h"
 #include "dcfileio.h"
 #include "DXinit.h"
+#include "scorpion.h"
 
 #include <cstring>
 
@@ -8301,6 +8302,275 @@ CDummy::CDummy(const char* pName, i16 mTypeArg, i16 scale, i32 posY, i32 default
 	}
 }
 
+// 0x00553014 and 0x0055302C. The CDummy copy of the Scorpion tail hook tables (the values are
+// identical to scorpion.cpp's gTailBaseRingHooks/gTailBaseHook, but they are a separate copy in
+// the binary): a circle of radius 240 around (0, 368, 464), all on bone 2.
+static const i16 gDummyTailBaseRingHooks[4][3] = {
+	{ 0, 368, 704 },
+	{ 240, 368, 464 },
+	{ 0, 368, 224 },
+	{ -239, 368, 464 }
+};
+static const i16 gDummyTailBaseHook[3] = { 0, 368, 464 };
+
+// 0x00553034 and 0x0055304C. The same for the tail tip: a circle of radius 120 around
+// (0, -1, 0), all on bone 0.
+static const i16 gDummyTailTipRingHooks[4][3] = {
+	{ 120, -1, 0 },
+	{ 0, -1, -120 },
+	{ -119, -1, 0 },
+	{ 0, -1, 120 }
+};
+static const i16 gDummyTailTipHook[3] = { 0, -1, 0 };
+
+// @Ok
+// 0x495970, 1862 bytes. The Mac build names it .TailRenderer__6CDummyFv, and it is the same
+// code as CScorpion::TailRenderer (0x489810, scorpion.cpp) with CDummy's own field offsets:
+// field_240 is the tail item, field_304[23] are the tail nodes and mpTailGeometry is the
+// geometry buffer. Only caller is Shell_CharacterViewer, for the Scorpion preview (mType 310).
+// Rebuilds a ring of four vertices and four normals around each of the 23 tail nodes every
+// frame, then hands the tail item to M3d_Render. The first and the last ring come from model
+// hooks; the ones in between are swept with a Frenet style frame kept square by two GTE cross
+// products, with the ring radius tapering off along the tail.
+void CDummy::TailRenderer(void)
+{
+	if (this->field_240.mRegion == 0xFF)
+		return;
+
+	// the tail item sits at the midpoint of the first and the last node, so every vertex can be
+	// stored relative to it as an i16
+	this->field_240.mPos.vx = this->field_304[0].vx
+			+ (this->field_304[22].vx - this->field_304[0].vx) / 2;
+	this->field_240.mPos.vy = this->field_304[0].vy
+			+ (this->field_304[22].vy - this->field_304[0].vy) / 2;
+	this->field_240.mPos.vz = this->field_304[0].vz
+			+ (this->field_304[22].vz - this->field_304[0].vz) / 2;
+
+	i32 firstX = (this->field_304[0].vx - this->field_240.mPos.vx) >> 12;
+	i32 firstY = (this->field_304[0].vy - this->field_240.mPos.vy) >> 12;
+	i32 firstZ = (this->field_304[0].vz - this->field_240.mPos.vz) >> 12;
+	i32 lastX = (this->field_304[22].vx - this->field_240.mPos.vx) >> 12;
+	i32 lastY = (this->field_304[22].vy - this->field_240.mPos.vy) >> 12;
+	i32 lastZ = (this->field_304[22].vz - this->field_240.mPos.vz) >> 12;
+
+	STailGeometry *pGeom = this->mpTailGeometry;
+
+	// low half is the bigger of the two, high half the smaller
+	if (firstX >= lastX)
+		pGeom->BoundsX = ((lastX & 0xFFFF) << 16) | (firstX & 0xFFFF);
+	else
+		pGeom->BoundsX = ((firstX & 0xFFFF) << 16) | (lastX & 0xFFFF);
+
+	if (firstY >= lastY)
+		pGeom->BoundsY = ((lastY & 0xFFFF) << 16) | (firstY & 0xFFFF);
+	else
+		pGeom->BoundsY = ((firstY & 0xFFFF) << 16) | (lastY & 0xFFFF);
+
+	if (firstZ >= lastZ)
+		pGeom->BoundsZ = ((lastZ & 0xFFFF) << 16) | (firstZ & 0xFFFF);
+	else
+		pGeom->BoundsZ = ((firstZ & 0xFFFF) << 16) | (lastZ & 0xFFFF);
+
+	CVector normal;
+	CVector binormal;
+
+	normal.vx = 0;
+	normal.vy = 0;
+	normal.vz = 0;
+	binormal.vx = 0;
+	binormal.vy = 0;
+	binormal.vz = 0;
+
+	for (u32 node = 0; node < 23; node++)
+	{
+		if (node == 0)
+		{
+			SHook hook;
+			CVector centre;
+
+			hook.Part.vx = gDummyTailBaseHook[0];
+			hook.Part.vy = gDummyTailBaseHook[1];
+			hook.Part.vz = gDummyTailBaseHook[2];
+			hook.Offset = 2;
+
+			centre.vx = 0;
+			centre.vy = 0;
+			centre.vz = 0;
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&centre), this, &hook);
+
+			for (u32 i = 0; i < 4; i++)
+			{
+				CVector pos;
+
+				pos.vx = 0;
+				pos.vy = 0;
+				pos.vz = 0;
+
+				hook.Part.vx = gDummyTailBaseRingHooks[i][0];
+				hook.Part.vy = gDummyTailBaseRingHooks[i][1];
+				hook.Part.vz = gDummyTailBaseRingHooks[i][2];
+
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&pos), this, &hook);
+
+				CVector out = (pos - centre) >> 6;
+				VectorNormal(reinterpret_cast<VECTOR*>(&out),
+						reinterpret_cast<VECTOR*>(&out));
+
+				pGeom->Normals[i].vx = static_cast<i16>(out.vx);
+				pGeom->Normals[i].vy = static_cast<i16>(out.vy);
+				pGeom->Normals[i].vz = static_cast<i16>(out.vz);
+				pGeom->Normals[i].pad = 0;
+
+				pGeom->Vertices[i].vx = static_cast<i16>(
+						(pos.vx - this->field_240.mPos.vx) >> 12);
+				pGeom->Vertices[i].vy = static_cast<i16>(
+						(pos.vy - this->field_240.mPos.vy) >> 12);
+				pGeom->Vertices[i].vz = static_cast<i16>(
+						(pos.vz - this->field_240.mPos.vz) >> 12);
+				pGeom->Vertices[i].pad = 0;
+
+				if (i == 0)
+					normal = out;
+			}
+
+			continue;
+		}
+
+		// the tangent along the tail, the last node uses the chord behind it because there is
+		// no node after it
+		const CVector *pNode;
+		CVector tangent;
+
+		tangent.vx = 0;
+		tangent.vy = 0;
+		tangent.vz = 0;
+
+		if (node == 22)
+		{
+			pNode = &this->field_304[22];
+			tangent = (this->field_304[22] - this->field_304[21]) >> 6;
+		}
+		else
+		{
+			pNode = &this->field_304[node];
+			tangent = (this->field_304[node + 1] - this->field_304[node]) >> 6;
+		}
+
+		VectorNormal(reinterpret_cast<VECTOR*>(&tangent),
+				reinterpret_cast<VECTOR*>(&tangent));
+
+		// binormal = tangent x normal, then normal = binormal x tangent, so the frame stays
+		// square as the tail bends
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&tangent));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&normal));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&binormal));
+
+		VectorNormal(reinterpret_cast<VECTOR*>(&binormal),
+				reinterpret_cast<VECTOR*>(&binormal));
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&binormal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&tangent));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&normal));
+
+		i32 taper = 16 - ((rcossin_tbl[(42 * (node + 1)) & 0xFFF].sin * 8) >> 12);
+
+		if (node == 22)
+		{
+			// the tip ring is not swept, it comes from model hooks like the first one does
+			// (the frame built above goes unused here)
+			SHook hook;
+			CVector centre;
+
+			hook.Part.vx = gDummyTailTipHook[0];
+			hook.Part.vy = gDummyTailTipHook[1];
+			hook.Part.vz = gDummyTailTipHook[2];
+			hook.Offset = 0;
+
+			centre.vx = 0;
+			centre.vy = 0;
+			centre.vz = 0;
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&centre), this, &hook);
+
+			for (u32 i = 0; i < 4; i++)
+			{
+				CVector pos;
+
+				pos.vx = 0;
+				pos.vy = 0;
+				pos.vz = 0;
+
+				hook.Part.vx = gDummyTailTipRingHooks[i][0];
+				hook.Part.vy = gDummyTailTipRingHooks[i][1];
+				hook.Part.vz = gDummyTailTipRingHooks[i][2];
+
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&pos), this, &hook);
+
+				CVector out = (pos - centre) >> 6;
+
+				// unlike the first ring this one is normalised straight into the i16 slot
+				VectorNormalS(reinterpret_cast<VECTOR*>(&out),
+						&pGeom->Normals[22 * 4 + i]);
+				pGeom->Normals[22 * 4 + i].pad = 0;
+
+				pGeom->Vertices[22 * 4 + i].vx = static_cast<i16>(
+						(pos.vx - this->field_240.mPos.vx) >> 12);
+				pGeom->Vertices[22 * 4 + i].vy = static_cast<i16>(
+						(pos.vy - this->field_240.mPos.vy) >> 12);
+				pGeom->Vertices[22 * 4 + i].vz = static_cast<i16>(
+						(pos.vz - this->field_240.mPos.vz) >> 12);
+				pGeom->Vertices[22 * 4 + i].pad = 0;
+			}
+
+			continue;
+		}
+
+		// sweep four points a quarter turn apart around the node
+		for (u32 i = 0; i < 4; i++)
+		{
+			i32 angle = (i << 10) & 0xFFF;
+			i32 sinA = rcossin_tbl[angle].sin;
+			i32 cosA = rcossin_tbl[angle].cos;
+
+			i32 nx = ((sinA * binormal.vx) >> 12) + ((cosA * normal.vx) >> 12);
+			i32 ny = ((binormal.vy * sinA) >> 12) + ((normal.vy * cosA) >> 12);
+			i32 nz = ((binormal.vz * sinA) >> 12) + ((normal.vz * cosA) >> 12);
+
+			pGeom->Normals[node * 4 + i].vx = static_cast<i16>(nx);
+			pGeom->Normals[node * 4 + i].vy = static_cast<i16>(ny);
+			pGeom->Normals[node * 4 + i].vz = static_cast<i16>(nz);
+			pGeom->Normals[node * 4 + i].pad = 0;
+
+			// the original shifts the offset node position right with shr while it shifts the
+			// tail centre with sar, so a node behind the origin wraps instead of going
+			// negative. Kept as it is
+			u32 vx = static_cast<u32>(
+					static_cast<i16>(nx) * taper + pNode->vx) >> 12;
+			u32 vy = static_cast<u32>(
+					static_cast<i16>(ny) * taper + pNode->vy) >> 12;
+			u32 vz = static_cast<u32>(
+					static_cast<i16>(nz) * taper + pNode->vz) >> 12;
+
+			pGeom->Vertices[node * 4 + i].vx = static_cast<i16>(
+					static_cast<i32>(vx) - (this->field_240.mPos.vx >> 12));
+			pGeom->Vertices[node * 4 + i].vy = static_cast<i16>(
+					static_cast<i32>(vy) - (this->field_240.mPos.vy >> 12));
+			pGeom->Vertices[node * 4 + i].vz = static_cast<i16>(
+					static_cast<i32>(vz) - (this->field_240.mPos.vz >> 12));
+			pGeom->Vertices[node * 4 + i].pad = 0;
+		}
+	}
+
+	*gM3dNoDcModelData = 1;
+	M3d_Render(&this->field_240);
+	*gM3dNoDcModelData = 0;
+}
+
 // @NotOk
 // sub_491560 (entered via the scalar-deleting-destructor thunk at 0x491540). The vtable reset,
 // the nine polymorphic member deletes and the CItem/CSuper base cleanup below are a faithful
@@ -9014,6 +9284,7 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_234, 0x234);
 	VALIDATE(CDummy, field_238, 0x238);
 
+	VALIDATE(CDummy, mpTailGeometry, 0x284);
 	VALIDATE(CDummy, field_240, 0x240);
 	VALIDATE(CDummy, field_288, 0x288);
 
