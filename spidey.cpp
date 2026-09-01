@@ -9477,35 +9477,186 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 	}
 }
 
-// @BIGTODO
-// Scoped 2026-09-01 but not implemented, because it is blocked leaf-first.
-// Original address 0x4B9420, 781 bytes, __thiscall taking the CVector by
-// value (the vector is only used as the normal for OrientToNormal(1, &v)).
-// It is the "clean everything up before the Venom distance attack" teardown:
-// deletes the auto-aim target (field_878, off MiscellaneousRenderingList),
-// clears field_ECC and gWaterEffect (0x60FA9C), stops the SFX handle in
-// field_ED0, deletes the body part held by the handle at field_ED4 (off
-// SpideyAdditionalBodyPartsList) and re-makes it as an empty handle, drops
-// mHeldObject at mPos-ish offset (-8 * field_C6C + 4 * field_C84) via
-// CManipOb::Drop, calls CSwinger_SwingBack then deletes field_E64, deletes
-// field_E6C, deletes the two body-part handles at CPlayer+0x5B8 and +0x5C0
-// the same way, clears field_5AC/field_5B0, bursts the dome behind the
-// handle at field_AB8 (CDome::Burst) and re-makes that handle empty, fades
-// all four smoke trails (field_584..field_590), clears
-// field_54C/field_AD4/field_8E8/field_8E9, resets field_A8 to (0,-4096,0),
-// re-orients to the passed normal, zeroes mVel/field_548/field_DF8, leaves
-// lookaround mode if field_8EA, sets CameraList->field_12C to -1 and, when
-// CameraList->mCameraMode == 3, restores the five camera tuning values
-// (gSpideySwingCam* / gSpideyWallCam*) and clears field_540, then
-// PutCameraBehind(0).
-// Blockers: CDome::Burst (0x4FAD50) has no declaration and no body in the
-// repo, and decompiling it first pulls in CDomeRing::CDomeRing (0x4F5510)
-// and CItem_Burst (0x45FDC0), neither of which is declared either. Doing
-// this function honestly means starting from those three. It also needs
-// seven new CPlayer fields (0x5AC, 0x5B0, an SHandle[2] at 0x5B8, 0xECC,
-// 0xED0, an SHandle at 0xED4 and a u8 at 0xEF4).
-void CPlayer::PriorToVenomDistanceAttack(CVector)
-{}
+// @Ok
+// verified against the IDA disasm of 0x4B9420 (781 bytes). The "clean
+// everything up before the Venom distance attack" teardown: every object
+// the player owns is dropped or deleted, the physics state is reset and the
+// player is stood back up along the passed normal.
+//
+// Caveat: the one call it makes that is not real yet is CDome::Burst
+// (web.cpp, still a stub), so the dome the player was holding is not
+// actually popped at runtime until that is written.
+void CPlayer::PriorToVenomDistanceAttack(CVector a2)
+{
+	// gWaterEffect (0x60FA9C) lives in post.cpp and has no header
+	// declaration, so it is pulled in the same way CurrentSuit is above.
+	extern i32 gWaterEffect;
+
+	CBody *pAutoAim = this->field_878;
+
+	this->field_EF4 = 0;
+
+	if (pAutoAim != 0)
+	{
+		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&MiscellaneousRenderingList));
+
+		i32 *v = reinterpret_cast<i32*>(pAutoAim);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+
+		this->field_878 = 0;
+	}
+
+	u32 hSfx = this->field_ED0;
+
+	this->field_ECC = 0;
+	gWaterEffect = 0;
+
+	if (hSfx != 0)
+	{
+		SFX_Stop(hSfx);
+		this->field_ED0 = 0;
+	}
+
+	CBody *pPart = reinterpret_cast<CBody*>(Mem_RecoverPointer(&this->field_ED4));
+
+	if (pPart != 0)
+	{
+		pPart->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+		i32 *v = reinterpret_cast<i32*>(pPart);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+
+		this->field_ED4 = Mem_MakeHandle(0);
+	}
+
+	CManipOb *pHeld = this->mHeldObject;
+
+	this->field_E88 = 0;
+	this->field_E84 = 0;
+
+	if (pHeld != 0)
+	{
+		i32 forward = 4;
+		i32 down = -8;
+
+		CVector dropPos = (down * this->field_C6C) + (forward * this->field_C84);
+
+		pHeld->Drop(&dropPos);
+		this->mHeldObject = 0;
+	}
+
+	i32 *pSwinger = this->field_E64;
+
+	if (pSwinger != 0)
+	{
+		CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+		(*(void(**)(i32*, i32))*pSwinger)(pSwinger, 1);
+		this->field_E64 = 0;
+	}
+
+	i32 *pWeb = this->field_E6C;
+
+	if (pWeb != 0)
+	{
+		(*(void(**)(i32*, i32))*pWeb)(pWeb, 1);
+		this->field_E6C = 0;
+	}
+
+	SHandle *pHandle = this->field_5B8;
+
+	for (i32 i = 2; i != 0; --i)
+	{
+		CBody *pFist = reinterpret_cast<CBody*>(Mem_RecoverPointer(pHandle));
+
+		if (pFist != 0)
+		{
+			pFist->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+			i32 *v = reinterpret_cast<i32*>(pFist);
+			(*(void(**)(i32*, i32))*v)(v, 1);
+
+			pHandle->pWhatever = 0;
+		}
+
+		pHandle++;
+	}
+
+	this->field_5B0 = 0;
+	this->field_5AC = 0;
+
+	CDome *pDome = reinterpret_cast<CDome*>(Mem_RecoverPointer(&this->field_AB8));
+
+	if (pDome != 0)
+	{
+		pDome->Burst();
+		this->field_AB8 = Mem_MakeHandle(0);
+	}
+
+	if (this->field_584 != 0)
+	{
+		this->field_584->mFadeAway = 1;
+		this->field_584 = 0;
+	}
+
+	if (this->field_588 != 0)
+	{
+		this->field_588->mFadeAway = 1;
+		this->field_588 = 0;
+	}
+
+	if (this->field_58C != 0)
+	{
+		this->field_58C->mFadeAway = 1;
+		this->field_58C = 0;
+	}
+
+	if (this->field_590 != 0)
+	{
+		this->field_590->mFadeAway = 1;
+		this->field_590 = 0;
+	}
+
+	this->field_54C = 0;
+	this->field_AD4 = 0;
+	this->field_8E9 = 0;
+	this->field_8E8 = 0;
+
+	this->field_A8.vx = 0;
+	this->field_A8.vy = -4096;
+	this->field_A8.vz = 0;
+
+	this->OrientToNormal(1, &a2);
+
+	u8 bLookaround = this->field_8EA;
+
+	this->mVel.vz = 0;
+	this->mVel.vy = 0;
+	this->mVel.vx = 0;
+	this->field_548 = 0;
+	this->field_DF8 = 0;
+
+	if (bLookaround != 0)
+		this->ExitLookaroundMode();
+
+	// the original writes through CameraList before checking it for null,
+	// kept as is
+	CCamera *pCamera = CameraList;
+
+	CameraList->field_12C = -1;
+
+	if (pCamera != 0 && pCamera->mCameraMode == 3)
+	{
+		pCamera->SetCamXOffset(gSpideyFloorCamXOffset, 0);
+		pCamera->SetCamYOffset(gSpideyFloorCamYOffset, 0);
+		pCamera->SetCamZOffset(gSpideyFloorCamZOffset, 0);
+		pCamera->SetCamXZDistance(gSpideyFloorCamXZDistance, 0);
+		pCamera->SetCamYDistance(gSpideyFloorCamYDistance, 0);
+
+		this->field_540 = 0;
+	}
+
+	this->PutCameraBehind(0);
+}
 
 // Transitions back to the stand (idle) animation from a finishing move.
 // Picks the stand anim + SFX entry to play based on the current mAnim (and

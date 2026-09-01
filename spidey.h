@@ -269,7 +269,11 @@ class CPlayer : public CSuper
 		// compute intermediate trail steps. [0] = hook 1, [1] = hook 0.
 		CVector field_594[2];
 
-		PADDING(0x5B4-0x594-0x18);
+		// counts down while a "double damage" combo bonus is active
+		// (UpdateAndTrackCombo halves it away one hit at a time); cleared by
+		// PriorToVenomDistanceAttack together with field_5B0.
+		i32 field_5AC;
+		i32 field_5B0;
 
 		// gTimerRelated of the last web shot; CheckWebShot refuses to fire
 		// again until more than 30 ticks have passed.
@@ -803,7 +807,12 @@ class CPlayer : public CSuper
 		// one qualifying baddy was found this pass
 		u8 field_EC0;
 
-		PADDING(0xED4-0xEC0-1);
+		PADDING(0xECC-0xEC0-1);
+
+		// water-effect state and the looping SFX handle that goes with it,
+		// both torn down by PriorToVenomDistanceAttack.
+		i32 field_ECC;
+		u32 field_ED0;
 
 		// another body part on SpideyAdditionalBodyPartsList, unlinked and
 		// deleted by ~CPlayer the same way as field_5B8.
@@ -821,7 +830,11 @@ class CPlayer : public CSuper
 
 		i32 mMaxHealth;
 
-		PADDING(0xEF8-0xEF0-4);
+		// cleared by PriorToVenomDistanceAttack; exact meaning unknown, no
+		// reader found yet.
+		u8 field_EF4;
+
+		PADDING(0xEF8-0xEF4-1);
 
 		// default perpendicularisation radius (fallback value used by
 		// GetPerpendicularisationRadius outside the special zone-1797 case).

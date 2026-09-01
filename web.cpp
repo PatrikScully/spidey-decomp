@@ -889,3 +889,20 @@ CImpactWeb::CImpactWeb(const CVector &, const CSVector &, i32, i32, i32)
 {
 	printf("CImpactWeb::CImpactWeb(const CVector &,const CSVector &,i32,i32,i32)");
 }
+
+// @MEDIUMTODO
+// 0x4FAD50, 205 bytes. Called by CPlayer::PriorToVenomDistanceAttack.
+// Behaviour recovered from IDA but not written out, because it needs three
+// things the repo does not have yet: CItem::Burst (0x45FDC0, 607 bytes, a
+// thiscall member of CItem so it belongs in ob.h/ob.cpp, not here),
+// CDomeRing::CDomeRing (0x4F5510, 494 bytes, CClass::operator new(0x110))
+// and a check that CDomeShockWave::CDomeShockWave in this file really is
+// the 0x4FAE20 the original calls with CBit::operator new(0x98).
+// What it does: if field_104 is 0 (a web dome, not a fire dome), clear bit
+// 0x400 of field_110's mFlags and call field_110->Burst(30, 30); set
+// field_100 to 3; new CDomeShockWave(field_104); new CDomeRing(&mPos,
+// field_104); then this->Die().
+void CDome::Burst(void)
+{
+	printf("CDome::Burst(void)");
+}
