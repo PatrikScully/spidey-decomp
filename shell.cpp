@@ -833,7 +833,7 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 // sub_50D9B0/sub_498450, none of which are this function under a different
 // name (checked each one's approximate size against the Mac prototype, no
 // match). Looks like PC-side dead code the port dropped. Left as a stub.
-// @MEDIUMTODO
+// @Bogus
 void Shell_ChooseItemCollection(i32)
 {
     printf("Shell_ChooseItemCollection(i32)");
@@ -843,7 +843,7 @@ void Shell_ChooseItemCollection(i32)
 // above: Mac-only (spiderman_names.txt, Mac address 0xec450), no PC
 // address in names.json or via string/xref search on the PC exe. Left as
 // a stub.
-// @MEDIUMTODO
+// @Bogus
 void Shell_ChooseSpeedTraining(i32)
 {
     printf("Shell_ChooseSpeedTraining(i32)");
@@ -1361,7 +1361,7 @@ i32 Shell_ChooseTrainingControlType(void)
 // Shell_ChooseSpeedTraining above: Mac-only (spiderman_names.txt, Mac
 // address 0xecdb0), no PC address in names.json or via string/xref search
 // on the PC exe. Left as a stub.
-// @MEDIUMTODO
+// @Bogus
 void Shell_ChooseTrainingMission(i32)
 {
     printf("Shell_ChooseTrainingMission(i32)");
