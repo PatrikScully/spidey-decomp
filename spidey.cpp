@@ -2259,10 +2259,120 @@ done:
 	(*gKillNotifyCallCount)++;
 }
 
-// @MEDIUMTODO
+// One-time parse of the static fight data. Sorts the follow-on and fists
+// tables into animation order, then builds the two id-indexed lookup
+// arrays the combo code uses: the distance definitions, from the blob at
+// 0x569194, and the move records, from the blob at 0x56929C. Each move
+// record also gets its variable-length tail resolved (a pointer to the byte
+// streams that follow the parts array, plus the length of the second
+// stream), and once every record is known each parts entry's move id is
+// rewritten in place into the pointer to that move's record. Both blobs use
+// the id 6666 as their terminator.
+// @Ok
 void CPlayer::ParseFightData(void)
 {
-    printf("CPlayer::ParseFightData(void)");
+	// set the first time the data is parsed, makes every later call a no-op.
+	static u8 * const gFightDataParsed = (u8*)0x006A9088;
+
+	// distance id -> pointer into the distance blob, 300 slots.
+	static u8 ** const gDistanceDefs = (u8**)0x006A8768;
+
+	// the distance blob: u16 id, then a 0xFF terminated byte stream, each
+	// record dword aligned.
+	static u16 * const gDistanceData = (u16*)0x00569194;
+
+	// move id -> pointer to a move record, 32 slots.
+	static u8 ** const gComboMoves = (u8**)0x006A8CB4;
+
+	// the move blob. A record is {u16 id, u16 anim, u8 *tail, ...,
+	// u16 tailLength at 0x1E, u16 partCount at 0x20, part[partCount] of 12
+	// bytes from 0x24}, followed by three 0xFF terminated byte streams.
+	static u8 * const gComboMoveData = (u8*)0x0056929C;
+
+	if (*gFightDataParsed)
+		return;
+
+	*gFightDataParsed = 1;
+
+	this->SortAnimationFollowOnData();
+	this->SortFistsData();
+
+	memset(gDistanceDefs, 0, 300 * sizeof(u8*));
+
+	u16 id = gDistanceData[0];
+	u8 *pData = reinterpret_cast<u8*>(gDistanceData + 1);
+
+	while (id != 6666)
+	{
+		print_if_false(gDistanceDefs[id] == 0, "Possible duplicate distance definition");
+
+		gDistanceDefs[id] = pData;
+
+		while (*pData != 0xFF)
+			pData++;
+
+		pData = reinterpret_cast<u8*>((reinterpret_cast<u32>(pData) + 4) & 0xFFFFFFFC);
+
+		id = *reinterpret_cast<u16*>(pData);
+		pData += 2;
+	}
+
+	memset(gComboMoves, 0, 32 * sizeof(u8*));
+
+	u8 *pMove = gComboMoveData;
+
+	for (;;)
+	{
+		u16 moveId = *reinterpret_cast<u16*>(pMove);
+
+		print_if_false(gComboMoves[moveId] == 0, "Possible duplicate move");
+
+		u16 partCount = *reinterpret_cast<u16*>(pMove + 0x20);
+
+		gComboMoves[moveId] = pMove;
+
+		u8 *pTail = pMove + (partCount + 3) * 12;
+		*reinterpret_cast<u8**>(pMove + 4) = pTail;
+
+		while (*pTail++ != 0xFF)
+			;
+
+		u8 length = 0;
+
+		while (*pTail++ != 0xFF)
+			length++;
+
+		*reinterpret_cast<u16*>(pMove + 0x1E) = length;
+
+		while (*pTail++ != 0xFF)
+			;
+
+		pTail = reinterpret_cast<u8*>((reinterpret_cast<u32>(pTail) + 3) & 0xFFFFFFFC);
+
+		if (*reinterpret_cast<u32*>(pTail) == 6666)
+			break;
+
+		pMove = pTail;
+	}
+
+	for (i32 i = 0; i < 32; i++)
+	{
+		u8 *pRecord = gComboMoves[i];
+
+		if (pRecord)
+		{
+			i32 partCount = *reinterpret_cast<u16*>(pRecord + 0x20);
+
+			for (i32 part = 0; part < partCount; part++)
+			{
+				u32 *pRef = reinterpret_cast<u32*>(pRecord + 0x24 + part * 12);
+
+				print_if_false(gComboMoves[*pRef] != 0, "Bad move reference");
+
+				*pRef = reinterpret_cast<u32>(gComboMoves[*pRef]);
+			}
+		}
+	}
 }
 
 // Walks the per-anim SFX trigger array (field_350). Each 32-bit element
