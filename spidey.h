@@ -118,7 +118,12 @@ class CPlayer : public CSuper
 		// hit is dropped before anything else happens).
 		i32 field_36C;
 
-		PADDING(0x500-0x36C-4);
+		PADDING(0x374-0x36C-4);
+
+		// gTimerRelated when the web dome was thrown (CheckWebShot).
+		i32 field_374;
+
+		PADDING(0x500-0x374-4);
 
 		// gTimerRelated at the moment of the last hit, and the field_E1C
 		// state the player was in when it landed. Both written by
@@ -153,7 +158,9 @@ class CPlayer : public CSuper
 
 		i32 field_540;
 
-		PADDING(0x548-0x540-4);
+		// 0, 1 or 2, picked from the sign of field_E2E when the left web
+		// shot starts (CheckWebShot).
+		i32 field_544;
 
 		// twist-around-Y correction angle (PS1 GTE units), applied on top of
 		// the normal-aligned basis by CPlayer::OrientToNormal via
@@ -182,7 +189,10 @@ class CPlayer : public CSuper
 		// cleared by CheckForwards whenever it retargets the torso angle
 		u8 field_551;
 
-		PADDING(0x554-0x551-1);
+		// cleared whenever CheckWebShot starts a web shot animation.
+		u8 field_552;
+
+		PADDING(0x554-0x552-1);
 
 		// CPlayer::AI: free-function callback, called as field_554(this)
 		// near the end of every AI tick when nonzero.
@@ -218,7 +228,13 @@ class CPlayer : public CSuper
 		// compute intermediate trail steps. [0] = hook 1, [1] = hook 0.
 		CVector field_594[2];
 
-		PADDING(0x5C8-0x594-0x18);
+		PADDING(0x5B4-0x594-0x18);
+
+		// gTimerRelated of the last web shot; CheckWebShot refuses to fire
+		// again until more than 30 ticks have passed.
+		i32 field_5B4;
+
+		PADDING(0x5C8-0x5B4-4);
 
 		// round-robin cursors into the two swing-web probe angle tables,
 		// see CPlayer::CheckJumpingSwingWeb. Both count 0..5 and wrap.
@@ -279,7 +295,16 @@ class CPlayer : public CSuper
 
 		i32 field_8DC;
 
-		PADDING(0x8E8-0x8DC-4);
+		// web-shot button latch (CheckWebShot): field_8E0 is "the button is
+		// down", field_8E1 "this press may aim a directional web", and
+		// field_8E4 the bitmask of directions that were already used up
+		// (bit 0 right, 1 left, 2 up, 3 down).
+		u8 field_8E0;
+		u8 field_8E1;
+
+		PADDING(2);
+
+		i32 field_8E4;
 
 
 		u8 field_8E8;
@@ -301,7 +326,13 @@ class CPlayer : public CSuper
 		// non-centre (clamped at 256), reset to 0 when it centres.
 		i32 field_8F0;
 
-		PADDING(0xAB8-0x8F0-4);
+		PADDING(0x8F8-0x8F0-4);
+
+		// which web shot is running: 1 forward, 2 right, 4 left
+		// (CheckWebShot, CPlayer::FireWeb).
+		u8 field_8F8;
+
+		PADDING(0xAB8-0x8F8-1);
 
 		SHandle field_AB8;
 
@@ -513,7 +544,8 @@ class CPlayer : public CSuper
 		// grab target handle, recovered via Mem_RecoverPointer in GrabUpdate
 		SHandle field_DD8;
 
-		PADDING(0xDE4-0xDE0);
+		// gTimerRelated when the zip web towards field_DD8 was started.
+		i32 field_DE0;
 
 		char field_DE4;
 
@@ -720,7 +752,7 @@ class CPlayer : public CSuper
 		EXPORT i32 CheckStickToWall(void);
 		EXPORT u8 CheckSwingWebAvailability(SLineInfo *);
 		EXPORT u8 CheckSwitchToGrabbedMode(CVector const *,CVector *);
-		EXPORT void CheckWebShot(void);
+		EXPORT i32 CheckWebShot(void);
 		EXPORT u8 CheckZipWebAvailability(SLineInfo *,i32);
 		EXPORT void CollideWithObject(CBody *);
 		EXPORT void CreateCombatImpactEffect(CVector *,i32);

@@ -71,6 +71,50 @@ static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
 	pPlayer->RunAnim(anim, 0, -1);
 }
 
+// raw accumulated yaw offset (relative to body heading) driven by look
+// input each frame in CPlayer::SetupLookaroundCamera (0x4C38A0); used
+// directly to drive the joint/head-turn and, added to GetEffectiveHeading,
+// to aim SetTargetTorsoAngle on lock-on. No idb_globals.txt entry (nearest
+// named neighbours are the gSpidey*Cam* tuning constants around
+// 0x6A81xx-0x6A8Cxx, none at this address), tentative name only.
+static i32 * const gLookaroundYawOffset = (i32*)0x6A7FFC;
+
+// @Bogus
+// The shared tail of every branch of CPlayer::CheckWebShot that actually
+// starts a web shot: latch the "aiming a lock-on" flag, then either turn
+// the torso by the fixed lookaround yaw (sign from field_8E9) or point it
+// at whatever the player is holding, and finally clear bit 0 of the CBody
+// byte at 0xAE.
+static void WebShotAimTorso(CPlayer *pPlayer)
+{
+	pPlayer->field_8ED = pPlayer->field_8EA;
+
+	if (pPlayer->field_8EA != 0)
+	{
+		if (pPlayer->field_8E9 != 0)
+			pPlayer->SetTargetTorsoAngle(
+				(i16)(pPlayer->GetEffectiveHeading() - *gLookaroundYawOffset), false);
+		else
+			pPlayer->SetTargetTorsoAngle(
+				(i16)(pPlayer->GetEffectiveHeading() + *gLookaroundYawOffset), false);
+	}
+	else
+	{
+		CBody *held = pPlayer->field_DCC;
+
+		if (held != 0)
+			pPlayer->SetTargetTorsoAngleToThisPoint(&held->mPos);
+		else
+			pPlayer->field_DF8 = 0;
+	}
+
+	// 0xAE is inside CBody's padding in ob.h (which this file does not own),
+	// so it is reached by raw offset, the same way CheckJumpingSmashKick
+	// reaches 0x54D.
+	u8 *pFlagAE = reinterpret_cast<u8*>(pPlayer) + 0xAE;
+	*pFlagAE &= 0xFE;
+}
+
 // @Ok
 EXPORT i16 gSpideyFloorCamXOffset;
 // @Ok
@@ -2384,10 +2428,169 @@ u8 CPlayer::CheckSwitchToGrabbedMode(CVector const *pPos, CVector *pNormal)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckWebShot(void)
+// @Ok
+// verified against the IDA disasm of 0x4C0510 (1644 bytes). Returns 1 when
+// a web shot was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// The web button (pInput[0x110]) is edge latched into field_8E0. On the
+// press, field_8E1 records whether this press is allowed to aim (only when
+// field_E1C bit 0 is clear, the aim stick is off centre, and field_EBC is
+// above 6), and field_8E4 then holds a mask of the four stick directions
+// that were already live at that moment so the same direction does not
+// fire twice.
+//
+// Which shot happens, in priority order:
+//   aim right (field_E2D > 0)   -> anim 0xFC / 0x106 when stunned
+//   aim left  (field_E2D < 0)   -> anim 0xFF / 0x109
+//   aim down  (field_E2E < 0)   -> web yank, costs 1024 webbing, anim 0x11D
+//   aim up    (field_E2E > 0)   -> web dome, costs 3072 webbing, anim 0x11B
+//   nothing aimed               -> zip web at a target baddy (anim 0x78)
+//                                  or the plain forward shot (0xFA / 0x104)
+// The last two both need at least 30 ticks since the previous shot.
+i32 CPlayer::CheckWebShot(void)
 {
-    printf("CPlayer::CheckWebShot(void)");
+	u8 bWasDown = this->field_8E0;
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if ((bWasDown != 0 && pInput[0x110] == 0) || this->mHeldObject != 0)
+	{
+		this->field_8E0 = 0;
+		return 0;
+	}
+
+	u8 bButton = pInput[0x110];
+
+	if (bButton != 0 && bWasDown == 0)
+	{
+		this->field_8E0 = 1;
+
+		if ((this->field_E1C & 1) == 0
+			&& (this->field_E2D != 0 || this->field_E2E != 0)
+			&& this->field_EBC > 6)
+			this->field_8E1 = 1;
+		else
+			this->field_8E1 = 0;
+	}
+
+	if (this->field_8E0 == 0)
+		return 0;
+
+	this->field_8E4 = 0;
+
+	if (this->field_8E1 != 0)
+	{
+		this->field_8E4 = (this->field_E2D > 0 ? 1 : 0)
+			| (this->field_E2D < 0 ? 2 : 0)
+			| (this->field_E2E > 0 ? 4 : 0)
+			| (this->field_E2E < 0 ? 8 : 0);
+	}
+
+	if (this->field_E2D > 0 && (this->field_8E4 & 1) == 0)
+	{
+		u8 bStunned = this->field_AD4;
+
+		this->field_8F8 = 2;
+		this->field_552 = 0;
+		this->field_E1C = 0x8000;
+
+		if (bStunned != 0)
+			RunAnimWithSFX(this, 0x106);
+		else
+			RunAnimWithSFX(this, 0xFC);
+
+		if (this->field_E2E > 0)
+			this->field_544 = 2;
+		else if (this->field_E2E < 0)
+			this->field_544 = 1;
+		else
+			this->field_544 = 0;
+
+		WebShotAimTorso(this);
+		return 1;
+	}
+
+	if (this->field_E2D < 0 && (this->field_8E4 & 2) == 0)
+	{
+		u8 bStunned = this->field_AD4;
+
+		this->field_8F8 = 4;
+		this->field_552 = 0;
+		this->field_E1C = 0x10000;
+
+		if (bStunned != 0)
+			RunAnimWithSFX(this, 0x109);
+		else
+			RunAnimWithSFX(this, 0xFF);
+
+		WebShotAimTorso(this);
+		return 1;
+	}
+
+	if (this->field_E2E < 0
+		&& (this->field_8E4 & 8) == 0
+		&& (u32)(gTimerRelated - this->field_5B4) > 30
+		&& this->field_AD4 == 0)
+	{
+		if (this->DecreaseWebbing(1024) == 0)
+			return 0;
+
+		RunAnimWithSFX(this, 0x11D);
+		this->field_E1C = 0x800000;
+		return 1;
+	}
+
+	if (this->field_8EA == 0)
+	{
+		if (this->field_E2E > 0 && (this->field_8E4 & 4) == 0)
+		{
+			// web dome
+			if (this->field_AD4 != 0)
+				return 0;
+
+			if (this->DecreaseWebbing(3072) == 0)
+				return 0;
+
+			this->field_E1C = 0x20000000;
+			RunAnimWithSFX(this, 0x11B);
+
+			this->field_374 = gTimerRelated;
+
+			SFX_PlayPos(34, &this->mPos, 0);
+
+			this->field_AB8 = Mem_MakeHandle(new CDome(this, (u8)this->field_5E8));
+			return 1;
+		}
+
+		if (this->field_AD4 == 0 && (pInput[0x120] != 0 || pInput[0x130] != 0))
+		{
+			// zip web towards an auto-picked baddy
+			this->field_DD8 = Mem_MakeHandle(this->SelectTargetBaddy(190, -4096, 4096, 0));
+			this->field_DE0 = gTimerRelated;
+			this->field_E1C = 0x2000000;
+			RunAnimWithSFX(this, 0x78);
+			return 1;
+		}
+	}
+
+	// plain forward shot
+	if (bButton == 0 || (u32)(gTimerRelated - this->field_5B4) <= 30)
+		return 0;
+
+	u8 bStunned = this->field_AD4;
+
+	this->field_8F8 = 1;
+	this->field_552 = 0;
+	this->field_E1C = 0x4000;
+
+	if (bStunned != 0)
+		RunAnimWithSFX(this, 0x104);
+	else
+		RunAnimWithSFX(this, 0xFA);
+
+	WebShotAimTorso(this);
+	return 1;
 }
 
 // @Ok
@@ -3205,14 +3408,6 @@ static i32 * const gWideScreen = (i32*)0x660F80;
 // byte offset 0xC. Structure of gAnimWebcart is not known, so this is a
 // tentative slot name only, not a real standalone global.
 static i32 * const gAnimWebcart_field_C = (i32*)0x60F76C;
-
-// raw accumulated yaw offset (relative to body heading) driven by look
-// input each frame in CPlayer::SetupLookaroundCamera (0x4C38A0); used
-// directly to drive the joint/head-turn and, added to GetEffectiveHeading,
-// to aim SetTargetTorsoAngle on lock-on. No idb_globals.txt entry (nearest
-// named neighbours are the gSpidey*Cam* tuning constants around
-// 0x6A81xx-0x6A8Cxx, none at this address), tentative name only.
-static i32 * const gLookaroundYawOffset = (i32*)0x6A7FFC;
 
 // smoothed copy of gLookaroundYawOffset, chased with a max delta of 192
 // per SetupLookaroundCamera call; feeds the camera-orientation matrix
