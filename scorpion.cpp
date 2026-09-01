@@ -9,6 +9,8 @@
 #include "spidey.h"
 #include "camera.h"
 #include "panel.h"
+#include "m3dutils.h"
+#include "ps2m3d.h"
 #include <cstring>
 
 extern CPlayer* MechList;
@@ -767,16 +769,279 @@ INLINE void CConstantLaser::SetRGB(
 }
 
 
-// @MEDIUMTODO
+// 0x00552404 and 0x0055241C. The four hook offsets TailRenderer rings the
+// first tail node with, and the hook at the middle of that ring. Read out of
+// the exe (they sit right after M3d_ScorpionLight, which ends at 0x00552404),
+// they are a circle of radius 240 around (0, 368, 464) in the XZ plane. All
+// five use bone 2.
+static const i16 gTailBaseRingHooks[4][3] = {
+	{ 0, 368, 704 },
+	{ 240, 368, 464 },
+	{ 0, 368, 224 },
+	{ -239, 368, 464 }
+};
+static const i16 gTailBaseHook[3] = { 0, 368, 464 };
+
+// 0x00552424 and 0x0055243C. The same for the tail tip: a circle of radius
+// 120 around (0, -1, 0), all on bone 0.
+static const i16 gTailTipRingHooks[4][3] = {
+	{ 120, -1, 0 },
+	{ 0, -1, -120 },
+	{ -119, -1, 0 },
+	{ 0, -1, 120 }
+};
+static const i16 gTailTipHook[3] = { 0, -1, 0 };
+
+// @Ok
 // 0x00489810, 1872 bytes. CBaddy vtable slot 17 for CScorpion, confirmed from
 // the class vtable at 0x0053BE2C (slot 17 = 0x489810, the same slot CDocOc
-// fills with RenderClaws). Draws the scorpion's segmented tail. Needs
-// CScorpion::BuildTail (0x488370), InitialiseTailPSX (0x489050) and
-// UniformCurveTesselator (0x489660), none of which are in the repo yet, so it
-// is only stubbed here to give Display (main.cpp) a real call site.
+// fills with RenderClaws). Rebuilds the tail geometry every frame: a ring of
+// four vertices and four normals around each of the 23 tail nodes, then hands
+// the tail item to M3d_Render.
+//
+// The first ring and the last ring are not generated, they come straight from
+// model hooks. Every ring in between is swept out with a Frenet style frame:
+// the chord to the next node is the tangent, the previous ring's first normal
+// seeds it, and a pair of GTE cross products keeps the frame upright. The ring
+// radius tapers off along the tail with a sine.
 void CScorpion::TailRenderer(void)
 {
-	printf("CScorpion::TailRenderer(void)");
+	if (this->field_3F8.mRegion == 0xFF)
+		return;
+
+	// the tail item sits at the midpoint of the first and the last node, so
+	// every vertex can be stored relative to it as an i16
+	this->field_3F8.mPos.vx = this->mTailNodes[0].vx
+			+ (this->mTailNodes[22].vx - this->mTailNodes[0].vx) / 2;
+	this->field_3F8.mPos.vy = this->mTailNodes[0].vy
+			+ (this->mTailNodes[22].vy - this->mTailNodes[0].vy) / 2;
+	this->field_3F8.mPos.vz = this->mTailNodes[0].vz
+			+ (this->mTailNodes[22].vz - this->mTailNodes[0].vz) / 2;
+
+	i32 firstX = (this->mTailNodes[0].vx - this->field_3F8.mPos.vx) >> 12;
+	i32 firstY = (this->mTailNodes[0].vy - this->field_3F8.mPos.vy) >> 12;
+	i32 firstZ = (this->mTailNodes[0].vz - this->field_3F8.mPos.vz) >> 12;
+	i32 lastX = (this->mTailNodes[22].vx - this->field_3F8.mPos.vx) >> 12;
+	i32 lastY = (this->mTailNodes[22].vy - this->field_3F8.mPos.vy) >> 12;
+	i32 lastZ = (this->mTailNodes[22].vz - this->field_3F8.mPos.vz) >> 12;
+
+	STailGeometry *pGeom = this->mpTailGeometry;
+
+	// low half is the bigger of the two, high half the smaller
+	if (firstX >= lastX)
+		pGeom->BoundsX = ((lastX & 0xFFFF) << 16) | (firstX & 0xFFFF);
+	else
+		pGeom->BoundsX = ((firstX & 0xFFFF) << 16) | (lastX & 0xFFFF);
+
+	if (firstY >= lastY)
+		pGeom->BoundsY = ((lastY & 0xFFFF) << 16) | (firstY & 0xFFFF);
+	else
+		pGeom->BoundsY = ((firstY & 0xFFFF) << 16) | (lastY & 0xFFFF);
+
+	if (firstZ >= lastZ)
+		pGeom->BoundsZ = ((lastZ & 0xFFFF) << 16) | (firstZ & 0xFFFF);
+	else
+		pGeom->BoundsZ = ((firstZ & 0xFFFF) << 16) | (lastZ & 0xFFFF);
+
+	CVector normal;
+	CVector binormal;
+
+	normal.vx = 0;
+	normal.vy = 0;
+	normal.vz = 0;
+	binormal.vx = 0;
+	binormal.vy = 0;
+	binormal.vz = 0;
+
+	for (u32 node = 0; node < 23; node++)
+	{
+		if (node == 0)
+		{
+			SHook hook;
+			CVector centre;
+
+			hook.Part.vx = gTailBaseHook[0];
+			hook.Part.vy = gTailBaseHook[1];
+			hook.Part.vz = gTailBaseHook[2];
+			hook.Offset = 2;
+
+			centre.vx = 0;
+			centre.vy = 0;
+			centre.vz = 0;
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&centre), this, &hook);
+
+			for (u32 i = 0; i < 4; i++)
+			{
+				CVector pos;
+
+				pos.vx = 0;
+				pos.vy = 0;
+				pos.vz = 0;
+
+				hook.Part.vx = gTailBaseRingHooks[i][0];
+				hook.Part.vy = gTailBaseRingHooks[i][1];
+				hook.Part.vz = gTailBaseRingHooks[i][2];
+
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&pos), this, &hook);
+
+				CVector out = (pos - centre) >> 6;
+				VectorNormal(reinterpret_cast<VECTOR*>(&out),
+						reinterpret_cast<VECTOR*>(&out));
+
+				pGeom->Normals[i].vx = static_cast<i16>(out.vx);
+				pGeom->Normals[i].vy = static_cast<i16>(out.vy);
+				pGeom->Normals[i].vz = static_cast<i16>(out.vz);
+				pGeom->Normals[i].pad = 0;
+
+				pGeom->Vertices[i].vx = static_cast<i16>(
+						(pos.vx - this->field_3F8.mPos.vx) >> 12);
+				pGeom->Vertices[i].vy = static_cast<i16>(
+						(pos.vy - this->field_3F8.mPos.vy) >> 12);
+				pGeom->Vertices[i].vz = static_cast<i16>(
+						(pos.vz - this->field_3F8.mPos.vz) >> 12);
+				pGeom->Vertices[i].pad = 0;
+
+				if (i == 0)
+					normal = out;
+			}
+
+			continue;
+		}
+
+		// the tangent along the tail, the last node uses the chord behind it
+		// because there is no node after it
+		const CVector *pNode;
+		CVector tangent;
+
+		tangent.vx = 0;
+		tangent.vy = 0;
+		tangent.vz = 0;
+
+		if (node == 22)
+		{
+			pNode = &this->mTailNodes[22];
+			tangent = (this->mTailNodes[22] - this->mTailNodes[21]) >> 6;
+		}
+		else
+		{
+			pNode = &this->mTailNodes[node];
+			tangent = (this->mTailNodes[node + 1] - this->mTailNodes[node]) >> 6;
+		}
+
+		VectorNormal(reinterpret_cast<VECTOR*>(&tangent),
+				reinterpret_cast<VECTOR*>(&tangent));
+
+		// binormal = tangent x normal, then normal = binormal x tangent, so the
+		// frame stays square as the tail bends
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&tangent));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&normal));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&binormal));
+
+		VectorNormal(reinterpret_cast<VECTOR*>(&binormal),
+				reinterpret_cast<VECTOR*>(&binormal));
+
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&binormal));
+		gte_ldopv2(reinterpret_cast<VECTOR*>(&tangent));
+		gte_op12();
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&normal));
+
+		i32 taper = 16 - ((rcossin_tbl[(42 * (node + 1)) & 0xFFF].sin * 8) >> 12);
+
+		if (node == 22)
+		{
+			// the tip ring is not swept, it comes from model hooks like the
+			// first one does (the frame built above goes unused here)
+			SHook hook;
+			CVector centre;
+
+			hook.Part.vx = gTailTipHook[0];
+			hook.Part.vy = gTailTipHook[1];
+			hook.Part.vz = gTailTipHook[2];
+			hook.Offset = 0;
+
+			centre.vx = 0;
+			centre.vy = 0;
+			centre.vz = 0;
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&centre), this, &hook);
+
+			for (u32 i = 0; i < 4; i++)
+			{
+				CVector pos;
+
+				pos.vx = 0;
+				pos.vy = 0;
+				pos.vz = 0;
+
+				hook.Part.vx = gTailTipRingHooks[i][0];
+				hook.Part.vy = gTailTipRingHooks[i][1];
+				hook.Part.vz = gTailTipRingHooks[i][2];
+
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&pos), this, &hook);
+
+				CVector out = (pos - centre) >> 6;
+
+				// unlike the first ring this one is normalised straight into the
+				// i16 slot
+				VectorNormalS(reinterpret_cast<VECTOR*>(&out),
+						&pGeom->Normals[22 * 4 + i]);
+				pGeom->Normals[22 * 4 + i].pad = 0;
+
+				pGeom->Vertices[22 * 4 + i].vx = static_cast<i16>(
+						(pos.vx - this->field_3F8.mPos.vx) >> 12);
+				pGeom->Vertices[22 * 4 + i].vy = static_cast<i16>(
+						(pos.vy - this->field_3F8.mPos.vy) >> 12);
+				pGeom->Vertices[22 * 4 + i].vz = static_cast<i16>(
+						(pos.vz - this->field_3F8.mPos.vz) >> 12);
+				pGeom->Vertices[22 * 4 + i].pad = 0;
+			}
+
+			continue;
+		}
+
+		// sweep four points a quarter turn apart around the node
+		for (u32 i = 0; i < 4; i++)
+		{
+			i32 angle = (i << 10) & 0xFFF;
+			i32 sinA = rcossin_tbl[angle].sin;
+			i32 cosA = rcossin_tbl[angle].cos;
+
+			i32 nx = ((sinA * binormal.vx) >> 12) + ((cosA * normal.vx) >> 12);
+			i32 ny = ((binormal.vy * sinA) >> 12) + ((normal.vy * cosA) >> 12);
+			i32 nz = ((binormal.vz * sinA) >> 12) + ((normal.vz * cosA) >> 12);
+
+			pGeom->Normals[node * 4 + i].vx = static_cast<i16>(nx);
+			pGeom->Normals[node * 4 + i].vy = static_cast<i16>(ny);
+			pGeom->Normals[node * 4 + i].vz = static_cast<i16>(nz);
+			pGeom->Normals[node * 4 + i].pad = 0;
+
+			// the original shifts the offset node position right with shr while
+			// it shifts the tail centre with sar, so a node behind the origin
+			// wraps instead of going negative. Kept as it is
+			u32 vx = static_cast<u32>(
+					static_cast<i16>(nx) * taper + pNode->vx) >> 12;
+			u32 vy = static_cast<u32>(
+					static_cast<i16>(ny) * taper + pNode->vy) >> 12;
+			u32 vz = static_cast<u32>(
+					static_cast<i16>(nz) * taper + pNode->vz) >> 12;
+
+			pGeom->Vertices[node * 4 + i].vx = static_cast<i16>(
+					static_cast<i32>(vx) - (this->field_3F8.mPos.vx >> 12));
+			pGeom->Vertices[node * 4 + i].vy = static_cast<i16>(
+					static_cast<i32>(vy) - (this->field_3F8.mPos.vy >> 12));
+			pGeom->Vertices[node * 4 + i].vz = static_cast<i16>(
+					static_cast<i32>(vz) - (this->field_3F8.mPos.vz >> 12));
+			pGeom->Vertices[node * 4 + i].pad = 0;
+		}
+	}
+
+	*gM3dNoDcModelData = 1;
+	M3d_Render(&this->field_3F8);
+	*gM3dNoDcModelData = 0;
 }
 
 void validate_CScorpion(void){
@@ -784,6 +1049,8 @@ void validate_CScorpion(void){
 
 	VALIDATE(CScorpion, field_324, 0x324);
 	VALIDATE(CScorpion, field_3EC, 0x3EC);
+	VALIDATE(CScorpion, mpTailGeometry, 0x43C);
+	VALIDATE(CScorpion, mTailNodes, 0x4BC);
 
 	VALIDATE(CScorpion, field_3F8, 0x3F8);
 	VALIDATE(CScorpion, field_440, 0x440);

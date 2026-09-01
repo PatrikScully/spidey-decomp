@@ -72,6 +72,11 @@ EXPORT i16* M3dAsm_LoadClipTableB(void const* pSrc);
 EXPORT i32 M3dAsm_SetCullSphereOffset(i32 x, i32 y, i32 z);
 EXPORT void M3dAsm_BoundingSpherePreprocessing(CItem* pList);
 
+// 0x00660F98. Set => render the raw PSX model and skip the DCModelData
+// path. Lives here because scorpion.cpp raises it around its own
+// M3d_Render call as well.
+static i32 * const gM3dNoDcModelData = (i32*)0x00660F98;
+
 EXPORT void M3d_Render(void*);
 EXPORT void DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *);
 EXPORT void DC_PSXModel_RenderModel(SModel const *,matrix4x4 const *,void const *,DCModelData *);
