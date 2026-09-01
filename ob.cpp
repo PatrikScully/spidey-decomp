@@ -389,43 +389,62 @@ void CSuper::OutlineOff(void)
 	this->mExtraFlags &= ~CSUPER_OUTLINE;
 }
 
-// Investigated 2026-08-31, missing block not attempted, left @NotOk.
-// Address 0x460880, 824 bytes. Checked via Hex-Rays decompile against
-// tools/names.json: the code already written here (mExtraFlags |=
-// CSUPER_OUTLINE, the field_11C null check that skips the missing block,
-// and the unconditional tail outlineR/G/B = -1 and alsoOutlineRelated =
-// 0x50000000) matches the original exactly (VALIDATE offsets confirm
-// mExtraFlags=0x12C, field_11C=0x11C, alsoOutlineRelated=0x120,
-// outlineR/G/B=0x124/0x125/0x126, all in ob.h). Only the missing block
-// (skipped here by "if (!this->field_11C){ }") is unimplemented.
+// Re-investigated 2026-09-01 with idalib (raw disasm, not just Hex-Rays), still left @NotOk on
+// purpose: this needs an undocumented record format and there is no way to verify a guess (no
+// runtime path reaches it in a smoke test, no compare.py hook, no reference struct anywhere).
+// Wrong-but-confident here is worse than honest @NotOk (PLAN.md's bar).
 //
-// What that block does: on the first call (field_11C == null) it looks up
-// CItemRelatedList[this->mRegion * 17] (ob.h, 0x6B2454, mRegion confirmed
-// at CItem+0x1F), then reads two more values off that same table slot: the
-// pointer stored there (a per-model face/vertex data blob) and the DWORD
-// one slot earlier (i.e. dword_6B2450[this->mRegion * 17], the same
-// address m3dinit.cpp's M3dInit_ParsePSX investigation already flagged as
-// an unnamed parallel table with unknown layout, of the family
-// dword_6B2450/2454/2458/246C/2470[17*a1]). It uses that DWORD as a face
-// count, allocates facecount*1024 bytes via DCMem_New (0x4581A0, already
-// @Ok in mem.cpp) into field_11C, fills it with 0xFF, then walks a packed,
-// variable-stride "neighbor faces" record list (debug asserts confirm the
-// original name: "Bad SNbrFaces size." / "NumFaces too big", strings at
-// 0x54E758/0x54E744) doing byte-level edge comparisons between adjacent
-// face corner indices and writing per-corner edge-outline flags into the
-// allocated buffer. The record walk advances by "*record >> 18" dwords per
-// step, a different shift than the i[0]+4 walk idiom already used
-// elsewhere in the repo (CLAUDE.md), so it is a distinct packed format.
+// Address 0x460880, 824 bytes. The code already written here (mExtraFlags |= CSUPER_OUTLINE, the
+// field_11C null check that skips the missing block, and the unconditional tail outlineR/G/B =
+// -1 and alsoOutlineRelated = 0x50000000) matches the original exactly (VALIDATE offsets confirm
+// mExtraFlags=0x12C, field_11C=0x11C, alsoOutlineRelated=0x120, outlineR/G/B=0x124/0x125/0x126,
+// all in ob.h). Only the missing block (skipped here by "if (!this->field_11C){ }") is
+// unimplemented.
 //
-// This SNbrFaces struct does not exist anywhere in the repo (no struct, no
-// prior use of dword_6B2450, no documented record layout), and the same
-// class of problem was already flagged as too risky for a focused single
-// -function session in m3dinit.cpp's M3dInit_ParsePSX
-// investigation (2026-08-31): getting the field offsets and shift amounts
-// right needs a real struct reverse-engineering pass across the files that
-// own dword_6B2450..2470, which is out of scope here. Left as a stub
-// (NOT_IMPLEMENTED) rather than guessing at an undocumented binary format;
-// only used by CVenom and CDummy per the game's outline-related callers.
+// What that block does, confirmed instruction-by-instruction against the raw disassembly: on the
+// first call (field_11C == null) it computes `i32 **pRegionEntry = CItemRelatedList[this->mRegion
+// * 17];` - the exact same table lookup already established in switch.cpp/mysterio.cpp/
+// ps2funcs.cpp/web.cpp/shell.cpp (ob.h, 0x6B2454, mRegion confirmed at CItem+0x1F). It then reads
+// `Q = pRegionEntry[0]` (the SAME per-region "slot 0" pointer mysterio.cpp's CMysterio::CMysterio
+// already writes bounding-box corners into, at Q[2]..Q[5] as i32) and, separately, `*((i32*)Q -
+// 1)` - the DWORD stored 4 bytes BEFORE the address Q itself points to, used as a face count. This
+// is a count-before-data header on the block Q points into (CLAUDE.md's "shifted pointer" idiom),
+// NOT a second parallel table at a neighboring address - correcting an earlier version of this
+// comment that described it as "dword_6B2450[region*17]"; the disasm is unambiguous
+// (`mov esi,[eax]` / `mov edi,[eax-4]` where eax is the pointer VALUE read from the table, not a
+// second table access).
+//
+// It uses that DWORD as a face count, allocates facecount*1024 bytes via DCMem_New (0x4581A0,
+// already @Ok in mem.cpp) into field_11C, fills it with 0xFF, then for each face computes a record
+// base with `Q(as u16*) + 8*(Q[1]+Q[2]) + 0x1C` bytes - this exact formula (sum of the u16 fields
+// at +2/+4, times 8, plus 0x1C) is byte-for-byte identical to switch.cpp's already-@Ok
+// Switch_SetSwitchFaceFlags, which computes `pRec + (*(u16*)(pRec+4) + *(u16*)(pRec+2)) * 8 +
+// 0x1C` on `pRegionEntry[pItem->mModel]` (a *different* slot of the *same* table, indexed by
+// model instead of the implicit slot 0 used here). That match is strong evidence both functions
+// are walking the same per-region face-record family, but Switch's per-record advance
+// (`(*(u16*)(pFace+2) >> 1) * 2`, i.e. the record's own u16 length field with its low bit
+// cleared) does not arithmetically reduce to this function's advance (`&(DWORD*)record[*(DWORD*)
+// record >> 18]`, i.e. skip the top 14 bits worth of dwords) even though both fields alias the
+// same two bytes of the record (offset+2..+3, the high 16 bits of the offset+0 dword) - so they
+// are reading the same bytes for two different purposes/lists, and it is not possible to tell
+// from the disassembly alone whether SNbrFaces is a distinct sibling format sharing byte layout
+// with Switch's records by convention, or something else. Debug asserts confirm the original
+// struct name: "Bad SNbrFaces size." / "NumFaces too big" (strings at 0x54E758/0x54E744, both
+// unconditionally-true prints in this build, i.e. inert here but real out-of-line calls in the
+// original that must still be reproduced). Inside the per-face walk (up to count*count iterations,
+// count <= 0x100 per the assert) it pulls all 4 bytes out of two DWORDs (one at the current record
+// +4, one at a second, independently-advancing record cursor +4) and does an all-pairs
+// byte-equality test between them, writing small integer indices into the 1024-byte output buffer
+// at 3 different offsets (buf-2, buf-1, buf) depending on which byte-equality combination hit, and
+// a bit test (`record byte 0 & 0x10`) that changes which of the two records' "extra" byte
+// (HIBYTE) participates. This reads as adjacency/shared-corner detection for outline-edge
+// generation, but the record layout (which byte is which triangle corner, what the 0x10 flag bit
+// means) is not named or documented anywhere in this repo, the maintainer's IDBs, or the Mac
+// symbol list (checked idb_globals.txt and idbs/spiderman_names.txt: no SNbrFaces symbol, no
+// struct). Getting the byte-role mapping wrong would silently produce plausible-looking but wrong
+// outline edges with zero way to detect it (visual-only, boss-outline effect, not reachable in any
+// headless smoke test). Left as a stub (NOT_IMPLEMENTED) rather than guessing at an undocumented
+// binary format; only used by CVenom and CDummy per the game's outline-related callers.
 // @NotOk
 void CSuper::OutlineOn(void){
 	NOT_IMPLEMENTED;
