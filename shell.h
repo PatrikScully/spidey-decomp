@@ -218,6 +218,7 @@ public:
 	// UniformCurveTesselator overloads, which the PC linker folded onto one body.
 	EXPORT void DocOckUniformCurveTesselator(CVector* pControl, u32 numPoints,
 			SSimpleRibbonParams* pOut);
+	EXPORT void DocOckBuildArms(void);
 	EXPORT void SuperOckBuildArms(void);
 
 	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).

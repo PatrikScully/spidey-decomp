@@ -9622,6 +9622,15 @@ static const i16 gSuperOckArmHooks[4][7] = {
 	{ 38, 39, 40, 41, 42, 43, 44 }
 };
 
+// Doc Ock's own list (0x494BE0). It is the SuperOck list with one added to every entry,
+// nothing else differs between the two functions.
+static const i16 gDocOckArmHooks[4][7] = {
+	{ 18, 19, 20, 21, 22, 23, 24 },
+	{ 32, 33, 34, 35, 36, 37, 38 },
+	{ 25, 26, 27, 28, 29, 30, 31 },
+	{ 39, 40, 41, 42, 43, 44, 45 }
+};
+
 // The texture both arm builders put on the ribbons, by checksum.
 static const u32 gOckArmTextureChecksum = 0x9809FFF5;
 
@@ -9697,6 +9706,89 @@ void CDummy::SuperOckBuildArms(void)
 	}
 
 	// backwards, because each claw points at the next one and the last one ends the chain
+	for (i32 claw = 3; claw >= 0; claw--)
+	{
+		if (this->field_214[claw] == 0)
+		{
+			this->field_214[claw] = new CBody();
+			this->field_214[claw]->InitItem("claw");
+			this->field_214[claw]->mFlags &= ~2u;
+
+			if (claw == 3)
+				this->field_214[3]->mNextItem = 0;
+			else
+				this->field_214[claw]->mNextItem = this->field_214[claw + 1];
+		}
+
+		SSimpleRibbonParams* pClawSpine = this->field_224[claw]->field_44;
+		this->field_214[claw]->mPos = pClawSpine[18].mPos;
+		Utils_CalcAim(&this->field_214[claw]->mAngles,
+				&pClawSpine[17].mPos, &pClawSpine[18].mPos);
+	}
+}
+
+// @Ok
+// 0x494BE0, 2016 bytes. Mac symbol .DocOckBuildArms__6CDummyFv (0xE6B70). Instruction for
+// instruction the same as SuperOckBuildArms above, for the Doc Ock preview costume (mType
+// 308); the only difference in the whole function is that every hook offset is one higher.
+void CDummy::DocOckBuildArms(void)
+{
+	for (i32 ribbon = 0; ribbon < 4; ribbon++)
+	{
+		if (this->field_224[ribbon] == 0)
+		{
+			this->field_224[ribbon] = new CSimpleTexturedRibbon(18);
+			this->field_224[ribbon]->SetTexture(
+					Spool_FindTextureEntry(gOckArmTextureChecksum));
+			this->field_224[ribbon]->SetOpaque();
+			this->field_224[ribbon]->SetRGB(128, 128, 128);
+
+			for (i32 point = 0; point < 19; point++)
+				this->field_224[ribbon]->field_44[point].mWidth = 10;
+		}
+	}
+
+	CVector control[4];
+	for (i32 c = 0; c < 4; c++)
+	{
+		control[c].vx = 0;
+		control[c].vy = 0;
+		control[c].vz = 0;
+	}
+
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	for (i32 arm = 0; arm < 4; arm++)
+	{
+		const i16* pArmHooks = gDocOckArmHooks[arm];
+		SSimpleRibbonParams* pSpine = this->field_224[arm]->field_44;
+
+		for (i32 h = 0; h < 4; h++)
+		{
+			hook.Offset = pArmHooks[h];
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&control[h]), this, &hook);
+			control[h] >>= 12;
+		}
+
+		this->DocOckUniformCurveTesselator(control, 10, pSpine);
+
+		control[0] = control[3];
+
+		for (i32 h2 = 0; h2 < 3; h2++)
+		{
+			hook.Offset = pArmHooks[h2 + 4];
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&control[h2 + 1]), this, &hook);
+			control[h2 + 1] >>= 12;
+		}
+
+		this->DocOckUniformCurveTesselator(control, 10, &pSpine[9]);
+	}
+
 	for (i32 claw = 3; claw >= 0; claw--)
 	{
 		if (this->field_214[claw] == 0)
