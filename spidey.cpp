@@ -1432,10 +1432,287 @@ void CPlayer::DoShadowCheck(void)
     printf("CPlayer::DoShadowCheck(void)");
 }
 
-// @MEDIUMTODO
+// Draws the offscreen spider-sense arrows that
+// BuildOffscreenSpideySenseIndicatorList/UpdateOffscreenSpideySenseIndicatorList
+// keep in field_5F0. Every slot owns four flat triangles: entry 0 is the
+// arrow where it is this frame, entries 1..3 are the three previous frames,
+// shifted along here to make a short motion trail. mInUse is the entry's age
+// in frame ticks: below 30 the arrow is semi transparent and slides in from
+// the screen edge (the "fade" term), from 30 on it turns opaque dark red,
+// parks at its final place and the trail is retired one triangle at a time
+// (at ages 33, 36 and 39). Which screen edge it sits on comes from the
+// direction vector: the top or bottom edge when
+// |x| <= |((y << 9) / 2) / 120|, the left or right edge otherwise. Each live
+// triangle is copied into the shared 0x56FB04 scratch buffer and drawn as a
+// degenerate quad (vertices 2 and 3 are the same point) through
+// PCGfx_DrawQPoly2D, the same way every other 2D draw in the repo does it.
+// @Ok
 void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
 {
-    printf("CPlayer::DrawOffscreenSpideySenseIndicatorList(void)");
+	// the shared bump allocated scratch record buffer, same addresses as
+	// flash.cpp's gEffectRecordBufPos/gEffectRecordBufEnd and bit.cpp's
+	// gFlatBitScratchBufPos/gFlatBitScratchBufEnd (pPoly/PolyBufferEnd in
+	// the idb). Kept function local so nothing else in this file sees it.
+	static u8 ** const gIndicatorBufPos = (u8**)0x0056FB04;
+	static u8 ** const gIndicatorBufEnd = (u8**)0x005FCD1C;
+
+	// the two ordering table slots this list submits through, handed to the
+	// addPrim stub exactly like flash.cpp hands it 0x56EB54. No idb name at
+	// either address, tentative names only.
+	static void * const gSpideySenseOT = (void*)0x006A9090;
+	static void * const gSpideySenseTPageOT = (void*)0x006A9094;
+
+	u8 drewAnything = 0;
+
+	for (i32 slot = 0; slot < 6; slot++)
+	{
+		SIndicator *ind = &this->field_5F0[slot];
+
+		if (ind->field_C.pWhatever == 0)
+			continue;
+
+		u32 age = static_cast<u32>(ind->mInUse);
+		i32 dirX = ind->mDirection.vx;
+		i32 dirY = ind->mDirection.vy;
+		i32 fade = 30 - static_cast<i32>(age);
+
+		POLY_F3 *poly = ind->mPoly;
+
+		bool shiftTrail = true;
+
+		if (age >= 30)
+		{
+			poly->code = static_cast<u8>(poly->code & 0xFD);
+
+			i32 retired = static_cast<i32>(age) - 30;
+
+			if (retired >= 9)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+				*reinterpret_cast<i32*>(&ind->mPoly[2].x0) = 0;
+				*reinterpret_cast<i32*>(&ind->mPoly[1].x0) = 0;
+				shiftTrail = false;
+			}
+			else if (retired >= 6)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+				*reinterpret_cast<i32*>(&ind->mPoly[2].x0) = 0;
+			}
+			else if (retired >= 3)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+			}
+		}
+		else
+		{
+			poly->code = static_cast<u8>(poly->code | 2);
+		}
+
+		if (shiftTrail)
+		{
+			for (i32 t = 3; t > 0; t--)
+			{
+				*reinterpret_cast<i32*>(&ind->mPoly[t].x0) = *reinterpret_cast<i32*>(&ind->mPoly[t - 1].x0);
+				*reinterpret_cast<i32*>(&ind->mPoly[t].x1) = *reinterpret_cast<i32*>(&ind->mPoly[t - 1].x1);
+				*reinterpret_cast<i32*>(&ind->mPoly[t].x2) = *reinterpret_cast<i32*>(&ind->mPoly[t - 1].x2);
+			}
+		}
+
+		if (ind->mInUse == 0)
+		{
+			*reinterpret_cast<i32*>(&ind->mPoly[3].x0) = 0;
+			*reinterpret_cast<i32*>(&ind->mPoly[2].x0) = 0;
+			*reinterpret_cast<i32*>(&ind->mPoly[1].x0) = 0;
+		}
+
+		i32 absX = (dirX < 0) ? -dirX : dirX;
+		i32 limit = ((dirY << 9) / 2) / 120;
+		i32 absLimit = (limit < 0) ? -limit : limit;
+
+		if (absX <= absLimit)
+		{
+			if (dirY >= 0)
+			{
+				i32 x = 104 * dirX / dirY + 256;
+
+				if (age < 30)
+				{
+					i32 spread = (13 * fade) / 4;
+					i32 y = 4 * (58 - fade);
+					i32 yTrail = y - (11 * fade) / 4 - 16;
+
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - spread - 19);
+					poly->y0 = static_cast<i16>(y);
+					poly->x2 = static_cast<i16>(spread + x + 19);
+					poly->y1 = static_cast<i16>(yTrail);
+					poly->y2 = static_cast<i16>(yTrail);
+				}
+				else
+				{
+					poly->y0 = 232;
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - 19);
+					poly->y1 = 216;
+					poly->x2 = static_cast<i16>(x + 19);
+					poly->y2 = 216;
+				}
+			}
+			else
+			{
+				i32 x = -104 * dirX / dirY + 256;
+
+				if (age < 30)
+				{
+					i32 spread = (13 * fade) / 4;
+					i32 y = 4 * fade + 24;
+					i32 yTrail = (11 * fade) / 4 + y + 16;
+
+					poly->y0 = static_cast<i16>(y);
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - spread - 19);
+					poly->x2 = static_cast<i16>(spread + x + 19);
+					poly->y1 = static_cast<i16>(yTrail);
+					poly->y2 = static_cast<i16>(yTrail);
+				}
+				else
+				{
+					poly->y0 = 24;
+					poly->x0 = static_cast<i16>(x);
+					poly->x1 = static_cast<i16>(x - 19);
+					poly->y1 = 40;
+					poly->x2 = static_cast<i16>(x + 19);
+					poly->y2 = 40;
+				}
+			}
+		}
+		else if (dirX < 0)
+		{
+			i32 y = -240 * dirY / dirX + 128;
+
+			if (age < 30)
+			{
+				i32 x = 6 * fade + 16;
+				i32 xTrail = (16 * fade) / 4 + x + 24;
+				i32 spread = (8 * fade) / 4;
+
+				poly->y0 = static_cast<i16>(y);
+				poly->x0 = static_cast<i16>(x);
+				poly->x1 = static_cast<i16>(xTrail);
+				poly->x2 = static_cast<i16>(xTrail);
+				poly->y1 = static_cast<i16>(y - spread - 12);
+				poly->y2 = static_cast<i16>(spread + y + 12);
+			}
+			else
+			{
+				poly->x0 = 16;
+				poly->y0 = static_cast<i16>(y);
+				poly->x1 = 40;
+				poly->y1 = static_cast<i16>(y - 12);
+				poly->x2 = 40;
+				poly->y2 = static_cast<i16>(y + 12);
+			}
+		}
+		else
+		{
+			i32 y = 240 * dirY / dirX + 128;
+
+			if (age >= 30)
+			{
+				poly->x0 = 496;
+				poly->y0 = static_cast<i16>(y);
+				poly->x1 = 472;
+				poly->y1 = static_cast<i16>(y - 12);
+				poly->x2 = 472;
+				poly->y2 = static_cast<i16>(y + 12);
+			}
+			else
+			{
+				i32 x = 496 - 6 * fade;
+				i32 xTrail = x - (16 * fade) / 4 - 24;
+				i32 spread = (8 * fade) / 4;
+
+				poly->y0 = static_cast<i16>(y);
+				poly->x0 = static_cast<i16>(x);
+				poly->x1 = static_cast<i16>(xTrail);
+				poly->y1 = static_cast<i16>(y - spread - 12);
+				poly->x2 = static_cast<i16>(xTrail);
+				poly->y2 = static_cast<i16>(spread + y + 12);
+			}
+		}
+
+		if (age >= 30)
+		{
+			u8 code = poly->code;
+			poly->r0 = 0x80;
+			poly->g0 = 0;
+			poly->b0 = 0;
+			poly->code = static_cast<u8>(code & 0xFD);
+		}
+
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
+
+		u32 color = poly->b0 | ((poly->g0 | ((poly->r0 | 0xFFFF8000) << 8)) << 8);
+
+		i32 drawn = 0;
+		POLY_F3 *pPoly = poly;
+
+		while (*reinterpret_cast<u32*>(&pPoly->x0) != 0)
+		{
+			u8 *rec = *gIndicatorBufPos;
+
+			if (rec + 20 > *gIndicatorBufEnd)
+				return;
+
+			memcpy(rec, pPoly, 20);
+			*gIndicatorBufPos = rec + 20;
+
+			gsub_46CB90(gSpideySenseOT);
+
+			POLY_F3 *pRec = reinterpret_cast<POLY_F3*>(rec);
+
+			f32 scaleY = static_cast<f32>(gGameResolutionY) / static_cast<f32>(Yres);
+			f32 scaleX = static_cast<f32>(gGameResolutionX) / static_cast<f32>(Xres);
+
+			drewAnything = 1;
+
+			f32 x0 = pRec->x0 * scaleX;
+			f32 y0 = pRec->y0 * scaleY;
+			f32 x1 = pRec->x1 * scaleX;
+			f32 y1 = pRec->y1 * scaleY;
+			f32 x2 = pRec->x2 * scaleX;
+			f32 y2 = pRec->y2 * scaleY;
+
+			PCGfx_DrawQPoly2D(
+					x0, y0, 0.0f, 0.0f, color,
+					x1, y1, 1.0f, 0.0f, color,
+					x2, y2, 0.0f, 1.0f, color,
+					x2, y2, 1.0f, 1.0f, color,
+					5.0f);
+
+			drawn++;
+			pPoly++;
+
+			if (drawn >= 4)
+				break;
+		}
+
+		ind->mInUse += this->field_80;
+	}
+
+	if (drewAnything)
+	{
+		u8 *rec = *gIndicatorBufPos;
+
+		if (rec + 8 <= *gIndicatorBufEnd)
+		{
+			*gIndicatorBufPos = rec + 8;
+
+			setDrawTPage();
+
+			gsub_46CB90(gSpideySenseTPageOT);
+		}
+	}
 }
 
 // @Ok

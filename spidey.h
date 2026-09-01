@@ -8,6 +8,7 @@
 #include "ob.h"
 #include "manipob.h"
 #include "quat.h"
+#include "psx_types.h"
 
 struct SAnimFrame;
 
@@ -22,10 +23,16 @@ struct SIndicator
 
 	SHandle field_C;
 
-	// @FIXME - there's a POLY_F3 that should go in here but I have
-	// no idea how it works leaving it for future me
-	PADDING(0x64-0xC-sizeof(SHandle));
+	// The four flat triangles this indicator draws: index 0 is the arrow at
+	// its position this frame, 1..3 hold the three previous frames'
+	// positions, which CPlayer::DrawOffscreenSpideySenseIndicatorList shifts
+	// along every call to make a short motion trail. Only the vertex fields
+	// are shifted; the colour and code bytes live in entry 0.
+	POLY_F3 mPoly[4];
 
+	// age of this entry in frame ticks (CSuper::field_80 is added per draw).
+	// Below 30 the arrow fades/slides in, from 30 on it is parked and the
+	// trail is retired one triangle at a time.
 	i32 mInUse;
 };
 
