@@ -9,6 +9,8 @@
 #include "spool.h"
 #include "utils.h"
 #include "my_assert.h"
+#include "web.h"
+#include "exp.h"
 
 // @Ok
 CVector ZeroVector;
@@ -128,6 +130,96 @@ void CItem::InitItem(const char * pName)
 		pModel->Box.vy = 0xFF9C0064;
 		pModel->Box.vz = 0xFF9C0064;
 	}
+}
+
+// @Ok
+// 0x45FDC0, 607 bytes. Blows the item apart into CItemFrag pieces. Transforms
+// every model vertex of the item's current model into world space with the
+// GTE, then walks the face list and spawns one fragment per face whose flag
+// word does not have bit 0x10 set, flying out from the item centre at
+// speed + Rnd(randomSpeed). Called by CDome::Burst (web.cpp) with (30, 30).
+// The first print_if_false really is a constant 1 in the original (a disabled
+// PSX-only assert), reproduced as written rather than dropped.
+// The 0x6B2454 table the original indexes with region*17 is
+// G_PSXREGION[region].ppModels (SPSXRegion is 68 bytes = 17 dwords and
+// ppModels sits at +0x14, so 0x6B2440 + 0x14 = 0x6B2454); indexed through the
+// containing global here per the address-audit rule, exactly as InitItem
+// above already does.
+void CItem::Burst(i32 speed, i32 randomSpeed)
+{
+	print_if_false(1, "CItem::Burst only works for PSX version 0x20004");
+	print_if_false(((this->mFlags >> 1) & 1) == 0, "Cannot burst a superitem");
+
+	i32 groundY = Web_GetGroundY(&this->mPos);
+
+	SModel *pModel = G_PSXREGION[this->mRegion].ppModels[this->mModel];
+
+	i32 numVerts = pModel->NumVertices;
+	SVECTOR *pSrc = reinterpret_cast<SVECTOR*>(&pModel->Vertices);
+
+	// one spare CVector past the end, as the original allocates it
+	CVector *pVerts = reinterpret_cast<CVector*>(Mem_New(4 * (3 * numVerts + 3)));
+
+	MATRIX rotMat;
+	M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(&this->mAngles), &rotMat);
+	gte_SetRotMatrix(&rotMat);
+	M3dAsm_SetTransVector(reinterpret_cast<VECTOR*>(&this->mPos));
+
+	if (numVerts != 0)
+	{
+		CVector *pDst = pVerts;
+		i32 i = numVerts;
+
+		do
+		{
+			gte_ldv0(pSrc);
+			gte_rtv0tr();
+			gte_stlvnl(reinterpret_cast<VECTOR*>(pDst));
+
+			pDst->vx <<= 12;
+			pDst->vy <<= 12;
+			pDst->vz <<= 12;
+
+			pDst++;
+			pSrc++;
+			i--;
+		} while (i != 0);
+	}
+
+	i32 numFaces = pModel->NumFaces;
+
+	// faces follow the vertex and normal SVECTOR arrays, both 8 bytes each
+	u32 *pFace = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pModel) + 0x1C
+			+ 8 * (pModel->NumNormals + numVerts));
+
+	if (numFaces != 0)
+	{
+		i32 i = numFaces;
+
+		do
+		{
+			if ((*reinterpret_cast<u8*>(pFace) & 0x10) == 0)
+			{
+				CVector dir = pVerts[pFace[1] & 0xFF] - this->mPos;
+
+				i32 length = dir.Length();
+
+				if (length != 0)
+				{
+					i32 speedNow = speed + Rnd(randomSpeed);
+					CVector vel = (dir * speedNow) / length;
+
+					new CItemFrag(pFace, pVerts, &vel, groundY);
+				}
+			}
+
+			// face records are variable length, size in dwords in bits 18+
+			pFace += *pFace >> 18;
+			i--;
+		} while (i != 0);
+	}
+
+	Mem_Delete(pVerts);
 }
 
 

@@ -93,6 +93,9 @@ class CItem
 		EXPORT virtual ~CItem();
 
 		EXPORT void InitItem(const char *);
+
+		// 0x45FDC0. Shatters the item's model into CItemFrag pieces.
+		EXPORT void Burst(i32 speed, i32 randomSpeed);
 };
 
 
