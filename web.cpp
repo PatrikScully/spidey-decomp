@@ -1007,11 +1007,99 @@ void Web_Trap(CSuper *, i32)
 	printf("Web_Trap(CSuper *,i32)");
 }
 
-// @MEDIUMTODO
-// 0x4F9940, 604 bytes. Called by CPlayer::FireWeb.
-CImpactWeb::CImpactWeb(const CVector &, const CSVector &, i32, i32, i32)
+// @Ok
+// 0x4F9940, 604 bytes. Called by CPlayer::FireWeb. The web projectile itself:
+// a CFlatBit that flies from Pos along Normal at Speed. The constructor casts
+// the whole flight path as one line up front (gLineInfo + M3dZone_LineToItem)
+// and, if it will hit something, shortens mLifetime to the number of frames
+// that takes and remembers the impact point, so the sprite stops exactly on
+// the surface instead of being tested every frame.
+//
+// LineOfSightCheck (m3dcolij.h) is raised around the M3dZone_LineToItem call,
+// the same "this is a sight/trace query, not a real collision" flag the rest
+// of the collision code uses.
+//
+// Original defects kept: mpHitItem / mpHitFace are only written on a hit,
+// while the six fields after them are pre-zeroed, so a miss leaves those two
+// holding whatever the freshly allocated block had; and the "Not in list"
+// walk over EnviroList computes a result that only ever feeds print_if_false,
+// which is a no-op in this build.
+CImpactWeb::CImpactWeb(
+		const CVector &Pos,
+		const CSVector &Normal,
+		i32 Speed,
+		i32 Damage,
+		i32 Lifetime)
 {
-	printf("CImpactWeb::CImpactWeb(const CVector &,const CSVector &,i32,i32,i32)");
+	this->mHitPos.vx = 0;
+	this->mHitPos.vy = 0;
+	this->mHitPos.vz = 0;
+
+	this->mHitNormal.vx = 0;
+	this->mHitNormal.vy = 0;
+	this->mHitNormal.vz = 0;
+
+	if (G_MECHLIST != 0)
+		this->mDamage = reinterpret_cast<CPlayer*>(G_MECHLIST)->GetDamageInflictedFromDifficulty(Damage);
+	else
+		this->mDamage = Damage;
+
+	this->mPos = Pos;
+	this->mStartTime = gTimerRelated;
+
+	print_if_false(Speed != 0, "Zero speed sent to CImpactWeb");
+
+	Utils_GetVecFromMagDir(&this->mVel, Speed, const_cast<CSVector*>(&Normal));
+
+	this->mLifetime = (u16)Lifetime;
+
+	gLineInfo.StartCoords = this->mPos;
+
+	gLineInfo.EndCoords.vx = this->mPos.vx + this->mLifetime * this->mVel.vx;
+	gLineInfo.EndCoords.vy = this->mPos.vy + this->mLifetime * this->mVel.vy;
+	gLineInfo.EndCoords.vz = this->mPos.vz + this->mLifetime * this->mVel.vz;
+
+	M3dColij_InitLineInfo(&gLineInfo);
+
+	LineOfSightCheck = 1;
+	M3dZone_LineToItem(&gLineInfo, 0);
+	LineOfSightCheck = 0;
+
+	if (gLineInfo.pItem != 0)
+	{
+		CItem *pItem = EnviroList;
+
+		while (pItem != 0 && pItem != gLineInfo.pItem)
+			pItem = pItem->mNextItem;
+
+		print_if_false(pItem != 0, "Not in list");
+
+		this->mpHitItem = gLineInfo.pItem;
+		this->mpHitFace = gLineInfo.pFace;
+
+		this->mHitPos.vx = gLineInfo.Position.vx;
+		this->mHitPos.vy = gLineInfo.Position.vy;
+		this->mHitPos.vz = gLineInfo.Position.vz;
+
+		this->mHitNormal.vx = gLineInfo.Normal.vx;
+		this->mHitNormal.vy = gLineInfo.Normal.vy;
+		this->mHitNormal.vz = gLineInfo.Normal.vz;
+
+		this->mLifetime = (u16)(gLineInfo.Distance / Speed);
+
+		print_if_false((this->mpHitItem->mFlags & 0x10) == 0, "Hit env obj!");
+	}
+
+	if ((i32)this->mLifetime > Lifetime)
+		this->mLifetime = (u16)Lifetime;
+
+	this->SetAnim(9);
+	this->SetFrame(0);
+	this->SetScale(0);
+
+	this->mPostScale = 0x0A001000;
+
+	this->field_5A = Rnd(2) != 0 ? 768 : -768;
 }
 
 // @Ok

@@ -26,9 +26,28 @@ class CImpactWeb : public CFlatBit
 		// Original 0x4F9940. Mac mangled name
 		// __ct__10CImpactWebFRC7CVectorRC8CSVectoriii gives the parameter
 		// list. The web splat left on a wall when a web shot misses.
-		EXPORT CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 a4, i32 a5, i32 a6);
+		EXPORT CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 Speed, i32 Damage, i32 Lifetime);
 
-		PADDING(0x24);
+		// Fields recovered from the constructor's own stores (0x4F9940),
+		// which is the only decompiled user of this class so far.
+
+		// the Damage argument, run through
+		// CPlayer::GetDamageInflictedFromDifficulty when a player exists
+		i32 mDamage;
+
+		// gTimerRelated at spawn time
+		i32 mStartTime;
+
+		// the item the forward ray hit, and the face on it. Both left
+		// uninitialised when the ray misses (original defect: only the six
+		// fields below are pre-zeroed).
+		CItem *mpHitItem;
+		u32 *mpHitFace;
+
+		CVector mHitPos;
+		CSVector mHitNormal;
+
+		PADDING(2);
 };
 
 
