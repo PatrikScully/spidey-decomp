@@ -1287,23 +1287,51 @@ void CKnottedWebSplat::Move(void)
 		this->Die();
 }
 
-// @MEDIUMTODO
-// 0x4F5BC0, 420 bytes. Scoped but not written out. What it does: chains
-// CQuadBit::CQuadBit, zeroes its own 0x8C..0xAC fields, SetTexture(0x3AF20073)
-// + SetSemiTransparent, sets field_84 (inherited) to 32 and mType to 40, puts
-// field_8C at pPos + pNormal * 10, calls CQuadBit::OrientUsing with a CSVector
-// rebuilt from the low words of pNormal's three i32s and a Rnd(4096) angle,
-// then stores (mPosB - mPos) >> 1 and (mPosC - mPos) >> 1 into field_98 /
-// field_A4 and runs one Move().
+// @Ok
+// 0x4F5BC0, 420 bytes. The blob of webbing left where a web shot lands: a
+// quad, facing along the surface normal and spun at a random angle, that
+// grows to full size over the first few frames (see Move above).
 //
-// Left as a stub because two of its steps cannot be written honestly yet: the
-// texture id 0x3AF20073 has no name in this repo, and the final call is
-// link-folded onto CSimbyShotSplat::Move (0x4A5E40, simby.cpp), so which class
-// really owns that Move body (and therefore what CKnottedWebSplat's vtable
-// should look like) is unresolved. Its caller CWeb::Fire below is complete.
-CKnottedWebSplat::CKnottedWebSplat(const CVector *, const CVector *)
+// The nine zero stores the original makes over 0x8C..0xAC before it does
+// anything else are the implicit construction of the three CVector members,
+// so they are not written out here (CVector's default constructor zeroes its
+// three components). field_88 is left at zero by CBit::operator new.
+//
+// shell.cpp has a near-identical sibling splat class at 0x4907F0 (same
+// SetTexture / SetSemiTransparent / OrientUsing(..., 1, 1, Rnd(4096)) /
+// corner-offset / Move() shape, one field further along), which is a good
+// second reading of every step here.
+//
+// The original works out the offset from the surface with the
+// (CVector, CVector) operator* overload and a one-int CVector left hand side
+// (that overload only reads lhs.vx), the idiom vector.h's explicit
+// CVector(i32) constructor exists for: the splat centre is the hit point
+// pushed 10 units back out along the normal.
+CKnottedWebSplat::CKnottedWebSplat(const CVector *pPos, const CVector *pNormal)
 {
-	printf("CKnottedWebSplat::CKnottedWebSplat(const CVector *,const CVector *)");
+	this->SetTexture(0x3AF6DFF3);
+	this->SetSemiTransparent();
+
+	this->field_84 = 32;
+
+	this->field_8C = *pPos;
+	this->field_8C += CVector(10) * *pNormal;
+
+	// the caller sign-extended a CSVector into the three i32s of pNormal
+	// (see CWeb::Fire below); this reads the low words straight back out
+	SVECTOR Normal;
+	Normal.vx = static_cast<i16>(pNormal->vx);
+	Normal.vy = static_cast<i16>(pNormal->vy);
+	Normal.vz = static_cast<i16>(pNormal->vz);
+
+	this->OrientUsing(&this->field_8C, &Normal, 1, 1, Rnd(4096));
+
+	this->field_98 = (this->mPosB - this->mPos) >> 1;
+	this->field_A4 = (this->mPosC - this->mPos) >> 1;
+
+	this->Move();
+
+	this->mType = 40;
 }
 
 // @Ok
