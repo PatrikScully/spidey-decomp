@@ -6806,7 +6806,7 @@ void CRecordBox::Update(void)
 // function was never linked in, not because it is merely hard to find.
 // Left as an honest stub rather than guessing an implementation from the
 // Mac-only prototype and the sibling Update/Display field usage.
-// @NotOk
+// @Bogus
 void CRecordBox::NameEntryOn(u8)
 {
 	printf("CRecordBox::NameEntryOn(u8)");
