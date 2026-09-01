@@ -3705,28 +3705,76 @@ void CPlayer::DoMGSShadow(void)
 }
 
 // @NotOk
-// This was an @Ok decompile of 0x4BFEC0 under the wrong name, and the body has
-// now been re-done correctly as CPlayer::CheckStickToWall above. Address
-// identity, verified 2026-09-01: the Mac build orders CPlayer as
-// CheckStickToCeiling 0x1194B0, CheckStickToWall 0x1196B0, CheckKick 0x1198B0;
-// the PC build has CheckStickToCeiling 0x4BFCE0, <this> 0x4BFEC0, CheckKick
-// 0x4C00B0 - the same three slots in the same order, so 0x4BFEC0 is
-// CheckStickToWall. The real CPlayer::DoPhysics is Mac 0xA7340, a different
-// translation unit entirely, and has no located PC address: the only PC name
-// for it is the wrong 0x4BFEC0 entry, in BOTH tools/names.json and the
-// maintainer's own IDB (idbs/spideypc_names.txt "004bfec0: CPlayer_DoPhysics").
-// Worth reporting upstream, both name sources agree and both are wrong.
+// LOCATED 2026-09-01: the real CPlayer::DoPhysics is sub_466CE0 (0x466CE0,
+// 0x1017 = 4119 bytes). Still a stub because it is leaf-blocked, see the
+// bottom of this comment. Do not use 0x4BFEC0 for it, that is
+// CheckStickToWall (also proven below).
 //
-// The removed body also carried two real defects, which is what exposed it:
+// How 0x466CE0 was found, by Mac translation-unit ordering:
+// the Mac build's physics.cpp runs
+//   Physics_SetGravity          0x0A7270
+//   CPlayer::DoPhysics          0x0A7340  (0xF60 bytes)
+//   CPlayer::DoSwingingPhysics  0x0A82A0  (0x3A0 bytes)
+//   CPlayer::DoCrawlingPhysics  0x0A8640  (0xB60 bytes)
+//   __sinit_physics_cpp         0x0A91A0
+// and the PC build has the same four slots in the same order:
+//   Physics_SetGravity          0x466C70  (0x066 bytes, already in physics.cpp)
+//   sub_466CE0                  0x466CE0  (0x1017 bytes)
+//   sub_467D20                  0x467D20  (0x2A8 bytes)
+//   CPlayer_DoCrawlingPhysics   0x467FD0  (0xD6F bytes, named in the IDB)
+// The two ends of the run are named identically on both builds, the sizes
+// line up (Mac 0xF60 / 0x3A0 / 0xB60 against PC 0x1017 / 0x2A8 / 0xD6F), and
+// nothing else lives between them.
+//
+// Three independent confirmations, so this is not just ordering:
+//  - 0x466CE0 has exactly ONE caller, SpideyAI0 (0x4B13F0), which is where
+//    the player's per-frame physics call belongs.
+//  - 0x466CE0 is the ONLY caller of both 0x467D20 and 0x467FD0, and it picks
+//    between them at the top with "if (field_E64) return sub_467D20();" and
+//    "if (field_AD4) return sub_467FD0();", i.e. swing web attached ->
+//    swinging physics, crawling flag set -> crawling physics. That is exactly
+//    DoPhysics dispatching to DoSwingingPhysics / DoCrawlingPhysics.
+//  - it is __thiscall and touches CPlayer-only fields (field_E1C state mask,
+//    field_AD4, field_E64, field_DBC, field_BB0 area), not just CBody ones.
+// So sub_467D20 is CPlayer::DoSwingingPhysics, and the IDB's
+// CPlayer_DoCrawlingPhysics at 0x467FD0 is confirmed correct.
+//
+// Names that are WRONG in both tools/names.json and the maintainer's IDB
+// (idbs/spideypc_names.txt), worth reporting upstream:
+//   0x4BFEC0 "CPlayer_DoPhysics" is really CPlayer::CheckStickToWall. The Mac
+//   build orders CheckStickToCeiling 0x1194B0, CheckStickToWall 0x1196B0,
+//   CheckKick 0x1198B0; the PC build has CheckStickToCeiling 0x4BFCE0,
+//   <0x4BFEC0>, CheckKick 0x4C00B0, the same three slots in the same order.
+//   0x4BFEC0 is already decompiled above as CPlayer::CheckStickToWall.
+// Missing entirely from both: 0x466CE0 (DoPhysics) and 0x467D20
+// (DoSwingingPhysics).
+//
+// Why this is still a stub: leaf-first. Both callees are unwritten. The repo
+// has physics.cpp with Physics_SetGravity alone; DoSwingingPhysics (0x467D20)
+// and DoCrawlingPhysics (0x467FD0) have no body, no declaration and no stub
+// anywhere, so writing DoPhysics now means writing 4215 more bytes of
+// unverifiable player physics underneath it. It also belongs in physics.cpp,
+// not here: the Mac TU boundaries put all three next to Physics_SetGravity.
+// Suggested order for whoever picks this up: DoSwingingPhysics (small),
+// then DoCrawlingPhysics, then DoPhysics, all three into physics.cpp, and
+// move this declaration out of spidey.h at the same time.
+//
+// One warning for that work: Hex-Rays mistypes several locals in 0x466CE0 as
+// float when they are ints or pointers. In particular the local holding
+// [this+0xDBC] (field_DBC, a CBody*) comes out as a float and then gets used
+// as "*(int *)(LODWORD(v82) + 100) < 0", which is really
+// "pOther->mVel.vy < 0". Read the raw disassembly for the arithmetic.
+//
+// History: this slot used to hold an @Ok decompile of 0x4BFEC0 under the
+// wrong name. That body has been redone correctly as CheckStickToWall above.
+// It also carried two real defects, which is what exposed the mislabel:
 //   - "if (vy > 0xD48 || vy < 0xF5D8)" with vy an i16. The i16 promotes to int,
 //     so "vy < 62936" is always true and the function could only ever return 0.
 //     The original is a signed 16-bit compare, i.e. "vy < -2600".
 //   - it walked &gSpideySFXEntry[0xEA] (the address of the slot) instead of
 //     gSpideySFXEntry[0xEA] (the -1-terminated list the slot points at), and
 //     skipped the null check the original has.
-// Nothing calls it and it is not hooked, so the wrong body was inert. Stubbed
-// rather than deleted because the declaration is in spidey.h and the function
-// does exist in the game; it just needs its real PC address found first.
+// Nothing calls it and it is not hooked, so the wrong body was inert.
 i32 CPlayer::DoPhysics(void)
 {
     printf("CPlayer::DoPhysics(void)");
