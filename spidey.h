@@ -267,7 +267,9 @@ class CPlayer : public CSuper
 		// and deleted (vtable[0](this,1)) when field_158 is cleared.
 		CQuadBit *field_AC0;
 
-		PADDING(4);
+		// lazily allocated CQuadBit for the ceiling shadow cast by
+		// CPlayer::DoShadowCheck
+		CQuadBit *field_AC4;
 
 		CVector field_AC8;
 

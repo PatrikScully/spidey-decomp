@@ -2398,10 +2398,130 @@ i32 CPlayer::DoPhysics(void)
 	return 1;
 }
 
-// @MEDIUMTODO
+// @Ok
 void CPlayer::DoShadowCheck(void)
 {
-    printf("CPlayer::DoShadowCheck(void)");
+	if ((this->mCollision & 2) == 0)
+	{
+		// airborne: drop a line along the current up vector and put the
+		// shadow where it lands
+		SLineInfo lineInfo;
+		lineInfo.StartCoords = this->mPos;
+		lineInfo.EndCoords.vx = this->mPos.vx - (this->field_C84.vx << 11);
+		lineInfo.EndCoords.vy = this->mPos.vy - (this->field_C84.vy << 11);
+		lineInfo.EndCoords.vz = this->mPos.vz - (this->field_C84.vz << 11);
+		memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+		memset(&lineInfo.Position, 0, sizeof(CVector));
+		lineInfo.Normal.vx = 0;
+		lineInfo.Normal.vy = 0;
+		lineInfo.Normal.vz = 0;
+
+		M3dColij_InitLineInfo(&lineInfo);
+		M3dZone_LineToItem(&lineInfo, 1);
+
+		if (lineInfo.pItem != 0)
+		{
+			this->field_158 = 1;
+			this->mShadowPos.vx = lineInfo.Position.vx;
+			this->mShadowPos.vy = lineInfo.Position.vy;
+			this->mShadowPos.vz = lineInfo.Position.vz;
+		}
+		else
+		{
+			this->field_158 = 0;
+		}
+
+		this->DoMGSShadow();
+	}
+	else if (this->field_AD4 != 0 && this->field_8EA != 0)
+	{
+		this->field_158 = 0;
+		this->DoMGSShadow();
+	}
+	else if (this->field_8E9 == 0 || CameraList->mPos.vy >= this->mPos.vy)
+	{
+		i32 dist = this->field_EA8;
+
+		CVector shadowPos = this->mPos - (this->field_C84 * dist);
+		this->mShadowPos.vx = shadowPos.vx;
+		this->mShadowPos.vy = shadowPos.vy;
+		this->mShadowPos.vz = shadowPos.vz;
+
+		this->mShadowNormal.vx = this->field_A8.vx;
+		this->mShadowNormal.vy = this->field_A8.vy;
+		this->mShadowNormal.vz = this->field_A8.vz;
+
+		CVector toCamera = (CameraList->mPos - this->mShadowPos) >> 12;
+
+		if (toCamera.vx * this->mShadowNormal.vx
+			+ toCamera.vy * this->mShadowNormal.vy
+			+ toCamera.vz * this->mShadowNormal.vz >= 0)
+			this->field_158 = 1;
+		else
+			this->field_158 = 0;
+
+		this->DoMGSShadow();
+	}
+	else
+	{
+		// on the ceiling with the camera above the player: the shadow goes
+		// up, on its own quad
+		this->field_158 = 0;
+		this->DoMGSShadow();
+
+		SLineInfo lineInfo;
+		lineInfo.StartCoords = this->mPos;
+		lineInfo.EndCoords.vx = this->mPos.vx;
+		lineInfo.EndCoords.vy = this->mPos.vy + 0x1000000;
+		lineInfo.EndCoords.vz = this->mPos.vz;
+		memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+		memset(&lineInfo.Position, 0, sizeof(CVector));
+		lineInfo.Normal.vx = 0;
+		lineInfo.Normal.vy = 0;
+		lineInfo.Normal.vz = 0;
+
+		M3dColij_InitLineInfo(&lineInfo);
+		M3dZone_LineToItem(&lineInfo, 1);
+
+		if (lineInfo.pItem != 0)
+		{
+			this->mShadowPos.vx = lineInfo.Position.vx;
+			this->mShadowPos.vy = lineInfo.Position.vy;
+			this->mShadowPos.vz = lineInfo.Position.vz;
+
+			CVector toCamera = (CameraList->mPos - this->mShadowPos) >> 12;
+
+			if (toCamera.vx * lineInfo.Normal.vx
+				+ toCamera.vy * lineInfo.Normal.vy
+				+ toCamera.vz * lineInfo.Normal.vz >= 0)
+			{
+				if (this->field_AC4 == 0)
+				{
+					CQuadBit *pQuad = new CQuadBit();
+					this->field_AC4 = pQuad;
+
+					// the shadow texture pointer sits at offset 4 of the
+					// first animation table entry
+					pQuad->SetTexture(reinterpret_cast<Texture*>(reinterpret_cast<u32*>(G_ANIM_TABLE[0])[1]));
+					pQuad->mFrigDeltaZ = 32;
+					pQuad->SetSemiTransparent();
+				}
+
+				this->field_AC4->OrientUsing(
+						&this->mShadowPos,
+						reinterpret_cast<SVECTOR*>(&lineInfo.Normal),
+						32,
+						32);
+				return;
+			}
+		}
+	}
+
+	if (this->field_AC4 != 0)
+	{
+		delete this->field_AC4;
+		this->field_AC4 = 0;
+	}
 }
 
 // @MEDIUMTODO
