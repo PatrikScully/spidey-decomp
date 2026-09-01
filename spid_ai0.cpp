@@ -2190,6 +2190,148 @@ void SpideyAI0(CPlayer *pPlayer)
 			break;
 		}
 
+		// 0x4B6901. Riding a zip-web dive onto a target: hold on, then either
+		// time out, punch (0x7C) or kick (0x7D).
+		case 0x2000000:
+		{
+			u16 lastAnim = (u16)animJustFinished;
+			CBody *pTarget;
+
+			pPlayer->field_EA6 = 0;
+
+			if (lastAnim == 0x7A || lastAnim == 0x79)
+			{
+				// 0x4B682F
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (lastAnim == 0x78)
+			{
+				pTarget = reinterpret_cast<CBody*>(
+					Mem_RecoverPointer(&pPlayer->field_DD8));
+
+				if (pTarget != 0)
+				{
+					i32 dx = (pTarget->mPos.vx - pPlayer->mPos.vx) >> 12;
+					i32 dz = (pTarget->mPos.vz - pPlayer->mPos.vz) >> 12;
+					i32 facing = pPlayer->field_C6C.vz * dz + dx * pPlayer->field_C6C.vx;
+
+					if (facing < 0
+						&& Utils_Dist(pPlayer->mPos, pTarget->mPos) <= 0xBE)
+					{
+						// virtual slot 10 on the target ("grab me here?"),
+						// reached with the __fastcall shim because this build
+						// rejects the __thiscall keyword.
+						typedef u8 (FASTCALL *SlotTenFn)(void*, void*, CVector*);
+						CVector dest = pPlayer->mPos - (pPlayer->field_C6C * 0x20);
+						SlotTenFn fn = *reinterpret_cast<SlotTenFn*>(
+							*reinterpret_cast<char**>(pTarget) + 0x28);
+
+						if (fn(pTarget, 0, &dest) != 0)
+						{
+							break;
+						}
+					}
+				}
+
+				pPlayer->PlaySingleAnim(0x79, 0, -1);
+				pPlayer->field_DD8.pWhatever = 0;
+				break;
+			}
+
+			if (pPlayer->mAnim != 0x7B) break;
+
+			pTarget = reinterpret_cast<CBody*>(Mem_RecoverPointer(&pPlayer->field_DD8));
+
+			if (pPlayer->CheckJump() != 0)
+			{
+				PLR_I32(pTarget, 0x2A8) &= ~0x40;
+				pPlayer->field_DD8.pWhatever = 0;
+				break;
+			}
+
+			pPlayer->CheckForwards(false);
+
+			if ((u8)(pPlayer->field_E2E | pPlayer->field_E2D) == 0)
+			{
+				pPlayer->LockTargetTorsoAngle();
+			}
+
+			{
+				u16 targetType = pTarget->mType;
+				i32 holdTime = (targetType == 0x13A)
+					? Utils_GetValueFromDifficultyLevel(0x1A4, 0x78, 0x78, 0x3C)
+					: 0x12C;
+				u8 *pPad;
+
+				if ((u32)(gTimerRelated - pPlayer->field_DE0) > (u32)holdTime)
+				{
+					PLR_I32(pTarget, 0x2A8) &= ~0x40;
+					pPlayer->PlaySingleAnim(0x7A, 0, -1);
+					pPlayer->field_DD8.pWhatever = 0;
+					break;
+				}
+
+				pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+				if (pPad[0x121] != 0 && targetType != 0x13A)
+				{
+					pPlayer->field_E1C = 0x8000000;
+					pPlayer->PlaySingleAnim(0x7D, 0, -1);
+					pPlayer->field_DE0 = (i32)gTimerRelated;
+					break;
+				}
+
+				if (pPad[0x131] == 0) break;
+
+				pPlayer->field_E1C = 0x4000000;
+				pPlayer->PlaySingleAnim(0x7C, 0, -1);
+			}
+			break;
+		}
+
+		// 0x4B6820. The punch at the end of a zip-web dive.
+		case 0x4000000:
+		{
+			CBody *pTarget;
+			SHitInfo hit;
+
+			pPlayer->field_EA6 = 0;
+
+			if ((u16)animJustFinished == 0x7C)
+			{
+				// 0x4B682F
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (pPlayer->mAnim != 0x7C) break;
+			if (pPlayer->mFrame < 0x10) break;
+
+			pTarget = reinterpret_cast<CBody*>(Mem_RecoverPointer(&pPlayer->field_DD8));
+			if (pTarget == 0) break;
+
+			hit.field_C.vx = 0;
+			hit.field_C.vy = 0;
+			hit.field_C.vz = 0;
+			hit.field_0 = 0x1E;
+			hit.field_8 = (u16)pPlayer->GetDamageInflictedFromDifficulty(0x46);
+			hit.field_C.vx = -pPlayer->field_C6C.vx;
+			hit.field_4 = 2;
+			hit.field_C.vy = 0;
+			hit.field_C.vz = -pPlayer->field_C6C.vz;
+			hit.field_18 = 0x258;
+			hit.field_1A = 0x10;
+
+			pTarget->Hit(&hit);
+
+			pPlayer->field_DD8.pWhatever = 0;
+			pPlayer->field_534 = 0x168;
+			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
+			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
 		default:
 			if ((u32)pPlayer->field_E1C > 0x10000)
 			{
