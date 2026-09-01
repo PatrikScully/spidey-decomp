@@ -652,31 +652,74 @@ void CTrapWebEffect::MoveProjector(void)
 	this->field_428 = (this->field_428 + 0x100) & 0xFFF;
 }
 
-// @MEDIUMTODO
-// 0x4F7F40, 429 bytes. Scoped but not written out. What it does: chains
-// CNonRenderedBit::CNonRenderedBit, zeroes the first 6 bytes of 81 entries at
-// +0x48 (stride 8), stores Mem_MakeHandle(pSuper) in field_3C and Type in the
-// inherited mType, then writes a Mem_MakeHandle(this) back into the CSuper's
-// own slot (field_104 for Type 0, field_10C for Type 1; any other Type only
-// asserts). Then +0x424 = 400, +0x41E = 6, +0x41F = <a per-Type count> / 6,
-// and field_44 = new CGPolyLine(80) with its +0x3C cleared.
+// @Ok
+// 0x4F7F40, 429 bytes. Hangs a new trap web on a baddy: takes a handle on
+// it, hangs a handle on itself off the baddy (field_104 for a normal trap
+// web, field_10C for the yank web), and sets the web "projector" up (see
+// MoveProjector / CalcHook above) with a 400 unit radius and a first target
+// height picked from the baddy's own size byte.
 //
-// Blocked on class layout, not on callees: the count written to +0x41F comes
-// from a byte at CSuper+0x13E, negated and randomised for Type 0 and divided
-// by three for Type 1, and +0x41E / +0x41F / +0x424 are fields this repo does
-// not have yet. Writing them would mean inventing three offsets inside the
-// existing field_48 padding block, which is exactly the guesswork PLAN.md
-// forbids.
+// The 81-entry zeroing loop over field_48 in the original is just the
+// implicit construction of the SHook array member (CSVector's default
+// constructor zeroes its three i16s, which is exactly the loop body), so it
+// is not written out here. It is also what pins the array's length, and so
+// the whole tail of the class: see the layout in web.h.
 //
-// Layout finding while scoping this (NOT yet applied, because
-// CTrapWebEffect::Burst is already @Ok against the current declaration): the
-// zeroing loop runs 81 iterations of stride 8 over +0x48, i.e. 0x48..0x2D0,
-// so web.h's `SHook field_48[122]` (0x48..0x418) is too long. 0x2D0 onwards is
-// a separate i16 array, with a count at +0x374, a byte triple at +0x378 and a
-// pointer array at +0x37C, all read by AddAnotherStrand below.
-CTrapWebEffect::CTrapWebEffect(CSuper *, i32)
+// Everything the constructor does not write (field_2D0, field_374,
+// field_378, field_420, field_428) is left zero by CBit::operator new, which
+// zeroes the whole allocation.
+//
+// Original defects kept: with a Type other than 0 or 1 the assert fires but
+// the object is still built, with an uninitialised target height (the
+// original just uses whatever was in the register, here 0); and the
+// CGPolyLine is used without a null check, so an out-of-memory
+// CBit::operator new dereferences null right after.
+CTrapWebEffect::CTrapWebEffect(CSuper *pSuper, i32 Type)
 {
-	printf("CTrapWebEffect::CTrapWebEffect(CSuper *,i32)");
+	print_if_false(pSuper != 0, "NULL pBaddy sent to CTrapWebEffect");
+
+	this->field_3C = Mem_MakeHandle(pSuper);
+	this->mType = static_cast<u8>(Type);
+
+	if (this->mType == 0)
+	{
+		print_if_false(Mem_RecoverPointer(&pSuper->field_104) == 0, "Baddy already has a web");
+		pSuper->field_104 = Mem_MakeHandle(this);
+	}
+	else if (this->mType == 1)
+	{
+		print_if_false(Mem_RecoverPointer(&pSuper->field_10C) == 0, "Baddy already has a web");
+		pSuper->field_10C = Mem_MakeHandle(this);
+	}
+	else
+	{
+		print_if_false(0, "Bad CTrapWebEffect type");
+	}
+
+	this->field_424 = 400;
+
+	i32 Target;
+
+	if (this->mType == 0)
+	{
+		Target = -(Rnd(pSuper->field_13E >> 1) + (pSuper->field_13E >> 1));
+	}
+	else if (this->mType == 1)
+	{
+		Target = pSuper->field_13E / -3;
+	}
+	else
+	{
+		print_if_false(0, "Bad CTrapWebEffect type");
+		Target = 0;
+	}
+
+	this->field_41E = 6;
+	this->field_41F = static_cast<i8>(Target / 6);
+
+	this->field_44 = new CGPolyLine(80);
+	this->field_44->SetSemiTransparent();
+	this->field_44->mNumSegs = 0;
 }
 
 // @MEDIUMTODO
