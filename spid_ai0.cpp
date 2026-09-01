@@ -6,17 +6,20 @@
 #include "effects.h"
 #include "flash.h"
 #include "m3dcolij.h"
+#include "m3dzone.h"
 #include "mem.h"
 #include "ob.h"
 #include "manipob.h"
 #include "PCInput.h"
 #include "ps2lowsfx.h"
 #include "ps2pad.h"
+#include "ps2redbook.h"
 #include "tweak.h"
 #include "ps2funcs.h"
 #include "trig.h"
 #include "utils.h"
 #include "vector.h"
+#include "web.h"
 
 // ---------------------------------------------------------------------------
 // CPlayer fields this file needs that spidey.h does not name yet. They all sit
@@ -80,6 +83,16 @@ static u8 * const gPracticeDifficultyFlag = reinterpret_cast<u8*>(0x0060CFC7);
 // {u16 anim, u16 followOnAnim} x 200, sorted into animation order by
 // CPlayer::SortAnimationFollowOnData (spidey.cpp, whose comment already points
 // at this read site, 0x4B204A).
+// gSaveGame + 0x?? style byte that spidey.cpp already calls
+// gRedbookXaPlayingMaybe at this address; kept the same name.
+static char * const gRedbookXaPlayingMaybe = reinterpret_cast<char*>(0x00682770);
+
+// real IDB names
+static i32 * const pgRedbookXaRelatedOne = reinterpret_cast<i32*>(0x00681D1C);
+static i32 * const pgRedbookXaRelatedTwo = reinterpret_cast<i32*>(0x006612C0);
+#define gRedbookXaRelatedOne (*pgRedbookXaRelatedOne)
+#define gRedbookXaRelatedTwo (*pgRedbookXaRelatedTwo)
+
 static u16 * const gAnimFollowOnData = reinterpret_cast<u16*>(0x00555C6C);
 
 // Scales the two extra body parts (spidey sense buzz, fists) the way the
@@ -824,9 +837,231 @@ void SpideyAI0(CPlayer *pPlayer)
 	// -----------------------------------------------------------------------
 	switch (pPlayer->field_E1C)
 	{
-		// 0x4B2164, 346 instructions. Not ported yet.
+		// 0x4B2164. Standing still: the idle/lean animations, the idle
+		// Redbook track, and the idle web-shot at the ceiling.
 		case 1:
+		{
+			u8 *pPad;
+			u8 anyInput;
+			u8 xaPlaying;
+			u16 anim;
+			i32 wantAnim;
+			i32 roll;
+			i32 webChance;
+			i32 midChance;
+			CWeb *pWeb;
+
+			if (pPlayer->CheckGroundGone() != 0) goto L_ReleaseWeb;
+
+			anim = pPlayer->mAnim;
+			if (anim == 0x124) break;
+
+			if ((anim == 0x122 && pPlayer->field_E6C != 0) || anim == 0x123)
+			{
+				if (pPlayer->mFrame > 0x1C && pPlayer->field_E6C != 0)
+				{
+					reinterpret_cast<CWeb*>(pPlayer->field_E6C)->field_102 = 2;
+				}
+
+				pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+				anyInput = (u8)(pPad[0x70] | pPad[0x60] | pPad[0x50] | pPad[0x40]
+					| pPad[0x30] | pPad[0x20] | pPad[0x10] | pPad[0]
+					| (u8)pPlayer->field_E2D | (u8)pPlayer->field_E2E);
+				xaPlaying = *gRedbookXaPlayingMaybe;
+
+				if (anyInput != 0)
+				{
+					if (xaPlaying != 0)
+					{
+						if (gRedbookXaRelatedOne == 0x20)
+						{
+							if (gRedbookXaRelatedTwo != 9)
+							{
+								pPlayer->PlaySingleAnim(0x124, 0, -1);
+								goto L_ReleaseWeb;
+							}
+							Redbook_XAStop();
+						}
+						else if (gRedbookXaRelatedOne == 0x21 && gRedbookXaRelatedTwo == 0)
+						{
+							Redbook_XAStop();
+						}
+					}
+
+					pPlayer->PlaySingleAnim(0x124, 0, -1);
+					goto L_ReleaseWeb;
+				}
+
+				if (xaPlaying != 0) break;
+				if (Rnd(0x40) != 0) break;
+
+				if (Rnd(2) != 0)
+				{
+					Redbook_XAPlay(0x21, 0, 0);
+				}
+				else
+				{
+					Redbook_XAPlay(0x20, 9, 0);
+				}
+				break;
+			}
+
+			if (pPlayer->CheckWebShot() != 0) goto L_ReleaseWeb;
+			if (pPlayer->CheckJumpingR1ZipWeb() != 0) goto L_ReleaseWeb;
+			if (pPlayer->CheckKick() != 0) goto L_ReleaseWeb;
+			if (pPlayer->CheckCeilingJumpingSmashPunch() != 0) goto L_ReleaseWeb;
+			if (pPlayer->CheckJumpingSwingWeb() != 0) goto L_ReleaseWeb;
+			if (pPlayer->CheckJumpingR2ZipWeb() != 0) goto L_ReleaseWeb;
+			if (pPlayer->CheckJump() != 0) goto L_ReleaseWeb;
+			if (pPlayer->CheckForwards(true) != 0) goto L_ReleaseWeb;
+
+			if (pPlayer->field_8EA == 0)
+			{
+				pPlayer->field_EA6 = (i16)(pPlayer->field_EA6 + (u16)pPlayer->field_80);
+			}
+
+			anim = pPlayer->mAnim;
+			if (pPlayer->field_DF8 == 0)
+			{
+				if (anim == 0x1B || anim == 0x1C || anim == 0x1D || anim == 0x1E)
+				{
+					pPlayer->PlaySingleAnim(pPlayer->field_AD4 != 0 ? 0x13 : 0, 0, -1);
+				}
+			}
+			else
+			{
+				pPlayer->field_EA6 = 0;
+
+				if (anim != 0xC8 && anim != 0xC2)
+				{
+					if (pPlayer->field_AD4 != 0)
+					{
+						if (pPlayer->field_DF4 > 0)
+						{
+							if (anim != 0x1D) pPlayer->PlaySingleAnim(0x1D, 0, -1);
+						}
+						else
+						{
+							if (anim != 0x1E) pPlayer->PlaySingleAnim(0x1E, 0, -1);
+						}
+					}
+					else
+					{
+						if (pPlayer->field_DF4 > 0)
+						{
+							if (anim != 0x1B) pPlayer->PlaySingleAnim(0x1B, 0, -1);
+						}
+						else
+						{
+							if (anim != 0x1C) pPlayer->PlaySingleAnim(0x1C, 0, -1);
+						}
+					}
+				}
+			}
+
+			// the idle "shoot a web at the ceiling" animation reaching its
+			// release frame: spawn the web and fire it at the spot the
+			// lookaround raycast below stored in 0x514/0x520.
+			if (pPlayer->mAnim == 0x122
+				&& pPlayer->mFrame >= 4
+				&& pPlayer->field_E6C == 0)
+			{
+				pWeb = new CWeb();
+				pWeb->field_F8 = (u8)pPlayer->field_5E8;
+				pPlayer->field_E6C = reinterpret_cast<i32*>(pWeb);
+				pWeb->field_102 = 0;
+				// 0x510: "the idle web is out" flag.
+				PLR_U8(pPlayer, 0x510) = 1;
+				pWeb->Fire(pPlayer->mPos,
+					*reinterpret_cast<CVector*>(reinterpret_cast<char*>(pPlayer) + 0x514),
+					0,
+					true,
+					*reinterpret_cast<CSVector*>(reinterpret_cast<char*>(pPlayer) + 0x520));
+
+				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->field_12C[0x6C] = 0;
+				SFX_PlayPos(0x15, &pPlayer->mPos, 0);
+			}
+
+			if (pPlayer->field_8EA != 0)
+			{
+				wantAnim = (pPlayer->field_AD4 != 0) ? 0x13 : 0;
+				if (pPlayer->mAnim != (u16)wantAnim)
+				{
+					pPlayer->PlaySingleAnim(wantAnim, 0, -1);
+				}
+				goto L_ReleaseWeb;
+			}
+
+			if ((u16)animJustFinished != 0) break;
+			if ((u16)pPlayer->field_EA6 <= 0xF0) break;
+
+			roll = Rnd(0x64);
+			webChance = 0;
+
+			if (pPlayer->field_AD4 == 0 && (u16)pPlayer->field_EA6 > 0xE10)
+			{
+				SLineInfo lineInfo;
+
+				lineInfo.StartCoords = pPlayer->mPos;
+				lineInfo.EndCoords.vx = pPlayer->mPos.vx;
+				lineInfo.EndCoords.vy = pPlayer->mPos.vy - 0x800000;
+				lineInfo.EndCoords.vz = pPlayer->mPos.vz;
+				lineInfo.MinCoords.vx = 0;
+				lineInfo.MinCoords.vy = 0;
+				lineInfo.MinCoords.vz = 0;
+				lineInfo.MaxCoords.vx = 0;
+				lineInfo.MaxCoords.vy = 0;
+				lineInfo.MaxCoords.vz = 0;
+				lineInfo.Position.vx = 0;
+				lineInfo.Position.vy = 0;
+				lineInfo.Position.vz = 0;
+				lineInfo.Normal.vx = 0;
+				lineInfo.Normal.vy = 0;
+				lineInfo.Normal.vz = 0;
+
+				M3dColij_InitLineInfo(&lineInfo);
+				M3dZone_LineToItem(&lineInfo, 1);
+
+				if (lineInfo.pItem != 0 && (lineInfo.pFace[3] & 0x40000) == 0)
+				{
+					CVector *pHitPos = reinterpret_cast<CVector*>(reinterpret_cast<char*>(pPlayer) + 0x514);
+					CSVector *pHitNormal = reinterpret_cast<CSVector*>(reinterpret_cast<char*>(pPlayer) + 0x520);
+
+					pHitPos->vx = lineInfo.Position.vx;
+					pHitPos->vy = lineInfo.Position.vy;
+					pHitPos->vz = lineInfo.Position.vz;
+					pHitNormal->vx = lineInfo.Normal.vx;
+					pHitNormal->vy = lineInfo.Normal.vy;
+					pHitNormal->vz = lineInfo.Normal.vz;
+					webChance = 0x32;
+				}
+			}
+
+			if (roll < webChance)
+			{
+				pPlayer->PlaySingleAnim(0x122, 0, -1);
+				break;
+			}
+
+			midChance = webChance + ((0x64 - webChance) / 2);
+			if (roll < midChance)
+			{
+				pPlayer->PlaySingleAnim(0x125, 0, -1);
+				break;
+			}
+
+			pPlayer->PlaySingleAnim(0x126, 0, -1);
 			break;
+
+		L_ReleaseWeb:
+			// 0x4B24D5, shared with several other states
+			if (pPlayer->field_E6C != 0)
+			{
+				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+				pPlayer->field_E6C = 0;
+			}
+			break;
+		}
 
 		// 0x4B274D. Airborne after a jump: the whole "can I grab something"
 		// chain, then the landing timeout.
