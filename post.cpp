@@ -79,6 +79,18 @@ void Post_PostProcessEffects(void)
 // a layout risks producing code that "looks plausible" but draws garbage
 // or crashes on the real letter data. Leaving as a stub rather than
 // guessing, per the "don't guess, document and move on" rule.
+// Re-verified 2026-09-01 with a fresh idalib decompile of 0x46A3E0: confirms every
+// finding above field-for-field. The record walk reads a tag byte (3 or 1) off
+// off_54ED9C to pick between a 24-byte record (4 UV pairs, via sub_507910 called
+// twice per record) and a 20-byte record (3 UV pairs), both indexing word_54ECBC/
+// word_54ECBE (angle/offset tables) by a per-vertex byte read out of the same
+// unknown table, and both formatting a per-letter glyph string through sub_46CB90
+// (format string byte_56EB54) before submitting geometry via sub_507910 (a 21-argument
+// draw-primitive call, itself not decompiled anywhere in this repo). None of
+// off_54ED9C's record layout, byte_56EB54's format string content, or sub_507910's
+// role is confirmed anywhere else in the codebase; implementing this would mean
+// guessing a whole undocumented per-letter mesh table format, which the acceptance
+// bar for this session explicitly says not to do. Left as a stub.
 // @MEDIUMTODO
 INLINE void Post_SpideyLogo(void)
 {
