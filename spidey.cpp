@@ -31,6 +31,7 @@
 #include "m3dinit.h"
 #include "SpideyDX.h"
 #include "switch.h"
+#include "ps2pad.h"
 
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
@@ -45,6 +46,30 @@ EXPORT u16 gSpideyCeilingCameraYDistance;
 
 // @Ok
 i32 *gSpideySFXEntry[300];
+
+// @Bogus
+// The animation-start idiom this file repeats everywhere: latch the SFX
+// script that belongs to the animation into field_350, clamp every entry
+// in it to 16 bits, then start the animation. The original inlines this
+// (six copies inside CPlayer::CheckLanded alone), so it was a helper in
+// the real source too.
+static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
+{
+	i32 *p = gSpideySFXEntry[anim];
+
+	pPlayer->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	pPlayer->RunAnim(anim, 0, -1);
+}
 
 // @Ok
 EXPORT i16 gSpideyFloorCamXOffset;
@@ -1701,10 +1726,124 @@ i32 CPlayer::CheckKick(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckLanded(void)
+// @Ok
+// verified against the IDA disasm of 0x4C24E0 (863 bytes). Returns 1 when
+// the player was actually touching something (mCollision bit 1), 0 if not,
+// so the header's void return was wrong and is fixed.
+// Notes on the details:
+//  - the landing grunt is SFX 9 normally, or one of four random variants
+//    (0x50..0x53) with bit 15 set when field_34C is set.
+//  - fall damage: field_E40 is the drop height where it starts, field_E44
+//    the drop that costs a full mMaxHealth, and the hit strength scales
+//    linearly between them (signed idiv in the original). If the fall
+//    killed the player (mHealth <= 0) no landing animation is started.
+//  - when the fall did no damage the pad rumbles instead, but only if the
+//    vibration option is on.
+//  - the animation is picked from the animation that was playing in the
+//    air; anim ids are shared with the SFX script table one for one.
+i32 CPlayer::CheckLanded(void)
 {
-    printf("CPlayer::CheckLanded(void)");
+	// gSaveGame + 0x7B (gSaveGame is 0x682858, declared in front.h with
+	// SSaveGame in shell.h): the "vibration on" option flag. This file does
+	// not include front.h, so it is reached through the containing global
+	// the same way CPlayer::Hit reaches +0x50 and +0x79.
+	static u8 * const gSaveGameVibration = (u8*)0x006828D3;
+
+	if ((this->mCollision & 2) == 0)
+		return 0;
+
+	if (this->field_34C != 0)
+		SFX_PlayPos((Rnd(4) + 0x50) | 0x8000, &this->mPos, 0);
+	else
+		SFX_PlayPos(9, &this->mPos, 0);
+
+	bool bHurt = false;
+
+	i32 hurtFrom = this->field_E40;
+
+	if (hurtFrom != 0)
+	{
+		i32 drop = (this->mPos.vy - this->field_E38) >> 12;
+
+		if (drop > hurtFrom)
+		{
+			SHitInfo hit;
+			hit.field_C.vx = 0;
+			hit.field_C.vy = 0;
+			hit.field_C.vz = 0;
+			hit.field_0 = 4;
+			hit.field_8 = (u16)((drop - hurtFrom) * this->mMaxHealth / (this->field_E44 - hurtFrom));
+
+			this->Hit(&hit);
+
+			if (this->mHealth <= 0)
+				return 1;
+
+			bHurt = true;
+		}
+	}
+
+	if (!bHurt && *gSaveGameVibration != 0)
+		Pad_ActuatorOn(0, 4, 0, 1);
+
+	u16 anim = this->mAnim;
+
+	if (anim == 0xE8)
+	{
+		if (this->field_E2D == 0 && this->field_E2E == 0)
+		{
+			RunAnimWithSFX(this, 0xED);
+			this->field_E8C = 0;
+		}
+		else
+		{
+			RunAnimWithSFX(this, 0xEC);
+		}
+	}
+	else if (anim == 0xAF || anim == 0xB0)
+	{
+		RunAnimWithSFX(this, 0xB2);
+	}
+	else if (anim == 0xE1)
+	{
+		if (this->field_E2D == 0 && this->field_E2E == 0)
+		{
+			RunAnimWithSFX(this, 0xE6);
+			this->field_E8C = 0;
+		}
+		else
+		{
+			RunAnimWithSFX(this, 0xE5);
+		}
+	}
+	else if (this->field_E8C != 0
+		&& (anim == 0xE2 || anim == 0xE4 || anim == 0xE9 || anim == 0xEB))
+	{
+		if (this->field_E2D == 0 && this->field_E2E == 0)
+		{
+			RunAnimWithSFX(this, 0xE6);
+			this->field_E8C = 0;
+		}
+		else
+		{
+			RunAnimWithSFX(this, 0xE5);
+		}
+	}
+	else
+	{
+		RunAnimWithSFX(this, 0xD5);
+		this->field_E8C = 0;
+	}
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	this->field_E1C = 8;
+	this->field_AE5 = 0;
+	this->field_54D = 0;
+	this->field_2C1 = 0;
+	pInput[0x101] = 0;
+
+	return 1;
 }
 
 // @Ok

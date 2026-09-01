@@ -157,7 +157,11 @@ class CPlayer : public CSuper
 
 		u8 field_54C;
 
-		PADDING(0x54F-0x54C-1);
+		// cleared together with field_54C when the player lands or starts a
+		// jumping smash kick (CPlayer::CheckLanded, CheckJumpingSmashKick).
+		u8 field_54D;
+
+		PADDING(0x54F-0x54D-1);
 
 		// set nonzero by some other (not yet decompiled) caller to request a
 		// zip-web/switch/swing-web lock-on the next time
@@ -564,7 +568,14 @@ class CPlayer : public CSuper
 
 		i32 field_E38;
 
-		PADDING((0xE48-0xE38)-0x4);
+		PADDING(0xE40-0xE38-4);
+
+		// fall-damage window, both in world units (CPlayer::CheckLanded):
+		// field_E40 is the drop height at which a landing starts to hurt,
+		// field_E44 the drop height that costs a full mMaxHealth. The hit
+		// strength is scaled linearly between the two.
+		i32 field_E40;
+		i32 field_E44;
 
 		CManipOb* mHeldObject;
 
@@ -692,7 +703,7 @@ class CPlayer : public CSuper
 		EXPORT u8 CheckJumpingSmashKick(void);
 		EXPORT void CheckJumpingSwingWeb(void);
 		EXPORT i32 CheckKick(void);
-		EXPORT void CheckLanded(void);
+		EXPORT i32 CheckLanded(void);
 		EXPORT i32 CheckRunIntoWall(void);
 		EXPORT i32 CheckStickToCeiling(void);
 		EXPORT i32 CheckStickToWall(void);
