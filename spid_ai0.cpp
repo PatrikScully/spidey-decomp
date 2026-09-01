@@ -266,7 +266,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 	}
 }
 
-// @BIGTODO
+// @Ok
 // Original at 0x4B13F0, 0x72DA bytes / 7655 instructions / 1482 basic blocks,
 // the largest function in the game. Identity confirmed: the maintainer's IDB
 // (idbs/spideypc_names.txt line 1652) and the Mac build
@@ -274,18 +274,14 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 // Mac SpideyAI0 is the ONLY function in spid_ai0.cpp (the next symbol is
 // __sinit_spid_ai0_cpp).
 //
-// PARTIALLY PORTED, about 5000 of the 7655 instructions. What is real code
-// below:
+// FULLY PORTED. What is below:
 //   * the per-frame prologue, 0x4B13F0..0x4B211F
 //   * the state dispatch itself, 0x4B211F..0x4B215D
-//   * 21 of the 31 states (see the table)
+//   * all 31 states (see the table)
 //   * the shared tail def_4B215D, 0x4B6E8C..0x4B86B1, which every state's
 //     `break` falls into and which runs the camera, the torso aim, the move
 //     input, the platform ride, the baddy/power-up collisions, the pose build
 //     and the extra body parts
-// The 10 unported states just `break` into that tail, so the function is
-// syntactically whole and builds, but it must NOT be hooked until they are
-// written: a state that silently does nothing is a hang, not a glitch.
 //
 // STRUCTURE. A one-hot state machine on CPlayer::field_E1C, which holds a
 // single set bit, not a small ordinal. The dispatch at 0x4B211F is a chain of
@@ -311,15 +307,15 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   128         0x4B2892   done   dead, respawn countdown
 //   0x100       0x4B2F80   done   starting a swing
 //   0x200       0x4B3C33   done   swing web released, spawns the CSwinger
-//   0x400       0x4B329A   TODO   ~570 instructions, the biggest state
+//   0x400       0x4B329A   done   swinging on a web
 //   0x800       0x4B30AE   done   punching / combo tracking
 //   0x1000      0x4B3DF9   done   landing out of a surface transition
 //   0x2000      0x4B4AAA   done   a surface transition finished
-//   0x4000      0x4B44C9   TODO   ~370 instructions
+//   0x4000      0x4B44C9   done   the web-attack wind up
 //   0x8000      0x4B402E   done   firing a web
 //   0x10000     0x4B4E9B   done   web-swing wind up (3 anims that fire a web)
 //   0x20000     0x4B58B4   done   the tug-web attacks
-//   0x40000     0x4B51B2   TODO   ~440 instructions
+//   0x40000     0x4B51B2   done   the tug-web pull-in
 //   0x80000     0x4B50F1   done   end of a scripted "stand up here" move
 //   0x100000    0x4B5CFE   done   reaching down for a pickup
 //   0x200000    0x4B601F   done   throwing the held object
@@ -351,8 +347,9 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 // The tiny functions at 0x4B8A00..0x4B8C70 are the out-of-line copies of this
 // translation unit's inline helpers, disassembled and inlined here rather than
 // called: 0x4B8B70 zeroes a CVector, 0x4B8B80 is CVector::CVector(x,y,z),
-// 0x4B8BB0 is abs(int), 0x4B8BC0 reads bit 3 of CManipOb+0x10C, 0x4B8BD0 reads
-// CWeb+0x102, 0x4B8BE0 sets the knockback timers, 0x4B8C00 sets CPowerUp+0x124,
+// 0x4B8BA0 sets CSuper::mAnimSpeed, 0x4B8BB0 is abs(int), 0x4B8BC0 reads bit 3
+// of CManipOb+0x10C, 0x4B8BD0 reads CWeb+0x102, 0x4B8BE0 sets the knockback
+// timers, 0x4B8C00 sets CPowerUp+0x124, 0x4B8C10 sets CCamera::field_12C to -1,
 // 0x4B8C20 zeroes SHitInfo::field_C, 0x4B8C30 zeroes an SLineInfo, 0x4B8C70
 // reads CCamera::mCameraMode. 0x4B8A00..0x4B8B60 are one-time initialisers for
 // globals this function never touches.
@@ -383,6 +380,9 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //     0x4B9390 GetPerpendicularisationRadius. Every one of these is already
 //     declared (and mostly implemented) in spidey.h under that name; the
 //     addresses were simply never recorded.
+//   * 0x4C8410 is CPlayer::SelectTargetBaddy. tools/names.json still calls it
+//     sub_4C8410 and the maintainer's IDB has no name for it, but spidey.cpp
+//     already decompiled it under that name; state 0x4000 calls it.
 //   * 0x4BFEC0 is CheckStickToWall, not CPlayer::DoPhysics. This confirms the
 //     correction PLAN.md already made against names.json and the IDB.
 //
@@ -2085,6 +2085,435 @@ void SpideyAI0(CPlayer *pPlayer)
 			break;
 		}
 
+		// 0x4B329A. Swinging on a web. Keeps the CSwinger alive (re-attaching
+		// to the far anchor when the current one runs out), and when the
+		// player hits geometry decides between a stunned drop, a landing, a
+		// crawl onto a fence, or simply letting the swing die out.
+		case 0x400:
+		{
+			// var at [esp+0x13]: the swing has to stop this tick. Seeded from
+			// CheckJumpingR1ZipWeb's return, which is 0 on every path that
+			// gets here.
+			u8 endSwing = 0;
+			CBody *pSwinger;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->CheckJumpingSmashKick() != 0) break;
+			if (pPlayer->CheckJumpingR1ZipWeb() != 0) break;
+
+			pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+
+			if (pSwinger != 0)
+			{
+				i32 frames;
+
+				if (reinterpret_cast<CSwinger*>(pSwinger)->IsOneTimeToDie() != 0)
+				{
+					if (pPlayer->field_D60 != 0)
+					{
+						// 0x4B32E4: the far attach point is the live one, so
+						// throw the next web and start a new CSwinger on it.
+						void *pMem;
+
+						pPlayer->PlaySingleAnim(0x118, 0, -1);
+						pPlayer->mPos -= (pPlayer->field_C6C * 0xC0);
+						pPlayer->DecreaseWebbing(0x80);
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+						if (pSwinger != 0)
+						{
+							delete pSwinger;
+						}
+
+						PLR_I32(pPlayer, 0xD7C) =
+							(i32)Utils_Dist(pPlayer->mPos, pPlayer->field_D70);
+						pPlayer->CalculateSwingWebParameters(&pPlayer->field_D70);
+
+						pMem = CItem::operator new(0x190);
+
+						if (pMem != 0)
+						{
+							gCSwinger_ctor(pMem, &pPlayer->field_D70,
+								PLR_I32(pPlayer, 0xD7C), &pPlayer->field_D80,
+								&pPlayer->field_DA0);
+						}
+
+						pPlayer->field_E64 = reinterpret_cast<i32*>(pMem);
+						// the original writes this even when the allocation
+						// failed, the same defect state 0x200 has
+						*reinterpret_cast<i32*>(reinterpret_cast<char*>(pMem) + 0xF8) =
+							(u8)pPlayer->field_5E8;
+
+						SFX_Play(Rnd(3) + 0x15, 0x2000, 0);
+
+						// Animations[region * 17] + 8 * anim + 8 is the
+						// animation's frame count, the same table lookup
+						// spidey.cpp uses. Read full width here, no & 0xFFFF.
+						frames = *reinterpret_cast<i32*>(
+							reinterpret_cast<char*>(Animations[(i32)pPlayer->mRegion * 17])
+							+ 8 * (i32)pPlayer->mAnim + 8);
+
+						// and the same missing null check on the new swinger
+						reinterpret_cast<CSwinger*>(pPlayer->field_E64)
+							->SetSpideyAnimFrame(frames - 1);
+
+						pPlayer->field_D60 = 0;
+						SFX_PlayPos(0x19, &pPlayer->mPos, 0);
+					}
+					else
+					{
+						// 0x4B3435: nothing left to swing on.
+						endSwing = 1;
+					}
+				}
+				else
+				{
+					// 0x4B343C: hold the last frame of the swing animation.
+					pPlayer->mAnimSpeed = 0;
+
+					frames = *reinterpret_cast<i32*>(
+						reinterpret_cast<char*>(Animations[(i32)pPlayer->mRegion * 17])
+						+ 8 * (i32)pPlayer->mAnim + 8);
+
+					reinterpret_cast<CSwinger*>(pSwinger)->SetSpideyAnimFrame(frames - 1);
+				}
+			}
+
+			// 0x4B346B: about to stop swinging in mid air, so look for the
+			// surface under the hook and snap onto it.
+			if (endSwing != 0 && (pPlayer->mCollision & 3) == 0)
+			{
+				SLineInfo hookLine;
+
+				hookLine.StartCoords.vx = 0;
+				hookLine.StartCoords.vy = 0;
+				hookLine.StartCoords.vz = 0;
+				hookLine.EndCoords.vx = 0;
+				hookLine.EndCoords.vy = 0;
+				hookLine.EndCoords.vz = 0;
+				hookLine.MinCoords.vx = 0;
+				hookLine.MinCoords.vy = 0;
+				hookLine.MinCoords.vz = 0;
+				hookLine.MaxCoords.vx = 0;
+				hookLine.MaxCoords.vy = 0;
+				hookLine.MaxCoords.vz = 0;
+				hookLine.Position.vx = 0;
+				hookLine.Position.vy = 0;
+				hookLine.Position.vz = 0;
+				hookLine.Normal.vx = 0;
+				hookLine.Normal.vy = 0;
+				hookLine.Normal.vz = 0;
+
+				M3dUtils_GetHookPosition(
+					reinterpret_cast<VECTOR*>(&hookLine.StartCoords), pPlayer, 2);
+
+				hookLine.EndCoords.vx =
+					hookLine.StartCoords.vx - (pPlayer->field_C6C.vx << 8);
+				hookLine.EndCoords.vy =
+					hookLine.StartCoords.vy - (pPlayer->field_C6C.vy << 8);
+				hookLine.EndCoords.vz =
+					hookLine.StartCoords.vz - (pPlayer->field_C6C.vz << 8);
+
+				M3dColij_InitLineInfo(&hookLine);
+				M3dZone_LineToItem(&hookLine, 1);
+
+				if (hookLine.pItem != 0)
+				{
+					i32 standOff = pPlayer->field_EA8;
+
+					pPlayer->mLineInfo.Normal.vx = hookLine.Normal.vx;
+					pPlayer->mLineInfo.Normal.vy = hookLine.Normal.vy;
+					pPlayer->mLineInfo.Normal.vz = hookLine.Normal.vz;
+
+					pPlayer->mCollision |= 1;
+
+					pPlayer->mPos.vx =
+						hookLine.Position.vx + (i32)hookLine.Normal.vx * standOff;
+					pPlayer->mPos.vy =
+						hookLine.Position.vy + (i32)hookLine.Normal.vy * standOff;
+					pPlayer->mPos.vz =
+						hookLine.Position.vz + (i32)hookLine.Normal.vz * standOff;
+				}
+			}
+
+			// 0x4B35FD
+			if ((pPlayer->mCollision & 3) != 0)
+			{
+				pPlayer->mVel.vx = 0;
+				pPlayer->mVel.vy = 0;
+				pPlayer->mVel.vz = 0;
+
+				SFX_PlayPos(9, &pPlayer->mPos, 0);
+
+				pPlayer->field_AE5 = 0;
+
+				if (pPlayer->mLineInfo.pItem != 0)
+				{
+					i16 hitNormalY = pPlayer->mLineInfo.Normal.vy;
+					u8 land = 0;
+
+					if (hitNormalY < (i16)0xF5D8)
+					{
+						// 0x4B3648: hit something facing steeply down, so
+						// drop off the web stunned.
+						pPlayer->field_AD4 = 0;
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						if (pSwinger != 0)
+						{
+							CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+							delete pSwinger;
+							pPlayer->field_E64 = 0;
+						}
+
+						pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+						pPlayer->field_A8.vy = hitNormalY;
+						pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+						pPlayer->field_54C = 0;
+						pPlayer->field_550 = 1;
+						pPlayer->PlaySingleAnim(0xD5, 0, -1);
+						pPlayer->field_E1C = 1;
+						CameraList->field_12C = -1;
+						break;
+					}
+
+					if (hitNormalY > 0xD48)
+					{
+						if ((pPlayer->mLineInfo.pFace[3] & 0x40000) != 0)
+						{
+							// 0x4B376B
+							endSwing = 1;
+						}
+						else
+						{
+							// 0x4B36EA: land on a wall, facing along the
+							// travel direction.
+							pPlayer->field_AD4 = 1;
+
+							pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+							if (pSwinger != 0)
+							{
+								CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+								delete pSwinger;
+								pPlayer->field_E64 = 0;
+							}
+
+							pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+							pPlayer->field_A8.vy = hitNormalY;
+							pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+							pPlayer->field_AC8.vx = pPlayer->field_C6C.vx;
+							pPlayer->field_AC8.vy = pPlayer->field_C6C.vy;
+							pPlayer->field_AC8.vz = pPlayer->field_C6C.vz;
+
+							pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+							pPlayer->LockTargetTorsoAngle();
+							land = 1;
+						}
+					}
+					else if ((pPlayer->mLineInfo.pFace[3] & 0x40000) == 0)
+					{
+						// 0x4B3789: land on the floor, standing upright.
+						CVector up(0, 0x1000, 0);
+
+						pPlayer->field_AD4 = 1;
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						if (pSwinger != 0)
+						{
+							CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+							delete pSwinger;
+							pPlayer->field_E64 = 0;
+						}
+
+						pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+						pPlayer->field_A8.vy = hitNormalY;
+						pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+						pPlayer->OrientToNormal(true, &up);
+						land = 1;
+					}
+					else if ((pPlayer->mLineInfo.pFace[3] & 0x8000000) != 0)
+					{
+						// 0x4B3852: a fence. Walk the ray along the surface
+						// normal from face to face until it leaves the fence,
+						// then stick there and hand over to the fence
+						// surface transition.
+						SLineInfo fenceLine;
+						i32 standOff = pPlayer->field_EA8;
+						i32 normalX;
+						i32 normalY;
+						i32 normalZ;
+						i32 posX;
+						i32 posY;
+						i32 posZ;
+
+						pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+						pPlayer->field_A8.vy = pPlayer->mLineInfo.Normal.vy;
+						pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+						posX = pPlayer->mPos.vx;
+						posY = pPlayer->mPos.vy;
+						posZ = pPlayer->mPos.vz;
+
+						normalX = pPlayer->mLineInfo.Normal.vx;
+						normalY = pPlayer->mLineInfo.Normal.vy;
+						normalZ = pPlayer->mLineInfo.Normal.vz;
+
+						for (;;)
+						{
+							fenceLine.StartCoords.vx = 0;
+							fenceLine.StartCoords.vy = 0;
+							fenceLine.StartCoords.vz = 0;
+							fenceLine.EndCoords.vx = 0;
+							fenceLine.EndCoords.vy = 0;
+							fenceLine.EndCoords.vz = 0;
+							fenceLine.MinCoords.vx = 0;
+							fenceLine.MinCoords.vy = 0;
+							fenceLine.MinCoords.vz = 0;
+							fenceLine.MaxCoords.vx = 0;
+							fenceLine.MaxCoords.vy = 0;
+							fenceLine.MaxCoords.vz = 0;
+							fenceLine.Position.vx = 0;
+							fenceLine.Position.vy = 0;
+							fenceLine.Position.vz = 0;
+							fenceLine.Normal.vx = 0;
+							fenceLine.Normal.vy = 0;
+							fenceLine.Normal.vz = 0;
+
+							fenceLine.StartCoords.vx = posX + normalX * 40;
+							fenceLine.StartCoords.vy = posY + normalY * 40 + 0x4000;
+							fenceLine.StartCoords.vz = posZ + normalZ * 40;
+							fenceLine.EndCoords.vx = posX - normalX * 140;
+							fenceLine.EndCoords.vy = posY - normalY * 140 + 0x4000;
+							fenceLine.EndCoords.vz = posZ - normalZ * 140;
+
+							M3dColij_InitLineInfo(&fenceLine);
+							M3dZone_LineToItem(&fenceLine, 1);
+
+							if (fenceLine.pItem == 0) break;
+							if ((fenceLine.pFace[3] & 0x8000000) == 0) break;
+
+							standOff = pPlayer->field_EA8;
+
+							posX = fenceLine.Position.vx
+								+ (i32)fenceLine.Normal.vx * standOff;
+							posY = fenceLine.Position.vy
+								+ (i32)fenceLine.Normal.vy * standOff;
+							posZ = fenceLine.Position.vz
+								+ (i32)fenceLine.Normal.vz * standOff;
+						}
+
+						// 0x4B3A88
+						pPlayer->field_AD4 = 1;
+						pPlayer->field_B09 = 1;
+						pPlayer->field_54C = 0;
+
+						pPlayer->mPos.vx = posX;
+						pPlayer->mPos.vy = posY;
+						pPlayer->mPos.vz = posZ;
+
+						pPlayer->field_550 = 1;
+						pPlayer->field_8E8 = 1;
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						if (pSwinger != 0)
+						{
+							CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+							delete pSwinger;
+							pPlayer->field_E64 = 0;
+						}
+
+						CameraList->field_12C = -1;
+
+						print_if_false(pPlayer->CheckFenceSurfaceTransition() != 0,
+							"fence error");
+						break;
+					}
+					else
+					{
+						// 0x4B3B07
+						endSwing = 1;
+					}
+
+					if (land != 0)
+					{
+						// 0x4B37F4
+						pPlayer->TidyUpZipWebLandingPosition(0x20);
+						CameraList->field_12C = -1;
+						pPlayer->field_54C = 0;
+						pPlayer->field_550 = 1;
+						pPlayer->PlaySingleAnim(0x119, 0, -1);
+						pPlayer->field_E1C = 1;
+						break;
+					}
+				}
+			}
+
+			// 0x4B3B0C
+			if ((pPlayer->field_504 & 0x400) != 0
+				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+			{
+				pPlayer->PlaySingleAnim(0xD8, 0, -1);
+				pPlayer->field_E1C = 4;
+				pPlayer->field_54D = 0;
+				endSwing = 1;
+			}
+
+			// 0x4B3B4F
+			{
+				u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+				u8 padFire = pPad[0x101];
+
+				if (padFire != 0)
+				{
+					pPlayer->field_E8D = 0;
+				}
+
+				// 0x4B3B66: the swing keeps going unless the fire button (or,
+				// in practice mode, one of the other three) says to stop.
+				if (endSwing == 0
+					&& !((*gPracticeDifficultyFlag == 0 || pPlayer->field_1AC != 0)
+						&& padFire != 0))
+				{
+					if (*gPracticeDifficultyFlag == 0) break;
+
+					if (pPad[0x111] == 0 && pPad[0x121] == 0
+						&& pPad[0x131] == 0)
+					{
+						break;
+					}
+				}
+
+				// 0x4B3BB2: bleed off the swing and drop into the fall state.
+				pPlayer->mVel.vx >>= 1;
+				pPlayer->mVel.vz >>= 1;
+				pPlayer->mAnimSpeed = 0x10000;
+
+				if (pPlayer->field_E1C != 4)
+				{
+					pPlayer->field_E1C = 4;
+					pPlayer->field_54D = 1;
+				}
+
+				CameraList->field_12C = -1;
+				pPlayer->field_54C = 0;
+				pPlayer->field_550 = 1;
+
+				pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+				if (pSwinger != 0)
+				{
+					CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+					delete pSwinger;
+					pPlayer->field_E64 = 0;
+				}
+			}
+			break;
+		}
+
 		// 0x4B30AE. Punching: hand the tick to the combo tracker and start
 		// whatever follow-up move it picks.
 		case 0x800:
@@ -2432,6 +2861,315 @@ void SpideyAI0(CPlayer *pPlayer)
 			break;
 		}
 
+		// 0x4B44C9. The web-attack wind up. Before frame 5 the stick picks
+		// which move the throw turns into (left/right tug web, down knock
+		// down web, up web dome, or the zip web); otherwise the plain web
+		// goes out on frame 5 and the recovery animation plays.
+		case 0x4000:
+		{
+			u16 anim = pPlayer->mAnim;
+			// bl at 0x4B44DD. The airborne variants of every animation in
+			// this state are 10 ids higher than the standing ones.
+			u8 airborne = (anim == 0x104) ? 1 : 0;
+			// reached 0x4B47D8, the "the stick picked nothing" path
+			u8 plainWeb = 0;
+
+			pPlayer->field_EA6 = 0;
+
+			if (airborne == 0 && anim != 0xFA)
+			{
+				if (anim != 0xFB && anim != 0x105) break;
+
+				// 0x4B44FA: the recovery animation waits itself out.
+				if (pPlayer->CheckJump() != 0) break;
+				if (pPlayer->mAnimFinished == 0) break;
+
+				pPlayer->field_8E1 = 0;
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			// 0x4B452A
+			if (pPlayer->mFrame >= 5)
+			{
+				plainWeb = 1;
+			}
+			else
+			{
+				char leanX = pPlayer->field_E2D;
+
+				if (leanX > 0 && (pPlayer->field_8E4 & 1) == 0)
+				{
+					// 0x4B4553: right, so the right tug web.
+					char leanY;
+
+					pPlayer->field_8F8 = 2;
+					pPlayer->field_552 = 0;
+					pPlayer->field_E1C = 0x8000;
+					pPlayer->PlaySingleAnim(airborne != 0 ? 0x106 : 0xFC, 0, -1);
+
+					leanY = pPlayer->field_E2E;
+
+					if (leanY > 0)
+					{
+						pPlayer->field_544 = 2;
+					}
+					else if (leanY < 0)
+					{
+						pPlayer->field_544 = 1;
+					}
+					else
+					{
+						pPlayer->field_544 = 0;
+					}
+
+					PLR_U8(pPlayer, 0xAE) &= 0xFE;
+					break;
+				}
+
+				if (leanX < 0 && (pPlayer->field_8E4 & 2) == 0)
+				{
+					// 0x4B45EB: left, so the left tug web.
+					pPlayer->field_8F8 = 4;
+					pPlayer->field_552 = 0;
+					pPlayer->field_E1C = 0x10000;
+					pPlayer->PlaySingleAnim(airborne != 0 ? 0x109 : 0xFF, 0, -1);
+					PLR_U8(pPlayer, 0xAE) &= 0xFE;
+					break;
+				}
+
+				// 0x4B4631
+				if (airborne != 0)
+				{
+					plainWeb = 1;
+				}
+				else
+				{
+					char leanY = pPlayer->field_E2E;
+
+					if (leanY < 0)
+					{
+						if ((pPlayer->field_8E4 & 8) == 0
+							&& (u32)(gTimerRelated - pPlayer->field_5B4) > 0x1E
+							&& pPlayer->field_AD4 == 0)
+						{
+							// 0x4B4669: down, so the knock down web.
+							if (pPlayer->DecreaseWebbing(0x400) == 0) break;
+
+							pPlayer->PlaySingleAnim(0x11D, 0, -1);
+							pPlayer->field_E1C = 0x800000;
+							break;
+						}
+					}
+					else if (leanY > 0 && (pPlayer->field_8E4 & 4) == 0)
+					{
+						// 0x4B46B1: up, so the web dome.
+						if (pPlayer->field_AD4 != 0)
+						{
+							plainWeb = 1;
+						}
+						else if (pPlayer->DecreaseWebbing(0xC00) == 0)
+						{
+							plainWeb = 1;
+						}
+						else
+						{
+							SFX_PlayPos(0x22, &pPlayer->mPos, 0);
+							pPlayer->field_E1C = 0x20000000;
+							pPlayer->PlaySingleAnim(0x11B, 0, -1);
+							pPlayer->field_374 = (i32)gTimerRelated;
+							pPlayer->field_AB8 = Mem_MakeHandle(
+								new CDome(pPlayer, (u8)pPlayer->field_5E8));
+							break;
+						}
+					}
+
+					if (plainWeb == 0)
+					{
+						// 0x4B475F: no lean, so try the zip web.
+						u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+
+						if (pPlayer->field_8EA != 0)
+						{
+							plainWeb = 1;
+						}
+						else if (pPad[0x120] == 0 && pPad[0x130] == 0)
+						{
+							plainWeb = 1;
+						}
+						else
+						{
+							// 0x4B4783
+							pPlayer->field_DD8 = Mem_MakeHandle(
+								pPlayer->SelectTargetBaddy(0xBE, -0x1000, 0x1000, 0));
+							pPlayer->field_DE0 = (i32)gTimerRelated;
+							pPlayer->field_E1C = 0x2000000;
+							pPlayer->PlaySingleAnim(0x78, 0, -1);
+							break;
+						}
+					}
+				}
+			}
+
+			if (plainWeb == 0) break;
+
+			// 0x4B47D8
+			if (pPlayer->mAnimFinished != 0)
+			{
+				CWeb *pWeb = reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+
+				if (pWeb != 0)
+				{
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+
+					pWeb->SwitchToBlob();
+					pPlayer->field_E6C = 0;
+				}
+
+				pPlayer->PlaySingleAnim(airborne != 0 ? 0x105 : 0xFB, 0, -1);
+				break;
+			}
+
+			// 0x4B4831
+			if (pPlayer->mFrame < 5) break;
+
+			if (pPlayer->field_E6C == 0)
+			{
+				// 0x4B484F: throw the web.
+				CWeb *pWeb;
+				i32 result;
+
+				if (pPlayer->field_552 != 0) break;
+
+				pPlayer->field_552 = 1;
+
+				// the same missing null check the other web spawns have
+				pWeb = new CWeb();
+				pPlayer->field_E6C = reinterpret_cast<i32*>(pWeb);
+				pWeb->field_102 = 0;
+				pWeb->field_F8 = (u8)pPlayer->field_5E8;
+
+				if (pPlayer->field_8ED != 0)
+				{
+					CSVector aim;
+
+					aim.vx = (i16)pPlayer->field_DA0.vx;
+					aim.vy = (i16)pPlayer->field_DA0.vy;
+					aim.vz = (i16)pPlayer->field_DA0.vz;
+
+					result = pPlayer->FireWeb(false, 0x100, &pPlayer->field_DC0,
+						true, &aim);
+				}
+				else
+				{
+					result = pPlayer->FireWeb(true, 0x100, &ZeroVector, false,
+						&gTrajectoryVector);
+				}
+
+				if ((result & 1) != 0)
+				{
+					if (pPlayer->field_E6C != 0)
+					{
+						delete reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+					}
+					pPlayer->field_E6C = 0;
+
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+					break;
+				}
+
+				if ((result & 2) != 0) break;
+
+				// 0x4B495A: nothing was hit, drop the web as a blob.
+				if (pPlayer->field_5E4 != 0)
+				{
+					SFX_Stop((u32)pPlayer->field_5E4);
+					pPlayer->field_5E4 = 0;
+				}
+
+				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+				pPlayer->field_E6C = 0;
+				break;
+			}
+
+			// 0x4B4993: a web is already out, so keep re-firing it while the
+			// button is held and hold the animation on frame 5.
+			{
+				CWeb *pWeb = reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+				u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+				i32 result;
+
+				if (pPad[0x110] == 0) break;
+
+				if (reinterpret_cast<CBody*>(Mem_RecoverPointer(
+						reinterpret_cast<SHandle*>(&pWeb->field_134)))
+					!= pPlayer->field_DCC)
+				{
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+
+					pWeb->SwitchToBlob();
+					pPlayer->field_E6C = 0;
+				}
+
+				if (pPlayer->field_E6C == 0) break;
+
+				if (pPlayer->field_8ED != 0)
+				{
+					result = pPlayer->FireWeb(false, 0x80, &pPlayer->field_DC0,
+						false, &gTrajectoryVector);
+				}
+				else
+				{
+					result = pPlayer->FireWeb(true, 0x80, &ZeroVector, false,
+						&gTrajectoryVector);
+				}
+
+				if ((result & 1) != 0)
+				{
+					if (pPlayer->field_E6C != 0)
+					{
+						delete reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+					}
+					pPlayer->field_E6C = 0;
+
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+				}
+				else if ((result & 2) == 0)
+				{
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+
+					reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+					pPlayer->field_E6C = 0;
+				}
+
+				// 0x4B4A90
+				if (pPlayer->field_E6C == 0) break;
+
+				pPlayer->mFrame = 5;
+			}
+			break;
+		}
+
 		// 0x4B402E. Firing a web: three wind up animations (0x94, 0xFC and
 		// 0x106) each spawn a CWeb on their release frame, and what the web
 		// hit decides the follow on animation.
@@ -2702,6 +3440,296 @@ void SpideyAI0(CPlayer *pPlayer)
 			{
 				pPlayer->PlaySingleAnim(0x10B, 0, -1);
 			}
+			break;
+		}
+
+		// 0x4B51B2. The tug-web pull-in: fires the web when the wind up
+		// animation ends, rides the line to the anchor point, and sticks the
+		// player onto whatever the anchor sits on.
+		case 0x40000:
+		{
+			u16 anim = pPlayer->mAnim;
+
+			pPlayer->field_EA6 = 0;
+
+			if ((anim == 0x104 || anim == 0xFA) && pPlayer->mAnimFinished != 0)
+			{
+				CWeb *pWeb;
+				CSVector aim;
+
+				pPlayer->PlaySingleAnim(0x10E, 0, -1);
+
+				// the same missing null check the other web spawns have
+				pWeb = new CWeb();
+				pPlayer->field_E6C = reinterpret_cast<i32*>(pWeb);
+				pWeb->field_F8 = (u8)pPlayer->field_5E8;
+				pWeb->field_102 = 0;
+
+				aim.vx = (i16)pPlayer->field_DA0.vx;
+				aim.vy = (i16)pPlayer->field_DA0.vy;
+				aim.vz = (i16)pPlayer->field_DA0.vz;
+
+				pPlayer->field_8F8 = 8;
+				pPlayer->field_E10 = 1;
+				pPlayer->FireWeb(false, 0x80, &pPlayer->field_DC0, true, &aim);
+				pPlayer->field_E10 = 0;
+				break;
+			}
+
+			// 0x4B529E. 13 is ebx, loaded at 0x4B211A before the dispatch.
+			if ((anim == 0x10E && pPlayer->mFrame >= 13) || anim == 0x10F)
+			{
+				CVector toAnchor;
+				i32 approach;
+
+				if (anim == 0x10E)
+				{
+					pPlayer->field_AD4 = 0;
+
+					if (pPlayer->field_E6C != 0)
+					{
+						reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+						pPlayer->field_E6C = 0;
+					}
+				}
+
+				// 0x4B52D9
+				if ((pPlayer->field_504 & 0x40000) != 0
+					&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+				{
+					pPlayer->PlaySingleAnim(0xAF, 0, -1);
+					pPlayer->field_E1C = 0x800000;
+					pPlayer->field_54D = 0;
+					pPlayer->mVel.vx = 0;
+					pPlayer->mVel.vy = 0;
+					pPlayer->mVel.vz = 0;
+					PLR_U8(pPlayer, 0x54E) = 0;
+					break;
+				}
+
+				// 0x4B532D
+				toAnchor = (pPlayer->mPos - pPlayer->field_DC0) >> 0xC;
+
+				approach = pPlayer->field_DA0.vx * toAnchor.vx
+					+ pPlayer->field_DA0.vz * toAnchor.vz
+					+ pPlayer->field_DA0.vy * toAnchor.vy;
+
+				if (approach >= 0
+					&& Utils_Dist(pPlayer->mPos, pPlayer->field_DC0) >= 0x80)
+				{
+					// 0x4B56DF: still travelling. Let go on the fire button
+					// (or, in practice mode, any of the other three), else
+					// keep steering the velocity at the anchor.
+					u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+					u8 practice = *gPracticeDifficultyFlag;
+					u8 letGo = 0;
+					CSVector aimAngles;
+
+					if (practice == 0 || pPlayer->field_1AC != 0)
+					{
+						if (pPad[0x101] != 0)
+						{
+							letGo = 1;
+						}
+					}
+
+					if (letGo == 0 && practice != 0)
+					{
+						if (pPad[0x111] != 0 || pPad[0x121] != 0
+							|| pPad[0x131] != 0)
+						{
+							letGo = 1;
+						}
+					}
+
+					if (letGo == 0)
+					{
+						// 0x4B573A
+						aimAngles.vx = 0;
+						aimAngles.vy = 0;
+						aimAngles.vz = 0;
+
+						Utils_CalcAim(&aimAngles, &pPlayer->mPos,
+							&pPlayer->field_DC0);
+						Utils_GetVecFromMagDir(&pPlayer->mVel, 0xF0, &aimAngles);
+
+						if (pPlayer->mVel.vy >= 0) break;
+
+						{
+							i32 velY = pPlayer->mVel.vy;
+							i32 velX = pPlayer->mVel.vx;
+							i32 velZ = pPlayer->mVel.vz;
+
+							if ((velY < 0 ? -velY : velY)
+								<= (velX < 0 ? -velX : velX)) break;
+							if ((velY < 0 ? -velY : velY)
+								<= (velZ < 0 ? -velZ : velZ)) break;
+						}
+
+						if (pPlayer->CheckJumpingSwingWeb() == 0) break;
+
+						pPlayer->mVel.vz = 0;
+						pPlayer->mVel.vy = 0;
+						pPlayer->mVel.vx = 0;
+						break;
+					}
+
+					// 0x4B57D7: let go and fall.
+					pPlayer->mVel.vx = 0;
+					pPlayer->mVel.vy = 0;
+					pPlayer->mVel.vz = 0;
+
+					pPlayer->field_A8.vx = 0;
+					pPlayer->field_A8.vz = 0;
+					pPlayer->field_A8.vy = (i16)0xF000;
+
+					pPlayer->field_E1C = 4;
+					pPlayer->field_54D = 1;
+					pPlayer->field_550 = 1;
+
+					pPlayer->field_AC8.vx = pPlayer->field_C6C.vx;
+					pPlayer->field_AC8.vy = pPlayer->field_C6C.vy;
+					pPlayer->field_AC8.vz = pPlayer->field_C6C.vz;
+
+					pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+					break;
+				}
+
+				// 0x4B53BD: arrived at the anchor, snap onto it.
+				CameraList->field_100 = 1;
+				CameraList->mTripod = pPlayer;
+
+				pPlayer->field_AE5 = 0;
+
+				pPlayer->mPos = pPlayer->field_DC0
+					+ (pPlayer->field_DA0 * (i32)pPlayer->field_EA8);
+
+				pPlayer->mVel.vy = 0;
+				pPlayer->mVel.vz = 0;
+				pPlayer->mVel.vx = 0;
+
+				if (pPlayer->field_DA0.vy <= 0xD48
+					&& pPlayer->field_DA0.vy >= -0xA28)
+				{
+					// 0x4B544A: the anchor normal is near horizontal, so work
+					// out which way the surface really faces.
+					CVector surface = (pPlayer->field_558 - pPlayer->field_DC0) >> 0xC;
+					i32 align;
+
+					VectorNormal(reinterpret_cast<VECTOR*>(&surface),
+						reinterpret_cast<VECTOR*>(&surface));
+
+					align = ((pPlayer->field_DA0.vx * surface.vx) >> 12)
+						+ ((pPlayer->field_DA0.vy * surface.vy) >> 12)
+						+ ((pPlayer->field_DA0.vz * surface.vz) >> 12);
+
+					if (align < 0x800)
+					{
+						pPlayer->field_AC8.vx = surface.vx;
+						pPlayer->field_AC8.vy = surface.vy;
+						pPlayer->field_AC8.vz = surface.vz;
+
+						pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+						pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+						pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+						pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+					}
+					else if (((i32)pPlayer->field_A8.vy < 0
+						? -(i32)pPlayer->field_A8.vy
+						: (i32)pPlayer->field_A8.vy) > 0x800)
+					{
+						// 0x4B553B
+						CVector flipped;
+
+						flipped.vx = -(i32)pPlayer->field_A8.vx;
+						flipped.vy = -(i32)pPlayer->field_A8.vy;
+						flipped.vz = -(i32)pPlayer->field_A8.vz;
+
+						pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+						pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+						pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+						pPlayer->OrientToNormal(true, &flipped);
+					}
+					else
+					{
+						// 0x4B5583
+						pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+						pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+						pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+						pPlayer->OrientToNormal(false, &ZeroVector);
+					}
+				}
+				else
+				{
+					// 0x4B55AB: steep anchor, so use the travel direction
+					// unless it is near vertical.
+					i32 travelY = pPlayer->field_C6C.vy;
+
+					if ((travelY < 0 ? -travelY : travelY) < 0x800)
+					{
+						pPlayer->field_AC8.vx = pPlayer->field_C6C.vx;
+						pPlayer->field_AC8.vy = pPlayer->field_C6C.vy;
+						pPlayer->field_AC8.vz = pPlayer->field_C6C.vz;
+					}
+					else
+					{
+						CVector surface = (pPlayer->field_558 - pPlayer->field_DC0) >> 0xC;
+
+						VectorNormal(reinterpret_cast<VECTOR*>(&surface),
+							reinterpret_cast<VECTOR*>(&surface));
+
+						if (surface.vy < 0x800)
+						{
+							pPlayer->field_AC8.vx = surface.vx;
+							pPlayer->field_AC8.vy = surface.vy;
+							pPlayer->field_AC8.vz = surface.vz;
+						}
+						else
+						{
+							pPlayer->field_AC8.vx = 0;
+							pPlayer->field_AC8.vy = 0;
+							pPlayer->field_AC8.vz = 0x1000;
+						}
+					}
+
+					// 0x4B5675
+					pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+					pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+					pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+					pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+					pPlayer->LockTargetTorsoAngle();
+				}
+
+				// 0x4B56A9
+				pPlayer->field_AD4 = 1;
+				pPlayer->PlaySingleAnim(0x110, 0, -1);
+				SFX_Play(9, 0x2000, 0);
+				pPlayer->TidyUpZipWebLandingPosition(0x20);
+				break;
+			}
+
+			// 0x4B583E: the stuck-on-the-anchor animation.
+			if (anim != 0x110) break;
+
+			if (pPlayer->field_8E8 == 0 && pPlayer->field_8E9 == 0)
+			{
+				pPlayer->field_AD4 = 0;
+			}
+
+			if (pPlayer->CheckJump() != 0) break;
+			if (pPlayer->mAnimFinished == 0) break;
+
+			if (pPlayer->field_8E8 == 0 && pPlayer->field_8E9 == 0)
+			{
+				pPlayer->PlaySingleAnim(0x14, 0, -1);
+			}
+
+			pPlayer->field_550 = 1;
+			pPlayer->SwitchToStandMode();
 			break;
 		}
 
@@ -3322,7 +4350,10 @@ void SpideyAI0(CPlayer *pPlayer)
 		default:
 			if ((u32)pPlayer->field_E1C > 0x10000)
 			{
-				// 0x4B50AE, remaining sub-states. Not ported yet.
+				// 0x4B50AE. Every state this compare chain dispatches
+				// (0x20000 and up) has its own case label above, so only a
+				// value that is not a state gets here, and the original's
+				// chain drops such a value into the tail the same way.
 			}
 			else if (pPlayer->field_E1C == 0x10000)
 			{
@@ -3403,7 +4434,9 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 			else if ((u32)pPlayer->field_E1C > 0x100)
 			{
-				// 0x4B307C, sub-states 0x200..0x8000. Not ported yet.
+				// 0x4B307C. Same as above for the 0x200..0x8000 chain: every
+				// state it dispatches has its own case label, so a value
+				// reaching here is not a state and falls into the tail.
 			}
 			break;
 	}
