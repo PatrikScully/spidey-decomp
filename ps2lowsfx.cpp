@@ -503,9 +503,31 @@ void SFX_Init(char* pSfxBankName)
 	SFX_ParseSFXFile(buf, gSfxArrayOne, gSfxArraAliasyOne, 64, 0);
 }
 
-// @NotOk
-// @Note: this is fine, it's missing a bunch of stubbed calls that after spending too much time
-// looking into the DreamCast version I opted not to pursue further. If someone wants a challenge, enjoy.
+// @Ok
+// 2026-09-01: full translation from a fresh IDA decompile+disasm of 0x470FD0 (452 bytes).
+// gSfxInited is byte_6191A4 (checked at entry, set here) and gNumVoices is dword_6191A0
+// (stored right after gSfxInited, matches the 4-byte gap between the two in the disasm).
+// gSfxEntries is dword_618730 (memset of 0x140 dwords = 0x500 = sizeof(gSfxEntries)) and
+// gSfxSomething is dword_618D80 (memset of 7 dwords = 0x1C = sizeof(SSfxRelated)).
+//
+// The rest of the original is real Dreamcast AICA sound-driver init: it loads the
+// "thehall.fpb" DSP program bank and the "amulti.fob" FX program bank, then "installs"
+// each into AICA sound RAM at fixed offsets (0x4880 and 0x5880). On this PC build every
+// install/config call in that sequence goes through sub_505B90, which tools/names.json
+// names syRtcInit and which is a confirmed literal `xor eax,eax; ret` no-op (stubs.cpp,
+// @Ok @Matching; see bit.cpp's investigation of the same function) -- it never reads or
+// writes its arguments or any global. Every check built from its return value therefore
+// also goes nowhere, since nullsub_1 (0x4015B0) is the confirmed-empty print_if_false
+// stub this repo already omits everywhere else it shows up (dcfileio.cpp, ps2m3d.cpp,
+// panel.cpp, shell.cpp, etc). That leaves: a "strange heap size" sanity check built from
+// a stack slot that is never actually written by anything live (it is pre-loaded with the
+// address of sub_470E70, a per-voice cleanup callback, but nothing ever reads that address
+// back through a call, only through the dead no-op chain above) and two "install program
+// bank" calls whose arguments are only ever forwarded into the no-op. None of that writes
+// any persistent field or global, so it is omitted here. The only observable effect of the
+// whole function beyond the memsets/flags above is: open+load then immediately free
+// "thehall.fpb" and "amulti.fob" via FileIO_Unk/FileIO_Unk2 (dcfileio.cpp, both @Ok
+// @Matching, exact-address matches for sub_430C30/sub_430CA0 respectively).
 void SFX_InitAtStart(void)
 {
 	if (!gSfxInited)
@@ -514,6 +536,14 @@ void SFX_InitAtStart(void)
 		memset(&gSfxSomething, 0, sizeof(gSfxSomething));
 		gSfxInited = 1;
 		gNumVoices = 0;
+
+		i32 dspBankSize;
+		void *dspBank = FileIO_Unk("thehall.fpb", &dspBankSize);
+		FileIO_Unk2(dspBank);
+
+		i32 fxBankSize;
+		void *fxBank = FileIO_Unk("amulti.fob", &fxBankSize);
+		FileIO_Unk2(fxBank);
 	}
 }
 
