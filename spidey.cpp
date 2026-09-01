@@ -3505,10 +3505,43 @@ u8 CPlayer::ShouldPlayerDropFlail(void)
 	return Utils_GetGroundHeight(&this->mPos, 0, 4096, 0) != -1;
 }
 
-// @SMALLTODO
+// Cycle-sorts the animation follow-on table into animation order so that
+// entry N describes animation N. Each record is a {u16 anim, u16 followOn}
+// pair; a record that does not sit in the slot named by its own anim id is
+// swapped towards that slot until it lands or until an empty (all zero)
+// record is pulled in. SpideyAI0 (0x4B204A) then indexes the sorted table
+// directly by anim id and runs the follow-on anim when the key is set.
+// @Ok
 void CPlayer::SortAnimationFollowOnData(void)
 {
-    printf("CPlayer::SortAnimationFollowOnData(void)");
+	// {u16 anim, u16 followOnAnim} x 200. Only this sort and SpideyAI0's
+	// follow-on lookup touch it, so it stays a local pointer into game
+	// memory rather than a shared global.
+	static u16 * const gAnimFollowOnData = (u16*)0x00555C6C;
+	static u16 * const gAnimFollowOnDataEnd = (u16*)0x00555F8C;
+
+	i32 slot = 0;
+	u16 *pEntry = gAnimFollowOnData;
+
+	do
+	{
+		while (pEntry[0] != slot && (pEntry[0] | pEntry[1]) != 0)
+		{
+			u16 *pDest = &gAnimFollowOnData[pEntry[0] * 2];
+
+			u16 anim = pDest[0];
+			u16 followOn = pDest[1];
+
+			pDest[0] = pEntry[0];
+			pDest[1] = pEntry[1];
+			pEntry[0] = anim;
+			pEntry[1] = followOn;
+		}
+
+		pEntry += 2;
+		slot++;
+	}
+	while (pEntry < gAnimFollowOnDataEnd);
 }
 
 // @SMALLTODO
