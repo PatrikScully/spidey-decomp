@@ -23,6 +23,11 @@ EXPORT i32 gGetGroundDefaultValue;
 
 extern CBody* MiscList;
 
+// sin/cos table, same address and idiom as bit.cpp / camera.cpp
+// (word_610C48[idx] = sin, word_610C48[idx + 1] = cos, idx = 2 * (angle & 0xFFF));
+// file-local copy per repo convention.
+static i16 * const word_610C48 = (i16*)0x610C48;
+
 // Second table parallel to CItemRelatedList (ob.h, 0x6B2454), indexed the same way
 // (region*17). Web_CollideWithSuper (0x4F7AE0) is the only known reader: it reads a hook
 // COUNT from this table's per-region entry at offset+8
@@ -566,6 +571,87 @@ i32 Web_GetGroundY(const CVector* a1)
 	return gLineInfo.Position.vy;
 }
 
+// @Ok
+// 0x4F8190, 256 bytes. One shot of the imaginary web "projector" that walks
+// around the trapped baddy: it fires a ray straight in at the baddy's
+// vertical axis, from a point field_424 out at angle field_428 and field_420
+// units up. Web_CollideWithSuper turns a hit into the part/offset pair in
+// field_48[HookIndex]; the projector's height at that moment is kept in
+// field_2D0[HookIndex] so AddAnotherStrand can measure the vertical gap
+// between two hooks later. Returns 1 on a hit, 0 on a miss.
+i32 CTrapWebEffect::CalcHook(i32 HookIndex)
+{
+	print_if_false(HookIndex <= 80, "Bad hook index");
+
+	CSuper *pSuper = reinterpret_cast<CSuper*>(Mem_RecoverPointer(&this->field_3C));
+	print_if_false(pSuper != 0, "pSuper NULL??");
+
+	i32 Idx = (this->field_428 & 0xFFF) * 2;
+
+	CVector Start;
+	Start.vx = pSuper->mPos.vx + word_610C48[Idx + 1] * this->field_424;
+	Start.vy = pSuper->mPos.vy + (this->field_420 << 12);
+	Start.vz = pSuper->mPos.vz + word_610C48[Idx] * this->field_424;
+
+	CVector End;
+	End.vx = pSuper->mPos.vx;
+	End.vy = pSuper->mPos.vy + (this->field_420 << 12);
+	End.vz = pSuper->mPos.vz;
+
+	if (!Web_CollideWithSuper(pSuper, &Start, &End, &this->field_48[HookIndex], 0x1000))
+		return 0;
+
+	this->field_2D0[HookIndex] = static_cast<i16>(this->field_420);
+
+	return 1;
+}
+
+// @Ok
+// 0x4F82A0, 285 bytes. Moves the projector one frame: up or down by
+// field_41F, and a sixteenth of a turn around the baddy. Every time the
+// field_41E countdown runs out it picks a new target height (a random spot
+// on the baddy, in the baddy's own field_13E/field_13F units) and a new
+// speed that gets there in six frames.
+//
+// Original defect kept: with any mType other than 0 or 1 the target height
+// is never assigned (the original just leaves whatever was in the register),
+// so the speed below is computed from garbage. Nothing can reach it, the
+// constructor rejects those types with the same assert.
+void CTrapWebEffect::MoveProjector(void)
+{
+	this->field_420 += this->field_41F;
+
+	if (this->field_41E != 0)
+		this->field_41E--;
+
+	if (this->field_41E == 0)
+	{
+		CSuper *pSuper = reinterpret_cast<CSuper*>(Mem_RecoverPointer(&this->field_3C));
+		print_if_false(pSuper != 0, "pSuper NULL??");
+
+		i32 Target;
+
+		if (this->mType == 0)
+		{
+			Target = Rnd(pSuper->field_13F + pSuper->field_13E) - pSuper->field_13E;
+		}
+		else if (this->mType == 1)
+		{
+			Target = Rnd(pSuper->field_13E * 2 / 3) - pSuper->field_13E / 3;
+		}
+		else
+		{
+			print_if_false(0, "Bad CTrapWebEffect type");
+			Target = 0;
+		}
+
+		this->field_41E = 6;
+		this->field_41F = static_cast<i8>((Target - this->field_420) / 6);
+	}
+
+	this->field_428 = (this->field_428 + 0x100) & 0xFFF;
+}
+
 // @MEDIUMTODO
 // 0x4F7F40, 429 bytes. Scoped but not written out. What it does: chains
 // CNonRenderedBit::CNonRenderedBit, zeroes the first 6 bytes of 81 entries at
@@ -646,14 +732,17 @@ void CTrapWebEffect::Burst(void)
 
 	if (pSuper != NULL)
 	{
-		u8 *pTarget = reinterpret_cast<u8*>(this->field_44);
-		i32 HookCount = *reinterpret_cast<i32*>(pTarget + 0x3C);
+		CGPolyLine *pLine = this->field_44;
+		i32 HookCount = pLine->mNumSegs;
 
 		if (HookCount != 0)
 		{
 			M3d_BuildTransform(pSuper);
 
-			VECTOR *pPositions = *reinterpret_cast<VECTOR**>(pTarget + 0x40);
+			// one hook position per line segment; SLineSeg is 16 bytes with
+			// its CVector first, so a VECTOR* walks it with the same stride
+			// the original uses
+			VECTOR *pPositions = reinterpret_cast<VECTOR*>(pLine->mSegs);
 			i32 i;
 
 			// index 0 is always computed once, unconditionally, before the
@@ -877,7 +966,18 @@ void validate_CTrapWebEffect(void)
 	VALIDATE(CTrapWebEffect, field_3C, 0x3C);
 	VALIDATE(CTrapWebEffect, field_44, 0x44);
 	VALIDATE(CTrapWebEffect, field_48, 0x48);
+	VALIDATE(CTrapWebEffect, field_2D0, 0x2D0);
+	VALIDATE(CTrapWebEffect, field_374, 0x374);
+	VALIDATE(CTrapWebEffect, field_378, 0x378);
 	VALIDATE(CTrapWebEffect, field_418, 0x418);
+	VALIDATE(CTrapWebEffect, field_41A, 0x41A);
+	VALIDATE(CTrapWebEffect, field_41C, 0x41C);
+	VALIDATE(CTrapWebEffect, field_41E, 0x41E);
+	VALIDATE(CTrapWebEffect, field_41F, 0x41F);
+	VALIDATE(CTrapWebEffect, field_420, 0x420);
+	VALIDATE(CTrapWebEffect, field_424, 0x424);
+	VALIDATE(CTrapWebEffect, field_428, 0x428);
+	VALIDATE(CTrapWebEffect, field_42C, 0x42C);
 }
 
 void validate_CDomeShockWave(void)

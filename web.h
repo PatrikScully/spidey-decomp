@@ -282,6 +282,22 @@ class CWebFrag : public CGLine
 		PADDING(3);
 };
 
+// One triangle of webbing spanning three of the trap web's hooks. Written by
+// CTrapWebEffect::AddAnotherStrand (0x4F83C0) and consumed every frame by
+// CTrapWebEffect::Move (0x4F8860, not decompiled yet), which fills the quad
+// from the three hook positions: mPos from mHookA, mPosB from mHookB, mPosC
+// AND mPosD both from mHookC (so the quad draws as a triangle).
+struct SWebStrand
+{
+	u8 mHookA;
+	u8 mHookB;
+	u8 mHookC;
+
+	PADDING(1);
+
+	CQuadBit *mpBit;
+};
+
 class CTrapWebEffect : public CNonRenderedBit
 {
 	public:
@@ -294,20 +310,73 @@ class CTrapWebEffect : public CNonRenderedBit
 		// 0x4F83C0. Adds one strand of webbing to the effect.
 		EXPORT void AddAnotherStrand(void);
 
+		// 0x4F82A0. Advances the imaginary "projector" that shoots the
+		// webbing at the baddy: raises/lowers it by field_41F and spins it
+		// a sixteenth of a turn.
+		EXPORT void MoveProjector(void);
+
+		// 0x4F8190. Fires one ray from the projector at the baddy's
+		// vertical axis and, if it hits, records the hit as hook HookIndex.
+		EXPORT i32 CalcHook(i32 HookIndex);
+
 		EXPORT void Burst(void);
 
 		SHandle field_3C;
-		i32 *field_44;
 
-		// Inline array of hook definitions Burst() feeds one at a time to
-		// M3dUtils_GetDynamicHookPosition. Size derived from the exact
-		// padding gap to field_418 (0x3D0 bytes); 0x3D0 / sizeof(SHook)
-		// (8) == 122 exactly, strong evidence this is really an SHook[]
-		// and not opaque padding.
-		SHook field_48[122];
+		// The hooks' own line: its mNumSegs is the hook count and its mSegs
+		// array holds one hook position per segment (Burst and Move both
+		// read it that way). Constructed with 80 segments and immediately
+		// reset to 0 segments by the constructor.
+		CGPolyLine *field_44;
+
+		// One entry per hook, filled by CalcHook and fed one at a time to
+		// M3dUtils_GetDynamicHookPosition by Burst and Move. The
+		// constructor zeroes exactly 81 of them (0x48..0x2D0), which is
+		// what fixes the size: 80 is the hook limit, plus the one extra
+		// hook 0 that AddAnotherStrand lays down before the first strand.
+		SHook field_48[81];
+
+		// Projector height (field_420) at the moment each hook was
+		// accepted. AddAnotherStrand uses the difference between two
+		// entries as the "gap" it looks for when picking the third corner
+		// of a strand.
+		i16 field_2D0[81];
+
+		PADDING(2);
+
+		// Number of live entries in field_378, capped at 20.
+		i32 field_374;
+
+		SWebStrand field_378[20];
 
 		u8 field_418;
-		PADDING(0x430-0x418-1);
+
+		PADDING(1);
+
+		// Both only used by Move (0x4F8860) on the burning (field_418 != 0)
+		// variant: an angle that steps 80 units a frame and a 0..256 ramp
+		// that steps 8 a frame.
+		u16 field_41A;
+		i16 field_41C;
+
+		// Frames left before the projector picks a new target height.
+		u8 field_41E;
+
+		// Per-frame projector speed, read sign-extended (movsx) at 0x4F82A4.
+		i8 field_41F;
+
+		// Projector height above the baddy's origin, in whole units (the
+		// world position shifts it left by 12).
+		i32 field_420;
+
+		// Projector distance from the baddy's axis, 400 from the ctor.
+		i32 field_424;
+
+		// Projector angle, kept in 0..0xFFF.
+		i32 field_428;
+
+		// Written by Move (0x4F8860) only: the hook count it last drew.
+		i32 field_42C;
 };
 
 class CDomeShockWave : public CNonRenderedBit
