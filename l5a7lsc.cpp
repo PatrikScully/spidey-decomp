@@ -133,7 +133,12 @@ void L5A7LSC_RelocatableModuleInit(reloc_mod *pMod)
 // implement; the "A7" in this stub's name is just this file's naming convention
 // (l5a7lsc.cpp), not evidence of a separate level-specific variant, since Mac's
 // name for the one real function has no such suffix either. Stub left as is.
-// @SMALLTODO
+// Retagged @NotOk 2026-09-01: there is no code for this in the PC binary, so it can
+// never become @Ok. The logic it would hold (walk EnvironmentalObjectList for the type
+// 0x192 pool item of the current region and read its water level) is already present,
+// inlined, inside L5A7LSC_MonitorSpideyinWater above, which is @Ok. Keeping the stub
+// only because the name is referenced in the Mac symbol list.
+// @NotOk
 EXPORT void obtainWaterLevelInPoolA7(i32)
 {
     printf("obtainWaterLevelInPool(i32)");
