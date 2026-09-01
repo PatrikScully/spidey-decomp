@@ -2400,15 +2400,24 @@ void ParseWavHeader(char *fileName, tWAVEFORMATEX **ppwfx, long *pSize, u8 **ppD
 #endif
 }
 
-// @MEDIUMTODO
-// Investigated, not attempted: no PC address, no caller anywhere in this
-// file, and unlike loadWAV/ParseWavHeader there is no sibling function to
-// tie its logic to either (checked every CALL in the 0x500000-0x520000
-// range against tools/names.json, nothing unnamed calls in from outside
-// that range points here). The Mac source has it at
-// spiderman_names.txt 0x164670, so it is real on that platform, but with no
-// PC code and no call site to infer behaviour from, writing a body here
-// would be a guess dressed up as a translation. Left as a stub.
+// @NotOk
+// Investigated, not attempted, re-verified 2026-09-01 (idalib session
+// 0dc9741d): no PC address, no caller anywhere in this file, and unlike
+// loadWAV/ParseWavHeader there is no sibling function to tie its logic to
+// either (checked every CALL in the 0x500000-0x520000 range against
+// tools/names.json, nothing unnamed calls in from outside that range points
+// here). Re-check this session: decompiled DXSOUND_Init (0x5039f0, the
+// natural place an "initial settings" helper would be called from) directly
+// with Hex-Rays - it zeroes two DirectSound buffer-position arrays,
+// allocates the primary sound buffer and sets its format, with no call to
+// anything matching this function anywhere in its body. Also ran func_query
+// over the entire DXsound.cpp address range (0x4fbdc0 through past
+// 0x50f6d0): every byte is already claimed by a function IDA has a size for
+// (named or sub_XXXXXX), so there is no unnamed gap hiding this code under a
+// different name. The Mac source has it at spiderman_names.txt 0x164670, so
+// it is real on that platform, but with no PC code and no call site to infer
+// behaviour from, writing a body here would be a guess dressed up as a
+// translation. Tagging @NotOk honestly rather than guessing an @Ok body.
 void initialSettings(void)
 {
     printf("initialSettings(void)");
