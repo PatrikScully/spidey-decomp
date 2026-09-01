@@ -203,6 +203,286 @@ void M3d_BuildTransform(CSuper* pSuper)
 	pSuper->mTransform.t[2] = pSuper->mPos.vz >> 12;
 }
 
+// ---------------------------------------------------------------------
+// M3dAsm_BoundingSpherePreprocessing (0x46FAD0) and its feeder leaves
+// (0x46D7E0, 0x46D810, 0x46E250). Per-frame view-frustum visibility cull:
+// walks the CItem list (mNextItem) and sets/clears CItem::mFlags bit
+// 0x8000. Confirmed from the raw disasm (every "or ah,80h"/"mov [ebx+4],bp"
+// site vs. the single "and eax,7FFFh"/"mov [ebx+4],ax" site at the very end
+// of the function): bit 0x8000 SET means CULLED (do not render), CLEAR
+// means visible. This refines M3d_Render's own comment below, which only
+// knew the bit gated rendering, not which state meant what.
+// ---------------------------------------------------------------------
+
+// Two 9-i16 (3 packed xyz triples, NO padding -- confirmed by the raw
+// disasm of the two loader functions below doing 9 sequential 2-byte
+// stores with no gap between them, i.e. NOT 3 padded SVECTORs) scratch
+// tables at fixed addresses feed the 6-plane frustum test. Filled once per
+// frame by M3dAsm_LoadClipTableA/B with the camera-space plane normals
+// M3d_RenderSetup's own gte_stsv loop writes at 0x628620/0x628648 (see
+// M3d_RenderSetup, this file) -- M3dAsm_BoundingSpherePreprocessing itself
+// only reads these tables, it does not call the loaders.
+// This exact scratch memory is ALSO written/read by two completely
+// unrelated routines elsewhere in the binary: ps2funcs.cpp's
+// gLineToSphereDirMatrix (SVECTOR[3], WITH a pad word per entry -- a
+// different, incompatible layout for the same address range, used by
+// M3dColij_LineToSphere) and a generic collision-check helper
+// (sub_4529C0, not part of this file, calls M3dAsm_LoadClipTableB
+// directly). This is genuinely a shared per-frame scratch buffer reused by
+// unrelated one-shot calculations, not a dedicated frustum-only table.
+// Declared here as its own raw, unpadded i16[9] (matching the ACTUAL write
+// pattern of the two loaders below), independent of ps2funcs.cpp's
+// differently-typed declaration at the same address, per this repo's
+// "duplicating static address globals across files is fine" convention.
+static i16 * const gM3dClipScratchA = (i16*)0x00610B40;
+static i16 * const gM3dClipScratchB = (i16*)0x00610B60;
+
+// @Ok
+// (0x46D7E0.) Copies 9 packed i16 (3 xyz triples) from pSrc into
+// gM3dClipScratchA. Called from M3d_Render (still forwarded, 3 call sites
+// per IDA xrefs) with pSrc pointing at the camera-space plane normals
+// M3d_RenderSetup computes at 0x628620.
+i16* M3dAsm_LoadClipTableA(void const* pSrc)
+{
+	i16 const* pSrc16 = (i16 const*)pSrc;
+	for (i32 i = 0; i < 9; i++)
+		gM3dClipScratchA[i] = pSrc16[i];
+	return gM3dClipScratchA + 9;
+}
+
+// @Ok
+// (0x46D810.) Same shape as M3dAsm_LoadClipTableA but writes
+// gM3dClipScratchB. Per IDA xrefs, also called from two functions outside
+// this file (a generic collision-check helper at 0x4529C0, and
+// RenderSuperItem at 0x475290) with unrelated source pointers -- confirms
+// this table really is shared scratch memory, not frustum-dedicated.
+i16* M3dAsm_LoadClipTableB(void const* pSrc)
+{
+	i16 const* pSrc16 = (i16 const*)pSrc;
+	for (i32 i = 0; i < 9; i++)
+		gM3dClipScratchB[i] = pSrc16[i];
+	return gM3dClipScratchB + 9;
+}
+
+static i32 * const gM3dCullSphereOffX = (i32*)0x00610BF0;
+static i32 * const gM3dCullSphereOffY = (i32*)0x00610BF4;
+static i32 * const gM3dCullSphereOffZ = (i32*)0x00610BF8;
+
+// @Ok
+// (0x46E250.) Trivial 3-int store: sets the culling-sphere-center offset
+// M3dAsm_BoundingSpherePreprocessing reads (left-shifted by 12 there, i.e.
+// this is a plain integer world-space offset, not already fixed-point
+// scaled). Only known caller (not yet decompiled) is inside M3d_Render.
+i32 M3dAsm_SetCullSphereOffset(i32 x, i32 y, i32 z)
+{
+	*gM3dCullSphereOffX = x;
+	*gM3dCullSphereOffY = y;
+	*gM3dCullSphereOffZ = z;
+	return x;
+}
+
+// Same address as gM3dCameraPtr, declared textually later in this file (see
+// M3d_RenderSetup) -- redeclared here for forward reference, matching this
+// file's existing convention (e.g. gDCOverrideFlags/gDCFogEnabled above,
+// which redeclare M3d_RenderSetup's/M3d_RenderBackground's statics for the
+// same reason).
+static i32 * const gM3dCameraPtrEarly = (i32*)0x00628640;
+
+// dword_6B2454 in the raw disasm: read as dword_6B2454[17*region][model] to
+// get a SModel*. 17 i32 units = 68 bytes = sizeof(SPSXRegion) (per the
+// M3d_Render comment below, already cross-checked against NumParts's real
+// offset there). Per CLAUDE.md's "Global boundaries" note, this address is
+// most likely PSXRegion[0]'s ppModels field itself (the compiler folding
+// the array base and the field offset together), not literally the region
+// array's base address -- functionally irrelevant here, the indexed read
+// is exactly equivalent either way.
+static SModel *** const gM3dRegionModelArray = (SModel***)0x006B2454;
+
+// (0x6150E8.) Gates whether the FIRST plane of the fine AABB-corner test
+// (below) can early-out to "pass"; only appears in that one plane's
+// condition in the raw disasm, planes 2-6 of the corner test always
+// compute their real dot product. Meaning beyond that not investigated.
+static i32 * const gM3dCornerTestBypass = (i32*)0x006150E8;
+
+// @Ok
+// (0x46FAD0, ~0x900 bytes.) Per-frame view-frustum visibility cull. Walks
+// the CItem list starting at pList; for each item, does up to two 6-plane
+// tests against the 6 clip-plane normals in gM3dClipScratchA/B (planes
+// 0-2 carry a per-axis offset term, gM3dCullSphereOff{X,Y,Z} << 12; planes
+// 3-5 do not -- reproduced exactly as read, not renamed to "near/far/etc"
+// since that meaning was not independently confirmed):
+//   1) A sphere test: item position (relative to the camera,
+//      SCamera::Position) vs. a radius from the item's current SModel
+//      (region+model indexed via gM3dRegionModelArray), SModel::Radius>>13,
+//      further x8 and/or rescaled by other fields when specific mFlags
+//      bits are set (see below). Any plane failing this sets mFlags bit
+//      0x8000 (culled) and moves to the next item.
+//   2) If the sphere test passes AND the item has no local rotation
+//      (mAngles all zero) and mFlags bits 0x2/0x200 (sic, see below) are
+//      clear, a tighter test against the model's own local bounding box
+//      corners (SModel::Box; each axis packs {low:i16, high:i16} in one
+//      i32 -- confirmed by the raw disasm treating Box.vx/vy/vz as two
+//      independent sign-extended 16-bit halves via `(i16)x` and `x>>16`,
+//      not a plain i32 value). Any plane failing this sets bit 0x8000;
+//      passing all 6 clears it (visible).
+// Two fast-exit paths force a cull without any of the above: mFlags bit
+// 0x1 or 0x1000 set (unconditional), or the item-to-camera delta
+// overflowing 15 bits on any axis (unconditional on X/Y, tolerated on Z
+// only when mFlags bit 0x2000 is set).
+//
+// Session-wide override: functional decompilation, not byte-matching (see
+// CLAUDE.md task header). Every branch and field offset below was cross-
+// checked against the raw disassembly instruction-by-instruction (not just
+// the Hex-Rays pseudocode -- which was NOT corrupted here, unlike the
+// rotation/tint blocks in RenderSuperItem below). This sets real
+// visibility state, so a wrong translation would make characters/objects
+// invisible or wrongly visible; treated with matching care.
+//
+// One genuinely unresolved detail, kept faithful rather than guessed at:
+// when mFlags bit 0x200 is set, the original reads pItem+0x18/+0x1A/+0x1C
+// as three signed i16 and uses their max abs() value (if >=4096, or if all
+// three are nonzero) to further rescale the radius. Those exact byte
+// offsets land on CItem::mAngles.vz, CItem::mModel and
+// CItem::mDummyFrame+mTintIndex (validated offsets, ob.cpp's
+// validate_CItem) -- three unrelated fields read back-to-back, not one
+// coherent 3-component field. Reproduced here as a raw 3xi16 read at that
+// byte offset (not as named CItem fields, which would assert semantics
+// that were not confirmed) rather than guessing what it "should" mean.
+void M3dAsm_BoundingSpherePreprocessing(CItem* pList)
+{
+	if (pList == 0)
+		return;
+
+	SCamera* pCam = *(SCamera**)gM3dCameraPtrEarly;
+	i32 camX = pCam->Position.vx;
+	i32 camY = pCam->Position.vy;
+	i32 camZ = pCam->Position.vz;
+
+	// 6 plane normals, packed i16 xyz, straight from the scratch tables
+	// (the original also copies these into on-stack temporaries first;
+	// that copy has no observable effect since nothing else writes the
+	// tables in between, so it is not reproduced here).
+	i16 n0x = gM3dClipScratchA[0], n0y = gM3dClipScratchA[1], n0z = gM3dClipScratchA[2];
+	i16 n1x = gM3dClipScratchA[3], n1y = gM3dClipScratchA[4], n1z = gM3dClipScratchA[5];
+	i16 n2x = gM3dClipScratchA[6], n2y = gM3dClipScratchA[7], n2z = gM3dClipScratchA[8];
+	i16 n3x = gM3dClipScratchB[0], n3y = gM3dClipScratchB[1], n3z = gM3dClipScratchB[2];
+	i16 n4x = gM3dClipScratchB[3], n4y = gM3dClipScratchB[4], n4z = gM3dClipScratchB[5];
+	i16 n5x = gM3dClipScratchB[6], n5y = gM3dClipScratchB[7], n5z = gM3dClipScratchB[8];
+
+	// Per-plane "positive vertex" sign code (bit0 = X sign, bit1 = Y sign,
+	// bit2 = Z sign of that plane's normal), used to pick which AABB
+	// corner to test in the fine pass below.
+	i32 sign0 = (n0x < 0 ? 1 : 0) | (n0y < 0 ? 2 : 0) | (n0z < 0 ? 4 : 0);
+	i32 sign1 = (n1x < 0 ? 1 : 0) | (n1y < 0 ? 2 : 0) | (n1z < 0 ? 4 : 0);
+	i32 sign2 = (n2x < 0 ? 1 : 0) | (n2y < 0 ? 2 : 0) | (n2z < 0 ? 4 : 0);
+	i32 sign3 = (n3x < 0 ? 1 : 0) | (n3y < 0 ? 2 : 0) | (n3z < 0 ? 4 : 0);
+	i32 sign4 = (n4x < 0 ? 1 : 0) | (n4y < 0 ? 2 : 0) | (n4z < 0 ? 4 : 0);
+	i32 sign5 = (n5x < 0 ? 1 : 0) | (n5y < 0 ? 2 : 0) | (n5z < 0 ? 4 : 0);
+
+	i32 offX = *gM3dCullSphereOffX << 12;
+	i32 offY = *gM3dCullSphereOffY << 12;
+	i32 offZ = *gM3dCullSphereOffZ << 12;
+
+	for (CItem* pItem = pList; pItem != 0; pItem = pItem->mNextItem)
+	{
+		u16 flags = pItem->mFlags;
+
+		if ((flags & 0x1001) != 0)
+		{
+			pItem->mFlags = flags | 0x8000;
+			continue;
+		}
+
+		i32 dx = (pItem->mPos.vx >> 12) - camX;
+		i32 dy = (pItem->mPos.vy >> 12) - camY;
+		i32 dz = (pItem->mPos.vz >> 12) - camZ;
+
+		if (my_abs(dx) > 0x7FFF || my_abs(dy) > 0x7FFF ||
+			(my_abs(dz) > 0x7FFF && (flags & 0x2000) == 0))
+		{
+			pItem->mFlags = flags | 0x8000;
+			continue;
+		}
+
+		i32 halfDx = dx >> 1;
+		i32 halfDy = dy >> 1;
+		i32 halfDz = dz >> 1;
+
+		SModel* pModel = gM3dRegionModelArray[17 * pItem->mRegion][pItem->mModel];
+		i32 radius = pModel->Radius >> 13;
+
+		i32 curOffX = offX, curOffY = offY, curOffZ = offZ;
+
+		if ((flags & 2) != 0)
+		{
+			// Original recomputes curOffX/Y/Z via an int -> float(*1.0f)
+			// -> int roundtrip (the float constant used, flt_54F048, is
+			// exactly 1.0f -- confirmed by reading its raw bytes,
+			// 0x3F800000). That is a numeric no-op for values in this
+			// range, so it is not reproduced; the x8 radius bump IS real
+			// and is reproduced below.
+			radius *= 8;
+		}
+
+		if ((flags & 0x200) != 0)
+		{
+			// See the function-header comment: these 3 bytes are not one
+			// coherent field under the current CItem layout.
+			i16 const* pRaw = (i16 const*)((u8*)pItem + 0x18);
+			i32 a = my_abs(pRaw[0]);
+			i32 b = my_abs(pRaw[1]);
+			i32 c = my_abs(pRaw[2]);
+			i32 maxAbs = (a >= b) ? ((a >= c) ? a : c) : ((b >= c) ? b : c);
+			if (maxAbs >= 4096 || (a != 0 && b != 0 && c != 0))
+				radius = (radius * maxAbs) >> 12;
+		}
+
+		i32 negRadius4096 = -4096 * radius;
+
+		bool sphereVisible =
+			(((flags & 0x2000) != 0) || (n0x * halfDx + n0y * halfDy + n0z * halfDz + curOffX >= negRadius4096)) &&
+			(n1x * halfDx + n1y * halfDy + n1z * halfDz + curOffY >= negRadius4096) &&
+			(n2x * halfDx + n2y * halfDy + n2z * halfDz + curOffZ >= negRadius4096) &&
+			(((flags & 0x2000) != 0) || (n3x * halfDx + n3y * halfDy + n3z * halfDz >= negRadius4096)) &&
+			(n4x * halfDx + n4y * halfDy + n4z * halfDz >= negRadius4096) &&
+			(n5x * halfDx + n5y * halfDy + n5z * halfDz >= negRadius4096);
+
+		if (!sphereVisible)
+		{
+			pItem->mFlags = flags | 0x8000;
+			continue;
+		}
+
+		// No local rotation and no override flags set: trust the sphere
+		// result, skip the fine AABB test.
+		if (pItem->mAngles.vx != 0 || pItem->mAngles.vy != 0 || pItem->mAngles.vz != 0 ||
+			(flags & 0x202) != 0)
+		{
+			pItem->mFlags = flags & 0x7FFF;
+			continue;
+		}
+
+		i32 boxLoX = (i32)(i16)pModel->Box.vx, boxHiX = pModel->Box.vx >> 16;
+		i32 boxLoY = (i32)(i16)pModel->Box.vy, boxHiY = pModel->Box.vy >> 16;
+		i32 boxLoZ = (i32)(i16)pModel->Box.vz, boxHiZ = pModel->Box.vz >> 16;
+
+		i32 cornerX[2] = { (dx + boxLoX) >> 1, (dx + boxHiX) >> 1 };
+		i32 cornerY[2] = { (dy + boxLoY) >> 1, (dy + boxHiY) >> 1 };
+		i32 cornerZ[2] = { (dz + boxLoZ) >> 1, (dz + boxHiZ) >> 1 };
+
+		bool skipPlane0 = (*gM3dCornerTestBypass != 0) || ((flags & 0x2000) != 0);
+		bool boxVisible =
+			(skipPlane0 || (n0x * cornerX[sign0 & 1] + n0y * cornerY[(sign0 >> 1) & 1] + n0z * cornerZ[(sign0 >> 2) & 1] + curOffX >= 0)) &&
+			(n1x * cornerX[sign1 & 1] + n1y * cornerY[(sign1 >> 1) & 1] + n1z * cornerZ[(sign1 >> 2) & 1] + curOffY >= 0) &&
+			(n2x * cornerX[sign2 & 1] + n2y * cornerY[(sign2 >> 1) & 1] + n2z * cornerZ[(sign2 >> 2) & 1] + curOffZ >= 0) &&
+			(((flags & 0x2000) != 0) || (n3x * cornerX[sign3 & 1] + n3y * cornerY[(sign3 >> 1) & 1] + n3z * cornerZ[(sign3 >> 2) & 1] >= 0)) &&
+			(n4x * cornerX[sign4 & 1] + n4y * cornerY[(sign4 >> 1) & 1] + n4z * cornerZ[(sign4 >> 2) & 1] >= 0) &&
+			(n5x * cornerX[sign5 & 1] + n5y * cornerY[(sign5 >> 1) & 1] + n5z * cornerZ[(sign5 >> 2) & 1] >= 0);
+
+		pItem->mFlags = boxVisible ? (flags & 0x7FFF) : (flags | 0x8000);
+	}
+}
+
 typedef void (*M3d_Render_fn)(void*);
 
 // @BIGTODO
@@ -247,18 +527,19 @@ typedef void (*M3d_Render_fn)(void*);
 //      sub_46DDF0 = gte_rtv0 (already @Ok, ps2funcs.cpp)
 //      sub_46E460 = m3d_ZeroTransVector (already @Ok, ps2funcs.cpp)
 //      sub_475FB0 = M3d_PreprocessWibblyTextures (already @Ok, this file)
-//    Genuinely still undecompiled: sub_46D7E0/sub_46D810 (small, decompiled
-//    this session: copy 3 precomputed camera-space SVECTORs, written by
-//    M3d_RenderSetup's own gte_stsv loop at 0x628648/0x628620, into a
-//    fixed frustum-plane-normal table at 0x610B40/0x610B60), sub_46E250
-//    (trivial 3-int store into 0x610BF0/F4/F8, a culling-sphere-center
-//    offset), and sub_46FAD0 = M3dAsm_BoundingSpherePreprocessing (large,
-//    ~0x900 bytes: per-item 6-plane view-frustum cull against those
-//    tables, sets/clears CItem::mFlags bit 0x8000 -- decompiled and read
-//    this session but NOT reimplemented, real visibility-culling logic,
-//    wrong math here would make characters invisible or wrongly visible,
-//    too risky for this pass).
-//  - Also still blocking: a per-item colour-tint sub-block (mFlags bit
+//    RESOLVED THIS SESSION: sub_46D7E0/sub_46D810 (copy 3 precomputed
+//    camera-space vectors, written by M3d_RenderSetup's own gte_stsv loop
+//    at 0x628648/0x628620, into a fixed clip-plane-normal scratch table at
+//    0x610B40/0x610B60), sub_46E250 (trivial 3-int store into
+//    0x610BF0/F4/F8, a culling-sphere-center offset), and sub_46FAD0 =
+//    M3dAsm_BoundingSpherePreprocessing (the real per-item 6-plane
+//    view-frustum cull against those tables, sets/clears CItem::mFlags bit
+//    0x8000) are ALL now real, implemented functions above (this file) --
+//    see M3dAsm_BoundingSpherePreprocessing's own comment for the full
+//    evidence. This function does not call them directly (they are called
+//    from inside M3d_Render's own body, still forwarded below), but the
+//    leaf dependency chain is no longer a blocker.
+//  - Still blocking: a per-item colour-tint sub-block (mFlags bit
 //    0x80, then bit 0x400) that gamma-corrects CItem::mRGB/mTRN bytes
 //    through several pow() calls into the same gDCTexAnimColor*/0x660F90
 //    override-mask globals DCModel_RenderModel already reads, PLUS a
@@ -268,14 +549,12 @@ typedef void (*M3d_Render_fn)(void*);
 //    pattern CLAUDE.md documents happening on other GTE/PSX code in this
 //    codebase) -- reconstructing that block safely needs raw disasm, not
 //    the pseudocode, which this pass did not have time to do.
-// Net effect: the false "extend CSuper" blocker from the previous session
-// does not apply here either, and most named leaves turned out to already
-// exist; the real remaining blocker is M3dAsm_BoundingSpherePreprocessing
-// (frustum culling, real behavioural risk) plus the corrupted-decompile
-// rotation/tint blocks. Whoever picks this up next: decompile
-// M3dAsm_BoundingSpherePreprocessing (and its two small feeder functions)
-// first since it is a true leaf with no further dependencies, then
-// hand-disassemble (not Hex-Rays) the rotation/tint blocks before
+// Net effect: the false "extend CSuper" blocker from an earlier session
+// does not apply here, and the whole leaf-function list (including the
+// bounding-sphere cull that used to be the last unresolved leaf) is now
+// real code. The only remaining blocker for this function itself is the
+// corrupted-decompile colour-tint/rotation block above -- whoever picks
+// this up next should hand-disassemble (not Hex-Rays) that block before
 // attempting this function's own list-walk shell.
 EXPORT void M3d_Render(void* pList)
 {
