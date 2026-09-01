@@ -537,6 +537,39 @@ class CShellMysterioHeadCircle : public CQuadBit
 // reference to any address inside 0x552AB8..0x552BE8 other than offsets 0x0..0x14),
 // but the table does carry data there: an x/y screen position, a menu caption string
 // and a menu option id. Kept as field_* because nothing confirms that reading.
+// 0x00553D18, 27 entries of 0x44 bytes each (the table ends at 0x00554444, which is exactly
+// where Shell_CharacterViewer's own loop bounds stop). One row per character-viewer entry.
+// Field purposes come from the two consumers: Shell_CharacterViewer (0x004962D0) reads every
+// field, and Shell_DoShell (0x004A1B44) is the only writer, filling Description at runtime
+// (it is 0 in the image, like the costume viewer's description table).
+struct SCharacterEntry
+{
+	// menu label, e.g. "spider-man"
+	char* Name;
+	// CDummy model name, e.g. "spidey". Empty string means the entry cannot be selected.
+	char* ModelName;
+	// CItem mType of the preview model, also the CDummy constructor's second argument
+	i32 Type;
+	// description text block, filled in at runtime by Shell_DoShell
+	char* Description;
+	// starting camera distance, and the clamp/step used by the zoom in/out triggers
+	i32 Zoom;
+	i32 MinZoom;
+	i32 MaxZoom;
+	i32 ZoomStep;
+	// the remaining CDummy constructor arguments (4, 5 and 6 through 12); the third
+	// argument, the scale, is the constant 4096 at both call sites
+	i32 PosY;
+	i32 DefaultAnim;
+	u16* TrackA;
+	u16* TrackB;
+	u16* TrackC;
+	u16* TrackD;
+	u16* TrackE;
+	i32 CtorA12;
+	i32 CtorA13;
+};
+
 struct SpideyIconRelated
 {
 	char *Name;
@@ -782,6 +815,7 @@ void validate_CShellSimbyMeltSplat(void);
 void validate_CShellSimbyFireDeath(void);
 void validate_CShellGoldFish(void);
 void validate_CShellMysterioHeadCircle(void);
+void validate_SCharacterEntry(void);
 void validate_SpideyIconRelated(void);
 void validate_SSaveGame(void);
 void validate_SScore(void);

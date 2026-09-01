@@ -34,6 +34,7 @@
 #include "dcfileio.h"
 #include "DXinit.h"
 #include "scorpion.h"
+#include "bullet.h"
 
 #include <cstring>
 
@@ -203,48 +204,6 @@ INLINE u32 Shell_CalculateGameChecksum(SSaveGame* pSave)
 	}
 
 	return checksum | 1;
-}
-
-// Re-investigated this session (address confirmed real: 0x4962D0, 3497
-// bytes, names.json). Called from Shell_DoShell's (0x4A1A80) "Special" menu
-// dispatch (case 7, via sub_49CCB0's menu-code loop, code 8). Left as a
-// stub: its own callees are mostly unnamed (sub_ addresses not in
-// names.json), and Shell_DoShell itself (the only caller) is a huge state
-// machine with ~15 more undecompiled callees of its own (see the Shell_
-// DoShell stub below), so decompiling this in isolation would not be
-// runtime-verifiable or even really leaf-first yet. Bigger than one
-// session's budget alongside the rest of this file's TODOs.
-// Confirmed 2026-08-31 via IDA callees(): this calls CheckForPadUnplugged
-// directly, so it is also blocked on that function's sub_460080 base-class
-// finding (see the long comment above CheckForPadUnplugged).
-// Update 2026-08-31, later same day: CheckForPadUnplugged (and its
-// CDropDownController widget, and the sub_460080/sub_460720 base-class
-// mystery) are all done now (real code, functional decompile session,
-// see shell.h/CDropDownController and bit2.h/CKnottedWeb). Re-ran
-// callees() on this function: every callee is a real name now except one
-// still-unnamed local helper (sub_495970) and CDummy_ctor (sub_490DF0,
-// the 3D preview-model constructor also used by Shell_MainMenu/
-// Shell_RollCredits/Shell_CostumeViewer, ~1840 bytes, its own BIGTODO,
-// not attempted this session). This is genuinely tractable once
-// sub_490DF0 and sub_495970 are done; the Shell_DoShell dispatcher issue
-// noted above is a separate, later concern (this function itself does
-// not need Shell_DoShell to exist first).
-// Update 2026-08-31, dedicated CDummy_ctor session: sub_490DF0 (CDummy::CDummy) is done now,
-// see shell.h/CDummy and CDummy::CDummy above. Re-decompiled this function in full to check
-// whether it was now tractable: it is genuinely 3497 bytes / 504 instructions / 95 basic blocks
-// with 45 distinct callees, only one of which (sub_495970) still lacks a name -- the other ~44
-// are ALL real functions, but the large majority (sub_43F9B0 the model-preview widget this
-// screen wraps around, sub_47AE80/sub_47AF10 a popup dialog, sub_505E00/sub_5064A0 HUD text
-// rows, sub_509D20/sub_50C470/sub_506160 background/scene setup, sub_50C180/sub_50C6C0/
-// sub_440110 input+trigger handling, sub_472DC0/sub_46E730/sub_46CFA0 a camera-lerp helper
-// chain, sub_4739A0/sub_476790/sub_475FB0 object-list kill/cleanup, plus a dozen more) are
-// themselves still undecompiled stubs in this repo. This is not a quick follow-up: it needs its
-// own dedicated leaf-first session working that ~44-function callee list bottom-up, the same way
-// CDummy_ctor needed one. Left as a stub rather than force a partial/guessed translation.
-// @MEDIUMTODO
-void Shell_CharacterViewer(void)
-{
-	printf("void Shell_CharacterViewer");
 }
 
 // @Ok
@@ -2191,6 +2150,518 @@ denied:
 	gsub_430680();
 	if (!gPrintStubbed)
 		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+
+	if (pMenu != 0)
+		delete pMenu;
+	if (pDescBox != 0)
+		delete pDescBox;
+	if (pDummy != 0)
+		delete pDummy;
+
+	Init_KillAll();
+	PShell_NormalFont();
+}
+
+// @Ok
+// The per-frame AI pass over one CItem list, as it is inlined into Shell_CharacterViewer
+// (0x00496C7D and 0x00496D37). An item flagged 0x40 is on its way out: the first frame only
+// sets 0x80, the next one deletes it. Everything else gets its interleaved AI step.
+INLINE void CallAI(CBody *pList)
+{
+	CBody* pCur = pList;
+	if (pCur)
+	{
+		for (
+				CBody *pNext = reinterpret_cast<CBody*>(pCur->mNextItem);
+				;
+				pNext = reinterpret_cast<CBody*>(pNext->mNextItem))
+		{
+			if (pCur->mCBodyFlags & 0x40)
+			{
+				if (pCur->mCBodyFlags & 0x80)
+				{
+					delete pCur;
+				}
+				else
+				{
+					pCur->mCBodyFlags |= 0x80;
+				}
+			}
+			else
+			{
+				pCur->InterleaveAI();
+			}
+
+			pCur = pNext;
+			if (!pNext)
+				break;
+		}
+	}
+}
+
+// 0x00553D18: the character viewer's table, 27 rows. It stays in game memory because
+// Shell_DoShell fills the Description pointers there at runtime.
+static SCharacterEntry * const gCharacters = (SCharacterEntry*)0x00553D18;
+static const i32 NUM_CHARACTERS = 27;
+
+// Pointer slots in game memory holding the on-screen control hints. The English image has
+// "rotate" (0x0054C96C), "zoom in" (0x0054C964) and "zoom out" (0x0054C958) in them.
+static char ** const gShellStrRotate = (char**)0x0054B918;
+static char ** const gShellStrZoomIn = (char**)0x0054B91C;
+static char ** const gShellStrZoomOut = (char**)0x0054B920;
+// "character viewer" (0x0054BCB8) and the locked-entry label "? ? ? ?" (0x0054BF98).
+static char ** const gShellStrCharacterViewer = (char**)0x0054BB98;
+static char ** const gShellStrLockedCharacter = (char**)0x0054BAA4;
+
+// The two render-distance floats this screen saves on entry and restores on exit. Same two
+// addresses ps2m3d.cpp calls gM3dSuperScaleDist and bit.cpp calls gGlowNearThreshold; they are
+// duplicated here because those are file-local statics in files this change does not own.
+// Whoever owns ps2m3d.h should hoist them into one shared declaration.
+static f32 * const gShellSuperScaleDist = (f32*)0x0055009C;
+static f32 * const gShellGlowNearThreshold = (f32*)0x00547E3C;
+
+// 0x0060D004, named JoelJewtCheatCode in the maintainer's IDB. Nonzero unlocks the
+// "j james jewett" row (bit 26) of the character list.
+static i32 * const gJoelJewtCheatCode = (i32*)0x0060D004;
+
+// @Ok
+// 0x4962D0, 3497 bytes. The Special menu's character viewer: a scrolling list of the 27
+// characters on the left, the selected one previewed as a spinning CDummy in the middle and its
+// description in an expanding box on the right. Reached from Shell_DoShell's Special dispatch.
+// The layout mirrors Shell_CostumeViewer above; the differences are the per-character table
+// (gCharacters), the per-mType extra render work in the switch, and the fact that picking a new
+// character tears the CDummy down and builds a new one three frames later.
+void Shell_CharacterViewer(void)
+{
+	print_if_false(gShellInitialized != 0, "Called Shell_CharacterViewer() without shell initialised");
+
+	// both are restored on the way out, and by the switch below for every character except
+	// Mysterio, who needs a much bigger draw distance for his head effect
+	f32 savedSuperScaleDist = *gShellSuperScaleDist;
+	f32 savedGlowNearThreshold = *gShellGlowNearThreshold;
+
+	// the Joel Jewett cheat toggles the last row of the list on and off
+	if (*gJoelJewtCheatCode != 0)
+		gSaveGame.field_84 |= 0x4000000;
+	else
+		gSaveGame.field_84 &= ~0x4000000;
+
+	Mess_SetScale(256);
+	Mess_SetCurrentFont("sp_fnt03.fnt");
+
+	CMenu* pMenu = new CMenu(40, 72, 1, 192, 192, 9);
+	pMenu->scrollbar_one = 1;
+	pMenu->field_1B = 12;
+	pMenu->scrollbar_zero = 0;
+
+	for (i32 i = 0; i < NUM_CHARACTERS; i++)
+	{
+		if (gSaveGame.field_84 & (1 << i))
+		{
+			pMenu->AddEntry(gCharacters[i].Name);
+			pMenu->mEntry[pMenu->mNumLines - 1].unk_c = 0x69;
+			pMenu->mEntry[pMenu->mNumLines - 1].unk_d = 0x69;
+			pMenu->mEntry[pMenu->mNumLines - 1].unk_e = 0;
+		}
+		else if ((1 << i) != 0x4000000 && (1 << i) != 0x2000000)
+		{
+			// the two hidden rows stay out of the list entirely instead of showing as locked
+			pMenu->AddEntry(*gShellStrLockedCharacter);
+			pMenu->SetRedText(pMenu->mNumLines - 1);
+		}
+	}
+
+	pMenu->NonGouraud();
+	pMenu->Zoom(2);
+
+	i32 transition = 0;
+	i32 descPage = 0;
+	i32 colorCycle = 2;
+	i32 colorVal = 2;
+	i32 titleScrollX = 0;
+	i32 boxDelay = 5;
+	CExpandingBox* pDescBox = 0;
+	CDummy* pDummy = 0;
+	i32 charIndex = 0;
+
+	// the screen always opens on Spider-Man, found by his mType rather than by name
+	for (i32 c = 0; c < NUM_CHARACTERS; c++)
+	{
+		if (gCharacters[c].Type == 50)
+		{
+			pDummy = new CDummy(gCharacters[c].ModelName,
+					static_cast<i16>(gCharacters[c].Type), 4096,
+					gCharacters[c].PosY, gCharacters[c].DefaultAnim,
+					gCharacters[c].TrackA, gCharacters[c].TrackB, gCharacters[c].TrackC,
+					gCharacters[c].TrackD, gCharacters[c].TrackE,
+					gCharacters[c].CtorA12, gCharacters[c].CtorA13);
+			pDummy->field_1D8 = 1;
+			charIndex = c;
+			break;
+		}
+	}
+
+	print_if_false(pDummy != 0, "No Spiderman in Character[] array");
+
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	i32 zoom = gCharacters[charIndex].Zoom;
+
+	*(i32*)0x005512EC = 384;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 startVblanks = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1, -1);
+
+		Mess_SetSort(4095);
+
+		if (pMenu->FinishedZooming())
+		{
+			Mess_SetScale(256);
+			Mess_SetCurrentFont("sp_fnt03.fnt");
+			Mess_SetRGB(0x64, 0x64, 0x64, 0);
+			Mess_SetRGBBottom(0x64, 0x64, 0x64);
+			Mess_SetShadowRGB(0xFF);
+			Mess_SetTextJustify(1);
+			Mess_DrawText(75, 194, *gShellStrRotate, 0, 0x1000);
+			Mess_DrawText(75, 211, *gShellStrZoomIn, 0, 0x1000);
+			Mess_DrawText(75, 228, *gShellStrZoomOut, 0, 0x1000);
+			PCGfx_DrawTexture2D(gPcIcons[0], 17, 181, 1.0f, 0xFF808080, 8, -3.0f);
+			PCGfx_DrawTexture2D(gPcIcons[1], 45, 181, 1.0f, 0xFF808080, 8, -3.0f);
+			PCGfx_DrawTexture2D(gPcIcons[3], 45, 198, 1.0f, 0xFF808080, 8, -3.0f);
+			PCGfx_DrawTexture2D(gPcIcons[4], 45, 215, 1.0f, 0xFF808080, 8, -3.0f);
+		}
+
+		Mess_SetScale(256);
+		Mess_SetCurrentFont("sp_fnt03.fnt");
+		pMenu->Display();
+
+		if (transition == 0)
+		{
+			M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+			TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+			M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+
+			// the Human Torch's flames are a wibbly-texture effect
+			if (pDummy->mType == 704)
+				M3d_PreprocessWibblyTextures(pDummy->mRegion);
+
+			M3d_Render(pDummy);
+
+			switch (pDummy->mType)
+			{
+				case 308:
+				case 309:
+					// Doc Ock and monster-Ock carry their four tentacles as separate items
+					if (pDummy->field_214[0] != 0)
+						M3d_Render(pDummy->field_214[0]);
+					if (pDummy->field_214[1] != 0)
+						M3d_Render(pDummy->field_214[1]);
+					if (pDummy->field_214[2] != 0)
+						M3d_Render(pDummy->field_214[2]);
+					if (pDummy->field_214[3] != 0)
+						M3d_Render(pDummy->field_214[3]);
+					break;
+
+				case 310:
+					// the Scorpion's tail geometry is rebuilt and drawn every frame
+					pDummy->TailRenderer();
+					break;
+
+				case 311:
+					// Mysterio's head glow reaches far past the model
+					*gShellGlowNearThreshold = 3850.0f;
+					*gShellSuperScaleDist = 3850.0f;
+					break;
+
+				case 313:
+					break;
+
+				case 324:
+					// the symbiote costume animates both its textures and its palette
+					if (pDummy->field_1EC != -1)
+					{
+						M3d_PreprocessWibblyTextures(pDummy->field_1EC);
+						M3d_PreprocessPulsingColours(pDummy->field_1EC);
+					}
+					break;
+
+				default:
+					*gShellSuperScaleDist = savedSuperScaleDist;
+					*gShellGlowNearThreshold = savedGlowNearThreshold;
+					break;
+			}
+
+			M3d_Render(BulletList);
+			M3d_Render(MiscList);
+			M3d_RenderCleanup();
+			Bit_Display();
+		}
+
+		if (pDescBox != 0)
+		{
+			if (pDescBox->field_30 != 0 && gCharacters[charIndex].Description != 0)
+			{
+				Mess_SetTextJustify(1);
+				Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+				Mess_SetRGBBottom(0x45, 0x3C, 0x6B);
+
+				char* pDesc = gCharacters[charIndex].Description;
+				i32 lineCount = 0;
+				i32 y = 70;
+
+				// one more line of the description appears every other frame, and the newest
+				// line is drawn white for a frame or two
+				if (colorCycle != 0 && --colorCycle == 0)
+				{
+					++descPage;
+					colorCycle = 2;
+					colorVal = 1;
+				}
+				else if (colorVal != 0)
+				{
+					--colorVal;
+				}
+
+				for (;;)
+				{
+					i8 c = static_cast<i8>(*pDesc);
+
+					if (c == 1)
+						break;
+					if (c == -1)
+						break;
+					if (static_cast<u32>(lineCount) >= static_cast<u32>(descPage))
+						break;
+
+					if (c == 2)
+					{
+						Mess_SetRGB(static_cast<u8>(pDesc[1]), static_cast<u8>(pDesc[2]),
+								static_cast<u8>(pDesc[3]), 0);
+						pDesc += 4;
+					}
+					else
+					{
+						if (colorVal != 0 && lineCount == descPage - 1)
+							Mess_SetRGB(0xFF, 0xFF, 0xFF, 0);
+
+						Mess_DrawText(320, y, pDesc, 0, 0x1000);
+						y += 10;
+
+						char first = *pDesc;
+						++pDesc;
+						if (first != 0)
+						{
+							while (*pDesc != 0)
+								++pDesc;
+							++pDesc;
+						}
+
+						++lineCount;
+					}
+				}
+			}
+
+			pDescBox->Display();
+		}
+
+		Shell_DrawTitleBar(titleScrollX, 38, *gShellStrCharacterViewer, 1, 0, 150, -21, 29);
+
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		titleScrollX = PShell_MoveTowards(titleScrollX, 160);
+
+		if (boxDelay != 0 && --boxDelay == 0)
+		{
+			pDescBox = new CExpandingBox(315, 58, 177, 117, 0, 0, 30, 15, 0);
+		}
+
+		// three frames after a new character is picked the old model is thrown away and the
+		// new one built
+		if (transition != 0 && --transition == 0)
+		{
+			if (pDummy != 0)
+				delete pDummy;
+
+			Init_KillAll();
+
+			pDummy = new CDummy(gCharacters[charIndex].ModelName,
+					static_cast<i16>(gCharacters[charIndex].Type), 4096,
+					gCharacters[charIndex].PosY, gCharacters[charIndex].DefaultAnim,
+					gCharacters[charIndex].TrackA, gCharacters[charIndex].TrackB,
+					gCharacters[charIndex].TrackC, gCharacters[charIndex].TrackD,
+					gCharacters[charIndex].TrackE,
+					gCharacters[charIndex].CtorA12, gCharacters[charIndex].CtorA13);
+			pDummy->field_1D8 = 1;
+
+			zoom = gCharacters[charIndex].Zoom;
+
+			gMikeCamera[0].Position.vx = 0;
+			gMikeCamera[0].Position.vy = 0;
+			gMikeCamera[0].Position.vz = 0;
+			gMikeCamera[0].Angles.vx = 0;
+			gMikeCamera[0].Angles.vy = 0;
+			gMikeCamera[0].Angles.vz = 0;
+			gMikeCamera[0].Style = 0;
+		}
+
+		Mess_Update();
+
+		if (pMenu->mLine > 0x28)
+			Pad_ClearTriggers(G_SCONTROL);
+		Pad_Update();
+		if (*(i32*)0x0054D38C != 0)
+			return;
+		CheckForPadUnplugged();
+
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+			break;
+
+		Mess_SetScale(256);
+		Mess_SetCurrentFont("sp_fnt03.fnt");
+		pMenu->Update();
+
+		i32 mouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			const char* pName = pMenu->mEntry[pMenu->mLine].name;
+			u8 just = pMenu->mJustification;
+			i32 ex, ey;
+			pMenu->GetEntryXY(pName, &ex, &ey);
+			mouseOverText = PCSHELL_IsMouseOverText(pName, ex, ey, just);
+		}
+
+		if (pMenu->mLine < 0x28 && (mouseOverText || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+
+			const char* pPicked = pMenu->mEntry[pMenu->mLine].name;
+
+			i32 idx = 0;
+			while (!Utils_CompareStrings(gCharacters[idx].Name, pPicked))
+			{
+				++idx;
+				if (idx >= NUM_CHARACTERS)
+					goto denied;
+			}
+
+			// idx can never be -1 out of the loop above, but the original still tests for it
+			if (idx == -1 || !(gSaveGame.field_84 & (1 << idx))
+					|| *gCharacters[idx].ModelName == 0)
+			{
+denied:
+				SFX_Play(0x1B, 0x2000, 0);
+			}
+			else if (gCharacters[idx].Type != pDummy->mType)
+			{
+				transition = 3;
+				charIndex = idx;
+				descPage = 0;
+				colorCycle = 2;
+				colorVal = 2;
+				SFX_Play(0x1F, 0x2000, 0);
+			}
+		}
+
+		pDummy->AI();
+
+		CallAI(BulletList);
+		CallAI(MiscList);
+
+		Bit_Move();
+		Bit_RemoveDeadBits();
+
+		if (PCSHELL_CheckTriggers(0x100000, 0, 0))
+			zoom -= gCharacters[charIndex].ZoomStep;
+		if (PCSHELL_CheckTriggers(0x200000, 0, 0))
+			zoom += gCharacters[charIndex].ZoomStep;
+
+		if (zoom < gCharacters[charIndex].MinZoom)
+			zoom = gCharacters[charIndex].MinZoom;
+		if (zoom > gCharacters[charIndex].MaxZoom)
+			zoom = gCharacters[charIndex].MaxZoom;
+
+		i32 rot = gMikeCamera[0].Angles.vy;
+		if (PCSHELL_CheckTriggers(16388, 0, 0))
+		{
+			rot = (gMikeCamera[0].Angles.vy - 64) & 0xFFF;
+			gMikeCamera[0].Angles.vy = static_cast<i16>(rot);
+		}
+		else if (PCSHELL_CheckTriggers(32776, 0, 0))
+		{
+			rot = (gMikeCamera[0].Angles.vy + 64) & 0xFFF;
+			gMikeCamera[0].Angles.vy = static_cast<i16>(rot);
+		}
+		rot &= 0xFFF;
+
+		gMikeCamera[0].Position.vx = -(zoom * rcossin_tbl[rot].sin) >> 12;
+		gMikeCamera[0].Position.vz = -(zoom * rcossin_tbl[rot].cos) >> 12;
+
+		if (Vblanks == startVblanks)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
+
+	G_SCONTROL[0].Circle.Triggered = 0;
+	SFX_Play(0x23, 0x2000, 0);
+
+	*gShellSuperScaleDist = savedSuperScaleDist;
+	*gShellGlowNearThreshold = savedGlowNearThreshold;
+
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+
+	// two more background-only frames so the model is gone before the screen hands over
+	for (i32 f = 0; f < 2; f++)
+	{
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+		gsub_430680();
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+	}
+
 	Pad_ClearTriggers(G_SCONTROL);
 
 	if (pMenu != 0)
@@ -7482,35 +7953,6 @@ void CShellPreviewIcon::AI(void)
 	}
 }
 
-// @Ok
-INLINE void CallAI(CBody *pList)
-{
-	CBody* pCur = pList;
-	if (pCur)
-	{
-		for (
-				CBody *pNext = reinterpret_cast<CBody*>(pCur->mNextItem);
-				;
-				pNext = reinterpret_cast<CBody*>(pNext->mNextItem))
-		{
-			if (pCur->mCBodyFlags & 0x40)
-			{
-				if (pCur->mCBodyFlags & 0x80)
-				{
-					delete pCur;
-				}
-			}
-			else
-			{
-				pCur->InterleaveAI();
-			}
-
-			pCur = pNext;
-			if (!pNext)
-				break;
-		}
-	}
-}
 
 // @Ok
 void CShellMysterioHeadCircle::Move(void)
@@ -9436,6 +9878,29 @@ void validate_CShellMysterioHeadCircle(void)
 	VALIDATE(CShellMysterioHeadCircle, field_90, 0x90);
 }
 
+void validate_SCharacterEntry(void)
+{
+	VALIDATE_SIZE(SCharacterEntry, 0x44);
+
+	VALIDATE(SCharacterEntry, Name, 0x0);
+	VALIDATE(SCharacterEntry, ModelName, 0x4);
+	VALIDATE(SCharacterEntry, Type, 0x8);
+	VALIDATE(SCharacterEntry, Description, 0xC);
+	VALIDATE(SCharacterEntry, Zoom, 0x10);
+	VALIDATE(SCharacterEntry, MinZoom, 0x14);
+	VALIDATE(SCharacterEntry, MaxZoom, 0x18);
+	VALIDATE(SCharacterEntry, ZoomStep, 0x1C);
+	VALIDATE(SCharacterEntry, PosY, 0x20);
+	VALIDATE(SCharacterEntry, DefaultAnim, 0x24);
+	VALIDATE(SCharacterEntry, TrackA, 0x28);
+	VALIDATE(SCharacterEntry, TrackB, 0x2C);
+	VALIDATE(SCharacterEntry, TrackC, 0x30);
+	VALIDATE(SCharacterEntry, TrackD, 0x34);
+	VALIDATE(SCharacterEntry, TrackE, 0x38);
+	VALIDATE(SCharacterEntry, CtorA12, 0x3C);
+	VALIDATE(SCharacterEntry, CtorA13, 0x40);
+}
+
 void validate_SpideyIconRelated(void)
 {
 	VALIDATE_SIZE(SpideyIconRelated, 0x28);
@@ -9450,6 +9915,10 @@ void validate_SpideyIconRelated(void)
 	VALIDATE(SpideyIconRelated, field_1C, 0x1C);
 	VALIDATE(SpideyIconRelated, field_20, 0x20);
 	VALIDATE(SpideyIconRelated, field_24, 0x24);
+
+	// main.cpp owns the list of validators to run and is not ours to edit, so the character
+	// table's check rides along with the other shell.cpp table here.
+	validate_SCharacterEntry();
 }
 
 void validate_SSaveGame(void)
