@@ -11,6 +11,7 @@
 #include "m3dzone.h"
 #include "powerup.h"
 #include "reloc.h"
+#include "switch.h"
 #include "ps2m3d.h"
 #include "mem.h"
 #include "ob.h"
@@ -920,7 +921,7 @@ void SpideyAI0(CPlayer *pPlayer)
 	// original's `jmp def_4B215D`, the shared tail at 0x4B6E8C, which is not
 	// ported yet.
 	// -----------------------------------------------------------------------
-	switch (pPlayer->field_E1C)
+	switch ((u32)pPlayer->field_E1C)
 	{
 		// 0x4B2164. Standing still: the idle/lean animations, the idle
 		// Redbook track, and the idle web-shot at the ceiling.
@@ -1609,10 +1610,275 @@ void SpideyAI0(CPlayer *pPlayer)
 			break;
 		}
 
-		default:
-			if (pPlayer->field_E1C > 0x10000)
+		// 0x4B50F1. The end of a scripted "stand up here" move: teleport to
+		// hook 2 and face the stored normal.
+		case 0x80000:
+		{
+			CVector hook;
+			CVector up;
+
+			pPlayer->field_EA6 = 0;
+			if (pPlayer->mAnimFinished == 0) break;
+
+			pPlayer->field_AD4 = 1;
+
+			hook.vx = 0;
+			hook.vy = 0;
+			hook.vz = 0;
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hook), pPlayer, 2);
+			pPlayer->mPos = hook;
+
+			pPlayer->field_AC8.vx = 0;
+			pPlayer->field_AC8.vy = 0x1000;
+			pPlayer->field_AC8.vz = 0;
+
+			// 0xB84: the CSVector angles the scripted move ends on.
+			pPlayer->field_A8.vx = PLR_I16(pPlayer, 0xB84);
+			pPlayer->field_A8.vy = PLR_I16(pPlayer, 0xB86);
+			pPlayer->field_A8.vz = PLR_I16(pPlayer, 0xB88);
+
+			up.vx = 0;
+			up.vy = 0x1000;
+			up.vz = 0;
+			pPlayer->OrientToNormal(true, &up);
+			pPlayer->LockTargetTorsoAngle();
+			pPlayer->SwitchToStandMode();
+			break;
+		}
+
+		// 0x4B5CFE. Reaching down for a pickup.
+		case 0x100000:
+		{
+			u16 anim;
+			CManipOb *pObject;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->mAnimFinished != 0)
 			{
-				// 0x4B50AE, 1936 instructions. Not ported yet.
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (pPlayer->mHeldObject != 0) break;
+
+			anim = pPlayer->mAnim;
+			if (anim == 0)
+			{
+				// 0x4B6597
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (!((anim == 0xC4 && pPlayer->mFrame >= 0xA)
+				|| (anim == 0xBE && pPlayer->mFrame >= 0xA)))
+			{
+				break;
+			}
+
+			// 0xE4C: SHandle of the object the reach was started for.
+			pObject = reinterpret_cast<CManipOb*>(Mem_RecoverPointer(
+				reinterpret_cast<SHandle*>(reinterpret_cast<char*>(pPlayer) + 0xE4C)));
+			if (pObject == 0) break;
+
+			if (Utils_CrapDist(pPlayer->mPos, pObject->mPos) >= 0x300) break;
+
+			pPlayer->mHeldObject = pObject;
+			pObject->Pickup();
+			SFX_Play(7, 0x2000, 0);
+			break;
+		}
+
+		// 0x4B5F4D. Rolling: the roll angle is driven straight off the frame
+		// number, so the player spins exactly once over the animation.
+		case 0x400000:
+		{
+			i32 frame;
+
+			if (pPlayer->CheckGroundGone() != 0) break;
+
+			pPlayer->mAnimSpeed = 0x20000;
+
+			if ((u16)animJustFinished != 0xFFFF)
+			{
+				u8 *pAnimEntry;
+				i32 numFrames;
+
+				frame = pPlayer->mFrame;
+				if (pPlayer->CheckJump() == 0) break;
+
+				// Animations[region * 17] (export.h) is really
+				// gCostumeRegionEntries[region * 17 + 2]; +0x100 is the
+				// animation's frame count.
+				pAnimEntry = reinterpret_cast<u8*>(Animations[(i32)pPlayer->mRegion * 17]);
+				numFrames = *reinterpret_cast<i32*>(pAnimEntry + 0x100);
+
+				pPlayer->field_548 = (i32)((u32)(frame << 11) / (u32)(numFrames - 1));
+				pPlayer->OrientToNormal(false, &ZeroVector);
+				pPlayer->field_548 = 0;
+				break;
+			}
+
+			pPlayer->field_548 = 0x800;
+			pPlayer->OrientToNormal(false, &ZeroVector);
+			pPlayer->field_548 = 0;
+
+			if (pPlayer->CheckJump() != 0) break;
+
+			if ((u8)(pPlayer->field_E2E | pPlayer->field_E2D) == 0)
+			{
+				// 0x4B682F
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			// 0x4B6010
+			pPlayer->field_E1C = 0x10;
+			break;
+		}
+
+		// 0x4B5DDB. Knocked down / getting back up.
+		case 0x800000:
+		{
+			u16 lastAnim = (u16)animJustFinished;
+			u16 anim;
+
+			pPlayer->field_EA6 = 0;
+
+			// 0x54E: the flail-drop chain is running.
+			if (PLR_U8(pPlayer, 0x54E) != 0)
+			{
+				if (lastAnim == 0xAF)
+				{
+					pPlayer->PlaySingleAnim(0xB1, 0, -1);
+				}
+				else if (lastAnim == 0xB1)
+				{
+					pPlayer->field_E1C = 4;
+					PLR_U8(pPlayer, 0x54E) = 0;
+					break;
+				}
+			}
+
+			if (PLR_U16(pPlayer, 0xE8E) > 0x1E0)
+			{
+				gLevelStatus = 8;
+			}
+
+			if (pPlayer->mAnim == 0x11D
+				&& pPlayer->mFrame >= 7
+				&& (u32)(gTimerRelated - pPlayer->field_5B4) > 0x3C)
+			{
+				pPlayer->field_5AC = 5;
+				pPlayer->field_5B0 = 0;
+				pPlayer->field_5B4 = (i32)gTimerRelated;
+				SFX_PlayPos(0x16, &pPlayer->mPos, 0);
+			}
+
+			if (lastAnim == 0xB4 || lastAnim == 0xAE)
+			{
+				pPlayer->field_36C = 0x1E;
+				pPlayer->field_AE5 = 0;
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (lastAnim == 0xAA || lastAnim == 0xBB || lastAnim == 0xB5
+				|| lastAnim == 0x11D)
+			{
+				// 0x4B6597
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			anim = pPlayer->mAnim;
+			if (anim != 0xAF && anim != 0xB0) break;
+			if ((pPlayer->mCollision & 2) == 0) break;
+
+			pPlayer->PlaySingleAnim(0xB2, 0, -1);
+			if (pPlayer->mHealth > 0) break;
+
+			pPlayer->SwitchToDeathMode(false);
+			break;
+		}
+
+		// 0x4B6DD8. Holding a web dome: pop it when the player struggles.
+		case 0x20000000:
+		{
+			u8 *pPad;
+
+			pPlayer->mRMinor = 0x96;
+
+			if ((u16)animJustFinished == 0x11C)
+			{
+				pPlayer->SwitchToStandMode();
+				pPlayer->mRMinor = 0x64;
+				break;
+			}
+
+			if (pPlayer->mAnim == 0x11C) break;
+
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+			if ((u32)(gTimerRelated - pPlayer->field_374) <= 0x96
+				&& pPad[0x120] == 0 && pPad[0x130] == 0 && pPad[0x100] == 0)
+			{
+				break;
+			}
+
+			pPlayer->PlaySingleAnim(0x11C, 0, -1);
+			SFX_PlayPos(0x23, &pPlayer->mPos, 0);
+
+			{
+				CDome *pDome = reinterpret_cast<CDome*>(
+					Mem_RecoverPointer(&pPlayer->field_AB8));
+
+				if (pDome != 0)
+				{
+					pDome->Burst();
+					pPlayer->field_AB8 = Mem_MakeHandle(0);
+				}
+			}
+			break;
+		}
+
+		// 0x4B6DCA
+		case 0x40000000:
+			pPlayer->field_EA6 = 0;
+			break;
+
+		// 0x4B6D81. Pulling a switch.
+		case 0x80000000u:
+		{
+			CSwitch *pSwitch;
+
+			if (pPlayer->field_E20 != 0)
+			{
+				// 0x4B509C
+				if ((u16)animJustFinished != 0xFFFF)
+				{
+					pPlayer->SwitchToStandMode();
+				}
+				break;
+			}
+
+			if (pPlayer->mFrame < 0xC) break;
+
+			// 0xE54: SHandle of the switch being pulled.
+			pSwitch = reinterpret_cast<CSwitch*>(Mem_RecoverPointer(
+				reinterpret_cast<SHandle*>(reinterpret_cast<char*>(pPlayer) + 0xE54)));
+			if (pSwitch != 0)
+			{
+				pSwitch->Flick();
+			}
+
+			pPlayer->field_E20++;
+			break;
+		}
+
+		default:
+			if ((u32)pPlayer->field_E1C > 0x10000)
+			{
+				// 0x4B50AE, remaining sub-states. Not ported yet.
 			}
 			else if (pPlayer->field_E1C == 0x10000)
 			{
@@ -1691,9 +1957,9 @@ void SpideyAI0(CPlayer *pPlayer)
 					pPlayer->SwitchToStandMode();
 				}
 			}
-			else if (pPlayer->field_E1C > 0x100)
+			else if ((u32)pPlayer->field_E1C > 0x100)
 			{
-				// 0x4B307C, 1871 instructions. Not ported yet.
+				// 0x4B307C, sub-states 0x200..0x8000. Not ported yet.
 			}
 			break;
 	}
