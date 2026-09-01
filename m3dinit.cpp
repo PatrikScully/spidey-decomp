@@ -141,8 +141,8 @@ void M3dInit_InitAtStart(void)
 // helper matching either shape). Only the Mac build has them as real symbols
 // (spiderman_names.txt, 0x8e530 and 0x8e650). MSVC6 inlined both into
 // M3dInit_ParsePSX below, matching the repo's documented inlining rule.
-// They stay separate @SMALLTODO stubs (same treatment as the SwapPSX* family
-// in spool.cpp: a real Mac function with no standalone PC address).
+// Both stubs were retagged @NotOk on 2026-09-01: with no PC code to translate they
+// can never reach @Ok, so @SMALLTODO overstated the backlog. See the note above each.
 
 // Scratch buffer for the colour-pulsing packet ids parsed at the top of
 // M3dInit_ParsePSX, passed straight through as DCModel_CreateFromSModel's
@@ -665,13 +665,27 @@ INLINE void M3dInit_SetResolution(u32 X,u32 Y)
 	PixelAspectX = 0x1000;
 }
 
-// @SMALLTODO
+// No code for this exists in the PC binary. Re-verified 2026-09-01 with a fresh IDA
+// decompile of M3dInit_ParsePSX (0x4534A0): the body this function would hold on Mac
+// (allocate 36 bytes per item with syMalloc, store the block in gDCRegionItems[region]
+// and the count in gDCRegionItemCounts[region], then walk every SModel item and call
+// DCModel_CreateFromSModel at 0x431430 for it) sits inlined in ParsePSX, and ParsePSX
+// makes no call to any separate helper of this shape. Only the Mac build has it as a
+// real symbol (spiderman_names.txt, 0x8e650, 296 bytes). Cannot become @Ok.
+// @NotOk
 void alloc_dc_models(i32,i32)
 {
     printf("alloc_dc_models(i32,i32)");
 }
 
-// @SMALLTODO
+// Same situation as alloc_dc_models above. The colour-pulsing packet walk it would
+// hold (check the packet tag is 7, then step the packet list writing each entry id
+// into gPulseColorList and terminating with -1, asserting on "Zero list length" and
+// "More 'Pulse' colors than planned for") is inlined at the top of M3dInit_ParsePSX
+// (0x4534A0), verified 2026-09-01 by IDA decompile: those two assert strings are
+// referenced from inside ParsePSX itself, not from any separate function. Mac only
+// (spiderman_names.txt, 0x8e530, 236 bytes). Cannot become @Ok.
+// @NotOk
 void setup_pulsing_colors(i32)
 {
     printf("setup_pulsing_colors(i32)");

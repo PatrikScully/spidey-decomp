@@ -402,6 +402,104 @@ CChunkSmoke::CChunkSmoke(
 }
 
 // @Ok
+// Functional decompile of 0x439E20 (Mac: CPingLine::CPingLine(CVector const&,
+// CSVector const&, int, int, int, int, int, int)). pDir is a rotation, not a
+// vector: it goes straight into Utils_GetVecFromMagDir, once with velMag to
+// build mVel and once with lengthMag to build the line's end offset. mStart is
+// the raw spawn point, mEnd is that point plus the offset. The start colour is
+// forced to black and only the end colour carries the tint, then bit 25 of
+// mCodeBGR0 is set (the same "gouraud line" code bit CGLine users set
+// elsewhere). The original asserts on a zero fade rate and still stores it.
+CPingLine::CPingLine(CVector* pPos, CSVector* pDir, i32 r, i32 g, i32 b, i32 fadeRate, i32 lengthMag, i32 velMag)
+{
+	Utils_GetVecFromMagDir(&this->mVel, velMag, pDir);
+
+	this->mStart = *pPos;
+
+	Utils_GetVecFromMagDir(&this->mEnd, lengthMag, pDir);
+	this->mEnd += *pPos;
+
+	this->SetRGB0(0, 0, 0);
+	this->SetRGB1(static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b));
+
+	this->mCodeBGR0 |= 0x2000000;
+
+	print_if_false(fadeRate != 0, "Zero FadeRate");
+	this->mFadeRate = static_cast<u8>(fadeRate);
+}
+
+// @Ok
+// Functional decompile of 0x439F20. Same body as the CSVector overload above,
+// except pDir is a real direction vector here, so the two scaled copies come
+// from CVector operator*(const CVector&, const int&) (0x4E77A0) instead of
+// Utils_GetVecFromMagDir. No PC call site for this overload exists yet, it is
+// implemented because the class needs it to be complete.
+CPingLine::CPingLine(CVector* pPos, CVector* pDir, i32 r, i32 g, i32 b, i32 fadeRate, i32 lengthMag, i32 velMag)
+{
+	this->mVel = *pDir * velMag;
+
+	this->mStart = *pPos;
+
+	this->mEnd = *pDir * lengthMag;
+	this->mEnd += *pPos;
+
+	this->SetRGB0(0, 0, 0);
+	this->SetRGB1(static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b));
+
+	this->mCodeBGR0 |= 0x2000000;
+
+	print_if_false(fadeRate != 0, "Zero FadeRate");
+	this->mFadeRate = static_cast<u8>(fadeRate);
+}
+
+// @Ok
+CPingLine::~CPingLine(void)
+{
+}
+
+// @Ok
+// Functional decompile of 0x43A040. Both ends move by mVel, then every channel
+// of the end colour drops by mFadeRate with an unsigned clamp at zero (the
+// original uses jbe, so a fade rate above the channel value gives 0, it does
+// not wrap). The bit dies once the whole colour word is zero.
+void CPingLine::Move(void)
+{
+	this->mStart.vx += this->mVel.vx;
+	this->mStart.vy += this->mVel.vy;
+	this->mStart.vz += this->mVel.vz;
+
+	this->mEnd.vx += this->mVel.vx;
+	this->mEnd.vy += this->mVel.vy;
+	this->mEnd.vz += this->mVel.vz;
+
+	u8 fade = this->mFadeRate;
+
+	u8 low = static_cast<u8>(this->mPadBGR1);
+	u8 mid = static_cast<u8>(this->mPadBGR1 >> 8);
+	u8 high = static_cast<u8>(this->mPadBGR1 >> 16);
+
+	if (fade > low)
+		low = 0;
+	else
+		low -= fade;
+
+	if (fade > mid)
+		mid = 0;
+	else
+		mid -= fade;
+
+	if (fade > high)
+		high = 0;
+	else
+		high -= fade;
+
+	this->mPadBGR1 = (((high << 8) | mid) << 8) | low;
+
+	if (!this->mPadBGR1)
+		this->Die();
+}
+
+// @Ok
 void CFootprint::Move(void)
 {
 	if (this->field_84)
@@ -493,6 +591,37 @@ CFootprint::CFootprint(CVector* pVector, i32 a3)
 	this->mPosD.vz += pVector->vz;
 
 	this->mType = 25;
+}
+
+// @Ok
+// Functional decompile of 0x43A300 (Mac: Effects_FootStomp(CVector const&,
+// ulong)). Throws 20 dust lines out of one spot: each one picks a random
+// heading, spawns 80 units away from pPos along that heading (the trig table
+// entries are read signed, movsx in the original) and flies off at a random
+// speed with a fixed upward pitch of -312. Checksum is the second parameter
+// the PC build never reads, see the note in effects.h.
+void Effects_FootStomp(CVector* pPos, u32 Checksum)
+{
+	CSVector Dir;
+	CVector Spawn;
+
+	Dir.vy = 0;
+	Dir.vx = -312;
+	Dir.vz = 0;
+
+	Spawn.vx = 0;
+	Spawn.vz = 0;
+	Spawn.vy = pPos->vy;
+
+	for (i32 i = 20; i != 0; i--)
+	{
+		Dir.vy = static_cast<i16>(Rnd(4096));
+
+		Spawn.vx = pPos->vx - rcossin_tbl[Dir.vy & 0xFFF].sin * 80;
+		Spawn.vz = pPos->vz - rcossin_tbl[Dir.vy & 0xFFF].cos * 80;
+
+		new CPingLine(&Spawn, &Dir, 0x80, 0x80, 0x80, 0xF, 0xC8, Rnd(50) + 30);
+	}
 }
 
 // @Ok
@@ -1002,6 +1131,13 @@ void validate_CFootprint(void)
 	VALIDATE_SIZE(CFootprint, 0x88);
 
 	VALIDATE(CFootprint, field_84, 0x84);
+}
+
+void validate_CPingLine(void)
+{
+	VALIDATE_SIZE(CPingLine, 0x60);
+
+	VALIDATE(CPingLine, mFadeRate, 0x5C);
 }
 
 void validate_CChunkSmoke(void)

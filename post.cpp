@@ -4,6 +4,8 @@
 #include "m3dinit.h"
 #include "SpideyDX.h"
 #include "db.h"
+#include "panel.h"
+#include "psx_types.h"
 
 EXPORT i32 gWaterEffect;
 EXPORT i32 gPostTimerRelated;
@@ -48,53 +50,202 @@ void Post_PostProcessEffects(void)
 	}
 }
 
-// Investigated 2026-08-31, left as a stub (not tractable in the time
-// available, documenting findings per repo policy rather than guessing).
-// Real PC address found via IDA xrefs on gPaletteProcessingPaused/
-// gPostSpideyLogoRelated/gPostPauseRelated: 0x46A3E0, size 0x8db (2267
-// bytes, matches the Mac prototypes.json size of 2372 for
-// "Post_SpideyLogo(void)" closely enough to be the same function). Not in
-// names.json and no tools/functions/*.bin entry, so there is no ground
-// truth byte blob checked into the repo for it either; this was found
-// straight from the exe.
-// The call site (Post_DoPauseDisplayListProcessing, unnamed in names.json
-// as sub_46ACC0/0x46ACC0, tagged @Ok in this file even though its body is
-// just "if (gPaletteProcessingPaused) Post_SpideyLogo();") already matches
-// byte-for-byte with this printf stub in place, because compare.py masks
-// call targets: "call <stub>" and "call <real function>" look identical at
-// the mnemonic/operand level it checks. That is why the gap was invisible
-// until traced by hand.
-// Why it is hard: the function draws the "SPIDER-MAN" logo lettering as a
-// sequence of individually shaped textured quads, reading per-letter
-// mesh/UV records out of a raw data table (off_54ED9C in the disassembly)
-// with 3 record shapes selected by a leading tag byte (3, 1, 0), plus two
-// small lookup tables (word_54ECBC/word_54ECBE, 512 entries each,
-// apparently a sin/cos-style angle-to-offset table) and a sprintf-style
-// helper (sub_46CB90) that formats each letter's glyph index into a
-// per-quad UV rect. None of this data table format exists anywhere else
-// in the repo (it is not SLineInfo, not POLY_FT4, not an SAnimFrame
-// table); decompiling this function correctly needs the actual byte
-// layout of that table, which is not something IDA's decompiler recovers
-// on its own and is not written down anywhere in this codebase. Guessing
-// a layout risks producing code that "looks plausible" but draws garbage
-// or crashes on the real letter data. Leaving as a stub rather than
-// guessing, per the "don't guess, document and move on" rule.
-// Re-verified 2026-09-01 with a fresh idalib decompile of 0x46A3E0: confirms every
-// finding above field-for-field. The record walk reads a tag byte (3 or 1) off
-// off_54ED9C to pick between a 24-byte record (4 UV pairs, via sub_507910 called
-// twice per record) and a 20-byte record (3 UV pairs), both indexing word_54ECBC/
-// word_54ECBE (angle/offset tables) by a per-vertex byte read out of the same
-// unknown table, and both formatting a per-letter glyph string through sub_46CB90
-// (format string byte_56EB54) before submitting geometry via sub_507910 (a 21-argument
-// draw-primitive call, itself not decompiled anywhere in this repo). None of
-// off_54ED9C's record layout, byte_56EB54's format string content, or sub_507910's
-// role is confirmed anywhere else in the codebase; implementing this would mean
-// guessing a whole undocumented per-letter mesh table format, which the acceptance
-// bar for this session explicitly says not to do. Left as a stub.
-// @MEDIUMTODO
-INLINE void Post_SpideyLogo(void)
+// Vertex table for the logo outline at 0x54ECBC, 4 bytes per entry, a signed
+// x/y pair. Indexed by the vertex index bytes in gSpideyLogoPolys below. Raw
+// game data, unnamed in the maintainer's IDB, so the name is a guess from the
+// only use site (this function).
+static const i16 * const gSpideyLogoVerts = reinterpret_cast<const i16*>(0x0054ECBC);
+
+// The logo outline itself, at 0x54ED9C. A stream of 40 records, each one a
+// corner count byte (4 draws a quad, 3 a triangle, any other value skips the
+// record and consumes just that one byte), then a colour selector byte (0
+// picks the first colour, anything else the second), then that many vertex
+// index bytes. Every byte is read signed by the original. Also unnamed in the
+// IDB, name guessed the same way.
+static const i8 * const gSpideyLogoPolys = reinterpret_cast<const i8*>(0x0054ED9C);
+
+// @Ok
+// Real address 0x46A3E0, 2267 bytes. Not in names.json and no
+// tools/functions/*.bin blob for it, found from the exe through IDA xrefs on
+// gPostSpideyLogoRelated. The INLINE marker this stub used to carry was wrong:
+// the caller (sub_46ACC0, Post_DoPauseDisplayListProcessing above) tail jumps
+// to it (jmp sub_46A3E0), so it is a real out of line function. Dropped INLINE.
+//
+// It draws the flashing SPIDER-MAN logo of the pause screen as flat shaded PSX
+// primitives. The outline is stored once, for the left half, and drawn twice,
+// mirrored in x about the centre line at 256. Each record is built into the
+// display list as a real POLY_F4/POLY_F3 (so the PSX path would pick it up)
+// and then also drawn straight away through PCGfx_DrawQPoly2D, twice per
+// record with the two windings, which is how the PC port renders both faces.
+// A triangle is drawn as a quad with its last corner duplicated, the same
+// trick DCModel_CreateFromSModel uses.
+//
+// The fade colour ramps with gPostSpideyLogoRelated (96 per call, held at 768):
+// two channels get the full 255 ramp and one gets a 64 ramp, and which channel
+// is the dim one is what the per record selector byte chooses.
+//
+// Verified against the original by structure rather than by cmpsum, since this
+// address is not in names.json and has no tools/functions blob. Built 572
+// instructions/2054 bytes against 619/2272. The call sequence is identical and
+// in the same order (PCGfx_UseTexture, then printf + 1 draw in one branch and
+// printf + 2 draws in the other, because MSVC tail merges one of the four draw
+// call sites, in the original too), and the float work matches exactly: 44
+// fild, 36 fld, 28 fmul, 8 fdiv, 7 imul in both. The whole difference is the
+// fade colour maths, where the original folds the two channel ramps and the
+// byte packing into one masked expression (and 0FFFFF00Fh / 0FFFF0000h) and
+// this writes the two ramps out plainly, which costs 3 "and" and 6 "shl" fewer
+// on our side plus the register allocation that follows from it.
+// Also fixes Post_DoPauseDisplayListProcessing above: with INLINE dropped it
+// now emits the original's exact "mov al,flag / test / je / jmp logo" tail
+// call instead of inlining a stub.
+void Post_SpideyLogo(void)
 {
-    printf("Post_SpideyLogo(void)");
+	gPostSpideyLogoRelated += 96;
+	if (gPostSpideyLogoRelated > 768)
+		gPostSpideyLogoRelated = 768;
+
+	if (reinterpret_cast<u8*>(pPoly) + 1920 > PolyBufferEnd)
+		return;
+
+	u32 Fade = static_cast<u32>((90 * gPostSpideyLogoRelated) >> 6);
+	if (Fade > 4096)
+		Fade = 4096;
+
+	u32 Bright = (255 * Fade) >> 12;
+	u32 Dim = (64 * Fade) >> 12;
+
+	u32 ColourA = (Dim << 16) | (Bright << 8) | Bright;
+	u32 ColourB = (Bright << 16) | (Bright << 8) | Dim;
+
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_3);
+
+	for (i32 Pass = 0; Pass < 2; Pass++)
+	{
+		const i8 *pRecord = gSpideyLogoPolys;
+		i16 Mirror = static_cast<i16>(Pass != 0 ? 1 : -1);
+
+		for (i32 Left = 40; Left != 0; Left--)
+		{
+			i32 Corners = *pRecord;
+			pRecord++;
+
+			if (Corners == 4)
+			{
+				i32 Selector = *pRecord;
+				pRecord++;
+
+				POLY_F4 *p = reinterpret_cast<POLY_F4*>(pPoly);
+				pPoly = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pPoly) + sizeof(POLY_F4));
+
+				u32 Colour = Selector != 0 ? ColourB : ColourA;
+
+				p->tag = 0x5000000;
+				p->r0 = static_cast<u8>(Colour);
+				p->g0 = static_cast<u8>(Colour >> 8);
+				p->b0 = static_cast<u8>(Colour >> 16);
+				p->code = 0x2A;
+
+				i32 v = *pRecord;
+				pRecord++;
+				p->x0 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
+				p->y0 = gSpideyLogoVerts[2 * v + 1];
+
+				v = *pRecord;
+				pRecord++;
+				p->x1 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
+				p->y1 = gSpideyLogoVerts[2 * v + 1];
+
+				v = *pRecord;
+				pRecord++;
+				p->x2 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
+				p->y2 = gSpideyLogoVerts[2 * v + 1];
+
+				v = *pRecord;
+				pRecord++;
+				p->x3 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
+				p->y3 = gSpideyLogoVerts[2 * v + 1];
+
+				gsub_46CB90(reinterpret_cast<void*>(0x0056EB54));
+
+				u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFF8000) << 8)) << 8);
+
+				f32 yScale = gGameResolutionY / (f32)Yres;
+				f32 xScale = gGameResolutionX / (f32)Xres;
+
+				PCGfx_DrawQPoly2D(
+						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
+						p->x1 * xScale, p->y1 * yScale, 1.0f, 0.0f, col,
+						p->x2 * xScale, p->y2 * yScale, 0.0f, 1.0f, col,
+						p->x3 * xScale, p->y3 * yScale, 1.0f, 1.0f, col,
+						6.0f);
+
+				yScale = gGameResolutionY / (f32)Yres;
+				xScale = gGameResolutionX / (f32)Xres;
+
+				PCGfx_DrawQPoly2D(
+						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
+						p->x2 * xScale, p->y2 * yScale, 0.0f, 1.0f, col,
+						p->x1 * xScale, p->y1 * yScale, 1.0f, 0.0f, col,
+						p->x3 * xScale, p->y3 * yScale, 1.0f, 1.0f, col,
+						6.0f);
+			}
+			else if (Corners == 3)
+			{
+				i32 Selector = *pRecord;
+				pRecord++;
+
+				POLY_F3 *p = reinterpret_cast<POLY_F3*>(pPoly);
+				pPoly = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pPoly) + sizeof(POLY_F3));
+
+				u32 Colour = Selector != 0 ? ColourB : ColourA;
+
+				p->tag = 0x4000000;
+				p->r0 = static_cast<u8>(Colour);
+				p->g0 = static_cast<u8>(Colour >> 8);
+				p->b0 = static_cast<u8>(Colour >> 16);
+				p->code = 0x22;
+
+				i32 v = *pRecord;
+				pRecord++;
+				p->x0 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
+				p->y0 = gSpideyLogoVerts[2 * v + 1];
+
+				v = *pRecord;
+				pRecord++;
+				p->x1 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
+				p->y1 = gSpideyLogoVerts[2 * v + 1];
+
+				v = *pRecord;
+				pRecord++;
+				p->x2 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
+				p->y2 = gSpideyLogoVerts[2 * v + 1];
+
+				gsub_46CB90(reinterpret_cast<void*>(0x0056EB54));
+
+				u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFF8000) << 8)) << 8);
+
+				f32 yScale = gGameResolutionY / (f32)Yres;
+				f32 xScale = gGameResolutionX / (f32)Xres;
+
+				PCGfx_DrawQPoly2D(
+						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
+						p->x1 * xScale, p->y1 * yScale, 1.0f, 0.0f, col,
+						p->x2 * xScale, p->y2 * yScale, 0.0f, 1.0f, col,
+						p->x2 * xScale, p->y2 * yScale, 1.0f, 1.0f, col,
+						6.0f);
+
+				yScale = gGameResolutionY / (f32)Yres;
+				xScale = gGameResolutionX / (f32)Xres;
+
+				PCGfx_DrawQPoly2D(
+						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
+						p->x2 * xScale, p->y2 * yScale, 0.0f, 1.0f, col,
+						p->x1 * xScale, p->y1 * yScale, 1.0f, 0.0f, col,
+						p->x1 * xScale, p->y1 * yScale, 1.0f, 1.0f, col,
+						6.0f);
+			}
+		}
+	}
 }
 
 // @Ok
