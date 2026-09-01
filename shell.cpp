@@ -9855,6 +9855,49 @@ CTailRing::CTailRing(CVector* pPos, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7,
 	this->field_120 = (a6 << 12) / 450;
 }
 
+// @Ok
+// 0x48F040. names.json calls it CScorpExplosion_CScorpExplosion_0. The burst CDummy::AI fires
+// for the Scorpion preview (mType 310) at the end of the sting anim: two CTailRings (kept as
+// handles so whatever runs the explosion can find them again), a CGrenadeWave shock ring, and
+// ten CPingLines thrown out around the impact point at random yaws.
+CScorpExplosion::CScorpExplosion(CVector* pPos)
+{
+	CVector pos = *pPos;
+
+	this->field_3C = Mem_MakeHandle(
+			new CTailRing(&pos, 0, 4096, 2048, 350, 6, 0, 8, 30, 105));
+	this->field_44 = Mem_MakeHandle(
+			new CTailRing(&pos, 0, 4096, 2048, 199, 7, 0, 8, 30, 105));
+
+	CGrenadeWave* pWave = new CGrenadeWave(&pos, 255, 200, 0, 250, 7);
+	pWave->mMask = 0xFFFFFFC0;
+	pWave->mAngle = 1024;
+
+	// the ping line direction. Its vy doubles as the scratch the random yaw is kept in, so it
+	// changes every time round the loop below; the original reuses the same stack slot for both.
+	CSVector dir;
+	dir.vy = 0;
+	dir.vx = -312;
+
+	CVector spot;
+	spot.vx = 0;
+	spot.vz = 0;
+	spot.vy = pos.vy;
+
+	for (i32 i = 10; i != 0; i--)
+	{
+		dir.vy = static_cast<i16>(Rnd(4096));
+
+		i32 sinYaw = rcossin_tbl[dir.vy & 0xFFF].sin;
+		i32 cosYaw = 5 * rcossin_tbl[dir.vy & 0xFFF].cos;
+
+		spot.vx = pPos->vx - 80 * sinYaw;
+		spot.vz = pPos->vz - 16 * cosYaw;
+
+		new CPingLine(&spot, &dir, 255, 128, 0, 50, 200, Rnd(50) + 30);
+	}
+}
+
 // @BIGTODO
 // 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
 // vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
@@ -10580,6 +10623,7 @@ void validate_CDummy(void){
 	// main.cpp holds the list of validate functions the game calls, and this branch does not
 	// touch main.cpp, so the three classes added with CDummy::AI are checked from here.
 	validate_CTailRing();
+	validate_CScorpExplosion();
 }
 
 void validate_CTailRing(void)
@@ -10595,6 +10639,14 @@ void validate_CTailRing(void)
 	VALIDATE(CTailRing, field_118, 0x118);
 	VALIDATE(CTailRing, field_11C, 0x11C);
 	VALIDATE(CTailRing, field_120, 0x120);
+}
+
+void validate_CScorpExplosion(void)
+{
+	VALIDATE_SIZE(CScorpExplosion, 0x4C);
+
+	VALIDATE(CScorpExplosion, field_3C, 0x3C);
+	VALIDATE(CScorpExplosion, field_44, 0x44);
 }
 
 

@@ -571,6 +571,19 @@ class CTailRing : public CBody
 		i32 field_120;
 };
 
+// Reverse engineered from the constructor at 0x48F040 (names.json calls it
+// CScorpExplosion_CScorpExplosion_0). The burst CDummy::AI fires for the Scorpion preview
+// (mType 310) on anim 29 frame 4: two CTailRings, a CGrenadeWave and ten CPingLines thrown out
+// in random directions. It keeps handles to the two rings and nothing else.
+class CScorpExplosion : public CNonRenderedBit
+{
+	public:
+		EXPORT CScorpExplosion(CVector* pPos);
+
+		SHandle field_3C;
+		SHandle field_44;
+};
+
 class CShellGoldFish : public CBody
 {
 	public:
@@ -891,6 +904,7 @@ void validate_CShellEmber(void);
 void validate_CShellSimbyMeltSplat(void);
 void validate_CShellSimbyFireDeath(void);
 void validate_CTailRing(void);
+void validate_CScorpExplosion(void);
 void validate_CShellGoldFish(void);
 void validate_CShellMysterioHeadCircle(void);
 void validate_SCharacterEntry(void);
