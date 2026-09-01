@@ -1600,10 +1600,123 @@ u8 CPlayer::CheckJumpingR1ZipWeb(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJumpingR2ZipWeb(void)
+// @Ok
+// verified against the IDA disasm of 0x4C1460 (1020 bytes). Returns 1 when
+// a zip web was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// Same idea as CheckJumpingR1ZipWeb but this is the swing button (0x70,
+// plus the practice-mode auto fire, exactly the gate CheckJumpingSwingWeb
+// uses) and the probe aims up and forward: from the player to
+// mPos - field_C6C * 2048 + field_C84 * reach, where reach is 512, or a
+// random 256 - Rnd(512) while the player is already swinging or zipping
+// (field_E1C bits 1 and 2). The range passed to CheckZipWebAvailability is
+// 2048 here, and the CWeb branch is the same as R1's except that it does
+// not have to drop a lock-on first.
+u8 CPlayer::CheckJumpingR2ZipWeb(void)
 {
-    printf("CPlayer::CheckJumpingR2ZipWeb(void)");
+	// gPracticeDifficultyFlag, 0x60CFC7, same file-local pointer pshell.cpp
+	// uses; see CheckJumpingSwingWeb.
+	static u8 * const gPracticeDifficultyFlag = (u8*)0x0060CFC7;
+
+	if (this->field_8EA != 0 || this->mHeldObject != 0 || this->field_550 != 0)
+		return 0;
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if ((pInput[0x70] == 0 || (*gPracticeDifficultyFlag != 0 && this->field_1AC == 0))
+		&& (*gPracticeDifficultyFlag == 0
+			|| (this->field_E1C & 6) == 0
+			|| this->field_E8D == 0
+			|| pInput[0x100] == 0))
+		return 0;
+
+	i32 reach = 512;
+
+	if ((this->field_E1C & 6) != 0)
+		reach = 256 - Rnd(512);
+
+	i32 up = 2048;
+
+	CVector rayEnd = (this->mPos - (this->field_C6C * up)) + (this->field_C84 * reach);
+
+	SLineInfo lineInfo;
+	lineInfo.StartCoords = this->mPos;
+	lineInfo.EndCoords = rayEnd;
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (lineInfo.pItem == 0)
+		return 0;
+
+	if ((lineInfo.pFace[3] & 0x40000) != 0 && lineInfo.Normal.vy >= -2600)
+		return 0;
+
+	if (this->CheckZipWebAvailability(&lineInfo, 2048) == 0)
+		return 0;
+
+	this->field_DC0.vx = lineInfo.Position.vx;
+	this->field_DC0.vy = lineInfo.Position.vy;
+	this->field_DC0.vz = lineInfo.Position.vz;
+
+	this->field_DA0.vx = lineInfo.Normal.vx;
+	this->field_DA0.vy = lineInfo.Normal.vy;
+	this->field_DA0.vz = lineInfo.Normal.vz;
+
+	this->field_8ED = 0;
+
+	this->field_558.vx = this->mPos.vx;
+	this->field_558.vy = this->mPos.vy;
+	this->field_558.vz = this->mPos.vz;
+
+	this->field_DF8 = 0;
+
+	if ((this->field_E1C & 1) != 0)
+	{
+		if (this->field_AD4 != 0)
+			RunAnimWithSFX(this, 0x104);
+		else
+			RunAnimWithSFX(this, 0xFA);
+	}
+	else
+	{
+		CWeb *pWeb = new CWeb();
+		this->field_E6C = reinterpret_cast<i32*>(pWeb);
+
+		pWeb->field_102 = 0;
+		pWeb->field_F8 = (u8)this->field_5E8;
+
+		CSVector normal;
+		normal.vx = lineInfo.Normal.vx;
+		normal.vy = lineInfo.Normal.vy;
+		normal.vz = lineInfo.Normal.vz;
+
+		this->field_8F8 = 8;
+		this->field_E10 = 1;
+
+		this->FireWeb(false, 128, &this->field_DC0, true, &normal);
+
+		this->field_E10 = 0;
+
+		RunAnimWithSFX(this, 0x10E, 13);
+	}
+
+	this->field_E1C = 0x40000;
+
+	return 1;
 }
 
 // @Ok

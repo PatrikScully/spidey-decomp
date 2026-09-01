@@ -745,7 +745,7 @@ class CPlayer : public CSuper
 		EXPORT i32 CheckInteriorSurfaceTransition(void);
 		EXPORT i32 CheckJump(void);
 		EXPORT u8 CheckJumpingR1ZipWeb(void);
-		EXPORT void CheckJumpingR2ZipWeb(void);
+		EXPORT u8 CheckJumpingR2ZipWeb(void);
 		EXPORT u8 CheckJumpingSmashKick(void);
 		EXPORT u8 CheckJumpingSwingWeb(void);
 		EXPORT i32 CheckKick(void);
