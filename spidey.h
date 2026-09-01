@@ -67,7 +67,21 @@ class CPlayer : public CSuper
 		// while field_AD8 was pending.
 		u8 field_211;
 
-		PADDING(0x34C-0x211-1);
+		PADDING(0x2C1-0x211-1);
+
+		// cleared at the top of CheckJump on every jump-button edge
+		u8 field_2C1;
+
+		PADDING(0x2E1-0x2C1-1);
+
+		// both cleared by CheckKick on the kick/punch button edge
+		u8 field_2E1;
+
+		PADDING(0x2F1-0x2E1-1);
+
+		u8 field_2F1;
+
+		PADDING(0x34C-0x2F1-1);
 
 		// ProcessSFXArray: non-zero selects the (Rnd(4)+80)|0x8000 SFX range,
 		// zero selects the Rnd(4)+1 range, in the mAnim 0x15/0xC0/0xC6 case.
@@ -125,7 +139,12 @@ class CPlayer : public CSuper
 		// (0x4C38A0), "cmp [ebp+54Fh], bl" / "mov [ebp+54Fh], bl".
 		u8 field_54F;
 
-		PADDING(4);
+		PADDING(0x551-0x54F-1);
+
+		// cleared by CheckForwards whenever it retargets the torso angle
+		u8 field_551;
+
+		PADDING(0x554-0x551-1);
 
 		// CPlayer::AI: free-function callback, called as field_554(this)
 		// near the end of every AI tick when nonzero.
@@ -136,7 +155,10 @@ class CPlayer : public CSuper
 		// (offset 0x558, IDA disasm of 0x4C38A0).
 		CVector field_558;
 
-		PADDING(0x568-0x558-0xC);
+		// cleared by CPlayer::CheckSwitchToGrabbedMode when the grab starts
+		u8 field_564;
+
+		PADDING(0x568-0x564-1);
 
 		i32 field_568;
 		i32 field_56C;
@@ -187,7 +209,15 @@ class CPlayer : public CSuper
 		// SelectAutoAimTarget: current auto-aim target CBody (owned, deleted on switch)
 		CBody *field_878;
 
-		PADDING(0x89C-0x87C);
+		// both cleared by CPlayer::CheckSwitchToGrabbedMode
+		i32 field_87C;
+
+		PADDING(0x894-0x87C-4);
+
+		i32 field_894;
+
+		// gTimerRelated stamp taken by CheckKick when it starts a combo
+		i32 field_898;
 
 		MATRIX field_89C;
 
@@ -237,13 +267,19 @@ class CPlayer : public CSuper
 		// and deleted (vtable[0](this,1)) when field_158 is cleared.
 		CQuadBit *field_AC0;
 
-		PADDING(4);
+		// lazily allocated CQuadBit for the ceiling shadow cast by
+		// CPlayer::DoShadowCheck
+		CQuadBit *field_AC4;
 
 		CVector field_AC8;
 
 		u8 field_AD4;
 
-		PADDING(0xAD7-0xAD4-1);
+		// CheckInteriorSurfaceTransition: picks the "hard"/alternative set of
+		// surface transition animations when set.
+		u8 field_AD5;
+
+		u8 field_AD6;
 
 		u8 field_AD7;
 
@@ -251,13 +287,36 @@ class CPlayer : public CSuper
 		u8 field_AD8;
 		u8 field_AD9;
 
-		PADDING(0xAE4-0xAD9-1);
+		// HandleControlsForSurfaceTransition: "player is pushing away from
+		// this surface" flags, one per transition direction.
+		u8 field_ADA;
+		u8 field_ADB;
+
+		// CheckExteriorSurfaceTransition: same "pushing away" flag as
+		// field_ADA, for the wall transition.
+		u8 field_ADC;
+
+		PADDING(0xAE4-0xADC-1);
 
 		u8 field_AE4;
 		u8 field_AE5;
 		u8 field_AE6;
 
-		PADDING(0xB74-0xAE6-1);
+		PADDING(0xB08-0xAE6-1);
+
+		// blocks CheckInteriorSurfaceTransition when set
+		u8 field_B08;
+
+		// gate for CPlayer::CheckFenceSurfaceTransition: the player is
+		// standing on/near a fence surface
+		u8 field_B09;
+
+		PADDING(0xB4C-0xB09-1);
+
+		// CheckInteriorSurfaceTransition bails out when this is negative
+		i32 field_B4C;
+
+		PADDING(0xB74-0xB4C-4);
 
 		i32 field_B74;
 		i32 field_B78;
@@ -394,7 +453,9 @@ class CPlayer : public CSuper
 
 		i32 field_DB8;
 
-		PADDING(0xDC0-0xDB8-4);
+		// body the player is standing on; CheckJump adds its mVel.vy into
+		// the take-off velocity
+		CBody *field_DBC;
 
 		CVector field_DC0;
 
@@ -451,7 +512,9 @@ class CPlayer : public CSuper
 		i32 field_E18;
 		i32 field_E1C;
 
-		PADDING(0xE2D-0xE1C-4);
+		i32 field_E20;
+
+		PADDING(0xE2D-0xE20-4);
 
 		char field_E2D;
 		char field_E2E;
@@ -477,7 +540,10 @@ class CPlayer : public CSuper
 
 		CManipOb* mHeldObject;
 
-		PADDING(0xE64-0xE48-4);
+		// CheckKick targets: environmental object, auto-aim switch, baddy
+		SHandle field_E4C;
+		SHandle field_E54;
+		SHandle field_E5C;
 
 		// @FIXME guess the type, used as a scalar-deleting-destructor
 		// pointer (vtable[0](1)) in CPlayer::SwitchToDeathMode
@@ -492,14 +558,18 @@ class CPlayer : public CSuper
 
 		SHandle hLockTarget;
 
-		PADDING(0xE84-0xE70-sizeof(SHandle));
+		PADDING(0xE80-0xE70-sizeof(SHandle));
+
+		// jump take-off vertical velocity, set by CheckJump
+		i32 field_E80;
 
 		i32 field_E84;
 		i32 field_E88;
 
 		u8 field_E8C;
+		u8 field_E8D;
 
-		PADDING(0xEA0-0xE8C-1);
+		PADDING(0xEA0-0xE8D-1);
 
 		// ReadAnalogueInput: aim correction ratio (field_EA0/field_EA2).
 		u16 field_EA0;
@@ -515,13 +585,22 @@ class CPlayer : public CSuper
 
 		u16 field_EA8;
 
-		PADDING(0xEC0-0xEAA);
+		PADDING(0xEBC-0xEAA);
+
+		// cleared by CheckJump when the player was touching something
+		i32 field_EBC;
 
 		// set to 1 in BuildOffscreenSpideySenseIndicatorList when at least
 		// one qualifying baddy was found this pass
 		u8 field_EC0;
 
-		PADDING(0xEF0-0xEC0-1);
+		PADDING(0xEE0-0xEC0-1);
+
+		// position of the thing that grabbed the player, copied in by
+		// CPlayer::CheckSwitchToGrabbedMode
+		CVector field_EE0;
+
+		PADDING(0xEF0-0xEE0-0xC);
 
 		i32 mMaxHealth;
 
@@ -572,23 +651,23 @@ class CPlayer : public CSuper
 		EXPORT void CalculateSwingWebParameters(CVector *);
 		EXPORT i32 *CalculateTugWebPathPoints(void);
 		EXPORT u8 CheckCeilingJumpingSmashPunch(void);
-		EXPORT void CheckExteriorSurfaceTransition(void);
-		EXPORT void CheckFenceSurfaceTransition(void);
-		EXPORT void CheckForwards(bool);
+		EXPORT i32 CheckExteriorSurfaceTransition(void);
+		EXPORT i32 CheckFenceSurfaceTransition(void);
+		EXPORT i32 CheckForwards(bool);
 		EXPORT i32 CheckGroundGone(void);
-		EXPORT void CheckInteriorSurfaceTransition(void);
-		EXPORT void CheckJump(void);
+		EXPORT i32 CheckInteriorSurfaceTransition(void);
+		EXPORT i32 CheckJump(void);
 		EXPORT void CheckJumpingR1ZipWeb(void);
 		EXPORT void CheckJumpingR2ZipWeb(void);
 		EXPORT u8 CheckJumpingSmashKick(void);
 		EXPORT void CheckJumpingSwingWeb(void);
-		EXPORT void CheckKick(void);
+		EXPORT i32 CheckKick(void);
 		EXPORT void CheckLanded(void);
 		EXPORT i32 CheckRunIntoWall(void);
 		EXPORT i32 CheckStickToCeiling(void);
-		EXPORT void CheckStickToWall(void);
+		EXPORT i32 CheckStickToWall(void);
 		EXPORT u8 CheckSwingWebAvailability(SLineInfo *);
-		EXPORT void CheckSwitchToGrabbedMode(CVector const *,CVector *);
+		EXPORT u8 CheckSwitchToGrabbedMode(CVector const *,CVector *);
 		EXPORT void CheckWebShot(void);
 		EXPORT u8 CheckZipWebAvailability(SLineInfo *,i32);
 		EXPORT void CollideWithObject(CBody *);

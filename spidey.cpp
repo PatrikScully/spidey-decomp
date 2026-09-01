@@ -670,22 +670,367 @@ u8 CPlayer::CheckCeilingJumpingSmashPunch(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckExteriorSurfaceTransition(void)
+// @Ok
+i32 CPlayer::CheckExteriorSurfaceTransition(void)
 {
-    printf("CPlayer::CheckExteriorSurfaceTransition(void)");
+	if (this->field_B74 == 0)
+		return 0;
+
+	if (this->field_B08 == 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+		return 0;
+
+	i16 nx = this->field_B84.vx;
+	i16 ny = this->field_B84.vy;
+	i16 nz = this->field_B84.vz;
+
+	bool bAligned = ((nz * this->field_A8.vz) >> 12)
+		+ ((ny * this->field_A8.vy) >> 12)
+		+ ((nx * this->field_A8.vx) >> 12) >= 1567;
+
+	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+
+	u16 anim = bAligned ? 75 : 63;
+
+	if (bAlternative)
+		anim = bAligned ? 81 : 69;
+
+	if (this->field_8E8 != 0 && this->field_B84.vy < -2600)
+	{
+		CVector up;
+		up.vx = 0;
+		up.vy = 4096;
+		up.vz = 0;
+		this->OrientToNormal(true, &up);
+
+		anim = bAlternative ? 86 : 59;
+	}
+	else
+	{
+		i32 side = (-(nx * this->field_C78) >> 12)
+			+ (-(ny * this->field_C7C) >> 12)
+			+ (-(nz * this->field_C80) >> 12);
+
+		if (side > 2048)
+			anim = bAlternative ? 70 : 64;
+		else if (side < -2048)
+			anim = bAlternative ? 71 : 65;
+	}
+
+	i32 *p = gSpideySFXEntry[anim];
+	this->field_350 = p;
+
+	// low word of the animation table entry for this region and animation
+	// is its frame count
+	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 8 * anim + 8) & 0xFFFF;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->mFrame = (i16)(frames - 1);
+	this->ApplyPose(gUnkPose);
+
+	CVector hookPos;
+	hookPos.vx = 0;
+	hookPos.vy = 0;
+	hookPos.vz = 0;
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
+
+	CameraList->SetTripodMotion(hookPos, frames * 2);
+
+	if (this->field_8E8 != 0)
+	{
+		i16 vy = this->field_B84.vy;
+
+		if (vy > 3400)
+		{
+			if ((this->field_AD9 == 0 && this->field_E2D > 0) ||
+				(this->field_AD9 != 0 && this->field_E2D < 0))
+				this->field_ADA = 1;
+			else
+				this->field_ADA = 0;
+
+			this->field_AD9 = 0;
+			this->SetCeilingCamera(16);
+		}
+		else if (vy < -2600)
+		{
+			this->field_AD9 = 0;
+			this->SetFloorCamera(16);
+		}
+		else
+		{
+			u8 lock = this->gCamAngleLock;
+			this->field_AD6 = 0;
+
+			if (lock == 0)
+			{
+				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+			}
+		}
+	}
+	else if (this->field_8E9 != 0)
+	{
+		if (this->field_B84.vy <= 3400)
+		{
+			this->field_AD6 = 0;
+
+			if ((this->field_AD8 == 0 && this->field_E2D > 0) ||
+				(this->field_AD8 != 0 && this->field_E2D < 0))
+				this->field_ADC = 1;
+			else
+				this->field_ADC = 0;
+
+			u8 lock = this->gCamAngleLock;
+			this->field_AD8 = 0;
+
+			if (lock == 0)
+			{
+				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+			}
+
+			this->SetWallCamera(16);
+		}
+	}
+	else if (this->field_B84.vy <= 3400)
+	{
+		u8 lock = this->gCamAngleLock;
+		this->field_AD6 = 0;
+
+		if (lock == 0)
+		{
+			i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+			CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+		}
+
+		this->SetWallCamera(16);
+	}
+
+	i32 *p2 = gSpideySFXEntry[anim];
+	this->field_E1C = 0x2000;
+	this->field_350 = p2;
+
+	if (p2)
+	{
+		while (p2[0] != -1)
+		{
+			p2[0] &= 0xFFFF;
+			p2++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->field_DF8 = 0;
+	this->mVel.vz = 0;
+	this->mVel.vy = 0;
+	this->mVel.vx = 0;
+	this->field_AE5 = 0;
+
+	return 1;
 }
 
-// @SMALLTODO
-void CPlayer::CheckFenceSurfaceTransition(void)
+// @Ok
+i32 CPlayer::CheckFenceSurfaceTransition(void)
 {
-    printf("CPlayer::CheckFenceSurfaceTransition(void)");
+	if (this->field_B09 == 0)
+		return 0;
+
+	if (this->field_8E8 == 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+		return 0;
+
+	this->field_AC8.vx = 0;
+	this->field_AC8.vy = 4096;
+	this->field_AC8.vz = 0;
+	this->OrientToNormal(true, &this->field_AC8);
+
+	i32 *p = gSpideySFXEntry[0x5D];
+	this->field_350 = p;
+
+	// low word of the animation table entry for this region and animation
+	// is its frame count
+	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 8 * 0x5D + 8) & 0xFFFF;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(0x5D, 0, -1);
+
+	this->mFrame = (i16)(frames - 1);
+	this->ApplyPose(gUnkPose);
+
+	CVector hookPos;
+	hookPos.vx = 0;
+	hookPos.vy = 0;
+	hookPos.vz = 0;
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
+
+	CameraList->SetTripodMotion(hookPos, frames * 2);
+
+	this->field_AD9 = 0;
+
+	this->SetFloorCamera(16);
+
+	this->field_B84.vz = 0;
+	this->field_B84.vx = 0;
+	this->field_B84.vy = -4096;
+	this->field_E1C = 0x2000;
+
+	i32 *p2 = gSpideySFXEntry[0x5D];
+	this->field_350 = p2;
+
+	if (p2)
+	{
+		while (p2[0] != -1)
+		{
+			p2[0] &= 0xFFFF;
+			p2++;
+		}
+	}
+
+	this->RunAnim(0x5D, 0, -1);
+
+	this->field_DF8 = 0;
+	this->field_AE5 = 0;
+
+	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckForwards(bool)
+// @Ok
+i32 CPlayer::CheckForwards(bool bAllowStart)
 {
-    printf("CPlayer::CheckForwards(bool)");
+	if (reinterpret_cast<u8*>(this->field_E0C)[64] != 0 && (this->field_E1C & 1) != 0)
+		return 0;
+
+	if (this->field_8EA != 0)
+		return 0;
+
+	// field_E2D/field_E2E are the two analogue move axes, read together as
+	// one word to test "no move input at all"
+	if (*reinterpret_cast<u16*>(&this->field_E2D) == 0)
+		return 0;
+
+	u16 anim = this->mAnim;
+	if (anim == 234 || anim == 227 || anim == 281)
+		return 0;
+
+	u8 onSurface = this->field_8E8;
+	this->field_EA6 = 0;
+
+	i16 wanted;
+	if (onSurface != 0)
+		wanted = this->field_E32;
+	else
+		wanted = (i16)((CameraList->field_23A + this->field_E32) & 0xFFF);
+
+	i32 delta = (wanted - (u16)this->GetEffectiveHeading()) & 0xFFF;
+
+	if (delta > 0x600 && delta < 2560)
+	{
+		u16 cur = this->mAnim;
+		if (cur == 0 || cur == 11 || cur == 12 || cur == 13)
+		{
+			i32 *p = gSpideySFXEntry[0x1F];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0x1F, 0, -1);
+
+			this->field_DF8 = 0;
+			this->field_E1C = 0x400000;
+			return 1;
+		}
+	}
+
+	if (delta >= 128 && delta <= 3968)
+	{
+		if (this->field_DF8 == 0)
+		{
+			this->SetTargetTorsoAngle(wanted, true);
+			this->field_551 = 0;
+		}
+		else
+		{
+			u16 diff = (u16)((u16)((u16)this->field_DF0 - wanted) & 0xFFF);
+			if (diff >= 0x40 && diff <= 0xFC0)
+			{
+				this->SetTargetTorsoAngle(wanted, true);
+				this->field_551 = 0;
+			}
+		}
+
+		return 0;
+	}
+
+	if (!bAllowStart)
+		return 0;
+
+	u8 onWall = this->field_AD4;
+	this->field_E1C = 16;
+	this->field_AD7 = 0;
+
+	i32 startAnim;
+	if (onWall != 0)
+	{
+		startAnim = this->field_AD5 != 0 ? 0x3A : 0x39;
+	}
+	else if (this->mAnim == 200)
+	{
+		startAnim = 0xC5;
+	}
+	else if (this->mAnim == 194)
+	{
+		startAnim = 0xBF;
+	}
+	else
+	{
+		startAnim = 1;
+	}
+
+	i32 *p = gSpideySFXEntry[startAnim];
+	this->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(startAnim, 0, -1);
+
+	return 1;
 }
 
 // @Ok
@@ -734,16 +1079,327 @@ i32 CPlayer::CheckGroundGone(void)
 	return 0;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckInteriorSurfaceTransition(void)
+// @Ok
+i32 CPlayer::CheckInteriorSurfaceTransition(void)
 {
-    printf("CPlayer::CheckInteriorSurfaceTransition(void)");
+	if (this->field_B74 == 0)
+		return 0;
+
+	if (this->field_B08 != 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+		return 0;
+
+	if (this->field_B4C < 0)
+		return 0;
+
+	i16 ax = this->field_A8.vx;
+	i16 nx = this->field_B84.vx;
+	i16 ny = this->field_B84.vy;
+
+	u8 bToFloor = 0;
+	u8 bToWall = 0;
+
+	bool bAligned = ((this->field_B84.vz * this->field_A8.vz) >> 12)
+		+ ((ny * this->field_A8.vy) >> 12)
+		+ ((nx * ax) >> 12) >= 1567;
+
+	u8 bToCeiling = 0;
+
+	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+
+	u16 anim = bAligned ? 72 : 60;
+
+	if (this->field_8E8 != 0)
+	{
+		this->HandleControlsForSurfaceTransition(false);
+
+		i16 vy = this->field_B84.vy;
+		if (vy > 3400)
+			bToCeiling = 1;
+		else if (vy < -2600)
+			bToFloor = 1;
+	}
+	else if (this->field_8E9 != 0)
+	{
+		this->HandleControlsForSurfaceTransition(false);
+
+		if (this->field_B84.vy <= 3400)
+			bToWall = 1;
+	}
+	else if (ny <= 3400 && ny >= -2600)
+	{
+		bToWall = 1;
+	}
+
+	if (bAlternative)
+		anim = bAligned ? 78 : 66;
+
+	if (bToFloor)
+	{
+		CVector down;
+		down.vx = 0;
+		down.vy = -4096;
+		down.vz = 0;
+		this->OrientToNormal(true, &down);
+
+		anim = (u16)(87 + (this->field_AD5 != 0));
+	}
+	else if (!bAligned)
+	{
+		i32 side = (-(this->field_B84.vx * this->field_C78) >> 12)
+			+ (-(this->field_B84.vy * this->field_C7C) >> 12)
+			+ (-(this->field_B84.vz * this->field_C80) >> 12);
+
+		if (side > 2048)
+			anim = bAlternative ? 68 : 62;
+		else if (side < -2048)
+			anim = bAlternative ? 67 : 61;
+	}
+
+	this->field_AD6 = 0;
+
+	// low word of the animation table entry for this region and animation
+	// is its frame count
+	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 8 * anim + 8) & 0xFFFF;
+
+	if (this->gCamAngleLock == 0 && bToFloor == 0 && bToWall == 0 && bToCeiling == 0)
+	{
+		i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+		CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(2 * frames));
+	}
+
+	i32 *p = gSpideySFXEntry[anim];
+	this->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->mFrame = (i16)(frames - 1);
+	this->ApplyPose(gUnkPose);
+
+	CVector hookPos;
+	hookPos.vx = 0;
+	hookPos.vy = 0;
+	hookPos.vz = 0;
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
+
+	CameraList->SetTripodMotion(hookPos, frames * 2);
+
+	if (bToFloor)
+		this->SetFloorCamera(16);
+	else if (bToWall)
+		this->SetWallCamera(16);
+	else if (bToCeiling)
+		this->SetCeilingCamera(16);
+
+	i32 *p2 = gSpideySFXEntry[anim];
+	this->field_E1C = 4096;
+	this->field_350 = p2;
+
+	if (p2)
+	{
+		while (p2[0] != -1)
+		{
+			p2[0] &= 0xFFFF;
+			p2++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->field_DF8 = 0;
+	this->field_AE5 = 0;
+
+	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJump(void)
+// @Ok
+i32 CPlayer::CheckJump(void)
 {
-    printf("CPlayer::CheckJump(void)");
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[257] == 0)
+		return 0;
+
+	pInput[257] = 0;
+
+	u8 blocked = this->field_8EA;
+	this->field_2C1 = 0;
+
+	if (blocked != 0)
+		return 0;
+
+	if (this->mHeldObject != 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+	{
+		CBody *pGround = this->field_DBC;
+		this->field_E80 = -245760;
+
+		if (pGround)
+		{
+			i32 groundVel = pGround->mVel.vy;
+			if (groundVel >= -262144)
+				this->field_E80 = groundVel - 245760;
+			else
+				this->field_E80 = 2 * groundVel - 245760;
+		}
+
+		u8 flags = (u8)this->field_E1C;
+		this->field_AE6 = 0;
+
+		if (flags & 0x10)
+		{
+			i32 *p = gSpideySFXEntry[0xDF];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0xDF, 5, -1);
+			this->field_E8C = 1;
+		}
+		else
+		{
+			i32 *p = gSpideySFXEntry[0xD2];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0xD2, 4, -1);
+			this->field_E8C = 0;
+		}
+
+		u8 collision = (u8)this->mCollision;
+		this->field_AE5 = 0;
+		this->field_E1C = 64;
+
+		if (collision & 1)
+			this->field_EBC = 0;
+
+		SFX_PlayPos(9, &this->mPos, 0);
+
+		this->field_E8D = 0;
+		return 1;
+	}
+
+	if (this->field_8E8 != 0)
+	{
+		i32 *p = gSpideySFXEntry[0xD8];
+
+		this->mCollision &= ~2;
+		this->field_AE5 = 1;
+		this->field_AE6 = 0;
+		this->field_AD4 = 0;
+		this->field_E1C = 4;
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xD8, 0, -1);
+
+		bool noInput = *reinterpret_cast<u16*>(&this->field_E2D) == 0;
+
+		this->field_A8.vx = 0;
+		this->field_A8.vy = -4096;
+		this->field_A8.vz = 0;
+
+		i16 aim;
+		if (noInput || (aim = this->field_E32) <= 512 || aim >= 3584)
+		{
+			this->OrientToNormal(true, &this->field_C84);
+		}
+		else if (aim < 1536 || aim > 2560)
+		{
+			this->OrientToNormal(true, &this->field_C84);
+		}
+		else
+		{
+			CVector away;
+			away.vx = -this->field_C84.vx;
+			away.vy = -this->field_C84.vy;
+			away.vz = -this->field_C84.vz;
+			this->OrientToNormal(true, &away);
+		}
+
+		this->field_8E8 = 0;
+
+		SFX_PlayPos(9, &this->mPos, 0);
+
+		this->field_E8D = 0;
+		return 1;
+	}
+
+	if (this->field_8E9 != 0)
+	{
+		i32 *p = gSpideySFXEntry[0xD4];
+
+		this->mCollision &= ~2;
+		this->field_AE5 = 0;
+		this->field_AE6 = 0;
+		this->field_AD4 = 0;
+		this->field_E1C = 4;
+		this->field_350 = p;
+
+		if (p)
+		{
+			while (p[0] != -1)
+			{
+				p[0] &= 0xFFFF;
+				p++;
+			}
+		}
+
+		this->RunAnim(0xD4, 0, -1);
+
+		this->field_E8C = 0;
+
+		this->field_A8.vx = 0;
+		this->field_A8.vy = -4096;
+		this->field_A8.vz = 0;
+
+		this->OrientToNormal(true, &this->field_C6C);
+
+		this->field_8E9 = 0;
+
+		SFX_PlayPos(9, &this->mPos, 0);
+
+		this->field_E8D = 0;
+		return 1;
+	}
+
+	return 0;
 }
 
 // @MEDIUMTODO
@@ -848,10 +1504,201 @@ void CPlayer::CheckJumpingSwingWeb(void)
     printf("CPlayer::CheckJumpingSwingWeb(void)");
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckKick(void)
+// @Ok
+i32 CPlayer::CheckKick(void)
 {
-    printf("CPlayer::CheckKick(void)");
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[289] == 0 && pInput[305] == 0)
+		return 0;
+
+	if (this->field_AD4 != 0)
+		return 0;
+
+	if (this->field_8EA != 0)
+		return 0;
+
+	u8 punch = pInput[305];
+	pInput[289] = 0;
+	this->field_2E1 = 0;
+	bool bPunch = punch != 0;
+	pInput[305] = 0;
+	this->field_2F1 = 0;
+
+	if (bPunch && this->mHeldObject != 0)
+		return 0;
+
+	if (this->mHeldObject != 0 && !bPunch)
+	{
+		i32 objFlags = this->mHeldObject->field_10C;
+		this->field_E1C = 0x200000;
+
+		if (objFlags & 8)
+		{
+			i32 *p = gSpideySFXEntry[201];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(201, 0, -1);
+		}
+		else
+		{
+			i32 *p = gSpideySFXEntry[195];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(195, 0, -1);
+		}
+
+		CBody *pTarget = this->field_DCC;
+		if (pTarget)
+			this->SetTargetTorsoAngleToThisPoint(&pTarget->mPos);
+
+		return 1;
+	}
+
+	bool bFoundBaddy = false;
+	i32 bestDist = 512;
+
+	this->field_E5C.pWhatever = 0;
+
+	CBody *pBaddy = BaddyList;
+	if (pBaddy)
+	{
+		do
+		{
+			i32 dist = Utils_CrapDist(this->mPos, pBaddy->mPos);
+			if (dist < bestDist)
+			{
+				u16 type = (u16)pBaddy->mType;
+				if (type != 305 && type != 316)
+				{
+					bFoundBaddy = true;
+					bestDist = dist;
+					this->field_E5C = Mem_MakeHandle(pBaddy);
+				}
+			}
+
+			pBaddy = reinterpret_cast<CBody*>(pBaddy->mNextItem);
+		}
+		while (pBaddy != 0);
+	}
+
+	if (!bFoundBaddy)
+	{
+		if (!bPunch)
+		{
+			bool bAltAnim = bPunch;
+
+			this->field_E4C.pWhatever = 0;
+
+			CBody *pObject = EnvironmentalObjectList;
+			while (pObject != 0)
+			{
+				if (pObject->mType == 401 && (i32)Utils_CrapDist(this->mPos, pObject->mPos) < 768)
+				{
+					i32 facing = ((this->mPos.vx - pObject->mPos.vx) >> 12) * this->field_C6C.vx
+						+ ((this->mPos.vy - pObject->mPos.vy) >> 12) * this->field_C6C.vy
+						+ ((this->mPos.vz - pObject->mPos.vz) >> 12) * this->field_C6C.vz;
+
+					if (facing > 0)
+					{
+						SLineInfo lineInfo;
+						lineInfo.StartCoords = this->mPos;
+						lineInfo.EndCoords = pObject->mPos;
+						memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+						memset(&lineInfo.Position, 0, sizeof(CVector));
+						lineInfo.Normal.vx = 0;
+						lineInfo.Normal.vy = 0;
+						lineInfo.Normal.vz = 0;
+
+						M3dColij_InitLineInfo(&lineInfo);
+						M3dZone_LineToItem(&lineInfo, 1);
+
+						if (lineInfo.pItem == reinterpret_cast<CItem*>(pObject) && lineInfo.Distance <= 256)
+						{
+							this->field_E4C = Mem_MakeHandle(pObject);
+							bAltAnim = ((reinterpret_cast<CManipOb*>(pObject)->field_10C >> 3) & 1) != 0;
+							break;
+						}
+					}
+				}
+
+				pObject = reinterpret_cast<CBody*>(pObject->mNextItem);
+			}
+
+			if (this->field_E4C.pWhatever != 0)
+			{
+				this->field_E1C = 0x100000;
+
+				i32 anim = bAltAnim ? 196 : 190;
+
+				i32 *p = gSpideySFXEntry[anim];
+				this->field_350 = p;
+
+				if (p)
+				{
+					while (p[0] != -1)
+					{
+						p[0] &= 0xFFFF;
+						p++;
+					}
+				}
+
+				this->RunAnim(anim, 0, -1);
+
+				this->field_DF8 = 0;
+				return 1;
+			}
+		}
+
+		this->SelectTargetSwitch(256, 2896, &this->field_E54, 4096, 4096);
+
+		if (this->field_E54.pWhatever != 0)
+		{
+			i32 *p = gSpideySFXEntry[37];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(37, 0, -1);
+
+			this->field_E1C = (i32)0x80000000;
+			this->field_E20 = 0;
+			return 1;
+		}
+	}
+
+	this->field_E1C = 0x800;
+	this->field_898 = gTimerRelated;
+	this->field_DF8 = 0;
+
+	this->InitiateCombo(bPunch ? 1 : 0, 0);
+
+	return 1;
 }
 
 // @MEDIUMTODO
@@ -953,10 +1800,94 @@ i32 CPlayer::CheckStickToCeiling(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckStickToWall(void)
+// @Ok
+// tools/names.json calls 0x4BFEC0 "CPlayer_DoPhysics", but the Mac symbol
+// order (CheckStickToCeiling, CheckStickToWall, CheckKick) and the PC
+// function order (0x4BFCE0, 0x4BFEC0, 0x4C00B0) say this address is
+// CheckStickToWall. CPlayer::DoPhysics in this file holds an older copy of
+// the same body under that wrong name.
+i32 CPlayer::CheckStickToWall(void)
 {
-    printf("CPlayer::CheckStickToWall(void)");
+	if (!(this->field_E1C & 4))
+		return 0;
+
+	if (!(this->mCollision & 1))
+		return 0;
+
+	if (this->field_B74 == 0)
+		return 0;
+
+	i16 vy = this->field_B84.vy;
+	if (vy > 0xD48)
+		return 0;
+
+	if (vy < -2600)
+		return 0;
+
+	if (this->field_B8C[3] & 0x40000)
+		return 0;
+
+	if (Utils_GetGroundHeight(&this->mPos, 0, 0xB4, 0) != -1)
+		return 0;
+
+	i16 nx = this->field_B84.vx;
+	i16 ny = this->field_B84.vy;
+	i16 nz = this->field_B84.vz;
+
+	print_if_false((nx | nz | ny) != 0, "Bad normal");
+
+	this->field_A8.vz = nz;
+	this->field_AD4 = 1;
+	this->field_A8.vx = nx;
+	this->field_A8.vy = ny;
+
+	CVector up;
+	up.vx = 0;
+	up.vy = 4096;
+	up.vz = 0;
+	this->OrientToNormal(true, &up);
+
+	this->mVel.vz = 0;
+	this->field_DF8 = 0;
+	this->mVel.vy = 0;
+	this->mVel.vx = 0;
+
+	this->mPos.vx = this->field_B78 + this->field_EA8 * this->field_A8.vx;
+	this->mPos.vy = this->field_B7C + this->field_EA8 * this->field_A8.vy;
+	this->mPos.vz = this->field_B80 + this->field_EA8 * this->field_A8.vz;
+
+	i32 anim;
+	i32 *p;
+
+	if (this->mAnim == 0xE8)
+	{
+		anim = 0xEA;
+		p = gSpideySFXEntry[0xEA];
+	}
+	else
+	{
+		anim = 0xE3;
+		p = gSpideySFXEntry[0xE3];
+	}
+
+	this->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(anim, 0, -1);
+
+	this->field_E1C = 1;
+
+	SFX_Play(9, 0x2000, 0);
+
+	return 1;
 }
 
 // @Ok
@@ -1051,10 +1982,42 @@ u8 CPlayer::CheckSwingWebAvailability(SLineInfo *pLineInfo)
 	return 1;
 }
 
-// @SMALLTODO
-void CPlayer::CheckSwitchToGrabbedMode(CVector const *,CVector *)
+// @Ok
+u8 CPlayer::CheckSwitchToGrabbedMode(CVector const *pPos, CVector *pNormal)
 {
-    printf("CPlayer::CheckSwitchToGrabbedMode(CVector const *,CVector *)");
+	if (!(this->field_E1C & 1))
+		return 0;
+
+	if (this->field_AD4 != 0)
+		return 0;
+
+	this->field_E1C = 0x10000000;
+
+	this->field_EE0.vx = pPos->vx;
+	this->field_EE0.vy = pPos->vy;
+	this->field_EE0.vz = pPos->vz;
+
+	i32 *p = gSpideySFXEntry[0x96];
+	this->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(0x96, 0, -1);
+
+	this->field_564 = 0;
+	this->field_87C = 0;
+	this->field_894 = 0;
+
+	this->OrientToNormal(true, pNormal);
+
+	return 1;
 }
 
 // @MEDIUMTODO
@@ -1426,10 +2389,130 @@ i32 CPlayer::DoPhysics(void)
 	return 1;
 }
 
-// @MEDIUMTODO
+// @Ok
 void CPlayer::DoShadowCheck(void)
 {
-    printf("CPlayer::DoShadowCheck(void)");
+	if ((this->mCollision & 2) == 0)
+	{
+		// airborne: drop a line along the current up vector and put the
+		// shadow where it lands
+		SLineInfo lineInfo;
+		lineInfo.StartCoords = this->mPos;
+		lineInfo.EndCoords.vx = this->mPos.vx - (this->field_C84.vx << 11);
+		lineInfo.EndCoords.vy = this->mPos.vy - (this->field_C84.vy << 11);
+		lineInfo.EndCoords.vz = this->mPos.vz - (this->field_C84.vz << 11);
+		memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+		memset(&lineInfo.Position, 0, sizeof(CVector));
+		lineInfo.Normal.vx = 0;
+		lineInfo.Normal.vy = 0;
+		lineInfo.Normal.vz = 0;
+
+		M3dColij_InitLineInfo(&lineInfo);
+		M3dZone_LineToItem(&lineInfo, 1);
+
+		if (lineInfo.pItem != 0)
+		{
+			this->field_158 = 1;
+			this->mShadowPos.vx = lineInfo.Position.vx;
+			this->mShadowPos.vy = lineInfo.Position.vy;
+			this->mShadowPos.vz = lineInfo.Position.vz;
+		}
+		else
+		{
+			this->field_158 = 0;
+		}
+
+		this->DoMGSShadow();
+	}
+	else if (this->field_AD4 != 0 && this->field_8EA != 0)
+	{
+		this->field_158 = 0;
+		this->DoMGSShadow();
+	}
+	else if (this->field_8E9 == 0 || CameraList->mPos.vy >= this->mPos.vy)
+	{
+		i32 dist = this->field_EA8;
+
+		CVector shadowPos = this->mPos - (this->field_C84 * dist);
+		this->mShadowPos.vx = shadowPos.vx;
+		this->mShadowPos.vy = shadowPos.vy;
+		this->mShadowPos.vz = shadowPos.vz;
+
+		this->mShadowNormal.vx = this->field_A8.vx;
+		this->mShadowNormal.vy = this->field_A8.vy;
+		this->mShadowNormal.vz = this->field_A8.vz;
+
+		CVector toCamera = (CameraList->mPos - this->mShadowPos) >> 12;
+
+		if (toCamera.vx * this->mShadowNormal.vx
+			+ toCamera.vy * this->mShadowNormal.vy
+			+ toCamera.vz * this->mShadowNormal.vz >= 0)
+			this->field_158 = 1;
+		else
+			this->field_158 = 0;
+
+		this->DoMGSShadow();
+	}
+	else
+	{
+		// on the ceiling with the camera above the player: the shadow goes
+		// up, on its own quad
+		this->field_158 = 0;
+		this->DoMGSShadow();
+
+		SLineInfo lineInfo;
+		lineInfo.StartCoords = this->mPos;
+		lineInfo.EndCoords.vx = this->mPos.vx;
+		lineInfo.EndCoords.vy = this->mPos.vy + 0x1000000;
+		lineInfo.EndCoords.vz = this->mPos.vz;
+		memset(&lineInfo.MinCoords, 0, sizeof(CVector) * 2);
+		memset(&lineInfo.Position, 0, sizeof(CVector));
+		lineInfo.Normal.vx = 0;
+		lineInfo.Normal.vy = 0;
+		lineInfo.Normal.vz = 0;
+
+		M3dColij_InitLineInfo(&lineInfo);
+		M3dZone_LineToItem(&lineInfo, 1);
+
+		if (lineInfo.pItem != 0)
+		{
+			this->mShadowPos.vx = lineInfo.Position.vx;
+			this->mShadowPos.vy = lineInfo.Position.vy;
+			this->mShadowPos.vz = lineInfo.Position.vz;
+
+			CVector toCamera = (CameraList->mPos - this->mShadowPos) >> 12;
+
+			if (toCamera.vx * lineInfo.Normal.vx
+				+ toCamera.vy * lineInfo.Normal.vy
+				+ toCamera.vz * lineInfo.Normal.vz >= 0)
+			{
+				if (this->field_AC4 == 0)
+				{
+					CQuadBit *pQuad = new CQuadBit();
+					this->field_AC4 = pQuad;
+
+					// the shadow texture pointer sits at offset 4 of the
+					// first animation table entry
+					pQuad->SetTexture(reinterpret_cast<Texture*>(reinterpret_cast<u32*>(G_ANIM_TABLE[0])[1]));
+					pQuad->mFrigDeltaZ = 32;
+					pQuad->SetSemiTransparent();
+				}
+
+				this->field_AC4->OrientUsing(
+						&this->mShadowPos,
+						reinterpret_cast<SVECTOR*>(&lineInfo.Normal),
+						32,
+						32);
+				return;
+			}
+		}
+	}
+
+	if (this->field_AC4 != 0)
+	{
+		delete this->field_AC4;
+		this->field_AC4 = 0;
+	}
 }
 
 // @MEDIUMTODO
@@ -1910,10 +2993,62 @@ u8 CPlayer::GrabUpdate(CVector *out, i16 *outAngle)
 	return 1;
 }
 
-// @SMALLTODO
-void CPlayer::HandleControlsForSurfaceTransition(bool)
+// @Ok
+void CPlayer::HandleControlsForSurfaceTransition(bool bAllowTransition)
 {
-    printf("CPlayer::HandleControlsForSurfaceTransition(bool)");
+	if (this->field_8E8 != 0)
+	{
+		i16 vy = this->field_B84.vy;
+
+		if (vy > 0xD48)
+		{
+			if ((this->field_AD9 == 0 && this->field_E2D > 0) ||
+				(this->field_AD9 != 0 && this->field_E2D < 0))
+			{
+				this->field_ADA = 1;
+				this->field_AD9 = 0;
+				return;
+			}
+
+			this->field_ADA = 0;
+
+			if (bAllowTransition)
+				this->field_AD8 = 1;
+
+			this->field_AD9 = 0;
+			return;
+		}
+
+		if (vy < -2600)
+			this->field_AD9 = 0;
+
+		return;
+	}
+
+	if (this->field_8E9 == 0)
+		return;
+
+	if (this->field_B84.vy > 0xD48)
+		return;
+
+	if ((this->field_AD8 == 0 && this->field_E2D < 0) ||
+		(this->field_AD8 != 0 && this->field_E2D > 0))
+	{
+		this->field_ADB = 1;
+
+		if (bAllowTransition)
+		{
+			this->field_AD9 = 1;
+			this->field_AD8 = 0;
+			return;
+		}
+	}
+	else
+	{
+		this->field_ADB = 0;
+	}
+
+	this->field_AD8 = 0;
 }
 
 // @MEDIUMTODO
@@ -6575,6 +7710,10 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_1BC, 0x1BC);
 
+	VALIDATE(CPlayer, field_2C1, 0x2C1);
+	VALIDATE(CPlayer, field_2E1, 0x2E1);
+	VALIDATE(CPlayer, field_2F1, 0x2F1);
+
 	VALIDATE(CPlayer, field_350, 0x350);
 
 	VALIDATE(CPlayer, field_354, 0x354);
@@ -6593,7 +7732,9 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_54C, 0x54C);
 	VALIDATE(CPlayer, field_54F, 0x54F);
+	VALIDATE(CPlayer, field_551, 0x551);
 	VALIDATE(CPlayer, field_558, 0x558);
+	VALIDATE(CPlayer, field_564, 0x564);
 
 	VALIDATE(CPlayer, field_568, 0x568);
 	VALIDATE(CPlayer, field_56C, 0x56C);
@@ -6624,6 +7765,10 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_5E8, 0x5E8);
 
+	VALIDATE(CPlayer, field_87C, 0x87C);
+	VALIDATE(CPlayer, field_894, 0x894);
+	VALIDATE(CPlayer, field_898, 0x898);
+
 	VALIDATE(CPlayer, field_89C, 0x89C);
 
 	VALIDATE(CPlayer, field_8C4, 0x8C4);
@@ -6647,12 +7792,22 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_AD4, 0xAD4);
 
+	VALIDATE(CPlayer, field_AD5, 0xAD5);
+	VALIDATE(CPlayer, field_AD6, 0xAD6);
 	VALIDATE(CPlayer, field_AD7, 0xAD7);
+
+	VALIDATE(CPlayer, field_ADA, 0xADA);
+	VALIDATE(CPlayer, field_ADB, 0xADB);
+	VALIDATE(CPlayer, field_ADC, 0xADC);
 
 	VALIDATE(CPlayer, field_AE4, 0xAE4);
 	VALIDATE(CPlayer, field_AE5, 0xAE5);
 	VALIDATE(CPlayer, field_AE6, 0xAE6);
 
+
+	VALIDATE(CPlayer, field_B08, 0xB08);
+	VALIDATE(CPlayer, field_B09, 0xB09);
+	VALIDATE(CPlayer, field_B4C, 0xB4C);
 
 	VALIDATE(CPlayer, field_B74, 0xB74);
 	VALIDATE(CPlayer, field_B84, 0xB84);
@@ -6697,6 +7852,7 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_DAC, 0xDAC);
 
 	VALIDATE(CPlayer, field_DB8, 0xDB8);
+	VALIDATE(CPlayer, field_DBC, 0xDBC);
 
 	VALIDATE(CPlayer, field_DC0, 0xDC0);
 	VALIDATE(CPlayer, field_DCC, 0xDCC);
@@ -6726,16 +7882,25 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, hLockTarget, 0xE70);
 
+	VALIDATE(CPlayer, field_E80, 0xE80);
 	VALIDATE(CPlayer, field_E84, 0xE84);
 	VALIDATE(CPlayer, field_E88, 0xE88);
 	VALIDATE(CPlayer, field_E8C, 0xE8C);
+	VALIDATE(CPlayer, field_E8D, 0xE8D);
+	VALIDATE(CPlayer, field_EBC, 0xEBC);
 
 	VALIDATE(CPlayer, mHeldObject, 0xE48);
+	VALIDATE(CPlayer, field_E4C, 0xE4C);
+	VALIDATE(CPlayer, field_E54, 0xE54);
+	VALIDATE(CPlayer, field_E5C, 0xE5C);
+	VALIDATE(CPlayer, field_E20, 0xE20);
 	VALIDATE(CPlayer, field_E64, 0xE64);
 
 	VALIDATE(CPlayer, field_EA4, 0xEA4);
 
 	VALIDATE(CPlayer, field_EA8, 0xEA8);
+
+	VALIDATE(CPlayer, field_EE0, 0xEE0);
 
 	VALIDATE(CPlayer, mMaxHealth, 0xEF0);
 }
