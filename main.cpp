@@ -584,6 +584,140 @@ void Display(void)
 			- (reinterpret_cast<u32>(pDoubleBuffer->Polys) & 0x7FFFFFFF));
 }
 
+// @Ok
+// 0x004559D0, 704 bytes. One level, start to finish: it sets the frame loop
+// up, runs Logic and Display once per frame until something writes an end code
+// into gLevelStatus, then tears the audio down. SpideyMain's inner loop is
+// really "call this, then act on gLevelStatus".
+void PlayAway(void)
+{
+	FontManager::ResetCharMaps();
+
+	*gFrontUseAltTriggerMask = 1;
+
+	Bruce_Sync();
+	PCGfx_BeginScene(3, -1);
+
+	Vblanks = 0;
+	TTime = 0;
+
+	Pad_ClearAll();
+
+	gWaterEffect = 0;
+	*gWaterEffectTwo = 0;
+	gAttackRelated = 0;
+	*gPlayAwayCounter = 0;
+
+	if (*gShellMenuAbort)
+	{
+		// storyboard and comic viewers: no frame loop at all, just repaint the
+		// sky and report end code 11, which sends SpideyMain back to the shell.
+		M3d_FadeColour = 0xFFFFFF;
+		M3dInit_SetFoggingParams(0, 6000, 2048);
+
+		Db_SkyColor = 0;
+		gBFoggingRelated = 1;
+		Db_UpdateSky();
+
+		gLevelStatus = 11;
+		return;
+	}
+
+	gLevelStatus = 0;
+
+	if (*gDoShellForceLevelExit)
+		Utils_InitialRand(0x12A6CC58);
+
+	Pause(1);
+	Screen_StartCircularFadeIn(32, 8);
+
+	while (gLevelStatus == 0)
+	{
+		u32 frameStart = Vblanks;
+
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		Logic();
+
+		if (gLevelStatus)
+			break;
+
+		Music_MusicUpdate();
+		Display();
+		gsub_430880();
+
+		if (*gShowFrameRate)
+		{
+			char fps[8];
+			strcpy(fps, "XX FPS");
+
+			i32 rate = 60 / MechList->field_80;
+
+			if (rate <= 9)
+			{
+				fps[0] = '0';
+				fps[1] = static_cast<char>(rate + '0');
+			}
+			else
+			{
+				fps[0] = static_cast<char>(rate / 10 + '0');
+				fps[1] = static_cast<char>(rate % 10 + '0');
+			}
+
+			Mess_SetScale(192);
+			Mess_SetTextJustify(1);
+			Mess_DrawText(90, 104, fps, 0, 0x1000);
+		}
+
+		// if no vblank happened while the frame was being built, burn one so
+		// the game never runs faster than 60Hz.
+		if (Vblanks == frameStart)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+
+		DrawSync();
+
+		print_if_false(
+				(reinterpret_cast<u32>(pPoly) & 0x7FFFFFFF)
+					<= (reinterpret_cast<u32>(PolyBufferEnd) & 0x7FFFFFFF),
+				"Undetected Poly Buffer Overflow");
+
+		gsub_430680();
+
+		if (!DoVblankProcessing)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCGfx_EndScene(1);
+
+		if (MechList->IsDead())
+		{
+			gLevelStatus = 2;
+			break;
+		}
+	}
+
+	Db_SkyColor = 0;
+	Db_UpdateSky();
+
+	if (gSceneRelated)
+		PCGfx_EndScene(1);
+
+	Spool_Sync();
+
+	*gOtPushback = 1;
+
+	if (gLevelStatus == 3)
+		Front_SaveGameState();
+
+	SFX_StopAll();
+	Redbook_XAStop();
+}
+
 // @BIGTODO
 // Re-checked twice with idalib against the real exe. Address 0x00455C90, 4555
 // bytes of the poly HUD aside this is the top level game state machine: 434
