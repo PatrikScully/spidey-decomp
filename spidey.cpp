@@ -1993,7 +1993,11 @@ i32 CPlayer::GetDamageInflictedFromDifficulty(i32 a2)
 	return a2;
 }
 
-// @SMALLTODO
+// @NotOk
+// Same as GetComboFrameInfoPointer above: no standalone PC code, inlined
+// into CPlayer::InitiateCombo (0x4C87D0), and the mapping from name to
+// stream is not decidable from the PC binary. See that comment for the full
+// evidence.
 void CPlayer::GetEnterExitFrameInfoPointer(u16)
 {
     printf("CPlayer::GetEnterExitFrameInfoPointer(u16)");
