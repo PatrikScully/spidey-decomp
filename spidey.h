@@ -275,7 +275,10 @@ class CPlayer : public CSuper
 		// again until more than 30 ticks have passed.
 		i32 field_5B4;
 
-		PADDING(0x5C8-0x5B4-4);
+		// two extra body parts (the fists, created by CPlayer::CreateFists)
+		// hanging off SpideyAdditionalBodyPartsList; ~CPlayer unlinks and
+		// deletes both.
+		SHandle field_5B8[2];
 
 		// round-robin cursors into the two swing-web probe angle tables,
 		// see CPlayer::CheckJumpingSwingWeb. Both count 0..5 and wrap.
@@ -800,7 +803,13 @@ class CPlayer : public CSuper
 		// one qualifying baddy was found this pass
 		u8 field_EC0;
 
-		PADDING(0xEE0-0xEC0-1);
+		PADDING(0xED4-0xEC0-1);
+
+		// another body part on SpideyAdditionalBodyPartsList, unlinked and
+		// deleted by ~CPlayer the same way as field_5B8.
+		SHandle field_ED4;
+
+		PADDING(0xEE0-0xED4-sizeof(SHandle));
 
 		// position of the thing that grabbed the player, copied in by
 		// CPlayer::CheckSwitchToGrabbedMode

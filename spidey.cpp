@@ -7951,10 +7951,201 @@ void CPlayer::UpdateTrails(void)
 	}
 }
 
-// @MEDIUMTODO
+// @Ok
+// verified against the IDA disasm of 0x4BAA30 (the real destructor; the
+// vtable slot 0 entry at 0x4C9210 is only MSVC's scalar deleting thunk,
+// which is why Hex-Rays refuses that address).
+//
+// Order of business: stash the webbing/armour numbers back into gSaveGame
+// so they survive the level change, stop the looping SFX, free every owned
+// object (lock-on target, the two shadows, the extra body parts, the
+// auto-aim target, every live web, every command block, the two hand
+// trails), unlink from MechList and drop the reticle target.
 CPlayer::~CPlayer(void)
 {
-    printf("CPlayer::~CPlayer(void)");
+	// gSaveGame is 0x682858 (front.h, SSaveGame in shell.h) and this file
+	// does not include front.h, so the four slots the player carries across
+	// a level change are reached through the containing global, the same way
+	// CPlayer::Hit does it. +0x48 is the webbing amount, +0x4C the webbing
+	// upgrade level, +0x50 the armour amount, +0x79 "armour unlocked" and
+	// +0x7A "armour is on".
+	static u8 * const gSaveGameBytes = (u8*)0x00682858;
+
+	// 0x6A9058..0x6A9068: where the destructor pushes the previous gSaveGame
+	// values before overwriting them with the live ones. No idb_globals.txt
+	// entry (nearest named are gSpideyHeadModel 0x6A9054 and gTextureEntries
+	// 0x6A90B8), tentative names from usage. Nothing in the repo reads them
+	// back yet.
+	static i32 * const gPrevSavedWebbing = (i32*)0x006A9058;
+	static i32 * const gPrevSavedWebbingLevel = (i32*)0x006A905C;
+	static u8 * const gPrevSavedArmourUnlocked = (u8*)0x006A9060;
+	static i32 * const gPrevSavedArmour = (i32*)0x006A9064;
+	static u8 * const gPrevSavedArmourOn = (u8*)0x006A9068;
+
+	// 0x6A9034, right in front of MechList (0x6A9038): how many players are
+	// on that list. CPlayer::CPlayer increments it, this decrements it. No
+	// idb_globals.txt entry, tentative name.
+	static i32 * const gMechListCount = (i32*)0x006A9034;
+
+	// 0x60F76C, the screen y offset panel.cpp already calls gPanelScreenY;
+	// cleared here along with gWideScreen when the player goes away.
+	static i32 * const gPanelScreenY = (i32*)0x0060F76C;
+
+	if (gLevelStatus == 3 || gLevelStatus == 0)
+	{
+		*gPrevSavedWebbing = *reinterpret_cast<i32*>(gSaveGameBytes + 0x48);
+		*gPrevSavedWebbingLevel = *reinterpret_cast<i32*>(gSaveGameBytes + 0x4C);
+		*gPrevSavedArmour = *reinterpret_cast<i32*>(gSaveGameBytes + 0x50);
+		*gPrevSavedArmourOn = gSaveGameBytes[0x7A];
+		*gPrevSavedArmourUnlocked = gSaveGameBytes[0x79];
+
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x4C) = this->field_5D8;
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x48) = this->mWebbing;
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x50) = this->field_5EC;
+		gSaveGameBytes[0x79] = (gSpideyArmorSet != 0);
+		gSaveGameBytes[0x7A] = (this->field_57C != 0);
+	}
+	else if (gLevelStatus == 2)
+	{
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x48) = 0;
+		*reinterpret_cast<i32*>(gSaveGameBytes + 0x4C) = 0;
+	}
+
+	u32 hSfx = this->field_538;
+
+	this->field_52C = 0;
+	this->field_528 = 0;
+
+	if (hSfx != 0)
+	{
+		SFX_Stop(hSfx);
+		this->field_538 = 0;
+	}
+
+	i32 *pLockOn = this->field_E64;
+
+	if (pLockOn != 0)
+		(*(void(**)(i32*, i32))*pLockOn)(pLockOn, 1);
+
+	CQuadBit *pShadow = this->field_AC0;
+
+	if (pShadow != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pShadow);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	CQuadBit *pCeilingShadow = this->field_AC4;
+
+	this->field_AC0 = 0;
+
+	if (pCeilingShadow != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pCeilingShadow);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	this->field_AC4 = 0;
+
+	CBody *pPart = reinterpret_cast<CBody*>(Mem_RecoverPointer(&this->field_ED4));
+
+	if (pPart != 0)
+	{
+		pPart->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+		i32 *v = reinterpret_cast<i32*>(pPart);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	SHandle *pHandle = this->field_5B8;
+
+	for (i32 i = 2; i != 0; --i)
+	{
+		CBody *pFist = reinterpret_cast<CBody*>(Mem_RecoverPointer(pHandle));
+
+		if (pFist != 0)
+		{
+			pFist->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+			i32 *v = reinterpret_cast<i32*>(pFist);
+			(*(void(**)(i32*, i32))*v)(v, 1);
+		}
+
+		pHandle++;
+	}
+
+	if (gSpideyArmorSet != 0)
+	{
+		print_if_false(gSpideyArmorSet, "Error");
+
+		if (gLowGraphics != 0 && gSpideyVramProcessing != 0)
+		{
+			Spidey_SwapSuitTextures(0, CurrentSuit);
+			gSpideyVramProcessing = (gSpideyVramProcessing == 0);
+		}
+
+		gSpideyArmorSet = 0;
+	}
+
+	CBody *pAutoAim = this->field_878;
+
+	*gWideScreen = 0;
+	*gPanelScreenY = 0;
+
+	if (pAutoAim != 0)
+	{
+		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&MiscellaneousRenderingList));
+
+		i32 *v = reinterpret_cast<i32*>(pAutoAim);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+
+		this->field_878 = 0;
+	}
+
+	CBody *pWeb = WebList;
+
+	while (pWeb != 0)
+	{
+		CBody *pNext = reinterpret_cast<CBody*>(pWeb->mNextItem);
+
+		if (pWeb != 0)
+		{
+			i32 *v = reinterpret_cast<i32*>(pWeb);
+			(*(void(**)(i32*, i32))*v)(v, 1);
+		}
+
+		pWeb = pNext;
+	}
+
+	this->KillAllCommandBlocks();
+
+	CSmokeTrail *pTrail = this->field_58C;
+
+	if (pTrail != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pTrail);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	CSmokeTrail *pTrail2 = this->field_590;
+
+	if (pTrail2 != 0)
+	{
+		i32 *v = reinterpret_cast<i32*>(pTrail2);
+		(*(void(**)(i32*, i32))*v)(v, 1);
+	}
+
+	this->DeleteFrom(reinterpret_cast<CBody**>(&MechList));
+
+	(*gMechListCount)--;
+
+	Screen_TargetOn(0);
+
+	if (this->field_C90 != 0)
+	{
+		Mem_Delete(reinterpret_cast<void*>(this->field_C90));
+		this->field_C90 = 0;
+	}
 }
 
 // globals for Spidey_BagHead below (no idb_globals.txt entry, tentative
