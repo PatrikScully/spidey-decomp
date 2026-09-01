@@ -206,9 +206,9 @@ public:
 	              u16* pTrackA, u16* pTrackB, u16* pTrackC, u16* pTrackD, u16* pTrackE,
 	              i32 a12, i32 a13);
 	EXPORT virtual ~CDummy(void) OVERRIDE;
-	// @BIGTODO: 0x491A10, 0x123E bytes, not attempted this session (only reached through the
-	// vtable -- no direct caller in the binary -- so it does not block CDummy_ctor or any of the
-	// menu functions that construct a CDummy).
+	// 0x491A10, 0x123E bytes. Reached only through the vtable (off_53BFAC slot 2), never by a
+	// direct call, so the item list the costume viewer and the main menu previews run is the
+	// only way in.
 	EXPORT virtual void AI(void) OVERRIDE;
 
 	// 0x495970, the CDummy copy of CScorpion::TailRenderer (Mac symbol
