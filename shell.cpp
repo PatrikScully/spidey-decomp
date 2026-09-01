@@ -35,6 +35,7 @@
 #include "DXinit.h"
 #include "scorpion.h"
 #include "bullet.h"
+#include "bit.h"
 
 #include <cstring>
 
@@ -9480,6 +9481,61 @@ void CDummy::ScorpionUniformCurveTesselator(CVector* pControl, u32 numPoints, CV
 
 			t += static_cast<i32>(step);
 			s -= static_cast<i32>(step);
+		}
+	}
+}
+
+// @Ok
+// 0x494A60, 384 bytes. The same fold again: CDummy::DocOckUniformCurveTesselator (Mac
+// 0xE6970) and CDummy::SuperOckUniformCurveTesselator (Mac 0xE6030) have identical bodies,
+// so the PC build has one copy, called eight times each from DocOckBuildArms (0x494BE0) and
+// SuperOckBuildArms (0x494280). Same cubic bezier as ScorpionUniformCurveTesselator above,
+// but it does the weighting in plain integer maths instead of the GTE, writes into a ribbon
+// spine (28 byte SSimpleRibbonParams, position first) instead of bare CVectors, and takes
+// its parameter step from field_234 rather than working it out from numPoints.
+void CDummy::DocOckUniformCurveTesselator(CVector* pControl, u32 numPoints,
+		SSimpleRibbonParams* pOut)
+{
+	pOut[0].mPos = pControl[0] << 12;
+	pOut[numPoints - 1].mPos = pControl[3] << 12;
+
+	u32 remaining = numPoints - 1;
+	if (remaining > 1)
+	{
+		SSimpleRibbonParams* pPoint = &pOut[1];
+		i32 t = 0;
+
+		for (u32 left = remaining - 1; left != 0; left--)
+		{
+			i32 x = 0;
+			i32 y = 0;
+			i32 z = 0;
+
+			t += this->field_234;
+
+			i32 s = 4096 - t;
+			i32 s2 = (s * s) >> 12;
+			i32 weight = ((4096 - t) * s2) >> 12;
+
+			for (u32 c = 0; c < 4; c++)
+			{
+				CVector* pPos = &pControl[c];
+				x += pPos->vx * weight;
+				z += pPos->vz * weight;
+				y += pPos->vy * weight;
+
+				if (c == 0)
+					weight = (3 * t * s2) >> 12;
+				else if (c == 1)
+					weight = (t * ((3 * t * s) >> 12)) >> 12;
+				else if (c == 2)
+					weight = (t * ((t * t) >> 12)) >> 12;
+			}
+
+			pPoint->mPos.vx = x;
+			pPoint->mPos.vy = y;
+			pPoint->mPos.vz = z;
+			pPoint++;
 		}
 	}
 }

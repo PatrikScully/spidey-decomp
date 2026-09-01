@@ -16,6 +16,7 @@ class CVertexWobble;
 
 // defined in scorpion.h; only used here as a pointer member of CDummy.
 struct STailGeometry;
+struct SSimpleRibbonParams;
 
 struct SRecordRelated
 {
@@ -211,6 +212,12 @@ public:
 	EXPORT void ScorpionUniformCurveTesselator(CVector* pControl, u32 numPoints,
 			CVector* pOut);
 
+	// Doc Ock (mType 308) and monster-Ock (mType 309). Mac symbols
+	// .DocOckBuildArms__6CDummyFv / .SuperOckBuildArms__6CDummyFv and the two
+	// UniformCurveTesselator overloads, which the PC linker folded onto one body.
+	EXPORT void DocOckUniformCurveTesselator(CVector* pControl, u32 numPoints,
+			SSimpleRibbonParams* pOut);
+
 	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).
 	u16* field_1A4;
 	u16* field_1A8;
@@ -288,7 +295,10 @@ public:
 	void* field_214[4];
 	void* field_224[4];
 
-	// constant 455, written for the Scorpion-claw (mType 308) and SuperOck (mType 309) costumes.
+	// constant 455, written for the Scorpion-claw (mType 308) and SuperOck (mType 309)
+	// costumes. It is the bezier parameter step DocOckUniformCurveTesselator adds per
+	// output point, in 12.12 (455 * 9 == 4095, one short of a whole curve, so the last
+	// interior point stops just before the end control point).
 	i32 field_234;
 
 	// polymorphic pointer, deleted in ~CDummy; not set by the constructor.
