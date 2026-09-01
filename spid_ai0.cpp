@@ -311,7 +311,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   128         0x4B2892   done   dead, respawn countdown
 //   0x100       0x4B2F80   done   starting a swing
 //   0x200       0x4B3C33   done   swing web released, spawns the CSwinger
-//   0x400       0x4B329A   TODO   ~570 instructions, the biggest state
+//   0x400       0x4B329A   done   swinging on a web
 //   0x800       0x4B30AE   done   punching / combo tracking
 //   0x1000      0x4B3DF9   done   landing out of a surface transition
 //   0x2000      0x4B4AAA   done   a surface transition finished
@@ -2082,6 +2082,435 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 
 			SFX_Play(Rnd(3) + 0x15, 0x2000, 0);
+			break;
+		}
+
+		// 0x4B329A. Swinging on a web. Keeps the CSwinger alive (re-attaching
+		// to the far anchor when the current one runs out), and when the
+		// player hits geometry decides between a stunned drop, a landing, a
+		// crawl onto a fence, or simply letting the swing die out.
+		case 0x400:
+		{
+			// var at [esp+0x13]: the swing has to stop this tick. Seeded from
+			// CheckJumpingR1ZipWeb's return, which is 0 on every path that
+			// gets here.
+			u8 endSwing = 0;
+			CBody *pSwinger;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->CheckJumpingSmashKick() != 0) break;
+			if (pPlayer->CheckJumpingR1ZipWeb() != 0) break;
+
+			pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+
+			if (pSwinger != 0)
+			{
+				i32 frames;
+
+				if (reinterpret_cast<CSwinger*>(pSwinger)->IsOneTimeToDie() != 0)
+				{
+					if (pPlayer->field_D60 != 0)
+					{
+						// 0x4B32E4: the far attach point is the live one, so
+						// throw the next web and start a new CSwinger on it.
+						void *pMem;
+
+						pPlayer->PlaySingleAnim(0x118, 0, -1);
+						pPlayer->mPos -= (pPlayer->field_C6C * 0xC0);
+						pPlayer->DecreaseWebbing(0x80);
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+						if (pSwinger != 0)
+						{
+							delete pSwinger;
+						}
+
+						PLR_I32(pPlayer, 0xD7C) =
+							(i32)Utils_Dist(pPlayer->mPos, pPlayer->field_D70);
+						pPlayer->CalculateSwingWebParameters(&pPlayer->field_D70);
+
+						pMem = CItem::operator new(0x190);
+
+						if (pMem != 0)
+						{
+							gCSwinger_ctor(pMem, &pPlayer->field_D70,
+								PLR_I32(pPlayer, 0xD7C), &pPlayer->field_D80,
+								&pPlayer->field_DA0);
+						}
+
+						pPlayer->field_E64 = reinterpret_cast<i32*>(pMem);
+						// the original writes this even when the allocation
+						// failed, the same defect state 0x200 has
+						*reinterpret_cast<i32*>(reinterpret_cast<char*>(pMem) + 0xF8) =
+							(u8)pPlayer->field_5E8;
+
+						SFX_Play(Rnd(3) + 0x15, 0x2000, 0);
+
+						// Animations[region * 17] + 8 * anim + 8 is the
+						// animation's frame count, the same table lookup
+						// spidey.cpp uses. Read full width here, no & 0xFFFF.
+						frames = *reinterpret_cast<i32*>(
+							reinterpret_cast<char*>(Animations[(i32)pPlayer->mRegion * 17])
+							+ 8 * (i32)pPlayer->mAnim + 8);
+
+						// and the same missing null check on the new swinger
+						reinterpret_cast<CSwinger*>(pPlayer->field_E64)
+							->SetSpideyAnimFrame(frames - 1);
+
+						pPlayer->field_D60 = 0;
+						SFX_PlayPos(0x19, &pPlayer->mPos, 0);
+					}
+					else
+					{
+						// 0x4B3435: nothing left to swing on.
+						endSwing = 1;
+					}
+				}
+				else
+				{
+					// 0x4B343C: hold the last frame of the swing animation.
+					pPlayer->mAnimSpeed = 0;
+
+					frames = *reinterpret_cast<i32*>(
+						reinterpret_cast<char*>(Animations[(i32)pPlayer->mRegion * 17])
+						+ 8 * (i32)pPlayer->mAnim + 8);
+
+					reinterpret_cast<CSwinger*>(pSwinger)->SetSpideyAnimFrame(frames - 1);
+				}
+			}
+
+			// 0x4B346B: about to stop swinging in mid air, so look for the
+			// surface under the hook and snap onto it.
+			if (endSwing != 0 && (pPlayer->mCollision & 3) == 0)
+			{
+				SLineInfo hookLine;
+
+				hookLine.StartCoords.vx = 0;
+				hookLine.StartCoords.vy = 0;
+				hookLine.StartCoords.vz = 0;
+				hookLine.EndCoords.vx = 0;
+				hookLine.EndCoords.vy = 0;
+				hookLine.EndCoords.vz = 0;
+				hookLine.MinCoords.vx = 0;
+				hookLine.MinCoords.vy = 0;
+				hookLine.MinCoords.vz = 0;
+				hookLine.MaxCoords.vx = 0;
+				hookLine.MaxCoords.vy = 0;
+				hookLine.MaxCoords.vz = 0;
+				hookLine.Position.vx = 0;
+				hookLine.Position.vy = 0;
+				hookLine.Position.vz = 0;
+				hookLine.Normal.vx = 0;
+				hookLine.Normal.vy = 0;
+				hookLine.Normal.vz = 0;
+
+				M3dUtils_GetHookPosition(
+					reinterpret_cast<VECTOR*>(&hookLine.StartCoords), pPlayer, 2);
+
+				hookLine.EndCoords.vx =
+					hookLine.StartCoords.vx - (pPlayer->field_C6C.vx << 8);
+				hookLine.EndCoords.vy =
+					hookLine.StartCoords.vy - (pPlayer->field_C6C.vy << 8);
+				hookLine.EndCoords.vz =
+					hookLine.StartCoords.vz - (pPlayer->field_C6C.vz << 8);
+
+				M3dColij_InitLineInfo(&hookLine);
+				M3dZone_LineToItem(&hookLine, 1);
+
+				if (hookLine.pItem != 0)
+				{
+					i32 standOff = pPlayer->field_EA8;
+
+					pPlayer->mLineInfo.Normal.vx = hookLine.Normal.vx;
+					pPlayer->mLineInfo.Normal.vy = hookLine.Normal.vy;
+					pPlayer->mLineInfo.Normal.vz = hookLine.Normal.vz;
+
+					pPlayer->mCollision |= 1;
+
+					pPlayer->mPos.vx =
+						hookLine.Position.vx + (i32)hookLine.Normal.vx * standOff;
+					pPlayer->mPos.vy =
+						hookLine.Position.vy + (i32)hookLine.Normal.vy * standOff;
+					pPlayer->mPos.vz =
+						hookLine.Position.vz + (i32)hookLine.Normal.vz * standOff;
+				}
+			}
+
+			// 0x4B35FD
+			if ((pPlayer->mCollision & 3) != 0)
+			{
+				pPlayer->mVel.vx = 0;
+				pPlayer->mVel.vy = 0;
+				pPlayer->mVel.vz = 0;
+
+				SFX_PlayPos(9, &pPlayer->mPos, 0);
+
+				pPlayer->field_AE5 = 0;
+
+				if (pPlayer->mLineInfo.pItem != 0)
+				{
+					i16 hitNormalY = pPlayer->mLineInfo.Normal.vy;
+					u8 land = 0;
+
+					if (hitNormalY < (i16)0xF5D8)
+					{
+						// 0x4B3648: hit something facing steeply down, so
+						// drop off the web stunned.
+						pPlayer->field_AD4 = 0;
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						if (pSwinger != 0)
+						{
+							CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+							delete pSwinger;
+							pPlayer->field_E64 = 0;
+						}
+
+						pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+						pPlayer->field_A8.vy = hitNormalY;
+						pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+						pPlayer->field_54C = 0;
+						pPlayer->field_550 = 1;
+						pPlayer->PlaySingleAnim(0xD5, 0, -1);
+						pPlayer->field_E1C = 1;
+						CameraList->field_12C = -1;
+						break;
+					}
+
+					if (hitNormalY > 0xD48)
+					{
+						if ((pPlayer->mLineInfo.pFace[3] & 0x40000) != 0)
+						{
+							// 0x4B376B
+							endSwing = 1;
+						}
+						else
+						{
+							// 0x4B36EA: land on a wall, facing along the
+							// travel direction.
+							pPlayer->field_AD4 = 1;
+
+							pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+							if (pSwinger != 0)
+							{
+								CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+								delete pSwinger;
+								pPlayer->field_E64 = 0;
+							}
+
+							pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+							pPlayer->field_A8.vy = hitNormalY;
+							pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+							pPlayer->field_AC8.vx = pPlayer->field_C6C.vx;
+							pPlayer->field_AC8.vy = pPlayer->field_C6C.vy;
+							pPlayer->field_AC8.vz = pPlayer->field_C6C.vz;
+
+							pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+							pPlayer->LockTargetTorsoAngle();
+							land = 1;
+						}
+					}
+					else if ((pPlayer->mLineInfo.pFace[3] & 0x40000) == 0)
+					{
+						// 0x4B3789: land on the floor, standing upright.
+						CVector up(0, 0x1000, 0);
+
+						pPlayer->field_AD4 = 1;
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						if (pSwinger != 0)
+						{
+							CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+							delete pSwinger;
+							pPlayer->field_E64 = 0;
+						}
+
+						pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+						pPlayer->field_A8.vy = hitNormalY;
+						pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+						pPlayer->OrientToNormal(true, &up);
+						land = 1;
+					}
+					else if ((pPlayer->mLineInfo.pFace[3] & 0x8000000) != 0)
+					{
+						// 0x4B3852: a fence. Walk the ray along the surface
+						// normal from face to face until it leaves the fence,
+						// then stick there and hand over to the fence
+						// surface transition.
+						SLineInfo fenceLine;
+						i32 standOff = pPlayer->field_EA8;
+						i32 normalX;
+						i32 normalY;
+						i32 normalZ;
+						i32 posX;
+						i32 posY;
+						i32 posZ;
+
+						pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+						pPlayer->field_A8.vy = pPlayer->mLineInfo.Normal.vy;
+						pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
+
+						posX = pPlayer->mPos.vx;
+						posY = pPlayer->mPos.vy;
+						posZ = pPlayer->mPos.vz;
+
+						normalX = pPlayer->mLineInfo.Normal.vx;
+						normalY = pPlayer->mLineInfo.Normal.vy;
+						normalZ = pPlayer->mLineInfo.Normal.vz;
+
+						for (;;)
+						{
+							fenceLine.StartCoords.vx = 0;
+							fenceLine.StartCoords.vy = 0;
+							fenceLine.StartCoords.vz = 0;
+							fenceLine.EndCoords.vx = 0;
+							fenceLine.EndCoords.vy = 0;
+							fenceLine.EndCoords.vz = 0;
+							fenceLine.MinCoords.vx = 0;
+							fenceLine.MinCoords.vy = 0;
+							fenceLine.MinCoords.vz = 0;
+							fenceLine.MaxCoords.vx = 0;
+							fenceLine.MaxCoords.vy = 0;
+							fenceLine.MaxCoords.vz = 0;
+							fenceLine.Position.vx = 0;
+							fenceLine.Position.vy = 0;
+							fenceLine.Position.vz = 0;
+							fenceLine.Normal.vx = 0;
+							fenceLine.Normal.vy = 0;
+							fenceLine.Normal.vz = 0;
+
+							fenceLine.StartCoords.vx = posX + normalX * 40;
+							fenceLine.StartCoords.vy = posY + normalY * 40 + 0x4000;
+							fenceLine.StartCoords.vz = posZ + normalZ * 40;
+							fenceLine.EndCoords.vx = posX - normalX * 140;
+							fenceLine.EndCoords.vy = posY - normalY * 140 + 0x4000;
+							fenceLine.EndCoords.vz = posZ - normalZ * 140;
+
+							M3dColij_InitLineInfo(&fenceLine);
+							M3dZone_LineToItem(&fenceLine, 1);
+
+							if (fenceLine.pItem == 0) break;
+							if ((fenceLine.pFace[3] & 0x8000000) == 0) break;
+
+							standOff = pPlayer->field_EA8;
+
+							posX = fenceLine.Position.vx
+								+ (i32)fenceLine.Normal.vx * standOff;
+							posY = fenceLine.Position.vy
+								+ (i32)fenceLine.Normal.vy * standOff;
+							posZ = fenceLine.Position.vz
+								+ (i32)fenceLine.Normal.vz * standOff;
+						}
+
+						// 0x4B3A88
+						pPlayer->field_AD4 = 1;
+						pPlayer->field_B09 = 1;
+						pPlayer->field_54C = 0;
+
+						pPlayer->mPos.vx = posX;
+						pPlayer->mPos.vy = posY;
+						pPlayer->mPos.vz = posZ;
+
+						pPlayer->field_550 = 1;
+						pPlayer->field_8E8 = 1;
+
+						pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+						if (pSwinger != 0)
+						{
+							CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+							delete pSwinger;
+							pPlayer->field_E64 = 0;
+						}
+
+						CameraList->field_12C = -1;
+
+						print_if_false(pPlayer->CheckFenceSurfaceTransition() != 0,
+							"fence error");
+						break;
+					}
+					else
+					{
+						// 0x4B3B07
+						endSwing = 1;
+					}
+
+					if (land != 0)
+					{
+						// 0x4B37F4
+						pPlayer->TidyUpZipWebLandingPosition(0x20);
+						CameraList->field_12C = -1;
+						pPlayer->field_54C = 0;
+						pPlayer->field_550 = 1;
+						pPlayer->PlaySingleAnim(0x119, 0, -1);
+						pPlayer->field_E1C = 1;
+						break;
+					}
+				}
+			}
+
+			// 0x4B3B0C
+			if ((pPlayer->field_504 & 0x400) != 0
+				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+			{
+				pPlayer->PlaySingleAnim(0xD8, 0, -1);
+				pPlayer->field_E1C = 4;
+				pPlayer->field_54D = 0;
+				endSwing = 1;
+			}
+
+			// 0x4B3B4F
+			{
+				u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+				u8 padFire = pPad[0x101];
+
+				if (padFire != 0)
+				{
+					pPlayer->field_E8D = 0;
+				}
+
+				// 0x4B3B66: the swing keeps going unless the fire button (or,
+				// in practice mode, one of the other three) says to stop.
+				if (endSwing == 0
+					&& !((*gPracticeDifficultyFlag == 0 || pPlayer->field_1AC != 0)
+						&& padFire != 0))
+				{
+					if (*gPracticeDifficultyFlag == 0) break;
+
+					if (pPad[0x111] == 0 && pPad[0x121] == 0
+						&& pPad[0x131] == 0)
+					{
+						break;
+					}
+				}
+
+				// 0x4B3BB2: bleed off the swing and drop into the fall state.
+				pPlayer->mVel.vx >>= 1;
+				pPlayer->mVel.vz >>= 1;
+				pPlayer->mAnimSpeed = 0x10000;
+
+				if (pPlayer->field_E1C != 4)
+				{
+					pPlayer->field_E1C = 4;
+					pPlayer->field_54D = 1;
+				}
+
+				CameraList->field_12C = -1;
+				pPlayer->field_54C = 0;
+				pPlayer->field_550 = 1;
+
+				pSwinger = reinterpret_cast<CBody*>(pPlayer->field_E64);
+				if (pSwinger != 0)
+				{
+					CSwinger_SwingBack(reinterpret_cast<CSwinger*>(pSwinger));
+					delete pSwinger;
+					pPlayer->field_E64 = 0;
+				}
+			}
 			break;
 		}
 
