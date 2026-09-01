@@ -389,67 +389,158 @@ void CSuper::OutlineOff(void)
 	this->mExtraFlags &= ~CSUPER_OUTLINE;
 }
 
-// Re-investigated 2026-09-01 with idalib (raw disasm, not just Hex-Rays), still left @NotOk on
-// purpose: this needs an undocumented record format and there is no way to verify a guess (no
-// runtime path reaches it in a smoke test, no compare.py hook, no reference struct anywhere).
-// Wrong-but-confident here is worse than honest @NotOk (PLAN.md's bar).
+// @Ok
+// 0x460880, 824 bytes, real PC function (names.json ?OutlineOn@CSuper@@QAEXXZ, Mac size 852).
+// Full translation, verified against the raw disasm of 0x460880 (idalib session 0dc9741d), not
+// just Hex-Rays. Builds the per-face neighbour (adjacency) table the outline renderer needs, once,
+// on the first call, and caches it in field_11C.
 //
-// Address 0x460880, 824 bytes. The code already written here (mExtraFlags |= CSUPER_OUTLINE, the
-// field_11C null check that skips the missing block, and the unconditional tail outlineR/G/B =
-// -1 and alsoOutlineRelated = 0x50000000) matches the original exactly (VALIDATE offsets confirm
-// mExtraFlags=0x12C, field_11C=0x11C, alsoOutlineRelated=0x120, outlineR/G/B=0x124/0x125/0x126,
-// all in ob.h). Only the missing block (skipped here by "if (!this->field_11C){ }") is
-// unimplemented.
-//
-// What that block does, confirmed instruction-by-instruction against the raw disassembly: on the
-// first call (field_11C == null) it computes `i32 **pRegionEntry = CItemRelatedList[this->mRegion
-// * 17];` - the exact same table lookup already established in switch.cpp/mysterio.cpp/
-// ps2funcs.cpp/web.cpp/shell.cpp (ob.h, 0x6B2454, mRegion confirmed at CItem+0x1F). It then reads
-// `Q = pRegionEntry[0]` (the SAME per-region "slot 0" pointer mysterio.cpp's CMysterio::CMysterio
-// already writes bounding-box corners into, at Q[2]..Q[5] as i32) and, separately, `*((i32*)Q -
-// 1)` - the DWORD stored 4 bytes BEFORE the address Q itself points to, used as a face count. This
-// is a count-before-data header on the block Q points into (CLAUDE.md's "shifted pointer" idiom),
-// NOT a second parallel table at a neighboring address - correcting an earlier version of this
-// comment that described it as "dword_6B2450[region*17]"; the disasm is unambiguous
-// (`mov esi,[eax]` / `mov edi,[eax-4]` where eax is the pointer VALUE read from the table, not a
-// second table access).
-//
-// It uses that DWORD as a face count, allocates facecount*1024 bytes via DCMem_New (0x4581A0,
-// already @Ok in mem.cpp) into field_11C, fills it with 0xFF, then for each face computes a record
-// base with `Q(as u16*) + 8*(Q[1]+Q[2]) + 0x1C` bytes - this exact formula (sum of the u16 fields
-// at +2/+4, times 8, plus 0x1C) is byte-for-byte identical to switch.cpp's already-@Ok
-// Switch_SetSwitchFaceFlags, which computes `pRec + (*(u16*)(pRec+4) + *(u16*)(pRec+2)) * 8 +
-// 0x1C` on `pRegionEntry[pItem->mModel]` (a *different* slot of the *same* table, indexed by
-// model instead of the implicit slot 0 used here). That match is strong evidence both functions
-// are walking the same per-region face-record family, but Switch's per-record advance
-// (`(*(u16*)(pFace+2) >> 1) * 2`, i.e. the record's own u16 length field with its low bit
-// cleared) does not arithmetically reduce to this function's advance (`&(DWORD*)record[*(DWORD*)
-// record >> 18]`, i.e. skip the top 14 bits worth of dwords) even though both fields alias the
-// same two bytes of the record (offset+2..+3, the high 16 bits of the offset+0 dword) - so they
-// are reading the same bytes for two different purposes/lists, and it is not possible to tell
-// from the disassembly alone whether SNbrFaces is a distinct sibling format sharing byte layout
-// with Switch's records by convention, or something else. Debug asserts confirm the original
-// struct name: "Bad SNbrFaces size." / "NumFaces too big" (strings at 0x54E758/0x54E744, both
-// unconditionally-true prints in this build, i.e. inert here but real out-of-line calls in the
-// original that must still be reproduced). Inside the per-face walk (up to count*count iterations,
-// count <= 0x100 per the assert) it pulls all 4 bytes out of two DWORDs (one at the current record
-// +4, one at a second, independently-advancing record cursor +4) and does an all-pairs
-// byte-equality test between them, writing small integer indices into the 1024-byte output buffer
-// at 3 different offsets (buf-2, buf-1, buf) depending on which byte-equality combination hit, and
-// a bit test (`record byte 0 & 0x10`) that changes which of the two records' "extra" byte
-// (HIBYTE) participates. This reads as adjacency/shared-corner detection for outline-edge
-// generation, but the record layout (which byte is which triangle corner, what the 0x10 flag bit
-// means) is not named or documented anywhere in this repo, the maintainer's IDBs, or the Mac
-// symbol list (checked idb_globals.txt and idbs/spiderman_names.txt: no SNbrFaces symbol, no
-// struct). Getting the byte-role mapping wrong would silently produce plausible-looking but wrong
-// outline edges with zero way to detect it (visual-only, boss-outline effect, not reachable in any
-// headless smoke test). Left as a stub (NOT_IMPLEMENTED) rather than guessing at an undocumented
-// binary format; only used by CVenom and CDummy per the game's outline-related callers.
-// @NotOk
+// What the disasm does, step by step:
+//  - mExtraFlags |= CSUPER_OUTLINE always; the table is built only when field_11C is still null.
+//  - pRegionEntry = CItemRelatedList[mRegion * 17] (ob.h, 0x6B2454, mRegion at CItem+0x1F), the
+//    same per-region model table switch.cpp/mysterio.cpp/web.cpp already walk. The model count is
+//    the DWORD stored 4 bytes BEFORE that entry (`mov edi,[eax-4]`, CLAUDE.md's shifted-pointer
+//    idiom), and pRegionEntry[0] is the first model record.
+//  - allocates count*1024 bytes with Mem_New (DCMem_New(size,0,1,0,1), the exact 5 args pushed)
+//    and fills it with 0xFF via the nested 256 x 4-byte store loop the original emits. 1024 bytes
+//    per model = 256 faces * 4 neighbour bytes, which is why "NumFaces too big" asserts at 0x100.
+//  - per model: numFaces = u16 at rec+6, face records start at rec + (u16@+2 + u16@+4)*8 + 0x1C
+//    (byte-identical to Switch_SetSwitchFaceFlags), each record advances by (rec[0] >> 18) DWORDs.
+//  - per outer face j (cursor B) it scans every other face i (cursor A, reset per j) and compares
+//    the four bytes of the DWORD at record+4 (the face's vertex indices) all-pairs. Writing i into
+//    slot k of face j's 4-byte record means face i shares edge k with face j. bit 0x10 of the
+//    outer record's byte 0 selects a 3-corner face: the quad case fills 4 edges (b0b1, b0b2, b1b3,
+//    b2b3), the triangle case only 3 (b0b1, b0b2, b1b2), i.e. a quad wound 0,1,3,2. That edge
+//    reading is what makes the byte roles unambiguous; an earlier pass left this stub because the
+//    record format is undocumented, but the operations themselves are fully determined by the
+//    disasm and are reproduced here 1:1 (self-compare skip, cursor advances, and the exact write
+//    conditions/order included).
+//  - the next model record is where the last face record ended (cursor B after the walk).
+// Both debug asserts are constant-true in this build (call nullsub_1): print_if_false(1, "Bad
+// SNbrFaces size.") is a folded sizeof check, the second is the real numFaces <= 0x100 test.
+// Not runtime-testable in a headless smoke run (visual-only boss outline, CVenom/CDummy callers),
+// so this is verified against the disassembly only.
 void CSuper::OutlineOn(void){
-	NOT_IMPLEMENTED;
 	this->mExtraFlags |= CSUPER_OUTLINE;
+
 	if (!this->field_11C){
+
+		i32 **pRegionEntry = CItemRelatedList[this->mRegion * 17];
+		u8 *pModelRec = reinterpret_cast<u8*>(pRegionEntry[0]);
+		i32 numModels = reinterpret_cast<i32*>(pRegionEntry)[-1];
+
+		print_if_false(1, "Bad SNbrFaces size.");
+
+		u8 *pNbrTable = static_cast<u8*>(Mem_New(numModels << 10));
+		this->field_11C = pNbrTable;
+
+		if (numModels > 0)
+		{
+			u8 *pFill = pNbrTable;
+			for (i32 model = numModels; model != 0; model--)
+			{
+				for (i32 slot = 256; slot != 0; slot--)
+				{
+					pFill[0] = 0xFF;
+					pFill[1] = 0xFF;
+					pFill[2] = 0xFF;
+					pFill[3] = 0xFF;
+					pFill += 4;
+				}
+			}
+		}
+
+		if (numModels > 0)
+		{
+			u8 *pRow = static_cast<u8*>(this->field_11C) + 2;
+
+			for (i32 model = numModels; model != 0; model--)
+			{
+				i32 numFaces = *reinterpret_cast<u16*>(pModelRec + 6);
+				print_if_false(numFaces <= 0x100, "NumFaces too big");
+
+				i32 faceOffset =
+					*reinterpret_cast<u16*>(pModelRec + 4) + *reinterpret_cast<u16*>(pModelRec + 2);
+
+				u8 *pFacesBase = pModelRec + faceOffset * 8 + 0x1C;
+				u8 *pFaceB = pFacesBase;
+
+				if (numFaces > 0)
+				{
+					u8 *pNbr = pRow;
+
+					for (i32 j = 0; j < numFaces; j++)
+					{
+						u8 *pFaceA = pFacesBase;
+
+						for (i32 i = 0; i < numFaces; i++)
+						{
+							if (i != j)
+							{
+								u32 a = *reinterpret_cast<u32*>(pFaceA + 4);
+								u32 b = *reinterpret_cast<u32*>(pFaceB + 4);
+
+								u32 a0 = a & 0xFF;
+								u32 a1 = (a >> 8) & 0xFF;
+								u32 a2 = (a >> 16) & 0xFF;
+								u32 a3 = a >> 24;
+
+								u32 b0 = b & 0xFF;
+								u32 b1 = (b >> 8) & 0xFF;
+								u32 b2 = (b >> 16) & 0xFF;
+								u32 b3 = b >> 24;
+
+								i32 m0 = (b0 == a3) || (b0 == a2) || (b0 == a1) || (b0 == a0);
+								i32 m1 = (b1 == a3) || (b1 == a2) || (b1 == a1) || (b1 == a0);
+								i32 m2 = (b2 == a3) || (b2 == a2) || (b2 == a1) || (b2 == a0);
+
+								if (pFaceB[0] & 0x10)
+								{
+									if (m0)
+									{
+										if (m1)
+											pNbr[-2] = static_cast<u8>(i);
+
+										if (m2)
+											pNbr[-1] = static_cast<u8>(i);
+									}
+
+									if (m1 && m2)
+										pNbr[0] = static_cast<u8>(i);
+								}
+								else
+								{
+									i32 m3 = (b3 == a3) || (b3 == a2) || (b3 == a1) || (b3 == a0);
+
+									if (m0)
+									{
+										if (m1)
+											pNbr[-2] = static_cast<u8>(i);
+
+										if (m2)
+											pNbr[-1] = static_cast<u8>(i);
+									}
+
+									if (m1 && m3)
+										pNbr[0] = static_cast<u8>(i);
+
+									if (m2 && m3)
+										pNbr[1] = static_cast<u8>(i);
+								}
+							}
+
+							pFaceA += (*reinterpret_cast<u32*>(pFaceA) >> 18) * 4;
+						}
+
+						pNbr += 4;
+						pFaceB += (*reinterpret_cast<u32*>(pFaceB) >> 18) * 4;
+					}
+				}
+
+				pModelRec = pFaceB;
+				pRow += 1024;
+			}
+		}
 	}
 
 	this->outlineR = -1;
