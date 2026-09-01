@@ -2497,12 +2497,20 @@ void M3d_PreprocessWibblyTextures(i32 region)
 static volatile u8 * const gM3dBackgroundFlag = (u8*)0x00550024;
 static volatile i32 * const gM3dBackgroundDword = (i32*)0x00660F90;
 static u32 ** const gM3dBackgroundClut = (u32**)0x0064F5D0;
-static volatile u32 * const * const gM3dBackgroundModelData = (u32* const*)0x005F6764;
+// Fixed 2026-09-01: was u32* const*, so the "+ 36 * modelIndex" below
+// advanced 36 DWORDS (144 bytes) per model instead of the 36 BYTES the
+// original advances (sizeof(DCModelData) == 0x24; the disassembly does
+// lea ecx,[ecx+ecx*8]; lea ebp,[edx+ecx*4]).
+static u8 * const * const gM3dBackgroundModelData = (u8* const*)0x005F6764;
 static volatile i32 * const gM3dBackgroundSave = (i32*)0x0054D384;
 static volatile f32 * const gM3dBackgroundScale = (f32*)0x00550090;
 static volatile u8 * const gM3dBackgroundFlagTwo = (u8*)0x00652F3C;
 static volatile u8 * const gM3dBackgroundFlagThree = (u8*)0x00660FE2;
-static i32 * const gM3dIdentityOne = (i32*)0x0064E518;
+// Fixed 2026-09-01: was i32*, which made the matrix4x4 construction
+// below CONVERT the stored float bit patterns to float (1.0f became
+// 1065353216.0f) instead of reading them as floats. The original does
+// a plain dword copy out of this table.
+static f32 * const gM3dIdentityOne = (f32*)0x0064E518;
 static i32 * const gM3dIdentityTwo = (i32*)0x0064E51C;
 static i32 * const gM3dIdentityThree = (i32*)0x0064E520;
 
@@ -2569,20 +2577,21 @@ void M3d_RenderBackground(void *pList)
 					f32 sinx = (f32)sin(x), cosx = (f32)cos(x);
 					f32 siny = (f32)sin(y), cosy = (f32)cos(y);
 					f32 sinz = (f32)sin(z), cosz = (f32)cos(z);
-					f32 c00 = cosz * cosy;
-					f32 c01 = sinz * siny;
-					f32 c02 = cosz * siny;
-					f32 c03 = sinz * cosy;
-					f32 c10 = cosy * sinx;
-					f32 c11 = -sinx;
-					f32 c12 = siny * sinx;
-					f32 c20 = c00 * sinx + c01;
-					f32 c21 = cosx * sinz;
-					f32 c22 = c02 * sinx - c03;
-					f32 c23 = c03 * sinx - c02;
-					f32 c30 = sinz * sinx;
-					f32 c31 = c01 * sinx + c00;
-					v48 = matrix4x4(c31, c30, c23, 0, c22, c21, c20, 0, c12, c11, c10, 0, 0, 0, 0, 1.0f);
+					// Fixed 2026-09-01: the old cell assignment here did not
+					// come out orthonormal (for a pure X rotation it produced
+					// rows (0,0,sinx) and (0,-sinx,sinx)). Re-derived from the
+					// raw disassembly of the 16 constructor arguments at
+					// 0x4749F7..0x474AB1, which is the same YXZ matrix
+					// M3d_Render builds at 0x474359.
+					f32 czcy = cosz * cosy;
+					f32 szsy = sinz * siny;
+					f32 czsy = cosz * siny;
+					f32 szcy = sinz * cosy;
+					v48 = matrix4x4(
+						szsy * sinx + czcy, sinz * cosx, szcy * sinx - czsy, 0.0f,
+						czsy * sinx - szcy, cosz * cosx, czcy * sinx + szsy, 0.0f,
+						siny * cosx,        -sinx,       cosy * cosx,        0.0f,
+						0.0f,               0.0f,        0.0f,               1.0f);
 				}
 				else
 				{
