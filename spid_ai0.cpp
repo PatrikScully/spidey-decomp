@@ -297,7 +297,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x400       0x4B329A   TODO   ~570 instructions, the biggest state
 //   0x800       0x4B30AE   done   punching / combo tracking
 //   0x1000      0x4B3DF9   done   landing out of a surface transition
-//   0x2000      0x4B4AAA   TODO   ~250 instructions
+//   0x2000      0x4B4AAA   done   a surface transition finished
 //   0x4000      0x4B44C9   TODO   ~370 instructions
 //   0x8000      0x4B402E   TODO   ~290 instructions
 //   0x10000     0x4B4E9B   done   web-swing wind up (3 anims that fire a web)
@@ -318,8 +318,8 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x80000000  0x4B6D81   done   pulling a switch
 //
 // Small blocks several states jump into, all already inlined where used:
-//   0x4B4E56  mPos += field_C6C * 8;  field_C58 -= 8;  break
-//   0x4B4E7F  mPos += field_C6C * field_C58;  field_C58 = 0;  break
+//   0x4B4E56  mPos += field_C6C * 8;  field_C54 -= 8;  break
+//   0x4B4E7F  mPos += field_C6C * field_C54;  field_C54 = 0;  break
 //   0x4B509C  if (animJustFinished != 0xFFFF) SwitchToStandMode();  break
 //   0x4B6010  field_E1C = 0x10;  break
 //   0x4B6597  SwitchToStandMode();  break
@@ -2412,6 +2412,193 @@ void SpideyAI0(CPlayer *pPlayer)
 			pPlayer->field_534 = 0x168;
 			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
 			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
+		// 0x4B4AAA. A surface transition finished: snap to hook 2, take the
+		// new surface normal and decide whether we ended up standing, on a
+		// wall or on a ceiling.
+		case 0x2000:
+		{
+			CVector normal;
+			CVector hookPos;
+			i32 pushOut;
+
+			pPlayer->field_EA6 = 0;
+
+			if ((u16)animJustFinished == 0xFFFF)
+			{
+				// 0x4B4E1B: eat the queued slide along field_C6C, 8 units at
+				// a time. 0xC54 is a second slide counter next to the 0xC58
+				// one state 0x1000 uses, both inside a spidey.h PADDING run.
+				i32 left = PLR_I32(pPlayer, 0xC54);
+
+				if (left == 0) break;
+
+				if (left >= 8)
+				{
+					pPlayer->mPos += (pPlayer->field_C6C * 8);
+					PLR_I32(pPlayer, 0xC54) = left - 8;
+				}
+				else
+				{
+					pPlayer->mPos += (pPlayer->field_C6C * left);
+					PLR_I32(pPlayer, 0xC54) = 0;
+				}
+				break;
+			}
+
+			pushOut = ((u16)animJustFinished == 0x3F) ? 0x42 : 0x37;
+
+			hookPos.vx = 0;
+			hookPos.vy = 0;
+			hookPos.vz = 0;
+			pPlayer->field_AD6 = 1;
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), pPlayer, 2);
+
+			pPlayer->mPos.vx = hookPos.vx;
+			pPlayer->mPos.vy = hookPos.vy;
+			pPlayer->mPos.vz = hookPos.vz;
+
+			normal.vx = pPlayer->field_C84.vx;
+			normal.vy = pPlayer->field_C84.vy;
+			normal.vz = pPlayer->field_C84.vz;
+
+			pPlayer->field_AC8.vx = pPlayer->field_C84.vx;
+			pPlayer->field_AC8.vy = pPlayer->field_C84.vy;
+			pPlayer->field_AC8.vz = pPlayer->field_C84.vz;
+
+			pPlayer->LockTargetTorsoAngle();
+
+			if (pPlayer->field_B84.vy < (i16)0xF5D8)
+			{
+				// pointing far enough down: we are back on our feet.
+				pPlayer->field_8E9 = 0;
+				pPlayer->field_8E8 = 0;
+				pPlayer->field_A8.vx = 0;
+				pPlayer->field_A8.vy = (i16)0xF000;
+				pPlayer->field_A8.vz = 0;
+				pPlayer->OrientToNormal(true, &normal);
+				pPlayer->field_AD4 = 0;
+
+				if ((u16)animJustFinished == 0x3B
+					|| (u16)animJustFinished == 0x56
+					|| (u16)animJustFinished == 0x5D)
+				{
+					SFX_PlayPos(9, &pPlayer->mPos, 0);
+					pushOut = 0;
+					pPlayer->SwitchToStandMode();
+				}
+				else
+				{
+					pPlayer->PlaySingleAnim(0x14, 0, -1);
+					pPlayer->field_E1C = 1;
+				}
+
+				if (pushOut != 0)
+				{
+					pPlayer->mPos += (pPlayer->field_C84 * pushOut);
+					pushOut = 0;
+				}
+
+				pPlayer->TidyUpZipWebLandingPosition(8);
+
+				{
+					i32 height = Utils_GetGroundHeight(&pPlayer->mPos, 0, 0xC8, 0);
+
+					if (height != -1)
+					{
+						pPlayer->mPos.vy = height - ((i32)pPlayer->field_EA8 << 12);
+					}
+					else
+					{
+						// 0x4B4C24: no ground under us, so step sideways
+						// along field_C78 (a CVector living in three i32
+						// members in spidey.h), further every other try,
+						// until some ground turns up.
+						i32 step = 8;
+						i32 i;
+
+						for (i = 0; i < 0x12; i++)
+						{
+							CVector probe;
+
+							probe.vx = pPlayer->mPos.vx;
+							probe.vy = pPlayer->mPos.vy;
+							probe.vz = pPlayer->mPos.vz;
+
+							if ((i & 1) != 0)
+							{
+								probe += (*reinterpret_cast<CVector*>(&pPlayer->field_C78) * step);
+							}
+							else
+							{
+								probe -= (*reinterpret_cast<CVector*>(&pPlayer->field_C78) * step);
+							}
+
+							height = Utils_GetGroundHeight(&probe, 0, 0xC8, 0);
+
+							if (height != -1)
+							{
+								pPlayer->mPos.vx = probe.vx;
+								pPlayer->mPos.vy = height - ((i32)pPlayer->field_EA8 << 12);
+								pPlayer->mPos.vz = probe.vz;
+								break;
+							}
+
+							if ((i & 1) != 0)
+							{
+								step = step * 2;
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				// 0x4B4D05: still on a wall or a ceiling, so keep the
+				// surface normal and pick which of the two we are on.
+				pPlayer->field_A8.vx = pPlayer->field_B84.vx;
+				pPlayer->field_A8.vy = pPlayer->field_B84.vy;
+				pPlayer->field_A8.vz = pPlayer->field_B84.vz;
+				pPlayer->OrientToNormal(true, &normal);
+				pPlayer->field_E1C = 0x10;
+
+				if (pPlayer->field_A8.vy > 0xD48)
+				{
+					if (pPlayer->field_8E8 != 0 && pPlayer->field_ADA != 0)
+					{
+						pPlayer->field_AD8 = 1;
+					}
+
+					pPlayer->field_8E8 = 0;
+					pPlayer->field_8E9 = 1;
+				}
+				else
+				{
+					if (pPlayer->field_8E9 != 0 && pPlayer->field_ADC != 0)
+					{
+						pPlayer->field_AD9 = 1;
+					}
+
+					pPlayer->field_8E8 = 1;
+					pPlayer->field_8E9 = 0;
+				}
+
+				if (pushOut != 0)
+				{
+					pPlayer->mPos += (pPlayer->field_C84 * pushOut);
+					pushOut = 0;
+				}
+
+				pPlayer->TidyUpZipWebLandingPosition(0x10);
+			}
+
+			// 0x4B4DED
+			if (pushOut != 0)
+			{
+				pPlayer->mPos += (pPlayer->field_C84 * pushOut);
+			}
 			break;
 		}
 
