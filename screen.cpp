@@ -281,8 +281,92 @@ void Screen_StartCircularFadeIn(i32,i32 a2)
 	gCircularFadeRelatedFour = 0;
 }
 
+// gCircularFadeShapeProgram/gCircularFadeShapePoints (0x54ED9C/0x54ECBC):
+// fixed game data read by Screen_UpdateFades (0x48AFE0) to build the curved
+// boundary of the circular wipe. The program is a byte stream of 21
+// primitives: opcode byte (3=triangle/3 points, 4=quad/4 points), one pad
+// byte, then N point-index bytes. Each index looks up an (x,y) pair in the
+// point table (i16, values roughly in 0..256 x 0..240, centred at 256,120).
+// Confirmed by reading the raw bytes at these addresses with IDA and
+// replaying the loop in sub_48AFE0 by hand (21 entries: 20 opcode-4 quads
+// and one opcode-3 triangle at position 3, matching the v142=21 loop count).
+static u8 * const gCircularFadeShapeProgram = (u8*)0x54ED9C;
+static i16 * const gCircularFadeShapePoints = (i16*)0x54ECBC;
+
+// Shared tail of every fade primitive: scale the poly's screen-space corners
+// (in the fade's 512x240 reference space) into game resolution and issue it
+// twice through PCGfx_DrawQPoly2D, with the vertex order/UV swapped between
+// the two calls (V1/V2 swapped, UVs adjusted to match). Verified against the
+// disassembly bit for bit; the reason for issuing it twice isn't understood
+// (a two-pass blend for a soft edge is the working guess) but the sequence
+// is reproduced exactly rather than guessed away.
+// This helper is not a separate function in the original (its 3 call sites
+// are inlined at 0x48b198, 0x48b567, 0x48b8ff); factored out here since the
+// acceptance bar for this pass is functional correctness, not a byte match
+// (PLAN.md), so it doesn't hurt to avoid the triplication.
 // @Ok
-// @Matching
+static void CircularFade_DrawQuad(POLY_F4 *p, f32 xScale, f32 yScale)
+{
+	gsub_46CB90((void*)0x0056EB54);
+
+	f32 x0 = (f32)p->x0 * xScale, y0 = (f32)p->y0 * yScale;
+	f32 x1 = (f32)p->x1 * xScale, y1 = (f32)p->y1 * yScale;
+	f32 x2 = (f32)p->x2 * xScale, y2 = (f32)p->y2 * yScale;
+	f32 x3 = (f32)p->x3 * xScale, y3 = (f32)p->y3 * yScale;
+
+	PCGfx_DrawQPoly2D(x0, y0, 0.0f, 0.0f, 0,
+			x1, y1, 1.0f, 0.0f, 0,
+			x2, y2, 0.0f, 1.0f, 0,
+			x3, y3, 1.0f, 1.0f, 0, 0.0f);
+
+	PCGfx_DrawQPoly2D(x0, y0, 0.0f, 0.0f, 0,
+			x2, y2, 0.0f, 1.0f, 0,
+			x1, y1, 1.0f, 0.0f, 0,
+			x3, y3, 1.0f, 1.0f, 0, 0.0f);
+}
+
+// Same as CircularFade_DrawQuad but for the ring's one triangle primitive:
+// the original reuses point 2 as a degenerate 4th vertex instead of a
+// separate 3-vertex draw call.
+// @Ok
+static void CircularFade_DrawTri(POLY_F3 *p, f32 xScale, f32 yScale)
+{
+	gsub_46CB90((void*)0x0056EB54);
+
+	f32 x0 = (f32)p->x0 * xScale, y0 = (f32)p->y0 * yScale;
+	f32 x1 = (f32)p->x1 * xScale, y1 = (f32)p->y1 * yScale;
+	f32 x2 = (f32)p->x2 * xScale, y2 = (f32)p->y2 * yScale;
+
+	PCGfx_DrawQPoly2D(x0, y0, 0.0f, 0.0f, 0,
+			x1, y1, 1.0f, 0.0f, 0,
+			x2, y2, 0.0f, 1.0f, 0,
+			x2, y2, 1.0f, 1.0f, 0, 0.0f);
+
+	PCGfx_DrawQPoly2D(x0, y0, 0.0f, 0.0f, 0,
+			x2, y2, 0.0f, 1.0f, 0,
+			x1, y1, 1.0f, 0.0f, 0,
+			x1, y1, 1.0f, 1.0f, 0, 0.0f);
+}
+
+// @Ok
+// Full re-decompile of 0x48AFE0 (3078 bytes), replacing the old
+// screen_DrawCircularFade split. See CLAUDE.md 2026-08-27 note: names.json
+// mislabelled 0x48AFE0 as screen_DrawCircularFade; it is actually the real
+// Screen_UpdateFades with screen_DrawCircularFade fully inlined (the Mac
+// build keeps them separate per prototypes.json: 164 + 3228 bytes). The
+// dispatch part below (gCircularFadeRelatedThree/Four/One/Two) was already
+// correct; what follows the old screen_DrawCircularFade() call is new.
+//
+// Once the state update above says "still fading", this draws the circular
+// wipe: while gCircularFadeRelatedOne (scaled x16 into a 512x240 reference
+// space as `radius`) is under 256, four rectangles cover
+// everything outside a centred cross the circle is growing into (left,
+// right, top, bottom bands -- cases 0-3 in the switch, all sharing the same
+// left/right x bounds since the "half width" only depends on radius, not on
+// which band is being built). Then, always, a 21-primitive fan (see
+// gCircularFadeShapeProgram above) draws the actual curved boundary, run
+// twice (i loop) with the x sign flipped to cover both left and right
+// halves of the screen.
 void Screen_UpdateFades(void)
 {
 	if (gCircularFadeRelatedThree)
@@ -307,13 +391,137 @@ void Screen_UpdateFades(void)
 		}
 	}
 
-	screen_DrawCircularFade();
-}
+	// Bail if there isn't room left in the poly scratch buffer for the
+	// worst case (21 quads + the 4 rectangles, all POLY_F4-sized).
+	if ((u8*)pPoly + 1200 >= PolyBufferEnd)
+		return;
 
-// @MEDIUMTODO
-INLINE void screen_DrawCircularFade(void)
-{
-    printf("screen_DrawCircularFade(void)");
+	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+
+	i32 radius = 16 * gCircularFadeRelatedOne;
+
+	f32 yScale = (f32)gGameResolutionY / (f32)Yres;
+	f32 xScale = (f32)gGameResolutionX / (f32)Xres;
+
+	if (radius < 0x1000)
+	{
+		i16 half = (i16)((radius << 8) >> 12);
+		i16 left = (i16)(256 - half);
+		i16 right = (i16)(256 + half);
+		i16 hTop = (i16)(120 - ((120 * radius) >> 12));
+		i16 hBot = (i16)((120 * radius) >> 12);
+
+		for (i32 band = 0; band < 4; band++)
+		{
+			POLY_F4 *p = (POLY_F4*)pPoly;
+			pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+
+			p->tag = 0x5000000;
+			p->r0 = 0;
+			p->g0 = 0;
+			p->b0 = 0;
+			p->code = 40;
+
+			switch (band)
+			{
+			case 0:
+				p->x0 = 0;    p->y0 = 0;
+				p->x1 = left; p->y1 = 0;
+				p->x2 = 0;    p->y2 = 240;
+				p->x3 = left; p->y3 = 240;
+				break;
+			case 1:
+				p->x0 = 512;   p->y0 = 0;
+				p->x1 = right; p->y1 = 0;
+				p->x2 = 512;   p->y2 = 240;
+				p->x3 = right; p->y3 = 240;
+				break;
+			case 2:
+				p->x0 = left;  p->y0 = 0;
+				p->x1 = right; p->y1 = 0;
+				p->x2 = left;  p->y2 = hTop;
+				p->x3 = right; p->y3 = hTop;
+				break;
+			case 3:
+				p->x0 = left;  p->y0 = (i16)(hBot + 120);
+				p->x1 = right; p->y1 = (i16)(hBot + 120);
+				p->x2 = left;  p->y2 = 240;
+				p->x3 = right; p->y3 = 240;
+				break;
+			}
+
+			CircularFade_DrawQuad(p, xScale, yScale);
+		}
+	}
+
+	for (i32 i = 0; i < 2; i++)
+	{
+		u8 *prog = gCircularFadeShapeProgram;
+		i32 sign = (i != 0) ? 1 : -1;
+
+		for (i32 n = 21; n != 0; n--)
+		{
+			u8 opcode = *prog++;
+
+			if (opcode == 3)
+			{
+				++prog; // pad byte
+
+				POLY_F3 *p = (POLY_F3*)pPoly;
+				pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F3));
+
+				p->tag = 0x4000000;
+				p->r0 = 0;
+				p->g0 = 0;
+				p->b0 = 0;
+				p->code = 32;
+
+				for (i32 j = 0; j < 3; j++)
+				{
+					i32 idx = *prog++;
+					i16 x = (i16)(sign * ((radius * gCircularFadeShapePoints[2 * idx]) >> 12) + 256);
+					i16 y = (i16)(((radius * (gCircularFadeShapePoints[2 * idx + 1] - 120)) >> 12) + 120);
+					switch (j)
+					{
+					case 0: p->x0 = x; p->y0 = y; break;
+					case 1: p->x1 = x; p->y1 = y; break;
+					case 2: p->x2 = x; p->y2 = y; break;
+					}
+				}
+
+				CircularFade_DrawTri(p, xScale, yScale);
+			}
+			else // opcode == 4
+			{
+				++prog; // pad byte
+
+				POLY_F4 *p = (POLY_F4*)pPoly;
+				pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+
+				p->tag = 0x5000000;
+				p->r0 = 0;
+				p->g0 = 0;
+				p->b0 = 0;
+				p->code = 40;
+
+				for (i32 j = 0; j < 4; j++)
+				{
+					i32 idx = *prog++;
+					i16 x = (i16)(sign * ((radius * gCircularFadeShapePoints[2 * idx]) >> 12) + 256);
+					i16 y = (i16)(((radius * (gCircularFadeShapePoints[2 * idx + 1] - 120)) >> 12) + 120);
+					switch (j)
+					{
+					case 0: p->x0 = x; p->y0 = y; break;
+					case 1: p->x1 = x; p->y1 = y; break;
+					case 2: p->x2 = x; p->y2 = y; break;
+					case 3: p->x3 = x; p->y3 = y; break;
+					}
+				}
+
+				CircularFade_DrawQuad(p, xScale, yScale);
+			}
+		}
+	}
 }
 
 // @Ok

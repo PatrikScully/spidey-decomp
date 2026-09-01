@@ -20,6 +20,5 @@ EXPORT void Screen_SepiaFade(void);
 EXPORT void Screen_SetTarget(CVector *,u16,i16);
 EXPORT void Screen_StartCircularFadeIn(i32,i32);
 EXPORT void Screen_UpdateFades(void);
-EXPORT void screen_DrawCircularFade(void);
 
 #endif
