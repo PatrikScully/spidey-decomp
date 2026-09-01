@@ -319,7 +319,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x8000      0x4B402E   done   firing a web
 //   0x10000     0x4B4E9B   done   web-swing wind up (3 anims that fire a web)
 //   0x20000     0x4B58B4   done   the tug-web attacks
-//   0x40000     0x4B51B2   TODO   ~440 instructions
+//   0x40000     0x4B51B2   done   the tug-web pull-in
 //   0x80000     0x4B50F1   done   end of a scripted "stand up here" move
 //   0x100000    0x4B5CFE   done   reaching down for a pickup
 //   0x200000    0x4B601F   done   throwing the held object
@@ -3131,6 +3131,296 @@ void SpideyAI0(CPlayer *pPlayer)
 			{
 				pPlayer->PlaySingleAnim(0x10B, 0, -1);
 			}
+			break;
+		}
+
+		// 0x4B51B2. The tug-web pull-in: fires the web when the wind up
+		// animation ends, rides the line to the anchor point, and sticks the
+		// player onto whatever the anchor sits on.
+		case 0x40000:
+		{
+			u16 anim = pPlayer->mAnim;
+
+			pPlayer->field_EA6 = 0;
+
+			if ((anim == 0x104 || anim == 0xFA) && pPlayer->mAnimFinished != 0)
+			{
+				CWeb *pWeb;
+				CSVector aim;
+
+				pPlayer->PlaySingleAnim(0x10E, 0, -1);
+
+				// the same missing null check the other web spawns have
+				pWeb = new CWeb();
+				pPlayer->field_E6C = reinterpret_cast<i32*>(pWeb);
+				pWeb->field_F8 = (u8)pPlayer->field_5E8;
+				pWeb->field_102 = 0;
+
+				aim.vx = (i16)pPlayer->field_DA0.vx;
+				aim.vy = (i16)pPlayer->field_DA0.vy;
+				aim.vz = (i16)pPlayer->field_DA0.vz;
+
+				pPlayer->field_8F8 = 8;
+				pPlayer->field_E10 = 1;
+				pPlayer->FireWeb(false, 0x80, &pPlayer->field_DC0, true, &aim);
+				pPlayer->field_E10 = 0;
+				break;
+			}
+
+			// 0x4B529E. 13 is ebx, loaded at 0x4B211A before the dispatch.
+			if ((anim == 0x10E && pPlayer->mFrame >= 13) || anim == 0x10F)
+			{
+				CVector toAnchor;
+				i32 approach;
+
+				if (anim == 0x10E)
+				{
+					pPlayer->field_AD4 = 0;
+
+					if (pPlayer->field_E6C != 0)
+					{
+						reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+						pPlayer->field_E6C = 0;
+					}
+				}
+
+				// 0x4B52D9
+				if ((pPlayer->field_504 & 0x40000) != 0
+					&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+				{
+					pPlayer->PlaySingleAnim(0xAF, 0, -1);
+					pPlayer->field_E1C = 0x800000;
+					pPlayer->field_54D = 0;
+					pPlayer->mVel.vx = 0;
+					pPlayer->mVel.vy = 0;
+					pPlayer->mVel.vz = 0;
+					PLR_U8(pPlayer, 0x54E) = 0;
+					break;
+				}
+
+				// 0x4B532D
+				toAnchor = (pPlayer->mPos - pPlayer->field_DC0) >> 0xC;
+
+				approach = pPlayer->field_DA0.vx * toAnchor.vx
+					+ pPlayer->field_DA0.vz * toAnchor.vz
+					+ pPlayer->field_DA0.vy * toAnchor.vy;
+
+				if (approach >= 0
+					&& Utils_Dist(pPlayer->mPos, pPlayer->field_DC0) >= 0x80)
+				{
+					// 0x4B56DF: still travelling. Let go on the fire button
+					// (or, in practice mode, any of the other three), else
+					// keep steering the velocity at the anchor.
+					u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+					u8 practice = *gPracticeDifficultyFlag;
+					u8 letGo = 0;
+					CSVector aimAngles;
+
+					if (practice == 0 || pPlayer->field_1AC != 0)
+					{
+						if (pPad[0x101] != 0)
+						{
+							letGo = 1;
+						}
+					}
+
+					if (letGo == 0 && practice != 0)
+					{
+						if (pPad[0x111] != 0 || pPad[0x121] != 0
+							|| pPad[0x131] != 0)
+						{
+							letGo = 1;
+						}
+					}
+
+					if (letGo == 0)
+					{
+						// 0x4B573A
+						aimAngles.vx = 0;
+						aimAngles.vy = 0;
+						aimAngles.vz = 0;
+
+						Utils_CalcAim(&aimAngles, &pPlayer->mPos,
+							&pPlayer->field_DC0);
+						Utils_GetVecFromMagDir(&pPlayer->mVel, 0xF0, &aimAngles);
+
+						if (pPlayer->mVel.vy >= 0) break;
+
+						{
+							i32 velY = pPlayer->mVel.vy;
+							i32 velX = pPlayer->mVel.vx;
+							i32 velZ = pPlayer->mVel.vz;
+
+							if ((velY < 0 ? -velY : velY)
+								<= (velX < 0 ? -velX : velX)) break;
+							if ((velY < 0 ? -velY : velY)
+								<= (velZ < 0 ? -velZ : velZ)) break;
+						}
+
+						if (pPlayer->CheckJumpingSwingWeb() == 0) break;
+
+						pPlayer->mVel.vz = 0;
+						pPlayer->mVel.vy = 0;
+						pPlayer->mVel.vx = 0;
+						break;
+					}
+
+					// 0x4B57D7: let go and fall.
+					pPlayer->mVel.vx = 0;
+					pPlayer->mVel.vy = 0;
+					pPlayer->mVel.vz = 0;
+
+					pPlayer->field_A8.vx = 0;
+					pPlayer->field_A8.vz = 0;
+					pPlayer->field_A8.vy = (i16)0xF000;
+
+					pPlayer->field_E1C = 4;
+					pPlayer->field_54D = 1;
+					pPlayer->field_550 = 1;
+
+					pPlayer->field_AC8.vx = pPlayer->field_C6C.vx;
+					pPlayer->field_AC8.vy = pPlayer->field_C6C.vy;
+					pPlayer->field_AC8.vz = pPlayer->field_C6C.vz;
+
+					pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+					break;
+				}
+
+				// 0x4B53BD: arrived at the anchor, snap onto it.
+				CameraList->field_100 = 1;
+				CameraList->mTripod = pPlayer;
+
+				pPlayer->field_AE5 = 0;
+
+				pPlayer->mPos = pPlayer->field_DC0
+					+ (pPlayer->field_DA0 * (i32)pPlayer->field_EA8);
+
+				pPlayer->mVel.vy = 0;
+				pPlayer->mVel.vz = 0;
+				pPlayer->mVel.vx = 0;
+
+				if (pPlayer->field_DA0.vy <= 0xD48
+					&& pPlayer->field_DA0.vy >= -0xA28)
+				{
+					// 0x4B544A: the anchor normal is near horizontal, so work
+					// out which way the surface really faces.
+					CVector surface = (pPlayer->field_558 - pPlayer->field_DC0) >> 0xC;
+					i32 align;
+
+					VectorNormal(reinterpret_cast<VECTOR*>(&surface),
+						reinterpret_cast<VECTOR*>(&surface));
+
+					align = ((pPlayer->field_DA0.vx * surface.vx) >> 12)
+						+ ((pPlayer->field_DA0.vy * surface.vy) >> 12)
+						+ ((pPlayer->field_DA0.vz * surface.vz) >> 12);
+
+					if (align < 0x800)
+					{
+						pPlayer->field_AC8.vx = surface.vx;
+						pPlayer->field_AC8.vy = surface.vy;
+						pPlayer->field_AC8.vz = surface.vz;
+
+						pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+						pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+						pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+						pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+					}
+					else if (((i32)pPlayer->field_A8.vy < 0
+						? -(i32)pPlayer->field_A8.vy
+						: (i32)pPlayer->field_A8.vy) > 0x800)
+					{
+						// 0x4B553B
+						CVector flipped;
+
+						flipped.vx = -(i32)pPlayer->field_A8.vx;
+						flipped.vy = -(i32)pPlayer->field_A8.vy;
+						flipped.vz = -(i32)pPlayer->field_A8.vz;
+
+						pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+						pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+						pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+						pPlayer->OrientToNormal(true, &flipped);
+					}
+					else
+					{
+						// 0x4B5583
+						pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+						pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+						pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+						pPlayer->OrientToNormal(false, &ZeroVector);
+					}
+				}
+				else
+				{
+					// 0x4B55AB: steep anchor, so use the travel direction
+					// unless it is near vertical.
+					i32 travelY = pPlayer->field_C6C.vy;
+
+					if ((travelY < 0 ? -travelY : travelY) < 0x800)
+					{
+						pPlayer->field_AC8.vx = pPlayer->field_C6C.vx;
+						pPlayer->field_AC8.vy = pPlayer->field_C6C.vy;
+						pPlayer->field_AC8.vz = pPlayer->field_C6C.vz;
+					}
+					else
+					{
+						CVector surface = (pPlayer->field_558 - pPlayer->field_DC0) >> 0xC;
+
+						VectorNormal(reinterpret_cast<VECTOR*>(&surface),
+							reinterpret_cast<VECTOR*>(&surface));
+
+						if (surface.vy < 0x800)
+						{
+							pPlayer->field_AC8.vx = surface.vx;
+							pPlayer->field_AC8.vy = surface.vy;
+							pPlayer->field_AC8.vz = surface.vz;
+						}
+						else
+						{
+							pPlayer->field_AC8.vx = 0;
+							pPlayer->field_AC8.vy = 0;
+							pPlayer->field_AC8.vz = 0x1000;
+						}
+					}
+
+					// 0x4B5675
+					pPlayer->field_A8.vx = (i16)pPlayer->field_DA0.vx;
+					pPlayer->field_A8.vy = (i16)pPlayer->field_DA0.vy;
+					pPlayer->field_A8.vz = (i16)pPlayer->field_DA0.vz;
+
+					pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+					pPlayer->LockTargetTorsoAngle();
+				}
+
+				// 0x4B56A9
+				pPlayer->field_AD4 = 1;
+				pPlayer->PlaySingleAnim(0x110, 0, -1);
+				SFX_Play(9, 0x2000, 0);
+				pPlayer->TidyUpZipWebLandingPosition(0x20);
+				break;
+			}
+
+			// 0x4B583E: the stuck-on-the-anchor animation.
+			if (anim != 0x110) break;
+
+			if (pPlayer->field_8E8 == 0 && pPlayer->field_8E9 == 0)
+			{
+				pPlayer->field_AD4 = 0;
+			}
+
+			if (pPlayer->CheckJump() != 0) break;
+			if (pPlayer->mAnimFinished == 0) break;
+
+			if (pPlayer->field_8E8 == 0 && pPlayer->field_8E9 == 0)
+			{
+				pPlayer->PlaySingleAnim(0x14, 0, -1);
+			}
+
+			pPlayer->field_550 = 1;
+			pPlayer->SwitchToStandMode();
 			break;
 		}
 
