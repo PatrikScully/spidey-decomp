@@ -722,19 +722,82 @@ CTrapWebEffect::CTrapWebEffect(CSuper *pSuper, i32 Type)
 	this->field_44->mNumSegs = 0;
 }
 
-// @MEDIUMTODO
-// 0x4F83C0, 435 bytes. Blocked leaf-first on two callees that do not exist
-// yet, CTrapWebEffect::MoveProjector (0x4F82A0) and CTrapWebEffect::CalcHook
-// (0x4F8190), and on the same unmapped fields as the constructor above.
-// What it does: while field_44's strand count (+0x3C) is under 80, advances
-// the projector, adds one hook, and then, once at least two hooks exist and
-// with a 1-in-4 chance and under 20 strands, picks the widest gap between the
-// newest hook and each earlier one, records the (newest, newest-1, widest)
-// index triple, and allocates a CQuadBit for the new strand
-// (SetTexture(0x35006853), SetSemiTransparent).
+// @Ok
+// 0x4F83C0, 435 bytes. One frame's worth of webbing: move the projector on,
+// try to land one more hook on the baddy, and every so often join three
+// hooks up with a triangle of webbing.
+//
+// The hooks live in the field_44 line's segments, so its mNumSegs doubles as
+// the hook count, and 80 is the limit. Hook 0 is laid down on its own the
+// very first time (nothing has been hooked yet, so there is no hook to move
+// away from), which is why the SHook array is 81 long and not 80.
+//
+// A strand is only added one time in four, only once there are at least two
+// hooks, and only up to 20 strands. Its three corners are the newest hook,
+// the one two before it, and whichever earlier hook sits at the biggest
+// height difference from the newest one (the projector's height at the time
+// each hook was made is what field_2D0 keeps). CTrapWebEffect::Move
+// (0x4F8860) turns that index triple into the quad's corners every frame.
 void CTrapWebEffect::AddAnotherStrand(void)
 {
-	printf("CTrapWebEffect::AddAnotherStrand(void)");
+	print_if_false(this->field_44->mNumSegs <= 80, "Bad mNumSegs");
+
+	if (this->field_44->mNumSegs == 80)
+		return;
+
+	this->MoveProjector();
+
+	if (this->field_44->mNumSegs == 0)
+	{
+		if (!this->CalcHook(0))
+			return;
+
+		this->MoveProjector();
+	}
+
+	if (!this->CalcHook(this->field_44->mNumSegs + 1))
+		return;
+
+	this->field_44->mNumSegs++;
+
+	if (this->field_44->mNumSegs < 2)
+		return;
+
+	if (Rnd(4) != 0)
+		return;
+
+	if (this->field_374 >= 20)
+		return;
+
+	i32 Newest = this->field_44->mNumSegs;
+	i32 Widest = Newest - 1;
+	i32 Biggest = 0;
+
+	for (i32 i = 0; i < Newest - 2; i++)
+	{
+		i32 Gap = this->field_2D0[Newest] - this->field_2D0[i];
+
+		if (Gap < 0)
+			Gap = -Gap;
+
+		if (Gap > Biggest)
+		{
+			Biggest = Gap;
+			Widest = i;
+		}
+	}
+
+	this->field_378[this->field_374].mHookA = static_cast<u8>(Newest);
+	this->field_378[this->field_374].mHookB = static_cast<u8>(Newest - 2);
+	this->field_378[this->field_374].mHookC = static_cast<u8>(Widest);
+
+	CQuadBit *pBit = new CQuadBit();
+
+	pBit->SetTexture(0x35023093);
+	pBit->SetSemiTransparent();
+
+	this->field_378[this->field_374].mpBit = pBit;
+	this->field_374++;
 }
 
 // @Ok
