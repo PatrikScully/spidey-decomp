@@ -926,10 +926,120 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckForwards(bool)
+// @Ok
+i32 CPlayer::CheckForwards(bool bAllowStart)
 {
-    printf("CPlayer::CheckForwards(bool)");
+	if (reinterpret_cast<u8*>(this->field_E0C)[64] != 0 && (this->field_E1C & 1) != 0)
+		return 0;
+
+	if (this->field_8EA != 0)
+		return 0;
+
+	// field_E2D/field_E2E are the two analogue move axes, read together as
+	// one word to test "no move input at all"
+	if (*reinterpret_cast<u16*>(&this->field_E2D) == 0)
+		return 0;
+
+	u16 anim = this->mAnim;
+	if (anim == 234 || anim == 227 || anim == 281)
+		return 0;
+
+	u8 onSurface = this->field_8E8;
+	this->field_EA6 = 0;
+
+	i16 wanted;
+	if (onSurface != 0)
+		wanted = this->field_E32;
+	else
+		wanted = (i16)((CameraList->field_23A + this->field_E32) & 0xFFF);
+
+	i32 delta = (wanted - (u16)this->GetEffectiveHeading()) & 0xFFF;
+
+	if (delta > 0x600 && delta < 2560)
+	{
+		u16 cur = this->mAnim;
+		if (cur == 0 || cur == 11 || cur == 12 || cur == 13)
+		{
+			i32 *p = gSpideySFXEntry[0x1F];
+			this->field_350 = p;
+
+			if (p)
+			{
+				while (p[0] != -1)
+				{
+					p[0] &= 0xFFFF;
+					p++;
+				}
+			}
+
+			this->RunAnim(0x1F, 0, -1);
+
+			this->field_DF8 = 0;
+			this->field_E1C = 0x400000;
+			return 1;
+		}
+	}
+
+	if (delta >= 128 && delta <= 3968)
+	{
+		if (this->field_DF8 == 0)
+		{
+			this->SetTargetTorsoAngle(wanted, true);
+			this->field_551 = 0;
+		}
+		else
+		{
+			u16 diff = (u16)((u16)((u16)this->field_DF0 - wanted) & 0xFFF);
+			if (diff >= 0x40 && diff <= 0xFC0)
+			{
+				this->SetTargetTorsoAngle(wanted, true);
+				this->field_551 = 0;
+			}
+		}
+
+		return 0;
+	}
+
+	if (!bAllowStart)
+		return 0;
+
+	u8 onWall = this->field_AD4;
+	this->field_E1C = 16;
+	this->field_AD7 = 0;
+
+	i32 startAnim;
+	if (onWall != 0)
+	{
+		startAnim = this->field_AD5 != 0 ? 0x3A : 0x39;
+	}
+	else if (this->mAnim == 200)
+	{
+		startAnim = 0xC5;
+	}
+	else if (this->mAnim == 194)
+	{
+		startAnim = 0xBF;
+	}
+	else
+	{
+		startAnim = 1;
+	}
+
+	i32 *p = gSpideySFXEntry[startAnim];
+	this->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(startAnim, 0, -1);
+
+	return 1;
 }
 
 // @Ok
@@ -7143,6 +7253,7 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_54C, 0x54C);
 	VALIDATE(CPlayer, field_54F, 0x54F);
+	VALIDATE(CPlayer, field_551, 0x551);
 	VALIDATE(CPlayer, field_558, 0x558);
 	VALIDATE(CPlayer, field_564, 0x564);
 

@@ -125,7 +125,12 @@ class CPlayer : public CSuper
 		// (0x4C38A0), "cmp [ebp+54Fh], bl" / "mov [ebp+54Fh], bl".
 		u8 field_54F;
 
-		PADDING(4);
+		PADDING(0x551-0x54F-1);
+
+		// cleared by CheckForwards whenever it retargets the torso angle
+		u8 field_551;
+
+		PADDING(0x554-0x551-1);
 
 		// CPlayer::AI: free-function callback, called as field_554(this)
 		// near the end of every AI tick when nonzero.
@@ -617,7 +622,7 @@ class CPlayer : public CSuper
 		EXPORT u8 CheckCeilingJumpingSmashPunch(void);
 		EXPORT i32 CheckExteriorSurfaceTransition(void);
 		EXPORT i32 CheckFenceSurfaceTransition(void);
-		EXPORT void CheckForwards(bool);
+		EXPORT i32 CheckForwards(bool);
 		EXPORT i32 CheckGroundGone(void);
 		EXPORT i32 CheckInteriorSurfaceTransition(void);
 		EXPORT void CheckJump(void);
