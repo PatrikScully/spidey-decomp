@@ -3544,10 +3544,36 @@ void CPlayer::SortAnimationFollowOnData(void)
 	while (pEntry < gAnimFollowOnDataEnd);
 }
 
-// @SMALLTODO
+// Cycle-sorts the fists table into animation order, exactly like
+// SortAnimationFollowOnData above but over single u16 records: the low 12
+// bits hold the animation id, the top bits the fists variant. SpideyAI0
+// (0x4B8653) reads gFistsData[anim] >> 14 and hands that to
+// CPlayer::CreateFists. MSVC6 inlined this into ParseFightData.
+// @Ok
 void CPlayer::SortFistsData(void)
 {
-    printf("CPlayer::SortFistsData(void)");
+	// u16 x 200, low 12 bits = anim id, top 2 bits = fists variant.
+	static u16 * const gFistsData = (u16*)0x00555A14;
+	static u16 * const gFistsDataEnd = (u16*)0x00555BA4;
+
+	i32 slot = 0;
+	u16 *pEntry = gFistsData;
+
+	do
+	{
+		while ((pEntry[0] & 0xFFF) != slot && (pEntry[0] & 0xFFF) != 0)
+		{
+			u16 *pDest = &gFistsData[pEntry[0] & 0xFFF];
+
+			u16 entry = pDest[0];
+			pDest[0] = pEntry[0];
+			pEntry[0] = entry;
+		}
+
+		pEntry++;
+		slot++;
+	}
+	while (pEntry < gFistsDataEnd);
 }
 
 // helper for CPlayer::SwitchToDeathMode/SwitchToSynthesizedInput below: the
