@@ -1840,10 +1840,365 @@ tail:
 // list). Same conclusion as Shell_CharacterViewer: this needs its own dedicated leaf-first
 // session working that callee list bottom-up, not a quick follow-up. Left as a stub rather than
 // force a partial/guessed translation.
-// @MEDIUMTODO
+// Costume name table (0x554598): 10 entries of [name, description, value], 12 bytes each.
+// The description pointer (second field, 0x55459C + 12*N) is set by Shell_DoShell's biography
+// parser; it is the per-costume description text drawn in the CExpandingBox. The third field is
+// a per-costume constant (purpose unconfirmed beyond "stored in the table").
+static const char * const gCostumeNames[10] =
+{
+	(const char*)0x00554A9C, // "spider-man"
+	(const char*)0x005546DC, // "Spider-man 2099"
+	(const char*)0x005546C8, // "symbiote spider-man"
+	(const char*)0x005546B4, // "Captain Universe"
+	(const char*)0x005546A0, // "Spidey unlimited"
+	(const char*)0x00554690, // "Amazing bag man"
+	(const char*)0x00554680, // "Scarlet Spidey"
+	(const char*)0x00554674, // "Ben Riley"
+	(const char*)0x00554660, // "Quick Change Spidey"
+	(const char*)0x00554A8C, // "Peter Parker"
+};
+// Per-costume description text pointers (0x55459C), 12 bytes (3 pointers) apart; written by
+// Shell_DoShell. The description for costume N is gCostumeDescriptions[3*N].
+static int * const gCostumeDescriptions = (int*)0x0055459C;
+// Instructional / title / locked strings.
+static const char * const gCostumeInstrRotate  = (const char*)0x0054C96C; // "rotate"
+static const char * const gCostumeInstrZoomIn  = (const char*)0x0054C964; // "zoom in"
+static const char * const gCostumeInstrZoomOut = (const char*)0x0054C958; // "zoom out"
+static const char * const gCostumeTitle        = (const char*)0x0054BC70; // "costume viewer"
+static const char * const gCostumeLocked       = (const char*)0x0054BF98; // "??????"
+// CDummy animation track lists (u16 animation ids, 0xffff terminated).
+static const u16 gCostumeTrackA[] = { 0x0000, 0x0001, 0x0015, 0x0015, 0x0015, 0x000B, 0xFFFF };
+static const u16 gCostumeTrackB[] = { 0x0000, 0x0004, 0x0032, 0x0033, 0x0032, 0x0033, 0x0032, 0x0033, 0x0014, 0xFFFF };
+static const u16 gCostumeTrackC[] = { 0x0122, 0x0123, 0x0124, 0xFFFF };
+// Alternative texture set table (0x552830), shared with Shell_CharacterViewer.
+static u32 * const gAltTextureSet = (u32*)0x00552830;
+// PC icon texture ids (PCTex.cpp), used for the on-screen control hints.
+EXPORT extern i32 gPcIcons[5];
+// @Ok
 void Shell_CostumeViewer(void)
 {
-    printf("Shell_CostumeViewer(void)");
+	print_if_false(gShellInitialized != 0, "Called Shell_CostumeViewer() without shell initialised");
+	print_if_false(gSaveGame.field_7C < 10, "Bad GameState.CurrentCostume");
+
+	Mess_SetScale(256);
+	Mess_SetCurrentFont("sp_fnt03.fnt");
+
+	CMenu* pMenu = new CMenu(24, 75, 1, 192, 192, 10);
+	pMenu->scrollbar_one = 1;
+	pMenu->scrollbar_zero = 0;
+	pMenu->AdjustWidth(5);
+
+	for (i32 i = 0; i < 10; i++)
+	{
+		if (gSaveGame.field_80 & (1 << i))
+		{
+			pMenu->AddEntry(gCostumeNames[i]);
+			pMenu->mEntry[i].field_14 = 0x80;
+			pMenu->mEntry[i].field_15 = 0x80;
+			pMenu->mEntry[i].field_16 = 0x80;
+			pMenu->mEntry[i].field_17 = 0x45;
+			pMenu->mEntry[i].field_18 = 0x3C;
+			pMenu->mEntry[i].field_19 = 0x6B;
+		}
+		else if (1 << i != 32)
+		{
+			pMenu->AddEntry(gCostumeLocked);
+			pMenu->SetRedText(pMenu->mNumLines - 1);
+		}
+	}
+
+	pMenu->Zoom(1);
+	pMenu->SetLine(0);
+
+	// find the current costume's line in the menu
+	if (pMenu->mNumLines != 0)
+	{
+		i32 line = 0;
+		SEntry* pEntry = pMenu->mEntry;
+		while (!Utils_CompareStrings(pEntry->name, gCostumeNames[gSaveGame.field_7C]))
+		{
+			++line;
+			++pEntry;
+			if (line >= pMenu->mNumLines)
+				break;
+		}
+		pMenu->SetLine(line);
+	}
+
+	gShellMenuEase = 384;
+
+	i32 boxDelay = 5;
+	CExpandingBox* pDescBox = 0;
+
+	CDummy* pDummy = new CDummy("spidey", 50, 4096, -32, 0,
+		(u16*)gCostumeTrackA, (u16*)gCostumeTrackB, (u16*)gCostumeTrackC, 0, 0, 0, 0);
+
+	i32 texTransition = 0;
+	pDummy->field_1D4 = 1;
+
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	i32 zoom = 454;
+	i32 titleScrollX = 0;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+
+		i32 startVblanks = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1, -1);
+
+		Mess_SetSort(4095);
+
+		if (pMenu->FinishedZooming())
+		{
+			Mess_SetScale(256);
+			Mess_SetCurrentFont("sp_fnt03.fnt");
+			Mess_SetRGB(0x64, 0x64, 0x64, 0);
+			Mess_SetRGBBottom(0x64, 100, 100);
+			Mess_SetShadowRGB(0xFF);
+			Mess_SetTextJustify(1);
+			Mess_DrawText(75, 194, gCostumeInstrRotate, 0, 0x1000);
+			Mess_DrawText(75, 211, gCostumeInstrZoomIn, 0, 0x1000);
+			Mess_DrawText(75, 228, gCostumeInstrZoomOut, 0, 0x1000);
+			PCGfx_DrawTexture2D(gPcIcons[0], 17, 181, 1.0f, 0xFF808080, 8, -3.0f);
+			PCGfx_DrawTexture2D(gPcIcons[1], 45, 181, 1.0f, 0xFF808080, 8, -3.0f);
+			PCGfx_DrawTexture2D(gPcIcons[3], 45, 198, 1.0f, 0xFF808080, 8, -3.0f);
+			PCGfx_DrawTexture2D(gPcIcons[4], 45, 215, 1.0f, 0xFF808080, 8, -3.0f);
+		}
+
+		Mess_SetScale(256);
+		Mess_SetCurrentFont("sp_fnt03.fnt");
+		pMenu->Display();
+
+		if (texTransition == 0)
+		{
+			M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+			TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+			M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+			M3d_Render(pDummy);
+			M3d_RenderCleanup();
+			Bit_Display();
+		}
+
+		if (pDescBox != 0)
+		{
+			char* pDesc = (char*)gCostumeDescriptions[3 * (u8)gSaveGame.field_7C];
+			if (pDesc != 0)
+			{
+				Mess_SetTextJustify(1);
+				Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+				i32 lineCount = 0;
+				i32 y = 70;
+				i32 page = 0;
+				i32 colorCycle = 2;
+				i32 colorVal = 2;
+				if (--colorCycle != 0)
+				{
+					if (colorVal == 0)
+						goto drawDesc;
+					colorVal = colorVal - 1;
+				}
+				else
+				{
+					++page;
+					colorCycle = 2;
+					colorVal = 1;
+				}
+drawDesc:
+				for (;;)
+				{
+					i8 b = (i8)*pDesc;
+					if (*pDesc == 1)
+						break;
+					if (b == -1 || lineCount >= page)
+						break;
+					if (b == 2)
+					{
+						Mess_SetRGB(pDesc[1], pDesc[2], pDesc[3], 0);
+						pDesc += 4;
+					}
+					else
+					{
+						if (colorVal != 0 && lineCount == page - 1)
+							Mess_SetRGB(0xFF, 0xFF, 0xFF, 0);
+						Mess_DrawText(325, y, pDesc, 0, 0x1000);
+						y += 10;
+						++pDesc;
+						if (pDesc[-1] != 0)
+							pDesc += strlen(pDesc) + 1;
+						++lineCount;
+					}
+				}
+			}
+			pDescBox->Display();
+		}
+
+		Shell_DrawTitleBar(titleScrollX, 38, gCostumeTitle, 1, 0, 150, -21, 29);
+
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		titleScrollX = PShell_MoveTowards(titleScrollX, 128);
+
+		if (boxDelay != 0 && --boxDelay == 0)
+		{
+			pDescBox = new CExpandingBox(318, 58, 172, 117, 0, 0, 30, 15, 0);
+		}
+
+		if (texTransition != 0)
+		{
+			texTransition--;
+			if (texTransition == 0)
+				Spidey_LoadAlternativeTextureSet(gAltTextureSet, (u8)gSaveGame.field_7C + 1);
+		}
+
+		Mess_Update();
+
+		if (texTransition == 0)
+		{
+			if (pMenu->mLine > 0x28)
+				Pad_ClearTriggers(G_SCONTROL);
+			Pad_Update();
+			if (*gShellMenuAbort)
+				return;
+			CheckForPadUnplugged();
+		}
+
+		if (PCSHELL_CheckTriggers(131616, 1, 1))
+			break;
+
+		Mess_SetScale(256);
+		Mess_SetCurrentFont("sp_fnt03.fnt");
+		pMenu->Update();
+
+		i32 mouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+		{
+			const char* pName = pMenu->mEntry[pMenu->mLine].name;
+			u8 just = pMenu->mJustification;
+			i32 ex, ey;
+			pMenu->GetEntryXY(pName, &ex, &ey);
+			mouseOverText = PCSHELL_IsMouseOverText(pName, ex, ey, just);
+		}
+
+		if (pMenu->mLine < 0x28 && (mouseOverText || PCSHELL_CheckTriggers(65552, 1, 1)))
+		{
+			G_SCONTROL[0].Start.Triggered = 0;
+			G_SCONTROL[0].X.Triggered = 0;
+
+			i32 idx = 0;
+			while (!Utils_CompareStrings(pMenu->mEntry[pMenu->mLine].name, gCostumeNames[idx]))
+			{
+				++idx;
+				if (idx >= 10)
+					goto denied;
+			}
+
+			if (idx == -1 || !(gSaveGame.field_80 & (1 << idx)))
+			{
+denied:
+				SFX_Play(0x1B, 0x2000, 0);
+			}
+			else if (idx != (u8)gSaveGame.field_7C)
+			{
+				texTransition = 2;
+				gSaveGame.field_7C = (u8)idx;
+				SFX_Play(0x1F, 0x2000, 0);
+			}
+		}
+
+		pDummy->AI();
+		Bit_Move();
+		Bit_RemoveDeadBits();
+
+		i32 z = zoom;
+		if (PCSHELL_CheckTriggers(0x100000, 0, 0))
+		{
+			z = zoom - 10;
+			zoom -= 10;
+		}
+		if (PCSHELL_CheckTriggers(0x200000, 0, 0))
+		{
+			z += 10;
+			zoom = z;
+		}
+		if (z >= 300)
+		{
+			if (z > 800)
+				z = 800;
+		}
+		else
+		{
+			z = 300;
+		}
+		zoom = z;
+
+		i32 rot = gMikeCamera[0].Angles.vy;
+		if (PCSHELL_CheckTriggers(16388, 0, 0))
+			rot = gMikeCamera[0].Angles.vy - 64;
+		else if (PCSHELL_CheckTriggers(32776, 0, 0))
+			rot = gMikeCamera[0].Angles.vy + 64;
+		rot &= 0xFFF;
+		gMikeCamera[0].Angles.vy = rot;
+
+		i32 cosA = rcossin_tbl[rot & 0xFFF].cos;
+		gMikeCamera[0].Position.vx = -(zoom * rcossin_tbl[rot & 0xFFF].sin) >> 12;
+		gMikeCamera[0].Position.vz = -(zoom * cosA) >> 12;
+
+	ail:
+		if (Vblanks == startVblanks)
+			Pause(1);
+
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+
+		PCSHELL_Relax();
+	}
+
+	G_SCONTROL[0].Circle.Triggered = 0;
+	SFX_Play(0x23, 0x2000, 0);
+	Pause(1);
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	gsub_430680();
+	if (!gPrintStubbed)
+		gsub_46CB90((void*)"stubbed out: DrawSync");
+	Pad_ClearTriggers(G_SCONTROL);
+
+	if (pMenu != 0)
+		delete pMenu;
+	if (pDescBox != 0)
+		delete pDescBox;
+	if (pDummy != 0)
+		delete pDummy;
+
+	Init_KillAll();
+	PShell_NormalFont();
 }
 
 // @Ok
@@ -3192,8 +3547,6 @@ done:
 // @Ok
 // buffer the Merge loop writes merged records into, then copies back
 static char * const gMergeBuffer = (char*)0x00610790;
-// alt texture set table for Spidey_LoadAlternativeTextureSet
-static u32 * const gAltTextureSet = (u32*)0x00552830;
 // mouse-related flag used by the input helper below
 static u8 * const gMouseRelated = (u8*)0x005FAE9D;
 
