@@ -594,6 +594,37 @@ CFootprint::CFootprint(CVector* pVector, i32 a3)
 }
 
 // @Ok
+// Functional decompile of 0x43A300 (Mac: Effects_FootStomp(CVector const&,
+// ulong)). Throws 20 dust lines out of one spot: each one picks a random
+// heading, spawns 80 units away from pPos along that heading (the trig table
+// entries are read signed, movsx in the original) and flies off at a random
+// speed with a fixed upward pitch of -312. Checksum is the second parameter
+// the PC build never reads, see the note in effects.h.
+void Effects_FootStomp(CVector* pPos, u32 Checksum)
+{
+	CSVector Dir;
+	CVector Spawn;
+
+	Dir.vy = 0;
+	Dir.vx = -312;
+	Dir.vz = 0;
+
+	Spawn.vx = 0;
+	Spawn.vz = 0;
+	Spawn.vy = pPos->vy;
+
+	for (i32 i = 20; i != 0; i--)
+	{
+		Dir.vy = static_cast<i16>(Rnd(4096));
+
+		Spawn.vx = pPos->vx - rcossin_tbl[Dir.vy & 0xFFF].sin * 80;
+		Spawn.vz = pPos->vz - rcossin_tbl[Dir.vy & 0xFFF].cos * 80;
+
+		new CPingLine(&Spawn, &Dir, 0x80, 0x80, 0x80, 0xF, 0xC8, Rnd(50) + 30);
+	}
+}
+
+// @Ok
 void CRhinoWallImpact::Move(void)
 {
 	if (++this->mAge >= 200)

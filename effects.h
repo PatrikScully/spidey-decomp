@@ -260,5 +260,9 @@ void validate_CElectroLine(void);
 
 EXPORT void Effects_Electrify(CSuper*);
 EXPORT void Effects_UnElectrify(CSuper*);
+// The second parameter is a checksum the PC build never reads (the Mac symbol
+// is Effects_FootStomp(CVector const&, ulong) and the only call site passes
+// 0xC16175F4). Kept in the signature because the original still takes it.
+EXPORT void Effects_FootStomp(CVector*, u32);
 
 #endif
