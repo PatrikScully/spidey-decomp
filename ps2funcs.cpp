@@ -921,6 +921,33 @@ void VectorNormal(VECTOR* a1, VECTOR* a2)
 }
 
 // @Ok
+// 0x00470520. VectorNormal's SVECTOR twin, the Mac build has
+// VectorNormalS__FP6VECTORP7SVECTOR (0x000B2AA0) right after VectorNormal
+// (0x000B28D0). Same maths, the unit vector is just written out as i16.
+void VectorNormalS(VECTOR* a1, SVECTOR* a2)
+{
+	float fx = (float)a1->vx;
+	float fy = (float)a1->vy;
+	float fz = (float)a1->vz;
+
+	float lenSq = fx * fx + fy * fy + fz * fz;
+
+	if (lenSq == 0.0f)
+	{
+		a2->vx = 0;
+		a2->vy = 0x1000;
+		a2->vz = 0;
+		return;
+	}
+
+	float len = (float)sqrt((double)lenSq);
+
+	a2->vx = (i16)(i32)((float)(a1->vx << 12) / len);
+	a2->vy = (i16)(i32)((float)(a1->vy << 12) / len);
+	a2->vz = (i16)(i32)((float)(a1->vz << 12) / len);
+}
+
+// @Ok
 // @Matching
 // @Note: kudos to valps, adding extra parentheses fix it
 i32 M3dMaths_SquareRoot0(i32 i){

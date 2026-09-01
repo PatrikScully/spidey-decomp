@@ -197,6 +197,7 @@ EXPORT void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3);
 EXPORT void MulMatrix(MATRIX *a1, MATRIX *a2);
 EXPORT void m3d_ZeroTransVector(void);
 EXPORT void VectorNormal(VECTOR*, VECTOR*);
+EXPORT void VectorNormalS(VECTOR*, SVECTOR*);
 
 EXPORT i32 M3dMaths_SquareRoot0(i32 i);
 
