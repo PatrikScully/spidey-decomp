@@ -32,6 +32,7 @@
 #include "ps2card.h"
 #include "dcmemcard.h"
 #include "dcfileio.h"
+#include "DXinit.h"
 
 #include <cstring>
 
@@ -2488,10 +2489,407 @@ void Shell_DisplayGameInfo(
 // a multi-session undertaking on its own, well past this session's budget.
 // Left as a stub with this map so the next session does not have to
 // re-trace the whole dispatch tree from scratch.
-// @MEDIUMTODO
-void Shell_DoShell(const u32 *,u32 *)
+
+// Shell_DoShell data (original .rdata/.bss addresses).
+static i32 * const gDoShellSaveLevelCode = (i32*)0x00550E0C;   // dword_550E0C
+static const char * const gDoShellLevelCodeStr = (const char*)0x00550E4F; // byte_550E4F
+static i32 * const gDoShellSaveA = (i32*)0x00550E58;           // dword_550E58
+static i32 * const gDoShellSaveB = (i32*)0x00550E5C;           // dword_550E5C
+static i32 * const gDoShellSaveC = (i32*)0x00550E60;           // dword_550E60
+static u8 * const gDoShellSaveD = (u8*)0x00550E89;             // byte_550E89
+static u8 * const gDoShellSaveE = (u8*)0x00550E8A;             // byte_550E8A
+static i32 * const gDoShellForceLevelExit = (i32*)0x0068293C;  // = gPshellForceLevelExit
+static u8 * const gDoShellQuitFlag = (u8*)0x0060CF88;          // byte_60CF88
+static i32 * const gDoShellSpecialFlag = (i32*)0x0060CFD8;     // dword_60CFD8
+static u8 * const gDoShellKidModeFlag = (u8*)0x0060CFC7;       // byte_60CFC7
+static i32 * const gDoShellShowTitle = (i32*)0x0054D38C;       // dword_54D38C
+static SMovieDetails * const gMovieDetails = (SMovieDetails*)0x0054F2E8; // movieDetails
+
+// sub_47A350: returns NUMCOSTUMES (10). Forward to original.
+typedef i32 (*DoShell_NumCostumes_t)(void);
+// @Bogus
+static i32 DoShell_NumCostumes(void)
 {
-    printf("Shell_DoShell(u32 const *,u32 *)");
+	DoShell_NumCostumes_t func = (DoShell_NumCostumes_t)0x0047A350;
+	return func();
+}
+
+// sub_49A3B0: training/arena chooser. Forward to original.
+typedef i32 (*DoShell_TrainingChooser_t)(i32);
+// @Bogus
+static i32 DoShell_TrainingChooser(i32 a1)
+{
+	DoShell_TrainingChooser_t func = (DoShell_TrainingChooser_t)0x0049A3B0;
+	return func(a1);
+}
+
+// Find the description for the given name in charbio.dat.
+// Returns the offset into gBiographies of the description, or 0 if not found.
+// @Bogus
+static i32 DoShell_FindBioDesc(const char *pName)
+{
+	const char *pBio = (const char*)gBiographies;
+	i32 result = 0;
+	i8 type = *pBio;
+	if (type != 0xFF)
+	{
+		i32 found = 0;
+		while (1)
+		{
+			++pBio;
+			if (type == 1 && Utils_CompareStrings(pBio, pName))
+			{
+				found = 1;
+				break;
+			}
+			type = *pBio;
+			if (type == 0xFF)
+				break;
+		}
+		if (found)
+		{
+			i8 first = *pBio;
+			result = (i32)(pBio + 1);
+			if (first != 0)
+				result += strlen((const char*)result) + 1;
+		}
+	}
+	return result;
+}
+
+// @Ok
+void Shell_DoShell(const u32 *a1,u32 *)
+{
+	// The original takes a single pointer param which points to an array of
+	// two flags: *a1 = fromGame, *(a1+1) = rollCredits. The repo stub uses
+	// (const u32*,u32*) for the function table; we read the two flags from
+	// the first param and ignore the second.
+	const i32 *pFlags = (const i32*)a1;
+	i32 fromGame = pFlags[0];
+	i32 rollCredits = pFlags[1];
+
+	DXINIT_SetDisplayOptions(640, 480, 16, gLowGraphics, gBrightnessRelated);
+	PCINPUT_SetMouseBounds(0, 0, 608, 448);
+	PCINPUT_SetMousePosition(304, 224);
+	gShellFromGame = 0;
+	PShell_Initialise();
+	Spidey_LoadAlternativeTextureSet(gAltTextureSet, (i32)(u8)gSaveGame.field_7C + 1);
+	print_if_false(gBiographies == 0, "pBios not NULL?");
+
+	i32 fileHandle = FileIO_Open("charbio.dat");
+	gBiographies = DCMem_New((u32)fileHandle, 1, 1, 0, 1);
+	FileIO_Load(gBiographies);
+	FileIO_Sync();
+
+	// Parse biographies (27-entry table, 68-byte stride, name at offset -8).
+	{
+		i32 *pDesc = (i32*)0x00553D24;
+		const i32 *pEnd = (i32*)0x00554450;
+		while (pDesc < pEnd)
+		{
+			const char *pName = (const char*)*(pDesc - 2);
+			*pDesc = DoShell_FindBioDesc(pName);
+			pDesc += 17;
+		}
+	}
+
+	i32 numCostumes = DoShell_NumCostumes();
+	print_if_false(numCostumes == 10, "NUMCOSTUMES mismatch");
+	print_if_false(1, "Bad NUMCOSTUMES");
+
+	// Parse the 10 costume descriptions from charbio.dat.
+	{
+		static const char *gCostumeDescNames[10] = {
+			"spider-man", "Spider-man 2099", "symbiote spider-man", "Captain Universe",
+			"Spidey unlimited", "Amazing bag man", "Scarlet Spidey", "Ben Riley",
+			"Quick Change Spidey", "Peter Parker"
+		};
+		i32 *pCostumeDesc = (i32*)0x0055459C;  // costume_descriptions
+		for (i32 i = 0; i < 10; i++)
+		{
+			pCostumeDesc[3 * i] = DoShell_FindBioDesc(gCostumeDescNames[i]);
+		}
+	}
+
+	// Movie-name matching (21-entry table at 0x55444C, 16-byte stride).
+	// Each entry: [level_movie_code, movie_index, count, description].
+	// Match movieDetails[i].name against the level_movie_code (case-insensitive).
+	{
+		i32 *pTable = (i32*)0x0055444C;
+		const i32 *pEnd = (i32*)0x0055459C;  // costume_descriptions
+		while (pTable < pEnd)
+		{
+			i32 movieIndex = 0;
+			i32 numMovies = GameFMV_GetNumMovies();
+			if (numMovies > 0)
+			{
+				const SMovieDetails *pMovie = gMovieDetails;
+				while (movieIndex < numMovies)
+				{
+					const char *pName = pMovie->name;
+					if (pName[0] != 0)
+					{
+						const char *pCode = (const char*)pTable[0];
+						i32 match = 1;
+						for (i32 i = 0; pCode[i] != 0 && pName[i] != 0; i++)
+						{
+							i8 c1 = pCode[i];
+							i8 c2 = pName[i];
+							if (c1 >= 'A' && c1 <= 'Z') c1 += 32;
+							if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
+							if (c1 != c2)
+							{
+								match = 0;
+								break;
+							}
+						}
+						// Both strings must end at the same time.
+						if (match && pCode[strlen(pCode)] != pName[strlen(pName)])
+							match = 0;
+						if (match)
+						{
+							pTable[1] = movieIndex;
+							break;
+						}
+					}
+					pMovie++;
+					movieIndex++;
+				}
+			}
+			pTable += 4;
+		}
+	}
+
+	// Credits / force-exit setup.
+	if (*gDoShellForceLevelExit != 0)
+	{
+		*gDoShellShowTitle = 1;
+		gSaveGame.field_7B = (u8)*gDoShellSaveLevelCode;
+	}
+
+	i32 v56 = 0;
+	*gDoShellForceLevelExit = 0;
+	Pad_IdleTime = 0;
+	gPshellArmorRealted = 0;
+	i32 v57 = (gSaveGame.field_78 != 0) + 1;
+	Shell_LegalScreen();
+
+	while (1)
+	{
+		// Show title screen if needed.
+		if (*gDoShellShowTitle != 0)
+		{
+			*gDoShellShowTitle = 0;
+			*(u8*)&Levels[35].mName = 1;
+			Shell_TitleScreen();
+			*(u8*)&Levels[35].mName = 0;
+		}
+		// If v56 != 0, enter the level.
+		if (v56 != 0)
+			goto enterLevel;
+		// Get the menu selection.
+		if (fromGame != 0)
+			v57 = 5;
+		else
+			v57 = Shell_MainMenu((EShellResult)v57);
+		switch (v57)
+		{
+			case 1:  // new game
+				if (Shell_Difficulty(1) == 0)
+					continue;  // retry menu
+				Utils_CopyString("l1a1_t", gSaveGame.field_4, 9);
+				Utils_CopyString("Re_Start_death", gSaveGame.mRestartPointName, 50);
+				Utils_CopyString(gDoShellLevelCodeStr, (char*)&gSaveGame.field_3F, 9);
+				*(i32*)((u8*)&gSaveGame + 0x4C) = *gDoShellSaveB;
+				*(i32*)((u8*)&gSaveGame + 0x48) = *gDoShellSaveA;
+				*(i32*)((u8*)&gSaveGame + 0x50) = *gDoShellSaveC;
+				((u8*)&gSaveGame)[0x7A] = *gDoShellSaveE;
+				((u8*)&gSaveGame)[0x79] = *gDoShellSaveD;
+				memset(&gSaveGame.field_56[0], 0, 0x20);
+				*(i16*)((u8*)&gSaveGame + 0x76) = 0;
+				gSaveGame.mDifficulty = (i8)DifficultyLevel;
+				gSaveGame.field_78 = 1;
+				Spidey_LoadAlternativeTextureSet(gAltTextureSet, (i32)(u8)gSaveGame.field_7C + 1);
+				goto enterLevel;
+			case 2:  // continue
+				goto enterLevel;
+			case 4:  // options
+			{
+				i32 v58 = Shell_Options((EShellResult)15);
+				if (v58 == 0)
+					continue;  // retry menu
+				do
+				{
+					switch (v58)
+					{
+						case 3:
+						{
+							i32 v59 = 20;
+							while (1)
+							{
+								i32 v60 = Shell_MemoryCard((EShellResult)v59);
+								v59 = v60;
+								if (v60 == 0)
+									break;
+								if (v60 == 20 && Shell_LoadGame() != 0)
+								{
+									v57 = 0;
+									goto optionsLoop;
+								}
+								if (v59 == 21)
+								{
+									i32 saveFlag = 0;
+									i32 rcFlag = rollCredits;
+									Shell_SaveGame((const u32*)&saveFlag, (u32*)&rcFlag);
+									if (rcFlag != 0)
+										goto optionsLoop;
+								}
+							}
+							break;
+						}
+						case 14:
+							PCSHELL_DoControllerConfig(1);
+							break;
+						case 15:
+							PCSHELL_DoControllerConfig(0);
+							break;
+						case 16:
+							Shell_SFXMusic();
+							break;
+						case 17:
+							PCSHELL_DoDisplayOptions();
+							break;
+						case 19:
+							Shell_ScreenAdjust();
+							break;
+						default:
+							break;
+					}
+					optionsLoop:
+					v58 = Shell_Options((EShellResult)v58);
+				}
+				while (v58 != 0);
+				continue;  // retry menu
+			}
+			case 5:  // training
+			{
+				i32 v61 = 0;
+				while (v61 != 0 || Shell_ChooseTrainingControlType() != 0)
+				{
+					v61 = DoShell_TrainingChooser(0);
+					if (v61 != 0)
+					{
+						if (gSaveGame.field_7C != 0)
+						{
+							gSaveGame.field_7C = 0;
+							Spidey_LoadAlternativeTextureSet(gAltTextureSet, 1);
+						}
+						v56 = 1;
+						gPshellArmorRealted = 1;
+						break;
+					}
+				}
+				continue;  // retry menu
+			}
+			case 6:
+				DoShell_TrainingChooser(1);
+				continue;  // retry menu
+			case 7:  // gallery
+			{
+				i32 j = Shell_Gallery((EShellResult)8);
+				while (j != 0)
+				{
+					switch (j)
+					{
+						case 8:
+							Shell_CharacterViewer();
+							break;
+						case 9:
+							Shell_MovieViewer();
+							break;
+						case 10:
+							Shell_ComicCollection();
+							break;
+						case 11:
+							Shell_GameCovers();
+							break;
+						case 12:
+							Shell_StoryBoards();
+							break;
+						default:
+							break;
+					}
+					j = Shell_Gallery((EShellResult)j);
+				}
+				continue;  // retry menu
+			}
+			case 13:  // special
+			{
+				i32 v62 = Shell_Special((EShellResult)22);
+				if (v62 == 0)
+					continue;  // retry menu
+				while (1)
+				{
+					switch (v62)
+					{
+						case 22:
+							Shell_CostumeViewer();
+							goto specialLoop;
+						case 23:
+							Shell_Cheats();
+							goto specialLoop;
+						case 24:
+							Shell_RollCredits();
+							goto specialLoop;
+						case 25:
+							if (*gDoShellSpecialFlag == 0)
+							{
+								if (Shell_LevelSelect() != 0)
+									goto enterLevel;
+								goto specialLoop;
+							}
+							if (Shell_LevelSelect() == 0)
+							{
+								specialLoop:
+								v62 = Shell_Special((EShellResult)v62);
+								if (v62 == 0)
+									break;  // retry main menu
+								continue;
+							}
+							while (Shell_Difficulty(0) == 0)
+							{
+								if (Shell_LevelSelect() == 0)
+									goto specialLoop;
+							}
+							goto enterLevel;
+						default:
+							goto specialLoop;
+					}
+				}
+				continue;  // retry menu
+			}
+			case 18:  // quit
+				*gDoShellQuitFlag = 1;
+				PShell_Cleanup();
+				return;
+			default:
+				continue;  // retry menu
+		}
+	}
+
+enterLevel:
+	if (*gDoShellForceLevelExit != 0)
+	{
+		i32 v65 = (u8)gSaveGame.field_7B;
+		gSaveGame.field_7B = 0;
+		*gDoShellSaveLevelCode = v65;
+	}
+	if (gPshellArmorRealted == 0)
+		*gDoShellKidModeFlag = (DifficultyLevel == 0);
+	Utils_InitialRand(Vblanks);
+	for (i32 k = 10000; k != 0; --k)
+		Rnd(10);
+	PShell_Cleanup();
 }
 
 // @Ok
