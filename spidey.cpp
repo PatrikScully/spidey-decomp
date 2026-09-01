@@ -31,6 +31,7 @@
 #include "m3dinit.h"
 #include "SpideyDX.h"
 #include "switch.h"
+#include "ps2pad.h"
 
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
@@ -45,6 +46,74 @@ EXPORT u16 gSpideyCeilingCameraYDistance;
 
 // @Ok
 i32 *gSpideySFXEntry[300];
+
+// @Bogus
+// The animation-start idiom this file repeats everywhere: latch the SFX
+// script that belongs to the animation into field_350, clamp every entry
+// in it to 16 bits, then start the animation. The original inlines this
+// (six copies inside CPlayer::CheckLanded alone), so it was a helper in
+// the real source too.
+static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
+{
+	i32 *p = gSpideySFXEntry[anim];
+
+	pPlayer->field_350 = p;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	pPlayer->RunAnim(anim, 0, -1);
+}
+
+// raw accumulated yaw offset (relative to body heading) driven by look
+// input each frame in CPlayer::SetupLookaroundCamera (0x4C38A0); used
+// directly to drive the joint/head-turn and, added to GetEffectiveHeading,
+// to aim SetTargetTorsoAngle on lock-on. No idb_globals.txt entry (nearest
+// named neighbours are the gSpidey*Cam* tuning constants around
+// 0x6A81xx-0x6A8Cxx, none at this address), tentative name only.
+static i32 * const gLookaroundYawOffset = (i32*)0x6A7FFC;
+
+// @Bogus
+// The shared tail of every branch of CPlayer::CheckWebShot that actually
+// starts a web shot: latch the "aiming a lock-on" flag, then either turn
+// the torso by the fixed lookaround yaw (sign from field_8E9) or point it
+// at whatever the player is holding, and finally clear bit 0 of the CBody
+// byte at 0xAE.
+static void WebShotAimTorso(CPlayer *pPlayer)
+{
+	pPlayer->field_8ED = pPlayer->field_8EA;
+
+	if (pPlayer->field_8EA != 0)
+	{
+		if (pPlayer->field_8E9 != 0)
+			pPlayer->SetTargetTorsoAngle(
+				(i16)(pPlayer->GetEffectiveHeading() - *gLookaroundYawOffset), false);
+		else
+			pPlayer->SetTargetTorsoAngle(
+				(i16)(pPlayer->GetEffectiveHeading() + *gLookaroundYawOffset), false);
+	}
+	else
+	{
+		CBody *held = pPlayer->field_DCC;
+
+		if (held != 0)
+			pPlayer->SetTargetTorsoAngleToThisPoint(&held->mPos);
+		else
+			pPlayer->field_DF8 = 0;
+	}
+
+	// 0xAE is inside CBody's padding in ob.h (which this file does not own),
+	// so it is reached by raw offset, the same way CheckJumpingSmashKick
+	// reaches 0x54D.
+	u8 *pFlagAE = reinterpret_cast<u8*>(pPlayer) + 0xAE;
+	*pFlagAE &= 0xFE;
+}
 
 // @Ok
 EXPORT i16 gSpideyFloorCamXOffset;
@@ -1498,10 +1567,235 @@ u8 CPlayer::CheckJumpingSmashKick(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJumpingSwingWeb(void)
+// @Ok
+// verified against the IDA disasm of 0x4C18A0 (1533 bytes). Returns 1 when
+// a swing web was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// What it does: cast a probe line up from the player and ask
+// CheckSwingWebAvailability whether that hit point can carry a web. Up to
+// three probes are tried, in this order.
+//  1. straight along field_C6C (the player's up axis), one unit long.
+//  2. field_C84 tilted by the next angle out of the wide fan table, then,
+//     if that hits something usable, the angle is walked back towards zero
+//     in 57 unit steps for as long as it keeps hitting (the last good hit
+//     is the one that is used).
+//  3. field_C78 tilted by the next angle out of the narrow fan table.
+// A hit on a face flagged 0x40000 whose normal points up (vy >= -2600) is
+// rejected, the game does not let the player web those.
+//
+// The two fan tables live in the original's .rdata at 0x556590 and
+// 0x556578, six i32 each, and both cursors (field_5CC, field_5C8) walk
+// them round robin so repeated swings do not all aim at the same angle.
+u8 CPlayer::CheckJumpingSwingWeb(void)
 {
-    printf("CPlayer::CheckJumpingSwingWeb(void)");
+	// gPracticeDifficultyFlag, 0x60CFC7, same file-local pointer pshell.cpp
+	// uses. Set while the training/practice mode assists the player.
+	static u8 * const gPracticeDifficultyFlag = (u8*)0x0060CFC7;
+
+	// probe angle tables, original addresses 0x556590 and 0x556578.
+	static const i32 gSwingWebWideFanAngles[6] = { -171, 171, -341, 341, -512, 512 };
+	static const i32 gSwingWebNarrowFanAngles[6] = { 57, -57, 114, -114, 171, -171 };
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[0x70] == 0 || (*gPracticeDifficultyFlag != 0 && this->field_1AC == 0))
+	{
+		// no button, but practice mode can still fire the swing for you
+		if (*gPracticeDifficultyFlag == 0)
+			return 0;
+
+		if ((this->field_E1C & 6) == 0)
+			return 0;
+
+		if (this->field_E8D == 0)
+			return 0;
+
+		if (pInput[0x100] == 0)
+			return 0;
+	}
+
+	if (this->field_8EA != 0)
+		return 0;
+
+	if (this->mHeldObject != 0)
+		return 0;
+
+	if (this->field_550 != 0)
+		return 0;
+
+	bool bFound = false;
+
+	SLineInfo lineInfo;
+
+	i32 one = 4096;
+	CVector probe = this->mPos - (this->field_C6C * one);
+
+	lineInfo.StartCoords.vx = this->mPos.vx;
+	lineInfo.StartCoords.vy = this->mPos.vy - 0x40000;
+	lineInfo.StartCoords.vz = this->mPos.vz;
+
+	lineInfo.EndCoords.vx = probe.vx;
+	lineInfo.EndCoords.vy = probe.vy;
+	lineInfo.EndCoords.vz = probe.vz;
+
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (lineInfo.pFace != 0 && (lineInfo.pFace[3] & 0x40000) != 0
+		&& lineInfo.Normal.vy >= -2600)
+	{
+		lineInfo.pItem = 0;
+	}
+	else if (lineInfo.pItem != 0)
+	{
+		bFound = this->CheckSwingWebAvailability(&lineInfo) != 0;
+	}
+
+	if ((this->field_E1C & 0x40006) != 0 && !bFound)
+	{
+		i16 angle = (i16)gSwingWebWideFanAngles[this->field_5CC];
+
+		this->field_5CC++;
+		if (this->field_5CC > 5)
+			this->field_5CC = 0;
+
+		i32 s = rcossin_tbl[angle & 0xFFF].sin;
+		i32 c = rcossin_tbl[angle & 0xFFF].cos;
+
+		lineInfo.EndCoords.vx = this->mPos.vx
+			+ ((((this->field_C84.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+		lineInfo.EndCoords.vy = this->mPos.vy
+			+ (((((this->field_C84.vy * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+		lineInfo.EndCoords.vz = this->mPos.vz
+			+ ((((this->field_C84.vz * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+
+		M3dColij_InitLineInfo(&lineInfo);
+		M3dZone_LineToItem(&lineInfo, 1);
+
+		if (lineInfo.pFace != 0 && (lineInfo.pFace[3] & 0x40000) != 0
+			&& lineInfo.Normal.vy >= -2600)
+		{
+			lineInfo.pItem = 0;
+		}
+		else if (lineInfo.pItem != 0 && this->CheckSwingWebAvailability(&lineInfo) != 0)
+		{
+			// keep straightening the probe while it still finds a hook
+			while (angle <= -57)
+			{
+				angle = (i16)(angle + 57);
+
+				s = rcossin_tbl[angle & 0xFFF].sin;
+				c = rcossin_tbl[angle & 0xFFF].cos;
+
+				lineInfo.EndCoords.vx = this->mPos.vx
+					+ ((((this->field_C84.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+				lineInfo.EndCoords.vy = this->mPos.vy
+					+ (((((this->field_C84.vy * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+				lineInfo.EndCoords.vz = this->mPos.vz
+					+ ((((this->field_C84.vz * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+
+				M3dColij_InitLineInfo(&lineInfo);
+				M3dZone_LineToItem(&lineInfo, 1);
+
+				if (lineInfo.pItem == 0)
+					break;
+
+				if ((lineInfo.pFace[3] & 0x40000) != 0 && lineInfo.Normal.vy >= -2600)
+				{
+					lineInfo.pItem = 0;
+					break;
+				}
+
+				if (this->CheckSwingWebAvailability(&lineInfo) == 0)
+					break;
+			}
+
+			bFound = true;
+		}
+
+		if (!bFound)
+		{
+			i32 narrowAngle = gSwingWebNarrowFanAngles[this->field_5C8];
+
+			this->field_5C8++;
+			if (this->field_5C8 > 5)
+				this->field_5C8 = 0;
+
+			s = rcossin_tbl[narrowAngle & 0xFFF].sin;
+			c = rcossin_tbl[narrowAngle & 0xFFF].cos;
+
+			lineInfo.EndCoords.vx = this->mPos.vx
+				+ ((((this->field_C78 * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+			lineInfo.EndCoords.vy = this->mPos.vy
+				+ (((((this->field_C7C * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+			lineInfo.EndCoords.vz = this->mPos.vz
+				+ ((((this->field_C80 * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (lineInfo.pFace != 0 && (lineInfo.pFace[3] & 0x40000) != 0
+				&& lineInfo.Normal.vy >= -2600)
+				return 0;
+
+			if (lineInfo.pItem == 0)
+				return 0;
+
+			bFound = this->CheckSwingWebAvailability(&lineInfo) != 0;
+		}
+	}
+
+	if (!bFound)
+		return 0;
+
+	print_if_false(this->field_E64 == 0, "Error");
+
+	this->field_DC0.vx = lineInfo.Position.vx;
+	this->field_DAC.vx = lineInfo.Position.vx;
+	this->field_DC0.vy = lineInfo.Position.vy;
+	this->field_DC0.vz = lineInfo.Position.vz;
+	this->field_DAC.vy = lineInfo.Position.vy;
+	this->field_DAC.vz = lineInfo.Position.vz;
+
+	this->field_8ED = 0;
+	this->field_AD4 = 0;
+	this->field_DF8 = 0;
+
+	if ((this->field_E1C & 9) != 0)
+	{
+		this->field_E1C = 0x100;
+		RunAnimWithSFX(this, 0x111);
+	}
+	else
+	{
+		this->field_54C = 1;
+		this->field_E1C = 0x200;
+		this->field_E20 = 0;
+		RunAnimWithSFX(this, 0x11A);
+
+		if (this->mVel.vy > 0)
+			this->mVel.vy = 0;
+	}
+
+	this->field_201 = 1;
+	reinterpret_cast<u8*>(this->field_E0C)[0x41] = 1;
+
+	return 1;
 }
 
 // @Ok
@@ -1701,10 +1995,124 @@ i32 CPlayer::CheckKick(void)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckLanded(void)
+// @Ok
+// verified against the IDA disasm of 0x4C24E0 (863 bytes). Returns 1 when
+// the player was actually touching something (mCollision bit 1), 0 if not,
+// so the header's void return was wrong and is fixed.
+// Notes on the details:
+//  - the landing grunt is SFX 9 normally, or one of four random variants
+//    (0x50..0x53) with bit 15 set when field_34C is set.
+//  - fall damage: field_E40 is the drop height where it starts, field_E44
+//    the drop that costs a full mMaxHealth, and the hit strength scales
+//    linearly between them (signed idiv in the original). If the fall
+//    killed the player (mHealth <= 0) no landing animation is started.
+//  - when the fall did no damage the pad rumbles instead, but only if the
+//    vibration option is on.
+//  - the animation is picked from the animation that was playing in the
+//    air; anim ids are shared with the SFX script table one for one.
+i32 CPlayer::CheckLanded(void)
 {
-    printf("CPlayer::CheckLanded(void)");
+	// gSaveGame + 0x7B (gSaveGame is 0x682858, declared in front.h with
+	// SSaveGame in shell.h): the "vibration on" option flag. This file does
+	// not include front.h, so it is reached through the containing global
+	// the same way CPlayer::Hit reaches +0x50 and +0x79.
+	static u8 * const gSaveGameVibration = (u8*)0x006828D3;
+
+	if ((this->mCollision & 2) == 0)
+		return 0;
+
+	if (this->field_34C != 0)
+		SFX_PlayPos((Rnd(4) + 0x50) | 0x8000, &this->mPos, 0);
+	else
+		SFX_PlayPos(9, &this->mPos, 0);
+
+	bool bHurt = false;
+
+	i32 hurtFrom = this->field_E40;
+
+	if (hurtFrom != 0)
+	{
+		i32 drop = (this->mPos.vy - this->field_E38) >> 12;
+
+		if (drop > hurtFrom)
+		{
+			SHitInfo hit;
+			hit.field_C.vx = 0;
+			hit.field_C.vy = 0;
+			hit.field_C.vz = 0;
+			hit.field_0 = 4;
+			hit.field_8 = (u16)((drop - hurtFrom) * this->mMaxHealth / (this->field_E44 - hurtFrom));
+
+			this->Hit(&hit);
+
+			if (this->mHealth <= 0)
+				return 1;
+
+			bHurt = true;
+		}
+	}
+
+	if (!bHurt && *gSaveGameVibration != 0)
+		Pad_ActuatorOn(0, 4, 0, 1);
+
+	u16 anim = this->mAnim;
+
+	if (anim == 0xE8)
+	{
+		if (this->field_E2D == 0 && this->field_E2E == 0)
+		{
+			RunAnimWithSFX(this, 0xED);
+			this->field_E8C = 0;
+		}
+		else
+		{
+			RunAnimWithSFX(this, 0xEC);
+		}
+	}
+	else if (anim == 0xAF || anim == 0xB0)
+	{
+		RunAnimWithSFX(this, 0xB2);
+	}
+	else if (anim == 0xE1)
+	{
+		if (this->field_E2D == 0 && this->field_E2E == 0)
+		{
+			RunAnimWithSFX(this, 0xE6);
+			this->field_E8C = 0;
+		}
+		else
+		{
+			RunAnimWithSFX(this, 0xE5);
+		}
+	}
+	else if (this->field_E8C != 0
+		&& (anim == 0xE2 || anim == 0xE4 || anim == 0xE9 || anim == 0xEB))
+	{
+		if (this->field_E2D == 0 && this->field_E2E == 0)
+		{
+			RunAnimWithSFX(this, 0xE6);
+			this->field_E8C = 0;
+		}
+		else
+		{
+			RunAnimWithSFX(this, 0xE5);
+		}
+	}
+	else
+	{
+		RunAnimWithSFX(this, 0xD5);
+		this->field_E8C = 0;
+	}
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	this->field_E1C = 8;
+	this->field_AE5 = 0;
+	this->field_54D = 0;
+	this->field_2C1 = 0;
+	pInput[0x101] = 0;
+
+	return 1;
 }
 
 // @Ok
@@ -2020,10 +2428,169 @@ u8 CPlayer::CheckSwitchToGrabbedMode(CVector const *pPos, CVector *pNormal)
 	return 1;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckWebShot(void)
+// @Ok
+// verified against the IDA disasm of 0x4C0510 (1644 bytes). Returns 1 when
+// a web shot was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// The web button (pInput[0x110]) is edge latched into field_8E0. On the
+// press, field_8E1 records whether this press is allowed to aim (only when
+// field_E1C bit 0 is clear, the aim stick is off centre, and field_EBC is
+// above 6), and field_8E4 then holds a mask of the four stick directions
+// that were already live at that moment so the same direction does not
+// fire twice.
+//
+// Which shot happens, in priority order:
+//   aim right (field_E2D > 0)   -> anim 0xFC / 0x106 when stunned
+//   aim left  (field_E2D < 0)   -> anim 0xFF / 0x109
+//   aim down  (field_E2E < 0)   -> web yank, costs 1024 webbing, anim 0x11D
+//   aim up    (field_E2E > 0)   -> web dome, costs 3072 webbing, anim 0x11B
+//   nothing aimed               -> zip web at a target baddy (anim 0x78)
+//                                  or the plain forward shot (0xFA / 0x104)
+// The last two both need at least 30 ticks since the previous shot.
+i32 CPlayer::CheckWebShot(void)
 {
-    printf("CPlayer::CheckWebShot(void)");
+	u8 bWasDown = this->field_8E0;
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if ((bWasDown != 0 && pInput[0x110] == 0) || this->mHeldObject != 0)
+	{
+		this->field_8E0 = 0;
+		return 0;
+	}
+
+	u8 bButton = pInput[0x110];
+
+	if (bButton != 0 && bWasDown == 0)
+	{
+		this->field_8E0 = 1;
+
+		if ((this->field_E1C & 1) == 0
+			&& (this->field_E2D != 0 || this->field_E2E != 0)
+			&& this->field_EBC > 6)
+			this->field_8E1 = 1;
+		else
+			this->field_8E1 = 0;
+	}
+
+	if (this->field_8E0 == 0)
+		return 0;
+
+	this->field_8E4 = 0;
+
+	if (this->field_8E1 != 0)
+	{
+		this->field_8E4 = (this->field_E2D > 0 ? 1 : 0)
+			| (this->field_E2D < 0 ? 2 : 0)
+			| (this->field_E2E > 0 ? 4 : 0)
+			| (this->field_E2E < 0 ? 8 : 0);
+	}
+
+	if (this->field_E2D > 0 && (this->field_8E4 & 1) == 0)
+	{
+		u8 bStunned = this->field_AD4;
+
+		this->field_8F8 = 2;
+		this->field_552 = 0;
+		this->field_E1C = 0x8000;
+
+		if (bStunned != 0)
+			RunAnimWithSFX(this, 0x106);
+		else
+			RunAnimWithSFX(this, 0xFC);
+
+		if (this->field_E2E > 0)
+			this->field_544 = 2;
+		else if (this->field_E2E < 0)
+			this->field_544 = 1;
+		else
+			this->field_544 = 0;
+
+		WebShotAimTorso(this);
+		return 1;
+	}
+
+	if (this->field_E2D < 0 && (this->field_8E4 & 2) == 0)
+	{
+		u8 bStunned = this->field_AD4;
+
+		this->field_8F8 = 4;
+		this->field_552 = 0;
+		this->field_E1C = 0x10000;
+
+		if (bStunned != 0)
+			RunAnimWithSFX(this, 0x109);
+		else
+			RunAnimWithSFX(this, 0xFF);
+
+		WebShotAimTorso(this);
+		return 1;
+	}
+
+	if (this->field_E2E < 0
+		&& (this->field_8E4 & 8) == 0
+		&& (u32)(gTimerRelated - this->field_5B4) > 30
+		&& this->field_AD4 == 0)
+	{
+		if (this->DecreaseWebbing(1024) == 0)
+			return 0;
+
+		RunAnimWithSFX(this, 0x11D);
+		this->field_E1C = 0x800000;
+		return 1;
+	}
+
+	if (this->field_8EA == 0)
+	{
+		if (this->field_E2E > 0 && (this->field_8E4 & 4) == 0)
+		{
+			// web dome
+			if (this->field_AD4 != 0)
+				return 0;
+
+			if (this->DecreaseWebbing(3072) == 0)
+				return 0;
+
+			this->field_E1C = 0x20000000;
+			RunAnimWithSFX(this, 0x11B);
+
+			this->field_374 = gTimerRelated;
+
+			SFX_PlayPos(34, &this->mPos, 0);
+
+			this->field_AB8 = Mem_MakeHandle(new CDome(this, (u8)this->field_5E8));
+			return 1;
+		}
+
+		if (this->field_AD4 == 0 && (pInput[0x120] != 0 || pInput[0x130] != 0))
+		{
+			// zip web towards an auto-picked baddy
+			this->field_DD8 = Mem_MakeHandle(this->SelectTargetBaddy(190, -4096, 4096, 0));
+			this->field_DE0 = gTimerRelated;
+			this->field_E1C = 0x2000000;
+			RunAnimWithSFX(this, 0x78);
+			return 1;
+		}
+	}
+
+	// plain forward shot
+	if (bButton == 0 || (u32)(gTimerRelated - this->field_5B4) <= 30)
+		return 0;
+
+	u8 bStunned = this->field_AD4;
+
+	this->field_8F8 = 1;
+	this->field_552 = 0;
+	this->field_E1C = 0x4000;
+
+	if (bStunned != 0)
+		RunAnimWithSFX(this, 0x104);
+	else
+		RunAnimWithSFX(this, 0xFA);
+
+	WebShotAimTorso(this);
+	return 1;
 }
 
 // @Ok
@@ -2841,14 +3408,6 @@ static i32 * const gWideScreen = (i32*)0x660F80;
 // byte offset 0xC. Structure of gAnimWebcart is not known, so this is a
 // tentative slot name only, not a real standalone global.
 static i32 * const gAnimWebcart_field_C = (i32*)0x60F76C;
-
-// raw accumulated yaw offset (relative to body heading) driven by look
-// input each frame in CPlayer::SetupLookaroundCamera (0x4C38A0); used
-// directly to drive the joint/head-turn and, added to GetEffectiveHeading,
-// to aim SetTargetTorsoAngle on lock-on. No idb_globals.txt entry (nearest
-// named neighbours are the gSpidey*Cam* tuning constants around
-// 0x6A81xx-0x6A8Cxx, none at this address), tentative name only.
-static i32 * const gLookaroundYawOffset = (i32*)0x6A7FFC;
 
 // smoothed copy of gLookaroundYawOffset, chased with a max delta of 192
 // per SetupLookaroundCamera call; feeds the camera-orientation matrix

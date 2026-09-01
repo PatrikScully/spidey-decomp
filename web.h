@@ -21,6 +21,11 @@ EXPORT i32 BoundingBoxCollisionCheck(SVECTOR const *pMin, SVECTOR const *pMax, S
 class CImpactWeb : public CFlatBit
 {
 	public:
+		// Original 0x4F9940. Mac mangled name
+		// __ct__10CImpactWebFRC7CVectorRC8CSVectoriii gives the parameter
+		// list. The web splat left on a wall when a web shot misses.
+		EXPORT CImpactWeb(const CVector &Pos, const CSVector &Normal, i32 a4, i32 a5, i32 a6);
+
 		PADDING(0x24);
 };
 
@@ -75,13 +80,24 @@ class CWeb : public CBody
 {
 	public:
 
+		EXPORT CWeb(void);
+
 		PADDING(4);
 
 		i32 field_F8;
 
 		PADDING(4);
 
-		i32 field_100;
+		u16 field_100;
+
+		// Written as a u16 (0) by CPlayer::CheckJumpingR1ZipWeb and
+		// CheckJumpingR2ZipWeb right after the web is allocated, and read
+		// back as a u16 by CPlayer::FireWeb, which passes it on to
+		// CPlayer::DecreaseWebbing as the cost of the shot. field_100 was
+		// an i32 covering 0x100..0x104 before that was found; nothing in
+		// the repo used it, so it is split into two u16 here.
+		u16 field_102;
+
 		i32 field_104;
 		CVector field_108;
 
@@ -101,7 +117,17 @@ class CWeb : public CBody
 		i32 field_138;
 
 		EXPORT void SwitchToBlob(void);
+
+		// Original 0x4F5ED0. Mac mangled name
+		// Fire__4CWebFR7CVectorR7CVectorP5CBodybR8CSVector gives the
+		// parameter list. Anchors the web between two points and spawns the
+		// drawn strand; pTarget is whatever the web attached to.
+		EXPORT void Fire(CVector &Hook, CVector &Target, CBody *pTarget, bool bSplat, CSVector &Normal);
 };
+
+// Original 0x4F8D10. Mac mangled name Web_Trap__FP6CSuperi. Wraps a baddy
+// in a trap web.
+EXPORT void Web_Trap(CSuper *pSuper, i32 a2);
 
 // Fields at 0xF8/0xFC/0x17C reverse engineered 2026-08-31 while decompiling
 // CSwinger_SwingBack (0x4F7550, web.cpp): that function reads all three

@@ -668,6 +668,7 @@ void validate_CWeb(void){
 	VALIDATE(CWeb, field_F8, 0xF8);
 
 	VALIDATE(CWeb, field_100, 0x100);
+	VALIDATE(CWeb, field_102, 0x102);
 	VALIDATE(CWeb, field_104, 0x104);
 
 	VALIDATE(CWeb, field_108, 0x108);
@@ -840,4 +841,51 @@ void CWeb::SwitchToBlob(void)
 	// known yet (CWeb only ever sees it through this handle), so it stays a
 	// raw offset rather than a guessed field name.
 	*reinterpret_cast<i32*>(reinterpret_cast<u8*>(pTarget) + 0x2A8) &= ~8;
+}
+
+// @Ok
+// verified against the IDA disasm of 0x4F5DA0 (136 bytes). Chains
+// CBody::CBody, zeroes the two anchor vectors and the three scalars behind
+// them, links the new web into WebList and stamps mType 1. Everything else
+// (the mode in field_104, the webbing cost in field_102, the hook and
+// target handles) is filled in by the caller, CPlayer::CheckJumpingR1ZipWeb
+// or CPlayer::CheckJumpingR2ZipWeb.
+CWeb::CWeb(void)
+{
+	this->field_108.vx = 0;
+	this->field_108.vy = 0;
+	this->field_108.vz = 0;
+
+	this->field_114.vx = 0;
+	this->field_114.vy = 0;
+	this->field_114.vz = 0;
+
+	this->field_120 = 0;
+	this->field_124 = 0;
+	this->field_128 = 0;
+
+	this->AttachTo(&WebList);
+
+	this->mType = 1;
+}
+
+// @MEDIUMTODO
+// 0x4F5ED0, 662 bytes. Called by CPlayer::FireWeb.
+void CWeb::Fire(CVector &, CVector &, CBody *, bool, CSVector &)
+{
+	printf("CWeb::Fire(CVector &,CVector &,CBody *,bool,CSVector &)");
+}
+
+// @MEDIUMTODO
+// 0x4F8D10, 229 bytes. Called by CPlayer::FireWeb.
+void Web_Trap(CSuper *, i32)
+{
+	printf("Web_Trap(CSuper *,i32)");
+}
+
+// @MEDIUMTODO
+// 0x4F9940, 604 bytes. Called by CPlayer::FireWeb.
+CImpactWeb::CImpactWeb(const CVector &, const CSVector &, i32, i32, i32)
+{
+	printf("CImpactWeb::CImpactWeb(const CVector &,const CSVector &,i32,i32,i32)");
 }
