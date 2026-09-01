@@ -315,7 +315,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x800       0x4B30AE   done   punching / combo tracking
 //   0x1000      0x4B3DF9   done   landing out of a surface transition
 //   0x2000      0x4B4AAA   done   a surface transition finished
-//   0x4000      0x4B44C9   TODO   ~370 instructions
+//   0x4000      0x4B44C9   done   the web-attack wind up
 //   0x8000      0x4B402E   done   firing a web
 //   0x10000     0x4B4E9B   done   web-swing wind up (3 anims that fire a web)
 //   0x20000     0x4B58B4   done   the tug-web attacks
@@ -2858,6 +2858,315 @@ void SpideyAI0(CPlayer *pPlayer)
 			pPlayer->field_534 = 0x168;
 			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
 			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
+		// 0x4B44C9. The web-attack wind up. Before frame 5 the stick picks
+		// which move the throw turns into (left/right tug web, down knock
+		// down web, up web dome, or the zip web); otherwise the plain web
+		// goes out on frame 5 and the recovery animation plays.
+		case 0x4000:
+		{
+			u16 anim = pPlayer->mAnim;
+			// bl at 0x4B44DD. The airborne variants of every animation in
+			// this state are 10 ids higher than the standing ones.
+			u8 airborne = (anim == 0x104) ? 1 : 0;
+			// reached 0x4B47D8, the "the stick picked nothing" path
+			u8 plainWeb = 0;
+
+			pPlayer->field_EA6 = 0;
+
+			if (airborne == 0 && anim != 0xFA)
+			{
+				if (anim != 0xFB && anim != 0x105) break;
+
+				// 0x4B44FA: the recovery animation waits itself out.
+				if (pPlayer->CheckJump() != 0) break;
+				if (pPlayer->mAnimFinished == 0) break;
+
+				pPlayer->field_8E1 = 0;
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			// 0x4B452A
+			if (pPlayer->mFrame >= 5)
+			{
+				plainWeb = 1;
+			}
+			else
+			{
+				char leanX = pPlayer->field_E2D;
+
+				if (leanX > 0 && (pPlayer->field_8E4 & 1) == 0)
+				{
+					// 0x4B4553: right, so the right tug web.
+					char leanY;
+
+					pPlayer->field_8F8 = 2;
+					pPlayer->field_552 = 0;
+					pPlayer->field_E1C = 0x8000;
+					pPlayer->PlaySingleAnim(airborne != 0 ? 0x106 : 0xFC, 0, -1);
+
+					leanY = pPlayer->field_E2E;
+
+					if (leanY > 0)
+					{
+						pPlayer->field_544 = 2;
+					}
+					else if (leanY < 0)
+					{
+						pPlayer->field_544 = 1;
+					}
+					else
+					{
+						pPlayer->field_544 = 0;
+					}
+
+					PLR_U8(pPlayer, 0xAE) &= 0xFE;
+					break;
+				}
+
+				if (leanX < 0 && (pPlayer->field_8E4 & 2) == 0)
+				{
+					// 0x4B45EB: left, so the left tug web.
+					pPlayer->field_8F8 = 4;
+					pPlayer->field_552 = 0;
+					pPlayer->field_E1C = 0x10000;
+					pPlayer->PlaySingleAnim(airborne != 0 ? 0x109 : 0xFF, 0, -1);
+					PLR_U8(pPlayer, 0xAE) &= 0xFE;
+					break;
+				}
+
+				// 0x4B4631
+				if (airborne != 0)
+				{
+					plainWeb = 1;
+				}
+				else
+				{
+					char leanY = pPlayer->field_E2E;
+
+					if (leanY < 0)
+					{
+						if ((pPlayer->field_8E4 & 8) == 0
+							&& (u32)(gTimerRelated - pPlayer->field_5B4) > 0x1E
+							&& pPlayer->field_AD4 == 0)
+						{
+							// 0x4B4669: down, so the knock down web.
+							if (pPlayer->DecreaseWebbing(0x400) == 0) break;
+
+							pPlayer->PlaySingleAnim(0x11D, 0, -1);
+							pPlayer->field_E1C = 0x800000;
+							break;
+						}
+					}
+					else if (leanY > 0 && (pPlayer->field_8E4 & 4) == 0)
+					{
+						// 0x4B46B1: up, so the web dome.
+						if (pPlayer->field_AD4 != 0)
+						{
+							plainWeb = 1;
+						}
+						else if (pPlayer->DecreaseWebbing(0xC00) == 0)
+						{
+							plainWeb = 1;
+						}
+						else
+						{
+							SFX_PlayPos(0x22, &pPlayer->mPos, 0);
+							pPlayer->field_E1C = 0x20000000;
+							pPlayer->PlaySingleAnim(0x11B, 0, -1);
+							pPlayer->field_374 = (i32)gTimerRelated;
+							pPlayer->field_AB8 = Mem_MakeHandle(
+								new CDome(pPlayer, (u8)pPlayer->field_5E8));
+							break;
+						}
+					}
+
+					if (plainWeb == 0)
+					{
+						// 0x4B475F: no lean, so try the zip web.
+						u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+
+						if (pPlayer->field_8EA != 0)
+						{
+							plainWeb = 1;
+						}
+						else if (pPad[0x120] == 0 && pPad[0x130] == 0)
+						{
+							plainWeb = 1;
+						}
+						else
+						{
+							// 0x4B4783
+							pPlayer->field_DD8 = Mem_MakeHandle(
+								pPlayer->SelectTargetBaddy(0xBE, -0x1000, 0x1000, 0));
+							pPlayer->field_DE0 = (i32)gTimerRelated;
+							pPlayer->field_E1C = 0x2000000;
+							pPlayer->PlaySingleAnim(0x78, 0, -1);
+							break;
+						}
+					}
+				}
+			}
+
+			if (plainWeb == 0) break;
+
+			// 0x4B47D8
+			if (pPlayer->mAnimFinished != 0)
+			{
+				CWeb *pWeb = reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+
+				if (pWeb != 0)
+				{
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+
+					pWeb->SwitchToBlob();
+					pPlayer->field_E6C = 0;
+				}
+
+				pPlayer->PlaySingleAnim(airborne != 0 ? 0x105 : 0xFB, 0, -1);
+				break;
+			}
+
+			// 0x4B4831
+			if (pPlayer->mFrame < 5) break;
+
+			if (pPlayer->field_E6C == 0)
+			{
+				// 0x4B484F: throw the web.
+				CWeb *pWeb;
+				i32 result;
+
+				if (pPlayer->field_552 != 0) break;
+
+				pPlayer->field_552 = 1;
+
+				// the same missing null check the other web spawns have
+				pWeb = new CWeb();
+				pPlayer->field_E6C = reinterpret_cast<i32*>(pWeb);
+				pWeb->field_102 = 0;
+				pWeb->field_F8 = (u8)pPlayer->field_5E8;
+
+				if (pPlayer->field_8ED != 0)
+				{
+					CSVector aim;
+
+					aim.vx = (i16)pPlayer->field_DA0.vx;
+					aim.vy = (i16)pPlayer->field_DA0.vy;
+					aim.vz = (i16)pPlayer->field_DA0.vz;
+
+					result = pPlayer->FireWeb(false, 0x100, &pPlayer->field_DC0,
+						true, &aim);
+				}
+				else
+				{
+					result = pPlayer->FireWeb(true, 0x100, &ZeroVector, false,
+						&gTrajectoryVector);
+				}
+
+				if ((result & 1) != 0)
+				{
+					if (pPlayer->field_E6C != 0)
+					{
+						delete reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+					}
+					pPlayer->field_E6C = 0;
+
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+					break;
+				}
+
+				if ((result & 2) != 0) break;
+
+				// 0x4B495A: nothing was hit, drop the web as a blob.
+				if (pPlayer->field_5E4 != 0)
+				{
+					SFX_Stop((u32)pPlayer->field_5E4);
+					pPlayer->field_5E4 = 0;
+				}
+
+				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+				pPlayer->field_E6C = 0;
+				break;
+			}
+
+			// 0x4B4993: a web is already out, so keep re-firing it while the
+			// button is held and hold the animation on frame 5.
+			{
+				CWeb *pWeb = reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+				u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+				i32 result;
+
+				if (pPad[0x110] == 0) break;
+
+				if (reinterpret_cast<CBody*>(Mem_RecoverPointer(
+						reinterpret_cast<SHandle*>(&pWeb->field_134)))
+					!= pPlayer->field_DCC)
+				{
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+
+					pWeb->SwitchToBlob();
+					pPlayer->field_E6C = 0;
+				}
+
+				if (pPlayer->field_E6C == 0) break;
+
+				if (pPlayer->field_8ED != 0)
+				{
+					result = pPlayer->FireWeb(false, 0x80, &pPlayer->field_DC0,
+						false, &gTrajectoryVector);
+				}
+				else
+				{
+					result = pPlayer->FireWeb(true, 0x80, &ZeroVector, false,
+						&gTrajectoryVector);
+				}
+
+				if ((result & 1) != 0)
+				{
+					if (pPlayer->field_E6C != 0)
+					{
+						delete reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+					}
+					pPlayer->field_E6C = 0;
+
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+				}
+				else if ((result & 2) == 0)
+				{
+					if (pPlayer->field_5E4 != 0)
+					{
+						SFX_Stop((u32)pPlayer->field_5E4);
+						pPlayer->field_5E4 = 0;
+					}
+
+					reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+					pPlayer->field_E6C = 0;
+				}
+
+				// 0x4B4A90
+				if (pPlayer->field_E6C == 0) break;
+
+				pPlayer->mFrame = 5;
+			}
 			break;
 		}
 
