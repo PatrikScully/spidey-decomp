@@ -5762,7 +5762,18 @@ void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 	}
 }
 
-// @SMALLTODO
+// @NotOk
+// No code for this in the PC binary. The Mac build has a real body
+// (.spideyLog__FPce at 0x116BA0, 0x50 bytes, right before
+// .ReadAnalogueInput__7CPlayerFv), but the PC release build compiled the
+// logger away: neither tools/names.json nor the maintainer's IDB
+// (idbs/spideypc_names.txt) has an address for it, and the debug-print
+// helper it would sit next to, print_if_false (0x4015B0), is a bare `retn`
+// in the PC exe. Every debug-print call site I checked in this TU
+// (CPlayer::CPlayer 0x4B9EB0, CPlayer::InitiateCombo 0x4C87D0,
+// CPlayer::ParseFightData 0x4C8CC0) pushes two arguments and calls that
+// same empty 0x4015B0, i.e. print_if_false, never a one-argument logger.
+// Leaving the stub rather than inventing a body.
 void spideyLog(char *,...)
 {
     printf("spideyLog(char *,...)");
