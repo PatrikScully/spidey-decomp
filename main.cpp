@@ -128,19 +128,88 @@ void CalcPolyBufferEnd(void)
 }
 
 // @BIGTODO
-// Investigated 2026-08-31 (address 0x455C90, per idb_globals /
-// spideypc_names.txt, not in tools/names.json). 434 instructions,
-// but it is the top level game state machine: attract mode, level
-// select, in game states 1 to 11 (switch on dword_60CFA4), FMV
-// playback, shell/menu transitions. It calls about 80 different
-// functions, most of them not decompiled in the repo yet (level
-// load, shell dispatch, screen fade, etc). The current stub below
-// only reproduces a small slice (init, boot movies, model preview)
-// and is not a faithful implementation of the real function. Not
-// tractable as a single leaf-first pass; leaving as TODO, retagged
-// to reflect real size. Do not confuse this stub's behavior with
-// the original: the real SpideyMain never returns during normal
-// play, it loops until the game exits.
+// Re-checked 2026-09-01 with idalib against the real exe (address
+// 0x455C90, WinMain is its only caller). 434 instructions, 77 basic
+// blocks, 45 unique callees. This is the top level game state
+// machine. Shape, confirmed from the real decompile:
+//   1. Boot: memset gMainStuff, Init_AtStart(1), PCTex_LoadPcIcons,
+//      4 boot movies (GameFMV_PlayMovie), Init_Cleanup(0), clear
+//      gRunCinemaRelated, busy-wait on gVlanksRelated. If a render
+//      test flag is set, go straight to model preview and shut down
+//      (this is the slice the current stub covers).
+//   2. Otherwise: load 3 fonts, PShell_NormalFont, then an infinite
+//      outer loop. Each pass: set fog params, maybe load "shell"
+//      through Reloc_Load/Reloc_CallUserFunction/Reloc_Unload,
+//      figure out the level code string, set the display mode
+//      (DXINIT_SetDisplayOptions) and mouse position, run the CD
+//      recheck (sub_515D80, the same helper documented elsewhere in
+//      this repo as the anti-piracy check tied to the
+//      SPIDEY_NO_CD_CHECK toggle; stay away from it), then call
+//      Front_LoadGame and enter an inner loop.
+//   3. Inner loop, every pass: call sub_4559D0 (unconditionally,
+//      once per pass), PCGfx_EndScene(1), reset a couple of flags,
+//      then switch on dword_60CFA4 (an end-code / next-state value,
+//      11 cases 0-10 plus default). The cases cover: reload save
+//      and restart (1), exit to shell with fade (2, 9), finish a
+//      level and unlock/save progress (3), cycle debug level index
+//      (4, 5), actually enter a level - Trig_ParseTRGFile, allocate
+//      and construct a CPlayer, Trig_ExecuteRestart, allocate and
+//      construct a CCamera (6), quit to shell or shut down (7),
+//      clear screen and reload save (8), set a "continue" flag and
+//      go to shell (10), plain go to shell (11), and an assert on
+//      an unrecognized code (default).
+//   4. Shutdown: busy-wait calling Pause(1), release two COM-style
+//      objects if set, a few cleanup calls, PCTex_FreePcIcons,
+//      Init_AtEnd, return.
+//
+// Callee status (checked against tools/names.json and this repo's
+// tags, not guessed): most of the named leaf calls used above are
+// already @Ok (Init_AtStart, Init_AtEnd, Init_Cleanup [=sub_443AD0],
+// GameFMV_PlayMovie [=sub_470750, confirmed by matching its bytes
+// against tools/functions/4654928.bin], PCTex_LoadPcIcons,
+// PCTex_FreePcIcons, Mess_LoadFont, PShell_NormalFont,
+// M3dInit_SetFoggingParams, Reloc_Load, Reloc_CallUserFunction,
+// Utils_CompareStrings, Utils_CopyString, DXINIT_SetDisplayOptions,
+// PCINPUT_SetMousePosition, Trig_GetLevelID, Front_LoadGame,
+// PCGfx_EndScene, Screen_SepiaFade, Front_ClearScreen,
+// Trig_ParseTRGFile, CClass::operator new [the 3836/756-byte
+// allocator, =sub_455390], Trig_ExecuteRestart, CCamera::CCamera,
+// Front_GetLevelIndex, PShell_MaybeUnlockStuff, Front_FindLevel,
+// PShell_MaybeSaveGame, Pause, print_if_false, Spool_ClearAllPSXs,
+// PCGfx_DoModelPreview).
+//
+// Real blockers, in order of size:
+//   - sub_4559D0 (0x4559D0): ~170 instructions, its own inner loop,
+//     about 28 further callees, almost none decompiled or even
+//     named. Called once per pass of the inner loop above, so this
+//     is really the per-frame driver / attract-mode tick, a whole
+//     separate subsystem on its own. This is the main reason
+//     SpideyMain is not a quick pass.
+//   - sub_47D830 (0x47D830, names.json calls it Front_ContinueExit):
+//     234 instructions, 29 callees. Not declared or stubbed
+//     anywhere in this repo yet, despite having a name in
+//     names.json.
+//   - CPlayer::CPlayer (spidey.cpp): still only a printf stub
+//     (@MEDIUMTODO), needed for case 6 (entering a level).
+//   - Six small never-named leaf helpers with no repo stub at all:
+//     0x50A6B0 (sets 4 render-region globals), 0x458C20 (thunk to
+//     0x43F6D0), 0x50C160 (releases a COM-style object via its
+//     vtable), 0x4305C0 (frees 4 slots through a shared 0x458210
+//     helper), 0x4553D0 (one-line wrapper of 0x458210),
+//     0x47D3A0 (linked-list unlink + dtor call by hash, names.json
+//     calls it Reloc_Unload_0). Small individually, but would still
+//     need names and real bodies before this function could even
+//     compile against them.
+//
+// Given all of the above (a whole undecompiled subsystem as a
+// per-frame dependency, a missing 29-callee function, and a still-
+// stubbed CPlayer constructor), this is not tractable as a single
+// leaf-first pass. Leaving as @BIGTODO with this map for whoever
+// picks it up next. The stub below only reproduces the boot slice
+// (init, boot movies, model preview) and is not a faithful
+// implementation of the real function; do not confuse it with the
+// original, which never returns during normal play, it loops until
+// the game exits.
 void SpideyMain(void)
 {
 	DXERR_printf("xxx main\n");
