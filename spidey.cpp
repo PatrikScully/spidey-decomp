@@ -53,7 +53,7 @@ i32 *gSpideySFXEntry[300];
 // in it to 16 bits, then start the animation. The original inlines this
 // (six copies inside CPlayer::CheckLanded alone), so it was a helper in
 // the real source too.
-static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
+static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim, i32 frame)
 {
 	i32 *p = gSpideySFXEntry[anim];
 
@@ -68,7 +68,15 @@ static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
 		}
 	}
 
-	pPlayer->RunAnim(anim, 0, -1);
+	pPlayer->RunAnim(anim, frame, -1);
+}
+
+// @Bogus
+// Same thing starting at frame 0, which is what almost every call site
+// wants.
+static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim)
+{
+	RunAnimWithSFX(pPlayer, anim, 0);
 }
 
 // raw accumulated yaw offset (relative to body heading) driven by look
@@ -1471,10 +1479,125 @@ i32 CPlayer::CheckJump(void)
 	return 0;
 }
 
-// @MEDIUMTODO
-void CPlayer::CheckJumpingR1ZipWeb(void)
+// @Ok
+// verified against the IDA disasm of 0x4C0EE0 (1408 bytes). Returns 1 when
+// a zip web was started, 0 if not, so the header's void return was wrong
+// and is fixed.
+//
+// The R1 variant fires straight ahead: the probe line runs from the player
+// to mPos + field_C84 * 3072 and the hit has to pass CheckZipWebAvailability
+// with a 3072 range. Faces flagged 0x40000 whose normal points up are
+// rejected. On a hit the surface point goes into field_DC0, the normal into
+// field_DA0, and then either the plain web-shot animation runs (when
+// field_E1C bit 0 is set, i.e. the player is on the ground) or a real CWeb
+// is allocated and fired at the surface point.
+u8 CPlayer::CheckJumpingR1ZipWeb(void)
 {
-    printf("CPlayer::CheckJumpingR1ZipWeb(void)");
+	if (this->field_8EA != 0)
+		return 0;
+
+	if (this->mHeldObject != 0)
+		return 0;
+
+	if (this->field_550 != 0)
+		return 0;
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	if (pInput[0x60] == 0)
+		return 0;
+
+	i32 reach = 3072;
+	CVector rayEnd = this->mPos + (this->field_C84 * reach);
+
+	SLineInfo lineInfo;
+	lineInfo.StartCoords = this->mPos;
+	lineInfo.EndCoords = rayEnd;
+	lineInfo.MinCoords.vx = 0;
+	lineInfo.MinCoords.vy = 0;
+	lineInfo.MinCoords.vz = 0;
+	lineInfo.MaxCoords.vx = 0;
+	lineInfo.MaxCoords.vy = 0;
+	lineInfo.MaxCoords.vz = 0;
+	lineInfo.Position.vx = 0;
+	lineInfo.Position.vy = 0;
+	lineInfo.Position.vz = 0;
+	lineInfo.Normal.vx = 0;
+	lineInfo.Normal.vy = 0;
+	lineInfo.Normal.vz = 0;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (lineInfo.pItem == 0)
+		return 0;
+
+	if ((lineInfo.pFace[3] & 0x40000) != 0 && lineInfo.Normal.vy >= -2600)
+		return 0;
+
+	if (this->CheckZipWebAvailability(&lineInfo, 3072) == 0)
+		return 0;
+
+	this->field_DC0.vx = lineInfo.Position.vx;
+	this->field_DC0.vy = lineInfo.Position.vy;
+	this->field_DC0.vz = lineInfo.Position.vz;
+
+	this->field_DA0.vx = lineInfo.Normal.vx;
+	this->field_DA0.vy = lineInfo.Normal.vy;
+	this->field_DA0.vz = lineInfo.Normal.vz;
+
+	this->field_8ED = 0;
+
+	this->field_558.vx = this->mPos.vx;
+	this->field_558.vy = this->mPos.vy;
+	this->field_558.vz = this->mPos.vz;
+
+	this->field_DF8 = 0;
+
+	if ((this->field_E1C & 1) != 0)
+	{
+		if (this->field_AD4 != 0)
+			RunAnimWithSFX(this, 0x104);
+		else
+			RunAnimWithSFX(this, 0xFA);
+	}
+	else
+	{
+		// drop whatever the lookaround/lock-on owned first
+		i32 *pOld = this->field_E64;
+
+		if (pOld != 0)
+		{
+			(*(void(**)(i32*, i32))*pOld)(pOld, 1);
+			this->field_E64 = 0;
+			this->field_54C = 0;
+			CameraList->field_12C = -1;
+		}
+
+		CWeb *pWeb = new CWeb();
+		this->field_E6C = reinterpret_cast<i32*>(pWeb);
+
+		pWeb->field_102 = 0;
+		pWeb->field_F8 = (u8)this->field_5E8;
+
+		CSVector normal;
+		normal.vx = lineInfo.Normal.vx;
+		normal.vy = lineInfo.Normal.vy;
+		normal.vz = lineInfo.Normal.vz;
+
+		this->field_8F8 = 8;
+		this->field_E10 = 1;
+
+		this->FireWeb(false, 128, &this->field_DC0, true, &normal);
+
+		this->field_E10 = 0;
+
+		RunAnimWithSFX(this, 0x10E, 13);
+	}
+
+	this->field_E1C = 0x40000;
+
+	return 1;
 }
 
 // @MEDIUMTODO
