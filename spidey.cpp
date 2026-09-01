@@ -572,64 +572,599 @@ nextBaddy:;
 		this->field_354 = 0;
 }
 
-// @BIGTODO
-// Scoped 2026-09-01 but not implemented. Original address 0x4B9EB0, 2807
-// bytes. It is a plain (very long) field initialiser, and every function it
-// calls already exists in the repo, so nothing blocks it leaf-first. What
-// stops it is the CPlayer layout: it writes about 200 offsets and roughly
-// 35 of them are still inside PADDING blocks. Adding them wrong shifts
-// everything after, so whoever does this should add one VALIDATE entry per
-// new field in validate_CPlayer and let tobey_validator check the lot.
+// declared in spid_ai0.h, which spidey.cpp does not include; CPlayer::CPlayer
+// only needs the address to store in field_554.
+EXPORT void SpideyAI0(CPlayer *);
+
+// @Ok
+// verified against the IDA disasm of 0x4B9EB0 (2807 bytes) with the
+// Hex-Rays output as a cross-check. Long field initialiser plus the
+// one-time global setup the player owns.
 //
-// What it does, in order:
-//  - CSuper::CSuper, then zero two 16 x CVector arrays at 0x37C and 0x43C
-//    (the current and previous collision part positions
-//    UpdateAndTrackCombo sweeps between), the CVector/CSVector pair at
-//    0x514/0x520, field_558, both halves of field_594, the six
-//    SIndicator::mDirection vectors from 0x5F0 on (stride 104), and a long
-//    run of vectors, quats and scalars from 0x8CC up to 0xEE8. The nonzero
-//    seeds are: 0x570/0x574/0x578 = 208/160/256, the identity w components
-//    (4096) of the quats at 0xC94, 0xCA4, 0xCC4, 0xCD4, field_C5C = 1,
-//    field_C60 = 300, field_C64 = 4096, field_A80 = 1, field_8EB = 1.
-//  - vptr, field_554 = SpideyAI0, field_194 = (field_194 & 0xFFFFF39F) |
-//    0x840, then ParseFightData().
-//  - patches nine gSpideySFXEntry slots (0x6A830C, 0x6A83A4, 0x6A8388,
-//    0x6A8380, 0x6A8384, 0x6A83A8, 0x6A83B4, 0x6A85B8, 0x6A85D0) to point
-//    at the .rdata blobs at 0x5565A8..0x556600, then walks the WHOLE
-//    gSpideySFXEntry array (0x6A82B8 up to gDistanceDefs at 0x6A8768) and
-//    masks every entry of every script to 16 bits.
-//  - Trig_GetLevelId(): a fixed list of level ids clears field_C5C.
-//  - field_360 = field_364 = 2, field_DEC = Spool_FindAnim("Reticle").
-//  - resets the whole camera tuning global block (gSpideyFloorCam*,
-//    gSpideyWallCam*, 0x6A81xx / 0x6A82xx / 0x6A8Cxx) to its defaults.
-//  - AttachTo(&MechList) and ++(the count at 0x6A9034).
-//  - difficulty (gDifficultyLevel at 0x54D474) picks mHealth and field_5D8;
-//    levels 6, 9 and 10 clamp field_5D8 to 2; gSaveGame+0x48/+0x4C restore
-//    mWebbing and field_5D8 when either is set; Trig_GetLevelId() above
-//    0x800 clamps field_5D8 to 2 again.
-//  - field_E0C = gSControl (0x661100), mpLight = 0x5559E0, InitItem
-//    ("spidey"), mFric = (1,4,1), mType = 50, mAngFric = (5,1,5),
-//    SwitchToStandMode(), M3dUtils_ReadHooksPacket(this, 0x55644C).
-//  - mTransform = identity-ish, then M3dMaths_RotMatrixYXZ((0,2048,0)) and
-//    MulMatrix into mTransform.
-//  - if gSaveGame+0x79 is set and gSaveGame+0xE8 is clear: load the
-//    "costarm" anim, seed field_5EC from difficulty then overwrite it with
-//    gSaveGame+0x50, and swap the suit textures once
-//    (Spidey_SwapSuitTextures + gSpideyVramProcessing, the same handshake
-//    ~CPlayer undoes).
-//  - Spidey_BagHead(4096, ...), then the SIndicator poly setup loop
-//    (6 x 4 POLY_F3, writing the dword at mPoly[j]+4 with 96 - j*24 and
-//    zeroing the one after; the setPolyF3/setSemiTrans calls next to it are
-//    the stubbed_printf pair, so they do nothing on PC). NOTE: this loop is
-//    the one part of the function I could not pin down cleanly, because the
-//    dword it writes lands on POLY_F3::r0..code rather than on the tag;
-//    check it against the disasm again before writing it out.
-//  - gSaveGame+0x7C picks field_580 (the hand trail colour).
-//  - field_E18 = 15, field_E12 = (i16)mAnimSpeed, and if field_8EA is set,
-//    ExitLookaroundMode().
+// Two blocks the original inlines are already separate @Ok functions here
+// and are called instead: InitialiseSFXArray (the nine built-in SFX trigger
+// lists plus the 300 slot 16 bit mask walk) and
+// InitialiseOffscreenSpideySenseIndicatorList (the 6 x 4 POLY_F3 loop).
+//
+// The POLY_F3 loop the old scoping comment could not pin down is resolved:
+// the loop base is field_5F0 + 0x18, and SIndicator::mPoly starts at
+// field_5F0 + 0x14, so the dword it writes with 0x60 - j*0x18 is
+// mPoly[j].r0..code (offset +4) and the dword it zeroes right before is
+// mPoly[j].x0/y0 (offset +8). That is exactly what the already-@Ok
+// InitialiseOffscreenSpideySenseIndicatorList does, so it is used here.
+//
+// Every CVector / CQuat / CSVector member of CPlayer has a zeroing (quats:
+// identity) default constructor, so MSVC already emits the member
+// construction the original does out of line; the explicit stores below are
+// kept anyway because the original writes them and a few of them are not
+// zero.
 CPlayer::CPlayer(void)
 {
-    printf("CPlayer::CPlayer(void)");
+	// 0x0055644C, the hooks-packet data blob baked into the exe image, the
+	// same pattern as chopper.cpp's gChopperHooksPacket.
+	static void * const gSpideyHooksPacket = (void*)0x0055644C;
+
+	// gSaveGame is 0x682858 (front.h, SSaveGame in shell.h) and this file
+	// does not include front.h, so the slots the player restores are read
+	// through the containing global, exactly like ~CPlayer does. +0x48 is
+	// the webbing amount, +0x4C the webbing upgrade level, +0x50 the armour
+	// amount, +0x79 "armour unlocked", +0x7A "armour is on" and +0x7C the
+	// hand trail colour selector (trig.cpp already calls that last one
+	// gSaveGameField7C).
+	static u8 * const gSaveGameBytes = (u8*)0x00682858;
+
+	// 0x00682940, named gPshellArmorRealted in idbs/idb_globals.txt (his
+	// spelling). A separate global, not part of gSaveGame.
+	static i32 * const gPshellArmorRealted = (i32*)0x00682940;
+
+	// same three lookaround camera angle slots spidey.cpp declares further
+	// down for CPlayer::EnterLookaroundMode; redeclared here because those
+	// file-scope statics come after this function.
+	static i32 * const gLookaroundCamAngle0 = (i32*)0x006A8260;
+	static i32 * const gLookaroundCamAngle1 = (i32*)0x006A81FC;
+	static i32 * const gLookaroundCamAngle2 = (i32*)0x006A8208;
+	static i32 * const gLookaroundPitchSmoothed = (i32*)0x006A82B4;
+	static i32 * const gLookaroundYawSmoothed = (i32*)0x006A8D54;
+
+	// 0x006A9034, right in front of MechList: how many CPlayers are on that
+	// list. ~CPlayer decrements it under the same name.
+	static i32 * const gMechListCount = (i32*)0x006A9034;
+
+	// 0x0060F770, the phase-1 script flag CPlayer::SynthesizeAnalogueInput
+	// declares further down as gSynthInputScriptFlag.
+	static u8 * const gSynthInputScriptFlag = (u8*)0x0060F770;
+
+	// 0x0060CFF4 / 0x0060CFF8, the two bag-head mode flags
+	// CPlayer::SetBagHeadMode declares further down.
+	static i32 * const gBagHeadModeOne = (i32*)0x0060CFF4;
+	static i32 * const gBagHeadModeTwo = (i32*)0x0060CFF8;
+
+	i32 i;
+
+	for (i = 0; i < 16; i++)
+	{
+		this->field_37C[i].vx = 0;
+		this->field_37C[i].vy = 0;
+		this->field_37C[i].vz = 0;
+	}
+
+	for (i = 0; i < 16; i++)
+	{
+		this->field_43C[i].vx = 0;
+		this->field_43C[i].vy = 0;
+		this->field_43C[i].vz = 0;
+	}
+
+	this->field_514.vx = 0;
+	this->field_514.vy = 0;
+	this->field_514.vz = 0;
+	this->field_520.vx = 0;
+	this->field_520.vy = 0;
+	this->field_520.vz = 0;
+
+	this->field_558.vx = 0;
+	this->field_558.vy = 0;
+	this->field_558.vz = 0;
+
+	this->field_594[0].vx = 0;
+	this->field_594[0].vy = 0;
+	this->field_594[0].vz = 0;
+
+	this->field_570 = 208;
+	this->field_574 = 160;
+	this->field_578 = 256;
+
+	this->field_594[1].vx = 0;
+	this->field_594[1].vy = 0;
+	this->field_594[1].vz = 0;
+
+	for (i = 0; i < 6; i++)
+	{
+		this->field_5F0[i].mDirection.vx = 0;
+		this->field_5F0[i].mDirection.vy = 0;
+		this->field_5F0[i].mDirection.vz = 0;
+	}
+
+	this->field_8CC.vx = 0;
+	this->field_8CC.vy = 0;
+	this->field_8CC.vz = 0;
+
+	this->field_8EB = 1;
+
+	this->field_91C = 0;
+	this->field_920 = 0;
+	this->field_924 = 0;
+	this->field_928 = 0;
+	this->field_92C = 0;
+	this->field_930 = 0;
+	this->field_934 = 0;
+	this->field_938 = 0;
+	this->field_93C = 0;
+	this->field_940 = 0;
+	this->field_944 = 0;
+	this->field_948 = 0;
+
+	this->field_A80 = 1;
+
+	this->field_AC8.vx = 0;
+	this->field_AC8.vy = 0;
+	this->field_AC8.vz = 0;
+
+	this->field_B0C.vx = 0;
+	this->field_B0C.vy = 0;
+	this->field_B0C.vz = 0;
+	this->field_B18.vx = 0;
+	this->field_B18.vy = 0;
+	this->field_B18.vz = 0;
+	this->field_B24.vx = 0;
+	this->field_B24.vy = 0;
+	this->field_B24.vz = 0;
+	this->field_B30.vx = 0;
+	this->field_B30.vy = 0;
+	this->field_B30.vz = 0;
+
+	this->field_B78 = 0;
+	this->field_B7C = 0;
+	this->field_B80 = 0;
+
+	this->field_B84.vx = 0;
+	this->field_B84.vy = 0;
+	this->field_B84.vz = 0;
+
+	this->field_BB0.vx = 0;
+	this->field_BB0.vy = 0;
+	this->field_BB0.vz = 0;
+	this->field_BBC.vx = 0;
+	this->field_BBC.vy = 0;
+	this->field_BBC.vz = 0;
+	this->field_BC8.vx = 0;
+	this->field_BC8.vy = 0;
+	this->field_BC8.vz = 0;
+	this->field_BD4.vx = 0;
+	this->field_BD4.vy = 0;
+	this->field_BD4.vz = 0;
+
+	this->field_C1C.vx = 0;
+	this->field_C1C.vy = 0;
+	this->field_C1C.vz = 0;
+
+	this->field_C28.vx = 0;
+	this->field_C28.vy = 0;
+	this->field_C28.vz = 0;
+
+	this->field_C6C.vx = 0;
+	this->field_C6C.vy = 0;
+	this->field_C6C.vz = 0;
+	this->field_C78 = 0;
+	this->field_C7C = 0;
+	this->field_C80 = 0;
+	this->field_C84.vx = 0;
+	this->field_C84.vy = 0;
+	this->field_C84.vz = 0;
+
+	this->field_C94.x = 0;
+	this->field_C94.y = 0;
+	this->field_C94.z = 0;
+	this->field_C94.w = 4096;
+
+	this->field_CA4.x = 0;
+	this->field_CA4.y = 0;
+	this->field_CA4.z = 0;
+	this->field_CA4.w = 4096;
+
+	this->field_CB8.vx = 0;
+	this->field_CB8.vy = 0;
+	this->field_CB8.vz = 0;
+
+	this->field_CC4.x = 0;
+	this->field_CC4.y = 0;
+	this->field_CC4.z = 0;
+	this->field_CC4.w = 4096;
+
+	this->field_C5C = 1;
+	this->field_C60 = 300;
+	this->field_C64 = 4096;
+	this->field_C68 = 0;
+	this->field_C69 = 0;
+
+	this->field_CD4.x = 0;
+	this->field_CD4.y = 0;
+	this->field_CD4.z = 0;
+	this->field_CD4.w = 4096;
+
+	this->field_CE8.vx = 0;
+	this->field_CE8.vy = 0;
+	this->field_CE8.vz = 0;
+	this->field_CF4.vx = 0;
+	this->field_CF4.vy = 0;
+	this->field_CF4.vz = 0;
+	this->field_D00.vx = 0;
+	this->field_D00.vy = 0;
+	this->field_D00.vz = 0;
+	this->field_D0C.vx = 0;
+	this->field_D0C.vy = 0;
+	this->field_D0C.vz = 0;
+
+	this->field_D30.vx = 0;
+	this->field_D30.vy = 0;
+	this->field_D30.vz = 0;
+	this->field_D3C.vx = 0;
+	this->field_D3C.vy = 0;
+	this->field_D3C.vz = 0;
+
+	this->field_D48.vx = 0;
+	this->field_D48.vy = 0;
+	this->field_D48.vz = 0;
+	this->field_D4E.vx = 0;
+	this->field_D4E.vy = 0;
+	this->field_D4E.vz = 0;
+
+	this->field_D54.vx = 0;
+	this->field_D54.vy = 0;
+	this->field_D54.vz = 0;
+	this->field_D64.vx = 0;
+	this->field_D64.vy = 0;
+	this->field_D64.vz = 0;
+	this->field_D70.vx = 0;
+	this->field_D70.vy = 0;
+	this->field_D70.vz = 0;
+
+	this->field_DA0.vx = 0;
+	this->field_DA0.vy = 0;
+	this->field_DA0.vz = 0;
+	this->field_DAC.vx = 0;
+	this->field_DAC.vy = 0;
+	this->field_DAC.vz = 0;
+	this->field_DC0.vx = 0;
+	this->field_DC0.vy = 0;
+	this->field_DC0.vz = 0;
+
+	this->field_E04 = 0;
+	this->field_E06 = 0;
+	this->field_E08 = 0;
+
+	this->field_E94.vx = 0;
+	this->field_E94.vy = 0;
+	this->field_E94.vz = 0;
+	this->field_EAC.vx = 0;
+	this->field_EAC.vy = 0;
+	this->field_EAC.vz = 0;
+
+	this->field_EE0.vx = 0;
+	this->field_EE0.vy = 0;
+	this->field_EE0.vz = 0;
+
+	this->field_554 = SpideyAI0;
+	this->field_194 = (this->field_194 & 0xFFFFF39F) | 0x840;
+
+	this->ParseFightData();
+	this->InitialiseSFXArray();
+
+	*gSynthInputScriptFlag = 0;
+
+	this->field_8F4 = 135;
+	this->field_8F9 = 7;
+	this->field_EC0 = 0;
+
+	switch (Trig_GetLevelId())
+	{
+		case 0x202:
+		case 0x401:
+		case 0x501:
+		case 0x502:
+		case 0x505:
+		case 0x601:
+		case 0x602:
+		case 0x603:
+		case 0x702:
+		case 0x704:
+		case 0x705:
+		case 0x804:
+		case 0x805:
+		case 0x806:
+			this->field_C5C = 0;
+			break;
+
+		default:
+			break;
+	}
+
+	this->field_360 = 2;
+	this->field_364 = 2;
+	this->field_DEC = Spool_FindAnim("Reticle", 1);
+
+	gSpideyFloorCamYDistance = -128;
+	gSpideySwingCamYDistance = -128;
+	gSpideyFallingCamYDist = -128;
+
+	gSpideyFloorCamXOffset = 0;
+	gSpideyFloorCamYOffset = 0;
+	gSpideyFloorCamZOffset = 0;
+	gSpideyFloorCamXZDistance = 512;
+
+	gSpideyWallCamXOffset = 0;
+	gSpideyWallCamYOffset = 0;
+	gSpideyWallCamZOffset = 0;
+	gSpideyWallCamXZDistance = 700;
+	gSpideyWallCamYDistance = 0;
+
+	gSpideyCeilingCameraXOffset = 0;
+	gSpideyCeilingCameraYOffset = 0;
+	gSpideyCeilingCameraZOffset = 0;
+	gSpideyCeilingCameraXZDistance = 800;
+	gSpideyCeilingCameraYDistance = 100;
+
+	gSpideySwingCamXOffset = 0;
+	gSpideySwingCamYOffset = 0;
+	gSpideySwingCamZOffset = 0;
+	gSpideySwingCamXZDistance = 512;
+
+	gSpideyFallingCamXOff = 0;
+	gSpideyFallingCamYOff = 0;
+	gSpideyFallingCamZOff = 0;
+	gSpideyFallingCamXZDist = 512;
+
+	*gLookaroundCamAngle0 = 170;
+	*gLookaroundCamAngle1 = 170;
+	*gLookaroundCamAngle2 = 170;
+	*gLookaroundYawOffset = 0;
+	*gLookaroundPitchSmoothed = 0;
+	*gLookaroundYawSmoothed = 0;
+
+	this->field_AC8.vx = 0;
+	this->field_AC8.vy = 0;
+	this->field_AC8.vz = 4096;
+
+	this->field_553 = 0;
+	this->field_540 = -1;
+	this->field_AD4 = 0;
+	this->field_AD6 = 1;
+	this->gCamAngleLock = 0;
+
+	this->field_DFC = (Trig_GetLevelId() == 0x806) ? 2 : 1;
+
+	this->AttachTo(reinterpret_cast<CBody**>(&MechList));
+
+	(*gMechListCount)++;
+
+	print_if_false(*gMechListCount == 1, "2 or more CPlayers");
+
+	this->mCBodyFlags = (u16)(this->mCBodyFlags & 0xFFFD);
+	this->mRMinor = 100;
+
+	switch (DifficultyLevel)
+	{
+		case 0:
+			this->mHealth = 600;
+			this->field_5D8 = 9;
+			break;
+
+		case 1:
+			this->mHealth = 200;
+			this->field_5D8 = 9;
+			break;
+
+		case 2:
+			this->mHealth = 100;
+			this->field_5D8 = 7;
+			break;
+
+		case 3:
+			this->mHealth = 80;
+			this->field_5D8 = 2;
+			break;
+
+		default:
+			break;
+	}
+
+	if (CurrentSuit == 6 || CurrentSuit == 9 || CurrentSuit == 10)
+	{
+		this->field_5D8 = 2;
+	}
+
+	if (*reinterpret_cast<i32*>(gSaveGameBytes + 0x48) != 0
+			|| *reinterpret_cast<i32*>(gSaveGameBytes + 0x4C) != 0)
+	{
+		this->mWebbing = *reinterpret_cast<i32*>(gSaveGameBytes + 0x48);
+		this->field_5D8 = *reinterpret_cast<i32*>(gSaveGameBytes + 0x4C);
+
+		if ((CurrentSuit == 6 || CurrentSuit == 9 || CurrentSuit == 10)
+				&& this->field_5D8 > 2)
+		{
+			this->field_5D8 = 2;
+		}
+	}
+	else
+	{
+		this->mWebbing = 4096;
+	}
+
+	if (((u32)Trig_GetLevelId() & 0xFFFFFF00) > 0x800)
+	{
+		this->field_5D8 = 2;
+	}
+
+	this->mFlags = (u16)(this->mFlags | 0x480);
+	this->mMaxHealth = this->mHealth;
+
+	this->field_E0C = reinterpret_cast<i32*>(gSControl);
+	this->field_8EA = 0;
+	this->mpLight = &M3d_PlayerLight;
+	this->field_D2C = 0x202020;
+
+	this->InitItem("spidey");
+
+	this->mFric.vx = 1;
+	this->mFric.vy = 4;
+	this->mFric.vz = 1;
+
+	this->mType = 50;
+
+	this->mAngFric.vx = 5;
+	this->mAngFric.vy = 1;
+	this->mAngFric.vz = 5;
+
+	this->field_EA8 = 96;
+	this->field_EAA = 70;
+	this->mRMinor = 100;
+	this->field_E14 = 1;
+	this->field_158 = 0;
+
+	this->SwitchToStandMode();
+
+	M3dUtils_ReadHooksPacket(this, gSpideyHooksPacket);
+
+	this->mTransform.m[0][0] = 4096;
+	this->mTransform.m[0][1] = 0;
+	this->mTransform.m[0][2] = 0;
+	this->mTransform.m[1][0] = 0;
+	this->mTransform.m[1][1] = 4096;
+	this->mTransform.m[1][2] = 0;
+	this->mTransform.m[2][0] = 0;
+	this->mTransform.m[2][1] = 0;
+	this->mTransform.m[2][2] = 4096;
+
+	this->field_A8.vx = 0;
+	this->field_A8.vy = 4096;
+	this->field_A8.vz = 0;
+
+	this->field_D18.vx = 0;
+	this->field_D18.vy = 4096;
+	this->field_D18.vz = 0;
+
+	this->mExtraFlags |= 1;
+
+	SVECTOR angles;
+	MATRIX rot;
+
+	angles.vx = 0;
+	angles.vy = 2048;
+	angles.vz = 0;
+
+	M3dMaths_RotMatrixYXZ(&angles, &rot);
+	MulMatrix(&this->mTransform, &rot);
+
+	print_if_false(this->field_AA4 == 0, "Bad");
+
+	if (gSaveGameBytes[0x79] != 0 && *gPshellArmorRealted == 0)
+	{
+		gSpideyAnimTwo = 0;
+		gSpideyAnimTwo = Spool_FindAnim("costarm", 1);
+
+		switch (DifficultyLevel)
+		{
+			case 0:
+				this->field_5EC = 600;
+				break;
+
+			case 1:
+				this->field_5EC = 200;
+				break;
+
+			case 2:
+				this->field_5EC = 100;
+				break;
+
+			case 3:
+				this->field_5EC = 80;
+				break;
+
+			default:
+				break;
+		}
+
+		if (gSpideyArmorSet == 0)
+		{
+			if (gLowGraphics != 0 && gSpideyVramProcessing == 0)
+			{
+				Spidey_SwapSuitTextures(CurrentSuit, 0);
+				gSpideyVramProcessing = (gSpideyVramProcessing == 0);
+			}
+
+			this->field_5E9 = 1;
+			gSpideyArmorSet = 1;
+		}
+
+		this->field_5EC = *reinterpret_cast<i32*>(gSaveGameBytes + 0x50);
+
+		print_if_false(this->field_5EC > 0, "Error");
+	}
+
+	if (gSaveGameBytes[0x7A] != 0 && CurrentSuit == 5)
+	{
+		this->field_57C = 1;
+	}
+
+	i32 bagHeadMode;
+
+	if (*gBagHeadModeOne != 0)
+	{
+		bagHeadMode = 1;
+	}
+	else
+	{
+		bagHeadMode = (*gBagHeadModeTwo != 0) ? 2 : 0;
+	}
+
+	Spidey_BagHead(4096, bagHeadMode);
+
+	this->InitialiseOffscreenSpideySenseIndicatorList();
+
+	switch (gSaveGameBytes[0x7C])
+	{
+		case 1:
+		case 4:
+		case 7:
+			this->field_580 = 0x402020;
+			break;
+
+		case 2:
+		case 8:
+		case 9:
+			this->field_580 = 0x200000;
+			break;
+
+		case 3:
+			this->field_580 = 0x404040;
+			break;
+
+		case 5:
+			this->field_580 = 0x403030;
+			break;
+
+		default:
+			this->field_580 = 0x202040;
+			break;
+	}
+
+	this->field_E18 = 15;
+	this->field_E12 = (i16)this->mAnimSpeed;
+
+	if (this->field_8EA != 0)
+	{
+		this->ExitLookaroundMode();
+	}
 }
 
 // @Ok
@@ -3170,28 +3705,76 @@ void CPlayer::DoMGSShadow(void)
 }
 
 // @NotOk
-// This was an @Ok decompile of 0x4BFEC0 under the wrong name, and the body has
-// now been re-done correctly as CPlayer::CheckStickToWall above. Address
-// identity, verified 2026-09-01: the Mac build orders CPlayer as
-// CheckStickToCeiling 0x1194B0, CheckStickToWall 0x1196B0, CheckKick 0x1198B0;
-// the PC build has CheckStickToCeiling 0x4BFCE0, <this> 0x4BFEC0, CheckKick
-// 0x4C00B0 - the same three slots in the same order, so 0x4BFEC0 is
-// CheckStickToWall. The real CPlayer::DoPhysics is Mac 0xA7340, a different
-// translation unit entirely, and has no located PC address: the only PC name
-// for it is the wrong 0x4BFEC0 entry, in BOTH tools/names.json and the
-// maintainer's own IDB (idbs/spideypc_names.txt "004bfec0: CPlayer_DoPhysics").
-// Worth reporting upstream, both name sources agree and both are wrong.
+// LOCATED 2026-09-01: the real CPlayer::DoPhysics is sub_466CE0 (0x466CE0,
+// 0x1017 = 4119 bytes). Still a stub because it is leaf-blocked, see the
+// bottom of this comment. Do not use 0x4BFEC0 for it, that is
+// CheckStickToWall (also proven below).
 //
-// The removed body also carried two real defects, which is what exposed it:
+// How 0x466CE0 was found, by Mac translation-unit ordering:
+// the Mac build's physics.cpp runs
+//   Physics_SetGravity          0x0A7270
+//   CPlayer::DoPhysics          0x0A7340  (0xF60 bytes)
+//   CPlayer::DoSwingingPhysics  0x0A82A0  (0x3A0 bytes)
+//   CPlayer::DoCrawlingPhysics  0x0A8640  (0xB60 bytes)
+//   __sinit_physics_cpp         0x0A91A0
+// and the PC build has the same four slots in the same order:
+//   Physics_SetGravity          0x466C70  (0x066 bytes, already in physics.cpp)
+//   sub_466CE0                  0x466CE0  (0x1017 bytes)
+//   sub_467D20                  0x467D20  (0x2A8 bytes)
+//   CPlayer_DoCrawlingPhysics   0x467FD0  (0xD6F bytes, named in the IDB)
+// The two ends of the run are named identically on both builds, the sizes
+// line up (Mac 0xF60 / 0x3A0 / 0xB60 against PC 0x1017 / 0x2A8 / 0xD6F), and
+// nothing else lives between them.
+//
+// Three independent confirmations, so this is not just ordering:
+//  - 0x466CE0 has exactly ONE caller, SpideyAI0 (0x4B13F0), which is where
+//    the player's per-frame physics call belongs.
+//  - 0x466CE0 is the ONLY caller of both 0x467D20 and 0x467FD0, and it picks
+//    between them at the top with "if (field_E64) return sub_467D20();" and
+//    "if (field_AD4) return sub_467FD0();", i.e. swing web attached ->
+//    swinging physics, crawling flag set -> crawling physics. That is exactly
+//    DoPhysics dispatching to DoSwingingPhysics / DoCrawlingPhysics.
+//  - it is __thiscall and touches CPlayer-only fields (field_E1C state mask,
+//    field_AD4, field_E64, field_DBC, field_BB0 area), not just CBody ones.
+// So sub_467D20 is CPlayer::DoSwingingPhysics, and the IDB's
+// CPlayer_DoCrawlingPhysics at 0x467FD0 is confirmed correct.
+//
+// Names that are WRONG in both tools/names.json and the maintainer's IDB
+// (idbs/spideypc_names.txt), worth reporting upstream:
+//   0x4BFEC0 "CPlayer_DoPhysics" is really CPlayer::CheckStickToWall. The Mac
+//   build orders CheckStickToCeiling 0x1194B0, CheckStickToWall 0x1196B0,
+//   CheckKick 0x1198B0; the PC build has CheckStickToCeiling 0x4BFCE0,
+//   <0x4BFEC0>, CheckKick 0x4C00B0, the same three slots in the same order.
+//   0x4BFEC0 is already decompiled above as CPlayer::CheckStickToWall.
+// Missing entirely from both: 0x466CE0 (DoPhysics) and 0x467D20
+// (DoSwingingPhysics).
+//
+// Why this is still a stub: leaf-first. Both callees are unwritten. The repo
+// has physics.cpp with Physics_SetGravity alone; DoSwingingPhysics (0x467D20)
+// and DoCrawlingPhysics (0x467FD0) have no body, no declaration and no stub
+// anywhere, so writing DoPhysics now means writing 4215 more bytes of
+// unverifiable player physics underneath it. It also belongs in physics.cpp,
+// not here: the Mac TU boundaries put all three next to Physics_SetGravity.
+// Suggested order for whoever picks this up: DoSwingingPhysics (small),
+// then DoCrawlingPhysics, then DoPhysics, all three into physics.cpp, and
+// move this declaration out of spidey.h at the same time.
+//
+// One warning for that work: Hex-Rays mistypes several locals in 0x466CE0 as
+// float when they are ints or pointers. In particular the local holding
+// [this+0xDBC] (field_DBC, a CBody*) comes out as a float and then gets used
+// as "*(int *)(LODWORD(v82) + 100) < 0", which is really
+// "pOther->mVel.vy < 0". Read the raw disassembly for the arithmetic.
+//
+// History: this slot used to hold an @Ok decompile of 0x4BFEC0 under the
+// wrong name. That body has been redone correctly as CheckStickToWall above.
+// It also carried two real defects, which is what exposed the mislabel:
 //   - "if (vy > 0xD48 || vy < 0xF5D8)" with vy an i16. The i16 promotes to int,
 //     so "vy < 62936" is always true and the function could only ever return 0.
 //     The original is a signed 16-bit compare, i.e. "vy < -2600".
 //   - it walked &gSpideySFXEntry[0xEA] (the address of the slot) instead of
 //     gSpideySFXEntry[0xEA] (the -1-terminated list the slot points at), and
 //     skipped the null check the original has.
-// Nothing calls it and it is not hooked, so the wrong body was inert. Stubbed
-// rather than deleted because the declaration is in spidey.h and the function
-// does exist in the game; it just needs its real PC address found first.
+// Nothing calls it and it is not hooked, so the wrong body was inert.
 i32 CPlayer::DoPhysics(void)
 {
     printf("CPlayer::DoPhysics(void)");
@@ -11014,6 +11597,34 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_588, 0x588);
 
 	VALIDATE(CPlayer, field_37C, 0x37C);
+	VALIDATE(CPlayer, field_AA4, 0xAA4);
+	VALIDATE(CPlayer, field_514, 0x514);
+	VALIDATE(CPlayer, field_520, 0x520);
+	VALIDATE(CPlayer, field_553, 0x553);
+	VALIDATE(CPlayer, field_574, 0x574);
+	VALIDATE(CPlayer, field_578, 0x578);
+	VALIDATE(CPlayer, field_8EB, 0x8EB);
+	VALIDATE(CPlayer, field_8F4, 0x8F4);
+	VALIDATE(CPlayer, field_8F9, 0x8F9);
+	VALIDATE(CPlayer, field_A80, 0xA80);
+	VALIDATE(CPlayer, field_B0C, 0xB0C);
+	VALIDATE(CPlayer, field_B18, 0xB18);
+	VALIDATE(CPlayer, field_B24, 0xB24);
+	VALIDATE(CPlayer, field_B30, 0xB30);
+	VALIDATE(CPlayer, field_BB0, 0xBB0);
+	VALIDATE(CPlayer, field_BBC, 0xBBC);
+	VALIDATE(CPlayer, field_BC8, 0xBC8);
+	VALIDATE(CPlayer, field_BD4, 0xBD4);
+	VALIDATE(CPlayer, field_C60, 0xC60);
+	VALIDATE(CPlayer, field_CC4, 0xCC4);
+	VALIDATE(CPlayer, field_D2C, 0xD2C);
+	VALIDATE(CPlayer, field_D30, 0xD30);
+	VALIDATE(CPlayer, field_D48, 0xD48);
+	VALIDATE(CPlayer, field_D54, 0xD54);
+	VALIDATE(CPlayer, field_E14, 0xE14);
+	VALIDATE(CPlayer, field_E94, 0xE94);
+	VALIDATE(CPlayer, field_EAA, 0xEAA);
+	VALIDATE(CPlayer, field_EAC, 0xEAC);
 	VALIDATE(CPlayer, field_43C, 0x43C);
 	VALIDATE(CPlayer, field_58C, 0x58C);
 	VALIDATE(CPlayer, field_590, 0x590);
