@@ -1,3 +1,29 @@
+// physics.cpp: the player's movement code. The Mac build's own physics.cpp
+// holds exactly these four functions, in this order:
+//   Physics_SetGravity          Mac 0x0A7270  PC 0x466C70
+//   CPlayer::DoPhysics          Mac 0x0A7340  PC 0x466CE0  (0x1017 bytes)
+//   CPlayer::DoSwingingPhysics  Mac 0x0A82A0  PC 0x467D20  (0x2A8 bytes)
+//   CPlayer::DoCrawlingPhysics  Mac 0x0A8640  PC 0x467FD0  (0xD6F bytes)
+// Both ends of the run are named the same way on both builds and nothing
+// else sits between them, so the two middle slots follow.
+//
+// Two names are wrong in tools/names.json AND in the maintainer's IDB
+// (idbs/spideypc_names.txt), worth reporting upstream:
+//   0x4BFEC0 is labelled "CPlayer_DoPhysics" in both. It is really
+//   CPlayer::CheckStickToWall (Mac orders CheckStickToCeiling 0x1194B0,
+//   CheckStickToWall 0x1196B0, CheckKick 0x1198B0; the PC has 0x4BFCE0,
+//   <0x4BFEC0>, 0x4C00B0). It is decompiled under the right name in
+//   spidey.cpp.
+//   0x466CE0 (DoPhysics) and 0x467D20 (DoSwingingPhysics) are missing from
+//   both name sources.
+// A third, found while doing 0x467FD0: the unnamed sub_4BEA90 is
+// CPlayer::HandleControlsForSurfaceTransition(bool). Mac orders
+// SwitchToStandMode / CheckFenceSurfaceTransition /
+// HandleControlsForSurfaceTransition / CheckInteriorSurfaceTransition, the
+// PC has 0x4BE4B0 / 0x4BE8C0 / 0x4BEA90 / 0x4BEB70, and DoCrawlingPhysics
+// calls sub_4BEA90(1) right after swapping a surface normal into
+// mLineInfo.Normal, which is exactly what that function reads.
+
 #include "physics.h"
 
 #include "spidey.h"
@@ -5,6 +31,9 @@
 #include "m3dcolij.h"
 #include "m3dzone.h"
 #include "platform.h"
+#include "ps2funcs.h"
+#include "baddy.h"
+#include "utils.h"
 
 EXPORT void Physics_SetGravity(CVector *);
 
@@ -508,4 +537,576 @@ void CPlayer::DoCrawlingPhysics(void)
 		reinterpret_cast<CPlatform *>(groundInfo.pItem)->AdjustBruceHealth();
 		this->field_DBC = reinterpret_cast<CBody *>(groundInfo.pItem);
 	}
+}
+
+// Original 0x0054EC7C, a const 1 sitting in read-only data. CPlayer::DoPhysics
+// is the only reader and nothing writes it, so it reads like a build-time
+// switch. When it is set, a collision this frame cancels an upward move but
+// still lets a downward one through. Tentative name.
+static i32 * const gClipUpwardsMoveOnCollision = (i32*)0x0054EC7C;
+
+// Original 0x0054EC80, same shape and same single reader: the version of the
+// rule above for the fall applied after the ground ray misses. Tentative name.
+static i32 * const gClipUpwardsFallOnGroundHit = (i32*)0x0054EC80;
+
+// Original 0x0054EC84, the const float 10.0. It is the sideways offset, in
+// world units, of the eight extra ground probes DoPhysics fires when the
+// straight-down one misses. Tentative name.
+static float * const gGroundProbeSpread = (float*)0x0054EC84;
+
+// Original 0x0060F894, an i32 in .data that starts at 0 and that nothing in
+// the binary writes, so the eight-probe fan it gates is dead code in the
+// shipped build. Kept because the original still tests it. Tentative name.
+static i32 * const gUseWideGroundProbe = (i32*)0x0060F894;
+
+// @Ok
+// Original 0x466CE0. Spider-Man's per-frame physics while he is neither web
+// swinging nor crawling: integrate mVel/mAcc, sweep the movement against the
+// world (up to three times, sliding along whatever it hits), then drop a ray
+// straight down to land him. Dispatches to DoSwingingPhysics and
+// DoCrawlingPhysics for the other two modes.
+void CPlayer::DoPhysics(void)
+{
+	CVector startPos;
+	CVector move;
+	CVector ray;
+	CVector radial;
+	CVector slideNormal;
+	SLineInfo lineInfo;
+	CBody *pLastPlatform;
+	i32 savedFallVel;
+	i32 savedPosY;
+	i32 len3;
+	i32 lenXZ;
+	i32 tryCount;
+	i32 reach;
+	i32 reachStep;
+	i32 sqx;
+	i32 sqz;
+	i32 px;
+	i32 py;
+	i32 pz;
+	i32 dot;
+	i32 fall;
+	i32 dx;
+	i32 dz;
+	i32 sideX;
+	i32 sideZ;
+	i32 fwdX;
+	i32 fwdY;
+	i32 fwdZ;
+	i32 angle;
+	i32 iStartY;
+	i32 iEndY;
+	i32 probe;
+	float fx;
+	float fz;
+	float fStartY;
+	float fEndY;
+	float sx;
+	float sz;
+	float ex;
+	float ez;
+	float half;
+
+	this->mCollision = 0;
+	this->field_B08 = 0;
+	this->mLineInfo.pItem = 0;
+	this->mLineInfo2.pItem = 0;
+
+	pLastPlatform = this->field_DBC;
+	this->field_DBC = 0;
+
+	if (this->field_E64 != 0)
+	{
+		this->DoSwingingPhysics();
+		return;
+	}
+
+	if (this->field_AD4 != 0)
+	{
+		this->DoCrawlingPhysics();
+		return;
+	}
+
+	startPos.vx = this->mPos.vx;
+	startPos.vy = this->mPos.vy;
+	startPos.vz = this->mPos.vz;
+
+	this->mVel += this->mAcc;
+	this->mVel %= this->mFric;
+	this->mVel.KillSmall();
+
+	// one animation window moves the player with no collision at all.
+	if (this->field_E1C == 0x40000
+		&& ((this->mAnim == 270 && this->mFrame >= 13) || this->mAnim == 271))
+	{
+		this->mPos += this->mVel;
+
+		if (this->field_80 > 2)
+			this->mPos += this->mVel * (this->field_80 - 2);
+
+		return;
+	}
+
+	// the fall is taken out of mVel here and put back by the ground ray at
+	// the bottom, so the horizontal sweep never sees it.
+	savedFallVel = -1;
+
+	if (this->mVel.vy >= 0)
+	{
+		savedFallVel = this->mVel.vy;
+		this->mVel.vy = 0;
+	}
+
+	if (this->field_80 <= 2)
+	{
+		move.vx = this->mVel.vx;
+		move.vy = this->mVel.vy;
+		move.vz = this->mVel.vz;
+	}
+	else
+	{
+		move = this->mVel + (this->mVel >> 1) * (this->field_80 - 2);
+	}
+
+	if (this->field_EF4 != 0)
+	{
+		// boss arena: bend the movement so the player stays on a circle of
+		// radius field_EF8 around gBossRelated.
+		dx = this->mPos.vx - reinterpret_cast<CItem *>(gBossRelated)->mPos.vx;
+		dz = this->mPos.vz - reinterpret_cast<CItem *>(gBossRelated)->mPos.vz;
+
+		radial.vx = dx + move.vx;
+		radial.vy = 0;
+		radial.vz = dz + move.vz;
+
+		if (radial.Length() != this->field_EF8)
+		{
+			radial >>= 8;
+			VectorNormal(reinterpret_cast<VECTOR *>(&radial), reinterpret_cast<VECTOR *>(&radial));
+			radial *= this->field_EF8;
+
+			move.vx = radial.vx - dx;
+			move.vz = radial.vz - dz;
+		}
+	}
+
+	sqx = (move.vx >> 9) * (move.vx >> 9);
+	sqz = (move.vz >> 9) * (move.vz >> 9);
+	tryCount = 0;
+
+	// @Note original defect, kept: SLineInfo's members that have
+	// constructors get zeroed here, but pItem does not, and it is only
+	// written by M3dColij_InitLineInfo. If the player did not move at all
+	// this frame the sweep below never runs, and the "did I hit anything"
+	// test after it reads pItem uninitialized.
+	len3 = M3dMaths_SquareRoot0(sqz + sqx + (move.vy >> 9) * (move.vy >> 9));
+
+	while (len3 != 0)
+	{
+		lenXZ = M3dMaths_SquareRoot0(sqx + sqz);
+
+		if (lenXZ == 0)
+			break;
+
+		reach = this->field_EAA;
+		reachStep = reach;
+
+		if (this->field_80 >= 5)
+			reachStep = reach + (this->field_80 - 4) * (reach >> 1);
+
+		px = this->mPos.vx;
+		py = this->mPos.vy - 0x40000;
+		pz = this->mPos.vz;
+
+		// @Note the original scales x and z by the frame-rate-adjusted
+		// reachStep but y by the raw field_EAA. Kept as it is.
+		ray.vx = move.vx * 8 * reachStep / len3;
+		ray.vy = move.vy * 8 * reach / len3;
+		ray.vz = move.vz * 8 * reachStep / len3;
+		ray += ray >> 3;
+
+		if (this->mHeldObject != 0)
+		{
+			// a carried object sweeps a second, lower line.
+			lineInfo.StartCoords.vx = px;
+			lineInfo.StartCoords.vy = py - 0x80000;
+			lineInfo.StartCoords.vz = pz;
+			lineInfo.EndCoords.vx = px + ray.vx;
+			lineInfo.EndCoords.vy = py + ray.vy - 0x80000;
+			lineInfo.EndCoords.vz = pz + ray.vz;
+
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (lineInfo.pItem != 0)
+				this->mCollision |= 0x40;
+		}
+
+		lineInfo.StartCoords.vx = px - ray.vx / 4;
+		lineInfo.StartCoords.vy = py - ray.vy / 4;
+		lineInfo.StartCoords.vz = pz - ray.vz / 4;
+		lineInfo.EndCoords.vx = px + ray.vx;
+		lineInfo.EndCoords.vy = py + ray.vy;
+		lineInfo.EndCoords.vz = pz + ray.vz;
+
+		M3dColij_InitLineInfo(&lineInfo);
+		M3dZone_LineToItem(&lineInfo, 1);
+
+		tryCount++;
+
+		if (lineInfo.pItem != 0)
+		{
+			this->mCollision = (this->mCollision & 0xFFBF) | 1;
+
+			this->mLineInfo.pFace = lineInfo.pFace;
+			this->mLineInfo.pItem = lineInfo.pItem;
+			this->mLineInfo.Position.vx = lineInfo.Position.vx;
+			this->mLineInfo.Position.vy = lineInfo.Position.vy;
+			this->mLineInfo.Position.vz = lineInfo.Position.vz;
+			this->mLineInfo.Normal.vx = lineInfo.Normal.vx;
+			this->mLineInfo.Normal.vy = lineInfo.Normal.vy;
+			this->mLineInfo.Normal.vz = lineInfo.Normal.vz;
+
+			print_if_false((lineInfo.Normal.vz | lineInfo.Normal.vy | lineInfo.Normal.vx) != 0,
+				"Bad normal");
+
+			// flatten the hit normal into the horizontal plane and slide
+			// along it.
+			slideNormal.vx = lineInfo.Normal.vx;
+			slideNormal.vy = 0;
+			slideNormal.vz = lineInfo.Normal.vz;
+			VectorNormal(reinterpret_cast<VECTOR *>(&slideNormal), reinterpret_cast<VECTOR *>(&slideNormal));
+
+			dot = (move.vz >> 6) * slideNormal.vz + (move.vx >> 6) * slideNormal.vx;
+
+			if (dot <= 0)
+			{
+				move.vx = (move.vx - (((dot >> 12) * slideNormal.vx) >> 6)) >> 2;
+				move.vz = (move.vz - (((dot >> 12) * slideNormal.vz) >> 6)) >> 2;
+			}
+		}
+		else
+		{
+			// nothing straight ahead: sweep two lines out to either side of
+			// the movement direction, at shoulder height.
+			sideZ = move.vz * 4 * reach / len3;
+			sideX = -(move.vx * 4 * reach / len3);
+			fwdX = move.vx * 8 * reachStep / lenXZ;
+			fwdY = move.vy * 8 * reach / len3;
+			fwdZ = move.vz * 8 * reachStep / lenXZ;
+
+			px = this->mPos.vx;
+			py = this->mPos.vy + 0x10000;
+			pz = this->mPos.vz;
+
+			lineInfo.StartCoords.vx = px + sideZ / 4 - fwdX / 2;
+			lineInfo.StartCoords.vy = py;
+			lineInfo.StartCoords.vz = pz + sideX / 4 - fwdZ / 2;
+			lineInfo.EndCoords.vx = px + sideZ + fwdX;
+			lineInfo.EndCoords.vy = py + fwdY;
+			lineInfo.EndCoords.vz = pz + sideX + fwdZ;
+
+			M3dColij_InitLineInfo(&lineInfo);
+			M3dZone_LineToItem(&lineInfo, 1);
+
+			if (lineInfo.pItem == 0)
+			{
+				lineInfo.StartCoords.vx = px - fwdX / 2 - sideZ / 4;
+				lineInfo.StartCoords.vy = py;
+				lineInfo.StartCoords.vz = pz - fwdZ / 2 - sideX / 4;
+				lineInfo.EndCoords.vx = px + fwdX - sideZ;
+				lineInfo.EndCoords.vy = py + fwdY;
+				lineInfo.EndCoords.vz = pz - sideX + fwdZ;
+
+				M3dColij_InitLineInfo(&lineInfo);
+				M3dZone_LineToItem(&lineInfo, 1);
+
+				if (lineInfo.pItem == 0)
+					break;
+			}
+
+			this->mCollision = (this->mCollision & 0xFFBF) | 1;
+
+			// the side hits slide against the raw normal, not the
+			// renormalized one the head-on hit uses.
+			dot = (move.vz >> 6) * lineInfo.Normal.vz + (move.vx >> 6) * lineInfo.Normal.vx;
+
+			if (dot <= 0)
+			{
+				move.vx = (move.vx - (((dot >> 12) * lineInfo.Normal.vx) >> 6)) >> 2;
+				move.vz = (move.vz - (((dot >> 12) * lineInfo.Normal.vz) >> 6)) >> 2;
+			}
+		}
+
+		if (lineInfo.pItem == 0 || tryCount >= 2)
+			break;
+
+		sqx = (move.vx >> 9) * (move.vx >> 9);
+		sqz = (move.vz >> 9) * (move.vz >> 9);
+		len3 = M3dMaths_SquareRoot0(sqx + sqz + (move.vy >> 9) * (move.vy >> 9));
+	}
+
+	if (this->field_80 <= 2)
+	{
+		this->mVel.vx = move.vx;
+		this->mVel.vy = move.vy;
+		this->mVel.vz = move.vz;
+	}
+	else
+	{
+		this->mVel = (move << 1) / this->field_80;
+	}
+
+	savedPosY = this->mPos.vy;
+
+	if (lineInfo.pItem == 0)
+	{
+		this->mPos += move;
+	}
+	else if (*gClipUpwardsMoveOnCollision == 0 || move.vy < 0)
+	{
+		this->mPos.vy = savedPosY + move.vy;
+	}
+
+	if (this->field_E1C == 1)
+	{
+		// bouncing state: keep skidding off walls, and pick a fresh random
+		// heading whenever there is no usable wall.
+		this->mLineInfo2.StartCoords.vx = this->mPos.vx;
+		this->mLineInfo2.StartCoords.vy = this->mPos.vy;
+		this->mLineInfo2.StartCoords.vz = this->mPos.vz;
+		this->mLineInfo2.EndCoords.vx = this->mPos.vx + this->field_E94.vx;
+		this->mLineInfo2.EndCoords.vy = this->mPos.vy;
+		this->mLineInfo2.EndCoords.vz = this->mPos.vz + this->field_E94.vz;
+
+		M3dColij_InitLineInfo(&this->mLineInfo2);
+		M3dZone_LineToItem(&this->mLineInfo2, 1);
+
+		if (this->mLineInfo2.pItem != 0
+			&& this->mLineInfo2.Normal.vy >= -2600
+			&& this->mLineInfo2.Normal.vy <= 3400)
+		{
+			this->mVel.vx += 4 * this->mLineInfo2.Normal.vx;
+			this->mVel.vz += 4 * this->mLineInfo2.Normal.vz;
+			this->field_E94.vx = -32 * this->mLineInfo2.Normal.vx;
+			this->field_E94.vz = -32 * this->mLineInfo2.Normal.vz;
+		}
+		else
+		{
+			this->field_E90 = this->field_E90 + Rnd(64) + 256;
+			angle = this->field_E90 & 0xFFF;
+			this->field_E94.vx = rcossin_tbl[angle].sin << 5;
+			this->field_E94.vz = rcossin_tbl[angle].cos << 5;
+		}
+	}
+
+	// falling, or standing on something that is falling: look for the ground
+	// he is about to drop onto and stop him on it.
+	if (this->mVel.vy < 0
+		|| (pLastPlatform != 0 && pLastPlatform->mVel.vy < 0))
+	{
+		this->mLineInfo2.StartCoords.vx = this->mPos.vx;
+		this->mLineInfo2.StartCoords.vy = this->mPos.vy - move.vy + 0x40000;
+		this->mLineInfo2.StartCoords.vz = this->mPos.vz;
+		this->mLineInfo2.EndCoords.vx = this->mPos.vx;
+		this->mLineInfo2.EndCoords.vy = this->mPos.vy - 0xB8000;
+		this->mLineInfo2.EndCoords.vz = this->mPos.vz;
+
+		M3dColij_InitLineInfo(&this->mLineInfo2);
+		M3dZone_LineToItem(&this->mLineInfo2, 1);
+
+		if (this->mLineInfo2.pItem != 0
+			&& this->mPos.vy - 0x78000 < this->mLineInfo2.Position.vy)
+		{
+			this->mPos.vy = savedPosY;
+			this->mVel.vy = 0;
+			this->mCollision = (this->mCollision & 0xFFBF) | 0x100;
+		}
+	}
+
+	if (savedFallVel < 0)
+	{
+		this->mAngles.Mask();
+		return;
+	}
+
+	fall = savedFallVel;
+
+	if (this->field_80 > 2)
+		fall = savedFallVel + (this->field_80 - 2) * (savedFallVel >> 1);
+
+	lineInfo.StartCoords.vx = this->mPos.vx;
+	lineInfo.StartCoords.vy = this->mPos.vy - 0x28000;
+	lineInfo.StartCoords.vz = this->mPos.vz;
+	lineInfo.EndCoords.vx = this->mPos.vx;
+	lineInfo.EndCoords.vy = fall + (this->mPos.vy - 0x28000) + 0x8C000;
+	lineInfo.EndCoords.vz = this->mPos.vz;
+
+	fz = (float)lineInfo.StartCoords.vz / 4096.0f;
+	fStartY = (float)lineInfo.StartCoords.vy / 4096.0f;
+	fx = (float)lineInfo.StartCoords.vx / 4096.0f;
+	fEndY = (float)lineInfo.EndCoords.vy / 4096.0f;
+
+	M3dColij_InitLineInfo(&lineInfo);
+	M3dZone_LineToItem(&lineInfo, 1);
+
+	if (*gUseWideGroundProbe != 0)
+	{
+		if (lineInfo.pItem == 0)
+		{
+			// dead in the shipped build (gUseWideGroundProbe is always 0):
+			// eight more ground probes offset around the player, then one
+			// last unoffset repeat.
+			iStartY = (i32)(fStartY * 4096.0f);
+			iEndY = (i32)(fEndY * 4096.0f);
+
+			for (probe = 0; probe <= 8; probe++)
+			{
+				sx = fx;
+				sz = fz;
+				ex = fx;
+				ez = fz;
+
+				switch (probe)
+				{
+					case 0:
+						ex = fx + *gGroundProbeSpread;
+						sx = ex;
+						break;
+
+					case 1:
+						ex = fx - *gGroundProbeSpread;
+						sx = ex;
+						break;
+
+					case 2:
+						ez = fz + *gGroundProbeSpread;
+						sz = ez;
+						break;
+
+					case 3:
+						ez = fz - *gGroundProbeSpread;
+						sz = ez;
+						break;
+
+					case 4:
+						half = *gGroundProbeSpread * 0.5f;
+						ex = half + fx;
+						sx = ex;
+						ez = half + fz;
+						sz = ez;
+						break;
+
+					case 5:
+						half = *gGroundProbeSpread * 0.5f;
+						ex = half + fx;
+						sx = ex;
+						ez = fz - half;
+						sz = ez;
+						break;
+
+					case 6:
+						half = *gGroundProbeSpread * 0.5f;
+						ex = fx - half;
+						sx = ex;
+						ez = half + fz;
+						sz = ez;
+						break;
+
+					case 7:
+						half = *gGroundProbeSpread * 0.5f;
+						ex = fx - half;
+						sx = ex;
+						ez = fz - half;
+						sz = ez;
+						break;
+
+					default:
+						break;
+				}
+
+				lineInfo.StartCoords.vx = (i32)(sx * 4096.0f);
+				lineInfo.StartCoords.vy = iStartY;
+				lineInfo.StartCoords.vz = (i32)(sz * 4096.0f);
+				lineInfo.EndCoords.vx = (i32)(ex * 4096.0f);
+				lineInfo.EndCoords.vy = iEndY;
+				lineInfo.EndCoords.vz = (i32)(ez * 4096.0f);
+
+				M3dColij_InitLineInfo(&lineInfo);
+				M3dZone_LineToItem(&lineInfo, 1);
+
+				if (lineInfo.pItem != 0)
+					break;
+			}
+		}
+	}
+
+	if (lineInfo.pItem == 0)
+	{
+		this->mPos.vy += fall;
+		this->mVel.vy = savedFallVel;
+		this->mAngles.Mask();
+		return;
+	}
+
+	this->field_EA4 = 4;
+
+	if (this->mHeldObject != 0 && (lineInfo.pFace[3] & 0x4000000) != 0)
+	{
+		// carrying something onto a surface flagged as no-go: undo the whole
+		// frame's movement.
+		this->mPos.vx = startPos.vx;
+		this->mPos.vy = startPos.vy;
+		this->mPos.vz = startPos.vz;
+		this->mCollision |= 2;
+	}
+	else if (lineInfo.Normal.vy < -2600)
+	{
+		// hit a ceiling on the way up.
+		lineInfo.Position.vy = lineInfo.Position.vy & 0xFFFFF000;
+		this->mPos.vy = lineInfo.Position.vy - (this->field_EA8 << 12);
+		this->mVel.vy = 0;
+		this->mCollision |= 2;
+	}
+	else if (lineInfo.Distance > 0)
+	{
+		// landed: sit on the surface and let the leftover fall slide along it.
+		this->mPos.vy = lineInfo.Position.vy - (this->field_EA8 << 12);
+		this->mPos.vx += ((fall - (fall >> this->mFric.vx)) >> 12) * lineInfo.Normal.vx;
+		this->mPos.vz += ((fall - (fall >> this->mFric.vz)) >> 12) * lineInfo.Normal.vz;
+		fall = fall - (fall >> this->mFric.vy);
+		this->mPos.vy += fall;
+		this->mVel.vy = savedFallVel;
+	}
+	else
+	{
+		if (*gClipUpwardsFallOnGroundHit == 0 || fall < 0)
+			this->mPos.vy += fall;
+
+		this->mVel.vy = savedFallVel;
+	}
+
+	this->field_A8.vx = 0;
+	this->field_A8.vy = -4096;
+	this->field_A8.vz = 0;
+
+	this->mShadowPos.vx = lineInfo.Position.vx;
+	this->mShadowPos.vy = lineInfo.Position.vy;
+	this->mShadowPos.vz = lineInfo.Position.vz;
+
+	if ((lineInfo.pItem->mFlags & 0x100) != 0)
+	{
+		reinterpret_cast<CPlatform *>(lineInfo.pItem)->NotifyTrodUpon(this, &this->mPos, &this->field_A8);
+		reinterpret_cast<CPlatform *>(lineInfo.pItem)->AdjustBruceHealth();
+		this->field_DBC = reinterpret_cast<CBody *>(lineInfo.pItem);
+	}
+
+	if ((lineInfo.pFace[3] & 0x800000) != 0)
+		this->AdjustBrightness(this->field_574);
+	else
+		this->AdjustBrightness(this->field_578);
+
+	this->mAngles.Mask();
 }

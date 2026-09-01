@@ -731,26 +731,26 @@ CPlayer::CPlayer(void)
 	this->mLineInfo.Normal.vy = 0;
 	this->mLineInfo.Normal.vz = 0;
 
-	this->field_BB0.vx = 0;
-	this->field_BB0.vy = 0;
-	this->field_BB0.vz = 0;
-	this->field_BBC.vx = 0;
-	this->field_BBC.vy = 0;
-	this->field_BBC.vz = 0;
-	this->field_BC8.vx = 0;
-	this->field_BC8.vy = 0;
-	this->field_BC8.vz = 0;
-	this->field_BD4.vx = 0;
-	this->field_BD4.vy = 0;
-	this->field_BD4.vz = 0;
+	this->mLineInfo2.StartCoords.vx = 0;
+	this->mLineInfo2.StartCoords.vy = 0;
+	this->mLineInfo2.StartCoords.vz = 0;
+	this->mLineInfo2.EndCoords.vx = 0;
+	this->mLineInfo2.EndCoords.vy = 0;
+	this->mLineInfo2.EndCoords.vz = 0;
+	this->mLineInfo2.MinCoords.vx = 0;
+	this->mLineInfo2.MinCoords.vy = 0;
+	this->mLineInfo2.MinCoords.vz = 0;
+	this->mLineInfo2.MaxCoords.vx = 0;
+	this->mLineInfo2.MaxCoords.vy = 0;
+	this->mLineInfo2.MaxCoords.vz = 0;
 
-	this->field_C1C.vx = 0;
-	this->field_C1C.vy = 0;
-	this->field_C1C.vz = 0;
+	this->mLineInfo2.Position.vx = 0;
+	this->mLineInfo2.Position.vy = 0;
+	this->mLineInfo2.Position.vz = 0;
 
-	this->field_C28.vx = 0;
-	this->field_C28.vy = 0;
-	this->field_C28.vz = 0;
+	this->mLineInfo2.Normal.vx = 0;
+	this->mLineInfo2.Normal.vy = 0;
+	this->mLineInfo2.Normal.vz = 0;
 
 	this->field_C6C.vx = 0;
 	this->field_C6C.vy = 0;
@@ -2996,23 +2996,23 @@ i32 CPlayer::CheckStickToCeiling(void)
 {
 	if ( this->mVel.vy > 0
 		|| !(this->mCollision & 0x100)
-		|| !this->field_C18
+		|| !this->mLineInfo2.pItem
 		|| !(reinterpret_cast<u8*>(this->field_E0C)[256])
-		|| this->field_C28.vy <= 3400
-		|| this->field_C30[3] & 0x40000)
+		|| this->mLineInfo2.Normal.vy <= 3400
+		|| this->mLineInfo2.pFace[3] & 0x40000)
 	{
 		return 0;
 	}
 
 	this->field_AD4 = 1;
-	this->field_A8 = this->field_C28;
+	this->field_A8 = this->mLineInfo2.Normal;
 	this->field_AC8 = this->field_C6C;
 	this->OrientToNormal(true, &this->field_AC8);
 
 	this->field_E88 = 0;
 	this->field_E84 = 0;
 
-	this->mPos = this->field_C1C;
+	this->mPos = this->mLineInfo2.Position;
 	this->mPos.vx += this->field_A8.vx * this->field_EA8;
 	this->mPos.vy += this->field_A8.vy * this->field_EA8;
 	this->mPos.vz += this->field_A8.vz * this->field_EA8;
@@ -3037,8 +3037,8 @@ i32 CPlayer::CheckStickToCeiling(void)
 // tools/names.json calls 0x4BFEC0 "CPlayer_DoPhysics", but the Mac symbol
 // order (CheckStickToCeiling, CheckStickToWall, CheckKick) and the PC
 // function order (0x4BFCE0, 0x4BFEC0, 0x4C00B0) say this address is
-// CheckStickToWall. CPlayer::DoPhysics in this file holds an older copy of
-// the same body under that wrong name.
+// CheckStickToWall. The real CPlayer::DoPhysics is 0x466CE0 and now lives in
+// physics.cpp.
 i32 CPlayer::CheckStickToWall(void)
 {
 	if (!(this->field_E1C & 4))
@@ -3702,82 +3702,6 @@ void CPlayer::DoMGSShadow(void)
 			delete this->field_AC0;
 		this->field_AC0 = 0;
 	}
-}
-
-// @NotOk
-// LOCATED 2026-09-01: the real CPlayer::DoPhysics is sub_466CE0 (0x466CE0,
-// 0x1017 = 4119 bytes). Still a stub because it is leaf-blocked, see the
-// bottom of this comment. Do not use 0x4BFEC0 for it, that is
-// CheckStickToWall (also proven below).
-//
-// How 0x466CE0 was found, by Mac translation-unit ordering:
-// the Mac build's physics.cpp runs
-//   Physics_SetGravity          0x0A7270
-//   CPlayer::DoPhysics          0x0A7340  (0xF60 bytes)
-//   CPlayer::DoSwingingPhysics  0x0A82A0  (0x3A0 bytes)
-//   CPlayer::DoCrawlingPhysics  0x0A8640  (0xB60 bytes)
-//   __sinit_physics_cpp         0x0A91A0
-// and the PC build has the same four slots in the same order:
-//   Physics_SetGravity          0x466C70  (0x066 bytes, already in physics.cpp)
-//   sub_466CE0                  0x466CE0  (0x1017 bytes)
-//   sub_467D20                  0x467D20  (0x2A8 bytes)
-//   CPlayer_DoCrawlingPhysics   0x467FD0  (0xD6F bytes, named in the IDB)
-// The two ends of the run are named identically on both builds, the sizes
-// line up (Mac 0xF60 / 0x3A0 / 0xB60 against PC 0x1017 / 0x2A8 / 0xD6F), and
-// nothing else lives between them.
-//
-// Three independent confirmations, so this is not just ordering:
-//  - 0x466CE0 has exactly ONE caller, SpideyAI0 (0x4B13F0), which is where
-//    the player's per-frame physics call belongs.
-//  - 0x466CE0 is the ONLY caller of both 0x467D20 and 0x467FD0, and it picks
-//    between them at the top with "if (field_E64) return sub_467D20();" and
-//    "if (field_AD4) return sub_467FD0();", i.e. swing web attached ->
-//    swinging physics, crawling flag set -> crawling physics. That is exactly
-//    DoPhysics dispatching to DoSwingingPhysics / DoCrawlingPhysics.
-//  - it is __thiscall and touches CPlayer-only fields (field_E1C state mask,
-//    field_AD4, field_E64, field_DBC, field_BB0 area), not just CBody ones.
-// So sub_467D20 is CPlayer::DoSwingingPhysics, and the IDB's
-// CPlayer_DoCrawlingPhysics at 0x467FD0 is confirmed correct.
-//
-// Names that are WRONG in both tools/names.json and the maintainer's IDB
-// (idbs/spideypc_names.txt), worth reporting upstream:
-//   0x4BFEC0 "CPlayer_DoPhysics" is really CPlayer::CheckStickToWall. The Mac
-//   build orders CheckStickToCeiling 0x1194B0, CheckStickToWall 0x1196B0,
-//   CheckKick 0x1198B0; the PC build has CheckStickToCeiling 0x4BFCE0,
-//   <0x4BFEC0>, CheckKick 0x4C00B0, the same three slots in the same order.
-//   0x4BFEC0 is already decompiled above as CPlayer::CheckStickToWall.
-// Missing entirely from both: 0x466CE0 (DoPhysics) and 0x467D20
-// (DoSwingingPhysics).
-//
-// Why this is still a stub: leaf-first. Both callees are unwritten. The repo
-// has physics.cpp with Physics_SetGravity alone; DoSwingingPhysics (0x467D20)
-// and DoCrawlingPhysics (0x467FD0) have no body, no declaration and no stub
-// anywhere, so writing DoPhysics now means writing 4215 more bytes of
-// unverifiable player physics underneath it. It also belongs in physics.cpp,
-// not here: the Mac TU boundaries put all three next to Physics_SetGravity.
-// Suggested order for whoever picks this up: DoSwingingPhysics (small),
-// then DoCrawlingPhysics, then DoPhysics, all three into physics.cpp, and
-// move this declaration out of spidey.h at the same time.
-//
-// One warning for that work: Hex-Rays mistypes several locals in 0x466CE0 as
-// float when they are ints or pointers. In particular the local holding
-// [this+0xDBC] (field_DBC, a CBody*) comes out as a float and then gets used
-// as "*(int *)(LODWORD(v82) + 100) < 0", which is really
-// "pOther->mVel.vy < 0". Read the raw disassembly for the arithmetic.
-//
-// History: this slot used to hold an @Ok decompile of 0x4BFEC0 under the
-// wrong name. That body has been redone correctly as CheckStickToWall above.
-// It also carried two real defects, which is what exposed the mislabel:
-//   - "if (vy > 0xD48 || vy < 0xF5D8)" with vy an i16. The i16 promotes to int,
-//     so "vy < 62936" is always true and the function could only ever return 0.
-//     The original is a signed 16-bit compare, i.e. "vy < -2600".
-//   - it walked &gSpideySFXEntry[0xEA] (the address of the slot) instead of
-//     gSpideySFXEntry[0xEA] (the -1-terminated list the slot points at), and
-//     skipped the null check the original has.
-// Nothing calls it and it is not hooked, so the wrong body was inert.
-void CPlayer::DoPhysics(void)
-{
-    printf("CPlayer::DoPhysics(void)");
 }
 
 // @Ok
@@ -11610,10 +11534,10 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, mLineInfo.EndCoords, 0xB18);
 	VALIDATE(CPlayer, mLineInfo.MinCoords, 0xB24);
 	VALIDATE(CPlayer, mLineInfo.MaxCoords, 0xB30);
-	VALIDATE(CPlayer, field_BB0, 0xBB0);
-	VALIDATE(CPlayer, field_BBC, 0xBBC);
-	VALIDATE(CPlayer, field_BC8, 0xBC8);
-	VALIDATE(CPlayer, field_BD4, 0xBD4);
+	VALIDATE(CPlayer, mLineInfo2, 0xBB0);
+	VALIDATE(CPlayer, mLineInfo2.EndCoords, 0xBBC);
+	VALIDATE(CPlayer, mLineInfo2.MinCoords, 0xBC8);
+	VALIDATE(CPlayer, mLineInfo2.MaxCoords, 0xBD4);
 	VALIDATE(CPlayer, field_C60, 0xC60);
 	VALIDATE(CPlayer, field_CC4, 0xCC4);
 	VALIDATE(CPlayer, field_D2C, 0xD2C);
@@ -11690,12 +11614,13 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, mLineInfo.Normal, 0xB84);
 	VALIDATE(CPlayer, mLineInfo.pFace, 0xB8C);
 
-	VALIDATE(CPlayer, field_C18, 0xC18);
-	VALIDATE(CPlayer, field_C1C, 0xC1C);
-	VALIDATE(CPlayer, field_C28, 0xC28);
+	VALIDATE(CPlayer, mLineInfo2.pItem, 0xC18);
+	VALIDATE(CPlayer, mLineInfo2.Position, 0xC1C);
+	VALIDATE(CPlayer, mLineInfo2.Normal, 0xC28);
 
 
-	VALIDATE(CPlayer, field_C30, 0xC30);
+	VALIDATE(CPlayer, mLineInfo2.pFace, 0xC30);
+	VALIDATE(CPlayer, field_E90, 0xE90);
 
 
 	VALIDATE(CPlayer, field_C6C, 0xC6C);

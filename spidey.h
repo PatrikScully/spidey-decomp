@@ -568,25 +568,14 @@ class CPlayer : public CSuper
 		// starts.
 		SLineInfo mLineInfo;
 
-		// four more vectors CPlayer::CPlayer constructs in one run.
-		CVector field_BB0;
-		CVector field_BBC;
-		CVector field_BC8;
-		CVector field_BD4;
-
-		PADDING(0xC18-0xBD4-12);
-
-		i32 field_C18;
-		CVector field_C1C;
-		CSVector field_C28;
-
-		PADDING(2);
-
-
-		// @FIXME
-		i32* field_C30;
-
-		PADDING(0xC54-0xC30-4);
+		// A second SLineInfo scratch block, 0xBB0..0xC54, same reasoning as
+		// mLineInfo above. CPlayer::DoPhysics (0x466CE0) casts a "am I about
+		// to land on something" ray straight down through &this[0xBB0]:
+		// 0xBB0/0xBBC are its start/end, and the already-known 0xC18 (hit
+		// item), 0xC1C (hit position), 0xC28 (surface normal) and 0xC30 (hit
+		// face) sit exactly at SLineInfo's pItem/Position/Normal/pFace, with
+		// the block ending at 0xC54.
+		SLineInfo mLineInfo2;
 
 		// CPlayer::DoCrawlingPhysics: distance push-back for the "player ran
 		// into an interior surface" case, set to mLineInfo.Distance-8 (0 when
@@ -850,7 +839,14 @@ class CPlayer : public CSuper
 		u8 field_E8C;
 		u8 field_E8D;
 
-		PADDING(0xE94-0xE8D-1);
+		PADDING(0xE90-0xE8D-1);
+
+		// CPlayer::DoPhysics: angle (rcossin_tbl index, masked to 12 bits)
+		// of the random bounce direction it picks when the field_E1C == 1
+		// state cannot find a wall to bounce off.
+		u16 field_E90;
+
+		PADDING(0xE94-0xE90-2);
 
 		CVector field_E94;
 
@@ -905,8 +901,9 @@ class CPlayer : public CSuper
 
 		i32 mMaxHealth;
 
-		// cleared by PriorToVenomDistanceAttack; exact meaning unknown, no
-		// reader found yet.
+		// cleared by PriorToVenomDistanceAttack. Read by CPlayer::DoPhysics
+		// (0x466CE0): while set, the frame's movement is bent so the player
+		// stays on a circle of radius field_EF8 around gBossRelated.
 		u8 field_EF4;
 
 		PADDING(0xEF8-0xEF4-1);
