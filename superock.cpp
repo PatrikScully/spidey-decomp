@@ -43,21 +43,38 @@ static i32 * const gSuperDocOckBarCoords = (i32*)0x557b9c;
 // Screen y-offset added to several bar draws (0x60F76C, a global i32).
 static i32 * const gSuperDocOckBarScreenOffset = (i32*)0x60f76c;
 
-// @NotOk
-// Implemented from the 0x4D0E70 disassembly (1408 bytes). The logic is
-// faithful: 15-texture load loop, MechList->field_1AC bail, FindBaddyOfType
-// (0x135) null checks, progress = min(Utils_XZDist, 2048) * 307 / 2048 (0
-// when field_35C set), field_328 += field_80 when !G_POST_WATER_EFFECT then
-// the field_328 > 4 consume-4 / field_324++ / wrap-at-5 dance, the two
-// print_if_false field_324 range checks, and the field_378 > 0xC00
-// rcossin_tbl screen-shake. Added field_324/328/35C/378 to CSuperDocOck
-// (were PADDING). Residue: the ~15 bar/pip/anim/flat-poly draw calls are
-// transcribed from the disasm but Bar 3 pushes a 3rd dword (ebx=128) that
-// no Panel_DrawTexturedPoly overload in panel.h takes (I called it 2-arg),
-// and the Spool_FindAnim("Sp",1)+2 frame walk / var_4 0..112 step 16 loop
-// and the two DCPanel_DrawFlatShadedPoly coord roles are not runtime-
-// verifiable (boss HUD only, no way to reach the fight in a smoke test),
-// so the exact per-draw x/y/w/h/color roles may be off.
+// @Ok
+// Re-verified line by line against the 0x4D0E70 disassembly (not just Hex-Rays) via idalib. This
+// is a single-baddy HUD (FindBaddyOfType(0x135), CSuperDocOck only) - there is no second/Jameson
+// bar in this function, unlike Panel_DisplayHealthBar's Scorpion+Jameson pair; every draw call
+// below targets the one boss. Logic: 15-texture load loop, MechList->field_1AC bail,
+// FindBaddyOfType(0x135) null checks, progress = min(Utils_XZDist, 2048) * 307 / 2048 (0 when
+// field_35C set), field_328 += field_80 when !G_POST_WATER_EFFECT then the field_328 > 4
+// consume-4 / field_324++ / wrap-at-5 dance, the two print_if_false field_324 range checks, and
+// the field_378 > 0xC00 rcossin_tbl screen-shake. field_324/328/35C/378 already added to
+// CSuperDocOck (were PADDING). The trailing f32 argument to every DCPanel_Draw*Poly call below
+// is a per-call-site literal straight out of the disassembly (1.0/2.0/3.0/4.0/2.999); meaning
+// unknown, reproduced as-is (same "unknown tag argument" situation documented in
+// Venom_DrawBarPiece above).
+//
+// Fixed against the disassembly (this instance was previously @NotOk with several transcription
+// bugs from an earlier pass, all confirmed wrong by re-reading the raw bytes at each call site,
+// not just re-reading Hex-Rays):
+// - Bar 3 and Bar 4 draw tags were 2.0f, disasm pushes 0x40400000 (3.0f) at both call sites.
+// - Bar 5's draw tag was 0.49996948f (bit pattern of a stray value), disasm pushes 0x403FEF9E,
+//   which is exactly the IEEE-754 encoding of the literal 2.999f, not 0.5-ish.
+// - The animated-frame loop draw and the second (post-Bar-5) anim draw both had tag 2.0f, disasm
+//   pushes 0x40400000 (3.0f) at both.
+// - The first DCPanel_DrawFlatShadedPoly call had tag 2.0f, disasm pushes 0x40400000 (3.0f); the
+//   second one was already correct at 4.0f.
+// - The screen-shake magnitude used `sin ^ ((sin>>31)&0x7FFFFFFF)`, which is not a valid
+//   absolute-value formula (e.g. abs(-1) computed as INT_MIN with it). The disassembly's
+//   `mask=sin>>31; (sin^mask)-mask` is exactly the repo's existing `my_abs()` macro
+//   (export.h), the same idiom used for this exact rcossin_tbl-magnitude pattern elsewhere
+//   (e.g. lizman.cpp's roll-factor code); switched to `my_abs(sin)`.
+// - `i32 c0 = ((val << 7) - val) >> 12 + 128;` has a C operator-precedence bug: `+` binds
+//   tighter than `>>`, so this actually shifted by 140, not 12. Disasm does `sar ecx, 0Ch` then
+//   a separate `add ecx, 80h`; added the missing parens: `(((val << 7) - val) >> 12) + 128`.
 void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 {
 	Texture** tex = gSuperDocTexs;
@@ -138,7 +155,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 		gSuperDocOckBarCoords[13] + *gSuperDocOckBarScreenOffset + 28,
 		v11, gSuperDocTexs[6],
 		gSuperDocOckBarCoords[14], gSuperDocOckBarCoords[15]);
-	DCPanel_DrawTexturedPoly(2.0f, v11, gSuperDocTexs[6], 0);
+	DCPanel_DrawTexturedPoly(3.0f, v11, gSuperDocTexs[6], 0);
 
 	// Bar 4 (gSuperDocTexs[7])
 	POLY_FT4* v12 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[7], 0);
@@ -147,7 +164,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 		gSuperDocOckBarCoords[17] + *gSuperDocOckBarScreenOffset + 28,
 		v12, gSuperDocTexs[7],
 		gSuperDocOckBarCoords[18], gSuperDocOckBarCoords[19]);
-	DCPanel_DrawTexturedPoly(2.0f, v12, gSuperDocTexs[7], 0);
+	DCPanel_DrawTexturedPoly(3.0f, v12, gSuperDocTexs[7], 0);
 
 	// Anim
 	SAnimFrame* anim = Spool_FindAnim("Sp", 1);
@@ -156,7 +173,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 	if (doc->field_378 > 0xC00) {
 		i32 idx = (gTimerRelated << 4) & 0xFFF;
 		i32 sin = rcossin_tbl[idx].sin;
-		i32 abs_sin = sin ^ ((sin >> 31) & 0x7FFFFFFF);
+		i32 abs_sin = my_abs(sin);
 		shake = (abs_sin << 7) >> 12;
 	}
 
@@ -172,7 +189,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 			((u8*)v13)[5] = (u8)shake;
 			((u8*)v13)[6] = (u8)shake;
 		}
-		DCPanel_DrawTexturedPoly(2.0f, v13, anim, 0);
+		DCPanel_DrawTexturedPoly(3.0f, v13, anim, 0);
 		var_4 += 16;
 	}
 
@@ -185,7 +202,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 		gSuperDocOckBarCoords[25] + *gSuperDocOckBarScreenOffset + 55,
 		v14, gSuperDocTexs[14],
 		gSuperDocOckBarCoords[26], gSuperDocOckBarCoords[27]);
-	DCPanel_DrawTexturedPoly(0.49996948f, v14, gSuperDocTexs[14], 0);
+	DCPanel_DrawTexturedPoly(2.999f, v14, gSuperDocTexs[14], 0);
 
 	// Anim 2 (anim+8)
 	anim += 2;
@@ -197,16 +214,16 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 			v15, anim,
 			gSuperDocOckBarCoords[30], gSuperDocOckBarCoords[31]);
 	}
-	DCPanel_DrawTexturedPoly(2.0f, v15, anim, 0);
+	DCPanel_DrawTexturedPoly(3.0f, v15, anim, 0);
 
 	// Flat shaded polys (field_378 based)
 	i32 val = doc->field_378;
-	i32 c0 = ((val << 7) - val) >> 12 + 128;
+	i32 c0 = (((val << 7) - val) >> 12) + 128;
 	i32 c1 = ((val << 8) - val) >> 12;
 	i32 c2 = ((val << 4) * 7) >> 12;
 	i32 h = (val >= 2048) ? ((val - 2048) << 7) >> 11 : 0;
 
-	DCPanel_DrawFlatShadedPoly(2.0f,
+	DCPanel_DrawFlatShadedPoly(3.0f,
 		gSuperDocOckBarCoords[32] + 466,
 		gSuperDocOckBarCoords[33] - c2 + *gSuperDocOckBarScreenOffset + 202,
 		gSuperDocOckBarCoords[34] + 9,
