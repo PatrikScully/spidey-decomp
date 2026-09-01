@@ -465,43 +465,52 @@ INLINE SLevel* Front_FindLevel(char* pTRGName)
 	return 0;
 }
 
-// @Bogus
-// Investigated 2026-08-31, re-verified twice on 2026-09-01 (idalib
-// sessions 0dc9741d and 7fdcc76e): this function does not exist in the PC
-// binary. tools/names.json
-// has no address for it, tools/functions/ has no matching .bin, and a
-// full-text search of the maintainer's IDA database (idalib, both name list
-// and string list) for "GetButtons" finds nothing. Re-check this session:
-// listed every function IDA knows about (func_query) across the whole
-// front.cpp address range (0x440000-0x442300) and the whole DXsound.cpp
-// range (0x4fbdc0-0x50f6d0+size) - every byte in both ranges is already
-// claimed by a function IDA has a size for (named or sub_XXXXXX), so there
-// is no gap hiding an unnamed copy of this function under a different name.
-// Also checked Front_Update's (0x440ef0) full callee list: none of them read
-// pad state as Activated/GoBack/AnyButton/Start the way this signature
-// implies. The only trace of it anywhere is the PSX THPS2 demo source
-// (thps2-stuff/decls.h: `Front_GetButtons__FRiN30(int *Activated, int
-// *GoBack, int *AnyButton, int *Start)`, body not included in that dump)
-// and the Mac prototype list (tools/prototypes.json: 240 bytes). Nothing
-// in the PC source calls it either (grepped the whole repo). Best guess:
-// this was a PS2/PSX-pad polling helper (matches the param names: which
-// face button did what) and the PC port replaced it outright with the
-// PCSHELL_CheckTriggers-based input system used everywhere else in this
-// file (see CMenu::Update), so the linker never pulled this function in.
-// Third check (2026-09-01 audit): idalib lookup_funcs "Front_GetButtons"
-// returns Not found against SpideyPC.exe, and the name is in
-// idbs/spiderman_names.txt (0007b8c0 .Front_GetButtons__FRiRiRiRi) but has
-// zero hits in idbs/spideypc_names.txt (the maintainer's PC IDB, 8950
-// names).
-// Writing a body from the Mac param names alone, with zero PC bytes and
-// zero PC callers to check logic against, would be invention, not
-// decompilation. Retagged @NotOk -> @Bogus in that audit: there is no PC
-// code to be equivalent to, so this can never become @Ok and does not
-// belong in the remaining-work count. Flip it back if the project would
-// rather keep Mac-only stubs in the backlog.
-void Front_GetButtons(i32 *,i32 *,i32 *,i32 *)
+// selects between two Start-button trigger bitmasks (0x40000 / 0x40040).
+// Tentative name, our own guess. Read by Front_GetButtons below and by
+// Front_Update further down, which is why it sits up here rather than with
+// the other Front_Update globals.
+#define gFrontUseAltTriggerMask (*reinterpret_cast<u8*>(0x005FAE9D))
+
+// @Ok
+// 0x00440E40, 167 bytes. FOUND 2026-09-01: this function DOES exist in the PC
+// build, the earlier @Bogus verdict above it was wrong. It is names.json's
+// unnamed sub_440E40, sitting right before Front_Update (0x440EF0) inside
+// front.cpp's own address range. The earlier audit listed the range and saw
+// every byte claimed by a named function or a sub_XXXXXX, and stopped there
+// without reading the sub_XXXXXX bodies.
+//
+// What identifies it: the parameter shape is exactly the THPS2 one
+// (thps2-stuff/decls.h, Front_GetButtons__FRiN30(int *Activated, int *GoBack,
+// int *AnyButton, int *Start)), it fills four int out-parameters in that
+// order, it derives AnyButton as Activated|GoBack, and it reads
+// gFrontUseAltTriggerMask (0x5FAE9D) to pick the Start mask. The PC port did
+// not drop it, it rewrote the body on top of PCSHELL_CheckTriggers, which is
+// why the Mac version is 240 bytes and this one is 167.
+//
+// Trigger masks: 0x40000 (or 0x40040 with the alternate mask) is Start,
+// 0x10010 is the accept button, 0x20220 is the back button.
+void Front_GetButtons(i32 *pActivated, i32 *pGoBack, i32 *pAnyButton, i32 *pStart)
 {
-    printf("Front_GetButtons(i32 *,i32 *,i32 *,i32 *)");
+	i32 startMask = 0x40000;
+
+	*pStart = 0;
+	*pAnyButton = 0;
+	*pGoBack = 0;
+	*pActivated = 0;
+
+	if (gFrontUseAltTriggerMask)
+		startMask = 0x40040;
+
+	*pStart = PCSHELL_CheckTriggers(startMask, 1, 1);
+
+	*pActivated = (PCSHELL_CheckTriggers(0x10010, 1, 1) || *pStart) ? 1 : 0;
+
+	*pGoBack = PCSHELL_CheckTriggers(0x20220, 1, 1);
+	*pAnyButton = *pActivated | *pGoBack;
+
+	// pressing accept wins over back when both come up in the same frame
+	if (*pActivated)
+		*pGoBack = 0;
 }
 
 // @Ok
@@ -817,7 +826,6 @@ void Front_SaveGameState(void)
 //   disassembly, not confirmed against any Trig data. If this case turns
 //   out wrong, the Trig side needs a real look, not just this file.
 #define gFrontUpdateBlocked (*reinterpret_cast<i32*>(0x00682950))
-#define gFrontUseAltTriggerMask (*reinterpret_cast<u8*>(0x005FAE9D))
 #define gFrontCardExistsThisFrame (*reinterpret_cast<u8*>(0x005FAE8C))
 #define gFrontCardPollDelay (*reinterpret_cast<i32*>(0x005FAE20))
 #define gFrontCardSlotChoice (*reinterpret_cast<i32*>(0x0066126C))
