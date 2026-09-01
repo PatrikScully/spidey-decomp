@@ -62,6 +62,16 @@ EXPORT matrix4x4* gsub_476A00(matrix4x4* dest, matrix4x4 const* a, matrix4x4 con
 EXPORT void ConvertSMatrixTomatrix4x4(SMatrix const* pIn, matrix4x4* pOut);
 
 EXPORT void M3d_BuildTransform(CSuper*);
+
+// addresses 0x46D7E0/0x46D810/0x46E250/0x46FAD0. Per-frame view-frustum
+// visibility cull, called from M3d_Render (still forwarded, see its own
+// comment). See the long comment on M3dAsm_BoundingSpherePreprocessing in
+// ps2m3d.cpp for the full evidence per field/flag.
+EXPORT i16* M3dAsm_LoadClipTableA(void const* pSrc);
+EXPORT i16* M3dAsm_LoadClipTableB(void const* pSrc);
+EXPORT i32 M3dAsm_SetCullSphereOffset(i32 x, i32 y, i32 z);
+EXPORT void M3dAsm_BoundingSpherePreprocessing(CItem* pList);
+
 EXPORT void M3d_Render(void*);
 EXPORT void DCModel_RenderModel(SModel const *,DCModelData *,matrix4x4 const *);
 EXPORT void DC_PSXModel_RenderModel(SModel const *,matrix4x4 const *,void const *,DCModelData *);
