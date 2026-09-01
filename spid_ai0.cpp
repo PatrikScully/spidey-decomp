@@ -312,7 +312,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x2000000   0x4B6901   done   riding a zip-web dive onto a target
 //   0x4000000   0x4B6820   done   the punch that ends a zip-web dive
 //   0x8000000   0x4B65E4   done   the kick that ends a zip-web dive
-//   0x10000000  0x4B6B1E   TODO   ~145 instructions
+//   0x10000000  0x4B6B1E   done   grabbed, wiggle free
 //   0x20000000  0x4B6DD8   done   held in a web dome
 //   0x40000000  0x4B6DCA   done   one store
 //   0x80000000  0x4B6D81   done   pulling a switch
@@ -2489,6 +2489,128 @@ void SpideyAI0(CPlayer *pPlayer)
 
 			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
 			pPad[0x121] = 0;
+			break;
+		}
+
+		// 0x4B6B1E. Grabbed (CheckSwitchToGrabbedMode puts us here): the
+		// player is dragged towards the grabber and has to wiggle the stick
+		// and mash the four face buttons to break free. field_894 counts the
+		// wiggles and bleeds one back down every eight ticks on average.
+		case 0x10000000:
+		{
+			u8 *pPad;
+
+			pPlayer->field_EA6 = 0;
+
+			if ((u16)animJustFinished == 0x99)
+			{
+				// 0x4B6597
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (pPlayer->field_894 != 0 && Rnd(8) == 0)
+			{
+				pPlayer->field_894 = pPlayer->field_894 - 1;
+			}
+
+			// left/right on the stick, counted on every sign change.
+			if (pPlayer->field_87C != 0 && pPlayer->field_E2E < 0)
+			{
+				pPlayer->field_87C = 0;
+				pPlayer->field_894++;
+			}
+			else if (pPlayer->field_87C == 0 && pPlayer->field_E2E > 0)
+			{
+				pPlayer->field_87C = 1;
+				pPlayer->field_894++;
+			}
+
+			// 0x880: the same latch for up/down (field_E2D). It sits in a
+			// spidey.h PADDING run, so it is reached by offset here.
+			if (PLR_I32(pPlayer, 0x880) != 0 && pPlayer->field_E2D < 0)
+			{
+				PLR_I32(pPlayer, 0x880) = 0;
+				pPlayer->field_894++;
+			}
+			else if (PLR_I32(pPlayer, 0x880) == 0 && pPlayer->field_E2D > 0)
+			{
+				PLR_I32(pPlayer, 0x880) = 1;
+				pPlayer->field_894++;
+			}
+
+			// 0x884, 0x88C, 0x888 and 0x890: one "button is down" latch per
+			// face button, all in the same PADDING run. Each pad entry is a
+			// held byte followed by a just-pressed byte.
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+
+			if (PLR_I32(pPlayer, 0x884) != 0 && pPad[0x10] != 0)
+			{
+				PLR_I32(pPlayer, 0x884) = 0;
+			}
+			else if (PLR_I32(pPlayer, 0x884) == 0 && pPad[0x11] != 0)
+			{
+				pPad[0x11] = 0;
+				PLR_I32(pPlayer, 0x884) = 1;
+				pPlayer->field_894++;
+			}
+
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+
+			if (PLR_I32(pPlayer, 0x88C) != 0 && pPad[0] != 0)
+			{
+				PLR_I32(pPlayer, 0x88C) = 0;
+			}
+			else if (PLR_I32(pPlayer, 0x88C) == 0 && pPad[1] != 0)
+			{
+				pPad[1] = 0;
+				PLR_I32(pPlayer, 0x88C) = 1;
+				pPlayer->field_894++;
+			}
+
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+
+			if (PLR_I32(pPlayer, 0x888) != 0 && pPad[0x20] != 0)
+			{
+				PLR_I32(pPlayer, 0x888) = 0;
+			}
+			else if (PLR_I32(pPlayer, 0x888) == 0 && pPad[0x21] != 0)
+			{
+				pPad[0x21] = 0;
+				PLR_I32(pPlayer, 0x888) = 1;
+				pPlayer->field_894++;
+			}
+
+			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+
+			if (PLR_I32(pPlayer, 0x890) != 0 && pPad[0x30] != 0)
+			{
+				PLR_I32(pPlayer, 0x890) = 0;
+			}
+			else if (PLR_I32(pPlayer, 0x890) == 0 && pPad[0x31] != 0)
+			{
+				pPad[0x31] = 0;
+				PLR_I32(pPlayer, 0x890) = 1;
+				pPlayer->field_894++;
+			}
+
+			if (pPlayer->field_894 > 8 && pPlayer->mAnim != 0x99)
+			{
+				pPlayer->PlaySingleAnim(0x99, 0, -1);
+			}
+
+			// slide halfway towards the grabber every tick.
+			pPlayer->mPos.vx += (pPlayer->field_EE0.vx - pPlayer->mPos.vx) >> 1;
+			pPlayer->mPos.vz += (pPlayer->field_EE0.vz - pPlayer->mPos.vz) >> 1;
+
+			if (pPlayer->field_564 != 0)
+			{
+				pPlayer->field_564 = 0;
+				if (pPlayer->mAnim != 0x99)
+				{
+					pPlayer->PlaySingleAnim(0x99, 0, -1);
+				}
+			}
 			break;
 		}
 
