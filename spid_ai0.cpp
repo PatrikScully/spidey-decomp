@@ -2760,7 +2760,7 @@ void SpideyAI0(CPlayer *pPlayer)
 
 			pPlayer->LockTargetTorsoAngle();
 
-			if (pPlayer->field_B84.vy < (i16)0xF5D8)
+			if (pPlayer->mLineInfo.Normal.vy < (i16)0xF5D8)
 			{
 				// pointing far enough down: we are back on our feet.
 				pPlayer->field_8E9 = 0;
@@ -2848,9 +2848,9 @@ void SpideyAI0(CPlayer *pPlayer)
 			{
 				// 0x4B4D05: still on a wall or a ceiling, so keep the
 				// surface normal and pick which of the two we are on.
-				pPlayer->field_A8.vx = pPlayer->field_B84.vx;
-				pPlayer->field_A8.vy = pPlayer->field_B84.vy;
-				pPlayer->field_A8.vz = pPlayer->field_B84.vz;
+				pPlayer->field_A8.vx = pPlayer->mLineInfo.Normal.vx;
+				pPlayer->field_A8.vy = pPlayer->mLineInfo.Normal.vy;
+				pPlayer->field_A8.vz = pPlayer->mLineInfo.Normal.vz;
 				pPlayer->OrientToNormal(true, &normal);
 				pPlayer->field_E1C = 0x10;
 
