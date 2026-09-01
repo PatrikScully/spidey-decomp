@@ -9129,11 +9129,39 @@ CDummy::~CDummy(void)
 }
 
 // @BIGTODO
-// 0x491A10, 0x123E bytes (4670). Confirmed via xrefs_to that this is reached ONLY through
-// CDummy's own vtable (off_53BFAC slot 2) -- no direct caller anywhere in the binary -- so it
-// does not block CDummy_ctor or any of the four shell.cpp menu functions that construct a
-// CDummy. A dedicated session should pick this up separately; it is a large, self-contained
-// per-frame update (animation advance, camera-facing, per-costume special behaviour).
+// 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
+// vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
+// leaf-first on five CDummy helpers that are still unnamed in names.json and absent from this
+// repo. The Mac build names them (idbs/spiderman_names.txt lists the whole CDummy method set),
+// and the call sites below pin four of the five down by the mType they run for:
+//
+//   0x494280  2016 b  CDummy::SuperOckBuildArms      called for mType 309 (monster-Ock)
+//   0x494A60   384 b  (unnamed, sits between the two BuildArms bodies)
+//   0x494BE0  2016 b  CDummy::DocOckBuildArms        called for mType 308 (Doc Ock)
+//   0x4953C0   768 b  CDummy::InitialiseTailPSX      mType 310, when field_240.mRegion == 0xFF
+//   0x4956C0   688 b  CDummy::InitialiseTailSweepPSX mType 310, when field_288.mRegion == 0xFF
+//   0x4960C0   528 b  CDummy::BuildTail              called for mType 310 (Scorpion)
+//
+// The two Initialise* helpers are the exact counterparts of the teardown block in ~CDummy
+// above (same two regions, same fields), which is what confirms their identity. The Mac build
+// also has DeleteTailPSX and DeleteTailSweepPSX; on PC those two are inlined into ~CDummy.
+// The Mac UniformCurveTesselator helpers have no separate PC bodies either, they are inlined
+// into their BuildArms/BuildTail callers (which is why the PC bodies are bigger than the Mac
+// ones). One more callee, sub_43A300 (256 b, effects.cpp range, takes a CVector), is also
+// still a stub.
+//
+// Shape of the function itself, for whoever picks it up:
+//  - a flat per-frame prologue (0x491A10..0x491E4C): restart the character's XA music track
+//    after 30 vblanks (field_1C4/field_1C8/field_1CC), run down the field_1D0 idle timer and
+//    pick a new random XA track out of the shuffled table at 0x550DF8, advance the current
+//    animation track (field_1B8) and call SelectNewTrack/RunAnim at its 0xFFFF terminator,
+//    the FadeAway/FadeBack outline ramp (field_1F8/field_1FC driving OutlineOn/OutlineOff and
+//    SetOutlineRGB), the mType 310 tail-region setup, then M3d_BuildTransform.
+//  - a dispatch on mType at 0x491E4C: 50 spidey, 307 Rhino, 308 Doc Ock, 309 monster-Ock,
+//    310 Scorpion, 311 Mysterio, then a jump table at 0x492C74 for 312 Henchman, 313 Venom,
+//    314 Carnage and 324 symbiote. Everything else falls into the shared tail at 0x492C3B.
+//    The 308/309/310 arms are short: they just call the BuildArms/BuildTail helper above and
+//    return, so those three become one-liners once the helpers exist.
 void CDummy::AI(void)
 {
 	printf("CDummy::AI");
