@@ -207,6 +207,9 @@ public:
 	// .BuildTail__6CDummyFv / .ScorpionUniformCurveTesselator__6CDummyFP7CVectorUiP7CVector.
 	EXPORT void InitialiseTailPSX(void);
 	EXPORT void InitialiseTailSweepPSX(void);
+	EXPORT void BuildTail(void);
+	EXPORT void ScorpionUniformCurveTesselator(CVector* pControl, u32 numPoints,
+			CVector* pOut);
 
 	// three "track" (animation id list) pointers SelectNewTrack picks randomly between (Rnd(3)).
 	u16* field_1A4;

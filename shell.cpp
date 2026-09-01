@@ -9417,6 +9417,73 @@ void CDummy::InitialiseTailSweepPSX(void)
 	}
 }
 
+// @Ok
+// 0x489660. The PC linker folded two identical bodies onto this one address:
+// CDummy::ScorpionUniformCurveTesselator (Mac 0xE7B50) and CScorpion::UniformCurveTesselator
+// (Mac 0xD8890, which is the name tools/names.json carries for it). Neither of them reads
+// its own object, which is why the two bodies came out the same. Kept here as the CDummy
+// method because CDummy::BuildTail is its only decompiled caller; CScorpion::BuildTail, when
+// somebody writes it, gets the identical body under the CScorpion name.
+//
+// Walks a cubic bezier through the four control points and writes numPoints evenly spaced
+// positions into pOut. The two ends come straight from the outer control points; every point
+// in between is a GTE weighted sum of all four with the Bernstein weights held in 12.12.
+// The control points come in shifted down 12, so the shift back up is what puts the output
+// in world units.
+void CDummy::ScorpionUniformCurveTesselator(CVector* pControl, u32 numPoints, CVector* pOut)
+{
+	u32 step = 4096 / (numPoints - 1);
+
+	pOut[0] = pControl[0] << 12;
+	pOut[numPoints - 1] = pControl[3] << 12;
+
+	u32 remaining = numPoints - 1;
+	if (remaining > 1)
+	{
+		CVector* pPoint = &pOut[1];
+		i32 t = static_cast<i32>(step);
+		i32 s = 4096 - static_cast<i32>(step);
+
+		for (u32 left = remaining - 1; left != 0; left--)
+		{
+			i32 x = 0;
+			i32 y = 0;
+			i32 z = 0;
+
+			i32 weight = (s * ((s * s) >> 12)) >> 12;
+
+			for (u32 c = 0; c < 4; c++)
+			{
+				gte_ldlvl(reinterpret_cast<VECTOR*>(&pControl[c]));
+				gte_lddp(weight);
+				gte_gpf0();
+
+				// the weight for the NEXT control point, worked out while the GTE runs
+				if (c == 0)
+					weight = (3 * t * ((s * s) >> 12)) >> 12;
+				else if (c == 1)
+					weight = (t * ((3 * t * s) >> 12)) >> 12;
+				else if (c == 2)
+					weight = (t * ((t * t) >> 12)) >> 12;
+
+				CVector scaled;
+				gte_stlvnl(reinterpret_cast<VECTOR*>(&scaled));
+				x += scaled.vx;
+				y += scaled.vy;
+				z += scaled.vz;
+			}
+
+			pPoint->vx = x;
+			pPoint->vy = y;
+			pPoint->vz = z;
+			pPoint++;
+
+			t += static_cast<i32>(step);
+			s -= static_cast<i32>(step);
+		}
+	}
+}
+
 // @BIGTODO
 // 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
 // vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
