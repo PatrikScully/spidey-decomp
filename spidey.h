@@ -164,7 +164,19 @@ class CPlayer : public CSuper
 		// parts snapshot their current position instead of sweeping.
 		u8 field_378;
 
-		PADDING(0x500-0x378-1);
+		PADDING(0x37C-0x378-1);
+
+		// world position of each active collision part this tick, refreshed
+		// by UpdateAndTrackCombo with M3dUtils_GetDynamicHookPosition. The
+		// collision parts stream (field_954) indexes it, so at most 16 are
+		// ever used before field_43C starts.
+		CVector field_37C[16];
+
+		// the same 16 positions from the previous tick; the pair gives the
+		// swept segment UpdateAndTrackCombo hands Web_CollideWithSuper.
+		CVector field_43C[16];
+
+		PADDING(0x500-0x43C-16*12);
 
 		// gTimerRelated at the moment of the last hit, and the field_E1C
 		// state the player was in when it landed. Both written by

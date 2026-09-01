@@ -7784,56 +7784,803 @@ void CPlayer::SynthesizeAnalogueInput(void)
 	}
 }
 
-// @BIGTODO
-// Scoped 2026-09-01 but not implemented. Original address 0x4C7120, 4839
-// bytes, by far the largest function left in this file. Every callee it has
-// already exists in the repo (M3dColij_LineToSphere, M3dZone_LineToItem,
-// M3dUtils_GetHookPosition / GetDynamicHookPosition, M3d_BuildTransform,
-// Web_CollideWithSuper, Utils_CrapDist, CSuper::ApplyPose, VectorNormal,
-// CPlayer::CreateCombatImpactEffect, SFX_PlayPos, InitiateCombo), and the
-// combo state it drives is now fully declared in spidey.h (field_8FC up to
-// field_A7C plus SComboPart), so this is a big but unblocked job.
+// declared in ps2m3d.h, which cannot be included here: it defines macros
+// that clash with names spidey.cpp already uses.
+EXPORT void M3d_BuildTransform(CSuper*);
+
+// @Ok
+// verified against the IDA disasm of 0x4C7120 (4839 bytes, 1337
+// instructions) with the Hex-Rays output as a cross-check. Runs one tick of
+// the combo move started by CPlayer::InitiateCombo.
 //
-// Elapsed time is field_84 - field_910; the byte at field_950[elapsed / 2]
-// is written straight into CSuper::mFrame, and hitting 0xFF in that stream
-// ends the move: everything is cleared and, if a follow-on was queued in
-// field_958, InitiateCombo(*field_958, field_90C) starts it (the
-// "exit frame incorrectly defined" assert fires on that path).
+// The original returns int (0, 1, or the follow-on move id) but nothing
+// reads it, so the repo signature stays void; the three `return` points
+// below are the original's three returns.
 //
-// The four blocks, in order:
-//  1. Distance. gDistanceDefs[mAnim] (0x6A8768, built by ParseFightData) is
-//     a byte stream walked with field_916 as the cursor: bytes 0x80..0x83
-//     and 0x84..0x87 select one of four slide hooks (and whether the y
-//     component is kept), anything else accumulates into a plain forward
-//     slide. The chosen slide is then swept with M3dColij_LineToSphere plus
-//     two M3dZone_LineToItem probes so the player does not slide into
-//     geometry, and the surviving offset is added to mPos with
-//     CVector::operator+=.
-//  2. Input latching. field_E2D / field_E2E against field_E2F / field_E30
-//     set the four direction latches at 0x241/0x251/0x261/0x271 and their
-//     pad mirrors, then the four attack buttons are packed into a 4 bit
-//     mask.
-//  3. Part matching. Walks field_95C while mInput is non null: a part only
-//     accepts a press inside its frame window (field_902/904 or
-//     field_906/908 depending on mUseLateWindow), advances mInput by 1 or 2
-//     depending on whether the press was inside the part's own timeout
-//     (the byte at mInput[1]), and when mInput reaches 0xFF the part wins:
-//     field_958, field_914, field_90A and field_90C are filled in from the
-//     move record's parts array and field_94C is cleared.
+// Elapsed time is field_84 - field_910. The byte at field_950[elapsed / 2]
+// is copied into CSuper::mFrame every tick, and a 0xFF anywhere in
+// field_950[0 .. elapsed / 2] ends the move: every button latch is dropped
+// and, if a follow-on was queued in field_958, InitiateCombo starts it.
+//
+// Then four blocks run in order:
+//  1. Distance. gDistanceDefs[mAnim] is a byte stream walked with field_916
+//     as the cursor. Bytes 0x80..0x83 and 0x84..0x87 pick one of four slide
+//     hooks (the second group drops the y component), anything else is a
+//     signed byte accumulated into a plain forward slide. The slide is only
+//     applied if a sphere sweep and three zone probes all come back clear,
+//     and it is SUBTRACTED from mPos (CVector::operator-=), not added.
+//  2. Input latching. field_E2D / field_E2E against last tick's
+//     field_E2F / field_E30 set the four direction latches at
+//     0x241/0x251/0x261/0x271 and their mirrors in the field_E0C input
+//     struct, then the four attack buttons are packed into a 4 bit mask.
+//  3. Part matching. Walks field_95C while mInput is non null. A part only
+//     accepts a press inside its frame window (field_902/904, or
+//     field_906/908 when mUseLateWindow is set), and advances mInput by 1
+//     (first press) or 2 (later presses, if the gap since the last press is
+//     within the timeout byte at mInput[1]). When mInput reaches 0xFF the
+//     part wins and field_958 / field_90A / field_90C / field_914 are filled
+//     in from the move record's parts array.
 //  4. Collision. Between field_8FE and field_900 the collision parts stream
-//     at field_954 is walked, each entry feeding
-//     M3dUtils_GetDynamicHookPosition into the 0x37C array (with the 0x43C
-//     array holding the previous frame, or the same position on the first
-//     tick, which is what field_378 gates). Every CBody in the baddy list
-//     that is not already in field_A6C and is within 700 units gets swept
-//     with Web_CollideWithSuper; on a hit it builds the SHitInfo (damage
-//     from the move record scaled by GetDamageInflictedFromDifficulty, the
-//     random slide distance from record+26/+28, the impact direction from
-//     Utils_CalcAim), calls the target's virtual Hit, plays one of three
-//     impact effects, and records the body in field_A6C.
+//     at field_954 is walked: field_43C[i] takes last tick's position and
+//     field_37C[i] is refreshed with M3dUtils_GetDynamicHookPosition (on the
+//     very first tick field_378 gates the copy out and the function stops
+//     there). Every baddy that is not already in field_A6C and is closer
+//     than 700 units is swept with Web_CollideWithSuper along
+//     field_43C[i] -> field_43C[i] + 1.5 * (field_37C[i] - field_43C[i]).
+//     On a hit it builds the SHitInfo, calls the target's virtual Hit, plays
+//     one of three impact effects and records the body in field_A6C.
 void CPlayer::UpdateAndTrackCombo(void)
 {
-    printf("CPlayer::UpdateAndTrackCombo(void)");
+	// per animation distance byte stream, filled by ParseFightData.
+	static u8 ** const gDistanceDefs = (u8**)0x006A8768;
+
+	// move id -> move record, 32 slots; filled by CPlayer::ParseFightData,
+	// which documents the record layout.
+	static u8 ** const gComboMoves = (u8**)0x006A8CB4;
+
+	// 0x005564E4, named gUnkPose in the maintainer's IDB (see m3dcolij.cpp):
+	// the shared pose buffer every CSuper::ApplyPose call is handed.
+	static i16 * const gUnkPose = (i16*)0x005564E4;
+
+	i32 elapsed = this->field_84 - this->field_910;
+	i32 half = elapsed / 2;
+
+	u8 poseApplied = 0;
+	u8 sameAnim;
+
+	if (this->field_914 != 0 && this->mAnim == this->field_914)
+	{
+		sameAnim = 1;
+	}
+	else
+	{
+		sameAnim = 0;
+
+		for (i32 i = 0; i <= half; i++)
+		{
+			if (this->field_950[i] == 0xFF)
+			{
+				u8 *pIn = reinterpret_cast<u8*>(this->field_E0C);
+				u16 *pFollowOn = this->field_958;
+
+				pIn[0x01] = 0;
+				pIn[0x21] = 0;
+				pIn[0x11] = 0;
+				pIn[0x31] = 0;
+				pIn[0x101] = 0;
+				pIn[0x111] = 0;
+				pIn[0x121] = 0;
+				pIn[0x131] = 0;
+				pIn[0xA1] = 0;
+				pIn[0x91] = 0;
+				pIn[0xB1] = 0;
+
+				this->field_954 = 0;
+
+				reinterpret_cast<u8*>(this)[0x1C1] = 0;
+				reinterpret_cast<u8*>(this)[0x1E1] = 0;
+				reinterpret_cast<u8*>(this)[0x1D1] = 0;
+				reinterpret_cast<u8*>(this)[0x1F1] = 0;
+				reinterpret_cast<u8*>(this)[0x2C1] = 0;
+				reinterpret_cast<u8*>(this)[0x2D1] = 0;
+				reinterpret_cast<u8*>(this)[0x2E1] = 0;
+				reinterpret_cast<u8*>(this)[0x2F1] = 0;
+				reinterpret_cast<u8*>(this)[0x261] = 0;
+				reinterpret_cast<u8*>(this)[0x251] = 0;
+				reinterpret_cast<u8*>(this)[0x271] = 0;
+				pIn[0x81] = 0;
+				reinterpret_cast<u8*>(this)[0x241] = 0;
+
+				this->field_94D = 0;
+
+				if (pFollowOn == 0)
+				{
+					return;
+				}
+
+				print_if_false(0, "exit frame incorrectly defined");
+
+				this->InitiateCombo(*pFollowOn, this->field_90C);
+				return;
+			}
+		}
+
+		this->mFrame = this->field_950[half];
+	}
+
+	u8 *pDist = gDistanceDefs[this->mAnim];
+
+	if (pDist != 0)
+	{
+		i32 accum = 0;
+		i32 bound = sameAnim ? (i32)this->mFrame : half;
+		i32 cursor = this->field_916;
+
+		// hookSel is left uninitialised by the original; it is only read
+		// when hookSlide is set, which is the only path that writes it.
+		u8 hookSlide = 0;
+		u8 keepY = 0;
+		i32 hookSel = 0;
+
+		if (cursor > bound)
+		{
+			this->field_916 = (u16)(bound + 1);
+		}
+		else
+		{
+			while (1)
+			{
+				u8 b = pDist[cursor];
+
+				if (b == 0xFF)
+				{
+					this->field_916 = (u16)cursor;
+					break;
+				}
+
+				switch (b)
+				{
+					case 0x80:
+					case 0x84:
+						hookSlide = 1;
+						hookSel = 1;
+						keepY = (b != 0x84);
+						break;
+
+					case 0x81:
+					case 0x85:
+						hookSlide = 1;
+						hookSel = 2;
+						keepY = (b != 0x85);
+						break;
+
+					case 0x82:
+					case 0x86:
+						hookSlide = 1;
+						hookSel = 3;
+						keepY = (b != 0x86);
+						break;
+
+					case 0x83:
+					case 0x87:
+						hookSlide = 1;
+						hookSel = 4;
+						keepY = (b != 0x87);
+						break;
+
+					default:
+						hookSlide = 0;
+						accum += (i8)b;
+						break;
+				}
+
+				cursor++;
+
+				if (cursor > bound)
+				{
+					this->field_916 = (u16)(bound + 1);
+					break;
+				}
+			}
+		}
+
+		if (hookSlide != 0 || accum != 0)
+		{
+			this->ApplyPose(gUnkPose);
+
+			CVector start;
+			start.vx = this->mPos.vx;
+			start.vy = this->mPos.vy + 0x20000;
+			start.vz = this->mPos.vz;
+
+			poseApplied = 1;
+
+			CVector fwd32 = this->field_C6C * 32;
+			CVector sphereEnd = start - fwd32;
+
+			if (M3dColij_LineToSphere(&start, &sphereEnd, &fwd32, BaddyList, 0, 2048) == 0)
+			{
+				SLineInfo info;
+
+				info.EndCoords.vx = 0;
+				info.EndCoords.vy = 0;
+				info.EndCoords.vz = 0;
+				info.MinCoords.vx = 0;
+				info.MinCoords.vy = 0;
+				info.MinCoords.vz = 0;
+				info.MaxCoords.vx = 0;
+				info.MaxCoords.vy = 0;
+				info.MaxCoords.vz = 0;
+				info.Position.vx = 0;
+				info.Position.vy = 0;
+				info.Position.vz = 0;
+				info.Normal.vx = 0;
+				info.Normal.vy = 0;
+				info.Normal.vz = 0;
+
+				info.StartCoords.vx = start.vx;
+				info.StartCoords.vy = start.vy;
+				info.StartCoords.vz = start.vz;
+
+				CVector fwd128 = this->field_C6C * 128;
+				CVector right32 = *reinterpret_cast<const CVector*>(&this->field_C78) * 32;
+
+				info.EndCoords = (start - right32) - fwd128;
+
+				M3dColij_InitLineInfo(&info);
+				M3dZone_LineToItem(&info, 1);
+
+				if (info.pItem == 0)
+				{
+					info.EndCoords = (start + right32) - fwd128;
+
+					M3dColij_InitLineInfo(&info);
+					M3dZone_LineToItem(&info, 1);
+
+					if (info.pItem == 0)
+					{
+						CVector up64 = this->field_C84 * 64;
+
+						info.StartCoords = start + up64;
+						info.EndCoords = (start + up64) - fwd128;
+
+						M3dColij_InitLineInfo(&info);
+						M3dZone_LineToItem(&info, 1);
+
+						if (info.pItem == 0)
+						{
+							if (hookSlide != 0)
+							{
+								CVector slide;
+								slide.vx = 0;
+								slide.vy = 0;
+								slide.vz = 0;
+
+								switch (hookSel)
+								{
+									case 1:
+										M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&slide), this, 6);
+										slide.vx -= this->field_91C;
+										slide.vz -= this->field_924;
+
+										if (keepY)
+										{
+											slide.vy -= this->field_920;
+										}
+										else
+										{
+											slide.vy = 0;
+										}
+										break;
+
+									case 2:
+										M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&slide), this, 5);
+										slide.vx -= this->field_928;
+										slide.vz -= this->field_930;
+
+										if (keepY)
+										{
+											slide.vy -= this->field_92C;
+										}
+										else
+										{
+											slide.vy = 0;
+										}
+										break;
+
+									case 3:
+										M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&slide), this, 1);
+										slide.vx -= this->field_934;
+										slide.vz -= this->field_93C;
+
+										if (keepY)
+										{
+											slide.vy -= this->field_938;
+										}
+										else
+										{
+											slide.vy = 0;
+										}
+										break;
+
+									case 4:
+										M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&slide), this, 0);
+										slide.vx -= this->field_940;
+										slide.vz -= this->field_948;
+
+										if (keepY)
+										{
+											slide.vy -= this->field_944;
+										}
+										else
+										{
+											slide.vy = 0;
+										}
+										break;
+
+									default:
+										break;
+								}
+
+								this->mPos -= slide;
+							}
+							else
+							{
+								this->mPos -= (this->field_C6C * accum);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (this->field_E2D > 0)
+	{
+		if (this->field_E2F <= 0)
+		{
+			reinterpret_cast<u8*>(this)[0x271] = 1;
+			reinterpret_cast<u8*>(this->field_E0C)[0xB1] = 1;
+		}
+	}
+	else if (this->field_E2D < 0)
+	{
+		if (this->field_E2F >= 0)
+		{
+			reinterpret_cast<u8*>(this)[0x261] = 1;
+			reinterpret_cast<u8*>(this->field_E0C)[0xA1] = 1;
+		}
+	}
+
+	if (this->field_E2E > 0)
+	{
+		if (this->field_E30 <= 0)
+		{
+			reinterpret_cast<u8*>(this)[0x251] = 1;
+			reinterpret_cast<u8*>(this->field_E0C)[0x91] = 1;
+		}
+	}
+	else if (this->field_E2E < 0)
+	{
+		if (this->field_E30 >= 0)
+		{
+			reinterpret_cast<u8*>(this)[0x241] = 1;
+			reinterpret_cast<u8*>(this->field_E0C)[0x81] = 1;
+		}
+	}
+
+	u8 *pInput = reinterpret_cast<u8*>(this->field_E0C);
+
+	i32 buttons = pInput[0x111]
+		| (2 * (pInput[0x131] | (2 * (pInput[0x121] | (2 * pInput[0x101])))));
+
+	if (buttons != 0)
+	{
+		this->field_918 = gTimerRelated;
+	}
+
+	u8 hasParts = this->field_94C;
+
+	pInput[0x101] = 0;
+	pInput[0x111] = 0;
+	pInput[0x121] = 0;
+	reinterpret_cast<u8*>(this)[0x2C1] = 0;
+	reinterpret_cast<u8*>(this)[0x2D1] = 0;
+	reinterpret_cast<u8*>(this)[0x2E1] = 0;
+	pInput[0x131] = 0;
+	reinterpret_cast<u8*>(this)[0x2F1] = 0;
+
+	if (hasParts != 0 && buttons != 0)
+	{
+		i32 matched = 0;
+		i32 partIndex = 0;
+		u8 won = 0;
+
+		print_if_false(1, "Combo error");
+
+		SComboPart *pPart = this->field_95C;
+
+		if (pPart->mInput != 0)
+		{
+			while (1)
+			{
+				if (pPart->mActive != 0)
+				{
+					i32 lo;
+					i32 hi;
+
+					if (pPart->mUseLateWindow == 0)
+					{
+						lo = this->field_902;
+						hi = this->field_904;
+					}
+					else
+					{
+						lo = this->field_906;
+						hi = this->field_908;
+					}
+
+					if (lo <= elapsed && hi >= elapsed)
+					{
+						i32 bit = 1 << pPart->mInput[0];
+
+						matched |= bit;
+
+						if ((buttons & bit) != 0)
+						{
+							u8 accepted = 1;
+
+							if (bit == 1)
+							{
+								pPart->mStarted = 1;
+							}
+							else if (pPart->mStarted != 0
+									&& reinterpret_cast<u8*>(this->field_E0C)[0x110] == 0)
+							{
+								pPart->mActive = 0;
+								accepted = 0;
+							}
+
+							if (accepted)
+							{
+								if (pPart->mWaitingFirst != 0)
+								{
+									pPart->mWaitingFirst = 0;
+									pPart->mLastPressTime = this->field_84;
+									pPart->mInput = pPart->mInput + 1;
+								}
+								else
+								{
+									u32 timeout = pPart->mInput[1];
+
+									if ((u32)(this->field_84 - pPart->mLastPressTime) > timeout)
+									{
+										// the press came too late: the part is
+										// dropped, but the original still runs
+										// the 0xFF check below on the cursor it
+										// did not advance.
+										pPart->mActive = 0;
+									}
+									else
+									{
+										pPart->mLastPressTime = this->field_84;
+										pPart->mInput = pPart->mInput + 2;
+									}
+								}
+
+								if (pPart->mInput[0] == 0xFF)
+								{
+									u16 move = this->field_8FC;
+									u8 *pMove = gComboMoves[move];
+
+									this->field_958 = *reinterpret_cast<u16**>(
+											pMove + 0x24 + 12 * partIndex);
+
+									print_if_false(gComboMoves[move] != 0, "Bad move");
+
+									pMove = gComboMoves[move];
+
+									this->field_90A = *reinterpret_cast<u16*>(
+											pMove + 0x28 + 12 * partIndex);
+									this->field_90C = *reinterpret_cast<u16*>(
+											pMove + 0x2A + 12 * partIndex);
+									this->field_914 = *reinterpret_cast<u16*>(
+											pMove + 0x2C + 12 * partIndex);
+
+									this->field_94C = 0;
+									won = 1;
+									break;
+								}
+							}
+						}
+					}
+				}
+
+				partIndex++;
+				pPart++;
+
+				print_if_false(partIndex < 256, "Combo error");
+
+				if (pPart->mInput == 0)
+				{
+					break;
+				}
+			}
+		}
+
+		if (!won && (matched | buttons) != matched)
+		{
+			this->field_94C = 0;
+		}
+	}
+	else if (hasParts == 0)
+	{
+		if ((i32)this->field_902 > elapsed)
+		{
+			pInput[0x101] = 0;
+			pInput[0x111] = 0;
+			pInput[0x121] = 0;
+			reinterpret_cast<u8*>(this)[0x2C1] = 0;
+			reinterpret_cast<u8*>(this)[0x2D1] = 0;
+			reinterpret_cast<u8*>(this)[0x2E1] = 0;
+			pInput[0x131] = 0;
+			reinterpret_cast<u8*>(this)[0x2F1] = 0;
+		}
+		else
+		{
+			u16 *pFollowOn = this->field_958;
+
+			if (pFollowOn != 0 && elapsed >= (i32)this->field_90A)
+			{
+				u16 nextAnim = this->field_914;
+				u8 startFollowOn = 1;
+
+				if (nextAnim != 0)
+				{
+					if (this->mAnim != nextAnim)
+					{
+						this->field_916 = 0;
+
+						i32 *pSFX = gSpideySFXEntry[nextAnim];
+						this->field_350 = pSFX;
+
+						if (pSFX)
+						{
+							while (pSFX[0] != -1)
+							{
+								pSFX[0] &= 0xFFFF;
+								pSFX++;
+							}
+						}
+
+						this->RunAnim(nextAnim, 0, -1);
+						poseApplied = 0;
+						startFollowOn = 0;
+					}
+					else if (this->mAnimFinished == 0)
+					{
+						startFollowOn = 0;
+					}
+				}
+
+				if (startFollowOn)
+				{
+					this->InitiateCombo(*pFollowOn, this->field_90C);
+					return;
+				}
+			}
+		}
+	}
+
+	if ((i32)this->field_8FE > elapsed || (i32)this->field_900 < elapsed)
+	{
+		return;
+	}
+
+	if (poseApplied == 0)
+	{
+		this->ApplyPose(gUnkPose);
+	}
+
+	u8 *pParts = this->field_954;
+
+	print_if_false(pParts != 0, "Bad collision parts info");
+
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+	hook.Offset = 0;
+
+	if (*pParts != 0xFF)
+	{
+		i32 part = 0;
+
+		do
+		{
+			hook.Offset = (i16)*pParts;
+			pParts++;
+
+			if (this->field_378 == 0)
+			{
+				this->field_43C[part].vx = this->field_37C[part].vx;
+				this->field_43C[part].vy = this->field_37C[part].vy;
+				this->field_43C[part].vz = this->field_37C[part].vz;
+			}
+
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&this->field_37C[part]), this, &hook);
+
+			part++;
+		}
+		while (*pParts != 0xFF);
+	}
+
+	if (this->field_378 != 0)
+	{
+		this->field_378 = 0;
+		return;
+	}
+
+	CBaddy *pBody = BaddyList;
+
+	while (pBody != 0)
+	{
+		if ((pBody->mFlags & 2) != 0 && pBody->mType != 316)
+		{
+			u8 alreadyHit = 0;
+			i32 hitCount = this->field_A7C;
+
+			if (hitCount > 0)
+			{
+				for (i32 j = 0; j < hitCount; j++)
+				{
+					if (this->field_A6C[j] == pBody)
+					{
+						alreadyHit = 1;
+						break;
+					}
+				}
+			}
+
+			if (!alreadyHit
+					&& (i32)Utils_CrapDist(this->mPos, pBody->mPos) < 700)
+			{
+				M3d_BuildTransform(pBody);
+
+				u8 *pWalk = this->field_954;
+				i32 part = 0;
+				u8 c = *pWalk;
+
+				pWalk++;
+
+				while (c != 0xFF)
+				{
+					CVector delta = this->field_37C[part] - this->field_43C[part];
+					CVector sweepEnd = delta;
+
+					sweepEnd += (delta >> 1);
+					sweepEnd += this->field_43C[part];
+
+					if (Web_CollideWithSuper(pBody, &this->field_43C[part],
+							&sweepEnd, &hook, 0x1800) != 0)
+					{
+						CVector impactPos;
+
+						impactPos.vx = 0;
+						impactPos.vy = 0;
+						impactPos.vz = 0;
+
+						M3dUtils_GetDynamicHookPosition(
+								reinterpret_cast<VECTOR*>(&impactPos), pBody, &hook);
+
+						u16 move = this->field_8FC;
+						u8 *pMove = gComboMoves[move];
+
+						SHitInfo hitInfo;
+
+						hitInfo.field_C.vx = 0;
+						hitInfo.field_C.vy = 0;
+						hitInfo.field_C.vz = 0;
+						hitInfo.field_4 = 0;
+						hitInfo.field_0 = 0x0F;
+						hitInfo.field_1 = (u8)hook.Offset;
+						hitInfo.field_0 = (u8)((pMove[0x10] != 0 ? 0x40 : 0) | 0x0F);
+
+						hitInfo.field_8 = (u16)this->GetDamageInflictedFromDifficulty(
+								*reinterpret_cast<u16*>(pMove + 8));
+
+						hitInfo.field_C.vy = 0;
+						hitInfo.field_C.vx =
+								(sweepEnd.vx - this->field_43C[part].vx) >> 12;
+						hitInfo.field_C.vz =
+								(sweepEnd.vz - this->field_43C[part].vz) >> 12;
+
+						VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C),
+								reinterpret_cast<VECTOR*>(&hitInfo.field_C));
+
+						if (this->field_5AC != 0)
+						{
+							u16 anim = this->mAnim;
+
+							if (anim == 100 || anim == 102 || anim == 104 || anim == 106)
+							{
+								this->field_5AC = this->field_5AC - 1;
+								hitInfo.field_8 = (u16)(2 * hitInfo.field_8);
+							}
+						}
+
+						pMove = gComboMoves[move];
+
+						if (*reinterpret_cast<u16*>(pMove + 0x1A) != 0)
+						{
+							hitInfo.field_0 = (u8)(hitInfo.field_0 | 0x10);
+							hitInfo.field_18 = *reinterpret_cast<i16*>(pMove + 0x1A);
+							hitInfo.field_1A = *reinterpret_cast<u16*>(pMove + 0x1C);
+						}
+						else
+						{
+							print_if_false(0, "Random slide distance");
+						}
+
+						// CCamera + 0x180 sits inside a PADDING run in
+						// camera.h, which this file does not own; reached by
+						// byte offset until that field gets a name.
+						if (reinterpret_cast<u8*>(CameraList)[0x180] != 0
+								&& this->field_AD4 == 0)
+						{
+							this->PutCameraBehind(0);
+						}
+
+						if (pBody->Hit(&hitInfo) != 0)
+						{
+							if (this->field_354 == 0)
+							{
+								this->field_354 = 1;
+								this->field_358 = this->mHealth;
+								this->field_35C = gTimerRelated;
+							}
+
+							u16 anim = this->mAnim;
+
+							this->field_534 = 360;
+							this->field_52C = (this->field_528 + 11) << 10;
+
+							if (anim == 106 || anim == 113)
+							{
+								SFX_PlayPos(17, &impactPos, 0);
+								this->CreateCombatImpactEffect(&impactPos, 2);
+							}
+							else if (anim == 104 || anim == 111)
+							{
+								SFX_PlayPos(16, &impactPos, 0);
+								this->CreateCombatImpactEffect(&impactPos, 1);
+							}
+							else
+							{
+								SFX_PlayPos(Rnd(2) + 14, &impactPos, 0);
+								this->CreateCombatImpactEffect(&impactPos, 0);
+							}
+						}
+
+						if (this->field_A7C < 4)
+						{
+							this->field_A6C[this->field_A7C] = pBody;
+							this->field_A7C = this->field_A7C + 1;
+						}
+
+						return;
+					}
+
+					c = *pWalk;
+					part++;
+					pWalk++;
+				}
+			}
+		}
+
+		pBody = reinterpret_cast<CBaddy*>(pBody->mNextItem);
+	}
 }
 
 // gSpideySenseIndicatorLastUpdateTime (0x6A9080): no idb_globals.txt entry
@@ -10266,6 +11013,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_584, 0x584);
 	VALIDATE(CPlayer, field_588, 0x588);
 
+	VALIDATE(CPlayer, field_37C, 0x37C);
+	VALIDATE(CPlayer, field_43C, 0x43C);
 	VALIDATE(CPlayer, field_58C, 0x58C);
 	VALIDATE(CPlayer, field_590, 0x590);
 
