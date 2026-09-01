@@ -676,10 +676,88 @@ void CPlayer::CheckExteriorSurfaceTransition(void)
     printf("CPlayer::CheckExteriorSurfaceTransition(void)");
 }
 
-// @SMALLTODO
-void CPlayer::CheckFenceSurfaceTransition(void)
+// @Ok
+i32 CPlayer::CheckFenceSurfaceTransition(void)
 {
-    printf("CPlayer::CheckFenceSurfaceTransition(void)");
+	if (this->field_B09 == 0)
+		return 0;
+
+	if (this->field_8E8 == 0)
+		return 0;
+
+	if (this->field_AD4 == 0)
+		return 0;
+
+	this->field_AC8.vx = 0;
+	this->field_AC8.vy = 4096;
+	this->field_AC8.vz = 0;
+	this->OrientToNormal(true, &this->field_AC8);
+
+	i32 *p = gSpideySFXEntry[0x5D];
+	this->field_350 = p;
+
+	// low word of the animation table entry for this region is the frame
+	// count of the fence dismount animation
+	i32 frames = *(i32*)((char*)Animations[17 * this->mRegion] + 0x2F0) & 0xFFFF;
+
+	if (p)
+	{
+		while (p[0] != -1)
+		{
+			p[0] &= 0xFFFF;
+			p++;
+		}
+	}
+
+	this->RunAnim(0x5D, 0, -1);
+
+	this->mFrame = (i16)(frames - 1);
+	this->ApplyPose(gUnkPose);
+
+	CVector hookPos;
+	hookPos.vx = 0;
+	hookPos.vy = 0;
+	hookPos.vz = 0;
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
+
+	CameraList->SetTripodMotion(hookPos, frames * 2);
+
+	this->field_AD9 = 0;
+
+	CCamera *pCamera = CameraList;
+	if (pCamera && pCamera->mCameraMode == 3)
+	{
+		pCamera->SetCamXOffset(gSpideyFloorCamXOffset, 16);
+		pCamera->SetCamYOffset(gSpideyFloorCamYOffset, 16);
+		pCamera->SetCamZOffset(gSpideyFloorCamZOffset, 16);
+		pCamera->SetCamXZDistance(gSpideyFloorCamXZDistance, 16);
+		pCamera->SetCamYDistance(gSpideyFloorCamYDistance, 16);
+		this->field_540 = 0;
+	}
+
+	this->field_B84.vz = 0;
+	this->field_B84.vx = 0;
+	this->field_B84.vy = -4096;
+	this->field_E1C = 0x2000;
+
+	i32 *p2 = gSpideySFXEntry[0x5D];
+	this->field_350 = p2;
+
+	if (p2)
+	{
+		while (p2[0] != -1)
+		{
+			p2[0] &= 0xFFFF;
+			p2++;
+		}
+	}
+
+	this->RunAnim(0x5D, 0, -1);
+
+	this->field_DF8 = 0;
+	this->field_AE5 = 0;
+
+	return 1;
 }
 
 // @MEDIUMTODO
@@ -6744,6 +6822,8 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_AE5, 0xAE5);
 	VALIDATE(CPlayer, field_AE6, 0xAE6);
 
+
+	VALIDATE(CPlayer, field_B09, 0xB09);
 
 	VALIDATE(CPlayer, field_B74, 0xB74);
 	VALIDATE(CPlayer, field_B84, 0xB84);

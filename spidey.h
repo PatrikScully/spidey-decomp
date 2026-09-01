@@ -272,7 +272,13 @@ class CPlayer : public CSuper
 		u8 field_AE5;
 		u8 field_AE6;
 
-		PADDING(0xB74-0xAE6-1);
+		PADDING(0xB09-0xAE6-1);
+
+		// gate for CPlayer::CheckFenceSurfaceTransition: the player is
+		// standing on/near a fence surface
+		u8 field_B09;
+
+		PADDING(0xB74-0xB09-1);
 
 		i32 field_B74;
 		i32 field_B78;
@@ -594,7 +600,7 @@ class CPlayer : public CSuper
 		EXPORT i32 *CalculateTugWebPathPoints(void);
 		EXPORT u8 CheckCeilingJumpingSmashPunch(void);
 		EXPORT void CheckExteriorSurfaceTransition(void);
-		EXPORT void CheckFenceSurfaceTransition(void);
+		EXPORT i32 CheckFenceSurfaceTransition(void);
 		EXPORT void CheckForwards(bool);
 		EXPORT i32 CheckGroundGone(void);
 		EXPORT void CheckInteriorSurfaceTransition(void);
