@@ -9,6 +9,7 @@
 #include "manipob.h"
 #include "quat.h"
 #include "psx_types.h"
+#include "m3dcolij.h"
 
 struct SAnimFrame;
 
@@ -554,52 +555,36 @@ class CPlayer : public CSuper
 
 		PADDING(0xB0C-0xB09-1);
 
-		// four vectors CPlayer::CPlayer constructs (zeroes) in one run.
-		CVector field_B0C;
-		CVector field_B18;
-		CVector field_B24;
-		CVector field_B30;
+		// The player's own SLineInfo raycast scratch block, 0xB0C..0xBB0.
+		// Identified 2026-09-01 from CPlayer::DoSwingingPhysics (0x467D20)
+		// and CPlayer::DoCrawlingPhysics (0x467FD0), which pass &this[0xB0C]
+		// straight to M3dColij_InitLineInfo / M3dZone_LineToItem and then
+		// read the hit back out of it. Every field this file already knew
+		// lines up: 0xB0C/0xB18 are the ray's start/end (StartCoords /
+		// EndCoords), 0xB4C is the hit distance (negative = no hit), 0xB74
+		// is the hit item, 0xB78..0xB80 the hit position, 0xB84 the surface
+		// normal and 0xB8C the hit face pointer. sizeof(SLineInfo) is 0xA4,
+		// which ends the block exactly at 0xBB0, where the next known field
+		// starts.
+		SLineInfo mLineInfo;
 
-		PADDING(0xB4C-0xB30-12);
+		// A second SLineInfo scratch block, 0xBB0..0xC54, same reasoning as
+		// mLineInfo above. CPlayer::DoPhysics (0x466CE0) casts a "am I about
+		// to land on something" ray straight down through &this[0xBB0]:
+		// 0xBB0/0xBBC are its start/end, and the already-known 0xC18 (hit
+		// item), 0xC1C (hit position), 0xC28 (surface normal) and 0xC30 (hit
+		// face) sit exactly at SLineInfo's pItem/Position/Normal/pFace, with
+		// the block ending at 0xC54.
+		SLineInfo mLineInfo2;
 
-		// CheckInteriorSurfaceTransition bails out when this is negative
-		i32 field_B4C;
+		// CPlayer::DoCrawlingPhysics: distance push-back for the "player ran
+		// into an interior surface" case, set to mLineInfo.Distance-8 (0 when
+		// the hit is 16 units or closer).
+		i32 field_C54;
 
-		PADDING(0xB74-0xB4C-4);
-
-		i32 field_B74;
-		i32 field_B78;
-		i32 field_B7C;
-		i32 field_B80;
-
-		CSVector field_B84;
-
-		PADDING(0xB8C-0xB84-sizeof(CSVector));
-
-		// @FIXME guess the type
-		i32* field_B8C;
-
-		PADDING(0xBB0-0xB8C-4);
-
-		// four more vectors CPlayer::CPlayer constructs in one run.
-		CVector field_BB0;
-		CVector field_BBC;
-		CVector field_BC8;
-		CVector field_BD4;
-
-		PADDING(0xC18-0xBD4-12);
-
-		i32 field_C18;
-		CVector field_C1C;
-		CSVector field_C28;
-
-		PADDING(2);
-
-
-		// @FIXME
-		i32* field_C30;
-
-		PADDING(0xC5C-0xC30-4);
+		// CPlayer::DoCrawlingPhysics: the same push-back for the sideways
+		// crawl ray, set to 88-mLineInfo.Distance (0 at 80 units or more).
+		i32 field_C58;
 
 		// CPlayer::AI: nonzero gate for the field_C64 accumulator update
 		// (0xC5C must be nonzero to run the clamp logic).
@@ -624,9 +609,14 @@ class CPlayer : public CSuper
 		PADDING(0xC6C-0xC69-1);
 
 		CVector field_C6C;
-		i32 field_C78;
-		i32 field_C7C;
-		i32 field_C80;
+
+		// the player's local "right" axis: CPlayer::UpdateFrameVectors fills
+		// it from the first column of mTransform (m[0][0]/m[1][0]/m[2][0]),
+		// and CPlayer::DoCrawlingPhysics (0x467FD0) passes &this[0xC78]
+		// straight into operator*(const CVector&, const int&). Was three
+		// separate i32 fields.
+		CVector field_C78;
+
 		CVector field_C84;
 		i32 field_C90;
 
@@ -849,7 +839,14 @@ class CPlayer : public CSuper
 		u8 field_E8C;
 		u8 field_E8D;
 
-		PADDING(0xE94-0xE8D-1);
+		PADDING(0xE90-0xE8D-1);
+
+		// CPlayer::DoPhysics: angle (rcossin_tbl index, masked to 12 bits)
+		// of the random bounce direction it picks when the field_E1C == 1
+		// state cannot find a wall to bounce off.
+		u16 field_E90;
+
+		PADDING(0xE94-0xE90-2);
 
 		CVector field_E94;
 
@@ -904,8 +901,9 @@ class CPlayer : public CSuper
 
 		i32 mMaxHealth;
 
-		// cleared by PriorToVenomDistanceAttack; exact meaning unknown, no
-		// reader found yet.
+		// cleared by PriorToVenomDistanceAttack. Read by CPlayer::DoPhysics
+		// (0x466CE0): while set, the frame's movement is bent so the player
+		// stays on a circle of radius field_EF8 around gBossRelated.
 		u8 field_EF4;
 
 		PADDING(0xEF8-0xEF4-1);
@@ -977,9 +975,14 @@ class CPlayer : public CSuper
 		EXPORT void CollideWithObject(CBody *);
 		EXPORT void CreateCombatImpactEffect(CVector *,i32);
 		EXPORT void CreateWebDrips(bool,bool);
+		EXPORT void DoCrawlingPhysics(void);
 		EXPORT void DoMGSShadow(void);
-		EXPORT i32 DoPhysics(void);
+		// 0x466CE0, 0x467D20 and 0x467FD0. All three live in physics.cpp,
+		// which is the translation unit the Mac build puts them in (next to
+		// Physics_SetGravity), not in spidey.cpp.
+		EXPORT void DoPhysics(void);
 		EXPORT void DoShadowCheck(void);
+		EXPORT void DoSwingingPhysics(void);
 		EXPORT void DrawOffscreenSpideySenseIndicatorList(void);
 		EXPORT void DrawReticle(u16,u16,u32);
 		EXPORT void EnterLookaroundMode(void);

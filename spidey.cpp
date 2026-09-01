@@ -710,54 +710,54 @@ CPlayer::CPlayer(void)
 	this->field_AC8.vy = 0;
 	this->field_AC8.vz = 0;
 
-	this->field_B0C.vx = 0;
-	this->field_B0C.vy = 0;
-	this->field_B0C.vz = 0;
-	this->field_B18.vx = 0;
-	this->field_B18.vy = 0;
-	this->field_B18.vz = 0;
-	this->field_B24.vx = 0;
-	this->field_B24.vy = 0;
-	this->field_B24.vz = 0;
-	this->field_B30.vx = 0;
-	this->field_B30.vy = 0;
-	this->field_B30.vz = 0;
+	this->mLineInfo.StartCoords.vx = 0;
+	this->mLineInfo.StartCoords.vy = 0;
+	this->mLineInfo.StartCoords.vz = 0;
+	this->mLineInfo.EndCoords.vx = 0;
+	this->mLineInfo.EndCoords.vy = 0;
+	this->mLineInfo.EndCoords.vz = 0;
+	this->mLineInfo.MinCoords.vx = 0;
+	this->mLineInfo.MinCoords.vy = 0;
+	this->mLineInfo.MinCoords.vz = 0;
+	this->mLineInfo.MaxCoords.vx = 0;
+	this->mLineInfo.MaxCoords.vy = 0;
+	this->mLineInfo.MaxCoords.vz = 0;
 
-	this->field_B78 = 0;
-	this->field_B7C = 0;
-	this->field_B80 = 0;
+	this->mLineInfo.Position.vx = 0;
+	this->mLineInfo.Position.vy = 0;
+	this->mLineInfo.Position.vz = 0;
 
-	this->field_B84.vx = 0;
-	this->field_B84.vy = 0;
-	this->field_B84.vz = 0;
+	this->mLineInfo.Normal.vx = 0;
+	this->mLineInfo.Normal.vy = 0;
+	this->mLineInfo.Normal.vz = 0;
 
-	this->field_BB0.vx = 0;
-	this->field_BB0.vy = 0;
-	this->field_BB0.vz = 0;
-	this->field_BBC.vx = 0;
-	this->field_BBC.vy = 0;
-	this->field_BBC.vz = 0;
-	this->field_BC8.vx = 0;
-	this->field_BC8.vy = 0;
-	this->field_BC8.vz = 0;
-	this->field_BD4.vx = 0;
-	this->field_BD4.vy = 0;
-	this->field_BD4.vz = 0;
+	this->mLineInfo2.StartCoords.vx = 0;
+	this->mLineInfo2.StartCoords.vy = 0;
+	this->mLineInfo2.StartCoords.vz = 0;
+	this->mLineInfo2.EndCoords.vx = 0;
+	this->mLineInfo2.EndCoords.vy = 0;
+	this->mLineInfo2.EndCoords.vz = 0;
+	this->mLineInfo2.MinCoords.vx = 0;
+	this->mLineInfo2.MinCoords.vy = 0;
+	this->mLineInfo2.MinCoords.vz = 0;
+	this->mLineInfo2.MaxCoords.vx = 0;
+	this->mLineInfo2.MaxCoords.vy = 0;
+	this->mLineInfo2.MaxCoords.vz = 0;
 
-	this->field_C1C.vx = 0;
-	this->field_C1C.vy = 0;
-	this->field_C1C.vz = 0;
+	this->mLineInfo2.Position.vx = 0;
+	this->mLineInfo2.Position.vy = 0;
+	this->mLineInfo2.Position.vz = 0;
 
-	this->field_C28.vx = 0;
-	this->field_C28.vy = 0;
-	this->field_C28.vz = 0;
+	this->mLineInfo2.Normal.vx = 0;
+	this->mLineInfo2.Normal.vy = 0;
+	this->mLineInfo2.Normal.vz = 0;
 
 	this->field_C6C.vx = 0;
 	this->field_C6C.vy = 0;
 	this->field_C6C.vz = 0;
-	this->field_C78 = 0;
-	this->field_C7C = 0;
-	this->field_C80 = 0;
+	this->field_C78.vx = 0;
+	this->field_C78.vy = 0;
+	this->field_C78.vz = 0;
 	this->field_C84.vx = 0;
 	this->field_C84.vy = 0;
 	this->field_C84.vz = 0;
@@ -1339,7 +1339,7 @@ u8 CPlayer::CheckCeilingJumpingSmashPunch(void)
 // @Ok
 i32 CPlayer::CheckExteriorSurfaceTransition(void)
 {
-	if (this->field_B74 == 0)
+	if (this->mLineInfo.pItem == 0)
 		return 0;
 
 	if (this->field_B08 == 0)
@@ -1348,22 +1348,22 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 	if (this->field_AD4 == 0)
 		return 0;
 
-	i16 nx = this->field_B84.vx;
-	i16 ny = this->field_B84.vy;
-	i16 nz = this->field_B84.vz;
+	i16 nx = this->mLineInfo.Normal.vx;
+	i16 ny = this->mLineInfo.Normal.vy;
+	i16 nz = this->mLineInfo.Normal.vz;
 
 	bool bAligned = ((nz * this->field_A8.vz) >> 12)
 		+ ((ny * this->field_A8.vy) >> 12)
 		+ ((nx * this->field_A8.vx) >> 12) >= 1567;
 
-	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+	bool bAlternative = this->field_AD5 != 0 || (this->mLineInfo.pFace[3] & 0x1000000) != 0;
 
 	u16 anim = bAligned ? 75 : 63;
 
 	if (bAlternative)
 		anim = bAligned ? 81 : 69;
 
-	if (this->field_8E8 != 0 && this->field_B84.vy < -2600)
+	if (this->field_8E8 != 0 && this->mLineInfo.Normal.vy < -2600)
 	{
 		CVector up;
 		up.vx = 0;
@@ -1375,9 +1375,9 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 	}
 	else
 	{
-		i32 side = (-(nx * this->field_C78) >> 12)
-			+ (-(ny * this->field_C7C) >> 12)
-			+ (-(nz * this->field_C80) >> 12);
+		i32 side = (-(nx * this->field_C78.vx) >> 12)
+			+ (-(ny * this->field_C78.vy) >> 12)
+			+ (-(nz * this->field_C78.vz) >> 12);
 
 		if (side > 2048)
 			anim = bAlternative ? 70 : 64;
@@ -1416,7 +1416,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 
 	if (this->field_8E8 != 0)
 	{
-		i16 vy = this->field_B84.vy;
+		i16 vy = this->mLineInfo.Normal.vy;
 
 		if (vy > 3400)
 		{
@@ -1441,14 +1441,14 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 
 			if (lock == 0)
 			{
-				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 			}
 		}
 	}
 	else if (this->field_8E9 != 0)
 	{
-		if (this->field_B84.vy <= 3400)
+		if (this->mLineInfo.Normal.vy <= 3400)
 		{
 			this->field_AD6 = 0;
 
@@ -1463,21 +1463,21 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 
 			if (lock == 0)
 			{
-				i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+				i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 			}
 
 			this->SetWallCamera(16);
 		}
 	}
-	else if (this->field_B84.vy <= 3400)
+	else if (this->mLineInfo.Normal.vy <= 3400)
 	{
 		u8 lock = this->gCamAngleLock;
 		this->field_AD6 = 0;
 
 		if (lock == 0)
 		{
-			i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+			i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 			CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 		}
 
@@ -1558,9 +1558,9 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 
 	this->SetFloorCamera(16);
 
-	this->field_B84.vz = 0;
-	this->field_B84.vx = 0;
-	this->field_B84.vy = -4096;
+	this->mLineInfo.Normal.vz = 0;
+	this->mLineInfo.Normal.vx = 0;
+	this->mLineInfo.Normal.vy = -4096;
 	this->field_E1C = 0x2000;
 
 	i32 *p2 = gSpideySFXEntry[0x5D];
@@ -1748,7 +1748,7 @@ i32 CPlayer::CheckGroundGone(void)
 // @Ok
 i32 CPlayer::CheckInteriorSurfaceTransition(void)
 {
-	if (this->field_B74 == 0)
+	if (this->mLineInfo.pItem == 0)
 		return 0;
 
 	if (this->field_B08 != 0)
@@ -1757,23 +1757,23 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	if (this->field_AD4 == 0)
 		return 0;
 
-	if (this->field_B4C < 0)
+	if (this->mLineInfo.Distance < 0)
 		return 0;
 
 	i16 ax = this->field_A8.vx;
-	i16 nx = this->field_B84.vx;
-	i16 ny = this->field_B84.vy;
+	i16 nx = this->mLineInfo.Normal.vx;
+	i16 ny = this->mLineInfo.Normal.vy;
 
 	u8 bToFloor = 0;
 	u8 bToWall = 0;
 
-	bool bAligned = ((this->field_B84.vz * this->field_A8.vz) >> 12)
+	bool bAligned = ((this->mLineInfo.Normal.vz * this->field_A8.vz) >> 12)
 		+ ((ny * this->field_A8.vy) >> 12)
 		+ ((nx * ax) >> 12) >= 1567;
 
 	u8 bToCeiling = 0;
 
-	bool bAlternative = this->field_AD5 != 0 || (this->field_B8C[3] & 0x1000000) != 0;
+	bool bAlternative = this->field_AD5 != 0 || (this->mLineInfo.pFace[3] & 0x1000000) != 0;
 
 	u16 anim = bAligned ? 72 : 60;
 
@@ -1781,7 +1781,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	{
 		this->HandleControlsForSurfaceTransition(false);
 
-		i16 vy = this->field_B84.vy;
+		i16 vy = this->mLineInfo.Normal.vy;
 		if (vy > 3400)
 			bToCeiling = 1;
 		else if (vy < -2600)
@@ -1791,7 +1791,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	{
 		this->HandleControlsForSurfaceTransition(false);
 
-		if (this->field_B84.vy <= 3400)
+		if (this->mLineInfo.Normal.vy <= 3400)
 			bToWall = 1;
 	}
 	else if (ny <= 3400 && ny >= -2600)
@@ -1814,9 +1814,9 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	}
 	else if (!bAligned)
 	{
-		i32 side = (-(this->field_B84.vx * this->field_C78) >> 12)
-			+ (-(this->field_B84.vy * this->field_C7C) >> 12)
-			+ (-(this->field_B84.vz * this->field_C80) >> 12);
+		i32 side = (-(this->mLineInfo.Normal.vx * this->field_C78.vx) >> 12)
+			+ (-(this->mLineInfo.Normal.vy * this->field_C78.vy) >> 12)
+			+ (-(this->mLineInfo.Normal.vz * this->field_C78.vz) >> 12);
 
 		if (side > 2048)
 			anim = bAlternative ? 68 : 62;
@@ -1832,7 +1832,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 
 	if (this->gCamAngleLock == 0 && bToFloor == 0 && bToWall == 0 && bToCeiling == 0)
 	{
-		i32 angle = ratan2(this->field_B84.vz, this->field_B84.vx);
+		i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
 		CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(2 * frames));
 	}
 
@@ -2565,11 +2565,11 @@ u8 CPlayer::CheckJumpingSwingWeb(void)
 			c = rcossin_tbl[narrowAngle & 0xFFF].cos;
 
 			lineInfo.EndCoords.vx = this->mPos.vx
-				+ ((((this->field_C78 * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
+				+ ((((this->field_C78.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
 			lineInfo.EndCoords.vy = this->mPos.vy
-				+ (((((this->field_C7C * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
+				+ (((((this->field_C78.vy * s) >> 12) - ((this->field_C6C.vy * c) >> 12)) - 64) << 12);
 			lineInfo.EndCoords.vz = this->mPos.vz
-				+ ((((this->field_C80 * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
+				+ ((((this->field_C78.vz * s) >> 12) - ((this->field_C6C.vz * c) >> 12)) << 12);
 
 			M3dColij_InitLineInfo(&lineInfo);
 			M3dZone_LineToItem(&lineInfo, 1);
@@ -2943,9 +2943,9 @@ i32 CPlayer::CheckLanded(void)
 // @Ok
 // verified against IDA sub_4BFBC0 (0x4BFBC0, 0x11C bytes). Found and
 // fixed two bugs from an earlier revision. (1) The threshold sum used
-// subtraction (field_C6C.x - field_B84.x) for all three components; the
+// subtraction (field_C6C.x - mLineInfo.Normal.x) for all three components; the
 // original multiplies each field_C6C component by the matching
-// field_B84 component (a velocity/heading dot product), not a
+// mLineInfo.Normal component (a velocity/heading dot product), not a
 // difference. (2) field_80 (CBody, ob.h, declared i32 and used as a full
 // int everywhere else in the repo) is added to field_AD7 here through an
 // explicit byte-sized read in the disassembly (mov cl,[esi+80h]); kept
@@ -2960,16 +2960,16 @@ i32 CPlayer::CheckRunIntoWall(void)
 
 	if (this->mCollision & 1)
 	{
-		if ( this->field_B84.vy <= 3400
-				&& this->field_B74
-				&& this->field_B84.vy >= -2600
+		if ( this->mLineInfo.Normal.vy <= 3400
+				&& this->mLineInfo.pItem
+				&& this->mLineInfo.Normal.vy >= -2600
 				// @FIXME
-				&& !(this->field_B8C[3] & 0x40000))
+				&& !(this->mLineInfo.pFace[3] & 0x40000))
 		{
 
-			if (((this->field_C6C.vx * this->field_B84.vx) >> 12) +
-					((this->field_C6C.vy * this->field_B84.vy) >> 12) +
-					((this->field_C6C.vz * this->field_B84.vz) >> 12) > 3800)
+			if (((this->field_C6C.vx * this->mLineInfo.Normal.vx) >> 12) +
+					((this->field_C6C.vy * this->mLineInfo.Normal.vy) >> 12) +
+					((this->field_C6C.vz * this->mLineInfo.Normal.vz) >> 12) > 3800)
 			{
 				v3 = 0;
 				this->field_AD7 += static_cast<u8>(this->field_80);
@@ -2996,23 +2996,23 @@ i32 CPlayer::CheckStickToCeiling(void)
 {
 	if ( this->mVel.vy > 0
 		|| !(this->mCollision & 0x100)
-		|| !this->field_C18
+		|| !this->mLineInfo2.pItem
 		|| !(reinterpret_cast<u8*>(this->field_E0C)[256])
-		|| this->field_C28.vy <= 3400
-		|| this->field_C30[3] & 0x40000)
+		|| this->mLineInfo2.Normal.vy <= 3400
+		|| this->mLineInfo2.pFace[3] & 0x40000)
 	{
 		return 0;
 	}
 
 	this->field_AD4 = 1;
-	this->field_A8 = this->field_C28;
+	this->field_A8 = this->mLineInfo2.Normal;
 	this->field_AC8 = this->field_C6C;
 	this->OrientToNormal(true, &this->field_AC8);
 
 	this->field_E88 = 0;
 	this->field_E84 = 0;
 
-	this->mPos = this->field_C1C;
+	this->mPos = this->mLineInfo2.Position;
 	this->mPos.vx += this->field_A8.vx * this->field_EA8;
 	this->mPos.vy += this->field_A8.vy * this->field_EA8;
 	this->mPos.vz += this->field_A8.vz * this->field_EA8;
@@ -3037,8 +3037,8 @@ i32 CPlayer::CheckStickToCeiling(void)
 // tools/names.json calls 0x4BFEC0 "CPlayer_DoPhysics", but the Mac symbol
 // order (CheckStickToCeiling, CheckStickToWall, CheckKick) and the PC
 // function order (0x4BFCE0, 0x4BFEC0, 0x4C00B0) say this address is
-// CheckStickToWall. CPlayer::DoPhysics in this file holds an older copy of
-// the same body under that wrong name.
+// CheckStickToWall. The real CPlayer::DoPhysics is 0x466CE0 and now lives in
+// physics.cpp.
 i32 CPlayer::CheckStickToWall(void)
 {
 	if (!(this->field_E1C & 4))
@@ -3047,25 +3047,25 @@ i32 CPlayer::CheckStickToWall(void)
 	if (!(this->mCollision & 1))
 		return 0;
 
-	if (this->field_B74 == 0)
+	if (this->mLineInfo.pItem == 0)
 		return 0;
 
-	i16 vy = this->field_B84.vy;
+	i16 vy = this->mLineInfo.Normal.vy;
 	if (vy > 0xD48)
 		return 0;
 
 	if (vy < -2600)
 		return 0;
 
-	if (this->field_B8C[3] & 0x40000)
+	if (this->mLineInfo.pFace[3] & 0x40000)
 		return 0;
 
 	if (Utils_GetGroundHeight(&this->mPos, 0, 0xB4, 0) != -1)
 		return 0;
 
-	i16 nx = this->field_B84.vx;
-	i16 ny = this->field_B84.vy;
-	i16 nz = this->field_B84.vz;
+	i16 nx = this->mLineInfo.Normal.vx;
+	i16 ny = this->mLineInfo.Normal.vy;
+	i16 nz = this->mLineInfo.Normal.vz;
 
 	print_if_false((nx | nz | ny) != 0, "Bad normal");
 
@@ -3085,9 +3085,9 @@ i32 CPlayer::CheckStickToWall(void)
 	this->mVel.vy = 0;
 	this->mVel.vx = 0;
 
-	this->mPos.vx = this->field_B78 + this->field_EA8 * this->field_A8.vx;
-	this->mPos.vy = this->field_B7C + this->field_EA8 * this->field_A8.vy;
-	this->mPos.vz = this->field_B80 + this->field_EA8 * this->field_A8.vz;
+	this->mPos.vx = this->mLineInfo.Position.vx + this->field_EA8 * this->field_A8.vx;
+	this->mPos.vy = this->mLineInfo.Position.vy + this->field_EA8 * this->field_A8.vy;
+	this->mPos.vz = this->mLineInfo.Position.vz + this->field_EA8 * this->field_A8.vz;
 
 	i32 anim;
 	i32 *p;
@@ -3702,83 +3702,6 @@ void CPlayer::DoMGSShadow(void)
 			delete this->field_AC0;
 		this->field_AC0 = 0;
 	}
-}
-
-// @NotOk
-// LOCATED 2026-09-01: the real CPlayer::DoPhysics is sub_466CE0 (0x466CE0,
-// 0x1017 = 4119 bytes). Still a stub because it is leaf-blocked, see the
-// bottom of this comment. Do not use 0x4BFEC0 for it, that is
-// CheckStickToWall (also proven below).
-//
-// How 0x466CE0 was found, by Mac translation-unit ordering:
-// the Mac build's physics.cpp runs
-//   Physics_SetGravity          0x0A7270
-//   CPlayer::DoPhysics          0x0A7340  (0xF60 bytes)
-//   CPlayer::DoSwingingPhysics  0x0A82A0  (0x3A0 bytes)
-//   CPlayer::DoCrawlingPhysics  0x0A8640  (0xB60 bytes)
-//   __sinit_physics_cpp         0x0A91A0
-// and the PC build has the same four slots in the same order:
-//   Physics_SetGravity          0x466C70  (0x066 bytes, already in physics.cpp)
-//   sub_466CE0                  0x466CE0  (0x1017 bytes)
-//   sub_467D20                  0x467D20  (0x2A8 bytes)
-//   CPlayer_DoCrawlingPhysics   0x467FD0  (0xD6F bytes, named in the IDB)
-// The two ends of the run are named identically on both builds, the sizes
-// line up (Mac 0xF60 / 0x3A0 / 0xB60 against PC 0x1017 / 0x2A8 / 0xD6F), and
-// nothing else lives between them.
-//
-// Three independent confirmations, so this is not just ordering:
-//  - 0x466CE0 has exactly ONE caller, SpideyAI0 (0x4B13F0), which is where
-//    the player's per-frame physics call belongs.
-//  - 0x466CE0 is the ONLY caller of both 0x467D20 and 0x467FD0, and it picks
-//    between them at the top with "if (field_E64) return sub_467D20();" and
-//    "if (field_AD4) return sub_467FD0();", i.e. swing web attached ->
-//    swinging physics, crawling flag set -> crawling physics. That is exactly
-//    DoPhysics dispatching to DoSwingingPhysics / DoCrawlingPhysics.
-//  - it is __thiscall and touches CPlayer-only fields (field_E1C state mask,
-//    field_AD4, field_E64, field_DBC, field_BB0 area), not just CBody ones.
-// So sub_467D20 is CPlayer::DoSwingingPhysics, and the IDB's
-// CPlayer_DoCrawlingPhysics at 0x467FD0 is confirmed correct.
-//
-// Names that are WRONG in both tools/names.json and the maintainer's IDB
-// (idbs/spideypc_names.txt), worth reporting upstream:
-//   0x4BFEC0 "CPlayer_DoPhysics" is really CPlayer::CheckStickToWall. The Mac
-//   build orders CheckStickToCeiling 0x1194B0, CheckStickToWall 0x1196B0,
-//   CheckKick 0x1198B0; the PC build has CheckStickToCeiling 0x4BFCE0,
-//   <0x4BFEC0>, CheckKick 0x4C00B0, the same three slots in the same order.
-//   0x4BFEC0 is already decompiled above as CPlayer::CheckStickToWall.
-// Missing entirely from both: 0x466CE0 (DoPhysics) and 0x467D20
-// (DoSwingingPhysics).
-//
-// Why this is still a stub: leaf-first. Both callees are unwritten. The repo
-// has physics.cpp with Physics_SetGravity alone; DoSwingingPhysics (0x467D20)
-// and DoCrawlingPhysics (0x467FD0) have no body, no declaration and no stub
-// anywhere, so writing DoPhysics now means writing 4215 more bytes of
-// unverifiable player physics underneath it. It also belongs in physics.cpp,
-// not here: the Mac TU boundaries put all three next to Physics_SetGravity.
-// Suggested order for whoever picks this up: DoSwingingPhysics (small),
-// then DoCrawlingPhysics, then DoPhysics, all three into physics.cpp, and
-// move this declaration out of spidey.h at the same time.
-//
-// One warning for that work: Hex-Rays mistypes several locals in 0x466CE0 as
-// float when they are ints or pointers. In particular the local holding
-// [this+0xDBC] (field_DBC, a CBody*) comes out as a float and then gets used
-// as "*(int *)(LODWORD(v82) + 100) < 0", which is really
-// "pOther->mVel.vy < 0". Read the raw disassembly for the arithmetic.
-//
-// History: this slot used to hold an @Ok decompile of 0x4BFEC0 under the
-// wrong name. That body has been redone correctly as CheckStickToWall above.
-// It also carried two real defects, which is what exposed the mislabel:
-//   - "if (vy > 0xD48 || vy < 0xF5D8)" with vy an i16. The i16 promotes to int,
-//     so "vy < 62936" is always true and the function could only ever return 0.
-//     The original is a signed 16-bit compare, i.e. "vy < -2600".
-//   - it walked &gSpideySFXEntry[0xEA] (the address of the slot) instead of
-//     gSpideySFXEntry[0xEA] (the -1-terminated list the slot points at), and
-//     skipped the null check the original has.
-// Nothing calls it and it is not hooked, so the wrong body was inert.
-i32 CPlayer::DoPhysics(void)
-{
-    printf("CPlayer::DoPhysics(void)");
-    return 0;
 }
 
 // @Ok
@@ -4969,7 +4892,7 @@ void CPlayer::HandleControlsForSurfaceTransition(bool bAllowTransition)
 {
 	if (this->field_8E8 != 0)
 	{
-		i16 vy = this->field_B84.vy;
+		i16 vy = this->mLineInfo.Normal.vy;
 
 		if (vy > 0xD48)
 		{
@@ -4999,7 +4922,7 @@ void CPlayer::HandleControlsForSurfaceTransition(bool bAllowTransition)
 	if (this->field_8E9 == 0)
 		return;
 
-	if (this->field_B84.vy > 0xD48)
+	if (this->mLineInfo.Normal.vy > 0xD48)
 		return;
 
 	if ((this->field_AD8 == 0 && this->field_E2D < 0) ||
@@ -5336,7 +5259,7 @@ u8 CPlayer::IfPlayerCeilingCheck(i32 a2, i32 a3)
 	{
 		if (this->mPos.vy >= a2 && this->mPos.vy <= a3)
 		{
-			if (this->field_8E9 || this->field_8E8 && this->field_B84.vy > 3400)
+			if (this->field_8E9 || this->field_8E8 && this->mLineInfo.Normal.vy > 3400)
 			{
 				return 1;
 			}
@@ -8606,7 +8529,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 				info.StartCoords.vz = start.vz;
 
 				CVector fwd128 = this->field_C6C * 128;
-				CVector right32 = *reinterpret_cast<const CVector*>(&this->field_C78) * 32;
+				CVector right32 = this->field_C78 * 32;
 
 				info.EndCoords = (start - right32) - fwd128;
 
@@ -10872,9 +10795,9 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 	this->field_C6C.vy = this->mTransform.m[1][2];
 	this->field_C6C.vz = this->mTransform.m[2][2];
 
-	this->field_C78 = this->mTransform.m[0][0];
-	this->field_C7C = this->mTransform.m[1][0];
-	this->field_C80 = this->mTransform.m[2][0];
+	this->field_C78.vx = this->mTransform.m[0][0];
+	this->field_C78.vy = this->mTransform.m[1][0];
+	this->field_C78.vz = this->mTransform.m[2][0];
 
 	this->field_C84.vx = -(i32)this->mTransform.m[0][1];
 	this->field_C84.vy = -(i32)this->mTransform.m[1][1];
@@ -11357,9 +11280,9 @@ void CPlayer::TidyUpZipWebLandingPosition(int a2)
 		int v7 = word_610C4A[v6];
 		int v8 = word_610C48[v6];
 
-		int v9 = v2 * (((this->field_C78 * v7) >> 12) + ((this->field_C6C.vx * v8) >> 12));
-		int v10 = this->field_C7C * v7;
-		int v11 = this->field_C80 * v7;
+		int v9 = v2 * (((this->field_C78.vx * v7) >> 12) + ((this->field_C6C.vx * v8) >> 12));
+		int v10 = this->field_C78.vy * v7;
+		int v11 = this->field_C78.vz * v7;
 
 		v21.StartCoords.vx = v9 + this->mPos.vx;
 		int v12 = (v10 >> 12) + ((this->field_C6C.vy * v8) >> 12);
@@ -11607,14 +11530,14 @@ void validate_CPlayer(void)
 	VALIDATE(CPlayer, field_8F4, 0x8F4);
 	VALIDATE(CPlayer, field_8F9, 0x8F9);
 	VALIDATE(CPlayer, field_A80, 0xA80);
-	VALIDATE(CPlayer, field_B0C, 0xB0C);
-	VALIDATE(CPlayer, field_B18, 0xB18);
-	VALIDATE(CPlayer, field_B24, 0xB24);
-	VALIDATE(CPlayer, field_B30, 0xB30);
-	VALIDATE(CPlayer, field_BB0, 0xBB0);
-	VALIDATE(CPlayer, field_BBC, 0xBBC);
-	VALIDATE(CPlayer, field_BC8, 0xBC8);
-	VALIDATE(CPlayer, field_BD4, 0xBD4);
+	VALIDATE(CPlayer, mLineInfo, 0xB0C);
+	VALIDATE(CPlayer, mLineInfo.EndCoords, 0xB18);
+	VALIDATE(CPlayer, mLineInfo.MinCoords, 0xB24);
+	VALIDATE(CPlayer, mLineInfo.MaxCoords, 0xB30);
+	VALIDATE(CPlayer, mLineInfo2, 0xBB0);
+	VALIDATE(CPlayer, mLineInfo2.EndCoords, 0xBBC);
+	VALIDATE(CPlayer, mLineInfo2.MinCoords, 0xBC8);
+	VALIDATE(CPlayer, mLineInfo2.MaxCoords, 0xBD4);
 	VALIDATE(CPlayer, field_C60, 0xC60);
 	VALIDATE(CPlayer, field_CC4, 0xCC4);
 	VALIDATE(CPlayer, field_D2C, 0xD2C);
@@ -11685,25 +11608,26 @@ void validate_CPlayer(void)
 
 	VALIDATE(CPlayer, field_B08, 0xB08);
 	VALIDATE(CPlayer, field_B09, 0xB09);
-	VALIDATE(CPlayer, field_B4C, 0xB4C);
+	VALIDATE(CPlayer, mLineInfo.Distance, 0xB4C);
 
-	VALIDATE(CPlayer, field_B74, 0xB74);
-	VALIDATE(CPlayer, field_B84, 0xB84);
-	VALIDATE(CPlayer, field_B8C, 0xB8C);
+	VALIDATE(CPlayer, mLineInfo.pItem, 0xB74);
+	VALIDATE(CPlayer, mLineInfo.Normal, 0xB84);
+	VALIDATE(CPlayer, mLineInfo.pFace, 0xB8C);
 
-	VALIDATE(CPlayer, field_C18, 0xC18);
-	VALIDATE(CPlayer, field_C1C, 0xC1C);
-	VALIDATE(CPlayer, field_C28, 0xC28);
+	VALIDATE(CPlayer, mLineInfo2.pItem, 0xC18);
+	VALIDATE(CPlayer, mLineInfo2.Position, 0xC1C);
+	VALIDATE(CPlayer, mLineInfo2.Normal, 0xC28);
 
 
-	VALIDATE(CPlayer, field_C30, 0xC30);
+	VALIDATE(CPlayer, mLineInfo2.pFace, 0xC30);
+	VALIDATE(CPlayer, field_E90, 0xE90);
 
 
 	VALIDATE(CPlayer, field_C6C, 0xC6C);
 
 	VALIDATE(CPlayer, field_C78, 0xC78);
-	VALIDATE(CPlayer, field_C7C, 0xC7C);
-	VALIDATE(CPlayer, field_C80, 0xC80);
+	VALIDATE(CPlayer, field_C54, 0xC54);
+	VALIDATE(CPlayer, field_C58, 0xC58);
 	VALIDATE(CPlayer, field_C84, 0xC84);
 
 	VALIDATE(CPlayer, field_C90, 0xC90);
