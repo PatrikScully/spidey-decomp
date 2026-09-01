@@ -316,7 +316,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x1000      0x4B3DF9   done   landing out of a surface transition
 //   0x2000      0x4B4AAA   done   a surface transition finished
 //   0x4000      0x4B44C9   TODO   ~370 instructions
-//   0x8000      0x4B402E   TODO   ~290 instructions
+//   0x8000      0x4B402E   done   firing a web
 //   0x10000     0x4B4E9B   done   web-swing wind up (3 anims that fire a web)
 //   0x20000     0x4B58B4   done   the tug-web attacks
 //   0x40000     0x4B51B2   TODO   ~440 instructions
@@ -2429,6 +2429,160 @@ void SpideyAI0(CPlayer *pPlayer)
 			pPlayer->field_534 = 0x168;
 			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
 			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
+		// 0x4B402E. Firing a web: three wind up animations (0x94, 0xFC and
+		// 0x106) each spawn a CWeb on their release frame, and what the web
+		// hit decides the follow on animation.
+		case 0x8000:
+		{
+			u16 anim = pPlayer->mAnim;
+
+			pPlayer->field_EA6 = 0;
+
+			if (anim == 0x94)
+			{
+				CWeb *pWeb;
+				i32 result;
+
+				if (pPlayer->field_552 != 0)
+				{
+					// 0x4B414E: hold the last frame of the throw.
+					if (pPlayer->mFrame < 7) break;
+					pPlayer->RunAnim(0x9A, (i32)(i16)pPlayer->mFrame, -1);
+					break;
+				}
+
+				if (pPlayer->mFrame < 5) break;
+				if (pPlayer->field_E6C != 0) break;
+
+				pPlayer->field_552 = 1;
+				PLR_I16(pPlayer, 0xDD4) = 0x28;
+
+				// Original defect, kept: the new web is written through
+				// without a null check, so a failed allocation faults.
+				pWeb = new CWeb();
+				pPlayer->field_E6C = reinterpret_cast<i32*>(pWeb);
+				pWeb->field_F8 = (u8)pPlayer->field_5E8;
+				pWeb->field_102 = 0;
+
+				result = pPlayer->FireWeb(true, 0x258, &ZeroVector, false,
+					&gTrajectoryVector);
+
+				if ((result & 1) != 0)
+				{
+					if (pPlayer->field_E6C != 0)
+					{
+						delete reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+					}
+					pPlayer->field_E6C = 0;
+					break;
+				}
+
+				if ((result & 8) == 0 && pPlayer->field_DCC != 0)
+				{
+					// 0x4B4117
+					pPlayer->field_E1C = 0x20000;
+					pPlayer->field_E20 = 0;
+					break;
+				}
+
+				if (pPlayer->field_E6C == 0) break;
+
+				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+				pPlayer->field_E6C = 0;
+				break;
+			}
+
+			if (anim == 0xFC || anim == 0x106)
+			{
+				i32 releaseFrame = (anim == 0xFC) ? 5 : 9;
+				i32 webTime = (anim == 0xFC) ? 0x28 : 0x40;
+				i32 loseAnim = (anim == 0xFC) ? 0xFD : 0x107;
+				i32 targetAnim = (anim == 0xFC) ? 0xFE : 0x108;
+
+				if (pPlayer->field_552 == 0
+					&& pPlayer->mFrame >= releaseFrame
+					&& pPlayer->field_E6C == 0)
+				{
+					CWeb *pWeb;
+					i32 result;
+
+					PLR_I16(pPlayer, 0xDD4) = (i16)webTime;
+					pPlayer->field_552 = 1;
+
+					// same missing null check as the 0x94 branch above.
+					pWeb = new CWeb();
+					pPlayer->field_E6C = reinterpret_cast<i32*>(pWeb);
+					pWeb->field_102 = 1;
+					pWeb->field_F8 = (u8)pPlayer->field_5E8;
+
+					if (pPlayer->field_8ED != 0)
+					{
+						CSVector aim;
+
+						aim.vx = (i16)pPlayer->field_DA0.vx;
+						aim.vy = (i16)pPlayer->field_DA0.vy;
+						aim.vz = (i16)pPlayer->field_DA0.vz;
+
+						result = pPlayer->FireWeb(false, 0x258,
+							&pPlayer->field_DC0, true, &aim);
+					}
+					else
+					{
+						result = pPlayer->FireWeb(true, 0x258, &ZeroVector,
+							false, &gTrajectoryVector);
+					}
+
+					if ((result & 1) != 0)
+					{
+						if (pPlayer->field_E6C != 0)
+						{
+							delete reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+						}
+						pPlayer->field_E6C = 0;
+					}
+				}
+
+				// 0x4B4282
+				if (pPlayer->mAnimFinished == 0) break;
+
+				if (pPlayer->field_DCC != 0 && pPlayer->field_DCC->mType == 0x197)
+				{
+					pPlayer->field_DCC = 0;
+				}
+
+				PLR_I16(pPlayer, 0xDD4) -= (i16)pPlayer->field_80;
+
+				if (pPlayer->field_E6C == 0)
+				{
+					pPlayer->PlaySingleAnim(loseAnim, 0, -1);
+					break;
+				}
+
+				if (pPlayer->field_DCC != 0)
+				{
+					pPlayer->PlaySingleAnim(targetAnim, 0, -1);
+					// 0x4B4117
+					pPlayer->field_E1C = 0x20000;
+					pPlayer->field_E20 = 0;
+					break;
+				}
+
+				reinterpret_cast<CWeb*>(pPlayer->field_E6C)->SwitchToBlob();
+				pPlayer->field_E6C = 0;
+				pPlayer->PlaySingleAnim(loseAnim, 0, -1);
+				break;
+			}
+
+			// 0x4B44AC: the recovery animations just wait themselves out.
+			if (anim != 0xFD && anim != 0x107 && anim != 0x9A) break;
+
+			// 0x4B5085
+			if (pPlayer->CheckJump() != 0) break;
+			if (pPlayer->mAnimFinished == 0) break;
+			pPlayer->SwitchToStandMode();
 			break;
 		}
 
