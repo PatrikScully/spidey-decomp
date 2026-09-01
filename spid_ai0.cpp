@@ -1,77 +1,823 @@
 #include "spid_ai0.h"
 
-// @BIGTODO
-// Original at 0x4B13F0. Investigated 2026-08-31, re-checked 2026-09-01,
-// and mapped structurally 2026-09-01 (this note) with idalib against the
-// real SpideyPC.exe.
-//
-// Identity is confirmed, names.json is right here: the maintainer's IDB
-// (idbs/spideypc_names.txt line 1652) also calls 0x4B13F0 "SpideyAI0",
-// and the Mac build has the matching symbol .SpideyAI0__FP7CPlayer
-// (idbs/spiderman_names.txt). tools/prototypes.json gives the Mac size as
-// 32080 bytes against 29402 (0x72DA) here, so it is the same function,
-// slightly tighter on PC.
-//
-// Size: 0x72DA bytes (matches tools/functions/4920304.bin exactly), 7655
-// instructions, 1482 basic blocks, a 0x4A4 byte stack frame holding
-// roughly fifty CVector / CSVector temporaries, and an SEH frame
-// (SEH_4B13F0).
-//
-// STRUCTURE (new this session, the earlier note did not have it). This is
-// NOT one flat blob, it is a one-hot state machine:
-//
-//   * The main dispatch is at 0x4B211F..0x4B215D on CPlayer field 0xE1C,
-//     which holds a single set bit (a state id, not a small ordinal):
-//         value  > 0x10000  -> 0x4B50AE
-//         value == 0x10000  -> 0x4B4E9B
-//         value  > 0x100    -> 0x4B307C
-//         value == 0x100    -> 0x4B2F80
-//         otherwise switch(value-1), a 128 entry jump table at
-//         jpt_4B215D with the byte index table at byte_4B86EC. Only the
-//         powers of two are real cases: 1, 2, 4, 8, 16, 64 and 128.
-//         Everything else falls into the shared default def_4B215D,
-//         which is also where every state's "break" jumps back to (that
-//         is why 130+ `jmp def_4B215D` show up in the disassembly).
-//     So a port can be built one state at a time: pick a bit, decompile
-//     that one case, leave the rest to the original.
-//
-//   * A second, smaller switch sits at 0x4B7971..0x4B7987, after the
-//     state machine: it reads the 16 bit field at +0x38 of an object
-//     pointer (CItem::mType, per ob.cpp's VALIDATE list) and dispatches
-//     21 cases over types 304..324, with 308/309/311/316/318/319/321-323
-//     falling to the default. This is the "what am I holding / standing
-//     on" tail, not part of the state machine.
-//
-//   * Before the state machine, the head (0x4B13F0..0x4B211F) is a flat
-//     per-frame prologue: it sets CPlayer+0xAE4 = 1, reads the keyboard
-//     mappings for actions 0x40 and 0x100 through
-//     PCINPUT_GetKeyboardMappingForAction, has a CurrentSuit (0x5559DC)
-//     == 5 special case, applies the pending water effect (gWaterEffect
-//     0x60FA9C -> Db_SkyColor + Db_UpdateSky, the same globals
-//     trig.cpp's WaterEffectOn / SetSkyColor commands write), and counts
-//     down several CPlayer timers.
-//
-// BLOCKERS, still true after this pass. 155 unique callees; 120 have a
-// real name in tools/names.json, but several the dispatch reaches
-// directly are still unfinished in this repo, so a partial translation
-// would call printf placeholders every frame while the player is being
-// driven: CPlayer::CheckKick (@MEDIUMTODO),
-// CPlayer::UpdateAndTrackCombo (@MEDIUMTODO),
-// CPlayer::FireWeb(bool,i32,CVector*,bool,CSVector*) (@MEDIUMTODO),
-// CPlayer::DrawOffscreenSpideySenseIndicatorList (@MEDIUMTODO),
-// CPlayer::SetupLookaroundCamera (0x4C38A0, 3674 bytes, @NotOk, its own
-// known hard blocker per PLAN.md). Another 34 callees (a cluster around
-// 0x4B8B70-0x4B8C70 plus scattered ones in 0x4C0000-0x4C9000) have no
-// name at all yet, not even in the maintainer's IDB.
-//
-// Recommended order for whoever picks this up: finish the five named
-// stubs above, name the 0x4B8B70-0x4B8C70 cluster, then port state bits
-// one at a time starting with the smallest case, keeping this stub for
-// the states that are not done. Do not attempt it in one pass: a wrong
-// translation here runs every frame and drives all of Spider-Man's
-// movement and combat.
-void SpideyAI0(CPlayer *)
+#include "bit.h"
+#include "camera.h"
+#include "db.h"
+#include "effects.h"
+#include "m3dcolij.h"
+#include "mem.h"
+#include "ob.h"
+#include "PCInput.h"
+#include "ps2lowsfx.h"
+#include "ps2pad.h"
+#include "tweak.h"
+#include "utils.h"
+
+// ---------------------------------------------------------------------------
+// CPlayer fields this file needs that spidey.h does not name yet. They all sit
+// inside existing PADDING runs; spidey.h belongs to another worktree, so they
+// are reached by byte offset here and reported for it to adopt. Evidence for
+// each one is on the line where it is used.
+// ---------------------------------------------------------------------------
+#define PLR_U8(p, off)  (*reinterpret_cast<u8*>(reinterpret_cast<char*>(p) + (off)))
+#define PLR_I8(p, off)  (*reinterpret_cast<i8*>(reinterpret_cast<char*>(p) + (off)))
+#define PLR_I16(p, off) (*reinterpret_cast<i16*>(reinterpret_cast<char*>(p) + (off)))
+#define PLR_U16(p, off) (*reinterpret_cast<u16*>(reinterpret_cast<char*>(p) + (off)))
+#define PLR_I32(p, off) (*reinterpret_cast<i32*>(reinterpret_cast<char*>(p) + (off)))
+
+// gWaterEffect is the repo global from post.cpp (spidey.cpp reaches it the
+// same way). Note trig.cpp instead points a file-local pointer at the game
+// address 0x0060FA9C for the same thing; the two readings disagree and should
+// be unified once post.h grows a declaration.
+extern i32 gWaterEffect;
+
+// The dword right after Db_SkyColor (db.h, 0x0056FC74). SpideyAI0 copies it
+// into Db_SkyColor when the pending water effect fires, which is the same pair
+// trig.cpp's SetSkyColor command writes. trig.cpp already has an identical
+// file-local pointer under this name; it belongs in db.h next to Db_SkyColor.
+static u32 * const gDbSkyColorTarget = reinterpret_cast<u32*>(0x0056FC78);
+
+// gSaveGame + 0x7B, the "vibration on" option byte. Same pointer spidey.cpp
+// uses under this name in two places.
+static u8 * const gSaveGameVibration = reinterpret_cast<u8*>(0x006828D3);
+
+// Cheat flags. Same addresses (and names) pshell.cpp defines; they scale the
+// extra body parts SpideyAI0 spawns.
+#define G_PULSATING_HEAD_FLAG (*reinterpret_cast<i32*>(0x0060CFF0))
+#define G_TOON_SPIDEY_FLAG (*reinterpret_cast<i32*>(0x02E09BF0))
+#define G_STICKMAN_FLAG (*reinterpret_cast<i32*>(0x02E09BF4))
+
+// CurrentSuit (0x005559DC, real IDB name); spool.cpp already has the same
+// macro under this name, baddy.cpp the same address as a pointer.
+#define G_CURRENTSUIT (*reinterpret_cast<i32*>(0x005559DC))
+
+// Lookaround camera accumulators, same file-local pointers (and names)
+// spidey.cpp uses for CPlayer::EnterLookaroundMode / SetupLookaroundCamera.
+static i32 * const gLookaroundYawOffset = reinterpret_cast<i32*>(0x006A7FFC);
+static i32 * const gLookaroundActiveCamAngle = reinterpret_cast<i32*>(0x006A818C);
+static i32 * const gLookaroundPitchSmoothed = reinterpret_cast<i32*>(0x006A82B4);
+static i32 * const gLookaroundYawSmoothed = reinterpret_cast<i32*>(0x006A8D54);
+
+// gSaveGame practice-difficulty byte, same pointer/name pshell.cpp and
+// spidey.cpp already use.
+static u8 * const gPracticeDifficultyFlag = reinterpret_cast<u8*>(0x0060CFC7);
+
+// {u16 anim, u16 followOnAnim} x 200, sorted into animation order by
+// CPlayer::SortAnimationFollowOnData (spidey.cpp, whose comment already points
+// at this read site, 0x4B204A).
+static u16 * const gAnimFollowOnData = reinterpret_cast<u16*>(0x00555C6C);
+
+// Scales the two extra body parts (spidey sense buzz, fists) the way the
+// cheats ask for. Reproduces the original's three separate inline copies:
+// they only differ in what the stickman cheat does, a halve for the fists
+// (0x4B1862, 0x4B18CF) and a *3/4 for the buzz (0x4B16DE).
+// @Bogus
+static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 {
-    printf("SpideyAI0(CPlayer *)");
+	if (G_TOON_SPIDEY_FLAG != 0)
+	{
+		pBody->mScale.vx = (i16)(pBody->mScale.vx * 3 >> 1);
+		pBody->mScale.vy = (i16)(pBody->mScale.vy * 3 >> 1);
+		pBody->mScale.vz = (i16)(pBody->mScale.vz * 3 >> 1);
+	}
+	else if (G_STICKMAN_FLAG != 0)
+	{
+		if (stickmanHalves != 0)
+		{
+			pBody->mScale.vx = (i16)(pBody->mScale.vx >> 1);
+			pBody->mScale.vy = (i16)(pBody->mScale.vy >> 1);
+			pBody->mScale.vz = (i16)(pBody->mScale.vz >> 1);
+		}
+		else
+		{
+			pBody->mScale.vx = (i16)(pBody->mScale.vx * 3 >> 2);
+			pBody->mScale.vy = (i16)(pBody->mScale.vy * 3 >> 2);
+			pBody->mScale.vz = (i16)(pBody->mScale.vz * 3 >> 2);
+		}
+	}
 }
 
+// @BIGTODO
+// Original at 0x4B13F0, 0x72DA bytes / 7655 instructions / 1482 basic blocks.
+// Identity confirmed: the maintainer's IDB (idbs/spideypc_names.txt line 1652)
+// and the Mac build (.SpideyAI0__FP7CPlayer, 0x109820) agree with
+// tools/names.json, and on the Mac SpideyAI0 is the ONLY function in
+// spid_ai0.cpp (the next symbol is __sinit_spid_ai0_cpp).
+//
+// PARTIALLY PORTED. What is real code below:
+//   * the per-frame prologue, 0x4B13F0..0x4B211F
+//   * the state dispatch itself, 0x4B211F..0x4B215D
+// Everything else is still the original's job; each unported state is marked
+// with the address range it covers so the next pass can take them one at a
+// time. Nothing here is hooked, so the partial body cannot affect the running
+// game.
+//
+// STRUCTURE. This is a one-hot state machine on CPlayer::field_E1C, which
+// holds a single set bit, not a small ordinal:
+//        > 0x10000  -> 0x4B50AE  (further dispatch, 1936 instructions)
+//       == 0x10000  -> 0x4B4E9B  (132 instructions)
+//        > 0x100    -> 0x4B307C  (further dispatch, 1871 instructions)
+//       == 0x100    -> 0x4B2F80  (58 instructions)
+//   otherwise switch(field_E1C - 1) over jpt_4B86CC with the byte index table
+//   at 0x4B86EC. Read out of the exe, the eight jump-table slots are
+//       0 -> 0x4B2164   1 -> 0x4B274D   2 -> 0x4B28D9   3 -> 0x4B2BF3
+//       4 -> 0x4B2D43   5 -> 0x4B269B   6 -> 0x4B2892   7 -> 0x4B6E8C
+//   and the index table selects slot 7 (the default) for every value except
+//       1 -> 0x4B2164 (346 instr)    2 -> 0x4B274D  (80 instr)
+//       4 -> 0x4B28D9 (215 instr)    8 -> 0x4B2BF3  (77 instr)
+//      16 -> 0x4B2D43 (157 instr)   64 -> 0x4B269B  (39 instr)
+//     128 -> 0x4B2892 (15 instr)
+//   0x4B6E8C (def_4B215D) is both the default case and the shared `break`
+//   target every state jumps back to, which is why 130+ `jmp 0x4B6E8C` show up
+//   in the disassembly. It runs to the epilogue at 0x4B86B1 (1725 instructions)
+//   and contains a second switch at 0x4B7971 over CItem::mType 304..324
+//   (21 cases; 308, 309, 311, 316, 318, 319 and 321..323 fall to the default).
+//
+// ADDRESS FINDINGS made while mapping the prologue (see the report):
+//   * 0x466CE0 is CPlayer::DoPhysics. PLAN.md records its PC address as
+//     unlocated. The Mac build orders Physics_SetGravity (0xA7270),
+//     DoPhysics (0xA7340), DoSwingingPhysics (0xA82A0), DoCrawlingPhysics
+//     (0xA8640); the PC has Physics_SetGravity (0x466C70), sub_466CE0,
+//     sub_467D20, CPlayer_DoCrawlingPhysics (0x467FD0) in the same order, and
+//     sub_466CE0's body tail-calls both sub_467D20 and 0x467FD0 exactly the
+//     way DoPhysics dispatches to the swinging and crawling variants.
+//   * 0x467D20 is CPlayer::DoSwingingPhysics, by the same ordering.
+//   * 0x4BD510 is CPlayer::ReadAnalogueInput (already @Ok in spidey.cpp with
+//     no address recorded). Its first instructions copy field_E2D/field_E2E
+//     into field_E2F/field_E30, clear both, and bail on field_E18 with
+//     field_1AC, which is exactly what the implemented body does.
+void SpideyAI0(CPlayer *pPlayer)
+{
+	u32 keyMappingA;
+	u32 keyMappingB;
+
+	pPlayer->field_AE4 = 1;
+
+	PCINPUT_GetKeyboardMappingForAction(0x40, &keyMappingA);
+	PCINPUT_GetKeyboardMappingForAction(0x100, &keyMappingB);
+
+	// PC-only: with the "suit 5" costume the two mapped keys together toggle
+	// field_57C, which drives the 0x800 CItem flag right below.
+	if (G_CURRENTSUIT == 5
+		&& PCINPUT_IsKeyPressed((u8)keyMappingA, 1) != 0
+		&& PCINPUT_IsKeyPressed((u8)keyMappingB, 1) != 0
+		&& pPlayer->field_1AC == 0
+		&& pPlayer->field_E18 == 0)
+	{
+		i8 wasSet = pPlayer->field_57C;
+
+		reinterpret_cast<u8*>(pPlayer->field_E0C)[0x51] = 0;
+		pPlayer->field_57C = (i8)(wasSet == 0);
+		pPlayer->field_570 = 0;
+		SFX_PlayPos(0x1F, &pPlayer->mPos, 0);
+	}
+
+	if (pPlayer->field_57C != 0)
+	{
+		pPlayer->mFlags |= 0x800;
+	}
+	else
+	{
+		pPlayer->mFlags &= 0xF7FF;
+	}
+
+	if (gWaterEffect == 1)
+	{
+		Db_SkyColor = *gDbSkyColorTarget;
+		Db_UpdateSky();
+		gWaterEffect = 0;
+	}
+
+	if (pPlayer->field_36C != 0)
+	{
+		pPlayer->field_36C -= pPlayer->field_80;
+		if (pPlayer->field_36C < 0)
+		{
+			pPlayer->field_36C = 0;
+		}
+	}
+
+	if (pPlayer->field_534 != 0)
+	{
+		pPlayer->field_534 -= pPlayer->field_80;
+		if (pPlayer->field_534 < 0)
+		{
+			pPlayer->field_534 = 0;
+		}
+	}
+
+	// electrocution timer: keeps the pad buzzing while it runs down.
+	if (pPlayer->field_50C != 0)
+	{
+		if (*gSaveGameVibration != 0)
+		{
+			Pad_ActuatorOn(0, (u16)pPlayer->field_50C, 1, 0xDB);
+		}
+
+		pPlayer->field_50C -= pPlayer->field_80;
+		if (pPlayer->field_50C <= 0)
+		{
+			pPlayer->field_50C = 0;
+			Effects_UnElectrify(pPlayer);
+		}
+	}
+
+	// spidey-sense buzz timer (field_ECC), its SFX handle (field_ED0) and the
+	// extra body part it shows (field_ED4).
+	if (pPlayer->field_ECC != 0)
+	{
+		i32 buzzLeft = pPlayer->field_ECC - pPlayer->field_80;
+
+		pPlayer->field_ECC = buzzLeft;
+		if (buzzLeft <= 0)
+		{
+			pPlayer->field_ECC = 0;
+		}
+		else
+		{
+			CBody *pBuzz;
+
+			// 0xEC8: the buzz kind. 1 also triggers the water effect.
+			if (PLR_I32(pPlayer, 0xEC8) == 1)
+			{
+				gWaterEffect = 1;
+			}
+
+			if (pPlayer->field_ED0 == 0)
+			{
+				pPlayer->field_ED0 = SFX_Play(0x1A, 0x2000, 0);
+			}
+
+			if ((i32)(Pad_GetActuatorTime(0, 1) & 0xFFFF) < buzzLeft
+				&& *gSaveGameVibration != 0)
+			{
+				Pad_ActuatorOn(0, (u16)pPlayer->field_ECC, 1, 0x3C);
+			}
+
+			if (Mem_RecoverPointer(&pPlayer->field_ED4) == 0)
+			{
+				pBuzz = new CBody();
+				pPlayer->field_ED4 = Mem_MakeHandle(pBuzz);
+				pBuzz->InitItem("items");
+				pBuzz->mFlags |= 0x200;
+				pBuzz->mModel = 4;
+				pBuzz->mType = 0x1F8;
+				pBuzz->AttachTo(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+
+				if (G_PULSATING_HEAD_FLAG != 0)
+				{
+					pBuzz->mScale.vx = (i16)(pBuzz->mScale.vx << 1);
+					pBuzz->mScale.vy = (i16)(pBuzz->mScale.vy << 1);
+					pBuzz->mScale.vz = (i16)(pBuzz->mScale.vz << 1);
+				}
+
+				SpideyAI0_ApplyCheatScale(pBuzz, 0);
+			}
+		}
+	}
+
+	if (pPlayer->field_ECC == 0)
+	{
+		CBody *pBuzz;
+
+		if (pPlayer->field_ED0 != 0)
+		{
+			SFX_Stop(pPlayer->field_ED0);
+			pPlayer->field_ED0 = 0;
+		}
+
+		pBuzz = reinterpret_cast<CBody*>(Mem_RecoverPointer(&pPlayer->field_ED4));
+		if (pBuzz != 0)
+		{
+			pBuzz->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+			delete pBuzz;
+			pPlayer->field_ED4 = Mem_MakeHandle(0);
+		}
+	}
+
+	// the two fists (field_5B8), sized from the combo bonus timer field_5B0.
+	if (pPlayer->field_5AC != 0)
+	{
+		i32 fist;
+
+		if (pPlayer->field_5B0 < 0x2000)
+		{
+			pPlayer->field_5B0 += pPlayer->field_80 * 384;
+		}
+		else
+		{
+			pPlayer->field_5B0 = 0x2000;
+		}
+
+		for (fist = 0; fist < 2; fist++)
+		{
+			CBody *pFist = reinterpret_cast<CBody*>(Mem_RecoverPointer(&pPlayer->field_5B8[fist]));
+
+			if (pFist == 0)
+			{
+				pFist = new CBody();
+				pPlayer->field_5B8[fist] = Mem_MakeHandle(pFist);
+				pFist->InitItem("items");
+				pFist->mModel = 8;
+				pFist->mType = 0x1F9;
+				pFist->AttachTo(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+				SpideyAI0_ApplyCheatScale(pFist, 1);
+				pFist->mFlags |= 0x200;
+			}
+
+			if (pPlayer->field_5B0 < 0x2000)
+			{
+				i16 scale = (i16)(pPlayer->field_5B0 / 2);
+
+				pFist->mFlags |= 0x200;
+				pFist->mScale.vx = scale;
+				pFist->mScale.vy = scale;
+				pFist->mScale.vz = scale;
+				SpideyAI0_ApplyCheatScale(pFist, 1);
+			}
+		}
+	}
+	else if (pPlayer->field_5B0 > 0)
+	{
+		i32 half;
+		i32 fist;
+
+		pPlayer->field_5B0 -= pPlayer->field_80 * 512;
+		if (pPlayer->field_5B0 < 0)
+		{
+			pPlayer->field_5B0 = 0;
+		}
+
+		half = pPlayer->field_5B0 / 2;
+
+		for (fist = 0; fist < 2; fist++)
+		{
+			CBody *pFist = reinterpret_cast<CBody*>(Mem_RecoverPointer(&pPlayer->field_5B8[fist]));
+
+			if (pFist != 0)
+			{
+				if (half != 0)
+				{
+					pFist->mFlags |= 0x200;
+					pFist->mScale.vx = (i16)half;
+					pFist->mScale.vy = (i16)half;
+					pFist->mScale.vz = (i16)half;
+				}
+				else
+				{
+					pFist->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+					delete pFist;
+					// the original only clears the pointer half of the handle
+					pPlayer->field_5B8[fist].pWhatever = 0;
+				}
+			}
+		}
+	}
+
+	// 0x553: one-shot "first tick" flag; drops the player onto the floor.
+	if (PLR_U8(pPlayer, 0x553) == 0)
+	{
+		i32 groundY;
+
+		PLR_U8(pPlayer, 0x553) = 1;
+		groundY = Utils_GetGroundHeight(&pPlayer->mPos, 0, 0x800, 0);
+		if (groundY != -1)
+		{
+			pPlayer->mPos.vy = groundY - (pPlayer->field_EA8 << 12);
+			pPlayer->field_E1C = 1;
+			pPlayer->field_A8.vx = 0;
+			pPlayer->field_A8.vy = (i16)0xF000;
+			pPlayer->field_A8.vz = 0;
+			pPlayer->OrientToNormal(false, &ZeroVector);
+			pPlayer->SetFloorCamera(0);
+			pPlayer->PutCameraBehind(0);
+		}
+	}
+
+	if (pPlayer->field_5D8 == 0 && pPlayer->field_5E8 == 0)
+	{
+		if (pPlayer->mWebbing < 0x200)
+		{
+			pPlayer->IncreaseWebbing(pPlayer->field_80 * 4);
+		}
+		else if (pPlayer->mWebbing < 0x555)
+		{
+			pPlayer->IncreaseWebbing(pPlayer->field_80);
+		}
+	}
+
+	if (pPlayer->field_E64 != 0)
+	{
+		if ((pPlayer->field_E1C & 0x400) != 0)
+		{
+			reinterpret_cast<CBody*>(pPlayer->field_E64)->AI();
+		}
+		else
+		{
+			delete reinterpret_cast<CBody*>(pPlayer->field_E64);
+			pPlayer->field_E64 = 0;
+		}
+	}
+
+	if (pPlayer->field_DBC != 0 && (pPlayer->field_DBC->mCBodyFlags & 0x40) != 0)
+	{
+		pPlayer->field_DBC = 0;
+	}
+
+	BaddyCollisionCheck = 0;
+
+	// 0xE28: a plain countdown, nothing in the prologue reads it.
+	if (PLR_I32(pPlayer, 0xE28) != 0)
+	{
+		PLR_I32(pPlayer, 0xE28) -= pPlayer->field_80;
+		if (PLR_I32(pPlayer, 0xE28) < 0)
+		{
+			PLR_I32(pPlayer, 0xE28) = 0;
+		}
+	}
+
+	pPlayer->mAnimSpeed = 0x10000;
+
+	// 0xE24: "AI suspended" gate; the whole tick is skipped.
+	if (PLR_U8(pPlayer, 0xE24) != 0)
+	{
+		return;
+	}
+
+	print_if_false(G_MECHLIST->mNextItem == 0, "2+ elements in MechList");
+
+	pPlayer->mFlags |= 4;
+	pPlayer->field_E8 = pPlayer->mPos;
+
+	// var_49C also caches mVel.vy here for the state code further down; that
+	// part is not ported yet, so the cache is left out.
+	if ((pPlayer->field_E1C & 0x83000) == 0)
+	{
+		// 0x466CE0, identified as CPlayer::DoPhysics (see the note above).
+		pPlayer->DoPhysics();
+	}
+
+	if (pPlayer->field_A8.vy > 0xD48)
+	{
+		pPlayer->OrientToNormal(true, &pPlayer->field_AC8);
+		pPlayer->field_8E8 = 0;
+		pPlayer->field_8E9 = 1;
+	}
+	else
+	{
+		pPlayer->field_8E9 = 0;
+		pPlayer->OrientToNormal(false, &ZeroVector);
+		pPlayer->field_8E8 = (u8)(pPlayer->field_A8.vy >= (i16)0xF5D8);
+	}
+
+	{
+		i32 state = pPlayer->field_E1C;
+		// 0xE3C: gTimerRelated stamp of the last tick spent in state 4.
+		i32 lastAirborneTime = PLR_I32(pPlayer, 0xE3C);
+		i32 camKind;
+
+		if (state != 4)
+		{
+			PLR_I32(pPlayer, 0xE3C) = (i32)gTimerRelated;
+		}
+
+		camKind = pPlayer->field_540;
+
+		if ((state & 0x3000) == 0)
+		{
+			if (state == 4)
+			{
+				if (camKind != 5
+					&& pPlayer->mVel.vy > 0
+					&& (u32)(gTimerRelated - lastAirborneTime) > 0x3C)
+				{
+					pPlayer->SetFallingCamera(15);
+				}
+			}
+			else if (camKind != 4 && pPlayer->field_54C != 0)
+			{
+				pPlayer->SetSwingCamera(15);
+			}
+			else if (camKind != 2 && pPlayer->field_8E9 != 0)
+			{
+				pPlayer->SetCeilingCamera(16);
+			}
+			else if (camKind != 1 && pPlayer->field_8E8 != 0 && pPlayer->field_54C == 0)
+			{
+				pPlayer->SetWallCamera(16);
+			}
+			else if (camKind != 0
+				&& pPlayer->field_8E8 == 0
+				&& pPlayer->field_8E9 == 0
+				&& pPlayer->field_54C == 0)
+			{
+				pPlayer->SetFloorCamera(16);
+			}
+		}
+	}
+
+	if (pPlayer->field_AD4 != 0)
+	{
+		pPlayer->mFric.vx = 1;
+		pPlayer->mFric.vy = 1;
+		pPlayer->mFric.vz = 1;
+	}
+	else if ((pPlayer->field_E1C & 0x1000000) != 0)
+	{
+		pPlayer->mFric.vx = 0x1F;
+		pPlayer->mFric.vy = 0x1F;
+		pPlayer->mFric.vz = 0x1F;
+	}
+	else if ((pPlayer->field_E1C & 6) != 0)
+	{
+		pPlayer->mFric.vx = 4;
+		pPlayer->mFric.vy = 4;
+		pPlayer->mFric.vz = 4;
+	}
+	else
+	{
+		pPlayer->mFric.vx = 1;
+		pPlayer->mFric.vy = ((pPlayer->field_E1C & 0x40000) != 0) ? 1 : 4;
+		pPlayer->mFric.vz = 1;
+	}
+
+	pPlayer->SelectAutoAimTarget();
+	pPlayer->UpdateOffscreenSpideySenseIndicatorList();
+	pPlayer->BuildOffscreenSpideySenseIndicatorList();
+
+	pPlayer->mRMinor = 0x64;
+
+	// 0xE8E: how long the player has been in a wall-crawl/swing state without
+	// a collision, as a 16 bit accumulator of field_80.
+	if ((pPlayer->field_E1C & 0x800004) != 0 && (pPlayer->mCollision & 2) == 0)
+	{
+		PLR_U16(pPlayer, 0xE8E) = (u16)(PLR_U16(pPlayer, 0xE8E) + (u16)pPlayer->field_80);
+	}
+	else
+	{
+		PLR_U16(pPlayer, 0xE8E) = 0;
+	}
+
+	pPlayer->ReadAnalogueInput();
+
+	{
+		u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+		u8 padFire;
+		i32 usedDirs;
+
+		if (pPad[0x100] == 0)
+		{
+			pPlayer->field_E8D = 1;
+		}
+
+		usedDirs = pPlayer->field_8E4;
+		if (usedDirs != 0)
+		{
+			if ((usedDirs & 1) != 0 && pPlayer->field_E2D <= 0)
+			{
+				pPlayer->field_8E4 = usedDirs & ~1;
+			}
+
+			usedDirs = pPlayer->field_8E4;
+			if ((usedDirs & 2) != 0 && pPlayer->field_E2D >= 0)
+			{
+				pPlayer->field_8E4 = usedDirs & ~2;
+			}
+
+			usedDirs = pPlayer->field_8E4;
+			if ((usedDirs & 4) != 0 && pPlayer->field_E2E <= 0)
+			{
+				pPlayer->field_8E4 = usedDirs & ~4;
+			}
+
+			usedDirs = pPlayer->field_8E4;
+			if ((usedDirs & 8) != 0 && pPlayer->field_E2E >= 0)
+			{
+				pPlayer->field_8E4 = usedDirs & ~8;
+			}
+		}
+
+		if (pPlayer->field_550 != 0 && pPad[0x70] == 0)
+		{
+			pPlayer->field_550 = 0;
+		}
+
+		// only these states let the lookaround button be held
+		if ((pPlayer->field_E1C & 0x3EBE3FCE) != 0)
+		{
+			pPad[0x40] = 0;
+		}
+		else if ((pPlayer->field_E1C & 0x1C000) != 0)
+		{
+			if (pPlayer->field_8EA == 0)
+			{
+				pPad[0x40] = 0;
+			}
+		}
+		else if (PLR_I32(pPlayer, 0xE48) != 0 || pPlayer->field_EA4 != 4)
+		{
+			pPad[0x40] = 0;
+		}
+
+		padFire = pPad[0x40];
+
+		// 0x8EB: lookaround allowed this tick.
+		if (padFire != 0 && PLR_U8(pPlayer, 0x8EB) != 0)
+		{
+			pPlayer->field_56C += pPlayer->field_80;
+		}
+		else
+		{
+			pPlayer->field_56C = 0;
+		}
+
+		if ((u32)pPlayer->field_56C > 0xF)
+		{
+			if (pPlayer->field_8EA == 0)
+			{
+				ECameraMode mode = CameraList->mCameraMode;
+
+				if (mode != CAMERAMODE_START
+					&& mode != CAMERAMODE_FAR
+					&& mode != CAMERAMODE_OVERHEAD
+					&& mode != CAMERAMODE_NOTHING)
+				{
+					pPlayer->EnterLookaroundMode();
+				}
+			}
+			else if (padFire == 0)
+			{
+				pPlayer->ExitLookaroundMode();
+			}
+		}
+		else if (pPlayer->field_8EA != 0 && padFire == 0)
+		{
+			pPlayer->ExitLookaroundMode();
+		}
+
+		if (pPlayer->field_8EA != 0 && (pPlayer->field_CE4 | pPlayer->field_CB4) == 0)
+		{
+			u8 pressed;
+
+			if (*gPracticeDifficultyFlag != 0)
+			{
+				pressed = pPad[0x101];
+			}
+			else
+			{
+				pressed = pPad[0x71];
+			}
+
+			if (pressed != 0 && pPlayer->field_E64 == 0)
+			{
+				pPad[0x101] = 0;
+				pPlayer->field_54F = 1;
+				pPad[0x71] = 0;
+				pPlayer->field_2C1 = 0;
+				// 0x231: cleared together with field_2C1 here.
+				PLR_U8(pPlayer, 0x231) = 0;
+			}
+
+			if (pPlayer->field_E2D != 0 && pPlayer->field_8E0 == 0)
+			{
+				i32 delta = ((pPlayer->field_E2D >> 3) * pPlayer->field_8F0 * pPlayer->field_80) >> 8;
+				i32 was = *gLookaroundActiveCamAngle;
+				i32 now;
+
+				// G_GAMESTATE[14] flips the pitch direction (look inversion).
+				if (G_GAMESTATE[14] == 0)
+				{
+					now = was + delta;
+				}
+				else
+				{
+					now = was - delta;
+				}
+
+				*gLookaroundActiveCamAngle = now;
+				if ((now < 0 ? -now : now) > 0x400)
+				{
+					*gLookaroundActiveCamAngle = was;
+				}
+			}
+
+			if (pPlayer->field_E2E != 0 && pPlayer->field_8E0 == 0)
+			{
+				i32 delta = ((pPlayer->field_E2E >> 3) * pPlayer->field_8F0 * pPlayer->field_80) >> 8;
+				i32 now = *gLookaroundYawOffset + delta;
+
+				*gLookaroundYawOffset = now;
+				if ((now < 0 ? -now : now) > 0x400)
+				{
+					i32 clamped = (now > 0x400) ? (now - 0x400) : (now + 0x400);
+					i16 heading = pPlayer->GetEffectiveHeading();
+
+					if (pPlayer->field_8E9 != 0)
+					{
+						pPlayer->SetTargetTorsoAngle((i16)((heading - clamped) & 0xFFF), false);
+					}
+					else
+					{
+						pPlayer->SetTargetTorsoAngle((i16)((clamped + heading) & 0xFFF), false);
+					}
+				}
+			}
+		}
+		else
+		{
+			*gLookaroundYawOffset = 0;
+			*gLookaroundPitchSmoothed = 0;
+			*gLookaroundYawSmoothed = 0;
+		}
+	}
+
+	// field_EBC ramps up to 16 while there is any move input and back down to
+	// 0 when there is none.
+	if ((pPlayer->field_E2E | pPlayer->field_E2D) != 0)
+	{
+		if (pPlayer->field_EBC < 0x10)
+		{
+			pPlayer->field_EBC += pPlayer->field_80;
+			if (pPlayer->field_EBC > 0x10)
+			{
+				pPlayer->field_EBC = 0x10;
+			}
+		}
+	}
+	else
+	{
+		if (pPlayer->field_EBC != 0)
+		{
+			pPlayer->field_EBC -= pPlayer->field_80;
+		}
+		if (pPlayer->field_EBC < 0)
+		{
+			pPlayer->field_EBC = 0;
+		}
+	}
+
+	// animation follow-on: when the anim that just finished has an entry in
+	// the sorted follow-on table, chain straight into it.
+	if (pPlayer->mAnimFinished != 0)
+	{
+		u16 anim = pPlayer->mAnim;
+
+		if (gAnimFollowOnData[anim * 2] != 0)
+		{
+			pPlayer->PlaySingleAnim(gAnimFollowOnData[anim * 2 + 1], 0, -1);
+		}
+		else if (anim == 0)
+		{
+			pPlayer->PlaySingleAnim(0, 0, -1);
+		}
+		else if (anim == 0x32)
+		{
+			pPlayer->PlaySingleAnim(Rnd(2) != 0 ? 0x33 : 0x55, 0, -1);
+		}
+		else if (anim == 0x33 || anim == 0x55)
+		{
+			pPlayer->PlaySingleAnim(0x32, 0, -1);
+		}
+		else if (anim == 0x39)
+		{
+			pPlayer->PlaySingleAnim(pPlayer->mAnimDir == 1 ? 0x32 : 0x13, 0, -1);
+		}
+		else if (anim == 0x3A)
+		{
+			pPlayer->PlaySingleAnim(pPlayer->mAnimDir == 1 ? 0x34 : 0x13, 0, -1);
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// state dispatch, 0x4B211F..0x4B215D. Not ported yet, see the note above.
+	// -----------------------------------------------------------------------
+	switch (pPlayer->field_E1C)
+	{
+		case 1:     // 0x4B2164, 346 instructions
+		case 2:     // 0x4B274D,  80 instructions
+		case 4:     // 0x4B28D9, 215 instructions
+		case 8:     // 0x4B2BF3,  77 instructions
+		case 16:    // 0x4B2D43, 157 instructions
+		case 64:    // 0x4B269B,  39 instructions
+		case 128:   // 0x4B2892,  15 instructions
+		case 0x100: // 0x4B2F80,  58 instructions
+			break;
+
+		default:
+			if (pPlayer->field_E1C > 0x10000)
+			{
+				// 0x4B50AE, 1936 instructions
+			}
+			else if (pPlayer->field_E1C == 0x10000)
+			{
+				// 0x4B4E9B, 132 instructions
+			}
+			else if (pPlayer->field_E1C > 0x100)
+			{
+				// 0x4B307C, 1871 instructions
+			}
+			break;
+	}
+
+	// def_4B215D, 0x4B6E8C..0x4B86B1, 1725 instructions. Not ported yet.
+}
