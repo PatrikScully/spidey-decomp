@@ -30,6 +30,7 @@
 #include "ps2gamefmv.h"
 #include "bmr.h"
 #include "ps2card.h"
+#include "dcmemcard.h"
 #include "dcfileio.h"
 
 #include <cstring>
@@ -3902,11 +3903,414 @@ i32 Shell_LoadGame(void)
 // bar drawing sub_48D9C0/sub_47AE80, background setup sub_509D20/sub_4E65E0, input handling
 // sub_50C180/sub_50C6C0/sub_50C5D0, camera-lerp sub_472DC0/sub_46E730/sub_46CFA0, object-list
 // cleanup sub_4739A0, and more). Same conclusion as Shell_CharacterViewer/Shell_CostumeViewer:
-// needs its own dedicated leaf-first session, not a quick follow-up. Left as a stub.
-// @MEDIUMTODO
-void Shell_MainMenu(EShellResult)
+// needs its own dedicated leaf-first session, not a quick follow-up.
+//
+// Implemented 2026-09-01 (functional decompile, IDA Hex-Rays): full main-menu
+// screen logic. Two-column icon list (Continue/New Game/Options/Quit |
+// Training/High Scores/Special/Gallery), a rotating Spidey preview icon
+// (Spidey_CIcon) and a CDummy whose animation track changes per highlighted
+// entry. Returns the highlighted entry's type on selection, 0 on abort.
+//
+// Menu table (original dword_552AA8, 8 entries x 10 ints; this function only
+// reads x/y/text/type, the rest stored for fidelity).
+struct SMainMenuEntry
 {
-    printf("Shell_MainMenu(EShellResult)");
+	i32 x;
+	i32 y;
+	const char *text;
+	i32 type;
+	i32 field_10;
+	i32 field_14;
+	i32 field_18;
+	i32 field_1C;
+	i32 field_20;
+	i32 field_24;
+};
+
+static const SMainMenuEntry gMainMenuTable[8] =
+{
+	{ 105, 46, "continue", 2, 0x005487F8, 5, 0, 0, 0, 0 },
+	{ 86, 98, "new game", 1, 0x005487F8, 5, 0, 0, 20, 512 },
+	{ 86, 153, "options", 4, 0x00554AA8, 1, 0, 0, 0, 700 },
+	{ 120, 202, "quit", 18, 0x0056EB54, -1, 0, 0, 0, 0 },
+	{ 400, 46, "training", 5, 0x005487F8, 5, 0, 0, -30, 512 },
+	{ 430, 98, "High Scores", 6, 0x00554AA8, 1, 0, 0, 0, 700 },
+	{ 430, 153, "special", 13, 0x00554AA8, 2, 0, 0, -4, 490 },
+	{ 400, 202, "gallery", 7, 0x00554AA8, 0, 0, 256, -16, 700 },
+};
+
+// CDummy animation tracks (original .rdata 0x552F2C..0x552FE0), u16 lists
+// terminated by 0xffff. case1 = idle (constructor + "new game"), case2 = walk
+// ("continue"), case5 = "training".
+static const u16 gMainMenuTrack1A[] = { 0x0000, 0x0021, 0x0022, 0x0022, 0x0022, 0x0022, 0x0022, 0x0024, 0xffff, 0x0000 };
+static const u16 gMainMenuTrack1B[] = { 0x0000, 0x0021, 0x0022, 0x0022, 0x0022, 0x0022, 0x0022, 0x0023, 0x0022, 0x0022, 0x0024, 0xffff, 0x0000 };
+static const u16 gMainMenuTrack1C[] = { 0x0125, 0x0125, 0x0125, 0x0126, 0x0126, 0x0125, 0xffff, 0x0000 };
+static const u16 gMainMenuTrack2A[] = { 0x0001, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x000b, 0x0125, 0x0126, 0xffff, 0x0000 };
+static const u16 gMainMenuTrack2B[] = { 0x0001, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x000b, 0x0125, 0xffff };
+static const u16 gMainMenuTrack2C[] = { 0x0001, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x0015, 0x000b, 0x0126, 0xffff, 0x0000 };
+static const u16 gMainMenuTrack5A[] = { 0x0064, 0x006b, 0x0091, 0x00d2, 0x00d3, 0x00d5, 0xffff, 0x0000 };
+static const u16 gMainMenuTrack5B[] = { 0x00d6, 0x00d7, 0x00d8, 0x00d5, 0xffff, 0x0000 };
+static const u16 gMainMenuTrack5C[] = { 0x00fa, 0x00fb, 0x00fc, 0x00fd, 0xffff, 0x0000 };
+
+// 0x5512EC, written to 512 here (front.cpp holds a file-local macro for the
+// same address, gFrontMysteryValueOne).
+static i32 * const gMainMenuMysteryValue = (i32*)0x005512EC;
+// 0x6A777C, the DCCard-exists flag (4 bytes before gBackgroundAnimFrame).
+static u8 * const gMainMenuDCCardFlag = (u8*)0x006A777C;
+
+// @Ok
+i32 Shell_MainMenu(EShellResult a1)
+{
+	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
+
+	// Find the entry whose type matches a1; default to line 2 if none does.
+	i32 line = 0;
+	const i32 *pType = &gMainMenuTable[0].type;
+	while (line < 8 && *pType != a1)
+	{
+		pType += 10;
+		++line;
+	}
+	if (line >= 8)
+		line = 2;
+
+	// Min completion value across the 34 level slots, and the first slot that
+	// holds it (the level "continue" would resume from).
+	i32 minComplete = 1000000;
+	for (i32 i = 0; i < 34; i++)
+	{
+		if ((u8)gSaveGame.field_56[i] < minComplete)
+			minComplete = (u8)gSaveGame.field_56[i];
+	}
+	i32 continueLevel = 0;
+	while ((u8)gSaveGame.field_56[continueLevel] != minComplete)
+	{
+		if (++continueLevel >= 34)
+			break;
+	}
+	Utils_CopyString(Levels[continueLevel].mName, gSaveGame.field_4, 9);
+
+	// allComplete is 1 only when no level slot is still 0.
+	i32 allComplete = 1;
+	for (i32 j = 0; j < 34; j++)
+	{
+		if (gSaveGame.field_56[j] == 0)
+			allComplete = 0;
+	}
+
+	Mess_SetTextJustify(0);
+	gMikeCamera[0].Position.vx = 0;
+	gMikeCamera[0].Position.vy = 0;
+	gMikeCamera[0].Position.vz = 0;
+	gMikeCamera[0].Angles.vx = 0;
+	gMikeCamera[0].Angles.vy = 0;
+	gMikeCamera[0].Angles.vz = 0;
+	gMikeCamera[0].Style = 0;
+
+	Spidey_CIcon *pIcon = new Spidey_CIcon(line);
+	CDummy *pDummy = new CDummy("spidey", 50, 4096, -32, 0,
+		(u16*)gMainMenuTrack1A, (u16*)gMainMenuTrack1B, (u16*)gMainMenuTrack1C, 0, 0, 0, 0);
+	pDummy->mPos.vz = 0x198000;
+	pDummy->mAngles.vy = 3584;
+
+	*gMainMenuMysteryValue = 512;
+	Redbook_XAPlay(78, 10, 0);
+
+	i32 moveRepeat = 0;
+	i32 startVblanks = 0;
+	i32 curType = 0;
+	i32 mouseOverText = 0;
+	i32 v20 = 0;
+	i32 v21 = 0;
+	i32 lineAtStart = 0;
+	i32 k = 0;
+
+	while (1)
+	{
+		gsub_430880();
+		Db_FlipClear();
+		CalcPolyBufferEnd();
+		startVblanks = Vblanks;
+
+		if (!gSceneRelated)
+			PCGfx_BeginScene(1, -1);
+
+		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
+		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+
+		curType = gMainMenuTable[line].type;
+		if (curType == 1 || curType == 5 || (curType == 2 && gSaveGame.field_78 != 0))
+			M3d_Render(pDummy);
+		else if (curType != 2)
+			M3d_Render(pIcon);
+
+		M3d_RenderCleanup();
+		Bit_Display();
+		PShell_DefaultText();
+		Mess_SetRGB(0x6B, 0x5D, 0xA7, 0);
+		Mess_SetRGBBottom(62, 54, 96);
+
+		if (curType == 2)
+		{
+			if (allComplete == 0 || continueLevel != 0)
+				Mess_DrawText(256, 178, Levels[continueLevel].mDisplayName, 0, 0x1000);
+			else
+				Mess_DrawText(256, 162, "costume viewer", 0, 0x1000);
+		}
+
+		if (gBackgroundAnimFrame == 0)
+			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
+		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
+
+		PShell_SmallFont();
+		Mess_ShadowsOff();
+		*gMainMenuDCCardFlag = DCCard_Exists(0);
+
+		for (k = 0; k < 8; k++)
+		{
+			if (k != 0 || gSaveGame.field_78 != 0)
+			{
+				Mess_SetTextJustify(0);
+				Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
+				Mess_SetRGBBottom(0x28, 35, 62);
+			}
+			else
+			{
+				Mess_SetRGB(0x1A, 0x17, 0x29, 0);
+				Mess_SetRGBBottom(0xF, 13, 24);
+			}
+			if (k != line)
+				Mess_DrawText(gMainMenuTable[k].x, gMainMenuTable[k].y, gMainMenuTable[k].text, 0, 0x1000);
+		}
+
+		PShell_NormalFont();
+		PShell_DefaultText();
+		Mess_ShadowsOn();
+		Shell_DrawTitleBar(gMainMenuTable[line].x, gMainMenuTable[line].y, gMainMenuTable[line].text, 0,
+			line >= 4 ? 512 : 0, 80, -20, 29);
+
+		PCSHELL_DrawMouseCursor();
+
+		if (gSceneRelated)
+			PCGfx_EndScene(1);
+
+		Pad_Update();
+		if (*gShellMenuAbort)
+			return 0;
+		CheckForPadUnplugged();
+
+		if (Redbook_XAStat() == 4)
+		{
+			Redbook_XAStop();
+			gCarnageXaRelatedTwo = 0;
+			Redbook_XAPlay(78, 10, 0);
+		}
+
+		mouseOverText = 0;
+		if (PCSHELL_CheckTriggers(256, 1, 1))
+			mouseOverText = PCSHELL_IsMouseOverText(gMainMenuTable[line].text, gMainMenuTable[line].x, gMainMenuTable[line].y, 0);
+
+		if (PCSHELL_CheckTriggers(16, 1, 1) || mouseOverText)
+			break;
+
+	nav:
+		v20 = line;
+		v21 = line;
+		lineAtStart = line;
+
+		if (PCSHELL_MouseMoved())
+		{
+			i32 over = -1;
+			for (i32 m = 0; m < 8; m++)
+			{
+				if (PCSHELL_IsMouseOverText(gMainMenuTable[m].text, gMainMenuTable[m].x, gMainMenuTable[m].y, 0))
+					over = m;
+			}
+			if (over >= 0)
+				v20 = over;
+			line = v20;
+		}
+
+		if (PCSHELL_CheckTriggers(12291, 0, 0))
+		{
+			if (moveRepeat == 0 || (moveRepeat > 20 && (moveRepeat & 1) == 0))
+			{
+				if (PCSHELL_CheckTriggers(4097, 0, 0))
+				{
+					if (v20 == 0 || ((--v20, line = v20, v20 == 0) && gSaveGame.field_78 == 0))
+					{
+						v20 = 7;
+						line = 7;
+					}
+				}
+				if (PCSHELL_CheckTriggers(8194, 0, 0))
+				{
+					if (v20 >= 7)
+					{
+						v20 = 0;
+						line = 0;
+						if (gSaveGame.field_78 == 0)
+						{
+							v20 = 1;
+							line = 1;
+						}
+					}
+					else
+					{
+						line = ++v20;
+					}
+				}
+			}
+			++moveRepeat;
+			v21 = lineAtStart;
+		}
+		else
+		{
+			moveRepeat = 0;
+		}
+
+		if (PCSHELL_CheckTriggers(32776, 1, 1))
+		{
+			G_SCONTROL[0].Right.Triggered = 0;
+			if (v20 < 4)
+			{
+				v20 += 4;
+				line = v20;
+			}
+		}
+
+		if (PCSHELL_CheckTriggers(16388, 1, 1))
+		{
+			G_SCONTROL[0].Left.Triggered = 0;
+			if (v20 >= 4)
+			{
+				v20 -= 4;
+				line = v20;
+				if (v20 == 2 && *gMainMenuDCCardFlag == 0)
+					line = ++v20;
+				else if (v20 == 0 && gSaveGame.field_78 == 0)
+					line = ++v20;
+			}
+		}
+
+		// Resolve the final line and whether a move sound plays.
+		i32 playMoveSound = 0;
+		if (v20 != 0 || gSaveGame.field_78 != 0)
+		{
+			if (v21 != v20)
+				playMoveSound = 1;
+		}
+		else
+		{
+			if (v21 != 0)
+			{
+				v20 = v21;
+				line = v21;
+			}
+			else
+			{
+				v20 = 1;
+				line = 1;
+			}
+		}
+
+		if (playMoveSound)
+			SFX_Play(0x29, 0x3FFF, 0);
+
+		switch (gMainMenuTable[v20].type)
+		{
+			case 1:
+				if (pDummy->mType != 1001)
+				{
+					pDummy->field_1A4 = (u16*)gMainMenuTrack1A;
+					pDummy->field_1A8 = (u16*)gMainMenuTrack1B;
+					pDummy->field_1AC = (u16*)gMainMenuTrack1C;
+					pDummy->SelectNewTrack(1);
+					pDummy->mType = 1001;
+				}
+				break;
+			case 2:
+				if (pDummy->mType != 1000)
+				{
+					pDummy->field_1A4 = (u16*)gMainMenuTrack2A;
+					pDummy->field_1A8 = (u16*)gMainMenuTrack2B;
+					pDummy->field_1AC = (u16*)gMainMenuTrack2C;
+					pDummy->SelectNewTrack(1);
+					pDummy->mType = 1000;
+				}
+				break;
+			case 5:
+				if (pDummy->mType != 1002)
+				{
+					pDummy->field_1A4 = (u16*)gMainMenuTrack5A;
+					pDummy->field_1A8 = (u16*)gMainMenuTrack5B;
+					pDummy->field_1AC = (u16*)gMainMenuTrack5C;
+					pDummy->SelectNewTrack(1);
+					pDummy->mType = 1002;
+				}
+				break;
+			default:
+				break;
+		}
+
+		pDummy->AI();
+		pIcon->SetIcon(v20);
+		pIcon->AI();
+		Bit_Move();
+		Bit_RemoveDeadBits();
+
+		if (Vblanks == startVblanks)
+			Pause(1);
+		DoVblankProcessing = 0;
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (DoVblankProcessing == 0)
+		{
+			Utils_VblankProcessing();
+			DoVblankProcessing = 1;
+		}
+		PCSHELL_Relax();
+	}
+
+	// Selection path: accept unless the highlighted entry is unavailable.
+	i32 selType = gMainMenuTable[line].type;
+	i32 accepted = 0;
+	if ((gRenderTest & 0x80) != 0)
+	{
+		i32 v19 = selType - 1;
+		if (v19 == 0 || (v19 == 1 && gSaveGame.field_78 != 0))
+			accepted = 1;
+	}
+	else
+	{
+		if (selType != 2 || gSaveGame.field_78 != 0)
+			accepted = 1;
+	}
+
+	if (accepted)
+	{
+		SFX_Play(0x1F, 0x2000, 0);
+		delete pIcon;
+		delete pDummy;
+		Init_KillAll();
+		Pause(1);
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		gsub_430680();
+		if (!gPrintStubbed)
+			gsub_46CB90((void*)"stubbed out: DrawSync");
+		Pad_ClearTriggers(G_SCONTROL);
+		gsub_430880();
+		Redbook_XAStop();
+		return gMainMenuTable[line].type;
+	}
+
+	// Denied: stay in the menu, re-enter at the navigation step.
+	SFX_Play(0x1B, 0x2000, 0);
+	goto nav;
 }
 
 // @Ok

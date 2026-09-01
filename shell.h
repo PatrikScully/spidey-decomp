@@ -720,7 +720,7 @@ EXPORT i32 Shell_InputName(char *,i32,i32, const char *);
 EXPORT void Shell_LegalScreen(void);
 EXPORT i32 Shell_LevelSelect(void);
 EXPORT i32 Shell_LoadGame(void);
-EXPORT void Shell_MainMenu(EShellResult);
+EXPORT i32 Shell_MainMenu(EShellResult);
 EXPORT i32 Shell_MemoryCard(EShellResult);
 EXPORT void Shell_MovieViewer(void);
 EXPORT i32 Shell_Options(EShellResult);
