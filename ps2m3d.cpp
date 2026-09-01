@@ -578,7 +578,6 @@ static i32 * const gM3dLightsAreDynamic   = (i32*)0x0065CEB0; // == gDCDebugLigh
 static i32 * const gM3dDynamicLightSource = (i32*)0x00660FEC;
 static u8  * const gM3dNoFogFlagEarly     = (u8*)0x00660FE1;  // == gDCNoFogFlag
 static i32 * const gM3dPerItemRenderFlag  = (i32*)0x0065CF08; // cleared per item, role not confirmed
-static i32 * const gM3dNoDcModelData      = (i32*)0x00660F98; // set => render the raw PSX model, skip DCModelData
 static i32 * const gM3dLightCount         = (i32*)0x0064E510; // == gDCLightCount
 // The two per-light tables DCModel_RenderModel already reads through its
 // GDC_LIGHT_VECTOR_TABLE / GDC_LIGHT_COLOR_TABLE macros (same addresses,

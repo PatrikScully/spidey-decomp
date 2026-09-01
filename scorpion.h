@@ -8,6 +8,28 @@
 #include "reloc.h"
 
 
+// The tail geometry buffer CScorpion::InitialiseTailPSX (0x00489050) hangs off
+// the tail item (CScorpion::mpTailGeometry). Only the three parts named here
+// are known: CScorpion::TailRenderer (0x00489810) rebuilds them every frame,
+// one ring of four vertices and four normals per tail node. The rest of the
+// buffer is model header data nothing in the repo reads yet.
+struct STailGeometry
+{
+	PADDING(0xC);
+
+	// (min << 16) | max of the tail bounding box in world units >> 12,
+	// relative to the tail item's own position
+	i32 BoundsX;
+	i32 BoundsY;
+	i32 BoundsZ;
+
+	PADDING(0x1C-0x14-4);
+
+	SVECTOR Vertices[23*4];
+	SVECTOR Normals[23*4];
+};
+
+
 class CScorpion : public CBaddy {
 	public:
 
@@ -57,15 +79,27 @@ class CScorpion : public CBaddy {
 		// still-undecompiled tail code), left as plain field_XXX names.
 		CItem field_3F8;
 
-		PADDING(0x440-0x3F8-sizeof(CItem));
+		PADDING(0x43C-0x3F8-sizeof(CItem));
+
+		// 0x43C. Written by CScorpion::InitialiseTailPSX (0x00489050) and
+		// rebuilt every frame by TailRenderer.
+		STailGeometry* mpTailGeometry;
 
 		CItem field_440;
 
 		// Both constructors zero this whole range (0x480-0xBD4) with three
 		// dword-triple loops in the disasm (this+0x48C x4, this+0x4BC x23,
-		// this+0x5D0 x128); no struct is known for it, so the ctors zero it
-		// with raw memset calls instead of guessing field names.
-		PADDING(0xBD4-0x440-sizeof(CItem));
+		// this+0x5D0 x128); no struct is known for the parts still left as
+		// padding, so the ctors zero it with raw memset calls instead of
+		// guessing field names.
+		PADDING(0x4BC-0x440-sizeof(CItem));
+
+		// 0x4BC, the "x23" loop above. The tail node positions. TailRenderer
+		// puts the tail item at the midpoint of the first and the last one and
+		// builds a ring of four vertices around each of them.
+		CVector mTailNodes[23];
+
+		PADDING(0xBD4-0x4BC-sizeof(CVector)*23);
 
 		i32 field_BD4;
 		i32 field_BD8;

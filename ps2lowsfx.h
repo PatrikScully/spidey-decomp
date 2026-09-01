@@ -125,6 +125,11 @@ EXPORT u32 translateLevelSpecificAliasToIndex(u32);
 
 EXPORT extern bool gBootRomSoundMode;
 
+// 0x0060D86C. Vblank timer of the currently playing music track, or 6666
+// when nothing is playing. SFX_Unpause parks it at 6666, Music_MusicUpdate
+// (music.cpp) counts it up and uses it to time the next track.
+EXPORT extern i32 gSfxGlobal;
+
 void validate_SSFXBank(void);
 void validate_SSfxEntry(void);
 void validate_SSfxRelated(void);
