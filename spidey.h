@@ -629,7 +629,7 @@ class CPlayer : public CSuper
 		EXPORT void CheckLanded(void);
 		EXPORT i32 CheckRunIntoWall(void);
 		EXPORT i32 CheckStickToCeiling(void);
-		EXPORT void CheckStickToWall(void);
+		EXPORT i32 CheckStickToWall(void);
 		EXPORT u8 CheckSwingWebAvailability(SLineInfo *);
 		EXPORT u8 CheckSwitchToGrabbedMode(CVector const *,CVector *);
 		EXPORT void CheckWebShot(void);
