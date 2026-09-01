@@ -305,7 +305,7 @@ static void SpideyAI0_ApplyCheatScale(CBody *pBody, i32 stickmanHalves)
 //   0x40000     0x4B51B2   TODO   ~440 instructions
 //   0x80000     0x4B50F1   done   end of a scripted "stand up here" move
 //   0x100000    0x4B5CFE   done   reaching down for a pickup
-//   0x200000    0x4B601F   TODO   ~190 instructions
+//   0x200000    0x4B601F   done   throwing the held object
 //   0x400000    0x4B5F4D   done   rolling
 //   0x800000    0x4B5DDB   done   knocked down / getting back up
 //   0x1000000   0x4B631E   done   the jumping smash kick
@@ -2412,6 +2412,128 @@ void SpideyAI0(CPlayer *pPlayer)
 			pPlayer->field_534 = 0x168;
 			pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
 			SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+			break;
+		}
+
+		// 0x4B601F. Throwing the held object: anim 0xC3 lobs it, anim 0xC9
+		// hurls it. With an auto-aim target close by the throw is aimed at
+		// it, otherwise it goes straight ahead.
+		case 0x200000:
+		{
+			u16 anim;
+			u8 isHardThrow;
+			u8 doThrow;
+
+			pPlayer->field_EA6 = 0;
+
+			if (pPlayer->mAnimFinished != 0)
+			{
+				pPlayer->SwitchToStandMode();
+				break;
+			}
+
+			if (pPlayer->mHeldObject == 0)
+			{
+				pPlayer->CheckJump();
+				break;
+			}
+
+			anim = pPlayer->mAnim;
+			isHardThrow = 0;
+
+			if (anim == 0xC9 && pPlayer->mFrame >= 0x12)
+			{
+				isHardThrow = 1;
+				doThrow = 1;
+			}
+			else if (anim == 0xC3 && pPlayer->mFrame >= 13)
+			{
+				isHardThrow = 0;
+				doThrow = 1;
+			}
+			else
+			{
+				doThrow = 0;
+			}
+
+			if (pPlayer->mFrame >= 6)
+			{
+				pPlayer->PutCameraBehind(0);
+			}
+
+			if (doThrow == 0) break;
+
+			{
+				CVector dir;
+
+				dir.vx = 0;
+				dir.vy = 0;
+				dir.vz = 0;
+
+				if (pPlayer->field_DCC != 0)
+				{
+					i32 dist = (i32)Utils_CrapXZDist(pPlayer->mPos,
+						pPlayer->field_DCC->mPos);
+
+					if (dist >= 0x400)
+					{
+						pPlayer->mHeldObject->ThrowPos(&pPlayer->field_DCC->mPos,
+							dist / 32);
+					}
+					else
+					{
+						i32 speed;
+
+						if (isHardThrow != 0)
+						{
+							speed = (dist << 12) / 6;
+							dir = CVector(-0x18) * pPlayer->field_C6C;
+						}
+						else
+						{
+							speed = (dist << 12) / 32;
+							dir = CVector(-0x20) * pPlayer->field_C6C;
+						}
+
+						if (speed < 0x14000)
+						{
+							speed = 0x14000;
+						}
+
+						dir.vy += (pPlayer->field_DCC->mPos.vy - pPlayer->mPos.vy
+							+ 0x80000) / speed - speed / 2;
+
+						pPlayer->mHeldObject->Throw(&dir);
+					}
+				}
+				else
+				{
+					if (isHardThrow != 0)
+					{
+						dir = (CVector(-0x18) * pPlayer->field_C6C)
+							+ (CVector(0xE) * pPlayer->field_C84);
+					}
+					else
+					{
+						dir = (CVector(-0x20) * pPlayer->field_C6C)
+							+ (CVector(0x10) * pPlayer->field_C84);
+					}
+
+					pPlayer->mHeldObject->Throw(&dir);
+				}
+			}
+
+			// 0x4B62DB
+			if (isHardThrow != 0)
+			{
+				SFX_PlayPos(0x26, &pPlayer->mPos, 0);
+			}
+			else
+			{
+				SFX_PlayPos(0x25, &pPlayer->mPos, 0);
+			}
+
+			pPlayer->mHeldObject = 0;
 			break;
 		}
 
