@@ -1,12 +1,17 @@
 #include "spid_ai0.h"
 
 #include "bit.h"
+#include "baddy.h"
 #include "camera.h"
 #include "db.h"
 #include "effects.h"
 #include "flash.h"
 #include "m3dcolij.h"
+#include "m3dutils.h"
 #include "m3dzone.h"
+#include "powerup.h"
+#include "reloc.h"
+#include "ps2m3d.h"
 #include "mem.h"
 #include "ob.h"
 #include "manipob.h"
@@ -96,7 +101,84 @@ static i32 * const pgRedbookXaRelatedTwo = reinterpret_cast<i32*>(0x006612C0);
 #define gRedbookXaRelatedOne (*pgRedbookXaRelatedOne)
 #define gRedbookXaRelatedTwo (*pgRedbookXaRelatedTwo)
 
+// The pose CPlayer::ApplyPose runs while the 4 flag is set on mFlags. Not
+// named in the IDB; the address is only referenced from here.
+static i16 * const gSpideyFixedPose = reinterpret_cast<i16*>(0x005564E4);
+
+// The two Reloc_CallUserFunction effect names the fists spawn (both are
+// plain strings in .rdata, read straight from the exe).
+static char * const gFistEffectNameLeft = reinterpret_cast<char*>(0x005559C4);
+static char * const gFistEffectNameRight = reinterpret_cast<char*>(0x005559CC);
+
+// The camera/boss anchor object SpideyAI0 aims the lookaround camera at;
+// real IDB name.
+static i32 * const pgBossRelated = reinterpret_cast<i32*>(0x0056E998);
+#define gBossRelated (*pgBossRelated)
+
 static u16 * const gAnimFollowOnData = reinterpret_cast<u16*>(0x00555C6C);
+
+
+// 0x00454040 M3dUtils_GetPartAngles: real name from tools/names.json, but the
+// function is not decompiled and m3dutils.h has no declaration for it, so it
+// is forwarded to the original here. cdecl, four arguments (the two call
+// sites below are followed by an `add esp` that accounts for 4 dwords).
+// @Bogus
+static void gM3dUtils_GetPartAngles(CSuper *pSuper, i32 part, CSVector *pAngles, i32 a4)
+{
+	typedef void (*func_ptr)(CSuper*, i32, CSVector*, i32);
+	func_ptr func = (func_ptr)0x00454040;
+	func(pSuper, part, pAngles, a4);
+}
+
+// CPowerUp::TakeEffect (0x0046B860, real name from tools/names.json) is a
+// __thiscall member the repo has not decompiled and powerup.h does not
+// declare. Same member-function-pointer adapter baddy.cpp uses for
+// gsub_4C9180, because this build's compiler rejects the __thiscall keyword.
+struct SPowerUpTakeEffectAdapter
+{
+	u8 TakeEffect(CPlayer *pPlayer);
+};
+
+// CSwinger::SetRenderEnd (0x004F74B0) and CWeb::SetFirePos (0x004F6170) are
+// real names from tools/names.json, but web.h declares neither, so both are
+// reached through the same adapter trick. They are __thiscall with one
+// CVector reference argument.
+struct SSwingerRenderEndAdapter
+{
+	void SetRenderEnd(CVector &pos);
+};
+
+struct SWebFirePosAdapter
+{
+	void SetFirePos(CVector &pos);
+};
+
+// @Bogus
+static void gCSwinger_SetRenderEnd(void *pSwinger, CVector &pos)
+{
+	typedef void (SSwingerRenderEndAdapter::*memfn)(CVector&);
+	union { memfn m; void *p; } u;
+	u.p = (void*)0x004F74B0;
+	(reinterpret_cast<SSwingerRenderEndAdapter*>(pSwinger)->*u.m)(pos);
+}
+
+// @Bogus
+static void gCWeb_SetFirePos(CWeb *pWeb, CVector &pos)
+{
+	typedef void (SWebFirePosAdapter::*memfn)(CVector&);
+	union { memfn m; void *p; } u;
+	u.p = (void*)0x004F6170;
+	(reinterpret_cast<SWebFirePosAdapter*>(pWeb)->*u.m)(pos);
+}
+
+// @Bogus
+static u8 gCPowerUp_TakeEffect(CBody *pPowerUp, CPlayer *pPlayer)
+{
+	typedef u8 (SPowerUpTakeEffectAdapter::*memfn)(CPlayer*);
+	union { memfn m; void *p; } u;
+	u.p = (void*)0x0046B860;
+	return (reinterpret_cast<SPowerUpTakeEffectAdapter*>(pPowerUp)->*u.m)(pPlayer);
+}
 
 // Scales the two extra body parts (spidey sense buzz, fists) the way the
 // cheats ask for. Reproduces the original's three separate inline copies:
@@ -1616,5 +1698,1101 @@ void SpideyAI0(CPlayer *pPlayer)
 			break;
 	}
 
-	// def_4B215D, 0x4B6E8C..0x4B86B1, 1725 instructions. Not ported yet.
+
+	// -----------------------------------------------------------------------
+	// def_4B215D, 0x4B6E8C..0x4B86B1. The shared tail: every state's `break`
+	// above lands here, and so does the state-machine default.
+	// -----------------------------------------------------------------------
+	{
+		u8 *pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
+		i32 camYaw;
+		i32 state;
+		u8 anyMove;
+		i32 torsoSpeed;
+		i16 heading;
+		i32 headingBefore;
+		i32 turnLeft;
+		CVector accel;
+		i32 bAccelSet;
+		CBody *pPlatform;
+		CVector prevPos;
+		i32 riseSpeed;
+		SLineInfo lineInfo;
+		CVector hookA;
+		CVector hookB;
+
+		// --- camera facing, 0x4B6E8C ---
+		// 0xAD6: "the camera may be auto-steered this tick".
+		if (PLR_U8(pPlayer, 0xAD6) != 0
+			&& PLR_U8(pPlayer, 0x8EC) == 0
+			&& pPlayer->field_54C == 0)
+		{
+			if (pPlayer->field_8E8 != 0)
+			{
+				pPlayer->field_551 = 0;
+				if ((pPlayer->field_E1C & 0x3000) == 0)
+				{
+					pPlayer->PutCameraBehind(0x1E);
+				}
+			}
+			// 0xE70: SHandle of the object the camera locks onto.
+			else if (pPad[0x50] != 0 && PLR_I32(pPlayer, 0xE70) != 0)
+			{
+				CSVector aim;
+				void *pLockTarget = Mem_RecoverPointer(
+					reinterpret_cast<SHandle*>(reinterpret_cast<char*>(pPlayer) + 0xE70));
+
+				Utils_CalcAim(&aim, &pPlayer->mPos,
+					reinterpret_cast<CVector*>(reinterpret_cast<char*>(pLockTarget) + 8));
+				CameraList->SetCamAngle(aim.vy, 0);
+				pPlayer->field_551 = 1;
+			}
+			else if (pPlayer->field_EA6 == 0)
+			{
+				pPlayer->field_551 = 0;
+
+				// the original calls this and throws the result away
+				pPlayer->GetEffectiveHeading();
+
+				if (pPad[0x41] != 0)
+				{
+					pPad[0x41] = 0;
+					pPlayer->field_201 = 0;
+					pPlayer->PutCameraBehind(0);
+					pPlayer->field_56C = 0;
+				}
+				else if (pPad[0x111] != 0
+					&& pPlayer->field_8EA == 0
+					&& (pPlayer->field_E1C & 0x2001C001) != 0)
+				{
+					pPad[0x111] = 0;
+					// 0x2D1: cleared with the camera reset, like field_201.
+					PLR_U8(pPlayer, 0x2D1) = 0;
+					pPlayer->PutCameraBehind(0);
+				}
+				else if ((u8)(pPlayer->field_E2E | pPlayer->field_E2D) != 0
+					&& pPlayer->field_E1C == 0x10)
+				{
+					i16 camAngle = CameraList->field_23A;
+					i16 want = (i16)(pPlayer->field_E32 + camAngle);
+					i32 delta = ((i32)camAngle - (i32)want) & 0xFFF;
+
+					if (delta < 0x4B0 || delta > 0xB50)
+					{
+						CameraList->SetCamAngle(want, 0x3C);
+					}
+					else if (delta > 0x7F0 && delta < 0x810)
+					{
+						CameraList->SetCamAngle(CameraList->field_236, 0);
+					}
+					else
+					{
+						// maps 0x4B0..0xB50 onto a full 0..0x800 sweep
+						i32 t = ((delta - 0x4B0) << 11) / 0x6A0;
+						i32 pitch = ((i32)Sine(t & 0xFFF) * 128 >> 12) + 0x3C;
+
+						CameraList->SetCamAngle(want, (u16)pitch);
+					}
+				}
+				else
+				{
+					CameraList->SetCamAngle(CameraList->field_236, 0);
+				}
+			}
+			else
+			{
+				if (pPad[0x41] != 0)
+				{
+					pPad[0x41] = 0;
+					pPlayer->field_201 = 0;
+					pPlayer->PutCameraBehind(0);
+					pPlayer->field_56C = 0;
+					pPlayer->field_551 = 1;
+				}
+
+				if (pPlayer->field_551 == 0)
+				{
+					pPlayer->PutCameraBehind(0x14);
+					pPlayer->field_551 = 1;
+				}
+			}
+		}
+
+		// --- torso aim, 0x4B70D5 ---
+		anyMove = (u8)(pPlayer->field_E2E | pPlayer->field_E2D);
+		torsoSpeed = 0;
+		if (anyMove != 0)
+		{
+			i16 aim = pPlayer->field_E32;
+
+			if (aim > 0x100 && aim < 0xF00)
+			{
+				torsoSpeed = ((i32)aim - 0x100) / 512 + 2;
+			}
+			else
+			{
+				torsoSpeed = 1;
+			}
+		}
+
+		camYaw = (CameraList != 0) ? (i32)CameraList->field_23A : 0;
+		state = pPlayer->field_E1C;
+
+		if ((state & 0x10) != 0)
+		{
+			if (pPlayer->field_8E8 != 0)
+			{
+				pPlayer->SetTargetTorsoAngle(pPlayer->field_E32, false);
+			}
+			else
+			{
+				pPlayer->SetTargetTorsoAngle((i16)(pPlayer->field_E32 + camYaw),
+					pPlayer->field_1AC != 0);
+			}
+		}
+		else if (state == 1)
+		{
+			if (anyMove == 0)
+			{
+				pPlayer->LockTargetTorsoAngle();
+			}
+		}
+		else if ((state & 0x4E) != 0)
+		{
+			if (pPlayer->field_AE6 != 0 || torsoSpeed == 0)
+			{
+				pPlayer->LockTargetTorsoAngle();
+			}
+			else
+			{
+				pPlayer->SetTargetTorsoAngle((i16)(pPlayer->field_E32 + camYaw), false);
+			}
+		}
+
+		// --- heading and the scripted turn, 0x4B717F ---
+		heading = pPlayer->GetEffectiveHeading();
+		turnLeft = pPlayer->field_DF8;
+		pPlayer->mAngles.vy = heading;
+		headingBefore = (i32)heading;
+		pPlayer->field_548 = headingBefore;
+
+		if (turnLeft != 0)
+		{
+			i32 dt = pPlayer->field_80;
+
+			if (turnLeft > dt)
+			{
+				i16 step = (i16)(pPlayer->field_DF4 * dt);
+
+				pPlayer->mAngles.vy = (i16)(((i32)step + headingBefore) & 0xFFF);
+				pPlayer->field_DF8 = turnLeft - dt;
+			}
+			else
+			{
+				// 0xDF0: the angle the scripted turn ends on.
+				pPlayer->field_DF8 = 0;
+				pPlayer->mAngles.vy = PLR_I16(pPlayer, 0xDF0);
+			}
+
+			if (pPlayer->field_A8.vy > 0xD48)
+			{
+				i32 idx = (headingBefore - (i32)pPlayer->mAngles.vy) & 0xFFF;
+				CVector dir(Sine(idx), 0, Cosine(idx));
+
+				gte_SetRotMatrix(&pPlayer->mTransform);
+				gte_ldlvl(reinterpret_cast<VECTOR*>(&dir));
+				gte_rtir();
+				gte_stlvnl(reinterpret_cast<VECTOR*>(&pPlayer->field_AC8));
+			}
+		}
+
+		pPlayer->field_548 = (i32)pPlayer->mAngles.vy - pPlayer->field_548;
+
+		pPlayer->mAcc.vz = 0;
+		pPlayer->mAcc.vx = 0;
+		if (pPlayer->field_E1C == 0x1000000)
+		{
+			// dead store, the next test overwrites it either way
+			pPlayer->mAcc.vy = 0;
+		}
+		if (pPlayer->field_AD4 != 0 || pPlayer->mAnim == 0x115)
+		{
+			pPlayer->mAcc.vy = 0;
+		}
+		else
+		{
+			pPlayer->mAcc.vy = 0xA000;
+		}
+
+		// --- move input into an acceleration, 0x4B72AD ---
+		bAccelSet = 0;
+		{
+			MATRIX identityA;
+			MATRIX identityB;
+
+			if (pPlayer->field_8E8 != 0)
+			{
+				gte_SetRotMatrix(reinterpret_cast<MATRIX*>(
+					reinterpret_cast<char*>(pPlayer) + 0x89C));
+			}
+			else
+			{
+				print_if_false(CameraList != 0, "no camera");
+				M3dMaths_SetIdentityRotation(&identityA);
+				M3dMaths_SetIdentityRotation(&identityB);
+				gte_SetRotMatrix(&identityB);
+			}
+
+			accel = (pPlayer->mVel >> 6);
+			gte_ldlvl(reinterpret_cast<VECTOR*>(&accel));
+			gte_rtir();
+			gte_stlvnl(reinterpret_cast<VECTOR*>(&accel));
+			accel <<= 6;
+
+			{
+				// 0xEF4/0xEF8: the "perpendicularising" run around a boss.
+				u8 wasPerpendicularising = pPlayer->field_EF4;
+				i32 moveMag = 0;
+				i32 moveScale = 0;
+				i32 yaw = 0;
+
+				pPlayer->field_EF4 = 0;
+
+				if (pPlayer->field_8EA == 0
+					&& pPlayer->field_AE4 != 0
+					&& (pPlayer->field_E1C & 0xBFF7F8C1) == 0)
+				{
+					if ((u8)(pPlayer->field_E2E | pPlayer->field_E2D) != 0)
+					{
+						i32 sideways = ((i32)pPlayer->field_E2E << 12) / 64;
+						i32 forwards = ((i32)pPlayer->field_E2D << 12) / 64;
+
+						if (sideways < 0) sideways = -sideways;
+						if (forwards < 0) forwards = -forwards;
+
+						moveMag = sideways + forwards;
+						if (moveMag > 0x1000)
+						{
+							moveMag = 0x1000;
+						}
+
+						if (pPlayer->mAnim == 0x32 || pPlayer->mAnim == 0x33
+							|| pPlayer->mAnim == 0x34)
+						{
+							i32 speed = ((moveMag >> 6) << 16) >> 6;
+
+							pPlayer->mAnimSpeed = speed;
+							if (speed < 0x8000)
+							{
+								pPlayer->mAnimSpeed = 0x8000;
+							}
+						}
+
+						if (pPlayer->field_AD4 != 0)
+						{
+							moveScale = 0x1A;
+						}
+						else if (pPlayer->mHeldObject != 0)
+						{
+							moveScale = ((pPlayer->mHeldObject->field_10C >> 3) & 1) ? 0x0A : 0x18;
+						}
+						else
+						{
+							moveScale = 0x28;
+							moveMag = 0x1000;
+						}
+
+						if (pPlayer->field_8E8 != 0)
+						{
+							i32 idx;
+							i32 c;
+
+							heading = pPlayer->GetEffectiveHeading();
+							idx = ((i32)heading - (i32)(u16)pPlayer->field_E32) & 0xFFF;
+							c = Cosine(idx);
+							if (c < 0) c = -c;
+							c = (c * moveMag) >> 12;
+							c = c * moveScale;
+							c = c * pPlayer->field_EBC;
+							accel.vz = -(c / 16);
+							bAccelSet = 1;
+						}
+						else
+						{
+							heading = pPlayer->GetEffectiveHeading();
+							yaw = (i32)heading;
+
+							if (CameraList->mCameraMode == CAMERAMODE_LOOKAROUND)
+							{
+								CVector *pAnchor = reinterpret_cast<CVector*>(
+									reinterpret_cast<char*>(gBossRelated) + 8);
+								i32 dist = Utils_XZDist(&pPlayer->mPos, pAnchor);
+
+								if (dist > 0x300)
+								{
+									CSVector aim;
+
+									Utils_CalcAim(&aim, &pPlayer->mPos, pAnchor);
+									yaw = ((i32)(u16)pPlayer->field_E32 + (i32)aim.vy) & 0xFFF;
+
+									if (pPlayer->field_E32 == 0x400
+										|| pPlayer->field_E32 == (i16)0xC00)
+									{
+										i32 radius = pPlayer->GetPerpendicularisationRadius();
+										u8 keepDistance;
+
+										if (dist > radius)
+										{
+											dist -= pPlayer->field_80;
+											keepDistance = 0;
+										}
+										else
+										{
+											keepDistance = wasPerpendicularising;
+										}
+
+										pPlayer->field_EF4 = 1;
+										if (keepDistance == 0)
+										{
+											pPlayer->field_EF8 = dist;
+										}
+									}
+								}
+							}
+							else if ((pPlayer->field_E1C & 6) != 0 && pPlayer->field_E8C == 0)
+							{
+								yaw = ((i32)(u16)pPlayer->field_E32 + camYaw) & 0xFFF;
+							}
+
+							if (pPlayer->field_AE5 == 0)
+							{
+								i32 idx = yaw & 0xFFF;
+								i32 ebc = pPlayer->field_EBC;
+								i32 c = (((i32)Cosine(idx) * moveMag) >> 12) * ebc * moveScale;
+								i32 sn = (((i32)Sine(idx) * moveMag) >> 12) * ebc * moveScale;
+
+								accel.vz = -(c / 16);
+								accel.vx = -(sn / 16);
+								bAccelSet = 1;
+							}
+						}
+					}
+					else if ((pPlayer->field_E1C & 0x40040004) == 0)
+					{
+						accel.vx = 0;
+						accel.vz = 0;
+						bAccelSet = 1;
+					}
+				}
+			}
+
+			// --- apply it, 0x4B763C ---
+			if (pPlayer->field_8E8 != 0)
+			{
+				gte_SetRotMatrix(&pPlayer->mTransform);
+			}
+			else
+			{
+				gte_SetRotMatrix(&identityA);
+			}
+
+			if (bAccelSet != 0)
+			{
+				pPlayer->mVel = (accel >> 6);
+				gte_ldlvl(reinterpret_cast<VECTOR*>(&pPlayer->mVel));
+				gte_rtir();
+				gte_stlvnl(reinterpret_cast<VECTOR*>(&pPlayer->mVel));
+				pPlayer->mVel <<= 6;
+			}
+		}
+
+		// --- ride the platform under us, 0x4B76C0 ---
+		pPlatform = pPlayer->field_DBC;
+		if (pPlatform != 0)
+		{
+			i32 dz = pPlatform->mVel.vz;
+			bool moved;
+
+			prevPos = pPlayer->mPos;
+
+			if (PLR_U16(pPlayer, 0xE8E) != 0)
+			{
+				i32 dx = pPlatform->mVel.vx;
+
+				moved = ((dx | dz) != 0);
+				if (moved)
+				{
+					pPlayer->mPos.vx += dx;
+				}
+			}
+			else
+			{
+				i32 dy = pPlatform->mVel.vy;
+				i32 dx = pPlatform->mVel.vx;
+
+				moved = ((dy | dx | dz) != 0);
+				if (moved)
+				{
+					pPlayer->mPos.vx += dx;
+					pPlayer->mPos.vy += dy;
+				}
+			}
+
+			if (moved)
+			{
+				pPlayer->mPos.vz += dz;
+
+				lineInfo.MinCoords.vx = 0;
+				lineInfo.MinCoords.vy = 0;
+				lineInfo.MinCoords.vz = 0;
+				lineInfo.MaxCoords.vx = 0;
+				lineInfo.MaxCoords.vy = 0;
+				lineInfo.MaxCoords.vz = 0;
+				lineInfo.Position.vx = 0;
+				lineInfo.Position.vy = 0;
+				lineInfo.Position.vz = 0;
+				lineInfo.Normal.vx = 0;
+				lineInfo.Normal.vy = 0;
+				lineInfo.Normal.vz = 0;
+				lineInfo.StartCoords = prevPos;
+				lineInfo.EndCoords = pPlayer->mPos;
+
+				M3dColij_InitLineInfo(&lineInfo);
+				M3dZone_LineToItem(&lineInfo, 1);
+
+				if (lineInfo.pItem != 0)
+				{
+					pPlayer->mPos = prevPos;
+				}
+			}
+		}
+
+		// --- vertical impulse, 0x4B77B8 ---
+		if ((pPlayer->mCollision & 0x100) != 0)
+		{
+			pPlayer->field_E88 = 0;
+		}
+
+		riseSpeed = pPlayer->field_E84;
+		if (riseSpeed > 0 || pPlayer->field_E88 > 0)
+		{
+			if (riseSpeed < 0x10000 && pPlayer->field_E88 == 0)
+			{
+				pPlayer->mVel.vy = (((pPlayer->field_E80 >> 12) * riseSpeed) >> 4) & (i32)0xFFFFF000;
+			}
+			else
+			{
+				pPlayer->mVel.vy = pPlayer->field_E80;
+			}
+		}
+
+		if ((i32)(riseSpeed & (i32)0xFFFF0000) > 0 && pPlayer->field_E1C == 0x200)
+		{
+			pPlayer->mVel.vy = pPlayer->field_E80;
+		}
+
+		pPlayer->ProcessSFXArray();
+
+		if (pPlayer->field_E88 > 0)
+		{
+			pPlayer->field_E88 -= (pPlayer->field_80 << 16) / 2;
+			if (pPlayer->field_E88 < 0)
+			{
+				pPlayer->field_E88 = 0;
+			}
+		}
+
+		if (pPlayer->field_E84 > 0)
+		{
+			pPlayer->field_E84 -= (pPlayer->field_80 << 16) / 2;
+			if (pPlayer->field_E84 < 0)
+			{
+				pPlayer->field_E84 = 0;
+			}
+		}
+
+		if (pPlayer->field_AD4 != 0 || (pPlayer->field_E1C & 0x3E3FF780) != 0)
+		{
+			pPlayer->field_5AC = 0;
+		}
+
+		// --- ran into a baddy, 0x4B78A8 ---
+		if (pPlayer->field_E8 != pPlayer->mPos)
+		{
+			CVector hitPos;
+
+			if ((pPlayer->field_E1C & 0x1000000) != 0 && pPlayer->field_8D8 == 0)
+			{
+				CVector lineStart;
+				CVector lineEnd;
+				CBody *pIgnore = 0;
+				CBody *pHit;
+
+				lineStart.vx = pPlayer->field_E8.vx;
+				lineStart.vy = pPlayer->mPos.vy;
+				lineStart.vz = pPlayer->field_E8.vz;
+				lineEnd = pPlayer->mPos + (pPlayer->mPos - pPlayer->field_E8);
+
+				for (;;)
+				{
+					pHit = M3dColij_LineToSphere(&lineStart, &lineEnd, &hitPos,
+						reinterpret_cast<CBody*>(BaddyList), pIgnore, 0x1000);
+					if (pHit == 0)
+					{
+						break;
+					}
+
+					{
+						i32 kind = (i32)pHit->mType - 304;
+
+						if ((u32)kind > 0x14)
+						{
+							break;
+						}
+
+						// jpt_4B7987: the 21 mTypes 304..324 pick one of three
+						// paths through byte_4B8778.
+						if (kind == 1 || kind == 11)
+						{
+							// types 305 and 315: pass straight through, carry
+							// on from the hit point ignoring this one
+							lineStart = hitPos;
+							pIgnore = pHit;
+							continue;
+						}
+
+						if (kind == 4 || kind == 5 || kind == 7 || kind == 12
+							|| kind == 14 || kind == 15 || kind == 17
+							|| kind == 18 || kind == 19)
+						{
+							// types 308, 309, 311, 316, 318, 319, 321..323
+							break;
+						}
+					}
+
+					// everything else: smash into it
+					{
+						SHitInfo hit;
+
+						hit.field_C.vx = 0;
+						hit.field_C.vy = 0;
+						hit.field_C.vz = 0;
+						hit.field_0 = 0x1E;
+						hit.field_8 = (u16)pPlayer->GetDamageInflictedFromDifficulty(0x14);
+						hit.field_4 = 2;
+						hit.field_C.vx = -pPlayer->field_C6C.vx;
+						hit.field_C.vy = 0;
+						hit.field_C.vz = -pPlayer->field_C6C.vz;
+						hit.field_18 = 0x200;
+						hit.field_1A = 0xF;
+						VectorNormal(reinterpret_cast<VECTOR*>(&hit.field_C),
+							reinterpret_cast<VECTOR*>(&hit.field_C));
+
+						pHit->Hit(&hit);
+						SFX_PlayPos(0x10, &pPlayer->mPos, 0);
+
+						// 0x4B8BE0, inlined: the knockback timer pair.
+						pPlayer->field_534 = 0x168;
+						pPlayer->field_52C = (pPlayer->field_528 + 0xB) << 10;
+
+						pPlayer->mVel.vz = 0;
+						pPlayer->mVel.vx = 0;
+						pPlayer->field_8D8 = 1;
+					}
+					break;
+				}
+			}
+			else if ((pPlayer->field_E1C & 0x14) != 0)
+			{
+				CBody *pHit = M3dColij_LineToSphere(&pPlayer->field_E8, &pPlayer->mPos,
+					&hitPos, reinterpret_cast<CBody*>(BaddyList), 0, 0x1000);
+
+				if (pHit != 0)
+				{
+					pPlayer->CollideWithObject(pHit);
+				}
+			}
+		}
+
+		// --- pick up power-ups, 0x4B7A74 ---
+		{
+			CBody *pPowerUp = reinterpret_cast<CBody*>(PowerUpList);
+
+			while (pPowerUp != 0)
+			{
+				if ((pPowerUp->mCBodyFlags & 0x40) == 0
+					&& Utils_CrapDist(pPlayer->mPos, pPowerUp->mPos) < (i32)pPowerUp->mRMinor)
+				{
+					if (pPowerUp->mType == 0xB)
+					{
+						if ((pPlayer->field_E1C & 0x11) != 0)
+						{
+							gCPowerUp_TakeEffect(pPowerUp, pPlayer);
+						}
+					}
+					else if (gCPowerUp_TakeEffect(pPowerUp, pPlayer) == 0)
+					{
+						// 0x4B8C00, inlined
+						PLR_U8(pPowerUp, 0x124) = 1;
+
+						// 0x370: "the pickup jingle is free to play again".
+						if (PLR_U8(pPlayer, 0x370) != 0)
+						{
+							u16 kind = pPowerUp->mType;
+
+							if (kind == 8 || (kind > 0xD && kind <= 0x10))
+							{
+								SFX_Play(0x28, 0x2000, 0);
+								PLR_U8(pPlayer, 0x370) = 0;
+							}
+						}
+					}
+					break;
+				}
+
+				pPowerUp = reinterpret_cast<CBody*>(pPowerUp->mNextItem);
+			}
+
+			if (pPowerUp == 0)
+			{
+				PLR_U8(pPlayer, 0x370) = 1;
+			}
+		}
+
+		// --- push away from baddies while standing, 0x4B7B1E ---
+		if ((pPlayer->field_E1C & 1) != 0 && pPlayer->field_E6C == 0)
+		{
+			CBody *pBaddy = reinterpret_cast<CBody*>(BaddyList);
+
+			while (pBaddy != 0)
+			{
+				if (pBaddy->mRMinor != 0)
+				{
+					CVector away = pPlayer->mPos - pBaddy->mPos;
+					i32 dist = away.Length();
+
+					if (dist < (((i32)pBaddy->mRMinor * 3) << 10 >> 12))
+					{
+						i32 strength = 10;
+
+						away.vy = 0;
+						away.vx = away.vx / dist;
+						away.vz = away.vz / dist;
+						pPlayer->mVel += (away * strength);
+					}
+				}
+
+				pBaddy = reinterpret_cast<CBody*>(pBaddy->mNextItem);
+			}
+		}
+
+		// --- trigger-zone sweep along the movement, 0x4B7BF0 ---
+		{
+			// function-local static in the original (guard byte 0x6A7F24,
+			// object 0x6A7EF8); the registered atexit handler is a bare retn.
+			static CVector sLastMoveDirection;
+
+			CVector moveDir = (pPlayer->mPos - pPlayer->field_E8) >> 12;
+
+			if (pPlayer->field_E1C != 0x80)
+			{
+				CVector normal;
+				CVector back;
+
+				if ((moveDir.vz | moveDir.vy | moveDir.vx) != 0)
+				{
+					sLastMoveDirection = moveDir;
+				}
+
+				VectorNormal(reinterpret_cast<VECTOR*>(&sLastMoveDirection),
+					reinterpret_cast<VECTOR*>(&normal));
+
+				back = pPlayer->field_E8 - (normal * 0x10);
+
+				lineInfo.MinCoords.vx = 0;
+				lineInfo.MinCoords.vy = 0;
+				lineInfo.MinCoords.vz = 0;
+				lineInfo.MaxCoords.vx = 0;
+				lineInfo.MaxCoords.vy = 0;
+				lineInfo.MaxCoords.vz = 0;
+				lineInfo.Position.vx = 0;
+				lineInfo.Position.vy = 0;
+				lineInfo.Position.vz = 0;
+				lineInfo.Normal.vx = 0;
+				lineInfo.Normal.vy = 0;
+				lineInfo.Normal.vz = 0;
+				lineInfo.StartCoords = back;
+				lineInfo.EndCoords = pPlayer->mPos;
+
+				M3dColij_InitLineInfo(&lineInfo);
+
+				TriggerCollisionCheck = 0;
+				lineInfo.RecordTriggerZoneHits = 1;
+				M3dZone_LineToItem(&lineInfo, 1);
+				TriggerCollisionCheck = 0;
+			}
+		}
+
+		// --- build this frame's pose, 0x4B7D5A ---
+		if ((pPlayer->mFlags & 4) != 0)
+		{
+			pPlayer->ApplyPose(gSpideyFixedPose);
+		}
+		else
+		{
+			M3d_BuildTransform(pPlayer);
+		}
+
+		pPlayer->DoShadowCheck();
+
+		if (pPlayer->field_94D != 0)
+		{
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pPlayer->field_91C), pPlayer, 6);
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pPlayer->field_928), pPlayer, 5);
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pPlayer->field_934), pPlayer, 1);
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pPlayer->field_940), pPlayer, 0);
+		}
+
+		pPlayer->UpdateTrails();
+
+		if (pPlayer->field_584 != 0)
+		{
+			CVector hookPos;
+
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), pPlayer, 5);
+			pPlayer->field_584->SetPos(hookPos);
+		}
+
+		if (pPlayer->field_588 != 0)
+		{
+			CVector hookPos;
+
+			M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), pPlayer, 6);
+			pPlayer->field_588->SetPos(hookPos);
+		}
+
+		// --- head look-at, 0x4B7E32 ---
+		// 0xA80: "the head tracks something this tick".
+		if (PLR_U8(pPlayer, 0xA80) != 0)
+		{
+			CVector target;
+			bool bHaveTarget = true;
+
+			if (pPlayer->field_E00 != 0)
+			{
+				Trig_GetPosition(&target, pPlayer->field_E00);
+			}
+			else if (pPlayer->field_8E8 != 0
+				|| pPlayer->field_8E9 != 0
+				|| pPlayer->field_DCC == 0
+				|| pPlayer->field_8EA != 0)
+			{
+				bHaveTarget = false;
+			}
+			else
+			{
+				target = pPlayer->field_DCC->mPos;
+			}
+
+			if (bHaveTarget)
+			{
+				CVector headHook;
+				CVector look;
+
+				M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&headHook), pPlayer, 8);
+
+				look.vx = (target.vx - headHook.vx) >> 12;
+				look.vy = (target.vy - headHook.vy) >> 12;
+				look.vz = (target.vz - headHook.vz) >> 12;
+
+				gte_SetRotMatrix(reinterpret_cast<MATRIX*>(
+					reinterpret_cast<char*>(pPlayer) + 0x89C));
+				gte_ldlvl(reinterpret_cast<VECTOR*>(&look));
+				gte_rtir();
+				gte_stlvnl(reinterpret_cast<VECTOR*>(&look));
+				look <<= 12;
+
+				Utils_CalcAim(reinterpret_cast<CSVector*>(
+						reinterpret_cast<char*>(pPlayer) + 0xE04),
+					&ZeroVector, &look);
+
+				// clamp the head yaw out of the 0x200..0xE00 dead zone
+				{
+					i16 *pHeadYaw = reinterpret_cast<i16*>(
+						reinterpret_cast<char*>(pPlayer) + 0xE04);
+					i16 *pHeadPitch = reinterpret_cast<i16*>(
+						reinterpret_cast<char*>(pPlayer) + 0xE06);
+					i32 yawVal = *pHeadYaw;
+					i32 pitchVal = *pHeadPitch;
+
+					if (yawVal > 0x800)
+					{
+						if (yawVal < 0xE00) *pHeadYaw = 0xE00;
+					}
+					else if (yawVal > 0x200)
+					{
+						*pHeadYaw = 0x200;
+					}
+
+					if (pitchVal > 0x800)
+					{
+						if (pitchVal < 0xD00) *pHeadPitch = 0xD00;
+					}
+					else if (pitchVal > 0x300)
+					{
+						*pHeadPitch = 0x300;
+					}
+				}
+			}
+		}
+		else
+		{
+			PLR_I16(pPlayer, 0xE04) = 0;
+			PLR_I16(pPlayer, 0xE06) = 0;
+		}
+
+		// --- ease the head joint towards the target angles, 0x4B7FB9 ---
+		if (pPlayer->mpJoints != 0)
+		{
+			i16 *pJointAngles = reinterpret_cast<i16*>(
+				reinterpret_cast<char*>(pPlayer->mpJoints) + 0x24);
+			i32 axis;
+
+			for (axis = 0; axis < 2; axis++)
+			{
+				i16 cur = pJointAngles[axis];
+				i32 diff = (i32)PLR_I16(pPlayer, 0xE04 + axis * 2) - (i32)cur;
+
+				if (diff > 0x800)
+				{
+					diff -= 0x1000;
+				}
+				else if (diff < -0x800)
+				{
+					diff += 0x1000;
+				}
+
+				if (diff != 0)
+				{
+					if (diff > 0x40)
+					{
+						diff = 0x40;
+					}
+					else if (diff < -0x40)
+					{
+						diff = -0x40;
+					}
+
+					pJointAngles[axis] = (i16)(diff + cur);
+				}
+			}
+		}
+
+		if (pPlayer->mHealth < 0)
+		{
+			pPlayer->mHealth = 0;
+		}
+
+		// --- the spidey-sense buzz and the two fists, 0x4B806B ---
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookA), pPlayer, 1);
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookB), pPlayer, 0);
+
+		{
+			CBody *pBuzz = reinterpret_cast<CBody*>(Mem_RecoverPointer(&pPlayer->field_ED4));
+
+			if (pBuzz != 0)
+			{
+				i32 pulse;
+
+				M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pBuzz->mPos), pPlayer, 8);
+				gM3dUtils_GetPartAngles(pPlayer, 7, &pBuzz->mAngles, 0);
+
+				pulse = Sine(((i32)gTimerRelated << 6) & 0xFFF);
+				if (pulse < 0) pulse = -pulse;
+				pulse = pulse / 2 + 0x800;
+
+				pBuzz->mScale.vx = (i16)pulse;
+				pBuzz->mScale.vy = (i16)pulse;
+				pBuzz->mScale.vz = (i16)pulse;
+
+				if (G_PULSATING_HEAD_FLAG != 0)
+				{
+					pBuzz->mScale.vx = (i16)(pBuzz->mScale.vx << 1);
+					pBuzz->mScale.vy = (i16)(pBuzz->mScale.vy << 1);
+					pBuzz->mScale.vz = (i16)(pBuzz->mScale.vz << 1);
+				}
+
+				SpideyAI0_ApplyCheatScale(pBuzz, 0);
+			}
+		}
+
+		{
+			i32 fist;
+
+			for (fist = 0; fist < 2; fist++)
+			{
+				CBody *pFist = reinterpret_cast<CBody*>(
+					Mem_RecoverPointer(&pPlayer->field_5B8[fist]));
+
+				if (pFist != 0)
+				{
+					i32 dist;
+
+					M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pFist->mPos),
+						pPlayer, (fist != 0) ? 3 : 4);
+					gM3dUtils_GetPartAngles(pPlayer, (fist != 0) ? 5 : 10,
+						&pFist->mAngles, 0);
+
+					dist = Utils_CrapDist(pFist->mPos, CameraList->mPos);
+					if (dist < 0x100)
+					{
+						pFist->mFlags |= 0xC00;
+						if (dist < 0xAA)
+						{
+							pFist->mRGB = 0;
+						}
+						else
+						{
+							u32 level = (u32)(dist - 0xAA);
+
+							pFist->mRGB = (((level << 8) | level) << 8) | level;
+						}
+					}
+					else
+					{
+						pFist->mFlags &= 0xF3FF;
+						pFist->mRGB = 0x808080;
+					}
+
+					if (pPlayer->field_5E8 != 0)
+					{
+						u32 blue = pFist->mRGB & 0xFF;
+
+						pFist->mFlags |= 0x400;
+						pFist->mRGB = (u32)((Rnd((i32)blue) / 2) << 8) | blue;
+					}
+				}
+			}
+		}
+
+		// --- the flaming-fists effect, 0x4B826A ---
+		if (pPlayer->field_5E8 != 0 && pPlayer->field_5AC != 0)
+		{
+			u16 anim = pPlayer->mAnim;
+			u32 args[2];
+			i32 count;
+			i32 i;
+
+			if (anim == 0x66 || anim == 0x68 || anim == 0x6A || anim == 0xD5)
+			{
+				count = 3;
+			}
+			else
+			{
+				count = (Rnd(4) != 0) ? 0 : 1;
+			}
+
+			args[0] = (u32)&hookA;
+			args[1] = 0x100;
+			for (i = 0; i < count; i++)
+			{
+				Reloc_CallUserFunction(gFistEffectNameLeft, 5, args, 0);
+			}
+
+			if (anim == 0x64 || anim == 0x6A || anim == 0xD5)
+			{
+				count = 3;
+			}
+			else
+			{
+				count = (Rnd(4) != 0) ? 0 : 1;
+			}
+
+			args[0] = (u32)&hookB;
+			for (i = 0; i < count; i++)
+			{
+				Reloc_CallUserFunction(gFistEffectNameRight, 5, args, 0);
+			}
+		}
+
+		// --- swing line, web and held object render ends, 0x4B8346 ---
+		if (pPlayer->field_E64 != 0)
+		{
+			if (pPlayer->mAnim == 0x118)
+			{
+				hookA -= (pPlayer->field_C6C * 8);
+				gCSwinger_SetRenderEnd(pPlayer->field_E64, hookA);
+			}
+			else
+			{
+				hookB -= (pPlayer->field_C6C * 8);
+				gCSwinger_SetRenderEnd(pPlayer->field_E64, hookB);
+			}
+		}
+
+		if (pPlayer->field_E6C != 0)
+		{
+			CWeb *pWeb = reinterpret_cast<CWeb*>(pPlayer->field_E6C);
+			CVector firePos;
+
+			if (pWeb->field_102 == 0)
+			{
+				firePos = hookB;
+			}
+			else if (pWeb->field_102 == 1)
+			{
+				firePos = hookA;
+			}
+			else
+			{
+				firePos = hookA + ((hookB - hookA) / 2);
+			}
+
+			gCWeb_SetFirePos(pWeb, firePos);
+		}
+
+		if (pPlayer->mHeldObject != 0)
+		{
+			CManipOb *pHeld = pPlayer->mHeldObject;
+			CVector mid = hookA + ((hookB - hookA) / 2);
+			CVector dir = (mid - pPlayer->mPos) >> 6;
+			i32 reach;
+
+			VectorNormal(reinterpret_cast<VECTOR*>(&dir),
+				reinterpret_cast<VECTOR*>(&dir));
+
+			reach = (i32)pHeld->field_108;
+			pHeld->mPos = (mid + (dir * reach)) + (pPlayer->field_C6C * 0x20);
+			pHeld->mAngles.vy = (i16)(pHeld->mAngles.vy + (i16)pPlayer->field_548);
+		}
+
+		// --- keep the fists model in step with the animation, 0x4B8638 ---
+		// 0xAB4: the animation id the current fists model was built for.
+		if (pPlayer->mAnim != (u16)PLR_U8(pPlayer, 0xAB4))
+		{
+			// gFistsData[anim] >> 14 is the fists variant, see
+			// CPlayer::SortFistsData in spidey.cpp.
+			u16 *pFistsData = reinterpret_cast<u16*>(0x00555A14);
+
+			pPlayer->CreateFists((u8)(pFistsData[pPlayer->mAnim] >> 14));
+			PLR_U8(pPlayer, 0xAB4) = (u8)pPlayer->mAnim;
+		}
+
+		pPlayer->SetupLookaroundCamera();
+		pPlayer->DrawOffscreenSpideySenseIndicatorList();
+
+		// clear the pad's per-frame edge flags, skipping entries 14 and 15
+		{
+			i32 i;
+
+			for (i = 0; i < 20; i++)
+			{
+				if (i != 14 && i != 15)
+				{
+					pPad[i * 16 + 1] = 0;
+					PLR_U8(pPlayer, 0x1C1 + i * 16) = 0;
+				}
+			}
+		}
+	}
 }
