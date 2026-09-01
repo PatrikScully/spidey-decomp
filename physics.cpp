@@ -49,16 +49,38 @@ void Physics_SetGravity(CVector *pVec)
     *gNormalizedGravity = *gGravity / (-*gGravityLength);
 }
 
-// @SMALLTODO
-// Original 0x4F7270, CSwinger::GetCurrentParams(CVector &). Stub only: the
-// real body is
-//     *pOut = swinger->field_10C - (swinger->field_108 * swinger->field_170);
-// (operator* 0x4E77D0 then operator- 0x4E7760 on three CVector fields of
-// CSwinger), but all three sit inside web.h's PADDING(0x17C-0x108) and web.h
-// is not this change's to edit. See the note in physics.h.
+// @Ok
+// Original 0x4F7270, CSwinger::GetCurrentParams(CVector &). Read from the raw
+// disassembly rather than the pseudocode, because the field layout is unusual:
+//
+//   lea ecx,[esi+108h] / lea eax,[esi+170h] -> operator*(CVector,CVector) 0x4E77D0
+//   then [esi+10Ch] minus that result       -> operator-(CVector,CVector) 0x4E7760
+//
+// Those members OVERLAP as three CVectors: 0x108 and 0x10C cannot both start a
+// 12-byte vector. That is deliberate, not a misread. operator* at 0x4E77D0
+// reads ONLY lhs.vx - its body is "mov eax,[eax]" followed by three imuls
+// against that one value, never touching [eax+4] or [eax+8] - so the original
+// is using the CVector*CVector overload as a scalar broadcast, the scalar
+// being the single dword at 0x108. Real layout: scalar at 0x108, CVector at
+// 0x10C, CVector at 0x170.
+//
+// Reached by byte offset instead of carving web.h's PADDING(0x17C-0x108),
+// because writing that overlap into the class declaration would be wrong.
+// Whoever names these members should encode the scalar/vector split above.
+//
+// NOTE for anyone auditing vector.cpp: the lhs.vx broadcast in
+// operator*(const CVector&, const CVector&) is FAITHFUL to the original, not a
+// transcription bug. It looks just like the genuine bug fixed in operator+ on
+// 2026-08-31, so do not "correct" it.
 void CSwinger_GetCurrentParams(i32 *pSwinger, CVector *pOut)
 {
-	printf("CSwinger_GetCurrentParams(%p, %p)", pSwinger, pOut);
+	const char *pBase = reinterpret_cast<const char*>(pSwinger);
+
+	const CVector &Scale  = *reinterpret_cast<const CVector*>(pBase + 0x108);
+	const CVector &Origin = *reinterpret_cast<const CVector*>(pBase + 0x10C);
+	const CVector &Offset = *reinterpret_cast<const CVector*>(pBase + 0x170);
+
+	*pOut = Origin - (Scale * Offset);
 }
 
 // @Ok
