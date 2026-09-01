@@ -572,7 +572,61 @@ nextBaddy:;
 		this->field_354 = 0;
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Scoped 2026-09-01 but not implemented. Original address 0x4B9EB0, 2807
+// bytes. It is a plain (very long) field initialiser, and every function it
+// calls already exists in the repo, so nothing blocks it leaf-first. What
+// stops it is the CPlayer layout: it writes about 200 offsets and roughly
+// 35 of them are still inside PADDING blocks. Adding them wrong shifts
+// everything after, so whoever does this should add one VALIDATE entry per
+// new field in validate_CPlayer and let tobey_validator check the lot.
+//
+// What it does, in order:
+//  - CSuper::CSuper, then zero two 16 x CVector arrays at 0x37C and 0x43C
+//    (the current and previous collision part positions
+//    UpdateAndTrackCombo sweeps between), the CVector/CSVector pair at
+//    0x514/0x520, field_558, both halves of field_594, the six
+//    SIndicator::mDirection vectors from 0x5F0 on (stride 104), and a long
+//    run of vectors, quats and scalars from 0x8CC up to 0xEE8. The nonzero
+//    seeds are: 0x570/0x574/0x578 = 208/160/256, the identity w components
+//    (4096) of the quats at 0xC94, 0xCA4, 0xCC4, 0xCD4, field_C5C = 1,
+//    field_C60 = 300, field_C64 = 4096, field_A80 = 1, field_8EB = 1.
+//  - vptr, field_554 = SpideyAI0, field_194 = (field_194 & 0xFFFFF39F) |
+//    0x840, then ParseFightData().
+//  - patches nine gSpideySFXEntry slots (0x6A830C, 0x6A83A4, 0x6A8388,
+//    0x6A8380, 0x6A8384, 0x6A83A8, 0x6A83B4, 0x6A85B8, 0x6A85D0) to point
+//    at the .rdata blobs at 0x5565A8..0x556600, then walks the WHOLE
+//    gSpideySFXEntry array (0x6A82B8 up to gDistanceDefs at 0x6A8768) and
+//    masks every entry of every script to 16 bits.
+//  - Trig_GetLevelId(): a fixed list of level ids clears field_C5C.
+//  - field_360 = field_364 = 2, field_DEC = Spool_FindAnim("Reticle").
+//  - resets the whole camera tuning global block (gSpideyFloorCam*,
+//    gSpideyWallCam*, 0x6A81xx / 0x6A82xx / 0x6A8Cxx) to its defaults.
+//  - AttachTo(&MechList) and ++(the count at 0x6A9034).
+//  - difficulty (gDifficultyLevel at 0x54D474) picks mHealth and field_5D8;
+//    levels 6, 9 and 10 clamp field_5D8 to 2; gSaveGame+0x48/+0x4C restore
+//    mWebbing and field_5D8 when either is set; Trig_GetLevelId() above
+//    0x800 clamps field_5D8 to 2 again.
+//  - field_E0C = gSControl (0x661100), mpLight = 0x5559E0, InitItem
+//    ("spidey"), mFric = (1,4,1), mType = 50, mAngFric = (5,1,5),
+//    SwitchToStandMode(), M3dUtils_ReadHooksPacket(this, 0x55644C).
+//  - mTransform = identity-ish, then M3dMaths_RotMatrixYXZ((0,2048,0)) and
+//    MulMatrix into mTransform.
+//  - if gSaveGame+0x79 is set and gSaveGame+0xE8 is clear: load the
+//    "costarm" anim, seed field_5EC from difficulty then overwrite it with
+//    gSaveGame+0x50, and swap the suit textures once
+//    (Spidey_SwapSuitTextures + gSpideyVramProcessing, the same handshake
+//    ~CPlayer undoes).
+//  - Spidey_BagHead(4096, ...), then the SIndicator poly setup loop
+//    (6 x 4 POLY_F3, writing the dword at mPoly[j]+4 with 96 - j*24 and
+//    zeroing the one after; the setPolyF3/setSemiTrans calls next to it are
+//    the stubbed_printf pair, so they do nothing on PC). NOTE: this loop is
+//    the one part of the function I could not pin down cleanly, because the
+//    dword it writes lands on POLY_F3::r0..code rather than on the tag;
+//    check it against the disasm again before writing it out.
+//  - gSaveGame+0x7C picks field_580 (the hand trail colour).
+//  - field_E18 = 15, field_E12 = (i16)mAnimSpeed, and if field_8EA is set,
+//    ExitLookaroundMode().
 CPlayer::CPlayer(void)
 {
     printf("CPlayer::CPlayer(void)");
@@ -7730,7 +7784,53 @@ void CPlayer::SynthesizeAnalogueInput(void)
 	}
 }
 
-// @MEDIUMTODO
+// @BIGTODO
+// Scoped 2026-09-01 but not implemented. Original address 0x4C7120, 4839
+// bytes, by far the largest function left in this file. Every callee it has
+// already exists in the repo (M3dColij_LineToSphere, M3dZone_LineToItem,
+// M3dUtils_GetHookPosition / GetDynamicHookPosition, M3d_BuildTransform,
+// Web_CollideWithSuper, Utils_CrapDist, CSuper::ApplyPose, VectorNormal,
+// CPlayer::CreateCombatImpactEffect, SFX_PlayPos, InitiateCombo), and the
+// combo state it drives is now fully declared in spidey.h (field_8FC up to
+// field_A7C plus SComboPart), so this is a big but unblocked job.
+//
+// Elapsed time is field_84 - field_910; the byte at field_950[elapsed / 2]
+// is written straight into CSuper::mFrame, and hitting 0xFF in that stream
+// ends the move: everything is cleared and, if a follow-on was queued in
+// field_958, InitiateCombo(*field_958, field_90C) starts it (the
+// "exit frame incorrectly defined" assert fires on that path).
+//
+// The four blocks, in order:
+//  1. Distance. gDistanceDefs[mAnim] (0x6A8768, built by ParseFightData) is
+//     a byte stream walked with field_916 as the cursor: bytes 0x80..0x83
+//     and 0x84..0x87 select one of four slide hooks (and whether the y
+//     component is kept), anything else accumulates into a plain forward
+//     slide. The chosen slide is then swept with M3dColij_LineToSphere plus
+//     two M3dZone_LineToItem probes so the player does not slide into
+//     geometry, and the surviving offset is added to mPos with
+//     CVector::operator+=.
+//  2. Input latching. field_E2D / field_E2E against field_E2F / field_E30
+//     set the four direction latches at 0x241/0x251/0x261/0x271 and their
+//     pad mirrors, then the four attack buttons are packed into a 4 bit
+//     mask.
+//  3. Part matching. Walks field_95C while mInput is non null: a part only
+//     accepts a press inside its frame window (field_902/904 or
+//     field_906/908 depending on mUseLateWindow), advances mInput by 1 or 2
+//     depending on whether the press was inside the part's own timeout
+//     (the byte at mInput[1]), and when mInput reaches 0xFF the part wins:
+//     field_958, field_914, field_90A and field_90C are filled in from the
+//     move record's parts array and field_94C is cleared.
+//  4. Collision. Between field_8FE and field_900 the collision parts stream
+//     at field_954 is walked, each entry feeding
+//     M3dUtils_GetDynamicHookPosition into the 0x37C array (with the 0x43C
+//     array holding the previous frame, or the same position on the first
+//     tick, which is what field_378 gates). Every CBody in the baddy list
+//     that is not already in field_A6C and is within 700 units gets swept
+//     with Web_CollideWithSuper; on a hit it builds the SHitInfo (damage
+//     from the move record scaled by GetDamageInflictedFromDifficulty, the
+//     random slide distance from record+26/+28, the impact direction from
+//     Utils_CalcAim), calls the target's virtual Hit, plays one of three
+//     impact effects, and records the body in field_A6C.
 void CPlayer::UpdateAndTrackCombo(void)
 {
     printf("CPlayer::UpdateAndTrackCombo(void)");
