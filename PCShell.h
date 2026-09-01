@@ -38,6 +38,13 @@ EXPORT void gsub_430680(void);
 // (was PCShell.cpp-local) so shell.cpp's CheckForPadUnplugged can call it too, same reason
 // as gsub_430680 above.
 EXPORT void gsub_430880(void);
+
+// display options chosen in the shell, applied by SpideyMain (main.cpp) on the
+// way into a level. Defined in PCShell.cpp. Tentative names, see the comment
+// there for the address evidence.
+EXPORT extern u32 gPendingResolutionX;
+EXPORT extern u32 gPendingResolutionY;
+EXPORT extern u32 gPendingColorDepth;
 EXPORT void initActionMaps(void);
 EXPORT u8 processControllerScreen(void);
 EXPORT void resetActionMaps(bool);

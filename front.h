@@ -15,7 +15,12 @@ struct SLevel
 	char* mDisplayName;
 	char* mName;
 
-	PADDING(0x4);
+	// bit 1 (0x2) is tested by SpideyMain (main.cpp) when a level finishes to
+	// decide whether the game auto-saves on the easier difficulties. Carved out
+	// of the blind PADDING(0x4) that used to start here; same byte range.
+	u8 field_8;
+
+	PADDING(3);
 
 	u16 field_C;
 
