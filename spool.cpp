@@ -20,9 +20,22 @@
 #include <cstring>
 #include <cstdlib>
 
-// @FIXME
-// should be 0
+// Bug found 2026-09-01 via a real headless boot test (title screen -> Enter
+// crashed inside the ORIGINAL, unhooked PShell_DrawHighlight on a null
+// texture pointer). Root cause: Spool_FindTextureEntry(u32) is hooked
+// (bit.cpp PATCH_PUSH_RET_POLY), so it runs OUR code and read OUR own
+// separate copy of this flag (always 1, since nothing hooked ever wrote 0
+// here) instead of the real game's copy, which the UNHOOKED ProcessNewPSX
+// correctly cycles 1->0 during PSX load. That split-brain made every texture
+// lookup miss return NULL instead of the intended fallback texture. Fixed
+// by pointing this at real game memory (0x6B2F08, confirmed in the
+// maintainer's idb_globals.txt) so the hooked reader and the unhooked
+// writer agree. Safe per the G_* runtime-safety rule: Spool_FindTextureEntry
+// is the only HOOKED reader/writer of this flag; ProcessNewPSX and
+// Spool_TextureAccess (the other reader) are both unhooked.
 EXPORT u8 gSpoolLogFailedTextureAccess = 1;
+//#define G_SPOOL_LOG_FAILED_TEXTURE_ACCESS (gSpoolLogFailedTextureAccess)
+#define G_SPOOL_LOG_FAILED_TEXTURE_ACCESS (*reinterpret_cast<u8*>(0x006B2F08))
 
 EXPORT i32 gRegionReloadRelated = -1;
 EXPORT u8 gReloading = 1;
@@ -568,7 +581,7 @@ void ProcessNewPSX(i32 a1)
 	// NewTextureEntry does not do. The array slots are overwritten in
 	// place from raw checksums to Texture* pointers, exactly like the
 	// original.
-	gSpoolLogFailedTextureAccess = 1;
+	G_SPOOL_LOG_FAILED_TEXTURE_ACCESS = 1;
 
 	if (texCount != 0)
 	{
@@ -591,7 +604,7 @@ void ProcessNewPSX(i32 a1)
 			else
 			{
 			notFound:
-				if (!gSpoolLogFailedTextureAccess)
+				if (!G_SPOOL_LOG_FAILED_TEXTURE_ACCESS)
 				{
 					print_if_false(0, "Can't find texture from checksum %ld", checksum);
 					pTexEntry = reinterpret_cast<Texture*>(
@@ -634,7 +647,7 @@ void ProcessNewPSX(i32 a1)
 		}
 	}
 
-	gSpoolLogFailedTextureAccess = 0;
+	G_SPOOL_LOG_FAILED_TEXTURE_ACCESS = 0;
 
 	// Remap each model's face texture-index (bit 0 of the face's packed
 	// "tag" dword) through pTexSlots (now full of Texture* after the loop
@@ -1542,14 +1555,14 @@ i32 Spool_TextureAccess(
 		return pTexture->mRegion;
 	}
 
-	if (!gSpoolLogFailedTextureAccess)
+	if (!G_SPOOL_LOG_FAILED_TEXTURE_ACCESS)
 	{
 		print_if_false(0, "Can't find texture from checksum %ld", checksum);
-		*ppTexture = gAnimTable[13]->pTexture;
+		*ppTexture = G_ANIM_TABLE[13]->pTexture;
 		accessLog(
 				"Create Texture Access Fails [NOT FOUND]: csum=%8.8X, rgn=%i, addr=0x%8.8X\r\n",
-				checksum, gAnimTable[13]->pTexture->mRegion, ppTexture);
-		return gAnimTable[13]->pTexture->mRegion;
+				checksum, G_ANIM_TABLE[13]->pTexture->mRegion, ppTexture);
+		return G_ANIM_TABLE[13]->pTexture->mRegion;
 	}
 
 	accessLog("Create Texture Access Fails [NOT FOUND]: csum=%8.8X, addr=0x%8.8X\r\n", checksum, ppTexture);
@@ -2063,8 +2076,14 @@ void Spool_ClearAllPSXs(void)
 // @Matching
 // Walks the checksum hash bucket for the texture. If nothing is found and
 // gSpoolLogFailedTextureAccess is 0, logs the miss and hands back the
-// default texture (gAnimTable[13]->pTexture), same idiom as the other
+// default texture (G_ANIM_TABLE[13]->pTexture), same idiom as the other
 // spool "not found" fallbacks. Original at 0x4C9460.
+// Bug found 2026-09-01 (same headless keypress test as the
+// G_SPOOL_LOG_FAILED_TEXTURE_ACCESS fix above): this function is hooked, so
+// it ran with our own never-populated gAnimTable[] instead of the real
+// game's table (bit.h already has G_ANIM_TABLE for exactly this, just
+// wasn't used here). Switched every gAnimTable[13] in this file to
+// G_ANIM_TABLE[13].
 Texture *Spool_FindTextureEntry(u32 checksum)
 {
 	Texture *pSearch;
@@ -2078,10 +2097,10 @@ Texture *Spool_FindTextureEntry(u32 checksum)
 
 	if (!pSearch)
 	{
-		if (!gSpoolLogFailedTextureAccess)
+		if (!G_SPOOL_LOG_FAILED_TEXTURE_ACCESS)
 		{
 			print_if_false(0, "Can't find texture from checksum %ld", checksum);
-			return gAnimTable[13]->pTexture;
+			return G_ANIM_TABLE[13]->pTexture;
 		}
 	}
 
@@ -2104,7 +2123,7 @@ Texture *Spool_FindTextureEntry(char *name)
 	}
 
 	if (index >= 256)
-		return gAnimTable[13]->pTexture;
+		return G_ANIM_TABLE[13]->pTexture;
 
 	return Spool_FindTextureEntry(gTextureEntries[index].Checksum);
 }
