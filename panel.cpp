@@ -407,14 +407,6 @@ static u8 * const gSynthInputScriptFlag = (u8*)0x0060F770;
 // contents are "00". Only Panel_Display touches it (xrefs_to 0x0054EA90).
 static char * const gWebCartDigits = (char*)0x0054EA90;
 
-// Defined in spidey.cpp (EXPORT SAnimFrame *gSpideyAnim / *gSpideyAnimTwo;
-// 0x0060F750 / 0x0060F754 per idb_globals.txt, both written by
-// Spidey_LoadAlternativeHealthIcon and CPlayer::SetArmor). spidey.h does not
-// declare them, so declare them here; they belong in spidey.h once that header
-// is free to edit.
-EXPORT extern SAnimFrame *gSpideyAnim;
-EXPORT extern SAnimFrame *gSpideyAnimTwo;
-
 // Defined further down next to Panel_DisplayHealthBar, which is where it was
 // first factored out; Panel_Display needs it too and comes earlier in the file.
 static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMode blend, f32 zOffset);

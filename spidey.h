@@ -967,6 +967,11 @@ EXPORT extern CPlayer* MechList;
 EXPORT extern CItem* SpideyAdditionalBodyPartsList;
 EXPORT extern CItem* MiscellaneousRenderingList;
 
+// Defined in spidey.cpp (0x0060F750 / 0x0060F754 per idb_globals.txt, both
+// written by Spidey_LoadAlternativeHealthIcon and CPlayer::SetArmor).
+EXPORT extern SAnimFrame *gSpideyAnim;
+EXPORT extern SAnimFrame *gSpideyAnimTwo;
+
 
 EXPORT void Bruce_Sync(void);
 
