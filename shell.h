@@ -18,6 +18,22 @@ class CVertexWobble;
 struct STailGeometry;
 struct SSimpleRibbonParams;
 class CSimpleTexturedRibbon;
+class CKnottedWeb;
+class CShellVenomElectrified;
+class CShellCarnageElectrified;
+class CShellSuperDocOckElectrified;
+class CShellSimbyFireDeath;
+class CShellSimbySlimeBase;
+
+// One row of the XA track table a CDummy is built with (constructor parameter a13, kept in
+// field_1DC). CDummy::AI plays row 0 on the square button, row 1 on the triangle button, and
+// picks one of rows 2..6 at random whenever the idle timer runs out. A row of two zeroes means
+// "no track", which is what the random picker skips over.
+struct SDummyXATrack
+{
+	i32 TrackA;
+	i32 TrackB;
+};
 
 struct SRecordRelated
 {
@@ -239,12 +255,17 @@ public:
 	// default/idle animation id, used when no track list exists (SelectNewTrack, SelectNewAnim).
 	i32 field_1C0;
 
-	// constructor parameter a12. Boolean-ish; if nonzero, ~CDummy calls Redbook_XAStop().
+	// Constructor parameter a12. The costume's intro XA track, packed as (TrackA << 16) |
+	// TrackB: CDummy::AI hands the two halves straight to Redbook_XAPlay once the model has
+	// been on screen for 30 vblanks. Zero means the costume has no intro track, which is also
+	// why ~CDummy only calls Redbook_XAStop() when it is nonzero.
 	i32 field_1C4;
 	// Vblanks value at construction time (spawn timestamp).
 	i32 field_1C8;
 
-	PADDING(4); // not written by the constructor; unconfirmed.
+	// set to 1 by CDummy::AI once the intro track above has been started, so it only fires
+	// once. The button-triggered tracks also check it, so nothing plays before the intro.
+	i32 field_1CC;
 
 	// Rnd(300) + 300 (a randomised 300..599 value; likely a decay/idle timer, not read by any
 	// currently-decompiled CDummy method).
@@ -257,14 +278,20 @@ public:
 	// idiom as Front_Init's pYesNoMenu->field_1E poke. Purpose unconfirmed beyond that one
 	// caller; the other 3 bytes of this dword are still unconfirmed padding.
 	u8 field_1D8;
-	PADDING(3);
 
-	// constructor parameter a13, stored as-is. Not read by any currently-decompiled CDummy method.
+	// L1+L2+R1+R2 latch. CDummy::AI sets it while all four shoulder buttons are held and
+	// clears it when any of them comes up, so the outline fade toggles once per press.
+	u8 field_1D9;
+
+	PADDING(2);
+
+	// Constructor parameter a13, stored as-is. It is an SDummyXATrack table (see above);
+	// CDummy::AI casts it and reads rows 0, 1 and 2..6 out of it.
 	i32 field_1DC;
 
-	// polymorphic pointer, deleted in ~CDummy via its vtable slot 0; not set by the constructor
-	// (set elsewhere -- CDummy::AI or similar -- not decompiled this session).
-	void* field_1E0;
+	// The web strand the spidey preview (mType 50) hangs from during anims 290/291. Created
+	// and re-aimed every frame by CDummy::AI, deleted as soon as the anim ends.
+	CKnottedWeb* field_1E0;
 
 	// "symbi_02" region CVertexWobble effects spawned for the fire/symbiote costume (mType 324);
 	// null for every other costume. Deleted polymorphically in ~CDummy.
@@ -274,20 +301,26 @@ public:
 	// sound/spool handle, -1 by default; set to Spool_PSX("fire", 0) for the fire/symbiote costume.
 	i32 field_1EC;
 
-	// polymorphic pointers, deleted in ~CDummy; not set by the constructor (set elsewhere, not
-	// decompiled this session).
-	void* field_1F0;
-	void* field_1F4;
+	// The symbiote costume's (mType 324) death effect and the slime puddle under it, both run
+	// by CDummy::AI: the puddle exists whenever the death effect does not, and the death
+	// effect reports back through its own field_50 when it is finished.
+	CShellSimbyFireDeath* field_1F0;
+	CShellSimbySlimeBase* field_1F4;
 
 	// FadeAway()/FadeBack() flags, already established before this session.
 	i32 field_1F8;
 	i32 field_1FC;
 
-	// polymorphic pointers, deleted in ~CDummy; not set by the constructor.
-	void* field_200;
-	void* field_204;
+	// Venom (mType 313) and Carnage (mType 314) electrified effects, both run by CDummy::AI.
+	CShellVenomElectrified* field_200;
+	CShellCarnageElectrified* field_204;
 
-	PADDING(8); // not written by the constructor; unconfirmed.
+	// Carnage's electrified countdown. While it is nonzero the effect above exists and the
+	// counter runs down; at zero the effect is dropped and Rnd(200) decides when to restart it.
+	i32 field_208;
+
+	// Rhino's (mType 307) one-shot latch for the foot stomp on anim 19 frame 19.
+	i32 field_20C;
 
 	// Mysterio costume (mType 311) glow effect. Deleted polymorphically in ~CDummy.
 	CShellMysterioHeadGlow* field_210;
@@ -305,10 +338,10 @@ public:
 	// interior point stops just before the end control point).
 	i32 field_234;
 
-	// polymorphic pointer, deleted in ~CDummy; not set by the constructor.
-	void* field_238;
-
-	PADDING(4); // not written by the constructor; unconfirmed.
+	// monster-Ock's (mType 309) electrified effect, and its countdown. Same shape as Carnage's
+	// field_204/field_208 pair above.
+	CShellSuperDocOckElectrified* field_238;
+	i32 field_23C;
 
 	CItem field_240;
 
@@ -324,7 +357,12 @@ public:
 
 	CItem field_288;
 
-	PADDING(4);
+	// Set by CDummy::AI for the Scorpion preview (mType 310): 1 while the current anim is one
+	// of the seven that swing the tail, 0 otherwise. Nothing in the repo reads it yet; the
+	// tail sweep renderer is the obvious consumer.
+	u8 field_2C8;
+
+	PADDING(3);
 
 	// the same "1" InitialiseTailPSX writes at field_280, written by
 	// InitialiseTailSweepPSX in front of field_2D0.
@@ -535,9 +573,12 @@ class CShellSimbyFireDeath : public CNonRenderedBit
 		SHandle field_3C;
 		CVector *field_44;
 
-		// tail unknown, ctor at 0x4908E0 never touches it. total size
-		// (0x54) confirmed by VALIDATE_SIZE below.
-		PADDING(0xC);
+		PADDING(8);
+
+		// "finished" flag. The constructor at 0x4908E0 never touches it (so its Move, which is
+		// not decompiled yet, must set it); CDummy::AI polls it every frame and deletes the
+		// effect as soon as it goes nonzero. Was the tail of a blanket PADDING(0xC).
+		i32 field_50;
 };
 
 // Reverse engineered from the constructor at 0x48ED80 (names.json calls it

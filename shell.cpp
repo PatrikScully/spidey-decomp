@@ -38,7 +38,6 @@
 #include "bit.h"
 #include "bit2.h"
 #include "exp.h"
-#include "bit.h"
 
 #include <cstring>
 
@@ -10013,43 +10012,638 @@ CShellSimbySlimeBase::CShellSimbySlimeBase(CVector* pPos, CSVector* pAngles, i32
 	this->mType = 11;
 }
 
-// @BIGTODO
-// 0x491A10, 0x123E bytes (4670), 1300 instructions, 104 calls. Reached only through CDummy's
-// vtable (off_53BFAC slot 2), so it blocks nothing else. Scoped, not written: it is blocked
-// leaf-first on five CDummy helpers that are still unnamed in names.json and absent from this
-// repo. The Mac build names them (idbs/spiderman_names.txt lists the whole CDummy method set),
-// and the call sites below pin four of the five down by the mType they run for:
+// 0x682934, the cursor into gDummyTrackShuffle below. CDummy::AI steps it once per idle
+// timeout and reshuffles the table every time it wraps past 5. It sits four bytes before
+// gPshellArmorRealted (0x682940) and is not in the maintainer's IDB, so the name is my guess.
+static u8 * const gDummyTrackShuffleCursor = reinterpret_cast<u8*>(0x682934);
+
+// 0x682770, nonzero while an XA track is already playing. spidey.cpp holds the same address
+// under the name gRedbookXaPlayingMaybe; the maintainer's IDB names the byte right after it
+// (0x682771) Redbook_XAPaused, so this is part of the redbook state block.
+static u8 * const gRedbookXaPlaying = reinterpret_cast<u8*>(0x682770);
+
+// The two CDummy animation tracks CDummy::AI recognises by address for Venom (mType 313), and
+// the one it recognises for the symbiote costume (mType 324). All three are 0xFFFF terminated
+// u16 lists in the original .rdata; the AI only compares field_1BC against them, it never
+// reads them here.
+//  - 0x553714 { 0x1f 0x20 0x20 0x20 0x21 0x28 0x29 0xffff }: the wrap track, the one Venom is
+//    electrified during.
+//  - 0x553724 { 0x01 0x0d 0x0c 0x0a 0x04 0x05 0x07 0x0b 0x09 0x0d 0x0c 0x02 0xffff }: the
+//    fade track. Step 1 of it is anim 13 and step 10 is anim 12, which is exactly what the
+//    two print_if_false checks below assert.
+//  - 0x5537E4 { 0x2c 0x2d 0x2d 0x2d 0x2d 0x2d 0x2d 0x2d 0xffff }: the symbiote death track.
+static const u16 * const gDummyVenomWrapTrack = reinterpret_cast<const u16*>(0x553714);
+static const u16 * const gDummyVenomFadeTrack = reinterpret_cast<const u16*>(0x553724);
+static const u16 * const gDummySymbioteDeathTrack = reinterpret_cast<const u16*>(0x5537E4);
+
+// @Ok
+// 0x491A10, 0x123E bytes (4670). CDummy's vtable slot 2 (off_53BFAC), so the only way in is the
+// item list the costume viewer and the main menu previews run every frame. It is the whole per
+// frame behaviour of a preview model, in four parts: the XA music the costume plays, the
+// animation track the player steps through with triangle and square, the outline fade toggle on
+// L1+L2+R1+R2, and then one arm per mType for whatever effects that costume owns.
 //
-//   0x494280  2016 b  CDummy::SuperOckBuildArms      called for mType 309 (monster-Ock)
-//   0x494A60   384 b  (unnamed, sits between the two BuildArms bodies)
-//   0x494BE0  2016 b  CDummy::DocOckBuildArms        called for mType 308 (Doc Ock)
-//   0x4953C0   768 b  CDummy::InitialiseTailPSX      mType 310, when field_240.mRegion == 0xFF
-//   0x4956C0   688 b  CDummy::InitialiseTailSweepPSX mType 310, when field_288.mRegion == 0xFF
-//   0x4960C0   528 b  CDummy::BuildTail              called for mType 310 (Scorpion)
-//
-// The two Initialise* helpers are the exact counterparts of the teardown block in ~CDummy
-// above (same two regions, same fields), which is what confirms their identity. The Mac build
-// also has DeleteTailPSX and DeleteTailSweepPSX; on PC those two are inlined into ~CDummy.
-// The Mac UniformCurveTesselator helpers have no separate PC bodies either, they are inlined
-// into their BuildArms/BuildTail callers (which is why the PC bodies are bigger than the Mac
-// ones). One more callee, sub_43A300 (256 b, effects.cpp range, takes a CVector), is also
-// still a stub.
-//
-// Shape of the function itself, for whoever picks it up:
-//  - a flat per-frame prologue (0x491A10..0x491E4C): restart the character's XA music track
-//    after 30 vblanks (field_1C4/field_1C8/field_1CC), run down the field_1D0 idle timer and
-//    pick a new random XA track out of the shuffled table at 0x550DF8, advance the current
-//    animation track (field_1B8) and call SelectNewTrack/RunAnim at its 0xFFFF terminator,
-//    the FadeAway/FadeBack outline ramp (field_1F8/field_1FC driving OutlineOn/OutlineOff and
-//    SetOutlineRGB), the mType 310 tail-region setup, then M3d_BuildTransform.
-//  - a dispatch on mType at 0x491E4C: 50 spidey, 307 Rhino, 308 Doc Ock, 309 monster-Ock,
-//    310 Scorpion, 311 Mysterio, then a jump table at 0x492C74 for 312 Henchman, 313 Venom,
-//    314 Carnage and 324 symbiote. Everything else falls into the shared tail at 0x492C3B.
-//    The 308/309/310 arms are short: they just call the BuildArms/BuildTail helper above and
-//    return, so those three become one-liners once the helpers exist.
+// The original inlines CDummy::SelectNewAnim, FadeAway, FadeBack and the constructors of the
+// four CShell* effect classes that live in this same file. They are written as calls here.
 void CDummy::AI(void)
 {
-	printf("CDummy::AI");
+	SHook hook;
+	hook.Part.vx = 0;
+	hook.Part.vy = 0;
+	hook.Part.vz = 0;
+
+	// --- the costume's own intro track, once the model has been up for 30 vblanks ---
+	if (this->field_1C4 != 0 && this->field_1CC == 0
+			&& static_cast<u32>(Vblanks - this->field_1C8) > 30)
+	{
+		Redbook_XAPlay(this->field_1C4 >> 16, static_cast<u16>(this->field_1C4), 0);
+		this->field_1CC = 1;
+	}
+
+	// --- idle timer: every 300..599 frames, another random track out of the shuffle ---
+	if (this->field_1D0 != 0)
+	{
+		this->field_1D0--;
+		if (this->field_1D0 == 0)
+		{
+			this->field_1D0 = Rnd(300) + 300;
+
+			if (this->field_1DC != 0 && *gRedbookXaPlaying == 0)
+			{
+				const SDummyXATrack* pTracks =
+						reinterpret_cast<const SDummyXATrack*>(this->field_1DC);
+
+				u8 cursor = *gDummyTrackShuffleCursor;
+				i32 trackA = 0;
+				i32 trackB = 0;
+				i32 tries = 0;
+
+				while (trackB == 0)
+				{
+					cursor++;
+					*gDummyTrackShuffleCursor = cursor;
+					if (cursor >= 5)
+					{
+						*gDummyTrackShuffleCursor = 0;
+						Utils_Jumble(gDummyTrackShuffle, 5);
+						cursor = *gDummyTrackShuffleCursor;
+					}
+
+					tries++;
+
+					i32 slot = gDummyTrackShuffle[cursor];
+					trackA = pTracks[slot + 2].TrackA;
+					trackB = pTracks[slot + 2].TrackB;
+
+					// ten goes at finding a row that has anything in it, then give up
+					if (tries > 10)
+						break;
+					if (trackA != 0)
+						break;
+				}
+
+				if (trackA != 0 || trackB != 0)
+					Redbook_XAPlay(trackA, trackB, 0);
+			}
+		}
+	}
+
+	if (this->mAnimFinished != 0)
+		this->SelectNewAnim();
+
+	// --- triangle and square step to the next track; the symbiote death effect locks it out ---
+	if (this->field_1F0 == 0)
+	{
+		if (G_SCONTROL[0].Triangle.Triggered != 0)
+		{
+			G_SCONTROL[0].Triangle.Triggered = 0;
+
+			u16* pTrack = this->field_1B0;
+			if (pTrack != 0 && *pTrack != 0xFFFF)
+			{
+				this->field_1B8 = pTrack;
+				this->field_1BC = pTrack;
+				this->RunAnim(*pTrack, 0, -1);
+			}
+
+			if (this->field_1DC != 0 && this->field_1CC != 0 && *gRedbookXaPlaying == 0)
+			{
+				const SDummyXATrack* pTracks =
+						reinterpret_cast<const SDummyXATrack*>(this->field_1DC);
+				if (pTracks[1].TrackA != 0 || pTracks[1].TrackB != 0)
+					Redbook_XAPlay(pTracks[1].TrackA, pTracks[1].TrackB, 0);
+			}
+		}
+
+		if (this->mType != 324 && G_SCONTROL[0].Square.Triggered != 0)
+		{
+			G_SCONTROL[0].Square.Triggered = 0;
+
+			u16* pTrack = this->field_1B4;
+			if (pTrack != 0 && *pTrack != 0xFFFF)
+			{
+				this->field_1B8 = pTrack;
+				this->field_1BC = pTrack;
+				this->RunAnim(*pTrack, 0, -1);
+			}
+
+			const SDummyXATrack* pTracks =
+					reinterpret_cast<const SDummyXATrack*>(this->field_1DC);
+			if (pTracks != 0 && this->field_1CC != 0 && *gRedbookXaPlaying == 0
+					&& (pTracks[0].TrackA != 0 || pTracks[0].TrackB != 0))
+				Redbook_XAPlay(pTracks[0].TrackA, pTracks[0].TrackB, 0);
+		}
+	}
+
+	this->UpdateFrame();
+
+	// --- L1+L2+R1+R2 toggles the outline fade, once per press ---
+	if (this->field_1D8 != 0)
+	{
+		if (G_SCONTROL[0].LeftOne.Pressed != 0 && G_SCONTROL[0].LeftTwo.Pressed != 0
+				&& G_SCONTROL[0].RightOne.Pressed != 0 && G_SCONTROL[0].RightTwo.Pressed != 0)
+		{
+			if (this->field_1D9 == 0)
+			{
+				// only these seven costumes have an outline to fade; everything else just
+				// takes the latch and does nothing
+				u16 type = this->mType;
+				bool canFade;
+				if (type <= 319)
+					canFade = (type == 319 || type == 50 || type == 303 || type == 316);
+				else
+					canFade = (type == 700 || type == 704 || type == 719);
+
+				if (canFade)
+				{
+					if (this->field_1F8 != 0)
+						this->FadeBack();
+					else
+						this->FadeAway();
+				}
+			}
+
+			this->field_1D9 = 1;
+		}
+		else
+		{
+			this->field_1D9 = 0;
+		}
+	}
+
+	// --- the two fade ramps, one step per frame ---
+	if (this->field_1F8 != 0)
+	{
+		i32 level = static_cast<u8>(this->mRGB);
+		if (level != 0)
+			level--;
+
+		this->mRGB = level | ((level | (level << 8)) << 8);
+
+		// the original only clears the low byte of this when it goes negative, which comes to
+		// the same thing because SetOutlineRGB takes it a byte at a time
+		i32 outline = 128 - 4 * level;
+		if (outline < 0)
+			outline = 0;
+
+		this->SetOutlineRGB(static_cast<u8>(outline), static_cast<u8>(outline),
+				static_cast<u8>(outline));
+	}
+
+	if (this->field_1FC != 0)
+	{
+		i32 level = static_cast<u8>(this->mRGB);
+		if (level == 32)
+		{
+			this->field_1FC = 0;
+			this->mFlags = static_cast<u16>((this->mFlags & 0xF7FF) | 0x80);
+			this->OutlineOff();
+		}
+		else
+		{
+			level++;
+			if (level > 32)
+				level = 32;
+
+			this->mRGB = level | ((level | (level << 8)) << 8);
+
+			i32 outline = 128 - 4 * level;
+			if (outline < 0)
+				outline = 0;
+
+			this->SetOutlineRGB(static_cast<u8>(outline), static_cast<u8>(outline),
+					static_cast<u8>(outline));
+		}
+	}
+
+	// the Scorpion builds its two hand made regions the first frame it runs
+	if (this->mType == 310)
+	{
+		if (this->field_240.mRegion == 0xFF)
+			this->InitialiseTailPSX();
+
+		if (this->field_288.mRegion == 0xFF)
+			this->InitialiseTailSweepPSX();
+	}
+
+	M3d_BuildTransform(this);
+
+	// --- one arm per costume. The original splits this into an "above 311" jump table, a
+	// separate test for 311, a pair for 309/310 and an if chain for the rest; it is one switch
+	// here because the arms do not share any code.
+	switch (this->mType)
+	{
+		case 50:
+		{
+			// the spidey preview hangs off a web strand for the two hanging anims
+			u16 anim = this->mAnim;
+			if ((anim == 290 && this->mFrame >= 4) || anim == 291)
+			{
+				CVector top;
+				CVector bottom;
+				top.vx = 0;
+				top.vy = 0;
+				top.vz = 0;
+				bottom.vx = 0;
+				bottom.vy = 0;
+				bottom.vz = 0;
+
+				hook.Offset = 11;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&top), this, &hook);
+
+				bottom.vy = top.vy - 1978368;
+				bottom.vx = top.vx;
+				bottom.vz = top.vz;
+
+				if (this->field_1E0 == 0)
+				{
+					this->field_1E0 = new CKnottedWeb(top, bottom);
+					this->field_1E0->mProtected = 1;
+					this->field_1E0->field_6E = 1;
+				}
+
+				this->field_1E0->SetStartAndEnd(&top, &bottom);
+			}
+			else if (this->field_1E0 != 0)
+			{
+				delete this->field_1E0;
+				this->field_1E0 = 0;
+			}
+			break;
+		}
+
+		case 307:
+		{
+			// the Rhino: one foot stomp per landing, then steam out of both nostrils while he
+			// is snorting
+			if (this->mAnim == 19 && this->mFrame == 19)
+			{
+				if (this->field_20C == 0)
+				{
+					CVector stomp;
+					stomp.vx = this->mPos.vx;
+					stomp.vy = this->mPos.vy + 450560;
+					stomp.vz = this->mPos.vz;
+
+					Effects_FootStomp(&stomp, 0x0F2354AC);
+					this->field_20C = 1;
+				}
+			}
+			else
+			{
+				this->field_20C = 0;
+			}
+
+			u16 anim = this->mAnim;
+			if ((anim == 0 && this->mFrame >= 21 && this->mFrame <= 38)
+					|| (anim == 9 && static_cast<u16>(this->mFrame) < 10)
+					|| (anim == 15 && this->mFrame >= 1 && this->mFrame <= 12))
+			{
+				CVector nostril;
+				CVector puff;
+				nostril.vx = 0;
+				nostril.vy = 0;
+				nostril.vz = 0;
+				puff.vx = 0;
+				puff.vy = 0;
+				puff.vz = 0;
+
+				// left nostril: the hook itself is the position, and the step from it to a
+				// second hook a little further out is the puff's velocity
+				hook.Part.vx = -32;
+				hook.Part.vy = 128;
+				hook.Part.vz = -640;
+				hook.Offset = 15;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&nostril), this, &hook);
+
+				hook.Part.vy += 48;
+				hook.Part.vz -= 32;
+				hook.Part.vx = -48;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&puff), this, &hook);
+
+				puff -= nostril;
+				new CShellRhinoNasalSteam(&nostril, &puff);
+
+				// right nostril, mirrored
+				hook.Part.vx = 32;
+				hook.Part.vy = 128;
+				hook.Part.vz = -640;
+				hook.Offset = 15;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&nostril), this, &hook);
+
+				hook.Part.vz -= 32;
+				hook.Part.vy += 48;
+				hook.Part.vx = 48;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&puff), this, &hook);
+
+				puff -= nostril;
+				new CShellRhinoNasalSteam(&nostril, &puff);
+			}
+			break;
+		}
+
+		case 308:
+			this->DocOckBuildArms();
+			break;
+
+		case 309:
+		{
+			this->SuperOckBuildArms();
+
+			// the electrified crackle comes and goes on a random timer
+			if (this->field_23C != 0)
+			{
+				this->field_23C--;
+				if (this->field_238 == 0)
+					this->field_238 = new CShellSuperDocOckElectrified(this);
+			}
+			else
+			{
+				if (this->field_238 != 0)
+				{
+					delete this->field_238;
+					this->field_238 = 0;
+				}
+
+				if (Rnd(200) == 0)
+					this->field_23C = Rnd(30) + 40;
+			}
+			break;
+		}
+
+		case 310:
+		{
+			this->BuildTail();
+
+			switch (this->mAnim)
+			{
+				case 5:
+				case 6:
+				case 8:
+				case 9:
+				case 25:
+				case 27:
+				case 29:
+					this->field_2C8 = 1;
+					break;
+				default:
+					this->field_2C8 = 0;
+					break;
+			}
+
+			// the sting lands on anim 29 frame 4
+			if (this->mAnim == 29 && this->mFrame == 4)
+			{
+				CVector impact;
+				impact.vx = 0;
+				impact.vy = 0;
+				impact.vz = 0;
+
+				hook.Part.vx = 0;
+				hook.Part.vy = 0;
+				hook.Part.vz = 0;
+				hook.Offset = 23;
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&impact), this, &hook);
+
+				impact.vy = this->mPos.vy + 471040;
+
+				new CScorpExplosion(&impact);
+			}
+			break;
+		}
+
+		case 311:
+			// Mysterio's head glow rides a hook inside the helmet
+			hook.Part.vx = 0;
+			hook.Part.vy = -11000;
+			hook.Part.vz = -2500;
+			hook.Offset = 1;
+			M3dUtils_GetDynamicHookPosition(
+					reinterpret_cast<VECTOR*>(&this->field_210->mPos), this, &hook);
+			break;
+
+		case 312:
+		{
+			// the henchman: a muzzle flash on the two firing anims, and a spray of sparks off
+			// the gun on the reload
+			CVector muzzle;
+			muzzle.vx = 0;
+			muzzle.vy = 0;
+			muzzle.vz = 0;
+
+			if (this->mAnim == 8)
+			{
+				if (this->mFrame == 6)
+				{
+					hook.Offset = 14;
+					hook.Part.vx = 0;
+					hook.Part.vy = 1000;
+					hook.Part.vz = -160;
+					M3dUtils_GetDynamicHookPosition(
+							reinterpret_cast<VECTOR*>(&muzzle), this, &hook);
+
+					new CGlowFlash(&muzzle, 6, 255, 255, 255, 0, 255, 128, 0, 0,
+							7, 0, 1, 10, 32, 5, 16, 1, 1);
+				}
+
+				if (this->mFrame == 15)
+				{
+					hook.Offset = 9;
+					hook.Part.vx = 0;
+					hook.Part.vy = 1000;
+					hook.Part.vz = -160;
+					M3dUtils_GetDynamicHookPosition(
+							reinterpret_cast<VECTOR*>(&muzzle), this, &hook);
+
+					new CGlowFlash(&muzzle, 6, 255, 255, 255, 0, 255, 128, 0, 0,
+							7, 0, 1, 10, 32, 5, 16, 1, 1);
+				}
+			}
+
+			if (this->mAnim == 21 && this->mFrame == 30)
+			{
+				hook.Part.vx = -120;
+				hook.Part.vy = 200;
+				hook.Part.vz = -400;
+				hook.Offset = 13;
+
+				// a unit step 90 degrees off the way he is facing
+				CSVector aim;
+				aim.vx = this->mAngles.vx;
+				aim.vy = static_cast<i16>(this->mAngles.vy + 0x400);
+				aim.vz = this->mAngles.vz;
+
+				CVector step;
+				step.vx = 0;
+				step.vy = 0;
+				step.vz = 0;
+				Utils_GetVecFromMagDir(&step, -256, &aim);
+				step >>= 8;
+
+				M3dUtils_GetDynamicHookPosition(
+						reinterpret_cast<VECTOR*>(&muzzle), this, &hook);
+
+				for (i32 spark = 6; spark != 0; spark--)
+				{
+					CVector vel;
+					vel.vx = 0;
+					vel.vy = 0;
+					vel.vz = 0;
+
+					i32 speed = Rnd(3) + 4;
+					vel.vx = step.vx * speed;
+					vel.vy = 0;
+					vel.vz = speed * step.vz;
+
+					CGLineParticle* pSpark = new CGLineParticle(muzzle, vel, 20, 1);
+					pSpark->SetRGB0(48, 96, 48);
+					pSpark->SetRGB1(0, 0, 0);
+					pSpark->mCodeBGR0 |= 0x2000000;
+				}
+			}
+			break;
+		}
+
+		case 313:
+		{
+			// Venom: electrified for as long as the wrap track is running
+			if (this->field_1BC == gDummyVenomWrapTrack)
+			{
+				if (this->field_200 == 0)
+					this->field_200 = new CShellVenomElectrified(this);
+			}
+			else if (this->field_200 != 0)
+			{
+				delete this->field_200;
+				this->field_200 = 0;
+			}
+
+			// the fade track drives the outline by hand instead of through the button toggle
+			if (this->field_1BC == gDummyVenomFadeTrack)
+			{
+				i32 step = this->field_1B8 - this->field_1BC;
+				if (step == 0)
+				{
+					this->field_1FC = 0;
+					this->mFlags = static_cast<u16>((this->mFlags & 0xF7FF) | 0x80);
+					this->mRGB = 0x202020;
+					this->OutlineOff();
+				}
+				else if (step == 1)
+				{
+					print_if_false(this->mAnim == 13, "Unexpected anim for venom");
+					if (this->mFrame == 45)
+						this->FadeAway();
+				}
+				else if (step == 10)
+				{
+					print_if_false(this->mAnim == 12, "Unexpected anim for venom");
+					if (this->mFrame == 2)
+						this->FadeBack();
+				}
+			}
+			else
+			{
+				this->FadeBack();
+			}
+			break;
+		}
+
+		case 314:
+		{
+			// Carnage: the tendril bits switch between two sets, and the electrified effect
+			// comes and goes on the same random timer monster-Ock uses
+			if (this->mAnim == 13)
+				this->field_194 = (this->field_194 & 0xFFF99FFF) | 0x22000;
+			else
+				this->field_194 = (this->field_194 & 0xFFF99FFF) | 0x44000;
+
+			if (this->field_208 != 0)
+			{
+				this->field_208--;
+				if (this->field_204 == 0)
+					this->field_204 = new CShellCarnageElectrified(this);
+			}
+			else
+			{
+				if (this->field_204 != 0)
+				{
+					delete this->field_204;
+					this->field_204 = 0;
+				}
+
+				if (Rnd(200) == 0)
+					this->field_208 = Rnd(30) + 40;
+			}
+			break;
+		}
+
+		case 324:
+		{
+			// the symbiote costume: a slime puddle underneath it until the death track starts,
+			// then the fire death effect instead
+			if (this->field_1BC == gDummySymbioteDeathTrack && this->field_1F0 == 0)
+				this->field_1F0 = new CShellSimbyFireDeath(this);
+
+			if (this->field_1F0 != 0)
+			{
+				if (this->field_1F0->field_50 != 0)
+				{
+					delete this->field_1F0;
+					this->field_1F0 = 0;
+					this->SelectNewTrack(0);
+					G_SCONTROL[0].Circle.Triggered = 0;
+					G_SCONTROL[0].Square.Triggered = 0;
+				}
+
+				if (this->field_1F4 != 0)
+				{
+					delete this->field_1F4;
+					this->field_1F4 = 0;
+				}
+			}
+			else if (this->field_1F4 == 0)
+			{
+				CVector base;
+				base.vx = this->mPos.vx;
+				base.vy = this->mPos.vy + 409600;
+				base.vz = this->mPos.vz;
+
+				this->field_1F4 = new CShellSimbySlimeBase(&base, &this->mAngles, 256);
+				this->field_1F4->mProtected = 1;
+			}
+			break;
+		}
+
+		default:
+			break;
+	}
 }
 
 // @Ok
@@ -10712,22 +11306,28 @@ void validate_CDummy(void){
 	VALIDATE(CDummy, field_1F0, 0x1F0);
 	VALIDATE(CDummy, field_1F4, 0x1F4);
 
+	VALIDATE(CDummy, field_1CC, 0x1CC);
+	VALIDATE(CDummy, field_1D9, 0x1D9);
 	VALIDATE(CDummy, field_1F8, 0x1F8);
 	VALIDATE(CDummy, field_1FC, 0x1FC);
 
 	VALIDATE(CDummy, field_200, 0x200);
 	VALIDATE(CDummy, field_204, 0x204);
 
+	VALIDATE(CDummy, field_208, 0x208);
+	VALIDATE(CDummy, field_20C, 0x20C);
 	VALIDATE(CDummy, field_210, 0x210);
 	VALIDATE(CDummy, field_214, 0x214);
 	VALIDATE(CDummy, field_224, 0x224);
 	VALIDATE(CDummy, field_234, 0x234);
 	VALIDATE(CDummy, field_238, 0x238);
+	VALIDATE(CDummy, field_23C, 0x23C);
 
 	VALIDATE(CDummy, field_280, 0x280);
 	VALIDATE(CDummy, mpTailGeometry, 0x284);
 	VALIDATE(CDummy, field_240, 0x240);
 	VALIDATE(CDummy, field_288, 0x288);
+	VALIDATE(CDummy, field_2C8, 0x2C8);
 	VALIDATE(CDummy, field_2CC, 0x2CC);
 	VALIDATE(CDummy, field_2D0, 0x2D0);
 
@@ -10779,7 +11379,6 @@ void validate_CShellSimbySlimeBase(void)
 	VALIDATE(CShellSimbySlimeBase, field_F0, 0xF0);
 	VALIDATE(CShellSimbySlimeBase, field_100, 0x100);
 }
-
 
 
 void validate_CDropDownController(void)
