@@ -6,6 +6,7 @@
 #include "SpideyDX.h"
 #include "spool.h"
 #include "algebra.h"
+#include "screen.h"
 #include <math.h>
 #include <string.h>
 
@@ -483,83 +484,567 @@ void M3dAsm_BoundingSpherePreprocessing(CItem* pList)
 	}
 }
 
-typedef void (*M3d_Render_fn)(void*);
+// ---------------------------------------------------------------------
+// M3d_Render (0x004739A0) globals.
+//
+// The PS2 original of this function survives in thps2-stuff/m3d.mik
+// (M3d_Render, line 1139) and names almost everything below. The
+// maintainer's IDB (idbs/idb_globals.txt) independently confirms
+// EnviroList (0x6B2EFC), EnvRegions (0x556C64), OTPushback (0x660F78) and
+// M3d_FadeColour (0x652F38) at these exact addresses, which is what let me
+// map the rest of the PS2 names onto PC addresses with confidence.
+//
+// The PSX "scratchpad" (0x1F800000) that the PS2 code writes through
+// SCRATCH_* indices became, in the PC port, one 16-byte slot per index in
+// a flat table starting at 0x00614F58. The slot addresses below are in
+// that table and the names come straight from the PS2 SCRATCH_* names.
+//
+// Several of these addresses are also declared, under different names, by
+// the DCModel_RenderModel / M3d_RenderBackground / M3d_RenderSetup static
+// blocks further down this file. They are file-local `static ... const`
+// pointers, so a second name for the same address is legal and is already
+// this file's convention (see gDCOverrideFlags's own comment above); the
+// duplicate is noted per line.
+// ---------------------------------------------------------------------
 
-// @BIGTODO
-// forward to original (0x4739A0, ~3.5KB). RE-INVESTIGATED this session
-// (fresh IDA decompile, cross-checked against the maintainer's IDB names
-// and this repo's own already-implemented functions) alongside
-// RenderSuperItem below -- see that function's comment for the CSuper
-// false-blocker debunking, which applies equally here (this function's own
-// CItem offsets, up to a1+362/a1+368, all land inside already-declared
-// CItem/CSuper fields, no struct extension needed).
-//  - Walks a linked list of CItem (mNextItem, confirmed: CItem has a
-//    vtable pointer at offset 0 since it declares `virtual ~CItem()`, so
-//    every raw disasm offset in this family of functions is +4 relative to
-//    ob.h's field list -- e.g. the disassembly's "a1+4" is mFlags, "a1+8"
-//    is mPos, "a1+26" is mModel, "a1+31" is mRegion, "a1+32" is
-//    mNextItem.) -- for each item: mFlags bit 0x8000 (tested as the raw
-//    i16 sign bit) gates whether it renders at all; if it does, mFlags
-//    byte 5 bit 0x2 ("is super") dispatches to RenderSuperItem(item),
-//    otherwise the function does its own single-model render inline: LOD
-//    selection (confirmed: `PSXRegion[region].NumParts`/`.ppModels` --
-//    the disassembly's `dword_6B2454[17*region]`/`word_6B2478[34*region]`
-//    are exactly `PSXRegion[region].ppModels`/`.NumParts`, since sizeof
-//    SPSXRegion is 0x44 == 17*4 and NumParts really sits at byte offset
-//    0x38 there, not the stale 0x34 the header comment claims -- matches
-//    17*4=0x44*region landing on ppModels's 0x14 offset, 34*2=0x44*region
-//    on NumParts's real 0x38 offset), walking SModel::NextLOD chains using
-//    SModel::zMax as a rough on-screen-size estimate against the
-//    viewport's derived projection scale (SViewport's "fieldE",
-//    M3d_RenderSetup's gM3dViewportPtr[+0xE]); a rotation matrix built
-//    from CItem::mAngles via the exact same sin/cos/matrix4x4 shape
-//    M3d_RenderBackground (@Ok, this file) already reproduces; and the
-//    same DCModelData::mFlags & 0x4000 dispatch between
-//    DC_PSXModel_RenderModel and DCModel_RenderModel (both @Ok) that
-//    M3d_RenderBackground uses, via the same gM3dBackgroundModelData table
-//    (`dword_5F6764[region] + 36*model`).
-//  - Leaf status re-checked this session (previously reported as "9
-//    still-undecompiled GTE/camera helper leaves" -- mostly stale, cross-
-//    checked against the maintainer's IDB and this repo's own already-@Ok
-//    functions):
-//      sub_46D7B0 = gte_SetRotMatrix (already @Ok, ps2funcs.cpp)
-//      sub_46D790 = gte_stlvnl (already @Ok, ps2funcs.cpp)
-//      sub_46DDF0 = gte_rtv0 (already @Ok, ps2funcs.cpp)
-//      sub_46E460 = m3d_ZeroTransVector (already @Ok, ps2funcs.cpp)
-//      sub_475FB0 = M3d_PreprocessWibblyTextures (already @Ok, this file)
-//    RESOLVED THIS SESSION: sub_46D7E0/sub_46D810 (copy 3 precomputed
-//    camera-space vectors, written by M3d_RenderSetup's own gte_stsv loop
-//    at 0x628648/0x628620, into a fixed clip-plane-normal scratch table at
-//    0x610B40/0x610B60), sub_46E250 (trivial 3-int store into
-//    0x610BF0/F4/F8, a culling-sphere-center offset), and sub_46FAD0 =
-//    M3dAsm_BoundingSpherePreprocessing (the real per-item 6-plane
-//    view-frustum cull against those tables, sets/clears CItem::mFlags bit
-//    0x8000) are ALL now real, implemented functions above (this file) --
-//    see M3dAsm_BoundingSpherePreprocessing's own comment for the full
-//    evidence. This function does not call them directly (they are called
-//    from inside M3d_Render's own body, still forwarded below), but the
-//    leaf dependency chain is no longer a blocker.
-//  - Still blocking: a per-item colour-tint sub-block (mFlags bit
-//    0x80, then bit 0x400) that gamma-corrects CItem::mRGB/mTRN bytes
-//    through several pow() calls into the same gDCTexAnimColor*/0x660F90
-//    override-mask globals DCModel_RenderModel already reads, PLUS a
-//    second block (mFlags bit 0x2, "has local angles") building a rotation
-//    matrix whose Hex-Rays decompile is corrupted into bogus
-//    `QModelIndex::QModelIndex(...)` calls (the same decompiler-misread
-//    pattern CLAUDE.md documents happening on other GTE/PSX code in this
-//    codebase) -- reconstructing that block safely needs raw disasm, not
-//    the pseudocode, which this pass did not have time to do.
-// Net effect: the false "extend CSuper" blocker from an earlier session
-// does not apply here, and the whole leaf-function list (including the
-// bounding-sphere cull that used to be the last unresolved leaf) is now
-// real code. The only remaining blocker for this function itself is the
-// corrupted-decompile colour-tint/rotation block above -- whoever picks
-// this up next should hand-disassemble (not Hex-Rays) that block before
-// attempting this function's own list-walk shell.
-EXPORT void M3d_Render(void* pList)
+// PS2: EnviroList / EnvRegions[2]. Both confirmed verbatim in idb_globals.txt.
+static CItem ** const gM3dEnviroList  = (CItem**)0x006B2EFC;
+static i32 * const gM3dEnvRegions     = (i32*)0x00556C64;
+
+// PS2: FrustumMatrix1 / FrustumMatrix2 (the two 9-i16 clip tables the cull
+// reads) and FrustumNormals[0].pad / FrustumNormals[1].pad (SVECTOR::pad,
+// so base 0x65CEB8 + 6 and + 14). gM3dFrustumPadScale is PC only: a plain
+// f32 global (1.0f in the image) the port multiplies the first pad by,
+// almost certainly the widescreen/aspect fixup.
+static void * const gM3dFrustumMatrix1   = (void*)0x00628648;
+static void * const gM3dFrustumMatrix2   = (void*)0x00628620;
+static i16 * const gM3dFrustumNormal0Pad = (i16*)0x0065CEBE;
+static i16 * const gM3dFrustumNormal1Pad = (i16*)0x0065CEC6;
+static f32 * const gM3dFrustumPadScale   = (f32*)0x00550070;
+
+// The emulated scratchpad slots (PS2 SCRATCH_* names).
+static i16 * const gM3dScratchDpqMin      = (i16*)0x00614F58;
+static i16 * const gM3dScratchDpqShift    = (i16*)0x00614F68;
+static i16 * const gM3dScratchOtPushback  = (i16*)0x00614F88; // == gDCEnvMapTableA
+static i16 * const gM3dScratchOtPushback2 = (i16*)0x00614F98; // == gDCEnvMapTableB
+static i16 * const gM3dScratchOtPushback3 = (i16*)0x00615018; // == gDCEnvMapTableC
+static i16 * const gM3dScratchReflected   = (i16*)0x00614FA8;
+static i32 * const gM3dScratchFadeColour  = (i32*)0x00615028;
+static i32 * const gM3dScratchRefMapClut  = (i32*)0x00615038;
+static i32 * const gM3dScratchRefMapTpage = (i32*)0x00615048;
+static i32 * const gM3dScratchTint        = (i32*)0x006150B8;
+// PS2: SCRATCH_GLOBALFACEFLAGS. In the PC port GlobalFaceFlags is not a
+// local, it IS this global, written at every step of the flag build.
+static i32 * const gM3dGlobalFaceFlags    = (i32*)0x00660F90; // == gDCOverrideFlags
+
+// Sources copied into the scratchpad slots above (PS2 names).
+static i32 * const gM3dDpqMin      = (i32*)0x0064E568; // == gM3dFadeDist (M3d_RenderSetup)
+static i32 * const gM3dDpqShift    = (i32*)0x0061B5DC;
+static i16 * const gM3dOtPushback  = (i16*)0x00660F78; // IDB: OTPushback, read as [0]/[1]/[2]
+static i32 * const gM3dRefMapClut  = (i32*)0x0065CF70;
+static i32 * const gM3dRefMapTpage = (i32*)0x0066072C;
+static i32 * const gM3dFadeColourValue  = (i32*)0x00652F38; // IDB: M3d_FadeColour
+
+// PC only. The ITEMFLAGS_RGB path gamma-corrects CItem::mRGB into a second
+// set of colour globals for the float renderer, on top of the PS2's
+// SCRATCH_TINT write. gM3dTintEnabled gates it downstream.
+static i32 * const gM3dTintEnabled   = (i32*)0x00660F94; // == gDCTintFlag
+static u32 * const gM3dTintPacked    = (u32*)0x0065F728; // mRGB with R and B swapped, then >>1 & 0x7F7F7F
+static u32 * const gM3dTintB         = (u32*)0x00652F48;
+static u32 * const gM3dTintG         = (u32*)0x00652F4C;
+static u32 * const gM3dTintR         = (u32*)0x00652F50;
+static f32 * const gM3dTintGamma     = (f32*)0x00550020;
+static i32 * const gM3dTintOutB      = (i32*)0x00660F48; // == gDCTexAnimColorSrcA
+static i32 * const gM3dTintOutG      = (i32*)0x00660F5C; // == gDCTexAnimColorSrcB
+static i32 * const gM3dTintOutR      = (i32*)0x006191D4; // == gDCTexAnimColorSrcC
+// Two bytes INSIDE gSaveGame (0x682858, front.cpp), at +5 and +7. Per
+// CLAUDE.md's address-audit rule these are NOT given standalone names: the
+// slots are part of the save block (the `lXaX_t` level code lives there),
+// and the gamma the tint uses is picked from those two level-code
+// characters. gSaveGame still has no G_* macro (CLAUDE.md lists that as an
+// open item), so the raw address is used here with this note.
+#define M3D_SAVEGAME_BYTE(i) (*reinterpret_cast<char*>(0x00682858 + (i)))
+
+// PS2: TestTheWater, CurrentWaterLevel, WaterNormal.pad, pCurrentCamera,
+// pCurrentViewport.
+static i32 * const gM3dTestTheWater   = (i32*)0x0065CEAC;
+static i32 * const gM3dWaterLevel     = (i32*)0x005FCDA8;
+static i16 * const gM3dWaterNormalPad = (i16*)0x0062860E;
+
+// PC only lighting state consumed by DCModel_RenderModel.
+static i32 * const gM3dLightingEnabled    = (i32*)0x00660F9C; // == gDCTexAnimFlag
+static i32 * const gM3dLightsAreDynamic   = (i32*)0x0065CEB0; // == gDCDebugLightFlag
+static i32 * const gM3dDynamicLightSource = (i32*)0x00660FEC;
+static u8  * const gM3dNoFogFlagEarly     = (u8*)0x00660FE1;  // == gDCNoFogFlag
+static i32 * const gM3dPerItemRenderFlag  = (i32*)0x0065CF08; // cleared per item, role not confirmed
+static i32 * const gM3dNoDcModelData      = (i32*)0x00660F98; // set => render the raw PSX model, skip DCModelData
+static i32 * const gM3dLightCount         = (i32*)0x0064E510; // == gDCLightCount
+// The two per-light tables DCModel_RenderModel already reads through its
+// GDC_LIGHT_VECTOR_TABLE / GDC_LIGHT_COLOR_TABLE macros (same addresses,
+// 6456936 == 0x628668 and 6616488 == 0x64F5A8), 3 floats per light.
+static f32 * const gM3dLightDirTable   = (f32*)0x00628668;
+static f32 * const gM3dLightColorTable = (f32*)0x0064F5A8;
+// SLight::BackColor as floats (PS2: M3dAsm_SetAmbient).
+static f32 * const gM3dAmbientR = (f32*)0x00660F50; // == gDCTexAnimColorC
+static f32 * const gM3dAmbientG = (f32*)0x00660F54; // == gDCTexAnimColorB
+static f32 * const gM3dAmbientB = (f32*)0x00660F58; // == gDCTexAnimColorA
+// Debug/override light: replaces light 0's colour and the ambient, points
+// lights 1 and 2 the opposite way to light 0 and blacks their colour out.
+static i32 * const gM3dLightOverride    = (i32*)0x00660FF4;
+static f32 * const gM3dOverrideLightRgb = (f32*)0x006191C8;
+static f32 * const gM3dOverrideAmbient  = (f32*)0x0065CF78;
+
+// Default (identity) 4x4 float transform, 16 floats. Same address as
+// gM3dIdentityOne, which M3d_RenderBackground declares further down.
+static f32 * const gM3dDefaultTransform = (f32*)0x0064E518;
+// Per-region base of the DCModelData array (36 bytes/entry, so
+// base + 36*model). Same address as m3dinit.cpp's gDCRegionItems and
+// M3d_RenderBackground's gM3dBackgroundModelData.
+static u8 ** const gM3dRegionModelData = (u8**)0x005F6764;
+
+// @Ok
+// (0x004739A0, 3570 bytes.) Per-frame world renderer: culls the CItem list
+// against the view frustum, then walks it and submits every visible item.
+//
+// Reconstructed against the PS2 original (thps2-stuff/m3d.mik line 1139),
+// which matches the PC disassembly statement for statement apart from the
+// PC-specific pieces called out below. Flag values recovered from that
+// pairing: ITEMFLAGS_ISSUPER 0x2, ITEMFLAGS_INWATER 0x8, ITEMFLAGS_LIT
+// 0x80, ITEMFLAGS_GOURAUD/ITEMFLAGS_RGB 0x400, ITEMFLAGS_TRN 0x800,
+// ITEMFLAGS_SCALED 0x200, ITEMFLAGS_IGNOREDPQ 0x2000, ITEMFLAGS_CULL
+// 0x8000; MODELFLAGS_LIT 0x4, MODELFLAGS_INVISIBLE 0x20; FACEFLAGS_TEXTURED
+// 0x1, FACEFLAGS_RELATIVEUVS 0x2, FACEFLAGS_LIT 0x4, FACEFLAGS_GOURAUD 0x8,
+// FACEFLAGS_TILED 0x20, FF_TRN 0x40, FF_TRL|FF_TRH 0x180. DEFZOOM is 191.
+//
+// Differences from the PS2 version, all confirmed in the disassembly:
+//  - reflection mapping is gone. The PS2's `if (REFLECTIONMAPPED) ... else
+//    ...` collapsed to just the else half (`&= ~FACEFLAGS_RELATIVEUVS;
+//    |= (FACEFLAGS_TEXTURED|FACEFLAGS_TILED) << 16`), and the PS2's
+//    M3dAsm_GetReflectionMapping call is not present at all, so the
+//    lighting branch is entered on `MODELFLAGS_LIT || ITEMFLAGS_LIT` alone.
+//  - the "Fast" path (RenderModelFast / RenderModelNonRotated /
+//    RenderModel) is gone: the PC always builds a float matrix4x4 and hands
+//    it to DCModel_RenderModel or DC_PSXModel_RenderModel.
+//  - the ITEMFLAGS_RGB branch additionally gamma-corrects mRGB (three pow()
+//    calls) into the float renderer's own colour globals, and the lighting
+//    branch additionally converts the GTE light/colour matrices and the
+//    ambient into floats for it.
+//  - the negative-zMax LOD variant (PS2 `#if SK`) is not compiled in, and
+//    the whole LOD step is skipped when gLowGraphics is set.
+void M3d_Render(void* pList)
 {
-	M3d_Render_fn f = (M3d_Render_fn)0x004739A0;
-	f(pList);
+	CItem *pItem = static_cast<CItem*>(pList);
+
+	if (pItem == 0)
+		return;
+
+	// bounding sphere preprocessing. PS2: gte_SetLightMatrix(&FrustumMatrix1),
+	// gte_SetColorMatrix(&FrustumMatrix2), gte_ldbkdir(FrustumNormals[0].pad>>1,
+	// FrustumNormals[1].pad>>1, 0). The GTE light/colour matrix registers are
+	// reused as the cull's clip-plane scratch here, which is why this repo
+	// named the two loaders M3dAsm_LoadClipTableA/B.
+	M3dAsm_LoadClipTableA(gM3dFrustumMatrix1);
+	M3dAsm_LoadClipTableB(gM3dFrustumMatrix2);
+	M3dAsm_SetCullSphereOffset(
+			static_cast<i32>(static_cast<f32>(*gM3dFrustumNormal0Pad >> 1) * *gM3dFrustumPadScale),
+			*gM3dFrustumNormal1Pad >> 1,
+			0);
+	M3dAsm_BoundingSpherePreprocessing(pItem);
+
+	// wibble the textures here so the bounding sphere cull has already run
+	if (pItem == *gM3dEnviroList)
+	{
+		M3d_PreprocessWibblyTextures(gM3dEnvRegions[0]);
+		M3d_PreprocessWibblyTextures(gM3dEnvRegions[1]);
+	}
+
+	*gM3dScratchDpqMin      = static_cast<i16>(*gM3dDpqMin);
+	*gM3dScratchDpqShift    = static_cast<i16>(*gM3dDpqShift);
+	*gM3dScratchOtPushback  = gM3dOtPushback[0];
+	*gM3dScratchOtPushback2 = gM3dOtPushback[1];
+	*gM3dScratchOtPushback3 = gM3dOtPushback[2];
+	*gM3dScratchReflected   = 0;
+	*gM3dScratchRefMapClut  = *gM3dRefMapClut;
+	*gM3dScratchRefMapTpage = *gM3dRefMapTpage;
+	*gM3dScratchFadeColour  = *gM3dFadeColourValue;
+
+	for ( ; pItem != 0; pItem = pItem->mNextItem)
+	{
+		if ((pItem->mFlags & 0x8000) != 0)
+		{
+			// culled. PS2: mpPolyStart = mpPolyEnd = NULL. Both are full
+			// dwords in the original; ob.h currently models CSuper 0xF8 as
+			// `u16 field_F8; PADDING(2);` and 0xFC as `i32 field_FC`, so a
+			// plain field store would only clear half of the first one.
+			if ((pItem->mFlags & 2) != 0)
+			{
+				*reinterpret_cast<i32*>(reinterpret_cast<u8*>(pItem) + 0xFC) = 0;
+				*reinterpret_cast<i32*>(reinterpret_cast<u8*>(pItem) + 0xF8) = 0;
+			}
+			continue;
+		}
+
+		// don't draw if the PSX file is currently being spooled in
+		if (G_PSXREGION[pItem->mRegion].Usable == 0)
+			continue;
+
+		// display modes for this item (lighting, tint, transparency)
+		i32 faceFlags = static_cast<i32>(0xFFFF0000);
+		*gM3dTintEnabled = 0;
+		*gM3dGlobalFaceFlags = static_cast<i32>(0xFFFF0000);
+
+		if ((pItem->mFlags & 0x80) != 0)
+		{
+			*gM3dGlobalFaceFlags = static_cast<i32>(0xFFFF0004);
+			if ((pItem->mFlags & 0x400) != 0)
+				faceFlags = static_cast<i32>(0xFFFF000C);
+			else
+				faceFlags = static_cast<i32>(0xFFF70004);
+		}
+		else if ((pItem->mFlags & 0x400) != 0)
+		{
+			*gM3dGlobalFaceFlags = static_cast<i32>(0xFFFB0008);
+
+			u32 rgb = pItem->mRGB;
+
+			*gM3dTintEnabled = 1;
+
+			u32 tint = (rgb & 0xFFFF0000) << 3;
+			tint = (tint | (rgb & 0xFF00)) << 3;
+			tint = (tint | (rgb & 0xFF)) << 2;
+			*gM3dScratchTint = static_cast<i32>(tint);
+
+			// mRGB is packed b<<16 | g<<8 | r, so this swaps R and B round
+			u32 packed = ((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF);
+			*gM3dTintPacked = packed;
+			*gM3dTintB = packed & 0xFF;
+			*gM3dTintR = (packed >> 16) & 0xFF;
+			*gM3dTintG = (packed >> 8) & 0xFF;
+
+			if (M3D_SAVEGAME_BYTE(5) == 'f' && M3D_SAVEGAME_BYTE(7) == '1')
+				*gM3dTintGamma = 0.4f;
+			else
+				*gM3dTintGamma = 0.7f;
+
+			f32 c = static_cast<f32>(*gM3dTintR) / 255.0f;
+			c = static_cast<f32>(pow(c, *gM3dTintGamma));
+			if (c > 1.0f)
+				c = 1.0f;
+			*gM3dTintOutR = static_cast<i32>(c * 255.0f);
+
+			c = static_cast<f32>(*gM3dTintG) / 255.0f;
+			c = static_cast<f32>(pow(c, *gM3dTintGamma));
+			if (c > 1.0f)
+				c = 1.0f;
+			*gM3dTintOutG = static_cast<i32>(c * 255.0f);
+
+			c = static_cast<f32>(*gM3dTintB) / 255.0f;
+			c = static_cast<f32>(pow(c, *gM3dTintGamma));
+			if (c > 1.0f)
+				c = 1.0f;
+			*gM3dTintOutB = static_cast<i32>(c * 255.0f);
+
+			*gM3dTintPacked = (*gM3dTintPacked >> 1) & 0x7F7F7F;
+
+			faceFlags = *gM3dGlobalFaceFlags;
+		}
+
+		// reflection mapping was dropped in the PC port, only the PS2's
+		// "not reflection mapped" half of the test survives
+		faceFlags = (faceFlags & ~2) | 0x210000;
+		*gM3dGlobalFaceFlags = faceFlags;
+
+		G_COLOUR_TABLE = G_PSXREGION[pItem->mRegion].pColourTable;
+
+		if ((pItem->mFlags & 0x800) != 0)
+			*gM3dGlobalFaceFlags = (faceFlags & ~0x180) | (static_cast<i32>(pItem->mTRN) & 0x180) | 0x40;
+
+		*gM3dLightingEnabled = 0;
+		*gM3dLightsAreDynamic = 0;
+		*gM3dTestTheWater = (pItem->mFlags >> 3) & 1;
+		*gM3dNoFogFlagEarly = 0;
+
+		i32 *pCamera = reinterpret_cast<i32*>(*gM3dCameraPtrEarly);
+
+		if ((pItem->mFlags & 2) != 0)
+		{
+			*gM3dWaterNormalPad = static_cast<i16>((*gM3dWaterLevel >> 12) - pCamera[2]);
+
+			// the superitem carries its own OT pushback pair. Those two i16
+			// live at CSuper 0x100/0x102, which ob.h currently models as the
+			// single `i32 field_100` (PS2: mOTPushback1 / mOTPushback2).
+			i16 savedPushback  = *gM3dScratchOtPushback;
+			i16 savedPushback2 = *gM3dScratchOtPushback2;
+			*gM3dScratchOtPushback  = *reinterpret_cast<i16*>(reinterpret_cast<u8*>(pItem) + 0x100);
+			*gM3dScratchOtPushback2 = *reinterpret_cast<i16*>(reinterpret_cast<u8*>(pItem) + 0x102);
+
+			RenderSuperItem(pItem, false);
+
+			*gM3dScratchOtPushback  = savedPushback;
+			*gM3dScratchOtPushback2 = savedPushback2;
+			continue;
+		}
+
+		u16 modelIndex = pItem->mModel;
+		SModel *pModel = G_PSXREGION[pItem->mRegion].ppModels[modelIndex];
+
+		if ((pModel->Flags & 0x20) != 0)
+			continue;
+
+		// camera view transform, then transform the item's local origin
+		gte_SetRotMatrix(reinterpret_cast<MATRIX*>(pCamera + 29));
+		m3d_ZeroTransVector();
+
+		VECTOR posnRelCam;
+		posnRelCam.vx = (pItem->mPos.vx >> 12) - pCamera[1];
+		posnRelCam.vy = (pItem->mPos.vy >> 12) - pCamera[2];
+		posnRelCam.vz = (pItem->mPos.vz >> 12) - pCamera[3];
+		gte_ldlv0(&posnRelCam);
+		gte_rtv0();
+
+		VECTOR position;
+		gte_stlvnl(&position);
+
+		u8 *pViewport = G_VIEW_CLIP_INFO;
+
+		// level of detail
+		if (G_LOWGRAPHICS == 0)
+		{
+			i32 zoom = *reinterpret_cast<u16*>(pViewport + 0x0E);
+			while (position.vz > pModel->zMax * zoom / 191)
+			{
+				if (pModel->NextLOD == 0xFFFF)
+					break;
+				modelIndex = pModel->NextLOD;
+				pModel = G_PSXREGION[pItem->mRegion].ppModels[modelIndex];
+			}
+		}
+
+		DCModelData *pModelData = 0;
+		if (*gM3dNoDcModelData == 0)
+		{
+			pModelData = reinterpret_cast<DCModelData*>(
+					gM3dRegionModelData[pItem->mRegion] + 36 * modelIndex);
+			print_if_false(pModelData != 0, "no dc model data");
+			if (*gM3dNoDcModelData == 0 && *gM3dTintEnabled != 0)
+				pModelData->mFlags |= 0x20;
+		}
+
+		// ran out of LODs and it is still too far away: drop the item
+		if (G_LOWGRAPHICS == 0)
+		{
+			i32 zoom = *reinterpret_cast<u16*>(pViewport + 0x0E);
+			if (position.vz > pModel->zMax * zoom / 191 && pModel->NextLOD == 0xFFFF)
+				continue;
+		}
+
+		*gM3dPerItemRenderFlag = 0;
+
+		if ((pModel->Flags & 4) != 0 || (pItem->mFlags & 0x80) != 0)
+		{
+			SLight *pLight = pItem->mpLight;
+
+			// PS2: MATRIX WorldTransform, TempMatrix. The PC port dropped
+			// the code that filled WorldTransform (the PS2 built it with
+			// M3dMaths_RotMatrixYXZ / M3dMaths_ScaleMatrix and fed it to the
+			// GTE; the PC builds a float matrix4x4 instead, further down),
+			// but it kept both gte_MulMatrix0 calls that read it. So this
+			// local really is passed in uninitialised in the original -- I
+			// checked every write in the 890-instruction disassembly and
+			// nothing touches [esp+158h] before the two calls. Kept exactly
+			// as the original does it rather than "fixing" it.
+			MATRIX worldTransform;
+			MATRIX tempMatrix;
+
+			if (pItem->mAngles.vx == 0 && pItem->mAngles.vy == 0 && pItem->mAngles.vz == 0)
+			{
+				M3dAsm_LoadClipTableA(pLight->LightMatrix);
+			}
+			else
+			{
+				MulMatrix0(reinterpret_cast<MATRIX*>(pLight), &worldTransform, &tempMatrix);
+				M3dAsm_LoadClipTableA(&tempMatrix);
+			}
+			M3dAsm_LoadClipTableB(pLight->ColorMatrix);
+
+			*gM3dLightingEnabled = 1;
+			*gM3dLightsAreDynamic = (*gM3dDynamicLightSource != 0) ? 1 : 0;
+
+			// PC only: the same product again, this time converted to floats
+			// for the software/D3D renderer.
+			MulMatrix0(reinterpret_cast<MATRIX*>(pLight), &worldTransform, &tempMatrix);
+
+			for (i32 light = 0; light < 3; light++)
+			{
+				gM3dLightDirTable[3 * light + 0] = static_cast<f32>(tempMatrix.m[light][0]) / 4096.0f;
+				gM3dLightDirTable[3 * light + 1] = static_cast<f32>(tempMatrix.m[light][1]) / 4096.0f;
+				gM3dLightDirTable[3 * light + 2] = static_cast<f32>(tempMatrix.m[light][2]) / 4096.0f;
+
+				// note the transpose: the colour matrix is read by column
+				gM3dLightColorTable[3 * light + 0] = static_cast<f32>(pLight->ColorMatrix[0][light]) / 4096.0f;
+				gM3dLightColorTable[3 * light + 1] = static_cast<f32>(pLight->ColorMatrix[1][light]) / 4096.0f;
+				gM3dLightColorTable[3 * light + 2] = static_cast<f32>(pLight->ColorMatrix[2][light]) / 4096.0f;
+			}
+
+			*gM3dAmbientB = static_cast<f32>(pLight->BackColor[2]) / 4096.0f;
+			*gM3dAmbientG = static_cast<f32>(pLight->BackColor[1]) / 4096.0f;
+			*gM3dLightCount = 3;
+			*gM3dAmbientR = static_cast<f32>(pLight->BackColor[0]) / 4096.0f;
+
+			if (*gM3dLightOverride != 0)
+			{
+				f32 backX = -gM3dLightDirTable[0];
+				f32 backY = -gM3dLightDirTable[1];
+				f32 backZ = -gM3dLightDirTable[2];
+
+				gM3dLightColorTable[0] = gM3dOverrideLightRgb[0];
+				gM3dLightColorTable[1] = gM3dOverrideLightRgb[1];
+				gM3dLightColorTable[2] = gM3dOverrideLightRgb[2];
+
+				gM3dLightDirTable[3] = backX;
+				gM3dLightDirTable[4] = backY;
+				gM3dLightDirTable[5] = backZ;
+				gM3dLightDirTable[6] = backX;
+				gM3dLightDirTable[7] = backY;
+				gM3dLightDirTable[8] = backZ;
+
+				gM3dLightColorTable[3] = 0.0f;
+				gM3dLightColorTable[4] = 0.0f;
+				gM3dLightColorTable[5] = 0.0f;
+				gM3dLightColorTable[6] = 0.0f;
+				gM3dLightColorTable[7] = 0.0f;
+				gM3dLightColorTable[8] = 0.0f;
+
+				*gM3dAmbientR = gM3dOverrideAmbient[0];
+				*gM3dAmbientG = gM3dOverrideAmbient[1];
+				*gM3dAmbientB = gM3dOverrideAmbient[2];
+			}
+		}
+
+		// ITEMFLAGS_IGNOREDPQ: no depth cueing and no distance clipping
+		i16 savedYon = *reinterpret_cast<i16*>(pViewport + 0x0A);
+		if ((pItem->mFlags & 0x2000) != 0)
+		{
+			*gM3dScratchReflected = 0;
+			*gM3dScratchDpqMin = 0x7FFF;
+			*reinterpret_cast<i16*>(pViewport + 0x0A) = 0x7FFF;
+		}
+
+		matrix4x4 transform;
+
+		if (pItem->mAngles.vx == 0 && pItem->mAngles.vy == 0 && pItem->mAngles.vz == 0)
+		{
+			for (i32 row = 0; row < 4; row++)
+			{
+				transform.field_0[row].field_0[0] = gM3dDefaultTransform[4 * row + 0];
+				transform.field_0[row].field_0[1] = gM3dDefaultTransform[4 * row + 1];
+				transform.field_0[row].field_0[2] = gM3dDefaultTransform[4 * row + 2];
+				transform.field_0[row].field_0[3] = gM3dDefaultTransform[4 * row + 3];
+			}
+		}
+		else
+		{
+			f32 toRadians = 3.1415927f / 2048.0f;
+			f32 angZ = static_cast<f32>(pItem->mAngles.vz) * toRadians;
+			f32 angY = static_cast<f32>(pItem->mAngles.vy) * toRadians;
+			f32 angX = static_cast<f32>(pItem->mAngles.vx) * toRadians;
+
+			f32 sinX = static_cast<f32>(sin(angX));
+			f32 cosX = static_cast<f32>(cos(angX));
+			f32 sinY = static_cast<f32>(sin(angY));
+			f32 cosY = static_cast<f32>(cos(angY));
+			f32 sinZ = static_cast<f32>(sin(angZ));
+			f32 cosZ = static_cast<f32>(cos(angZ));
+
+			transform.field_0[0].field_0[0] = (sinZ * sinY) * sinX + (cosZ * cosY);
+			transform.field_0[0].field_0[1] = sinZ * cosX;
+			transform.field_0[0].field_0[2] = (sinZ * cosY) * sinX - (cosZ * sinY);
+			transform.field_0[0].field_0[3] = 0.0f;
+			transform.field_0[1].field_0[0] = (cosZ * sinY) * sinX - (sinZ * cosY);
+			transform.field_0[1].field_0[1] = cosZ * cosX;
+			transform.field_0[1].field_0[2] = (cosZ * cosY) * sinX + (sinZ * sinY);
+			transform.field_0[1].field_0[3] = 0.0f;
+			transform.field_0[2].field_0[0] = sinY * cosX;
+			transform.field_0[2].field_0[1] = -sinX;
+			transform.field_0[2].field_0[2] = cosY * cosX;
+			transform.field_0[2].field_0[3] = 0.0f;
+			transform.field_0[3].field_0[0] = 0.0f;
+			transform.field_0[3].field_0[1] = 0.0f;
+			transform.field_0[3].field_0[2] = 0.0f;
+			transform.field_0[3].field_0[3] = 1.0f;
+		}
+
+		if ((pItem->mFlags & 0x200) != 0)
+		{
+			matrix4x4 scaleMatrix;
+			scaleMatrix.field_0[0].field_0[0] = static_cast<f32>(pItem->mScale.vx) * 0.00024414062f;
+			scaleMatrix.field_0[0].field_0[1] = 0.0f;
+			scaleMatrix.field_0[0].field_0[2] = 0.0f;
+			scaleMatrix.field_0[0].field_0[3] = 0.0f;
+			scaleMatrix.field_0[1].field_0[0] = 0.0f;
+			scaleMatrix.field_0[1].field_0[1] = static_cast<f32>(pItem->mScale.vy) * 0.00024414062f;
+			scaleMatrix.field_0[1].field_0[2] = 0.0f;
+			scaleMatrix.field_0[1].field_0[3] = 0.0f;
+			scaleMatrix.field_0[2].field_0[0] = 0.0f;
+			scaleMatrix.field_0[2].field_0[1] = 0.0f;
+			scaleMatrix.field_0[2].field_0[2] = static_cast<f32>(pItem->mScale.vz) * 0.00024414062f;
+			scaleMatrix.field_0[2].field_0[3] = 0.0f;
+			scaleMatrix.field_0[3].field_0[0] = 0.0f;
+			scaleMatrix.field_0[3].field_0[1] = 0.0f;
+			scaleMatrix.field_0[3].field_0[2] = 0.0f;
+			scaleMatrix.field_0[3].field_0[3] = 1.0f;
+
+			// the original saves and restores element [3][3] around the
+			// product. Both values are 1.0f so it is a no-op, kept for
+			// faithfulness.
+			f32 savedW = transform.field_0[3].field_0[3];
+			matrix4x4 scaled;
+			gsub_476A00(&scaled, &scaleMatrix, &transform);
+			for (i32 scaledRow = 0; scaledRow < 4; scaledRow++)
+			{
+				transform.field_0[scaledRow].field_0[0] = scaled.field_0[scaledRow].field_0[0];
+				transform.field_0[scaledRow].field_0[1] = scaled.field_0[scaledRow].field_0[1];
+				transform.field_0[scaledRow].field_0[2] = scaled.field_0[scaledRow].field_0[2];
+				transform.field_0[scaledRow].field_0[3] = scaled.field_0[scaledRow].field_0[3];
+			}
+			transform.field_0[3].field_0[3] = savedW;
+		}
+
+		transform.field_0[3].field_0[0] = static_cast<f32>(pItem->mPos.vx) * 0.00024414062f;
+		transform.field_0[3].field_0[1] = static_cast<f32>(pItem->mPos.vy) * 0.00024414062f;
+		transform.field_0[3].field_0[2] = static_cast<f32>(pItem->mPos.vz) * 0.00024414062f;
+
+		if (*gM3dNoDcModelData != 0)
+		{
+			DC_PSXModel_RenderModel(pModel, &transform, 0, 0);
+		}
+		else
+		{
+			i32 modelDataFlags = pModelData->mFlags;
+			if ((modelDataFlags & 0x100) == 0)
+			{
+				if ((modelDataFlags & 0x4000) != 0)
+					DC_PSXModel_RenderModel(pModel, &transform, 0, pModelData);
+				else
+					// the original pushes a fourth argument here (0) that
+					// DCModel_RenderModel never reads; ps2m3d.h declares the
+					// three it does use.
+					DCModel_RenderModel(pModel, pModelData, &transform);
+			}
+		}
+
+		if ((pItem->mFlags & 0x2000) != 0)
+		{
+			*gM3dScratchDpqMin = static_cast<i16>(*gM3dDpqMin);
+			*gM3dScratchReflected = 0;
+			*reinterpret_cast<i16*>(pViewport + 0x0A) = savedYon;
+		}
+	}
+
+	*gM3dTintEnabled = 0;
+	*gM3dLightingEnabled = 0;
+	*gM3dLightsAreDynamic = 0;
+	*gM3dNoFogFlagEarly = 0;
 }
 
 typedef i32 (*gsub_509000_fn)(f32, f32, f32, i32, f32, f32, f32, i32, f32);
