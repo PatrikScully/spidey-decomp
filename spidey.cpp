@@ -1928,7 +1928,27 @@ void CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)
     printf("CPlayer::FireWeb(bool,i32,CVector *,bool,CSVector *)");
 }
 
-// @SMALLTODO
+// @NotOk
+// No standalone code for this in the PC binary: MSVC6 inlined all three
+// combo-record accessors into their only caller, CPlayer::InitiateCombo
+// (0x4C87D0). The Mac build still has them out of line
+// (.GetComboFrameInfoPointer__7CPlayerFUs 0x122D10,
+// .GetEnterExitFrameInfoPointer__7CPlayerFUs 0x122DC0,
+// .GetComboPartsInfoPointer__7CPlayerFUs 0x122E60), and neither
+// tools/names.json nor idbs/spideypc_names.txt has a PC address for any of
+// them.
+// What the inlined bodies do (recovered from 0x4C8B0C and 0x4C8B4E, both
+// working off gComboMoves[id]->field_4, the pointer ParseFightData sets to
+// the first of the three 0xFF terminated byte streams that follow a move
+// record's parts array): one skips two streams and returns the third
+// (stored into CPlayer+0x950, later indexed by elapsed time / 2, so that one
+// is per-frame data), the other skips one stream and returns the second
+// (stored into CPlayer+0x954). The third accessor, which would just return
+// field_4 unchanged, has no call site left at all. Which of the three names
+// belongs to which of the three streams is not decidable from the PC binary
+// alone, so I am not guessing; implementing them would also mean changing
+// the return type in spidey.h (they are declared void here but really
+// return pointers).
 void CPlayer::GetComboFrameInfoPointer(u16)
 {
     printf("CPlayer::GetComboFrameInfoPointer(u16)");
