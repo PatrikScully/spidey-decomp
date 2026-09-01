@@ -14,6 +14,9 @@ EXPORT extern CBody *MiscList;
 // defined in effects.h (CBit-derived); only used here as a pointer member of CDummy.
 class CVertexWobble;
 
+// defined in scorpion.h; only used here as a pointer member of CDummy.
+struct STailGeometry;
+
 struct SRecordRelated
 {
 	char* pName;
@@ -190,6 +193,10 @@ public:
 	// menu functions that construct a CDummy).
 	EXPORT virtual void AI(void) OVERRIDE;
 
+	// 0x495970, the CDummy copy of CScorpion::TailRenderer (Mac symbol
+	// .TailRenderer__6CDummyFv). Only caller is Shell_CharacterViewer's per-mType switch.
+	EXPORT void TailRenderer(void);
+
 	EXPORT void FadeBack(void);
 	EXPORT void FadeAway(void);
 	EXPORT void SelectNewTrack(i32);
@@ -282,11 +289,20 @@ public:
 
 	CItem field_240;
 
-	PADDING(0x288 - 0x240 - sizeof(CItem));
+	PADDING(0x284 - 0x240 - sizeof(CItem));
+
+	// Tail geometry buffer for the Scorpion preview model (mType 310), rebuilt every frame by
+	// TailRenderer. Exactly the same buffer layout CScorpion::mpTailGeometry uses (scorpion.h).
+	STailGeometry* mpTailGeometry;
 
 	CItem field_288;
 
-	PADDING(0x2d4 - 0x288 - sizeof(CItem));
+	PADDING(0x2d0 - 0x288 - sizeof(CItem));
+
+	// Second dynamically built geometry buffer, the one that belongs to field_288, in the same
+	// role mpTailGeometry has for field_240. Only ~CDummy touches it (Mem_Delete for the
+	// Scorpion, mType 310), so nothing confirms its layout; kept untyped.
+	void* field_2D0;
 
 
 	CVector field_2D4[4];
@@ -518,23 +534,61 @@ class CShellMysterioHeadCircle : public CQuadBit
 		i32 field_90;
 };
 
+// Element size 0x28 is proven by Spidey_CIcon::SetIcon (0x493860), which scales the
+// index with "lea edi,[edi+edi*4]; shl edi,3" (index * 5 * 8). The two i16 fields are
+// read 16 bits at a time there ("mov cx,[edi+552AC0h]"), so the halves above them are
+// alignment padding; they are zero in every entry of the real table at 0x552AB8.
+// The four fields from 0x18 on are never read anywhere in the PC build (no code
+// reference to any address inside 0x552AB8..0x552BE8 other than offsets 0x0..0x14),
+// but the table does carry data there: an x/y screen position, a menu caption string
+// and a menu option id. Kept as field_* because nothing confirms that reading.
+// 0x00553D18, 27 entries of 0x44 bytes each (the table ends at 0x00554444, which is exactly
+// where Shell_CharacterViewer's own loop bounds stop). One row per character-viewer entry.
+// Field purposes come from the two consumers: Shell_CharacterViewer (0x004962D0) reads every
+// field, and Shell_DoShell (0x004A1B44) is the only writer, filling Description at runtime
+// (it is 0 in the image, like the costume viewer's description table).
+struct SCharacterEntry
+{
+	// menu label, e.g. "spider-man"
+	char* Name;
+	// CDummy model name, e.g. "spidey". Empty string means the entry cannot be selected.
+	char* ModelName;
+	// CItem mType of the preview model, also the CDummy constructor's second argument
+	i32 Type;
+	// description text block, filled in at runtime by Shell_DoShell
+	char* Description;
+	// starting camera distance, and the clamp/step used by the zoom in/out triggers
+	i32 Zoom;
+	i32 MinZoom;
+	i32 MaxZoom;
+	i32 ZoomStep;
+	// the remaining CDummy constructor arguments (4, 5 and 6 through 12); the third
+	// argument, the scale, is the constant 4096 at both call sites
+	i32 PosY;
+	i32 DefaultAnim;
+	u16* TrackA;
+	u16* TrackB;
+	u16* TrackC;
+	u16* TrackD;
+	u16* TrackE;
+	i32 CtorA12;
+	i32 CtorA13;
+};
+
 struct SpideyIconRelated
 {
 	char *Name;
 	i32 IconModel;
 	i16 field_8;
-
-	PADDING(2);
-
+	i16 pad_A;
 	i16 field_C;
-
-	PADDING(2);
-
+	i16 pad_E;
 	i32 field_10;
 	i32 field_14;
 	i32 field_18;
-
-	PADDING(0x28-0x18-4);
+	i32 field_1C;
+	char *field_20;
+	i32 field_24;
 };
 
 // Size 0x10 confirmed by PShell_EndTrainingDisplay (pshell.cpp): the game's
@@ -766,6 +820,7 @@ void validate_CShellSimbyMeltSplat(void);
 void validate_CShellSimbyFireDeath(void);
 void validate_CShellGoldFish(void);
 void validate_CShellMysterioHeadCircle(void);
+void validate_SCharacterEntry(void);
 void validate_SpideyIconRelated(void);
 void validate_SSaveGame(void);
 void validate_SScore(void);
