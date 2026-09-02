@@ -1082,7 +1082,27 @@ void CBaddy::ParseScript(u16 *a2)
 	this->field_20C = 0;
 }
 
+// How many CBaddy objects are alive. The exe owns it at 0x0056E98C, right in
+// front of BaddyList (0x0056E990) and ControlBaddyList (0x0056E994), which
+// already have their macros in baddy.h.
+//
+// Address read out of the disassembly, and both writers agree. CBaddy::CBaddy
+// (0x402C00) ends with "mov al,[56E98Ch]" at 0x402CE6 for field_21D, then
+// "mov ecx,[56E98Ch]; inc ecx; mov [56E98Ch],ecx" at 0x402CF1..0x402CFD.
+// CBaddy::~CBaddy (0x402D60) reads the same address at 0x402D84, hands the
+// "Negative NumBaddies" string (0x547B20) to print_if_false, then decrements
+// it with "mov [56E98Ch],ecx" at 0x402DAB.
+//
+// It has to point at game memory. Every enemy constructor in the exe runs
+// CBaddy::CBaddy and bumps the exe's counter, and CBaddy::CBaddy is not hooked,
+// so a repo-local copy would count only the baddies our own hooked code makes.
+// field_21D (the per-baddy index) would then collide across objects.
+//
+// Only this file touches it today, so the macro is file-local. Move it to
+// baddy.h if another .cpp ever needs it.
 i32 NumBaddies;
+//#define G_NUM_BADDIES (NumBaddies)
+#define G_NUM_BADDIES (*reinterpret_cast<i32*>(0x0056E98C))
 
 // @Ok
 // Checked against the original disasm at 0x402c00: every field init here
@@ -1091,13 +1111,12 @@ i32 NumBaddies;
 // field_F4=128, mNode=-1, field_216=32, mPushVal=64) matches the
 // original line for line. The base CSuper constructor call is implicit
 // (C++ base init) and matches the original's first call. Remaining
-// residue: NumBaddies is not yet a fixed game address (needs a G_*
-// macro), and the original compiles the six field_1A8[i] zero-inits as
+// residue: the original compiles the six field_1A8[i] zero-inits as
 // one tight loop (single decrementing counter) while our source (index 0
 // by itself, then a for over 1..5) compiles to unrolled stores, so the
 // built function is noticeably longer (444 vs 309 bytes) despite writing
-// the exact same fields. Neither is a functional bug, both are
-// byte-matching residue for a future pass.
+// the exact same fields. Not a functional bug, just byte-matching
+// residue for a future pass.
 CBaddy::CBaddy(void)
 {
 	this->field_1A8[0].vx = 0;
@@ -1139,7 +1158,7 @@ CBaddy::CBaddy(void)
 	this->field_2FC.vy = 0;
 	this->field_2FC.vz = 0;
 
-	this->field_21D = NumBaddies++;
+	this->field_21D = G_NUM_BADDIES++;
 	this->mCBodyFlags |= 0x200;
 
 	this->mRMinor = 128;
@@ -3149,8 +3168,8 @@ void CBaddy::MarkAIProcList(i32 a2, i32 a3, i32 a4)
 // @Ok
 CBaddy::~CBaddy(void)
 {
-	print_if_false(NumBaddies > 0, "Negative NumBaddies");
-	--NumBaddies;
+	print_if_false(G_NUM_BADDIES > 0, "Negative NumBaddies");
+	--G_NUM_BADDIES;
 
 	this->CleanUpAIProcList(1);
 	this->CleanUpMessages(1, 0);
