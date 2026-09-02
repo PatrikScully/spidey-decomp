@@ -11,7 +11,7 @@ EXPORT Sprite2* gLoadedBmp = 0;
 // @Matching
 void BMP_Draw(const char * pName)
 {
-	if (!gSceneRelated)
+	if (!G_SCENE_RELATED)
 	{
 		PCGfx_BeginScene(1, -1);
 	}
@@ -20,7 +20,7 @@ void BMP_Draw(const char * pName)
 	LoadBMP(pName);
 	DrawBMP();
 
-	if (gSceneRelated)
+	if (G_SCENE_RELATED)
 	{
 		PCGfx_EndScene(1);
 	}

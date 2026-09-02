@@ -71,7 +71,7 @@ i32 Front_ContinueExit(void)
 
 		u32 frameStart = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		pMenu->Display();
@@ -90,7 +90,7 @@ i32 Front_ContinueExit(void)
 
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		Pad_Update();

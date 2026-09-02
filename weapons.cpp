@@ -42,15 +42,12 @@ struct SGouraudRibbonScreenPoint
 };
 static SGouraudRibbonScreenPoint* const gGouraudRibbonScreenPoints = reinterpret_cast<SGouraudRibbonScreenPoint*>(0x614CD4);
 
-// Shared growing scratch/poly buffer, same address as front.cpp's
-// gMenuHighlightBufPos/End, flash.cpp's gEffectRecordBufPos/End and panel.cpp's
-// pPoly (0x56FB04/0x5FCD1C) - a plain address duplicated per file, not a G_*
-// hook macro, so the "one file only" G_* rule does not apply. Only the pointer
-// advance and the overflow bail-out are observable here (see the comment
-// above CGouraudRibbon::Display), so unlike those files this one never writes
-// through gRibbonPolyPos.
-#define gRibbonPolyPos (*reinterpret_cast<u8**>(0x0056FB04))
-#define gRibbonPolyBufferEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+// The shared growing poly buffer is db.cpp's pPoly/PolyBufferEnd
+// (0x56FB04/0x5FCD1C), reached here through G_PPOLY/G_POLY_BUFFER_END in db.h.
+// This file used to alias the same two addresses under its own names. Only the
+// pointer advance and the overflow bail-out are observable here (see the
+// comment above CGouraudRibbon::Display), so this one never writes any record
+// contents through it.
 
 // Camera-space projection matrix refresh shared by the whole Display*List/
 // ribbon-Display family (see bit.cpp's RefreshGfxMatrix and the family notes
@@ -210,9 +207,8 @@ static INLINE void GouraudRibbon_DrawFadeQuad(
 //    provably always taken (alpha=128, DCGfx_BlendingMode_2, texture slot 1 -
 //    same "flat/line" slot DisplayGLineList's notes document in bit.cpp);
 //    reproduced directly as a constant rather than as a dead runtime branch.
-//    The pPoly scratch queue (0x56FB04/0x5FCD1C, front.cpp's
-//    gMenuHighlightBufPos/End, flash.cpp's gEffectRecordBufPos/End, panel.cpp's
-//    pPoly) is bumped and bounds-checked exactly like the original (an overflow
+//    The pPoly scratch queue (G_PPOLY/G_POLY_BUFFER_END, 0x56FB04/0x5FCD1C)
+//    is bumped and bounds-checked exactly like the original (an overflow
 //    bails the whole remaining segment loop, matching bit.cpp's
 //    DisplayLinked2EndedBitListLeftover precedent for "pointer advance and
 //    bounds check are observable, record contents are not") but its actual
@@ -336,15 +332,15 @@ void CGouraudRibbon::Display(void)
 			i32 rightCornerXY = ((sxNext + dx) & 0xFFFF) | ((syNext + dy) << 16);
 			i32 curCornerXY = prevCornerXY;
 
-			if (gRibbonPolyPos + 80 > gRibbonPolyBufferEnd)
+			if (reinterpret_cast<u8*>(G_PPOLY) + 80 > G_POLY_BUFFER_END)
 				break;
-			gRibbonPolyPos += 80;
+			G_PPOLY = reinterpret_cast<u32*>(reinterpret_cast<u8*>(G_PPOLY) + 80);
 
 			if (this->mTrail > 2)
 			{
-				if (gRibbonPolyPos + 36 > gRibbonPolyBufferEnd)
+				if (reinterpret_cast<u8*>(G_PPOLY) + 36 > G_POLY_BUFFER_END)
 					break;
-				gRibbonPolyPos += 36;
+				G_PPOLY = reinterpret_cast<u32*>(reinterpret_cast<u8*>(G_PPOLY) + 36);
 
 				if (pNext->invZ > 0.0f && pCur->invZ > 0.0f)
 				{
@@ -632,11 +628,11 @@ void CSmokeRing::Display(void)
 			{
 				// unconditional per-segment PS2 GS "texture window" tag, built once
 				// regardless of which (if any) of the two wall quads below turn out visible
-				if ((u8*)pPoly + 0x20 > PolyBufferEnd)
+				if ((u8*)G_PPOLY + 0x20 > G_POLY_BUFFER_END)
 					return;
 
-				u8* pTagBuf = (u8*)pPoly;
-				pPoly = (u32*)(pTagBuf + 0x20);
+				u8* pTagBuf = (u8*)G_PPOLY;
+				G_PPOLY = (u32*)(pTagBuf + 0x20);
 
 				gsub_46CB90((void*)"stubbed out: setTexWindow");
 				gsub_46CB90((void*)"stubbed out: setTexWindow");
@@ -644,15 +640,15 @@ void CSmokeRing::Display(void)
 				*(u32*)(pTagBuf + 0x18) = *gGsTexWindowTagLo;
 				*(u32*)(pTagBuf + 0x1C) = *gGsTexWindowTagHi;
 
-				gsub_46CB90((void*)0x0056EB54);
+				gsub_46CB90(G_RENDER_BUF);
 
 				if (prev.visibleA && prev.visibleB && pCur->visibleA && pCur->visibleB)
 				{
-					if ((u8*)pPoly + sizeof(SSmokeRingGT4) > PolyBufferEnd)
+					if ((u8*)G_PPOLY + sizeof(SSmokeRingGT4) > G_POLY_BUFFER_END)
 						return;
 
-					SSmokeRingGT4* pNewPoly = (SSmokeRingGT4*)pPoly;
-					pPoly = (u32*)((u8*)pPoly + sizeof(SSmokeRingGT4));
+					SSmokeRingGT4* pNewPoly = (SSmokeRingGT4*)G_PPOLY;
+					G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(SSmokeRingGT4));
 
 					CopySmokeRingTemplate(pNewPoly, pTemplate1);
 
@@ -666,11 +662,11 @@ void CSmokeRing::Display(void)
 
 				if (prev.visibleC && prev.visibleB && pCur->visibleC && pCur->visibleB)
 				{
-					if ((u8*)pPoly + sizeof(SSmokeRingGT4) > PolyBufferEnd)
+					if ((u8*)G_PPOLY + sizeof(SSmokeRingGT4) > G_POLY_BUFFER_END)
 						return;
 
-					SSmokeRingGT4* pNewPoly = (SSmokeRingGT4*)pPoly;
-					pPoly = (u32*)((u8*)pPoly + sizeof(SSmokeRingGT4));
+					SSmokeRingGT4* pNewPoly = (SSmokeRingGT4*)G_PPOLY;
+					G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(SSmokeRingGT4));
 
 					CopySmokeRingTemplate(pNewPoly, pTemplate2);
 
@@ -683,13 +679,13 @@ void CSmokeRing::Display(void)
 				}
 
 				if (pBuiltPoly1)
-					gsub_46CB90((void*)0x0056EB54);
+					gsub_46CB90(G_RENDER_BUF);
 
 				if (pBuiltPoly2)
-					gsub_46CB90((void*)0x0056EB54);
+					gsub_46CB90(G_RENDER_BUF);
 
-				gsub_46CB90((void*)0x0056EB54);
-				gsub_46CB90((void*)0x0056EB54);
+				gsub_46CB90(G_RENDER_BUF);
+				gsub_46CB90(G_RENDER_BUF);
 			}
 		}
 

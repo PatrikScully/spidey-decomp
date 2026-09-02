@@ -1,4 +1,6 @@
 #include "flash.h"
+#include "ps2m3d.h"
+#include "db.h"
 #include "panel.h"
 #include "ps2funcs.h"
 #include "PCGfx.h"
@@ -49,14 +51,9 @@ i32 Flash_FadeFinished(void)
 	return FadeCountdown == 0;
 }
 
-// Same bump-allocated scratch record buffer as front.cpp's
-// gMenuHighlightBufPos/gMenuHighlightBufEnd (0x56FB04/0x5FCD1C): a small
-// record is written into it, then immediately used to build a draw call
-// here. Kept as a separate file-local alias (not moved to a shared header)
-// since the two files use it for unrelated record shapes and the address
-// duplication convention is fine for plain statics.
-#define gEffectRecordBufPos (*reinterpret_cast<u8**>(0x0056FB04))
-#define gEffectRecordBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
+// The bump-allocated scratch record buffer here is db.cpp's pPoly/PolyBufferEnd
+// (0x56FB04/0x5FCD1C), reached through G_PPOLY/G_POLY_BUFFER_END in db.h. A
+// small record is written into it, then immediately used to build a draw call.
 
 // @Ok
 // Verified against 0x43D980 (Flash_Display's own original address; the
@@ -84,13 +81,13 @@ void Flash_Display(void)
 	if (FlashCountdown == 0 && Fading == 0)
 		return;
 
-	u8 *rec = gEffectRecordBufPos;
+	u8 *rec = reinterpret_cast<u8*>(G_PPOLY);
 	u8 *newPos = rec + 0x20;
 
-	if (newPos > gEffectRecordBufEnd)
+	if (newPos > G_POLY_BUFFER_END)
 		return;
 
-	gEffectRecordBufPos = newPos;
+	G_PPOLY = reinterpret_cast<u32*>(newPos);
 
 	if (!gPrintStubbed)
 		stubbed_printf("stubbed out: setPolyF4");
@@ -113,7 +110,7 @@ void Flash_Display(void)
 	*reinterpret_cast<i16*>(rec + 0x14) = 512;
 	*reinterpret_cast<i16*>(rec + 0x16) = 240;
 
-	gsub_46CB90(reinterpret_cast<void*>(0x0056EB54));
+	gsub_46CB90(G_RENDER_BUF);
 
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 
@@ -145,7 +142,7 @@ void Flash_Display(void)
 	else
 		*reinterpret_cast<u32*>(rec + 0x1C) = 0xE1000620;
 
-	gsub_46CB90(reinterpret_cast<void*>(0x0056EB54));
+	gsub_46CB90(G_RENDER_BUF);
 }
 
 // @Ok

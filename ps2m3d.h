@@ -89,6 +89,13 @@ EXPORT void RenderSuperItem(CItem *,bool);
 
 EXPORT extern i32 gWideScreen;
 EXPORT extern char gRenderBuf[4];
+// The shared debug string buffer the render code sprintfs into and hands to
+// the print helper at 0x46CB90. M3d_RenderCleanup (0x473816) pushes it as the
+// immediate 56EB54h and Shell_DisplayGameInfo (0x49F1A0) loads the same
+// address. The real thing runs to 0x56EEFC (0x3A8 bytes), our array is a 4
+// byte placeholder, which is one more reason to read the exe's copy.
+//#define G_RENDER_BUF (gRenderBuf)
+#define G_RENDER_BUF (reinterpret_cast<char*>(0x0056EB54))
 
 // current colour table pointer, set by M3d_PreprocessPulsingColours from
 // PSXRegion[Region].pColourTable, read by the DC/PSX model renderers.

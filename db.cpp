@@ -13,19 +13,20 @@ u32* pPoly;
 u8* PolyBufferEnd;
 
 u32 Db_SkyColor;
+u32 Db_SkyColorTarget;
 
 // @Ok
 // @Matching
 void Db_CreateOTsAndPolyBuffers(void)
 {
-	print_if_false(DoubleBuffer[0].OrderingTable == (void*)-1, "OrderingTable 0 not NULL");
-	print_if_false(DoubleBuffer[1].OrderingTable == (void*)-1, "OrderingTable 1 not NULL");
-	print_if_false(DoubleBuffer[0].Polys == (void*)-1, "Poly buffer 0 not NULL");
-	print_if_false(DoubleBuffer[1].Polys == (void*)-1, "Poly buffer 1 not NULL");
-	DoubleBuffer[0].OrderingTable = (u32*)DCMem_New(0x4000u, 1, 1, 0, 1);
-	DoubleBuffer[1].OrderingTable = (u32*)DCMem_New(0x4000u, 1, 1, 0, 1);
-	DoubleBuffer[0].Polys = (u8*)DCMem_New(0x17000u, 1, 1, 0, 1);
-	DoubleBuffer[1].Polys = (u8*)DCMem_New(0x17000u, 1, 1, 0, 1);
+	print_if_false(G_DOUBLE_BUFFER[0].OrderingTable == (void*)-1, "OrderingTable 0 not NULL");
+	print_if_false(G_DOUBLE_BUFFER[1].OrderingTable == (void*)-1, "OrderingTable 1 not NULL");
+	print_if_false(G_DOUBLE_BUFFER[0].Polys == (void*)-1, "Poly buffer 0 not NULL");
+	print_if_false(G_DOUBLE_BUFFER[1].Polys == (void*)-1, "Poly buffer 1 not NULL");
+	G_DOUBLE_BUFFER[0].OrderingTable = (u32*)DCMem_New(0x4000u, 1, 1, 0, 1);
+	G_DOUBLE_BUFFER[1].OrderingTable = (u32*)DCMem_New(0x4000u, 1, 1, 0, 1);
+	G_DOUBLE_BUFFER[0].Polys = (u8*)DCMem_New(0x17000u, 1, 1, 0, 1);
+	G_DOUBLE_BUFFER[1].Polys = (u8*)DCMem_New(0x17000u, 1, 1, 0, 1);
 
 	Db_FlipClear();
 
@@ -36,51 +37,51 @@ void Db_CreateOTsAndPolyBuffers(void)
 // @Matching
 INLINE void Db_DefaultScreenOffsets(void)
 {
-	DoubleBuffer[0].Disp.screen.x = 0;
-	DoubleBuffer[1].Disp.screen.x = 0;
-	DoubleBuffer[0].Disp.screen.y = 0;
-	DoubleBuffer[1].Disp.screen.y = 0;
+	G_DOUBLE_BUFFER[0].Disp.screen.x = 0;
+	G_DOUBLE_BUFFER[1].Disp.screen.x = 0;
+	G_DOUBLE_BUFFER[0].Disp.screen.y = 0;
+	G_DOUBLE_BUFFER[1].Disp.screen.y = 0;
 }
 
 // @Ok
 // @Matching
 void Db_DeleteOTsAndPolyBuffers(void)
 {
-	if (DoubleBuffer[0].OrderingTable)
+	if (G_DOUBLE_BUFFER[0].OrderingTable)
 	{
-		Mem_Delete(DoubleBuffer[0].OrderingTable);
-		DoubleBuffer[0].OrderingTable = (u32*)0xFFFFFFFF;
+		Mem_Delete(G_DOUBLE_BUFFER[0].OrderingTable);
+		G_DOUBLE_BUFFER[0].OrderingTable = (u32*)0xFFFFFFFF;
 	}
-	if (DoubleBuffer[1].OrderingTable)
+	if (G_DOUBLE_BUFFER[1].OrderingTable)
 	{
-		Mem_Delete(DoubleBuffer[1].OrderingTable);
-		DoubleBuffer[1].OrderingTable = (u32*)0xFFFFFFFF;
-	}
-
-	if (DoubleBuffer[0].Polys)
-	{
-		Mem_Delete(DoubleBuffer[0].Polys);
-		DoubleBuffer[0].Polys = (u8*)0xFFFFFFFF;
-	}
-	if (DoubleBuffer[1].Polys)
-	{
-		Mem_Delete(DoubleBuffer[1].Polys);
-		DoubleBuffer[1].Polys = (u8*)0xFFFFFFFF;
+		Mem_Delete(G_DOUBLE_BUFFER[1].OrderingTable);
+		G_DOUBLE_BUFFER[1].OrderingTable = (u32*)0xFFFFFFFF;
 	}
 
-	pPoly = reinterpret_cast<u32*>(1);
+	if (G_DOUBLE_BUFFER[0].Polys)
+	{
+		Mem_Delete(G_DOUBLE_BUFFER[0].Polys);
+		G_DOUBLE_BUFFER[0].Polys = (u8*)0xFFFFFFFF;
+	}
+	if (G_DOUBLE_BUFFER[1].Polys)
+	{
+		Mem_Delete(G_DOUBLE_BUFFER[1].Polys);
+		G_DOUBLE_BUFFER[1].Polys = (u8*)0xFFFFFFFF;
+	}
+
+	G_PPOLY = reinterpret_cast<u32*>(1);
 }
 
 // @Ok
 // @Matching
 INLINE void Db_FlipClear(void)
 {
-	pDoubleBuffer = pDoubleBuffer == &DoubleBuffer[0] ?
-		&DoubleBuffer[1] :
-		&DoubleBuffer[0];
+	G_PDOUBLE_BUFFER = G_PDOUBLE_BUFFER == &G_DOUBLE_BUFFER[0] ?
+		&G_DOUBLE_BUFFER[1] :
+		&G_DOUBLE_BUFFER[0];
 
 	ClearOTagR();
-	pPoly = reinterpret_cast<u32*>(reinterpret_cast<u32>(pDoubleBuffer->Polys) & 0x7FFFFFFF);
+	G_PPOLY = reinterpret_cast<u32*>(reinterpret_cast<u32>(G_PDOUBLE_BUFFER->Polys) & 0x7FFFFFFF);
 }
 
 // @Ok
@@ -93,16 +94,16 @@ void Db_Init(void)
 	SetDefDispEnv();
 
 	Db_DefaultScreenOffsets();
-	DoubleBuffer[0].Draw.isbg = 1;
+	G_DOUBLE_BUFFER[0].Draw.isbg = 1;
 
 	setRGB0();
-	DoubleBuffer[1].Draw.isbg = 1;
+	G_DOUBLE_BUFFER[1].Draw.isbg = 1;
 	setRGB0();
 
-	DoubleBuffer[0].OrderingTable = (u32*)0xFFFFFFFF;
-	DoubleBuffer[1].OrderingTable = (u32*)0xFFFFFFFF;
-	DoubleBuffer[0].Polys = (u8*)0xFFFFFFFF;
-	DoubleBuffer[1].Polys = (u8*)0xFFFFFFFF;
+	G_DOUBLE_BUFFER[0].OrderingTable = (u32*)0xFFFFFFFF;
+	G_DOUBLE_BUFFER[1].OrderingTable = (u32*)0xFFFFFFFF;
+	G_DOUBLE_BUFFER[0].Polys = (u8*)0xFFFFFFFF;
+	G_DOUBLE_BUFFER[1].Polys = (u8*)0xFFFFFFFF;
 
 	Db_CreateOTsAndPolyBuffers();
 	Db_FlipClear();
@@ -116,32 +117,32 @@ void Db_Init(void)
 // @Matching
 void Db_UpdateSky(void)
 {
-	if (Db_SkyColor == 0x466973)
+	if (G_DB_SKY_COLOR == 0x466973)
 	{
-		Db_SkyColor = 0x154070;
+		G_DB_SKY_COLOR = 0x154070;
 	}
 
 	u32 v1 = 0;
 
-	if (Db_SkyColor == -1)
+	if (G_DB_SKY_COLOR == -1)
 	{
-		DoubleBuffer[0].Draw.isbg = 0;
-		DoubleBuffer[1].Draw.isbg = 0;
+		G_DOUBLE_BUFFER[0].Draw.isbg = 0;
+		G_DOUBLE_BUFFER[1].Draw.isbg = 0;
 	}
 	else
 	{
-		DoubleBuffer[0].Draw.isbg = 1;
+		G_DOUBLE_BUFFER[0].Draw.isbg = 1;
 		setRGB0();
-		DoubleBuffer[1].Draw.isbg = 1;
+		G_DOUBLE_BUFFER[1].Draw.isbg = 1;
 		setRGB0();
 
-		v1 = Db_SkyColor;
+		v1 = G_DB_SKY_COLOR;
 	}
 
-	if (v1 != gPcGfxSkyColor)
+	if (v1 != G_PCGFX_SKY_COLOR)
 	{
-		gPcGfxSkyColor = v1;
-		gBFoggingRelated = 1;
+		G_PCGFX_SKY_COLOR = v1;
+		G_BFOGGING_RELATED = 1;
 	}
 }
 

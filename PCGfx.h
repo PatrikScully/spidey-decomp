@@ -117,8 +117,31 @@ EXPORT i32 STDCALL kmUnloadDevice(void);
 EXPORT i32 amHeapAlloc(u32**, i32, i32, i32, i32);
 EXPORT i32 acG2Write(void*, void*, i32);
 
+// The four PCGfx globals that non DirectX code reads. PCGfx.cpp itself is not
+// hooked and is due to be rewritten, but the exe keeps writing these every
+// frame, so game side readers have to see the exe's copies. The rest of
+// PCGfx.cpp's state is only touched inside PCGfx.cpp and stays repo local.
+
 EXPORT extern u8 gSceneRelated;
+// PCGfx_IsInScene (0x509570) is two instructions: "mov al,[0AC08C4h]; ret".
+//#define G_SCENE_RELATED (gSceneRelated)
+#define G_SCENE_RELATED (*reinterpret_cast<u8*>(0x00AC08C4))
+
 EXPORT extern u32 gPcGfxSkyColor;
+// Db_UpdateSky (0x430336) compares against [0AC08C8h] and stores to it.
+//#define G_PCGFX_SKY_COLOR (gPcGfxSkyColor)
+#define G_PCGFX_SKY_COLOR (*reinterpret_cast<u32*>(0x00AC08C8))
+
 EXPORT extern u8 gBFoggingRelated;
+// Db_UpdateSky (0x430348) writes "mov byte ptr [0AC08C5h],1" right after the
+// sky colour store.
+//#define G_BFOGGING_RELATED (gBFoggingRelated)
+#define G_BFOGGING_RELATED (*reinterpret_cast<u8*>(0x00AC08C5))
+
+EXPORT extern i32 gUseTextureRelated;
+// PCGfx_UseTexture (0x506458) reads [568170h] and 0x506472 writes it back.
+// The exe has -1 there in the raw .data, same as our initialiser.
+//#define G_USE_TEXTURE_RELATED (gUseTextureRelated)
+#define G_USE_TEXTURE_RELATED (*reinterpret_cast<i32*>(0x00568170))
 
 #endif

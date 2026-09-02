@@ -510,12 +510,12 @@ EXPORT void CheckForPadUnplugged(void)
 
 		i32 startVblanks = G_VBLANKS;
 
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 
 		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 		M3d_Render(pWidget);
 		M3d_RenderCleanup();
 
@@ -532,7 +532,7 @@ EXPORT void CheckForPadUnplugged(void)
 
 		Bit_Display();
 
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 
 		Pad_Update();
@@ -652,7 +652,7 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v21 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -697,7 +697,7 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 				Mess_DrawText(256, 200, v13, 0, 0x1000);
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
 		if (pMenu->mLine > 0x28)
@@ -928,7 +928,7 @@ void Shell_ChooseSurvivalArena(i32 fromHighScores)
 
 		i32 vblanksSnapshot = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1u, -1);
 
 		Shell_DrawBackground();
@@ -956,7 +956,7 @@ void Shell_ChooseSurvivalArena(i32 fromHighScores)
 
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 0x180);
@@ -1069,7 +1069,7 @@ void Shell_ChooseTime(i32 a1, i32 a2)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v15 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -1112,7 +1112,7 @@ void Shell_ChooseTime(i32 a1, i32 a2)
 			}
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		if (pMenu->mLine > 0x28)
 			Pad_ClearTriggers(G_SCONTROL);
@@ -1201,7 +1201,7 @@ i32 Shell_ChooseTrainingControlType(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		v17 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		i32 v5 = pMenu->ChoiceIs("kid mode") && v11 == 0;
 		// sub_497690(pAnim, 330, v9, v5, v10); // kiddy animation
@@ -1217,7 +1217,7 @@ i32 Shell_ChooseTrainingControlType(void)
 			PShell_DefaultText();
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		v18 = PShell_MoveTowards(v0, 128);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
@@ -1474,7 +1474,7 @@ void Shell_ComicCollection(void)
 
 		i32 startVblanks = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		if (gBackgroundAnimFrame == 0)
@@ -1485,7 +1485,7 @@ void Shell_ComicCollection(void)
 
 		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 
 		if (pLoadingBox != 0)
 		{
@@ -1583,7 +1583,7 @@ void Shell_ComicCollection(void)
 		M3d_RenderCleanup();
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 160);
@@ -1920,7 +1920,7 @@ void Shell_CostumeViewer(void)
 
 		i32 startVblanks = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		Mess_SetSort(4095);
@@ -1950,7 +1950,7 @@ void Shell_CostumeViewer(void)
 		{
 			M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 			TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 			M3d_Render(pDummy);
 			M3d_RenderCleanup();
 			Bit_Display();
@@ -2017,7 +2017,7 @@ drawDesc:
 
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		titleScrollX = PShell_MoveTowards(titleScrollX, 128);
@@ -2327,7 +2327,7 @@ void Shell_CharacterViewer(void)
 
 		i32 startVblanks = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		Mess_SetSort(4095);
@@ -2357,7 +2357,7 @@ void Shell_CharacterViewer(void)
 		{
 			M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 			TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 
 			// the Human Torch's flames are a wibbly-texture effect
 			if (pDummy->mType == 704)
@@ -2490,7 +2490,7 @@ void Shell_CharacterViewer(void)
 
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		titleScrollX = PShell_MoveTowards(titleScrollX, 160);
@@ -2714,7 +2714,7 @@ i32 Shell_Difficulty(i32 a1)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		v40 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		v6 = pMenu->ChoiceIs("kid mode") && v32 == 0;
 		// sub_497690(pAnim, 321, v4, v6, v31); // kiddy animation
@@ -2766,7 +2766,7 @@ i32 Shell_Difficulty(i32 a1)
 			PShell_DefaultText();
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		v3 = PShell_MoveTowards(v3, 128);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
@@ -2918,7 +2918,7 @@ void Shell_DisplayGameInfo(
 				Mess_SetTextJustify(1);
 				Mess_DrawText(a1, a2, pLevel->mDisplayName, 0, 0x1000);
 
-				const char* v9 = gRenderBuf;
+				const char* v9 = G_RENDER_BUF;
 
 				switch (pSave->mDifficulty)
 				{
@@ -3462,7 +3462,7 @@ i32 Shell_Gallery(EShellResult a1)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v12 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -3495,7 +3495,7 @@ i32 Shell_Gallery(EShellResult a1)
 			}
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		v4 = PShell_MoveTowards(v4, 128);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
@@ -3696,7 +3696,7 @@ void Shell_GameCovers(void)
 
 		i32 startVblanks = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		if (gBackgroundAnimFrame == 0)
@@ -3707,7 +3707,7 @@ void Shell_GameCovers(void)
 
 		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 
 		CExpandingBox *pActiveBox;
 
@@ -3758,7 +3758,7 @@ void Shell_GameCovers(void)
 		M3d_RenderCleanup();
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 128);
@@ -4020,7 +4020,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 
 		vblankAtDraw = G_VBLANKS;
 
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 
 		Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
@@ -4043,7 +4043,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 		{
 			M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 			TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 			M3d_Render(pSpidey);
 			M3d_RenderCleanup();
 		}
@@ -4063,7 +4063,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 
 		titleX = PShell_MoveTowards(titleX, 128);
@@ -4249,7 +4249,7 @@ void Shell_LegalScreen(void)
 		u32 v3 = G_VBLANKS + 180;
 		while ( 1 )
 		{
-			if (!gSceneRelated)
+			if (!G_SCENE_RELATED)
 				PCGfx_BeginScene(1u, -1);
 
 			v0->draw(
@@ -4257,7 +4257,7 @@ void Shell_LegalScreen(void)
 				0,
 				8,
 				-1.0f);
-			if (gSceneRelated)
+			if (G_SCENE_RELATED)
 				PCGfx_EndScene(1);
 			++TTime;
 			Pad_Update();
@@ -4331,7 +4331,7 @@ i32 Shell_LevelSelect(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v22 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -4339,7 +4339,7 @@ i32 Shell_LevelSelect(void)
 		Shell_DrawTitleBar(v9, 38, "level select", 1, 0, 150, -21, 29);
 		pMenu->Display();
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		v9 = PShell_MoveTowards(v9, 128);
 		if (pMenu->mLine > 0x28)
@@ -4461,7 +4461,7 @@ i32 Shell_LoadGame(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 vblanks = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -4504,7 +4504,7 @@ i32 Shell_LoadGame(void)
 			break;
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		i32 v25 = PShell_MoveTowards(v0, 128);
 		if ((++TTime & 1) != 0)
@@ -4905,12 +4905,12 @@ i32 Shell_MainMenu(EShellResult a1)
 		CalcPolyBufferEnd();
 		startVblanks = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 
 		curType = gMainMenuTable[line].type;
 		if (curType == 1 || curType == 5 || (curType == 2 && gSaveGame.field_78 != 0))
@@ -4965,7 +4965,7 @@ i32 Shell_MainMenu(EShellResult a1)
 
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		Pad_Update();
@@ -5212,7 +5212,7 @@ i32 Shell_MemoryCard(EShellResult a1)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v11 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -5226,7 +5226,7 @@ i32 Shell_MemoryCard(EShellResult a1)
 			Mess_DrawText(256, 184, "or save game data", 0, 0x1000);
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		v4 = PShell_MoveTowards(v4, 128);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
@@ -5339,7 +5339,7 @@ void Shell_MovieViewer(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v15 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -5354,7 +5354,7 @@ void Shell_MovieViewer(void)
 			Mess_DrawText(256, 225, "then select a movie to view", 0, 0x1000);
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		v0 = PShell_MoveTowards(v0, 128);
 		if (pMenu->mLine > 0x28)
@@ -5482,7 +5482,7 @@ i32 Shell_Options(EShellResult a1)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v12 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -5516,7 +5516,7 @@ i32 Shell_Options(EShellResult a1)
 			}
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		i32 v13 = PShell_MoveTowards(v1, 128);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
@@ -5677,7 +5677,7 @@ inline void* operator new(size_t, void* location)
 // @Ok
 void Shell_RollCredits(void)
 {
-	Db_SkyColor = 0xFF000000;
+	G_DB_SKY_COLOR = 0xFF000000;
 	Db_UpdateSky();
 	Front_ClearScreen();
 	if (!gPrintStubbed)
@@ -5771,12 +5771,12 @@ void Shell_RollCredits(void)
 
 		u32 startVblanks = G_VBLANKS;
 
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 
 		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
 		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
-		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 
 		if (pDummy)
 			M3d_Render(pDummy);
@@ -5804,7 +5804,7 @@ void Shell_RollCredits(void)
 			}
 		}
 
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 
 		Pad_Update();
@@ -6105,7 +6105,7 @@ void Shell_SFXMusic(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v29 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -6133,7 +6133,7 @@ void Shell_SFXMusic(void)
 		}
 		pMenu->Display();
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		i32 v30 = PShell_MoveTowards(v3, 150);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
@@ -6332,9 +6332,9 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 		PShell_Initialise();
 		M3d_FadeColour = 0xFFFFFF;
 		M3dInit_SetFoggingParams(0, 0x1770, 0x800);
-		savedSkyColor = Db_SkyColor;
-		Db_SkyColor = 0;
-		gBFoggingRelated = 1;
+		savedSkyColor = G_DB_SKY_COLOR;
+		G_DB_SKY_COLOR = 0;
+		G_BFOGGING_RELATED = 1;
 		Db_UpdateSky();
 	}
 
@@ -6363,7 +6363,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 vblanks = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -6429,7 +6429,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 			break;
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		titleEase = PShell_MoveTowards(titleEase, 128);
 		if ((++TTime & 1) != 0)
@@ -6830,8 +6830,8 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 		*pResult = result;
 		if (fromGame != 0)
 		{
-			gBFoggingRelated = 1;
-			Db_SkyColor = savedSkyColor;
+			G_BFOGGING_RELATED = 1;
+			G_DB_SKY_COLOR = savedSkyColor;
 			Db_UpdateSky();
 		}
 		return;
@@ -6924,8 +6924,8 @@ void Shell_ScreenAdjust(void)
 
 	print_if_false(gShellInitialized != 0, "Called Shell_MainMenu() without shell initialised");
 
-	i32 savedX = DoubleBuffer[0].Disp.screen.x;
-	i32 savedY = DoubleBuffer[0].Disp.screen.y;
+	i32 savedX = G_DOUBLE_BUFFER[0].Disp.screen.x;
+	i32 savedY = G_DOUBLE_BUFFER[0].Disp.screen.y;
 	i32 cancelled = 0;
 
 	i32 titleEase = 0;
@@ -6939,7 +6939,7 @@ void Shell_ScreenAdjust(void)
 
 		i32 vblanksSnapshot = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1u, -1);
 
 		gsub_498240(gShellMenuEase, 0xDE);
@@ -6955,7 +6955,7 @@ void Shell_ScreenAdjust(void)
 		Mess_DrawText(0x100, 0x75, STR_SCREEN_ADJUST_LINE2, 0, 0x1000u);
 		Mess_DrawText(0x100, 0x86, STR_SCREEN_ADJUST_LINE3, 0, 0x1000u);
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		titleEase = PShell_MoveTowards(titleEase, 0x80);
@@ -6968,29 +6968,29 @@ void Shell_ScreenAdjust(void)
 
 		CheckForPadUnplugged();
 
-		if (G_SCONTROL[0].Right.Pressed && DoubleBuffer[0].Disp.screen.x < 0x20)
+		if (G_SCONTROL[0].Right.Pressed && G_DOUBLE_BUFFER[0].Disp.screen.x < 0x20)
 		{
-			DoubleBuffer[0].Disp.screen.x++;
-			DoubleBuffer[1].Disp.screen.x++;
+			G_DOUBLE_BUFFER[0].Disp.screen.x++;
+			G_DOUBLE_BUFFER[1].Disp.screen.x++;
 		}
 
-		if (G_SCONTROL[0].Left.Pressed && DoubleBuffer[0].Disp.screen.x > 0)
+		if (G_SCONTROL[0].Left.Pressed && G_DOUBLE_BUFFER[0].Disp.screen.x > 0)
 		{
-			DoubleBuffer[0].Disp.screen.x--;
-			DoubleBuffer[1].Disp.screen.x--;
+			G_DOUBLE_BUFFER[0].Disp.screen.x--;
+			G_DOUBLE_BUFFER[1].Disp.screen.x--;
 		}
 
-		if (G_SCONTROL[0].Up.Pressed && DoubleBuffer[0].Disp.screen.y > 0)
+		if (G_SCONTROL[0].Up.Pressed && G_DOUBLE_BUFFER[0].Disp.screen.y > 0)
 		{
-			DoubleBuffer[0].Disp.screen.y--;
-			DoubleBuffer[1].Disp.screen.y--;
+			G_DOUBLE_BUFFER[0].Disp.screen.y--;
+			G_DOUBLE_BUFFER[1].Disp.screen.y--;
 			G_SCONTROL[0].Up.Triggered = 0;
 		}
 
-		if (G_SCONTROL[0].Down.Pressed && DoubleBuffer[0].Disp.screen.y < 0x20)
+		if (G_SCONTROL[0].Down.Pressed && G_DOUBLE_BUFFER[0].Disp.screen.y < 0x20)
 		{
-			DoubleBuffer[0].Disp.screen.y++;
-			DoubleBuffer[1].Disp.screen.y++;
+			G_DOUBLE_BUFFER[0].Disp.screen.y++;
+			G_DOUBLE_BUFFER[1].Disp.screen.y++;
 			G_SCONTROL[0].Down.Triggered = 0;
 		}
 
@@ -7036,14 +7036,14 @@ void Shell_ScreenAdjust(void)
 
 	if (cancelled)
 	{
-		DoubleBuffer[0].Disp.screen.x = savedX;
-		DoubleBuffer[0].Disp.screen.y = savedY;
-		DoubleBuffer[1].Disp.screen.x = savedX;
-		DoubleBuffer[1].Disp.screen.y = savedY;
+		G_DOUBLE_BUFFER[0].Disp.screen.x = savedX;
+		G_DOUBLE_BUFFER[0].Disp.screen.y = savedY;
+		G_DOUBLE_BUFFER[1].Disp.screen.x = savedX;
+		G_DOUBLE_BUFFER[1].Disp.screen.y = savedY;
 	}
 
-	*reinterpret_cast<i32*>(&gSaveGame.field_A4) = DoubleBuffer[0].Disp.screen.x;
-	*reinterpret_cast<i32*>(&gSaveGame.field_A8) = DoubleBuffer[0].Disp.screen.y;
+	*reinterpret_cast<i32*>(&gSaveGame.field_A4) = G_DOUBLE_BUFFER[0].Disp.screen.x;
+	*reinterpret_cast<i32*>(&gSaveGame.field_A8) = G_DOUBLE_BUFFER[0].Disp.screen.y;
 
 	gShellMenuEase = 0x200;
 }
@@ -7357,7 +7357,7 @@ void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 
 		i32 vblanksSnapshot = G_VBLANKS;
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1u, -1);
 
 		Shell_DrawBackground();
@@ -7372,7 +7372,7 @@ void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 
 		PCSHELL_DrawMouseCursor();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		gShellMenuEase = PShell_MoveTowards(gShellMenuEase, 0x180);
@@ -7477,7 +7477,7 @@ i32 Shell_Special(EShellResult a1)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v13 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -7508,7 +7508,7 @@ i32 Shell_Special(EShellResult a1)
 			}
 		}
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		v1 = PShell_MoveTowards(v1, 128);
 		*(i32*)0x005512EC = PShell_MoveTowards(*(i32*)0x005512EC, 384);
@@ -7611,7 +7611,7 @@ void Shell_StoryBoards(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 		i32 v16 = G_VBLANKS;
-		if (gSceneRelated == 0)
+		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
@@ -7619,7 +7619,7 @@ void Shell_StoryBoards(void)
 		Shell_DrawTitleBar(v5, 38, "storyboards", 1, 0, 150, -21, 29);
 		pMenu->Display();
 		PCSHELL_DrawMouseCursor();
-		if (gSceneRelated != 0)
+		if (G_SCENE_RELATED != 0)
 			PCGfx_EndScene(1);
 		i32 v17 = PShell_MoveTowards(v5, 128);
 		if (pMenu->mLine > 0x28)
@@ -7738,7 +7738,7 @@ void Shell_TitleScreen(void)
 
 	while (1)
 	{
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1u, -1);
 
 		v0->screenHeight();
@@ -7747,7 +7747,7 @@ void Shell_TitleScreen(void)
 
 		Front_MiniUpdate();
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		++TTime;
