@@ -7,9 +7,6 @@
 #include "m3dcolij.h"
 #include "ps2m3d.h"
 
-extern CBaddy* BaddyList;
-extern u8 submarinerDieRelated;
-
 EXPORT SLight M3d_SpCloneLight =
 {
   { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
@@ -66,7 +63,7 @@ void CSpClone::AI(void)
 		this->CleanUpMessages(1, 0);
 	}
 
-	if (submarinerDieRelated)
+	if (G_SUBMARINER_DIE_RELATED)
 	{
 		this->Die(0);
 		return;
@@ -276,7 +273,7 @@ CSpClone::CSpClone(i16 * a2,i32 a3)
 
 	this->mpLight = &M3d_SpCloneLight;
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mType = 327;
 	this->field_31C.bothFlags = 1;
@@ -284,7 +281,7 @@ CSpClone::CSpClone(i16 * a2,i32 a3)
 	this->mRMinor = 0;
 	this->field_348 = reinterpret_cast<i32>(v5);
 
-	if ( submarinerDieRelated )
+	if ( G_SUBMARINER_DIE_RELATED )
 		this->Die(0);
 }
 
@@ -802,7 +799,7 @@ void CSpClone::SynthesizeAnalogueInput(void)
 // @Ok
 CSpClone::~CSpClone(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	delete this->field_338;
 
@@ -823,7 +820,7 @@ void SpClone_CreateSpClone(const u32 * a2,u32 * a3)
 // @Matching
 void SpClone_RelocatableModuleClear(void)
 {
-	for (CBody* cur = BaddyList; cur; )
+	for (CBody* cur = G_BADDY_LIST; cur; )
 	{
 		CBody* next = reinterpret_cast<CBody*>(cur->mNextItem);
 		if (cur->mType == 327)

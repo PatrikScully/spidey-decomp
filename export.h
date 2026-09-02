@@ -9,6 +9,9 @@
 static i32 * const Animations = (i32*)0x006B245C;
 
 //static unsigned char * const submarinerDieRelated = (unsigned char*)0x0060CFC4;
+// Written by spidey.cpp (unhooked). Any hooked reader needs game memory.
+//#define G_SUBMARINER_DIE_RELATED (submarinerDieRelated)
+#define G_SUBMARINER_DIE_RELATED (*reinterpret_cast<u8*>(0x0060CFC4))
 
 static u16* const word_6B2478 = (u16*)0x6B2478;
 //static int * const gTimerRelated = (int*)0x006B4CA8;
