@@ -698,7 +698,7 @@ void SpideyAI0(CPlayer *pPlayer)
 		return;
 	}
 
-	print_if_false(G_MECHLIST->mNextItem == 0, "2+ elements in MechList");
+	print_if_false(G_MECHLIST->mNextItem == 0, "2+ elements in G_MECHLIST_PLAYER");
 
 	pPlayer->mFlags |= 4;
 	pPlayer->field_E8 = pPlayer->mPos;

@@ -66,7 +66,7 @@ void CThug::TakeHit(void)
 			}
 			else
 			{
-				new CAIProc_LookAt(this, MechList, 0, 0, 80, 200);
+				new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 0, 80, 200);
 				this->RunAppropriateHitAnim();
 				this->dumbAssPad = 3;
 			}
@@ -118,13 +118,13 @@ void CThug::BackpedalPlease(void)
 			this->field_1F8 = 0;
 			v10 = this->mPos;
 
-			v10.vx += 6 * ((this->mPos.vx - MechList->mPos.vx) >> 2);
-			v10.vx += 6 * ((this->mPos.vz - MechList->mPos.vz) >> 2);
+			v10.vx += 6 * ((this->mPos.vx - G_MECHLIST_PLAYER->mPos.vx) >> 2);
+			v10.vx += 6 * ((this->mPos.vz - G_MECHLIST_PLAYER->mPos.vz) >> 2);
 
 			if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(&v10, 0))
 			{
 
-				this->mVel = (this->mPos - MechList->mPos) >> 2;
+				this->mVel = (this->mPos - G_MECHLIST_PLAYER->mPos) >> 2;
 				this->mVel.vy = 0;
 			}
 
@@ -170,7 +170,7 @@ void CThug::LookForPlayer(void)
 			CVector *mPos;
 
 			if (this->field_1F8 < 64)
-				mPos = &MechList->mPos;
+				mPos = &G_MECHLIST_PLAYER->mPos;
 			else
 				mPos = &this->mPos;
 
@@ -221,7 +221,7 @@ i32 CThug::DetermineFightState(void)
 	i32 dist = this->DistanceToPlayer(2);
 	i32 cachedPath = -1;
 
-	if (this->mHealth <= 0 || MechList->mHealth <= 0 || MechList->field_57C != 0)
+	if (this->mHealth <= 0 || G_MECHLIST_PLAYER->mHealth <= 0 || G_MECHLIST_PLAYER->field_57C != 0)
 		return false;
 
 	if (dist <= 1000)
@@ -234,7 +234,7 @@ i32 CThug::DetermineFightState(void)
 	if (this->field_330 == 0
 			&& dist < 300
 			&& this->field_348 == 0
-			&& abs(MechList->mPos.vy - this->mPos.vy) < 819200)
+			&& abs(G_MECHLIST_PLAYER->mPos.vy - this->mPos.vy) < 819200)
 	{
 		this->field_348 = 60;
 	}
@@ -242,7 +242,7 @@ i32 CThug::DetermineFightState(void)
 	if (this->field_1A4 != 0)
 		return false;
 
-	if (Utils_LineOfSight(&this->mPos, &MechList->mPos, 0, 0) == 0)
+	if (Utils_LineOfSight(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 0) == 0)
 	{
 		if (this->field_2A8 & 0x800)
 		{
@@ -274,7 +274,7 @@ i32 CThug::DetermineFightState(void)
 
 	if (this->field_330 != 0 && dist < this->field_370)
 	{
-		cachedPath = this->PathCheck(&this->mPos, &MechList->mPos, 0, 55);
+		cachedPath = this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55);
 
 		if (cachedPath == 0)
 		{
@@ -283,20 +283,20 @@ i32 CThug::DetermineFightState(void)
 		}
 	}
 
-	if (this->CheckSightCone(this->field_378, this->field_374, this->field_370, this->field_37C, MechList) == 0)
+	if (this->CheckSightCone(this->field_378, this->field_374, this->field_370, this->field_37C, G_MECHLIST_PLAYER) == 0)
 	{
 		i32 pathResult;
 
-		if (MechList->field_57C != 0
+		if (G_MECHLIST_PLAYER->field_57C != 0
 				|| gThugList != 0
-				|| MechList->mHeldObject != 0
+				|| G_MECHLIST_PLAYER->mHeldObject != 0
 				|| this->field_330 == 0
 				|| dist >= 1500)
 		{
 			goto checkStateChanged;
 		}
 
-		pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) : cachedPath;
+		pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55) : cachedPath;
 
 		if (pathResult == 0)
 			goto checkStateChanged;
@@ -323,7 +323,7 @@ i32 CThug::DetermineFightState(void)
 	}
 
 	if (cachedPath == -1)
-		cachedPath = this->PathCheck(&this->mPos, &MechList->mPos, 0, 55);
+		cachedPath = this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55);
 
 	if (cachedPath == 0)
 	{
@@ -344,16 +344,16 @@ i32 CThug::DetermineFightState(void)
 	{
 		i32 pathResult;
 
-		if (MechList->field_57C != 0
+		if (G_MECHLIST_PLAYER->field_57C != 0
 				|| gThugList != 0
-				|| MechList->mHeldObject != 0
+				|| G_MECHLIST_PLAYER->mHeldObject != 0
 				|| this->field_330 == 0
 				|| dist >= 1500)
 		{
 			goto checkStateChanged;
 		}
 
-		pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) : cachedPath;
+		pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55) : cachedPath;
 
 		if (pathResult == 0)
 			goto checkStateChanged;
@@ -376,13 +376,13 @@ i32 CThug::DetermineFightState(void)
 	this->field_31C.bothFlags = 4;
 	this->dumbAssPad = 0;
 
-	if (MechList->field_57C == 0
+	if (G_MECHLIST_PLAYER->field_57C == 0
 			&& gThugList == 0
-			&& MechList->mHeldObject == 0
+			&& G_MECHLIST_PLAYER->mHeldObject == 0
 			&& this->field_330 != 0
 			&& dist < 1500)
 	{
-		i32 pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) : cachedPath;
+		i32 pathResult = (cachedPath == -1) ? this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55) : cachedPath;
 
 		if (pathResult != 0)
 		{
@@ -429,12 +429,12 @@ void CThug::Caution(void)
 
 			SFX_PlayPos( (Rnd(3) + 14) | 0x8000, &this->mPos, 0);
 
-			if ((abs(MechList->mPos.vy - this->field_29C - 0x4000) < 409600)
+			if ((abs(G_MECHLIST_PLAYER->mPos.vy - this->field_29C - 0x4000) < 409600)
 				&& this->PlayerIsVisible())
 			{
 				if (!this->ShouldIShootPlayer())
 				{
-					this->field_31C.bothFlags = MechList->field_57C != 0 ? 1 : 4;
+					this->field_31C.bothFlags = G_MECHLIST_PLAYER->field_57C != 0 ? 1 : 4;
 					this->dumbAssPad = 0;
 				}
 			}
@@ -470,12 +470,12 @@ void CThug::CreateCombatImpactEffect(CVector* a2, i32 a3)
 // two's complement a lil diff
 INLINE i32 CThug::ShouldIShootPlayer(void)
 {
-	if ( MechList->field_57C
+	if ( G_MECHLIST_PLAYER->field_57C
 		|| gThugList
 		|| this->DistanceToPlayer(2) >= 2000
-		|| MechList->mHeldObject
+		|| G_MECHLIST_PLAYER->mHeldObject
 		|| this->DistanceToPlayer(2) <= 650
-		&& (abs(MechList->mPos.vy - this->field_29C - 0x4000) <= 409600) )
+		&& (abs(G_MECHLIST_PLAYER->mPos.vy - this->field_29C - 0x4000) <= 409600) )
 	{
 		return 0;
 	}
@@ -557,11 +557,11 @@ INLINE void CThug::DrawBarrelFlash(
 // in this file, so verified by code review rather than a byte diff.
 INLINE void CThug::CheckToShoot(i32 a2, i32 a3)
 {
-	if ( MechList->field_57C && !gThugList && !MechList->mHeldObject)
+	if ( G_MECHLIST_PLAYER->field_57C && !gThugList && !G_MECHLIST_PLAYER->mHeldObject)
 	{
 		if ( ((this->field_218 & 0x800) && a2 < this->field_37C)
 				||
-			 (this->field_330 && a2 < 1500 && (a3 != -1 || this->PathCheck(&this->mPos, &MechList->mPos, 0, 55))))
+			 (this->field_330 && a2 < 1500 && (a3 != -1 || this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55))))
 		{
 			this->Neutralize();
 			gThugList = this;
@@ -603,9 +603,9 @@ INLINE i32 CThug::AdjustPosPlaySound(i32 a2)
 	v4.vy = 0;
 	v4.vz = 0;
 
-	v4.vx = ((2400 * MechList->mPos.vx) >> 12) + ((1600 * this->mPos.vx) >> 12);
-	v4.vy = ((2400 * MechList->mPos.vy) >> 12) + ((1600 * this->mPos.vy) >> 12);
-	v4.vz = ((2400 * MechList->mPos.vz) >> 12) + ((1600 * this->mPos.vz) >> 12);
+	v4.vx = ((2400 * G_MECHLIST_PLAYER->mPos.vx) >> 12) + ((1600 * this->mPos.vx) >> 12);
+	v4.vy = ((2400 * G_MECHLIST_PLAYER->mPos.vy) >> 12) + ((1600 * this->mPos.vy) >> 12);
+	v4.vz = ((2400 * G_MECHLIST_PLAYER->mPos.vz) >> 12) + ((1600 * this->mPos.vz) >> 12);
 
 	return SFX_PlayPos(a2, &v4, 0);
 }
@@ -647,9 +647,9 @@ INLINE void CThug::SetAttacker(void)
 // @Ok
 INLINE i32 CThug::SpideyAnimUppercut(void)
 {
-	return MechList->mAnim == 106
-		|| MechList->mAnim == 113
-		|| MechList->mAnim == 284;
+	return G_MECHLIST_PLAYER->mAnim == 106
+		|| G_MECHLIST_PLAYER->mAnim == 113
+		|| G_MECHLIST_PLAYER->mAnim == 284;
 }
 
 // @Ok
@@ -756,7 +756,7 @@ i32 CThug::MonitorSpitPlease(void)
 		return 0;
 	}
 
-	if ((this->mFlags & 0x8000) && Utils_CrapDist(this->mPos, MechList->mPos) < 0xFA0)
+	if ((this->mFlags & 0x8000) && Utils_CrapDist(this->mPos, G_MECHLIST_PLAYER->mPos) < 0xFA0)
 	{
 		SFX_PlayPos(0x8011, &this->mPos, 0);
 
@@ -1583,9 +1583,9 @@ void CThug::RunToWhereTheActionIs(CVector* a2)
 
 	i32 addedPoint = 0;
 
-	if (!MechList->field_57C
-			&& this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) == 0
-			&& this->AddPointToPath(&MechList->mPos, 0))
+	if (!G_MECHLIST_PLAYER->field_57C
+			&& this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55) == 0
+			&& this->AddPointToPath(&G_MECHLIST_PLAYER->mPos, 0))
 	{
 		addedPoint = 1;
 	}

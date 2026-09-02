@@ -398,7 +398,7 @@ void Music_MusicUpdate(void)
 
 	if (useFightMusic)
 	{
-		CPlayer *pPlayer = MechList;
+		CPlayer *pPlayer = G_MECHLIST_PLAYER;
 		if (pPlayer != 0)
 		{
 			pPlayer->field_530 += delta;

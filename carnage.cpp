@@ -324,10 +324,10 @@ void CCarnage::GettingGrabbed(void)
 
 		case 1:
 		{
-			if (this->mAnimFinished && MechList->field_E1C != 0x8000000)
+			if (this->mAnimFinished && G_MECHLIST_PLAYER->field_E1C != 0x8000000)
 				this->RunAnim(0x1Eu, 0, -1);
 
-			this->mAngles.vy = MechList->mAngles.vy;
+			this->mAngles.vy = G_MECHLIST_PLAYER->mAngles.vy;
 			this->dumbAssPad++;
 			break;
 		}
@@ -337,11 +337,11 @@ void CCarnage::GettingGrabbed(void)
 			typedef u8 (CPlayer::*GrabUpdateFn)(CVector*, i16*);
 			union { GrabUpdateFn fn; u32 addr; } u;
 			u.addr = 0x004BB810;
-			u8 grabbed = (MechList->*u.fn)(&this->mPos, &this->mAngles.vy);
+			u8 grabbed = (G_MECHLIST_PLAYER->*u.fn)(&this->mPos, &this->mAngles.vy);
 
 			if (grabbed && (this->field_2A8 & 0x40))
 			{
-				if (MechList->field_E1C & 0x4000000)
+				if (G_MECHLIST_PLAYER->field_E1C & 0x4000000)
 				{
 					if (this->mAnim != 0x1F)
 						this->RunAnim(0x1F, 0, -1);
@@ -351,7 +351,7 @@ void CCarnage::GettingGrabbed(void)
 				if (!this->mAnimFinished)
 					return;
 
-				if (MechList->field_E1C == 0x8000000)
+				if (G_MECHLIST_PLAYER->field_E1C == 0x8000000)
 					return;
 
 				this->RunAnim(0x1E, 0, -1);
@@ -386,14 +386,14 @@ void CCarnage::GettingGrabbed(void)
 				this->field_288 &= ~0x10;
 
 				SHitInfo hitInfo;
-				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				hitInfo.field_C = (G_MECHLIST_PLAYER->mPos - this->mPos) >> 12;
 				hitInfo.field_C.vy = 0;
 				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
 				hitInfo.field_0 = 0xE;
 				hitInfo.field_4 = 0xB;
 				hitInfo.field_8 = 0xC;
 
-				MechList->Hit(&hitInfo);
+				G_MECHLIST_PLAYER->Hit(&hitInfo);
 			}
 
 			if (this->mFrame >= 0xC)
@@ -408,15 +408,15 @@ void CCarnage::GettingGrabbed(void)
 			if (this->mFrame < 0xC)
 			{
 				CVector delta;
-				delta.vx = this->mPos.vx - MechList->mPos.vx;
+				delta.vx = this->mPos.vx - G_MECHLIST_PLAYER->mPos.vx;
 				delta.vy = 0;
-				delta.vz = this->mPos.vz - MechList->mPos.vz;
+				delta.vz = this->mPos.vz - G_MECHLIST_PLAYER->mPos.vz;
 
 				if (delta.Length() < 0x80)
 				{
 					CVector scaled = delta * 12;
 					VectorNormal(reinterpret_cast<VECTOR*>(&scaled), reinterpret_cast<VECTOR*>(&scaled));
-					CVector target = MechList->mPos + scaled;
+					CVector target = G_MECHLIST_PLAYER->mPos + scaled;
 					this->mPos = target;
 				}
 			}
@@ -495,7 +495,7 @@ void CCarnage::ThrowBlades(void)
 			VECTOR hookPos;
 			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
 
-			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), G_MECHLIST_PLAYER->mPos);
 
 			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
 
@@ -527,7 +527,7 @@ void CCarnage::ThrowBlades(void)
 			VECTOR hookPos;
 			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
 
-			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), G_MECHLIST_PLAYER->mPos);
 
 			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
 
@@ -549,7 +549,7 @@ void CCarnage::ThrowBlades(void)
 			VECTOR hookPos;
 			M3dUtils_GetDynamicHookPosition(&hookPos, this, &hook);
 
-			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), MechList->mPos);
+			new CSymbioteBlade(*reinterpret_cast<CVector*>(&hookPos), G_MECHLIST_PLAYER->mPos);
 
 			SFX_PlayPos((Rnd(6) + 0x1DC) | 0x8000, &this->mPos, 0);
 
@@ -562,7 +562,7 @@ void CCarnage::ThrowBlades(void)
 			if (!this->mAnimFinished)
 				return;
 
-			if (MechList->field_E1C & 0x800000)
+			if (G_MECHLIST_PLAYER->field_E1C & 0x800000)
 			{
 				this->field_218 &= ~4;
 				this->RunAnim(0x26u, 0, -1);
@@ -574,7 +574,7 @@ void CCarnage::ThrowBlades(void)
 			Utils_CalcAim(&aim1, &gCarnageVector, &this->mPos);
 
 			CSVector aim2;
-			Utils_CalcAim(&aim2, &gCarnageVector, &MechList->mPos);
+			Utils_CalcAim(&aim2, &gCarnageVector, &G_MECHLIST_PLAYER->mPos);
 
 			i32 diff = aim2.vy - aim1.vy;
 			if (diff > 0x800)
@@ -582,7 +582,7 @@ void CCarnage::ThrowBlades(void)
 			else if (diff < -0x800)
 				diff += 0x1000;
 
-			if (my_abs(diff) < 0x17C && !MechList->field_AD4)
+			if (my_abs(diff) < 0x17C && !G_MECHLIST_PLAYER->field_AD4)
 			{
 				this->RunAnim(0x26u, 0, -1);
 				this->dumbAssPad++;
@@ -834,10 +834,10 @@ void CCarnage::AxeHandSlash(void)
 		{
 			this->field_194 = (this->field_194 & ~0x66000) | 0x22000;
 
-			if (Utils_XZDist(&MechList->mPos, &ZeroVector) < 700 && this->field_35C != 1)
+			if (Utils_XZDist(&G_MECHLIST_PLAYER->mPos, &ZeroVector) < 700 && this->field_35C != 1)
 				this->realRegisterArr[1] = 1;
 
-			if (Utils_XZDist(&this->mPos, &MechList->mPos) <= 150 || this->realRegisterArr[1])
+			if (Utils_XZDist(&this->mPos, &G_MECHLIST_PLAYER->mPos) <= 150 || this->realRegisterArr[1])
 			{
 				this->field_218 &= ~1;
 			}
@@ -846,14 +846,14 @@ void CCarnage::AxeHandSlash(void)
 				this->field_218 |= 1;
 
 				CSVector dir;
-				dir.vx = MechList->mPos.vx - this->mPos.vx;
+				dir.vx = G_MECHLIST_PLAYER->mPos.vx - this->mPos.vx;
 				dir.vy = 0;
-				dir.vz = MechList->mPos.vz - this->mPos.vz;
+				dir.vz = G_MECHLIST_PLAYER->mPos.vz - this->mPos.vz;
 				VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
 
-				this->field_240.vx = MechList->mPos.vx - 150 * dir.vx;
+				this->field_240.vx = G_MECHLIST_PLAYER->mPos.vx - 150 * dir.vx;
 				this->field_240.vy = this->mPos.vy;
-				this->field_240.vz = MechList->mPos.vz - 150 * dir.vz;
+				this->field_240.vz = G_MECHLIST_PLAYER->mPos.vz - 150 * dir.vz;
 
 				this->SnapArenaPosition(&this->field_240);
 			}
@@ -864,14 +864,14 @@ void CCarnage::AxeHandSlash(void)
 				this->realRegisterArr[1] = 1;
 
 				SHitInfo hitInfo;
-				hitInfo.field_C = (MechList->mPos - this->mPos) >> 12;
+				hitInfo.field_C = (G_MECHLIST_PLAYER->mPos - this->mPos) >> 12;
 				hitInfo.field_C.vy = 0;
 				VectorNormal(reinterpret_cast<VECTOR*>(&hitInfo.field_C), reinterpret_cast<VECTOR*>(&hitInfo.field_C));
 				hitInfo.field_0 = 0xE;
 				hitInfo.field_4 = 0xB;
 				hitInfo.field_8 = 0x1E;
 
-				MechList->Hit(&hitInfo);
+				G_MECHLIST_PLAYER->Hit(&hitInfo);
 
 				this->mVel.vz = 0;
 				this->mVel.vy = 0;
@@ -880,7 +880,7 @@ void CCarnage::AxeHandSlash(void)
 			}
 
 			i32 diff;
-			if (MechList->field_8E8 || MechList->field_8E9)
+			if (G_MECHLIST_PLAYER->field_8E8 || G_MECHLIST_PLAYER->field_8E9)
 			{
 				diff = 0x600;
 			}
@@ -889,7 +889,7 @@ void CCarnage::AxeHandSlash(void)
 				CSVector aim1;
 				Utils_CalcAim(&aim1, &gCarnageVector, &this->mPos);
 				CSVector aim2;
-				Utils_CalcAim(&aim2, &gCarnageVector, &MechList->mPos);
+				Utils_CalcAim(&aim2, &gCarnageVector, &G_MECHLIST_PLAYER->mPos);
 
 				diff = aim2.vy - aim1.vy;
 				if (diff > 0x800)
@@ -996,21 +996,21 @@ void CCarnage::SelectAttack(void)
 				break;
 			}
 
-			if (!MechList->field_8E8 && !MechList->field_8E9)
+			if (!G_MECHLIST_PLAYER->field_8E8 && !G_MECHLIST_PLAYER->field_8E9)
 			{
 				v10 = this->CalculateAngleDelta();
 				v11 = my_abs(v10);
 
 				if (v11 < 380)
 				{
-					if (MechList->field_E1C == 0x800000)
+					if (G_MECHLIST_PLAYER->field_E1C == 0x800000)
 					{
 						this->field_31C.bothFlags = 0x4000;
 						this->dumbAssPad = 0;
 					}
-					else if (Utils_XZDist(&MechList->mPos, &ZeroVector) >= 700 || this->field_35C == 1 )
+					else if (Utils_XZDist(&G_MECHLIST_PLAYER->mPos, &ZeroVector) >= 700 || this->field_35C == 1 )
 					{
-						if (Utils_XZDist(&this->mPos, &MechList->mPos) < 180)
+						if (Utils_XZDist(&this->mPos, &G_MECHLIST_PLAYER->mPos) < 180)
 							this->field_31C.bothFlags = 8;
 						else
 							this->field_31C.bothFlags = 4;
@@ -1357,7 +1357,7 @@ void CCarnage::BurnInBubble(void)
 				{
 					CSVector v19;
 
-					Utils_CalcAim(&v19, &gCarnageVector, &MechList->mPos);
+					Utils_CalcAim(&v19, &gCarnageVector, &G_MECHLIST_PLAYER->mPos);
 					v19.vy = (v19.vy + v18) & 0xFFF;
 
 					Utils_GetVecFromMagDir(&this->field_240, 768, &v19);
@@ -1507,7 +1507,7 @@ void CCarnage::GetYankedBySpidey(void)
 						&mPoss,
 						&this->mPos,
 						&v24,
-						MechList,
+						G_MECHLIST_PLAYER,
 						0,
 						4096))
 			{
@@ -1528,7 +1528,7 @@ void CCarnage::GetYankedBySpidey(void)
 						reinterpret_cast<VECTOR*>(&v28.field_C));
 				v28.field_8 = 30;
 
-				MechList->Hit(&v28);
+				G_MECHLIST_PLAYER->Hit(&v28);
 
 				v21 = 1;
 				this->mPos = mPoss;
@@ -1617,8 +1617,8 @@ void CCarnage::DoSonicBubbleProcessing(void)
 			}
 			else
 			{
-				if ((MechList->mCollision & 2) != 0
-					&& Utils_XZDist(&MechList->mPos, &ZeroVector) < this->field_350)
+				if ((G_MECHLIST_PLAYER->mCollision & 2) != 0
+					&& Utils_XZDist(&G_MECHLIST_PLAYER->mPos, &ZeroVector) < this->field_350)
 				{
 					SHitInfo v13;
 
@@ -1628,13 +1628,13 @@ void CCarnage::DoSonicBubbleProcessing(void)
 
 					v13.field_8 = 1;
 					v13.field_0 = 4;
-					if (MechList->mHealth > 1)
+					if (G_MECHLIST_PLAYER->mHealth > 1)
 					{
 						v13.field_0 = 6;
 						v13.field_4 = 16;
 					}
 
-					MechList->Hit(&v13);
+					G_MECHLIST_PLAYER->Hit(&v13);
 				}
 			}
 			break;
@@ -1867,9 +1867,9 @@ void CCarnage::StretchJumpAdvance(void)
 
 			v9 = this->CalculateAngleDelta();
 
-			if ( ((this->mVel.vx >> 12) * (MechList->mVel.vx >> 12)
-					+ (this->mVel.vz >> 12) * (MechList->mVel.vz >> 12)) < 0
-				&& Utils_XZDist(&this->mPos, &MechList->mPos) < 768 )
+			if ( ((this->mVel.vx >> 12) * (G_MECHLIST_PLAYER->mVel.vx >> 12)
+					+ (this->mVel.vz >> 12) * (G_MECHLIST_PLAYER->mVel.vz >> 12)) < 0
+				&& Utils_XZDist(&this->mPos, &G_MECHLIST_PLAYER->mPos) < 768 )
 
 			{
 				v9 = 0;
@@ -2027,7 +2027,7 @@ void CCarnage::DoubleAxeHandSlash(void)
 				v17.field_0 = 14;
 				v17.field_4 = 11;
 
-				v17.field_C = (MechList->mPos - this->mPos) >> 12;
+				v17.field_C = (G_MECHLIST_PLAYER->mPos - this->mPos) >> 12;
 				v17.field_C.vy = 0;
 
 				VectorNormal(
@@ -2036,7 +2036,7 @@ void CCarnage::DoubleAxeHandSlash(void)
 
 				v17.field_8 = 30;
 
-				MechList->Hit(&v17);
+				G_MECHLIST_PLAYER->Hit(&v17);
 			}
 			else
 			{
@@ -2352,7 +2352,7 @@ void CCarnage::DoPhysics(void)
 	else if (this->field_218 & 4)
 	{
 		CSVector v1;
-		Utils_CalcAim(&v1, &this->mPos, &MechList->mPos);
+		Utils_CalcAim(&v1, &this->mPos, &G_MECHLIST_PLAYER->mPos);
 		Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, CSVector(0, v1.vy, 0), 8);
 	}
 	else
@@ -2542,7 +2542,7 @@ INLINE i32 CCarnage::CalculateAngleDelta(void)
 	Utils_CalcAim(&v5, &gCarnageVector, &this->mPos);
 	i32 v3 = v5.vy;
 
-	Utils_CalcAim(&v5, &gCarnageVector, &MechList->mPos);
+	Utils_CalcAim(&v5, &gCarnageVector, &G_MECHLIST_PLAYER->mPos);
 	i32 result = v5.vy - v3;
 
 	if (result > 2048)
@@ -2618,8 +2618,8 @@ void CCarnage::Initialise(void)
 			{
 				if (this->field_218 & 0x200)
 				{
-					if (MechList)
-						MechList->ExitLookaroundMode();
+					if (G_MECHLIST_PLAYER)
+						G_MECHLIST_PLAYER->ExitLookaroundMode();
 					G_CAMERA_LIST->SetMode((ECameraMode)16);
 
 					DoAssert(1u, "bad value send to BossCamSpinRate");
@@ -2721,7 +2721,7 @@ void CCarnage::Laugh(void)
 			if (this->mAnimFinished)
 			{
 				this->field_218 &= 0xFFFFFFFB;
-				if (MechList->field_E1C != 0x800000)
+				if (G_MECHLIST_PLAYER->field_E1C != 0x800000)
 				{
 					this->field_31C.bothFlags = 2;
 					this->dumbAssPad = 0;

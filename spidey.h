@@ -1040,7 +1040,21 @@ class CPlayer : public CSuper
 // CPlayer::Hit, defined earlier in the same file, drops the armour too.
 EXPORT extern u8 gSpideyArmorSet;
 
+// The player. This is the SAME storage as G_MECHLIST in ob.h (0x006A9038): the
+// repo grew two variables for one global, spidey.cpp's CPlayer* MechList and
+// ob.cpp's CBody* RealMechList, and 826 references in the original all go to
+// 0x006A9038. CPlayer::CPlayer pushes that address into CBody::AttachTo at
+// 0x004BA51E and ~CPlayer into DeleteFrom at 0x004BACDD; nothing in our source
+// ever assigns it, the exe maintains the list.
+//
+// Two macros for one address is normally wrong, but these are two type views of
+// one object, not two slots: ob.h keeps the CBody* view for the object-list code
+// and this is the CPlayer* view the game logic wants. Merging them would change
+// which non-virtual overload every one of 405 call sites picks, so they stay
+// apart on purpose.
 EXPORT extern CPlayer* MechList;
+//#define G_MECHLIST_PLAYER (MechList)
+#define G_MECHLIST_PLAYER (*reinterpret_cast<CPlayer**>(0x006A9038))
 EXPORT extern CItem* SpideyAdditionalBodyPartsList;
 EXPORT extern CItem* MiscellaneousRenderingList;
 

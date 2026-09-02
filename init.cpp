@@ -267,7 +267,7 @@ void Init_Cleanup(i32 a1)
 // @Ok
 void Init_KillAll(void)
 {
-	DeleteList(MechList);
+	DeleteList(G_MECHLIST_PLAYER);
 	DeleteList(G_CAMERA_LIST);
 	DeleteList(BaddyList);
 	DeleteList(ControlBaddyList);
@@ -280,7 +280,7 @@ void Init_KillAll(void)
 	DeleteList(MiscList);
 	DeleteList(WebList);
 
-	print_if_false(MechList == 0, "Leftover protected members of MechList");
+	print_if_false(G_MECHLIST_PLAYER == 0, "Leftover protected members of G_MECHLIST_PLAYER");
 	print_if_false(G_CAMERA_LIST == 0, "Leftover protected members of G_CAMERA_LIST");
 	print_if_false(BaddyList == 0, "Leftover protected members of BaddyList");
 	print_if_false(ControlBaddyList == 0, "Leftover protected members of ControlBaddyList");

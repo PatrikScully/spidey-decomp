@@ -493,13 +493,13 @@ void Panel_Display(void)
 	print_if_false(reinterpret_cast<u8*>(pPoly) <= PolyBufferEnd, "Poly buffer overflowed before Panel_Display");
 
 	i32 inMech = 0;
-	if (MechList != 0 && (MechList->field_E18 != 0 || MechList->field_1AC != 0))
+	if (G_MECHLIST_PLAYER != 0 && (G_MECHLIST_PLAYER->field_E18 != 0 || G_MECHLIST_PLAYER->field_1AC != 0))
 		inMech = 1;
 
 	if (gBombDieRelatedTwo != 0)
 	{
 		u32 decay;
-		if (MechList->field_E18 != 0 || MechList->field_1AC != 0)
+		if (G_MECHLIST_PLAYER->field_E18 != 0 || G_MECHLIST_PLAYER->field_1AC != 0)
 			decay = 0;
 		else
 			decay = (static_cast<u32>(G_TIMER_RELATED - gBombDieTimerRelated) * gBombRelated) >> 12;
@@ -528,14 +528,14 @@ void Panel_Display(void)
 		Panel_SetStretchedScreenCoords(80, *gPanelScreenY + 58, pWebcart, gAnimWebcart, 20, 16);
 
 		u8 pulse;
-		if (MechList->field_5E8 != 0)
+		if (G_MECHLIST_PLAYER->field_5E8 != 0)
 			pulse = static_cast<u8>((abs(G_RCOSSIN_TBL[(G_TIMER_RELATED << 5) & 0xFFF].sin) << 7) >> 12);
 		else
 			pulse = 0x80;
 		pWebcart->g0 = pulse;
 		pWebcart->b0 = pulse;
 
-		i32 cartridges = MechList->field_5D8;
+		i32 cartridges = G_MECHLIST_PLAYER->field_5D8;
 		if (cartridges >= 10)
 		{
 			gWebCartDigits[0] = '1';
@@ -555,7 +555,7 @@ void Panel_Display(void)
 		Mess_DrawText(95, *gPanelScreenY + 56, gWebCartDigits, 0, 0x1000);
 		Mess_SetSort(0);
 
-		i32 age = G_TIMER_RELATED - MechList->field_5DC;
+		i32 age = G_TIMER_RELATED - G_MECHLIST_PLAYER->field_5DC;
 		if (age < 32)
 		{
 			i16 x0 = pWebcart->x0;
@@ -605,21 +605,21 @@ void Panel_Display(void)
 	PanelDisp_DrawIcon(&gAnimSp[1], 53, *gPanelScreenY + 59, 14, 16);
 	PanelDisp_DrawIcon(&gAnimSp[2], 53, *gPanelScreenY + 73, 14, 12);
 
-	if (MechList->field_5E9 != 0)
+	if (G_MECHLIST_PLAYER->field_5E9 != 0)
 	{
-		i32 pulseFrac = ((MechList->mMaxHealth - MechList->field_5EC) << 7) / MechList->mMaxHealth;
+		i32 pulseFrac = ((G_MECHLIST_PLAYER->mMaxHealth - G_MECHLIST_PLAYER->field_5EC) << 7) / G_MECHLIST_PLAYER->mMaxHealth;
 		i32 shade = 255 - 255 * pulseFrac / 128;
 		DCDrawGouraudPoly(2.0f, 58, *gPanelScreenY + 25, 61 - 61 * pulseFrac / 128, 6,
 				0xFF0000, 0xFF0000 | (shade << 8) | shade,
 				0xFF0000, 0xFF0000 | (shade << 8) | shade);
 	}
 
-	i32 damageFrac = ((MechList->mMaxHealth - MechList->mHealth) << 7) / MechList->mMaxHealth;
+	i32 damageFrac = ((G_MECHLIST_PLAYER->mMaxHealth - G_MECHLIST_PLAYER->mHealth) << 7) / G_MECHLIST_PLAYER->mMaxHealth;
 	i32 damageWidth = 61 * damageFrac / 128;
 	if (damageWidth != 0)
 		DCPanel_DrawFlatShadedPoly(3.0f, 119 - damageWidth, *gPanelScreenY + 25, damageWidth, 6, 0, 0, 0, 0, 0);
 
-	i32 hitAge = G_TIMER_RELATED - MechList->field_5E0;
+	i32 hitAge = G_TIMER_RELATED - G_MECHLIST_PLAYER->field_5E0;
 	i32 flash = (hitAge >= 32) ? 0 : 255 - 8 * hitAge;
 
 	if (damageWidth <= 30)
@@ -640,11 +640,11 @@ void Panel_Display(void)
 				(flash << 16) | (flash << 8) | 0xFF, (flash << 16) | 0xFFFF);
 	}
 
-	i32 webEmpty = 26 * (((4096 - MechList->mWebbing) << 7) / 4096) / 128;
+	i32 webEmpty = 26 * (((4096 - G_MECHLIST_PLAYER->mWebbing) << 7) / 4096) / 128;
 	if (webEmpty != 0)
 		DCPanel_DrawFlatShadedPoly(3.0f, 31, *gPanelScreenY - webEmpty + 67, 11, webEmpty, 0, 0, 0, 0, 0);
 
-	if (MechList->field_5E8 != 0)
+	if (G_MECHLIST_PLAYER->field_5E8 != 0)
 		DCPanel_DrawFlatShadedPoly(4.0f, 31, *gPanelScreenY + 41, 11, 26, 255, 0, 0, 0, 0);
 	else
 		DCPanel_DrawFlatShadedPoly(4.0f, 31, *gPanelScreenY + 41, 11, 26, 64, 64, 160, 0, 0);
@@ -1112,11 +1112,11 @@ void Panel_DisplayTimer(void)
 	switch (LevelId)
 	{
 	case 513:
-		if (MechList == 0 || (MechList->field_E18 == 0 && MechList->field_1AC == 0))
+		if (G_MECHLIST_PLAYER == 0 || (G_MECHLIST_PLAYER->field_E18 == 0 && G_MECHLIST_PLAYER->field_1AC == 0))
 			Reloc_CallUserFunction("l2a1lsc", 1, 0, 0);
 		break;
 	case 1281:
-		if (MechList == 0 || (MechList->field_E18 == 0 && MechList->field_1AC == 0))
+		if (G_MECHLIST_PLAYER == 0 || (G_MECHLIST_PLAYER->field_E18 == 0 && G_MECHLIST_PLAYER->field_1AC == 0))
 			Reloc_CallUserFunction("venom", 1, 0, 0);
 		break;
 	case 1285:
@@ -1395,7 +1395,7 @@ INLINE void Panel_UpdateTimer(void)
 	if (gBombDieRelatedTwo)
 	{
 		u32 v1 = 0;
-		if (MechList->field_E18 || MechList->field_1AC)
+		if (G_MECHLIST_PLAYER->field_E18 || G_MECHLIST_PLAYER->field_1AC)
 		{
 			v1 = 0;
 		}

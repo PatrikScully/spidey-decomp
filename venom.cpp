@@ -321,10 +321,10 @@ void Venom_DisplayProgressBar(const u32*, u32*)
 	}
 
 	CVenom *pVenom = reinterpret_cast<CVenom*>(FindBaddyOfType(313));
-	if (!MechList || !pVenom)
+	if (!G_MECHLIST_PLAYER || !pVenom)
 		return;
 
-	i32 dist = Utils_XZDist(&MechList->mPos, &pVenom->mPos);
+	i32 dist = Utils_XZDist(&G_MECHLIST_PLAYER->mPos, &pVenom->mPos);
 
 	i32 maxDist;
 	if (DifficultyLevel == 2)

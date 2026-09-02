@@ -7,18 +7,17 @@
 #include "validate.h"
 
 extern CBody* ControlBaddyList;
-extern CPlayer* MechList;
 extern CSVector gTrajectoryVector;
 extern i32 TotalBitUsage;
 
 // @Ok
 void CLaserFence::AI(void)
 {
-	if (MechList)
+	if (G_MECHLIST_PLAYER)
 	{
-		if (MechList->mPos.vx > this->mVxMin && MechList->mPos.vx < this->mVxMax)
+		if (G_MECHLIST_PLAYER->mPos.vx > this->mVxMin && G_MECHLIST_PLAYER->mPos.vx < this->mVxMax)
 		{
-			if (MechList->mPos.vz > this->mVzMin && MechList->mPos.vz < this->mVzMax)
+			if (G_MECHLIST_PLAYER->mPos.vz > this->mVzMin && G_MECHLIST_PLAYER->mPos.vz < this->mVzMax)
 			{
 				CVector v5;
 				v5.vx = 0;
@@ -29,9 +28,9 @@ void CLaserFence::AI(void)
 							&this->mPos,
 							&this->field_F8,
 							&v5,
-							MechList,
+							G_MECHLIST_PLAYER,
 							0,
-							4096) == reinterpret_cast<CBody*>(MechList))
+							4096) == reinterpret_cast<CBody*>(G_MECHLIST_PLAYER))
 				{
 					SHitInfo v6;
 
@@ -42,12 +41,12 @@ void CLaserFence::AI(void)
 					v6.field_0 = 4;
 					v6.field_8 = 10;
 
-					MechList->Hit(&v6);
+					G_MECHLIST_PLAYER->Hit(&v6);
 
 					if (this->field_114)
 					{
 						// @FIXME remove this shit
-						MechList->nullsub_one(reinterpret_cast<i32>(this));
+						G_MECHLIST_PLAYER->nullsub_one(reinterpret_cast<i32>(this));
 						Bit_SetSparkTrajectory(&gTrajectoryVector);
 
 						CSVector v4;
@@ -165,7 +164,7 @@ void CTripWire::AI(void)
 {
 	u8 v2 = 0;
 	SLineSeg* mSegs = this->field_110->mSegs;
-	if ( MechList && Utils_CheckObjectCollision(&this->mPos, &this->field_104, MechList, 0) )
+	if ( G_MECHLIST_PLAYER && Utils_CheckObjectCollision(&this->mPos, &this->field_104, G_MECHLIST_PLAYER, 0) )
 	{
 		v2 = 1;
 		if ( !this->field_FB )

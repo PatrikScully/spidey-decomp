@@ -10,7 +10,6 @@
 #include "ps2m3d.h"
 
 extern i32 DifficultyLevel;
-extern CPlayer* MechList;
 
 // guess: random XA speech sub-id table, picked with Rnd(5) when the player
 // gets close to a waiting hostage in CHostage::FollowWaypoints.
@@ -395,7 +394,7 @@ void CHostage::TellSomebodyToShootMe(void)
 // same as the original.
 INLINE void CHostage::CheckIfFreed(void)
 {
-	if (Utils_CrapDist(MechList->mPos, this->mPos) < 0xC8 || this->mInputFlags & 1)
+	if (Utils_CrapDist(G_MECHLIST_PLAYER->mPos, this->mPos) < 0xC8 || this->mInputFlags & 1)
 	{
 		if (DifficultyLevel == 1 || DifficultyLevel == 0)
 			this->field_218 |= 1;

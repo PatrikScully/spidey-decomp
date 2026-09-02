@@ -167,7 +167,7 @@ void CLizMan::CalculateJumpPositionArray(CVector* pTarget)
 i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 {
 	i32 result = 0;
-	i32 bestDist = Utils_CrapDist(this->mPos, MechList->mPos) - 0x100;
+	i32 bestDist = Utils_CrapDist(this->mPos, G_MECHLIST_PLAYER->mPos) - 0x100;
 
 	if (bestDist > 0)
 	{
@@ -194,7 +194,7 @@ i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 			if (d < 0x100 || d > 0xC00)
 				continue;
 
-			i32 distToPlayer = Utils_CrapDist(nodePos, MechList->mPos);
+			i32 distToPlayer = Utils_CrapDist(nodePos, G_MECHLIST_PLAYER->mPos);
 			if (distToPlayer >= bestDist)
 				continue;
 
@@ -228,7 +228,6 @@ i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 	return result;
 }
 
-extern CPlayer* MechList;
 extern CSVector gTrajectoryVector;
 static u16 word_5FBC0C;
 
@@ -245,7 +244,7 @@ void CLizMan::Guard(void)
 			{
 				new CAIProc_LookAt(
 						this,
-						MechList,
+						G_MECHLIST_PLAYER,
 						0,
 						0,
 						128,
@@ -365,11 +364,11 @@ void CLizMan::RunToWhereActionIs(CVector* pTarget)
 	adjustedTarget.vy = this->mPos.vy;
 	adjustedTarget.vz = pTarget->vz + biasZ;
 
-	if (!MechList->field_57C)
+	if (!G_MECHLIST_PLAYER->field_57C)
 	{
-		if (this->PathCheck(&this->mPos, &MechList->mPos, NULL, 0x37) == 0)
+		if (this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, NULL, 0x37) == 0)
 		{
-			if (this->AddPointToPath(&MechList->mPos, 0x5DC))
+			if (this->AddPointToPath(&G_MECHLIST_PLAYER->mPos, 0x5DC))
 				goto cleanup;
 		}
 	}

@@ -193,14 +193,14 @@ void L5A5LSC_RelocatableModuleInit(reloc_mod *pMod)
 // on the (6)+(8)+(9) combination (2 diffs) as the best found.
 void L5A5LSC_WiggleSubwayCars(u32 const *,u32 *)
 {
-	if (MechList)
+	if (G_MECHLIST_PLAYER)
 	{
 		if (!Rnd(4))
 		{
-			MechList->field_570 = Rnd(0x80) + 0x20;
+			G_MECHLIST_PLAYER->field_570 = Rnd(0x80) + 0x20;
 		}
 
-		if (MechList->mPos.vy > 0xCB2000)
+		if (G_MECHLIST_PLAYER->mPos.vy > 0xCB2000)
 		{
 			u8 found = 0;
 			i32 targetX = (i32)0xFEAB8000;
@@ -219,7 +219,7 @@ void L5A5LSC_WiggleSubwayCars(u32 const *,u32 *)
 					{
 						found = 1;
 						Trig_SendPulseToNode(i);
-						MechList->mPos = pos;
+						G_MECHLIST_PLAYER->mPos = pos;
 						break;
 					}
 				}

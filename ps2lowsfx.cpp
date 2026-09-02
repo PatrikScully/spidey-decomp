@@ -992,7 +992,7 @@ void SFX_Unpause(void)
 		}
 
 		gSfxGlobal = 6666;
-		MechList->field_530 = 6666;
+		G_MECHLIST_PLAYER->field_530 = 6666;
 		Redbook_XAPause(0);
 		nullsub_one_arg(2);
 	}

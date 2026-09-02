@@ -52,7 +52,6 @@ extern i32 DifficultyLevel;
 u8 gActuatorRelated;
 EXPORT SStateFlags gRhinoStateFlags;
 extern CBody* EnvironmentalObjectList;
-extern CPlayer* MechList;
 extern i32 gAttackRelated;
 extern CBaddy *BaddyList;
 #include "camera.h"
@@ -91,7 +90,7 @@ void CRhino::AI(void)
 		this->field_3D4 = 0;
 	}
 
-	if (!this->field_3D8 && !MechList->field_E18)
+	if (!this->field_3D8 && !G_MECHLIST_PLAYER->field_E18)
 	{
 		G_CAMERA_LIST->SetMode(CAMERAMODE_USER);
 		print_if_false(1, "bad value send to BossCamSpinRate");
@@ -114,7 +113,7 @@ void CRhino::AI(void)
 	{
 		if (this->field_324)
 		{
-			i32 dy = this->mPos.vy - MechList->mPos.vy;
+			i32 dy = this->mPos.vy - G_MECHLIST_PLAYER->mPos.vy;
 			i32 sign = dy >> 31;
 			i32 absDy = (dy ^ sign) - sign;
 
@@ -457,7 +456,7 @@ void CRhino::AttackPlayer(void)
 			this->field_310 = 0x64;
 			this->Neutralize();
 
-			new CAIProc_LookAt(this, MechList, 0, 2, 0x50, 0);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 0x50, 0);
 
 			this->field_330 = Rnd(30) + 0x5A;
 			this->dumbAssPad++;
@@ -546,7 +545,7 @@ void CRhino::ChargePlayer(void)
 			this->field_310 = 0x64;
 			this->Neutralize();
 
-			new CAIProc_LookAt(this, MechList, 0, 2, 0x50, 0);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 0x50, 0);
 
 			this->field_330 = Rnd(30) + 0x5A;
 
@@ -571,7 +570,7 @@ void CRhino::ChargePlayer(void)
 				break;
 
 			if (Utils_GetValueFromDifficultyLevel(1, 1, 0, 0) == 0
-				&& !this->LineOfSightCheck(&MechList->mPos, 1))
+				&& !this->LineOfSightCheck(&G_MECHLIST_PLAYER->mPos, 1))
 			{
 				this->field_31C.bothFlags = 0x16;
 				this->dumbAssPad = 0;
@@ -603,7 +602,7 @@ void CRhino::ChargePlayer(void)
 
 			this->field_330 = 0;
 
-			if (MechList->field_AD4)
+			if (G_MECHLIST_PLAYER->field_AD4)
 			{
 				this->field_31C.bothFlags = 0xD;
 				this->dumbAssPad = 0;
@@ -627,7 +626,7 @@ void CRhino::ChargePlayer(void)
 				8);
 
 			this->field_218 &= ~2;
-			this->field_334 = Utils_CrapXZDist(this->mPos, MechList->mPos);
+			this->field_334 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 			this->dumbAssPad = 5;
 			break;
 		case 5:
@@ -640,7 +639,7 @@ void CRhino::ChargePlayer(void)
 			}
 
 			{
-				i32 dist = Utils_CrapXZDist(this->mPos, MechList->mPos);
+				i32 dist = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 
 				if (dist < Utils_GetValueFromDifficultyLevel(0x258, 0x190, 0x154, 0x12C))
 				{
@@ -653,22 +652,22 @@ void CRhino::ChargePlayer(void)
 
 				if (gNumDomes)
 				{
-					if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x2AF8))
+					if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, G_MECHLIST_PLAYER, 0, 0x2AF8))
 					{
 						this->field_31C.bothFlags = 9;
 						this->dumbAssPad = 0;
 						return;
 					}
 				}
-				else if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, MechList, 0, 0x1800))
+				else if (M3dColij_LineToSphere(&this->field_2FC, &this->mPos, &unused, G_MECHLIST_PLAYER, 0, 0x1800))
 				{
 					SHitInfo hit;
-					hit.field_C = MechList->mPos - this->mPos;
+					hit.field_C = G_MECHLIST_PLAYER->mPos - this->mPos;
 					hit.field_0 = 0xE;
 					hit.field_4 = 0xC;
 					hit.field_8 = 0x1E;
 
-					MechList->Hit(&hit);
+					G_MECHLIST_PLAYER->Hit(&hit);
 
 					this->PlaySingleAnim(0xC, 0, -1);
 					this->field_218 |= 1;
@@ -754,7 +753,7 @@ void CRhino::ChargePlayer(void)
 			}
 
 			this->Neutralize();
-			new CAIProc_LookAt(this, MechList, 0, 2, 0x1E, 0);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 0x1E, 0);
 			this->PlaySingleAnim(0x14, 0, -1);
 			SFX_PlayPos(((gAttackRelated & 1) == 0 ? 1 : 0) | 0x8046, &this->mPos, 0);
 			this->mCBodyFlags |= 0x10;
@@ -783,7 +782,7 @@ void CRhino::ChasePlayer(i32 a2)
 			this->field_310 = 0x64;
 			this->Neutralize();
 
-			new CAIProc_LookAt(this, MechList, 0, 2, 0x50, 0);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 0x50, 0);
 
 			this->field_330 = 0;
 			this->dumbAssPad++;
@@ -814,13 +813,13 @@ void CRhino::ChasePlayer(i32 a2)
 					this->PlaySingleAnim(2, 0, -1);
 				}
 
-				if (!this->LineOfSightCheck(&MechList->mPos, 1))
+				if (!this->LineOfSightCheck(&G_MECHLIST_PLAYER->mPos, 1))
 				{
 					this->field_31C.bothFlags = 0x16;
 					this->dumbAssPad = 0;
 				}
 
-				i32 dist2 = Utils_CrapXZDist(this->mPos, MechList->mPos);
+				i32 dist2 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 
 				if (dist2 < (a2 == 2 ? 5000 : 200))
 				{
@@ -846,16 +845,16 @@ void CRhino::ChasePlayer(i32 a2)
 				this->field_288 &= ~8;
 				this->Neutralize();
 
-				i32 dist = Utils_CrapXZDist(this->mPos, MechList->mPos);
+				i32 dist = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 
 				if (dist < 0xC8)
 				{
-					if (MechList->field_AD4)
+					if (G_MECHLIST_PLAYER->field_AD4)
 					{
 						this->field_31C.bothFlags = 0xD;
 						this->dumbAssPad = 0;
 					}
-					else if (MechList->field_E1C & 0x800000)
+					else if (G_MECHLIST_PLAYER->field_E1C & 0x800000)
 					{
 						this->RunAnim(this->field_298.Bytes[0], 0, -1);
 						this->dumbAssPad++;
@@ -924,11 +923,11 @@ INLINE i32 CRhino::CheckIfPlayerHit(void)
 		v9.field_0 = 14;
 		v9.field_4 = 11;
 
-		v9.field_C = MechList->mPos - this->mPos;
+		v9.field_C = G_MECHLIST_PLAYER->mPos - this->mPos;
 		this->field_344 = gAttackRelated;
 		v9.field_8 = 15;
 
-		if (MechList->Hit(&v9))
+		if (G_MECHLIST_PLAYER->Hit(&v9))
 		{
 			return 1;
 		}
@@ -955,7 +954,7 @@ void CRhino::DieRhino(void)
 			this->PlayXAPlease(0x16, 1, 0);
 			this->dumbAssPad++;
 
-			MechList->SetIgnoreInputTimer(0x8000);
+			G_MECHLIST_PLAYER->SetIgnoreInputTimer(0x8000);
 
 			{
 				CCamera *camera = G_CAMERA_LIST;
@@ -1349,7 +1348,7 @@ void CRhino::GetLaunched(void)
 			this->dumbAssPad = 1;
 			this->PlaySingleAnim(15, 0, -1);
 
-			new CAIProc_LookAt(this, MechList, 0, 2, 80, 0);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 80, 0);
 			this->field_230 = Utils_GetValueFromDifficultyLevel(40, 30, 21, 21);
 
 		case 1:
@@ -1677,7 +1676,7 @@ i32 CRhino::GonnaHitWall(i32 a2)
 	}
 
 	if ((lineInfo.pItem->mFlags & 0x10) && lineInfo.pItem->mType == 0x191
-		&& lineInfo.pItem != *reinterpret_cast<CItem**>(reinterpret_cast<u8*>(MechList) + 0xE48))
+		&& lineInfo.pItem != *reinterpret_cast<CItem**>(reinterpret_cast<u8*>(G_MECHLIST_PLAYER) + 0xE48))
 	{
 		reinterpret_cast<CBaddy*>(lineInfo.pItem)->PlayerIsVisible();
 
@@ -2015,13 +2014,13 @@ void CRhino::PlayXAPlease(
 				this->field_3DC = v6;
 			}
 		}
-		else if (MechList->CanITalkRightNow() && Redbook_XAPlayPos(
+		else if (G_MECHLIST_PLAYER->CanITalkRightNow() && Redbook_XAPlayPos(
 				gRhinoData[v8].field_0,
 				gRhinoData[v8].field_2,
-				&MechList->mPos,
+				&G_MECHLIST_PLAYER->mPos,
 				gRhinoData[v8].field_6) )
 		{
-			MechList->AttachXA(gRhinoData[v8].field_0, gRhinoData[v8].field_2);
+			G_MECHLIST_PLAYER->AttachXA(gRhinoData[v8].field_0, gRhinoData[v8].field_2);
 			this->field_3DC = v6;
 		}
 	}
@@ -2195,7 +2194,7 @@ void CRhino::StompGround(void)
 					{
 						if (cur->mType == 401)
 						{
-							if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+							if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != G_MECHLIST_PLAYER->mHeldObject)
 							{
 								reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
 								barrels++;
@@ -2203,7 +2202,7 @@ void CRhino::StompGround(void)
 						}
 					}
 				}
-				else if (MechList->field_AD4 && (MechList->field_8E8 || MechList->field_8E9))
+				else if (G_MECHLIST_PLAYER->field_AD4 && (G_MECHLIST_PLAYER->field_8E8 || G_MECHLIST_PLAYER->field_8E9))
 				{
 					SHitInfo hit;
 					hit.field_C.vx = 0;
@@ -2213,8 +2212,8 @@ void CRhino::StompGround(void)
 					hit.field_4 = 0xD;
 					hit.field_8 = 0x1E;
 
-					MechList->Hit(&hit);
-					MechList->KnockSpideyFromCrawlPosition();
+					G_MECHLIST_PLAYER->Hit(&hit);
+					G_MECHLIST_PLAYER->KnockSpideyFromCrawlPosition();
 				}
 				else
 				{
@@ -2264,7 +2263,7 @@ void CRhino::StuckInWall(void)
 			if (this->field_288 & 1)
 			{
 				this->field_288 &= ~1;
-				this->field_230 = MechList->field_E18 ? 900 : Utils_GetValueFromDifficultyLevel(200, 150, 120, 90);
+				this->field_230 = G_MECHLIST_PLAYER->field_E18 ? 900 : Utils_GetValueFromDifficultyLevel(200, 150, 120, 90);
 				this->dumbAssPad++;
 			}
 			break;
@@ -2272,7 +2271,7 @@ void CRhino::StuckInWall(void)
 			this->RunTimer(&this->field_230);
 			if (this->field_230 > 0x3C)
 			{
-				if (!MechList->field_E18)
+				if (!G_MECHLIST_PLAYER->field_E18)
 				{
 					this->field_230 = 0x3C;
 				}
@@ -2344,7 +2343,7 @@ void Rhino_RelocatableModuleClear(void)
 // elsewhere (ob.cpp, powerup.cpp), so its type is not changed from here.
 i32 CRhino::DetermineFightState(i32 a2)
 {
-	i32 dy = this->mPos.vy - MechList->mPos.vy;
+	i32 dy = this->mPos.vy - G_MECHLIST_PLAYER->mPos.vy;
 	i32 originalFlags = this->field_31C.bothFlags;
 	i32 sign = dy >> 31;
 	i32 absDy = (dy ^ sign) - sign;
@@ -2358,7 +2357,7 @@ i32 CRhino::DetermineFightState(i32 a2)
 		return 0;
 	}
 
-	if (!this->LineOfSightCheck(&MechList->mPos, 1))
+	if (!this->LineOfSightCheck(&G_MECHLIST_PLAYER->mPos, 1))
 	{
 		if (this->field_1F0)
 		{
@@ -2369,7 +2368,7 @@ i32 CRhino::DetermineFightState(i32 a2)
 		v.vx = 0;
 		v.vy = 0;
 		v.vz = 0;
-		this->GetWaypointNearTarget(&MechList->mPos, 0x12C000, this->field_21D, &v);
+		this->GetWaypointNearTarget(&G_MECHLIST_PLAYER->mPos, 0x12C000, this->field_21D, &v);
 		this->field_21D++;
 
 		if (Utils_CrapXZDist(this->mPos, v) < 0x104)
@@ -2397,19 +2396,19 @@ i32 CRhino::DetermineFightState(i32 a2)
 			this->field_218 &= ~0x10;
 		}
 
-		if (gAttackRelated - this->field_358 < 0x96 && MechList->field_AD4)
+		if (gAttackRelated - this->field_358 < 0x96 && G_MECHLIST_PLAYER->field_AD4)
 		{
 			this->field_31C.bothFlags = 0xD;
 			this->dumbAssPad = 0;
 		}
 		else if (this->mPlayerDist < 0x1388)
 		{
-			if (MechList->field_E1C & 0x80)
+			if (G_MECHLIST_PLAYER->field_E1C & 0x80)
 			{
 				return 0;
 			}
 
-			if (MechList->field_E1C & 0x800000)
+			if (G_MECHLIST_PLAYER->field_E1C & 0x800000)
 			{
 				if (this->mPlayerDist < 0xC8)
 				{
@@ -2448,7 +2447,7 @@ void CRhino::TakeHit(void)
 	{
 		case 0:
 			this->field_310 = 0;
-			new CAIProc_LookAt(this, MechList, 0, 0, 80, 200);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 0, 80, 200);
 			this->PlaySingleAnim(0xFu, 0, -1);
 			this->field_230 = Utils_GetValueFromDifficultyLevel(40, 30, 21, 21);
 			this->dumbAssPad++;
@@ -2663,7 +2662,7 @@ void CRhino::FuckUpSomeBarrels(void)
 	{
 		if (cur->mType == 401)
 		{
-			if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != MechList->mHeldObject)
+			if (Utils_CrapDist(this->mPos, cur->mPos) < 0x2BC && cur != G_MECHLIST_PLAYER->mHeldObject)
 			{
 				reinterpret_cast<CBaddy*>(cur)->PlayerIsVisible();
 				barrels++;

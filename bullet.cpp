@@ -12,19 +12,18 @@
 CBody* BulletList;
 EXPORT i32 gBullets;
 
-extern CPlayer* MechList;
 
 
 // @Ok
 void CBullet::BlowUp(void)
 {
-	if (this->field_100 == reinterpret_cast<void*>(&MechList))
+	if (this->field_100 == reinterpret_cast<void*>(&G_MECHLIST_PLAYER))
 	{
 		new CSmokePuff(&this->mPos);
 
-		if (MechList)
+		if (G_MECHLIST_PLAYER)
 		{
-			u32 dist = Utils_Dist(this->mPos, MechList->mPos);
+			u32 dist = Utils_Dist(this->mPos, G_MECHLIST_PLAYER->mPos);
 
 			if (dist < this->field_106)
 			{
@@ -35,7 +34,7 @@ void CBullet::BlowUp(void)
 				hit.field_C.vz = 0;
 				hit.field_8 = dist * this->field_104 / this->field_106;
 
-				MechList->Hit(&hit);
+				G_MECHLIST_PLAYER->Hit(&hit);
 			}
 		}
 	}

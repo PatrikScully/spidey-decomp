@@ -22,17 +22,17 @@ static i32 * const gL6A1DrownTimer = (i32*)0x005FB86C;
 // ret) matches byte for byte. 16 hypotheses tried, see l6a1lsc.attempts.md.
 void L6A1LSC_MonitorSpideyinWater(u32 const *,u32 *)
 {
-	MechList->mFlags &= ~8;
+	G_MECHLIST_PLAYER->mFlags &= ~8;
 
-	i32 x = MechList->mPos.vx >> 12;
-	i32 y = MechList->mPos.vy >> 12;
-	i32 z = MechList->mPos.vz >> 12;
+	i32 x = G_MECHLIST_PLAYER->mPos.vx >> 12;
+	i32 y = G_MECHLIST_PLAYER->mPos.vy >> 12;
+	i32 z = G_MECHLIST_PLAYER->mPos.vz >> 12;
 
 	if (x > -29500 && x < -12250 && z > 1100 && z < 1700)
 	{
 		if (y > 2460 && y < 4000)
 		{
-			MechList->mFlags |= 8;
+			G_MECHLIST_PLAYER->mFlags |= 8;
 
 			i32 waterLevel = obtainWaterLevelInPoolL6A1(0);
 			*gL6A1PoolWaterLevel = waterLevel << 12;
@@ -50,7 +50,7 @@ void L6A1LSC_MonitorSpideyinWater(u32 const *,u32 *)
 	{
 		if (y > 2500 && y < 6000)
 		{
-			MechList->mFlags |= 8;
+			G_MECHLIST_PLAYER->mFlags |= 8;
 
 			i32 waterLevel = obtainWaterLevelInPoolL6A1(1);
 			*gL6A1PoolWaterLevel = waterLevel << 12;
@@ -72,7 +72,7 @@ commonTail:
 	u8 found = 0;
 	i32 i = 1;
 
-	*gL6A1DrownTimer += MechList->field_80;
+	*gL6A1DrownTimer += G_MECHLIST_PLAYER->field_80;
 
 	if (*gL6A1DrownTimer <= 20)
 		return;
@@ -95,7 +95,7 @@ commonTail:
 					found = 1;
 					*gL6A1DrownTimer = 0;
 					Trig_SendPulseToNode(i);
-					MechList->mPos = pos;
+					G_MECHLIST_PLAYER->mPos = pos;
 					break;
 				}
 			}

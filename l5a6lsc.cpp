@@ -34,9 +34,9 @@ static i32 * const gL5A6DrownTimer = (i32*)0x005FB65C;
 // instruction match.
 void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *)
 {
-	MechList->mFlags &= ~8;
+	G_MECHLIST_PLAYER->mFlags &= ~8;
 
-	CVector pos = MechList->mPos >> 12;
+	CVector pos = G_MECHLIST_PLAYER->mPos >> 12;
 	i32 vx = pos.vx;
 	i32 vy = pos.vy;
 	i32 vz = pos.vz;
@@ -49,7 +49,7 @@ void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *)
 			return;
 		}
 
-		MechList->mFlags |= 8;
+		G_MECHLIST_PLAYER->mFlags |= 8;
 		i32 level = obtainWaterLevelInPool(0);
 		*gL5A6PoolWaterLevel = level << 12;
 
@@ -67,7 +67,7 @@ void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *)
 			return;
 		}
 
-		MechList->mFlags |= 8;
+		G_MECHLIST_PLAYER->mFlags |= 8;
 		i32 level = obtainWaterLevelInPool(1);
 		*gL5A6PoolWaterLevel = level << 12;
 
@@ -87,7 +87,7 @@ void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *)
 				return;
 			}
 
-			MechList->mFlags |= 8;
+			G_MECHLIST_PLAYER->mFlags |= 8;
 			i32 level = obtainWaterLevelInPool(2);
 			*gL5A6PoolWaterLevel = level << 12;
 
@@ -105,7 +105,7 @@ void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *)
 				return;
 			}
 
-			MechList->mFlags |= 8;
+			G_MECHLIST_PLAYER->mFlags |= 8;
 			i32 level = obtainWaterLevelInPool(3);
 			*gL5A6PoolWaterLevel = level << 12;
 
@@ -127,7 +127,7 @@ void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *)
 		return;
 	}
 
-	*gL5A6DrownTimer += MechList->field_80;
+	*gL5A6DrownTimer += G_MECHLIST_PLAYER->field_80;
 
 	if (*gL5A6DrownTimer <= 20)
 		return;
@@ -147,7 +147,7 @@ void L5A6LSC_MonitorSpideyinWater(const u32 *,u32 *)
 					found = true;
 					*gL5A6DrownTimer = 0;
 					Trig_SendPulseToNode(i);
-					MechList->mPos = v;
+					G_MECHLIST_PLAYER->mPos = v;
 					break;
 				}
 			}

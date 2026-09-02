@@ -120,9 +120,9 @@ void CPlatform::AI(void)
 
 	this->field_334 = 0;
 
-	if ((this->field_218 & 4) && MechList)
+	if ((this->field_218 & 4) && G_MECHLIST_PLAYER)
 	{
-		CVector *mechPos = &MechList->mPos;
+		CVector *mechPos = &G_MECHLIST_PLAYER->mPos;
 		i32 mx = mechPos->vx;
 		i32 my = mechPos->vy;
 		i32 mz = mechPos->vz;
@@ -182,7 +182,7 @@ void CPlatform::AdjustBruceHealth(void)
 	{
 		if (value < 0)
 		{
-			MechList->IncHealth(value - 1);
+			G_MECHLIST_PLAYER->IncHealth(value - 1);
 		}
 		else
 		{
@@ -194,7 +194,7 @@ void CPlatform::AdjustBruceHealth(void)
 			v2.field_8 = value;
 			v2.field_0 = 4;
 
-			MechList->Hit(&v2);
+			G_MECHLIST_PLAYER->Hit(&v2);
 		}
 	}
 }
@@ -471,7 +471,7 @@ i32 CPlatform::ExecuteCommand(u16 a2)
 	{
 	case 0x4301:
 		{
-			CPlatform **pMech = (CPlatform**)((char*)MechList + 0xDBC);
+			CPlatform **pMech = (CPlatform**)((char*)G_MECHLIST_PLAYER + 0xDBC);
 			if (*pMech == this)
 				*pMech = 0;
 		}

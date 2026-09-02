@@ -250,7 +250,7 @@ i32 CBaddy::SmackSpidey(
 
 					secondVec += (secondVec - firstVec) >> 1;
 
-					if (Web_CollideWithSuper(MechList, &firstVec, &secondVec, &v22, 0x2000))
+					if (Web_CollideWithSuper(G_MECHLIST_PLAYER, &firstVec, &secondVec, &v22, 0x2000))
 						break;
 				}
 			}
@@ -260,15 +260,15 @@ i32 CBaddy::SmackSpidey(
 
 		if (this->field_1FC < 0xA)
 		{
-			SFX_PlayPos(0xFu, &MechList->mPos, 0);
+			SFX_PlayPos(0xFu, &G_MECHLIST_PLAYER->mPos, 0);
 		}
 		else if (this->field_1FC < 0x14)
 		{
-			SFX_PlayPos(0x10u, &MechList->mPos, 0);
+			SFX_PlayPos(0x10u, &G_MECHLIST_PLAYER->mPos, 0);
 		}
 		else
 		{
-			SFX_PlayPos(0x11u, &MechList->mPos, 0);
+			SFX_PlayPos(0x11u, &G_MECHLIST_PLAYER->mPos, 0);
 		}
 
 		if (!a5)
@@ -284,17 +284,17 @@ i32 CBaddy::SmackSpidey(
 			v27.field_8 = this->field_1FC;
 			v27.field_1 = v22.Offset;
 
-			v27.field_C.vz = (MechList->mPos.vz - this->mPos.vz) >> 12;
-			v27.field_C.vx = (MechList->mPos.vx - this->mPos.vx) >> 12;
+			v27.field_C.vz = (G_MECHLIST_PLAYER->mPos.vz - this->mPos.vz) >> 12;
+			v27.field_C.vx = (G_MECHLIST_PLAYER->mPos.vx - this->mPos.vx) >> 12;
 			v27.field_C.vy = 0;
 
 			VectorNormal(
 					reinterpret_cast<VECTOR*>(&v27.field_C),
 					reinterpret_cast<VECTOR*>(&v27.field_C));
 
-			MechList->Hit(&v27);
+			G_MECHLIST_PLAYER->Hit(&v27);
 
-			if (MechList->mHealth <= 0)
+			if (G_MECHLIST_PLAYER->mHealth <= 0)
 				this->Victorious();
 		}
 		return 1;
@@ -310,7 +310,7 @@ INLINE i32 CBaddy::DistanceToPlayer(i32 a2){
 		return this->field_204;
 
 	this->field_208 = gAttackRelated;
-	this->field_204 = Utils_CrapXZDist(this->mPos, MechList->mPos);
+	this->field_204 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 
 	return this->field_204;
 }
@@ -641,7 +641,7 @@ CBody* CBaddy::StruckGameObject(i32 a2, i32 a3)
 			|| (result = Utils_CheckObjectCollision(
 				&this->field_2FC,
 				&this->mPos,
-				MechList,
+				G_MECHLIST_PLAYER,
 				this)) == 0 )
 	  {
 		  if (a3 && (result = Utils_CheckObjectCollision(&this->field_2FC, &this->mPos, BaddyList, this)))
@@ -935,13 +935,13 @@ i32 CBaddy::BumpedIntoSpidey(i32 a2)
 	else
 	{
 		this->field_208 = gAttackRelated;
-		v4 = Utils_CrapXZDist(this->mPos, MechList->mPos);
+		v4 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 		this->field_204 = v4;
 	}
 
 	if (v4 < a2)
 	{
-		i32 res = this->field_21E - MechList->field_EA8 - (MechList->mPos.vy >> 12) + (this->mPos.vy >> 12);
+		i32 res = this->field_21E - G_MECHLIST_PLAYER->field_EA8 - (G_MECHLIST_PLAYER->mPos.vy >> 12) + (this->mPos.vy >> 12);
 
 		if (my_abs(res) < 200)
 			return 1;
@@ -955,13 +955,13 @@ i32 CBaddy::BumpedIntoSpidey(i32 a2)
 // @AlmostMatching: vector assingment is different
 i32 CBaddy::PlayerIsVisible()
 {
-	if (!MechList->IsDead() &&
-			Utils_LineOfSight(&this->mPos, &MechList->mPos, 0, 0)
+	if (!G_MECHLIST_PLAYER->IsDead() &&
+			Utils_LineOfSight(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 0)
 			)
 	{
-		if (!this->PathCheck( &this->mPos, &MechList->mPos, 0, 55))
+		if (!this->PathCheck( &this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55))
 		{
-			this->field_1A8[0] = MechList->mPos;
+			this->field_1A8[0] = G_MECHLIST_PLAYER->mPos;
 			this->field_2A8 |= 0x800;
 		}
 		return 1;
@@ -1013,7 +1013,7 @@ i32 CBaddy::CheckSightCone(i32 a2, i32 a3, i32 a4, i32 a5, CBody *a6)
 		return 0;
 
 	i32 v13;
-	if (a6 == MechList)
+	if (a6 == G_MECHLIST_PLAYER)
 	{
 		v13 = this->DistanceToPlayer(2);
 	}
@@ -2001,7 +2001,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		{
 			i16 x = static_cast<i16>(CBaddy_ReadOperand(this));
 			i16 z = static_cast<i16>(CBaddy_ReadOperand(this));
-			if (MechList != 0 && gsub_4C9180(MechList, x << 12, z << 12))
+			if (G_MECHLIST_PLAYER != 0 && gsub_4C9180(G_MECHLIST_PLAYER, x << 12, z << 12))
 				return true;
 			CBaddy_SkipToMatchingEndif(this);
 			return true;
@@ -2507,8 +2507,8 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			// the original stashes this straight into a MechList-family
 			// object at offset 2283, whose real type/name is not
 			// established here.
-			if (MechList != 0)
-				*(reinterpret_cast<u8*>(MechList) + 2283) = (val != 0);
+			if (G_MECHLIST_PLAYER != 0)
+				*(reinterpret_cast<u8*>(G_MECHLIST_PLAYER) + 2283) = (val != 0);
 			return true;
 		}
 
@@ -2554,11 +2554,11 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		}
 
 		case 0x430C:
-			gsub_438E20(MechList);
+			gsub_438E20(G_MECHLIST_PLAYER);
 			return true;
 
 		case 0x430D:
-			gsub_438EE0(MechList);
+			gsub_438EE0(G_MECHLIST_PLAYER);
 			return true;
 
 		case 0x450D: // C_CAMERA_TRAJECTORY (uncertain name, "BossCamStationaryRadius")
@@ -2568,16 +2568,16 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			u16 v190 = *reinterpret_cast<u16*>(this->field_24C); this->field_24C++;
 			u16 v191 = *reinterpret_cast<u16*>(this->field_24C); this->field_24C++;
 
-			if (MechList != 0)
+			if (G_MECHLIST_PLAYER != 0)
 			{
-				i32 dist = gsub_4E6150(&this->mPos, reinterpret_cast<i32*>(&MechList->mPos));
+				i32 dist = gsub_4E6150(&this->mPos, reinterpret_cast<i32*>(&G_MECHLIST_PLAYER->mPos));
 
 				if (dist <= static_cast<i32>(v190))
 				{
 					i32 buf[3];
-					buf[0] = (MechList->mPos.vx - this->mPos.vx) >> 12;
+					buf[0] = (G_MECHLIST_PLAYER->mPos.vx - this->mPos.vx) >> 12;
 					buf[1] = 0;
-					buf[2] = (MechList->mPos.vz - this->mPos.vz) >> 12;
+					buf[2] = (G_MECHLIST_PLAYER->mPos.vz - this->mPos.vz) >> 12;
 
 					gsub_470430(buf, buf);
 
@@ -2848,9 +2848,9 @@ i16 CBaddy::GetVariable(u16 a2)
 
 		case 0x2132:
 		{
-			if (MechList)
+			if (G_MECHLIST_PLAYER)
 			{
-				u32 dist = Utils_XZDist(&this->mPos, &MechList->mPos);
+				u32 dist = Utils_XZDist(&this->mPos, &G_MECHLIST_PLAYER->mPos);
 				return dist > 0x1FFF ? 0x1FFF : dist;
 			}
 
@@ -2859,13 +2859,13 @@ i16 CBaddy::GetVariable(u16 a2)
 
 		case 0x2133:
 		{
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				return 0;
 
 			CVector v = this->mPos;
 			v.vy -= this->field_220 << 12;
 
-			return Utils_LineOfSight(&v, &MechList->mPos, 0, 0);
+			return Utils_LineOfSight(&v, &G_MECHLIST_PLAYER->mPos, 0, 0);
 		}
 
 		case 0x212E:
@@ -2887,19 +2887,19 @@ i16 CBaddy::GetVariable(u16 a2)
 			return this->mPos.vz >> 12;
 
 		case 0x2150:
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				return 0;
-			return MechList->mPos.vx >> 12;
+			return G_MECHLIST_PLAYER->mPos.vx >> 12;
 
 		case 0x2151:
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				return 0;
-			return MechList->mPos.vy >> 12;
+			return G_MECHLIST_PLAYER->mPos.vy >> 12;
 
 		case 0x2152:
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				return 0;
-			return MechList->mPos.vz >> 12;
+			return G_MECHLIST_PLAYER->mPos.vz >> 12;
 
 		case 0x2100:
 			return this->mHealth;

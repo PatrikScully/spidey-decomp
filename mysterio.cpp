@@ -705,9 +705,9 @@ i32 CMysterio::MonitorAttack(
 					&this->field_37C,
 					&v13,
 					&v14,
-					MechList,
+					G_MECHLIST_PLAYER,
 					0,
-					((MechList->mRMinor + a4) << 12) / MechList->mRMinor))
+					((G_MECHLIST_PLAYER->mRMinor + a4) << 12) / G_MECHLIST_PLAYER->mRMinor))
 		{
 			res = 1;
 		}
@@ -1183,7 +1183,7 @@ void CMysterio::LookMenacing(void)
 	{
 		case 0:
 			this->Neutralize();
-			new CAIProc_LookAt(this, MechList, 0, 1, 60, 341);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 1, 60, 341);
 			this->RunAnim(8, 0, -1);
 			this->dumbAssPad++;
 			break;
@@ -1210,7 +1210,7 @@ void CMysterio::RotateToOptimalAttackAngle(
 	v7.vy = 0;
 	v7.vz = 0;
 
-	Utils_CalcAim(&v7, &this->mPos, &MechList->mPos);
+	Utils_CalcAim(&v7, &this->mPos, &G_MECHLIST_PLAYER->mPos);
 
 	i32 v4 = v7.vy - this->mAngles.vy;
 

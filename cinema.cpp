@@ -8,7 +8,6 @@
 #include "ps2pad.h"
 #include "utils.h"
 
-extern CPlayer *MechList;
 
 EXPORT i32 gComicBookRun = 1;
 
@@ -38,12 +37,12 @@ u8 Cinema_ComicBookStill(const char *pBMP)
 void Cinema_Run(u32 a1)
 {
 	SFX_StopAll();
-	if (MechList)
+	if (G_MECHLIST_PLAYER)
 	{
-		if (MechList->mpDecompressedFrame)
+		if (G_MECHLIST_PLAYER->mpDecompressedFrame)
 		{
-			Mem_Delete(MechList->mpDecompressedFrame);
-			MechList->mpDecompressedFrame = 0;
+			Mem_Delete(G_MECHLIST_PLAYER->mpDecompressedFrame);
+			G_MECHLIST_PLAYER->mpDecompressedFrame = 0;
 		}
 	}
 

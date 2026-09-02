@@ -217,9 +217,9 @@ void CPlayer::nullsub_one(i32)
 // @Ok
 void Bruce_Sync(void)
 {
-	print_if_false(MechList != 0, "NULL pointer");
-	MechList->field_D3C = MechList->mPos;
-	MechList->field_D4E = MechList->mAngles;
+	print_if_false(G_MECHLIST_PLAYER != 0, "NULL pointer");
+	G_MECHLIST_PLAYER->field_D3C = G_MECHLIST_PLAYER->mPos;
+	G_MECHLIST_PLAYER->field_D4E = G_MECHLIST_PLAYER->mAngles;
 }
 
 // Relocatable user-function hook globals (0x6A9048/0x6A904C in the original).
@@ -943,7 +943,7 @@ CPlayer::CPlayer(void)
 
 	this->field_DFC = (Trig_GetLevelId() == 0x806) ? 2 : 1;
 
-	this->AttachTo(reinterpret_cast<CBody**>(&MechList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_MECHLIST_PLAYER));
 
 	(*gMechListCount)++;
 
@@ -9488,7 +9488,7 @@ CPlayer::~CPlayer(void)
 		(*(void(**)(i32*, i32))*v)(v, 1);
 	}
 
-	this->DeleteFrom(reinterpret_cast<CBody**>(&MechList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_MECHLIST_PLAYER));
 
 	(*gMechListCount)--;
 

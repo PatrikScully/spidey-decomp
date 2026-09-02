@@ -80,9 +80,9 @@ void Training_MonitorLevel(const u32*, u32*)
 		if (gTrainingStuff[0] == 0x1501)
 		{
 			i32 score;
-			if (MechList)
+			if (G_MECHLIST_PLAYER)
 			{
-				score = MechList->field_568;
+				score = G_MECHLIST_PLAYER->field_568;
 				gTrainingScore = score;
 			}
 			else
@@ -98,7 +98,7 @@ void Training_MonitorLevel(const u32*, u32*)
 					return;
 				}
 			}
-			else if (MechList && MechList->field_E18 == 0)
+			else if (G_MECHLIST_PLAYER && G_MECHLIST_PLAYER->field_E18 == 0)
 			{
 				gBombAIRelated = 3600;
 				gBombDieRelatedOne = 1;
@@ -125,12 +125,12 @@ void Training_MonitorLevel(const u32*, u32*)
 			{
 				if (gTrainingStuff[1] == 1 && gBombAIRelated == 0)
 				{
-					gTrainingScore = MechList->field_5D0;
+					gTrainingScore = G_MECHLIST_PLAYER->field_5D0;
 					Training_EndExercise();
 					return;
 				}
 			}
-			else if (MechList && MechList->field_E18 == 0)
+			else if (G_MECHLIST_PLAYER && G_MECHLIST_PLAYER->field_E18 == 0)
 			{
 				gBombDieRelatedOne = 1;
 				gBombDieRelatedTwo = 1;
@@ -139,7 +139,7 @@ void Training_MonitorLevel(const u32*, u32*)
 				gTrainingStuff[1] = 1;
 			}
 
-			if (MechList->field_5D0 > 7500 && (gSaveGame.field_80 & 0x100) == 0)
+			if (G_MECHLIST_PLAYER->field_5D0 > 7500 && (gSaveGame.field_80 & 0x100) == 0)
 			{
 				if (NumNodes > 1)
 				{
@@ -171,7 +171,7 @@ void Training_MonitorLevel(const u32*, u32*)
 				gSaveGame.field_80 |= 0x100;
 			}
 
-			i32 score = MechList->field_5D0;
+			i32 score = G_MECHLIST_PLAYER->field_5D0;
 			char text[16];
 			sprintf(text, "Score: %4d", score);
 
@@ -179,7 +179,7 @@ void Training_MonitorLevel(const u32*, u32*)
 			Mess_SetTextJustify(1);
 			Mess_DrawText(348, *gTrainingBarBaseY + 36, text, 0, 0x1000);
 
-			if (!MechList || MechList->mHealth > 0 || gTrainingStuff[2] != 0)
+			if (!G_MECHLIST_PLAYER || G_MECHLIST_PLAYER->mHealth > 0 || gTrainingStuff[2] != 0)
 			{
 				if (gTrainingStuff[2] != 1)
 					return;
@@ -192,7 +192,7 @@ void Training_MonitorLevel(const u32*, u32*)
 
 			if ((u32)(G_TIMER_RELATED - gTrainingStuff[3]) > 0x1E)
 			{
-				gTrainingScore = MechList->field_5D0;
+				gTrainingScore = G_MECHLIST_PLAYER->field_5D0;
 				Training_EndExercise();
 			}
 			return;
@@ -210,20 +210,20 @@ void Training_MonitorLevel(const u32*, u32*)
 			gBombDieRelatedTwo = 0;
 			gBombDieTimerRelated = G_TIMER_RELATED;
 
-			if (MechList && MechList->field_E18 == 0)
+			if (G_MECHLIST_PLAYER && G_MECHLIST_PLAYER->field_E18 == 0)
 				gTrainingStuff[1] = G_TIMER_RELATED;
 		}
 
-		if (MechList)
+		if (G_MECHLIST_PLAYER)
 		{
-			if (MechList->field_5D0 >= 40 && gTrainingStuff[2] == 0)
+			if (G_MECHLIST_PLAYER->field_5D0 >= 40 && gTrainingStuff[2] == 0)
 			{
 				gTrainingStuff[2] = 1;
 				gTrainingStuff[3] = G_TIMER_RELATED;
 				gTrainingScore = gBombAIRelated;
 			}
 
-			if (MechList->mHealth <= 0 && gTrainingStuff[2] == 0)
+			if (G_MECHLIST_PLAYER->mHealth <= 0 && gTrainingStuff[2] == 0)
 			{
 				gTrainingScore = -1000;
 				gTrainingStuff[2] = 1;
@@ -237,7 +237,7 @@ void Training_MonitorLevel(const u32*, u32*)
 				Training_EndExercise();
 		}
 
-		if (MechList->field_5D0 >= 40 || gBombAIRelated < 0x4650)
+		if (G_MECHLIST_PLAYER->field_5D0 >= 40 || gBombAIRelated < 0x4650)
 			return;
 
 		gTrainingScore = -1000;
@@ -252,10 +252,10 @@ void Training_MonitorLevel(const u32*, u32*)
 
 		if (gTrainingStuff[1])
 		{
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				goto trainingLabel38;
 
-			if (MechList->mHealth > 0 && MechList->field_E18 == 0)
+			if (G_MECHLIST_PLAYER->mHealth > 0 && G_MECHLIST_PLAYER->field_E18 == 0)
 			{
 				gBombAIRelated = G_TIMER_RELATED - gTrainingStuff[1];
 
@@ -276,10 +276,10 @@ void Training_MonitorLevel(const u32*, u32*)
 			gTrainingFlags[0] = 0;
 			*gTimeAttackComplete = 0;
 
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				goto trainingLabel38;
 
-			if (MechList->field_E18 == 0)
+			if (G_MECHLIST_PLAYER->field_E18 == 0)
 			{
 				stuffOne = G_TIMER_RELATED;
 				gTrainingStuff[1] = G_TIMER_RELATED;
@@ -292,7 +292,7 @@ void Training_MonitorLevel(const u32*, u32*)
 			Training_EndExercise();
 		}
 
-		if (MechList->mHealth <= 0)
+		if (G_MECHLIST_PLAYER->mHealth <= 0)
 		{
 			gTrainingScore = -1000;
 			Training_EndExercise();
@@ -322,10 +322,10 @@ trainingLabel18:
 		// gTrainingStuff[0] in [0x1101,0x1104] or [0x1201,0x1204]
 		if (gTrainingStuff[1])
 		{
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				goto trainingLabel27;
 
-			if (MechList->mHealth <= 0)
+			if (G_MECHLIST_PLAYER->mHealth <= 0)
 			{
 trainingLabel28:
 				gTrainingScore = gBombAIRelated;
@@ -333,7 +333,7 @@ trainingLabel28:
 				return;
 			}
 
-			if (MechList->field_E18 == 0)
+			if (G_MECHLIST_PLAYER->field_E18 == 0)
 				gBombAIRelated = G_TIMER_RELATED - gTrainingStuff[1];
 		}
 		else
@@ -342,10 +342,10 @@ trainingLabel28:
 			gBombAIRelated = 0;
 			gBombDieRelatedOne = 1;
 
-			if (!MechList)
+			if (!G_MECHLIST_PLAYER)
 				return;
 
-			if (MechList->field_E18 == 0)
+			if (G_MECHLIST_PLAYER->field_E18 == 0)
 			{
 				gTrainingStuff[1] = G_TIMER_RELATED;
 				gBombDieRelatedTwo = 0;
@@ -353,7 +353,7 @@ trainingLabel28:
 			}
 		}
 
-		if (MechList->mHealth > 0)
+		if (G_MECHLIST_PLAYER->mHealth > 0)
 		{
 trainingLabel27:
 			if (!gTrainingFlags[0])
@@ -369,7 +369,7 @@ trainingLabel27:
 	{
 		// gTrainingStuff[0] in [0x901, 0x904]: enemy-kill-count exercise,
 		// draws a live "Enemies killed: NN" readout.
-		if (MechList && MechList->mHealth <= 0)
+		if (G_MECHLIST_PLAYER && G_MECHLIST_PLAYER->mHealth <= 0)
 		{
 			gBombDieRelatedTwo = 0;
 			gTrainingScore = *gKillNotifyCallCount;

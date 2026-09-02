@@ -11,7 +11,6 @@
 
 #include <cstring>
 
-extern CPlayer* MechList;
 extern CBaddy* BaddyList;
 extern CBody* ControlBaddyList;
 
@@ -179,7 +178,7 @@ void CDocOc::PlayIdleOrGloatAnim(void)
 		else
 		{
 			this->CalculateStage();
-			if (this->field_55C <= 600 && MechList->mHealth > 0)
+			if (this->field_55C <= 600 && G_MECHLIST_PLAYER->mHealth > 0)
 			{
 				if (this->field_550 == 1)
 					this->PlaySingleAnim(5, 0, -1);

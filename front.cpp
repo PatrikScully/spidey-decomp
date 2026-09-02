@@ -330,7 +330,6 @@ void Front_ClearScreen(void)
 // full CPlayer definition is not needed and pulling in spidey.h's huge
 // dependency graph is not worth it for one field read.
 class CPlayer;
-extern CPlayer* MechList;
 
 // @Ok
 // Functional decompile, cmpsum residue down to 2 mnemonic diffs (from 145
@@ -371,8 +370,8 @@ void Front_Display(void)
 		Mess_DrawText(0x100, 0xC8, gFrontTrainingTextTwo, 0, 0x1000);
 	}
 
-	if (MechList
-			&& *reinterpret_cast<i16*>(reinterpret_cast<u8*>(MechList) + 0xE2) <= 0
+	if (G_MECHLIST_PLAYER
+			&& *reinterpret_cast<i16*>(reinterpret_cast<u8*>(G_MECHLIST_PLAYER) + 0xE2) <= 0
 			&& G_INIT_RELATED_TWO == 1)
 	{
 		Mess_SetRGB(0x80, 0x80, 0x80, 0);

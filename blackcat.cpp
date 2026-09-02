@@ -11,7 +11,6 @@
 
 extern u8 submarinerDieRelated;
 extern CBaddy* BaddyList;
-extern CPlayer* MechList;
 
 EXPORT SLight M3d_BlackCatLight =
 {
@@ -100,9 +99,9 @@ void CBlackCat::AI(void)
 				case 0:
 				{
 					CVector aimTarget;
-					aimTarget.vx = MechList->mPos.vx;
+					aimTarget.vx = G_MECHLIST_PLAYER->mPos.vx;
 					aimTarget.vy = this->mPos.vy;
-					aimTarget.vz = MechList->mPos.vz;
+					aimTarget.vz = G_MECHLIST_PLAYER->mPos.vz;
 					Utils_CalcAim(&this->mAngles, &this->mPos, &aimTarget);
 
 					i32 groundHeight = Utils_GetGroundHeight(&this->mPos, 0, 0x800, 0);

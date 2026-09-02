@@ -33,16 +33,16 @@ static i32 * const gL5A7DrowningTimer = (i32*)0x005FB754;
 // one instruction.
 void L5A7LSC_MonitorSpideyinWater(const u32 *,u32 *)
 {
-	MechList->mFlags &= ~8;
+	G_MECHLIST_PLAYER->mFlags &= ~8;
 
-	i32 x = MechList->mPos.vx >> 12;
-	i32 z = MechList->mPos.vz >> 12;
-	i32 y = MechList->mPos.vy >> 12;
+	i32 x = G_MECHLIST_PLAYER->mPos.vx >> 12;
+	i32 z = G_MECHLIST_PLAYER->mPos.vz >> 12;
+	i32 y = G_MECHLIST_PLAYER->mPos.vy >> 12;
 
 	if (x <= -3600 || x >= -900 || z <= 3300 || z >= 5000 || y <= 2700 || y >= 4700)
 		goto resetTimer;
 
-	MechList->mFlags |= 8;
+	G_MECHLIST_PLAYER->mFlags |= 8;
 
 	{
 		u32 Model = Spool_GetModel(0xC50DC421, gObjFileRegion);
@@ -73,7 +73,7 @@ void L5A7LSC_MonitorSpideyinWater(const u32 *,u32 *)
 			goto resetTimer;
 	}
 
-	*gL5A7DrowningTimer += MechList->field_80;
+	*gL5A7DrowningTimer += G_MECHLIST_PLAYER->field_80;
 
 	if (*gL5A7DrowningTimer > 20)
 	{
@@ -91,7 +91,7 @@ void L5A7LSC_MonitorSpideyinWater(const u32 *,u32 *)
 					found = 1;
 					*gL5A7DrowningTimer = 0;
 					Trig_SendPulseToNode(i);
-					MechList->mPos = v;
+					G_MECHLIST_PLAYER->mPos = v;
 					break;
 				}
 			}

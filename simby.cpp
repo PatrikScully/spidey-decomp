@@ -20,7 +20,6 @@
 #include "exp.h"
 
 static SStateFlags gSimbyFlags;
-extern CPlayer* MechList;
 extern CBaddy* BaddyList;
 extern i32 gAttackRelated;
 
@@ -40,11 +39,11 @@ EXPORT i32 gSimbySetup[2] = { 84215815, 261 };
 // @AlmostMatching: same as SpideyAI_WaitForSimbyGrab
 void SpideyAI_ThrownBySimby(CPlayer *pPlayer)
 {
-	MechList->mFlags &= ~0x800u;
+	G_MECHLIST_PLAYER->mFlags &= ~0x800u;
 
-	if (MechList->mAnimFinished)
+	if (G_MECHLIST_PLAYER->mAnimFinished)
 	{
-		MechList->PlaySingleAnim(0xBAu, 0, -1);
+		G_MECHLIST_PLAYER->PlaySingleAnim(0xBAu, 0, -1);
 	}
 
 	if (pPlayer->mFlags & 4)
@@ -78,7 +77,7 @@ void SpideyAI_ThrownBySimby(CPlayer *pPlayer)
 // @AlmostMatching: assignment to field_158 is slightly off :(
 void SpideyAI_WaitForSimbyGrab(CPlayer *pPlayer)
 {
-	MechList->mFlags &= ~0x800u;
+	G_MECHLIST_PLAYER->mFlags &= ~0x800u;
 
 	if (pPlayer->mFlags & 4)
 	{
@@ -116,21 +115,21 @@ void CSimby::SimbyKnockSpideyDown(i32 a2)
 	CVector v7;
 	CVector v6;
 
-	v6 = this->mPos - MechList->mPos;
+	v6 = this->mPos - G_MECHLIST_PLAYER->mPos;
 
 	v6 >>= 12;
 	VectorNormal(
 			reinterpret_cast<VECTOR*>(&v6),
 			reinterpret_cast<VECTOR*>(&v6));
 
-	v7 = MechList->mPos + (v6 * 50);
+	v7 = G_MECHLIST_PLAYER->mPos + (v6 * 50);
 
-	MechList->CreateCombatImpactEffect(&v7, 0);
+	G_MECHLIST_PLAYER->CreateCombatImpactEffect(&v7, 0);
 	v10.field_0 = 6;
 	v10.field_8 = a2;
 	v10.field_4 = 14;
 
-	MechList->Hit(&v10);
+	G_MECHLIST_PLAYER->Hit(&v10);
 }
 
 // @Ok
@@ -733,7 +732,7 @@ CSimbyShot::CSimbyShot(CVector *a2)
 	this->field_A0.vy = 0;
 	this->field_A0.vz = 0;
 
-	if (!MechList)
+	if (!G_MECHLIST_PLAYER)
 	{
 		this->Die();
 		return;
@@ -743,7 +742,7 @@ CSimbyShot::CSimbyShot(CVector *a2)
 	this->SetSemiTransparent();
 	this->SetTint(0x64, 0, 100);
 
-	CVector toMech = MechList->mPos - *a2;
+	CVector toMech = G_MECHLIST_PLAYER->mPos - *a2;
 	i32 length = toMech.Length();
 	this->field_B4 = length;
 
@@ -878,7 +877,7 @@ void CSimby::Shoot(void)
 			this->CycleAnim(this->field_298.Bytes[0], 1);
 			new CAIProc_LookAt(
 					this,
-					MechList,
+					G_MECHLIST_PLAYER,
 					0,
 					2,
 					80,
@@ -926,7 +925,7 @@ void CSimby::TakeHit(void)
 
 			new CAIProc_LookAt(
 					this,
-					MechList,
+					G_MECHLIST_PLAYER,
 					0,
 					0,
 					80,

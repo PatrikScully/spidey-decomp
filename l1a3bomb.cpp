@@ -15,7 +15,6 @@ u8 gBombDieRelatedTwo;
 u32 gBombDieTimerRelated;
 u32 gBombAIRelated;
 
-extern CPlayer* MechList;
 extern i32 DifficultyLevel;
 
 // @Ok
@@ -232,9 +231,9 @@ void CL1A3Bomb::Smash(void)
 
 	i32 vz = 0;
 
-	if (MechList)
+	if (G_MECHLIST_PLAYER)
 	{
-		CVector v5 = (-24 * MechList->field_C6C) + (14 * MechList->field_C84);
+		CVector v5 = (-24 * G_MECHLIST_PLAYER->field_C6C) + (14 * G_MECHLIST_PLAYER->field_C84);
 		v9.vx = v5.vx;
 		v9.vy = v5.vy;
 		vz = v5.vz;

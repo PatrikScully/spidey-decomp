@@ -748,11 +748,11 @@ void PShell_EndTrainingInit(void)
 	G_SCREEN_MODE_FLAG = 0;
 	*(i32*)0x00660F80 = 0;  // gWideScreen (ps2m3d.cpp), fixed game address; see gSaveGame note in CLAUDE.md
 
-	if (MechList)
+	if (G_MECHLIST_PLAYER)
 	{
-		MechList->ExitLookaroundMode();
-		*(i32*)((char*)MechList + 0x68) = 0;
-		*(i32*)((char*)MechList + 0x60) = 0;
+		G_MECHLIST_PLAYER->ExitLookaroundMode();
+		*(i32*)((char*)G_MECHLIST_PLAYER + 0x68) = 0;
+		*(i32*)((char*)G_MECHLIST_PLAYER + 0x60) = 0;
 	}
 
 	Pad_ActuatorOff(0, 0);

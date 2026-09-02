@@ -133,7 +133,6 @@ extern CSpecialDisplay *SpecialDisplayList;
 
 extern i32 JoelJewCheatCode;
 
-extern CPlayer* MechList;
 extern CBody* ControlBaddyList;
 extern CBaddy* BaddyList;
 extern CBody* EnvironmentalObjectList;
@@ -844,7 +843,7 @@ void Trig_ExecuteRestart(void)
 {
 	ASSERT(G_RESTARTNODE != 0xFFFF, "Tried to execute a restart with no restart node set");
 	ASSERT(*G_OFFSETLIST[G_RESTARTNODE] == 8, "Eh? Restart node isn't a restart node!");
-	ASSERT(G_MECHLIST != 0, "Tried to execute a restart with a NULL MechList");
+	ASSERT(G_MECHLIST != 0, "Tried to execute a restart with a NULL G_MECHLIST_PLAYER");
 
 	CVector v7;
 

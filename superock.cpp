@@ -13,7 +13,6 @@
 #include "validate.h"
 
 extern CBaddy* BaddyList;
-extern CPlayer* MechList;
 
 EXPORT SLight M3d_SuperOckLight =
 {
@@ -87,13 +86,13 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 		tex++;
 	} while (name < (const char*)0x557b9c);
 
-	if (MechList->field_1AC != 0)
+	if (G_MECHLIST_PLAYER->field_1AC != 0)
 		return;
 
 	CBaddy* baddy = FindBaddyOfType(0x135);
 	if (baddy == 0)
 		return;
-	if (MechList == 0)
+	if (G_MECHLIST_PLAYER == 0)
 		return;
 
 	CSuperDocOck* doc = (CSuperDocOck*)baddy;
@@ -101,7 +100,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 	if (doc->field_35C != 0) {
 		progress = 0;
 	} else {
-		int dist = Utils_XZDist(&MechList->mPos, &baddy->mPos);
+		int dist = Utils_XZDist(&G_MECHLIST_PLAYER->mPos, &baddy->mPos);
 		if (dist > 2048)
 			dist = 2048;
 		progress = dist * 307 / 2048;
@@ -559,7 +558,7 @@ void CSuperDocOck::PlayIdleOrGloatAnim(void)
 			return;
 		}
 
-		if ( this->field_3E0 > 600 || MechList->mHealth <= 0 )
+		if ( this->field_3E0 > 600 || G_MECHLIST_PLAYER->mHealth <= 0 )
 		{
 			if ( this->field_3D4 == 1 )
 				this->PlaySingleAnim(35, 0, -1);

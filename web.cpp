@@ -323,7 +323,7 @@ i32 Web_CollideWithSuper(CSuper *pSuper, CVector const *pStart, CVector const *p
 CDomeShockWave::CDomeShockWave(i32 a2)
 {
 	this->mType = 8;
-	this->mPos = MechList->mPos;
+	this->mPos = G_MECHLIST_PLAYER->mPos;
 	this->mPos.vy += 204800;
 
 	this->field_44.vx = 240;
@@ -974,7 +974,7 @@ int CSwinger::IsOneTimeToDie(void)
 // @Matching
 void CSwinger::SetSpideyAnimFrame(i32 a2)
 {
-	MechList->mFrame = (a2 * (this->field_180 - 2048)) >> 11;
+	G_MECHLIST_PLAYER->mFrame = (a2 * (this->field_180 - 2048)) >> 11;
 }
 
 

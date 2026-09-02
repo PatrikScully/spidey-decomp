@@ -20,7 +20,6 @@ static unsigned char gAttackFlagsRelated;
 // (thug.cpp) and gRhinoStateFlags (rhino.cpp).
 EXPORT SStateFlags gCopStateFlags;
 
-extern CPlayer *MechList;
 extern CBaddy *BaddyList;
 
 EXPORT CCop* gCopList;
@@ -227,11 +226,11 @@ void CCop::Acknowledge(void)
 // @Ok
 INLINE void CCop::CheckToShoot(i32 a2, i32 a3)
 {
-	if ( MechList->field_57C && !gCopList && !MechList->mHeldObject)
+	if ( G_MECHLIST_PLAYER->field_57C && !gCopList && !G_MECHLIST_PLAYER->mHeldObject)
 	{
 		if ( ((this->field_218 & 0x800) && a2 < this->field_37C)
 				||
-			 (this->field_324 && a2 < 1500 && (a3 != -1 || this->PathCheck(&this->mPos, &MechList->mPos, 0, 55))))
+			 (this->field_324 && a2 < 1500 && (a3 != -1 || this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55))))
 		{
 			this->Neutralize();
 			gCopList = this;
@@ -292,7 +291,7 @@ INLINE void CCop::DrawBarrelFlash(
 // @Test
 void CCop::GetAttackPosition(CVector* pAttackerPos)
 {
-	*pAttackerPos = MechList->mPos;
+	*pAttackerPos = G_MECHLIST_PLAYER->mPos;
 	if (!(this->field_390 & 1) && (this->field_390 & 2))
 	{
 		if (this->field_391 & 0xEE)
@@ -519,9 +518,9 @@ void CCop::RunToWhereTheActionIs(CVector* a2)
 
 	i32 addedPoint = 0;
 
-	if (!MechList->field_57C
-			&& this->PathCheck(&this->mPos, &MechList->mPos, 0, 55) == 0
-			&& this->AddPointToPath(&MechList->mPos, 0))
+	if (!G_MECHLIST_PLAYER->field_57C
+			&& this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55) == 0
+			&& this->AddPointToPath(&G_MECHLIST_PLAYER->mPos, 0))
 	{
 		addedPoint = 1;
 	}
@@ -568,9 +567,9 @@ void CCop::HelpOutBuddy(CMessage *pMessage)
 // @Ok
 INLINE i32 CCop::SpideyAnimUppercut(void)
 {
-	return MechList->mAnim == 106
-		|| MechList->mAnim == 113
-		|| MechList->mAnim == 284;
+	return G_MECHLIST_PLAYER->mAnim == 106
+		|| G_MECHLIST_PLAYER->mAnim == 113
+		|| G_MECHLIST_PLAYER->mAnim == 284;
 }
 
 // @Ok
@@ -688,7 +687,7 @@ void CCop::LookForPlayer(void)
 			CVector *mPos;
 
 			if (this->field_1F8 < 64)
-				mPos = &MechList->mPos;
+				mPos = &G_MECHLIST_PLAYER->mPos;
 			else
 				mPos = &this->mPos;
 

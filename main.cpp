@@ -369,7 +369,7 @@ void Logic(void)
 		Flash_Update();
 
 		Trig_ResetCPCollisionFlags();
-		Ob_AI(reinterpret_cast<CBody**>(&MechList), 0);
+		Ob_AI(reinterpret_cast<CBody**>(&G_MECHLIST_PLAYER), 0);
 		Trig_ResetCPExecutedFlags();
 
 		Ob_AI(&PowerUpList, 0);
@@ -390,7 +390,7 @@ void Logic(void)
 	Trig_DoPendingCommandLists();
 
 	if (*gSubmarinerDieRelated)
-		MechList->CutSceneSkipCleanup();
+		G_MECHLIST_PLAYER->CutSceneSkipCleanup();
 
 	gsub_430880();
 
@@ -491,7 +491,7 @@ void Display(void)
 	Music_MusicUpdate();
 
 	if (gRenderListFlags[2])
-		M3d_Render(MechList);
+		M3d_Render(G_MECHLIST_PLAYER);
 
 	if (*gM3dSuperScaleEnabled)
 		*gDCUseFixedScale = 1;
@@ -501,7 +501,7 @@ void Display(void)
 
 	*gDCUseFixedScale = 0;
 
-	MechList->RenderLookaroundReticle();
+	G_MECHLIST_PLAYER->RenderLookaroundReticle();
 
 	if (gRenderListFlags[4])
 		M3d_Render(MiscellaneousRenderingList);
@@ -555,7 +555,7 @@ void Display(void)
 				{
 					pCamera->field_F9 = 0;
 
-					CPlayer *pPlayer = MechList;
+					CPlayer *pPlayer = G_MECHLIST_PLAYER;
 
 					for (u32 i = 0; i < 8; i++)
 					{
@@ -569,7 +569,7 @@ void Display(void)
 						{
 							pHeld->mFlags &= ~0x800;
 							pCamera->field_184[i] = 0;
-							pPlayer = MechList;
+							pPlayer = G_MECHLIST_PLAYER;
 						}
 					}
 				}
@@ -702,7 +702,7 @@ void PlayAway(void)
 			char fps[8];
 			strcpy(fps, "XX FPS");
 
-			i32 rate = 60 / MechList->field_80;
+			i32 rate = 60 / G_MECHLIST_PLAYER->field_80;
 
 			if (rate <= 9)
 			{
@@ -744,7 +744,7 @@ void PlayAway(void)
 
 		PCGfx_EndScene(1);
 
-		if (MechList->IsDead())
+		if (G_MECHLIST_PLAYER->IsDead())
 		{
 			gLevelStatus = 2;
 			break;
@@ -1618,6 +1618,11 @@ void game_patches(void)
 	patch_CFT4Bit();
 
 	patch_camera();
+	patch_exp();
+	patch_chopper();
+	patch_carnage();
+	patch_effects();
+	patch_manipob();
 }
 
 // @Bogus

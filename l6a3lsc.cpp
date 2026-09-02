@@ -11,16 +11,16 @@ void L6A3LSC_MonitorSpideyinWater(const u32 *,u32 *)
     static i32 * const gWaterTargetY = (i32*)0x5FCDA8;
     static u32 ** const gTrigNodes = (u32**)0x6B466C;
 
-    MechList->mFlags &= ~8u;
-    if (MechList->mPos.vy >> 12 <= 6800)
+    G_MECHLIST_PLAYER->mFlags &= ~8u;
+    if (G_MECHLIST_PLAYER->mPos.vy >> 12 <= 6800)
     {
         *gWaterTimer = 0;
     }
     else
     {
-        MechList->mFlags |= 8u;
+        G_MECHLIST_PLAYER->mFlags |= 8u;
         *gWaterTargetY = 6800;
-        *gWaterTimer += MechList->field_80;
+        *gWaterTimer += G_MECHLIST_PLAYER->field_80;
         if (*gWaterTimer > 10)
         {
             u8 found = 0;
@@ -45,7 +45,7 @@ void L6A3LSC_MonitorSpideyinWater(const u32 *,u32 *)
                     found = 1;
                     *gWaterTimer = 0;
                     Trig_SendPulseToNode(nodeIdx);
-                    MechList->mPos = pos;
+                    G_MECHLIST_PLAYER->mPos = pos;
                 }
             }
             print_if_false(found, "No TRG_Drowning node");

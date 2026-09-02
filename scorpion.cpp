@@ -13,7 +13,6 @@
 #include "ps2m3d.h"
 #include <cstring>
 
-extern CPlayer* MechList;
 extern CBaddy* BaddyList;
 extern CBody* EnvironmentalObjectList;
 
@@ -451,7 +450,7 @@ INLINE void CScorpion::TargetPlayer(i32 a2)
 {
 	this->field_C10 = a2;
 	this->field_BF8 = 2;
-	this->hCurrentTarget = Mem_MakeHandle(MechList);
+	this->hCurrentTarget = Mem_MakeHandle(G_MECHLIST_PLAYER);
 }
 
 // @Ok
@@ -591,14 +590,14 @@ void CScorpion::DetermineTarget(void)
 	if (this->field_C10)
 	{
 		this->field_BF8 = 2;
-		this->hCurrentTarget = Mem_MakeHandle(MechList);
+		this->hCurrentTarget = Mem_MakeHandle(G_MECHLIST_PLAYER);
 	}
 	else
 	{
 		if (!this->hCurrentTarget.pWhatever || !Mem_RecoverPointer(&this->hCurrentTarget))
 		{
 			this->field_BF8 = 2;
-			this->hCurrentTarget = Mem_MakeHandle(MechList);
+			this->hCurrentTarget = Mem_MakeHandle(G_MECHLIST_PLAYER);
 		}
 
 		switch (this->WhatShouldIDo())
@@ -616,7 +615,7 @@ void CScorpion::DetermineTarget(void)
 				{
 					if (this->field_31C.bothFlags != 3 || this->field_BF8 != 2)
 					{
-						this->hCurrentTarget = Mem_MakeHandle(MechList);
+						this->hCurrentTarget = Mem_MakeHandle(G_MECHLIST_PLAYER);
 						this->field_BF8 = 2;
 						this->field_31C.bothFlags = 3;
 						this->dumbAssPad = 0;
@@ -697,7 +696,7 @@ void CScorpion::TakeHit(void)
 			this->field_310 = 0;
 			new CAIProc_LookAt(
 					this,
-					MechList,
+					G_MECHLIST_PLAYER,
 					0,
 					2,
 					80,

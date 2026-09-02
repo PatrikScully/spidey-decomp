@@ -6,7 +6,6 @@
 #include "validate.h"
 
 extern CBody* ControlBaddyList;
-extern CPlayer* MechList;
 extern i32 NumNodes;
 
 // @Ok
@@ -287,14 +286,14 @@ void CSwitch::Flick(void)
 			break;
 		case 3:
 		case 4:
-			if (MechList)
-				MechList->field_568 += this->field_124 ? -1 : 1;
+			if (G_MECHLIST_PLAYER)
+				G_MECHLIST_PLAYER->field_568 += this->field_124 ? -1 : 1;
 			this->PulseLFA1Node(this->field_124 == 0);
 			this->field_100 = 5;
 			break;
 		case 5:
-			if (MechList)
-				MechList->field_568 += this->field_124 ? -1 : 1;
+			if (G_MECHLIST_PLAYER)
+				G_MECHLIST_PLAYER->field_568 += this->field_124 ? -1 : 1;
 			break;
 		default:
 			return;
