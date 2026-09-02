@@ -2437,7 +2437,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			{
 				gsub_4DFFB0(ControlBaddyList, val);
 				gsub_4DFFB0(BaddyList, val);
-				gsub_4DFFB0(EnvironmentalObjectList, val);
+				gsub_4DFFB0(G_ENVIRONMENTAL_OBJECT_LIST, val);
 			}
 			else
 			{

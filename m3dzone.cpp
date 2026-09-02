@@ -44,7 +44,7 @@ void M3dZone_LineToItem(
 	if (G_TRIGGER_COLLISION_CHECK)
 		G_M3DCOLIJ_ZERO_MASK ^= 0x20000u;
 	if (CheckEnviroObs)
-		M3dColij_LineToItem(&EnvironmentalObjectList[0], pInfo);
+		M3dColij_LineToItem(&G_ENVIRONMENTAL_OBJECT_LIST[0], pInfo);
 
 	for (i32 i = 0; i <= (NUM_ZONES - 1); i++)
 	{

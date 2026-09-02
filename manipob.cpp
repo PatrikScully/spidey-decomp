@@ -15,7 +15,6 @@
 
 static i16 * const word_610C48 = (i16*)0x610C48;
 extern const char *gObjFile;
-extern CBody* EnvironmentalObjectList;
 
 // @Ok
 void CManipObChunk::AI(void)
@@ -192,7 +191,7 @@ void CManipOb::Drop(CVector *a2)
 // @Ok
 CManipOb::~CManipOb(void)
 {
-	this->DeleteFrom(&EnvironmentalObjectList);
+	this->DeleteFrom(&G_ENVIRONMENTAL_OBJECT_LIST);
 
 	if (this->pVectors)
 	{
@@ -207,7 +206,7 @@ CManipOb::CManipOb(
 		i32 a3)
 {
 	this->InitItem(gObjFile);
-	this->AttachTo(&EnvironmentalObjectList);
+	this->AttachTo(&G_ENVIRONMENTAL_OBJECT_LIST);
 
 	this->mFlags = this->mFlags & 0x0FFFD | 0x10;
 	this->mType = 401;

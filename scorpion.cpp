@@ -15,7 +15,6 @@
 
 extern CPlayer* MechList;
 extern CBaddy* BaddyList;
-extern CBody* EnvironmentalObjectList;
 
 // Fixed game address (no idb_globals.txt entry). Holds the compiled SLight
 // record the (0x483290/0x483450) constructors point mpLight at. Read
@@ -538,7 +537,7 @@ i32 CScorpion::GetEnvironmentalObjectTarget(void)
 	{
 		CBody *candidates[4];
 		i32 count = 0;
-		CBody *cur = reinterpret_cast<CBody*>(EnvironmentalObjectList);
+		CBody *cur = reinterpret_cast<CBody*>(G_ENVIRONMENTAL_OBJECT_LIST);
 
 		while (cur && count < 4)
 		{

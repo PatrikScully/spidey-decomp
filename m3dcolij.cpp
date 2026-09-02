@@ -187,7 +187,7 @@ INLINE void NextInquiry(void)
 		G_INQUIRY=1;
 		for (pItem=G_ENVIRO_LIST; pItem; pItem=pItem->mNextItem)
 			pItem->mInquiry=0;
-		for (pItem=EnvironmentalObjectList; pItem; pItem=pItem->mNextItem)
+		for (pItem=G_ENVIRONMENTAL_OBJECT_LIST; pItem; pItem=pItem->mNextItem)
 			pItem->mInquiry=0;
 	}
 }

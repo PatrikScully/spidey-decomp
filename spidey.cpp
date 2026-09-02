@@ -2727,7 +2727,7 @@ i32 CPlayer::CheckKick(void)
 
 			this->field_E4C.pWhatever = 0;
 
-			CBody *pObject = EnvironmentalObjectList;
+			CBody *pObject = G_ENVIRONMENTAL_OBJECT_LIST;
 			while (pObject != 0)
 			{
 				if (pObject->mType == 401 && (i32)Utils_CrapDist(this->mPos, pObject->mPos) < 768)

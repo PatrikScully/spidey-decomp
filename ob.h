@@ -313,6 +313,16 @@ EXPORT extern CItem* EnviroList;
 //#define G_ENVIRO_LIST (EnviroList)
 #define G_ENVIRO_LIST (*reinterpret_cast<CItem**>(0x006B2EFC))
 EXPORT extern CBody* EnvironmentalObjectList;
+
+// Head of the environmental object list. M3dColij_InitLineInfo (0x452460 tail, inside
+// M3dColij_InitLineInfo at 0x452764) does "mov eax,[60DAACh]" and then walks
+// [eax+20h] (mNextItem) clearing [eax+6] (mInquiry), which is exactly NextInquiry's
+// second loop. M3dZone_LineToItem (0x454A25) does "mov edx,[60DAACh]; push edx" into
+// M3dColij_LineToItem. idb_globals.txt agrees (0x0060DAAC EnvironmentalObjectList).
+// The exe's CBody::AttachTo/DeleteFrom keep rewriting the head, and the hooked
+// M3dColij_LineToItem walks the list, so this must be the exe's pointer.
+//#define G_ENVIRONMENTAL_OBJECT_LIST (EnvironmentalObjectList)
+#define G_ENVIRONMENTAL_OBJECT_LIST (*reinterpret_cast<CBody**>(0x0060DAAC))
 EXPORT extern CBody* SuspendedList;
 
 // @Note: yeah it's cbody fucking game

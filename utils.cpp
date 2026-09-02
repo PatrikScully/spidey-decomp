@@ -14,7 +14,6 @@
 #include "ps2gamefmv.h"
 #include "camera.h"
 
-extern CBody *EnvironmentalObjectList;
 extern CBody *ControlBaddyList;
 extern CBody *PowerUpList;
 extern CBody *SuspendedList;
@@ -522,7 +521,7 @@ i32 Utils_KillEverythingInBox(CVector const * min,CVector const * max)
 {
 		return Utils_KillObjectsInBox(min, max, SuspendedList, false) +
 		Utils_KillObjectsInBox(min, max, PowerUpList, true) +
-		Utils_KillObjectsInBox(min, max, EnvironmentalObjectList, true) +
+		Utils_KillObjectsInBox(min, max, G_ENVIRONMENTAL_OBJECT_LIST, true) +
 		Utils_KillObjectsInBox(min, max, ControlBaddyList, true) +
 		Utils_KillObjectsInBox(min, max, BaddyList, true);
 }
@@ -1066,7 +1065,7 @@ CBody* Utils_CheckObjectCollision(
 		M3dColij_InitLineInfo(&G_LINE_INFO);
 
 		G_LINE_OF_SIGHT_CHECK = 1;
-		M3dColij_LineToItem(EnvironmentalObjectList, &G_LINE_INFO);
+		M3dColij_LineToItem(G_ENVIRONMENTAL_OBJECT_LIST, &G_LINE_INFO);
 		result = reinterpret_cast<CBody*>(G_LINE_INFO.pItem);
 		G_LINE_OF_SIGHT_CHECK = 0;
 	}

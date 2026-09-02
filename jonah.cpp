@@ -8,7 +8,6 @@
 // @Ok
 EXPORT i32 JoelJewtCheatCode;
 
-extern CBody* EnvironmentalObjectList;
 extern CBaddy* BaddyList;
 
 // @Ok
@@ -207,7 +206,7 @@ int CJonah::LinkedHidingPlaceStillExists(i32 a2)
 	{
 		if (infos[i].field_4 == 1 || infos[i].field_4 == 2)
 		{
-			CBody *BodyByNode = this->FindBodyByNode(infos[i].field_0, EnvironmentalObjectList);
+			CBody *BodyByNode = this->FindBodyByNode(infos[i].field_0, G_ENVIRONMENTAL_OBJECT_LIST);
 
 			if (BodyByNode)
 			{

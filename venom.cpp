@@ -17,7 +17,6 @@
 #include "spidey.h"
 
 
-extern CBody* EnvironmentalObjectList;
 
 // Real repo global, no header extern (post.cpp: "EXPORT i32 gPostWaterEffect;").
 extern i32 gPostWaterEffect;
@@ -923,7 +922,7 @@ void CVenom::AdjustWaterModel(void)
 	{
 		u32 Model = Spool_GetModel(0x26D2DBB7, gObjFileRegion);
 
-		for (pBody = EnvironmentalObjectList;
+		for (pBody = G_ENVIRONMENTAL_OBJECT_LIST;
 				pBody;
 				pBody = reinterpret_cast<CBody*>(pBody->mNextItem))
 		{

@@ -333,7 +333,7 @@ CDomeShockWave::CDomeShockWave(i32 a2)
 	this->field_90 = a2;
 
 	this->ResetHitFlags(BaddyList);
-	this->ResetHitFlags(EnvironmentalObjectList);
+	this->ResetHitFlags(G_ENVIRONMENTAL_OBJECT_LIST);
 
 	for (i32 i = 0; i < 16; i++)
 	{

@@ -776,7 +776,7 @@ INLINE CMystFoot::CMystFoot(void)
 {
 	this->InitItem(gObjFile);
 	this->mModel = static_cast<u16>(Spool_GetModel(0x98A81283, gObjFileRegion));
-	this->AttachTo(&EnvironmentalObjectList);
+	this->AttachTo(&G_ENVIRONMENTAL_OBJECT_LIST);
 	this->mType = 0x19D;
 	this->mFlags = (this->mFlags & 0xFFFD) | 0x10;
 }

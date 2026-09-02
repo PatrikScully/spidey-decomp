@@ -271,7 +271,7 @@ void Init_KillAll(void)
 	DeleteList(G_CAMERA_LIST);
 	DeleteList(BaddyList);
 	DeleteList(ControlBaddyList);
-	DeleteList(EnvironmentalObjectList);
+	DeleteList(G_ENVIRONMENTAL_OBJECT_LIST);
 	DeleteList(BackgroundList);
 	DeleteList(PowerUpList);
 	DeleteList(BulletList);
@@ -285,7 +285,7 @@ void Init_KillAll(void)
 	print_if_false(BaddyList == 0, "Leftover protected members of BaddyList");
 	print_if_false(ControlBaddyList == 0, "Leftover protected members of ControlBaddyList");
 	print_if_false(BackgroundList == 0, "Leftover protected members of BackgroundList");
-	print_if_false(EnvironmentalObjectList == 0, "Leftover protected members of EnvironmentalObjectList");
+	print_if_false(G_ENVIRONMENTAL_OBJECT_LIST == 0, "Leftover protected members of G_ENVIRONMENTAL_OBJECT_LIST");
 	print_if_false(PowerUpList == 0, "Leftover protected members of PowerUpList");
 	print_if_false(BulletList == 0, "Leftover protected members of BulletList");
 	print_if_false(SuspendedList == 0, "Leftover protected members of SuspendedList");
