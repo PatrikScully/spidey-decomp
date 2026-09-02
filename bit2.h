@@ -196,4 +196,6 @@ void validate_CGLineParticle(void);
 void validate_CKnottedWeb(void);
 void validate_SKnottedWebSeg(void);
 
+void patch_bit2(void);
+
 #endif

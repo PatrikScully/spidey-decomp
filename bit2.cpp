@@ -454,3 +454,40 @@ void validate_CGLineParticle(void)
 
 	VALIDATE(CGLineParticle, field_5C, 0x5C);
 }
+
+#include "my_patch.h"
+
+// Same two rules as patch_bit in bit.cpp: virtuals and constructors/destructors
+// go through PATCH_PUSH_RET_POLY, and nothing that draws is hooked (the three
+// line renderers for these classes live in bit.cpp and all go through
+// PCGfx_DrawLine).
+//
+// CKnottedWeb is skipped. Its constructor is at 0x4F8E20 and its vtable has
+// CKnottedWeb::~CKnottedWeb (0x4F9060) and CKnottedWeb::Move (0x4F9150), and
+// this repo declares neither, so a hooked constructor would lose both slots.
+
+// @Bogus
+void patch_bit2(void)
+{
+	PATCH_PUSH_RET_POLY(0x00411D50, CPolyLine::CPolyLine, "??0CPolyLine@@QAE@H@Z");
+	PATCH_PUSH_RET_POLY(0x00411E50, CPolyLine::~CPolyLine, "??1CPolyLine@@UAE@XZ");
+	PATCH_PUSH_RET(0x00411EC0, CPolyLine::SetSemiTransparent);
+
+	PATCH_PUSH_RET_POLY(0x00412350, CGPolyLine::CGPolyLine, "??0CGPolyLine@@QAE@H@Z");
+	PATCH_PUSH_RET_POLY(0x00412450, CGPolyLine::~CGPolyLine, "??1CGPolyLine@@UAE@XZ");
+	PATCH_PUSH_RET(0x004124C0, CGPolyLine::SetSemiTransparent);
+	PATCH_PUSH_RET(0x00412500, CGPolyLine::SetStartAndEnd);
+
+	PATCH_PUSH_RET_POLY(0x00412A30, CSmokeGenerator::CSmokeGenerator, "??0CSmokeGenerator@@QAE@PBVCVector@@HHEEEHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x00412AE0, CSmokeGenerator::~CSmokeGenerator, "??1CSmokeGenerator@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00412AF0, CSmokeGenerator::Move, "?Move@CSmokeGenerator@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x00412C00, CGLine::CGLine, "??0CGLine@@QAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00412C90, CGLine::~CGLine, "??1CGLine@@UAE@XZ");
+	PATCH_PUSH_RET(0x00412CF0, CGLine::SetRGB0);
+	PATCH_PUSH_RET(0x00412D20, CGLine::SetRGB1);
+
+	PATCH_PUSH_RET_POLY(0x00412D40, CGLineParticle::CGLineParticle, "??0CGLineParticle@@QAE@AAVCVector@@0GH@Z");
+	PATCH_PUSH_RET_POLY(0x00412E30, CGLineParticle::~CGLineParticle, "??1CGLineParticle@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00412E90, CGLineParticle::Move, "?Move@CGLineParticle@@UAEXXZ");
+}

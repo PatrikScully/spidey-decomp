@@ -5303,3 +5303,186 @@ void patch_CFT4Bit(void)
 
 	PATCH_PUSH_RET_POLY(0x0040F980, CSimpleAnim::Move, "?Move@CSimpleAnim@@UAEXXZ");
 }
+
+// Everything below is hooked into the running game. Two rules decided what is
+// in and what is out.
+//
+// 1. Virtual functions and constructors/destructors go through
+//    PATCH_PUSH_RET_POLY. Taking the address of a virtual member in MSVC6 gives
+//    a vcall thunk, not the function, and patching the exe with that thunk would
+//    loop forever.
+// 2. Nothing that draws is hooked. Every Display*List function and
+//    CSimpleTexturedRibbon::Display end up in PCGfx_Draw*, and PCGfx.cpp still
+//    keeps gDxPolys/gEndSceneRelatedTwo as plain repo globals, so our polys
+//    would land in the dll's own array and never reach the screen. Those come
+//    back once PCGfx gets the G_* treatment.
+//
+// Constructors are only hooked where our class declares every virtual the
+// original vtable has, because a hooked constructor stamps our vtable on the
+// object. Skipped for that reason: CQuadBit (the original has
+// CQuadBit::~CQuadBit at 0x409090, we have no destructor), CTextBox (the
+// original has CTextBox::Move at 0x40D770, we have none), CSimpleTexturedRibbon
+// and CWibbly (their vtables carry a Display we cannot hook, see rule 2).
+
+// @Bogus
+void patch_bit(void)
+{
+	// list keeping and per frame drivers
+	PATCH_PUSH_RET(0x00408280, Bit_UpdateQuickAnimLookups);
+	PATCH_PUSH_RET(0x004082E0, DeleteBitList);
+	PATCH_PUSH_RET(0x00408310, Bit_DeleteAll);
+	PATCH_PUSH_RET(0x00408610, Bit_RemoveDeadBits);
+	PATCH_PUSH_RET(0x004087E0, RemoveDeadBits);
+	PATCH_PUSH_RET(0x00408810, Bit_ReduceRGB);
+	PATCH_PUSH_RET(0x0040D630, Bit_ClearTextBoxes);
+	PATCH_PUSH_RET(0x00410890, Bit_MakeSpriteRing);
+	PATCH_PUSH_RET(0x00411B30, Bit_Move);
+	PATCH_PUSH_RET(0x00411CF0, Bit_Display);
+
+	// spark parameters
+	PATCH_PUSH_RET(0x0040F3D0, Bit_SetSparkTrajectory);
+	PATCH_PUSH_RET(0x0040F3F0, Bit_SetSparkTrajectoryCone);
+	PATCH_PUSH_RET(0x0040F410, Bit_SetSparkSize);
+	PATCH_PUSH_RET(0x0040F440, Bit_SetSparkRGB);
+	PATCH_PUSH_RET(0x0040F460, Bit_SetSparkFadeRGB);
+
+	// CBitServer. Bit_Init itself stays unhooked: it would register our own
+	// Display*List functions into gBitServer, and those cannot draw yet.
+	PATCH_PUSH_RET(0x00407F70, CBitServer::RegisterSlot);
+
+	// CBit
+	PATCH_PUSH_RET_POLY(0x004088A0, CBit::operator new, "??2CBit@@SAPAXI@Z");
+	PATCH_PUSH_RET_POLY(0x00408970, CBit::CBit, "??0CBit@@QAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004089F0, CBit::~CBit, "??1CBit@@UAE@XZ");
+
+	// CSpecialDisplay. Display is not hooked: the original shares one empty
+	// function at 0x4015B0 for it and for CBit::Move, so patching that address
+	// would redirect every class that inherits either slot.
+	PATCH_PUSH_RET_POLY(0x00408A10, CSpecialDisplay::CSpecialDisplay, "??0CSpecialDisplay@@QAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00408AA0, CSpecialDisplay::~CSpecialDisplay, "??1CSpecialDisplay@@UAE@XZ");
+
+	// CNonRenderedBit. 0x410180 is also CFireyExplosion's destructor, the
+	// original folded the two.
+	PATCH_PUSH_RET_POLY(0x00408B10, CNonRenderedBit::CNonRenderedBit, "??0CNonRenderedBit@@QAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00410180, CNonRenderedBit::~CNonRenderedBit, "??1CNonRenderedBit@@UAE@XZ");
+
+	// CFT4Bit
+	PATCH_PUSH_RET_POLY(0x00408B80, CFT4Bit::CFT4Bit, "??0CFT4Bit@@QAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00408C00, CFT4Bit::~CFT4Bit, "??1CFT4Bit@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00408D50, CFT4Bit::SetTexture, "?SetTexture@CFT4Bit@@QAEXI@Z");
+	// 0x410AE0 is CFT4Bit::IncFrameWithWrap and CRibbonBit::Move at once, the
+	// original folded them because CRibbonBit::Move is just the inlined call.
+	PATCH_PUSH_RET(0x00410AE0, CFT4Bit::IncFrameWithWrap);
+
+	// CQuadBit setters. The constructor stays unhooked, see the note above.
+	PATCH_PUSH_RET_POLY(0x004090E0, CQuadBit::SetTexture, "?SetTexture@CQuadBit@@QAEXHH@Z");
+	PATCH_PUSH_RET_POLY(0x00409210, CQuadBit::SetTexture, "?SetTexture@CQuadBit@@QAEXPAUTexture@@@Z");
+	PATCH_PUSH_RET_POLY(0x00409240, CQuadBit::SetTexture, "?SetTexture@CQuadBit@@QAEXI@Z");
+	PATCH_PUSH_RET(0x004092C0, CQuadBit::SetCorners);
+	PATCH_PUSH_RET(0x00409390, CQuadBit::SetSemiTransparent);
+	PATCH_PUSH_RET(0x004093A0, CQuadBit::SetSubtractiveTransparency);
+	PATCH_PUSH_RET(0x004093B0, CQuadBit::SetOpaque);
+	PATCH_PUSH_RET(0x004093C0, CQuadBit::SetTint);
+	PATCH_PUSH_RET(0x004093E0, CQuadBit::SetTransparency);
+	PATCH_PUSH_RET_POLY(0x00409400, CQuadBit::OrientUsing, "?OrientUsing@CQuadBit@@QAEXPAVCVector@@PAUSVECTOR@@HH@Z");
+	PATCH_PUSH_RET_POLY(0x00409560, CQuadBit::OrientUsing, "?OrientUsing@CQuadBit@@QAEXPAVCVector@@PAUSVECTOR@@HHH@Z");
+
+	// CSimpleTexturedRibbon setters. Both constructors and Display stay
+	// unhooked, see the note above.
+	PATCH_PUSH_RET_POLY(0x0040A510, CSimpleTexturedRibbon::~CSimpleTexturedRibbon, "??1CSimpleTexturedRibbon@@UAE@XZ");
+	PATCH_PUSH_RET(0x0040A5B0, CSimpleTexturedRibbon::SetNumFaces);
+	PATCH_PUSH_RET(0x0040A690, CSimpleTexturedRibbon::SetSemiTransparent);
+	PATCH_PUSH_RET(0x0040A6B0, CSimpleTexturedRibbon::SetOpaque);
+	PATCH_PUSH_RET_POLY(0x0040A6D0, CSimpleTexturedRibbon::SetTexture, "?SetTexture@CSimpleTexturedRibbon@@QAEXPAUTexture@@@Z");
+	PATCH_PUSH_RET_POLY(0x0040A7B0, CSimpleTexturedRibbon::SetTexture, "?SetTexture@CSimpleTexturedRibbon@@QAEXI@Z");
+	PATCH_PUSH_RET_POLY(0x0040A810, CSimpleTexturedRibbon::SetTexturei, "?SetTexturei@CSimpleTexturedRibbon@@QAEXHPAUTexture@@@Z");
+	PATCH_PUSH_RET_POLY(0x0040A8D0, CSimpleTexturedRibbon::SetTexturei, "?SetTexturei@CSimpleTexturedRibbon@@QAEXHI@Z");
+	PATCH_PUSH_RET(0x0040A920, CSimpleTexturedRibbon::SetRGB);
+	PATCH_PUSH_RET(0x0040A970, CSimpleTexturedRibbon::SetWidth);
+	PATCH_PUSH_RET(0x0040A9B0, CSimpleTexturedRibbon::SetWidthi);
+
+	// CChunkBit
+	PATCH_PUSH_RET_POLY(0x0040B570, CChunkBit::CChunkBit, "??0CChunkBit@@QAE@PAVCSVector@@00@Z");
+	PATCH_PUSH_RET_POLY(0x0040B7E0, CChunkBit::~CChunkBit, "??1CChunkBit@@UAE@XZ");
+	PATCH_PUSH_RET(0x0040B830, CChunkBit::SetRGB);
+	PATCH_PUSH_RET(0x0040B910, CChunkBit::SetUVs);
+
+	// CGlow
+	PATCH_PUSH_RET_POLY(0x0040C210, CGlow::CGlow, "??0CGlow@@QAE@II@Z");
+	PATCH_PUSH_RET_POLY(0x0040C350, CGlow::CGlow, "??0CGlow@@QAE@PAVCVector@@HHEEEEEE@Z");
+	PATCH_PUSH_RET_POLY(0x0040C4F0, CGlow::~CGlow, "??1CGlow@@UAE@XZ");
+	PATCH_PUSH_RET(0x0040C580, CGlow::SetRadius);
+	PATCH_PUSH_RET(0x0040C5B0, CGlow::SetFringeWidth);
+	PATCH_PUSH_RET(0x0040C600, CGlow::SetCentreRGB);
+	PATCH_PUSH_RET(0x0040C630, CGlow::SetRGB);
+	PATCH_PUSH_RET(0x0040C670, CGlow::SetFringeRGB);
+
+	// CTextBox. Only the destructor, see the note above.
+	PATCH_PUSH_RET_POLY(0x0040D720, CTextBox::~CTextBox, "??1CTextBox@@UAE@XZ");
+
+	// CFlatBit
+	PATCH_PUSH_RET_POLY(0x0040DA90, CFlatBit::CFlatBit, "??0CFlatBit@@QAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0040DB40, CFlatBit::~CFlatBit, "??1CFlatBit@@UAE@XZ");
+
+	// CCombatImpactRing
+	PATCH_PUSH_RET_POLY(0x0040E530, CCombatImpactRing::CCombatImpactRing, "??0CCombatImpactRing@@QAE@PAVCVector@@EEEHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0040E6A0, CCombatImpactRing::~CCombatImpactRing, "??1CCombatImpactRing@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0040E730, CCombatImpactRing::Move, "?Move@CCombatImpactRing@@UAEXXZ");
+
+	// CLinked2EndedBit and CRibbonBit. Their constructors have no address of
+	// their own in the exe, the original inlined them.
+	PATCH_PUSH_RET_POLY(0x0040E7B0, CLinked2EndedBit::~CLinked2EndedBit, "??1CLinked2EndedBit@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00410A50, CRibbonBit::~CRibbonBit, "??1CRibbonBit@@UAE@XZ");
+
+	// CPixel and CSpark. 0x40F680 is both destructors, the original folded them.
+	PATCH_PUSH_RET_POLY(0x0040F080, CPixel::CPixel, "??0CPixel@@QAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0040F680, CPixel::~CPixel, "??1CPixel@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0040F480, CSpark::CSpark, "??0CSpark@@QAE@AAVCVector@@HHH@Z");
+	PATCH_PUSH_RET_POLY(0x0040F6D0, CSpark::Move, "?Move@CSpark@@UAEXXZ");
+
+	// CSimpleAnim. Move is already hooked in patch_CFT4Bit.
+	PATCH_PUSH_RET_POLY(0x0040F7A0, CSimpleAnim::CSimpleAnim, "??0CSimpleAnim@@QAE@PAVCVector@@HGHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0040F8F0, CSimpleAnim::~CSimpleAnim, "??1CSimpleAnim@@UAE@XZ");
+
+	// CMotionBlur
+	PATCH_PUSH_RET_POLY(0x0040FA80, CMotionBlur::CMotionBlur, "??0CMotionBlur@@QAE@PAVCVector@@0HHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0040FBE0, CMotionBlur::~CMotionBlur, "??1CMotionBlur@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0040FC70, CMotionBlur::Move, "?Move@CMotionBlur@@UAEXXZ");
+
+	// CFrag
+	PATCH_PUSH_RET_POLY(0x0040FDA0, CFrag::CFrag, "??0CFrag@@QAE@PAVCVector@@EEEHGHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0040FF50, CFrag::~CFrag, "??1CFrag@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0040FFE0, CFrag::Move, "?Move@CFrag@@UAEXXZ");
+
+	// CFireyExplosion. Its destructor shares 0x410180 with CNonRenderedBit.
+	PATCH_PUSH_RET_POLY(0x00410090, CFireyExplosion::CFireyExplosion, "??0CFireyExplosion@@QAE@PAVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x004101D0, CFireyExplosion::Move, "?Move@CFireyExplosion@@UAEXXZ");
+
+	// CWibbly. The constructor stays unhooked, see the note above.
+	PATCH_PUSH_RET_POLY(0x004104A0, CWibbly::~CWibbly, "??1CWibbly@@UAE@XZ");
+	PATCH_PUSH_RET(0x00410500, CWibbly::SetEndPoints);
+	PATCH_PUSH_RET_POLY(0x004105F0, CWibbly::Move, "?Move@CWibbly@@UAEXXZ");
+
+	// CRibbon
+	PATCH_PUSH_RET_POLY(0x00410B20, CRibbon::CRibbon, "??0CRibbon@@QAE@PAVCVector@@HHHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x00410DC0, CRibbon::~CRibbon, "??1CRibbon@@UAE@XZ");
+	PATCH_PUSH_RET(0x00410E80, CRibbon::SetScale);
+	PATCH_PUSH_RET(0x00410EB0, CRibbon::SetPos);
+
+	// CSmokeTrail
+	PATCH_PUSH_RET_POLY(0x00410F50, CSmokeTrail::CSmokeTrail, "??0CSmokeTrail@@QAE@PAVCVector@@HHHH@Z");
+	PATCH_PUSH_RET_POLY(0x00411040, CSmokeTrail::~CSmokeTrail, "??1CSmokeTrail@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00411100, CSmokeTrail::Move, "?Move@CSmokeTrail@@UAEXXZ");
+
+	// CGlassBit
+	PATCH_PUSH_RET_POLY(0x00411160, CGlassBit::CGlassBit, "??0CGlassBit@@QAE@PBVCVector@@0HEEEHHH@Z");
+	PATCH_PUSH_RET_POLY(0x004113A0, CGlassBit::~CGlassBit, "??1CGlassBit@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004113F0, CGlassBit::Move, "?Move@CGlassBit@@UAEXXZ");
+
+	// CShatterBit lives in this file even though its four functions sit in
+	// shatter.cpp's address range (0x48Bxxx). Nothing else hooks them.
+	PATCH_PUSH_RET_POLY(0x0048BDC0, CShatterBit::CShatterBit, "??0CShatterBit@@QAE@ABVCSVector@@00ABVCVector@@H@Z");
+	PATCH_PUSH_RET_POLY(0x0048BEC0, CShatterBit::~CShatterBit, "??1CShatterBit@@UAE@XZ");
+	PATCH_PUSH_RET(0x0048BF20, CShatterBit::SetPos);
+	PATCH_PUSH_RET_POLY(0x0048C060, CShatterBit::Move, "?Move@CShatterBit@@UAEXXZ");
+}

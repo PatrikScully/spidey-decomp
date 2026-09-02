@@ -833,5 +833,6 @@ EXPORT extern CBit* PolyLineList;
 
 void patch_CBit(void);
 void patch_CFT4Bit(void);
+void patch_bit(void);
 
 #endif
