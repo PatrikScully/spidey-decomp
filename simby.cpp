@@ -49,7 +49,7 @@ void SpideyAI_ThrownBySimby(CPlayer *pPlayer)
 
 	if (pPlayer->mFlags & 4)
 	{
-		pPlayer->ApplyPose(gUnkPose);
+		pPlayer->ApplyPose(G_UNK_POSE);
 	}
 	else
 	{
@@ -82,7 +82,7 @@ void SpideyAI_WaitForSimbyGrab(CPlayer *pPlayer)
 
 	if (pPlayer->mFlags & 4)
 	{
-		pPlayer->ApplyPose(gUnkPose);
+		pPlayer->ApplyPose(G_UNK_POSE);
 	}
 	else
 	{
@@ -201,28 +201,28 @@ CFlamingImpactWeb::CFlamingImpactWeb(
 
 	this->mLifetime = 120;
 
-	gLineInfo.StartCoords = this->mPos;
+	G_LINE_INFO.StartCoords = this->mPos;
 
 	// @FIXME - all get fetched 3 times wth is going
 	// setters it makes it better but still weird
-	gLineInfo.EndCoords.SetX(this->mPos.vx + this->mVel.vx * this->mLifetime);
-	gLineInfo.EndCoords.SetY(this->mPos.vy + this->mVel.vy * this->mLifetime);
-	gLineInfo.EndCoords.SetZ(this->mPos.vz + this->mVel.vz * this->mLifetime);
+	G_LINE_INFO.EndCoords.SetX(this->mPos.vx + this->mVel.vx * this->mLifetime);
+	G_LINE_INFO.EndCoords.SetY(this->mPos.vy + this->mVel.vy * this->mLifetime);
+	G_LINE_INFO.EndCoords.SetZ(this->mPos.vz + this->mVel.vz * this->mLifetime);
 
-	M3dColij_InitLineInfo(&gLineInfo);
+	M3dColij_InitLineInfo(&G_LINE_INFO);
 
-	LineOfSightCheck = 1;
-	M3dZone_LineToItem(&gLineInfo, 0);
-	LineOfSightCheck = 0;
+	G_LINE_OF_SIGHT_CHECK = 1;
+	M3dZone_LineToItem(&G_LINE_INFO, 0);
+	G_LINE_OF_SIGHT_CHECK = 0;
 
-	if ( gLineInfo.pItem )
+	if ( G_LINE_INFO.pItem )
 	{
-		this->pItem = gLineInfo.pItem;
+		this->pItem = G_LINE_INFO.pItem;
 
-		this->pFace = gLineInfo.pFace;
-		this->mLinePos = gLineInfo.Position;
-		this->mLineNormal = gLineInfo.Normal;
-		this->mLifetime = gLineInfo.Distance / 32;
+		this->pFace = G_LINE_INFO.pFace;
+		this->mLinePos = G_LINE_INFO.Position;
+		this->mLineNormal = G_LINE_INFO.Normal;
+		this->mLifetime = G_LINE_INFO.Distance / 32;
 
 		DoAssert((this->pItem->mFlags & 0x10) == 0, "Hit env obj!");
 	}
@@ -605,9 +605,9 @@ void Simby_SplattyExplosion(CVector *a1, CVector *a2, i32 a3)
 	i32 groundY = Web_GetGroundY(&groundCheckPos);
 
 	i32 surfaceVal = 0;
-	if (gLineInfo.pItem && (gLineInfo.pItem->mFlags & 0x100))
+	if (G_LINE_INFO.pItem && (G_LINE_INFO.pItem->mFlags & 0x100))
 	{
-		surfaceVal = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(gLineInfo.pItem) + 100);
+		surfaceVal = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(G_LINE_INFO.pItem) + 100);
 	}
 
 	for (i32 i = a3; i != 0; i--)
@@ -758,33 +758,33 @@ CSimbyShot::CSimbyShot(CVector *a2)
 
 	CVector hitPoint = *a2 + unitDir * 5000;
 
-	gLineInfo.StartCoords = *a2;
-	gLineInfo.EndCoords = hitPoint;
+	G_LINE_INFO.StartCoords = *a2;
+	G_LINE_INFO.EndCoords = hitPoint;
 
-	M3dColij_InitLineInfo(&gLineInfo);
+	M3dColij_InitLineInfo(&G_LINE_INFO);
 
-	LineOfSightCheck = 1;
-	M3dZone_LineToItem(&gLineInfo, 0);
-	LineOfSightCheck = 0;
+	G_LINE_OF_SIGHT_CHECK = 1;
+	M3dZone_LineToItem(&G_LINE_INFO, 0);
+	G_LINE_OF_SIGHT_CHECK = 0;
 
-	if (gLineInfo.pItem)
+	if (G_LINE_INFO.pItem)
 	{
-		print_if_false((gLineInfo.pItem->mFlags & 0x10) == 0, "Hit env obj!");
+		print_if_false((G_LINE_INFO.pItem->mFlags & 0x10) == 0, "Hit env obj!");
 
 		CItem *pEnviro;
 		for (pEnviro = EnviroList; pEnviro; pEnviro = pEnviro->mNextItem)
 		{
-			if (pEnviro == gLineInfo.pItem)
+			if (pEnviro == G_LINE_INFO.pItem)
 				break;
 		}
 		print_if_false(pEnviro != 0, "Not in list");
 
 		this->field_84 = 1;
-		this->field_88.vx = gLineInfo.Normal.vx;
-		this->field_88.vy = gLineInfo.Normal.vy;
-		this->field_88.vz = gLineInfo.Normal.vz;
+		this->field_88.vx = G_LINE_INFO.Normal.vx;
+		this->field_88.vy = G_LINE_INFO.Normal.vy;
+		this->field_88.vz = G_LINE_INFO.Normal.vz;
 
-		hitPoint = gLineInfo.Position;
+		hitPoint = G_LINE_INFO.Position;
 	}
 
 	CVector toHit = hitPoint - *a2;

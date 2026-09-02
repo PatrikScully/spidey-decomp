@@ -621,13 +621,13 @@ finalCheck:
 INLINE i32 CBaddy::PathCheck(CVector* a2, CVector* a3, CVector* a4, i32 a5)
 {
 
-	i32 v5 = BaddyCollisionCheck;
+	i32 v5 = G_BADDY_COLLISION_CHECK;
 
 	if ((this->field_2A8 & 0x2000))
-		BaddyCollisionCheck = 1;
+		G_BADDY_COLLISION_CHECK = 1;
 
 	i32 result = this->PathCheckGuts(a2, a3, a4, a5);
-	BaddyCollisionCheck = v5;
+	G_BADDY_COLLISION_CHECK = v5;
 	return result;
 }
 

@@ -20,8 +20,6 @@ extern CBody *PowerUpList;
 extern CBody *SuspendedList;
 extern CBaddy *BaddyList;
 
-extern SLineInfo gLineInfo;
-
 // moved out of export.h 2026-08-27, see the comment there.
 // @Ok
 void print_if_false(unsigned char cry, char * message, ...) {
@@ -1062,15 +1060,15 @@ CBody* Utils_CheckObjectCollision(
 
 	if (!result)
 	{
-		gLineInfo.StartCoords = *a1;
-		gLineInfo.EndCoords = *a2;
+		G_LINE_INFO.StartCoords = *a1;
+		G_LINE_INFO.EndCoords = *a2;
 
-		M3dColij_InitLineInfo(&gLineInfo);
+		M3dColij_InitLineInfo(&G_LINE_INFO);
 
-		LineOfSightCheck = 1;
-		M3dColij_LineToItem(EnvironmentalObjectList, &gLineInfo);
-		result = reinterpret_cast<CBody*>(gLineInfo.pItem);
-		LineOfSightCheck = 0;
+		G_LINE_OF_SIGHT_CHECK = 1;
+		M3dColij_LineToItem(EnvironmentalObjectList, &G_LINE_INFO);
+		result = reinterpret_cast<CBody*>(G_LINE_INFO.pItem);
+		G_LINE_OF_SIGHT_CHECK = 0;
 	}
 
 	return result;

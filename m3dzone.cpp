@@ -7,6 +7,15 @@
 
 #define NUM_ZONES 1
 EXPORT SZone Zones[NUM_ZONES];
+// M3dZone_Init (0x454980) is the proof: "mov dword [5FC640h],0" is Zones[0].Flags = 0,
+// then "mov edi,5FC660h; mov ecx,190h; rep stosd" zeroes the 20x20 Ptr grid at
+// Zones[0] + 0x20. M3dZone_LineToItem indexes it as [eax+5FC640h] with eax = i*0x660,
+// which is sizeof(SZone). idb_globals.txt agrees (0x005FC640 Zones).
+// The exe's M3dZone_SetZone fills this while nothing in m3dzone.cpp is hooked, and
+// the already-hooked M3dColij_LineToItemZoned is fed the cell pointers out of it, so
+// the macro has to be on game memory.
+//#define G_ZONES (Zones)
+#define G_ZONES (reinterpret_cast<SZone*>(0x005FC640))
 
 // @Ok
 // functional: line-vs-zone-grid collision walk. Ghidra's generic v-names
@@ -22,34 +31,34 @@ void M3dZone_LineToItem(
 		SLineInfo *pInfo,
 		i32 CheckEnviroObs)
 {
-	print_if_false(Zones[0].Flags != 0, "No zone information");
+	print_if_false(G_ZONES[0].Flags != 0, "No zone information");
 
-	M3dColij_OneMask = 0;
-	M3dColij_ZeroMask = -1;
-	if (LineOfSightCheck)
-		M3dColij_OneMask = 0x400000;
-	if (!BaddyCollisionCheck)
-		M3dColij_OneMask ^= 0x200000u;
-	if (CameraCollisionCheck)
-		M3dColij_ZeroMask = 0xFFEFFFFF;
-	if (TriggerCollisionCheck)
-		M3dColij_ZeroMask ^= 0x20000u;
+	G_M3DCOLIJ_ONE_MASK = 0;
+	G_M3DCOLIJ_ZERO_MASK = -1;
+	if (G_LINE_OF_SIGHT_CHECK)
+		G_M3DCOLIJ_ONE_MASK = 0x400000;
+	if (!G_BADDY_COLLISION_CHECK)
+		G_M3DCOLIJ_ONE_MASK ^= 0x200000u;
+	if (G_CAMERA_COLLISION_CHECK)
+		G_M3DCOLIJ_ZERO_MASK = 0xFFEFFFFF;
+	if (G_TRIGGER_COLLISION_CHECK)
+		G_M3DCOLIJ_ZERO_MASK ^= 0x20000u;
 	if (CheckEnviroObs)
 		M3dColij_LineToItem(&EnvironmentalObjectList[0], pInfo);
 
 	for (i32 i = 0; i <= (NUM_ZONES - 1); i++)
 	{
-		if (Zones[i].Flags)
+		if (G_ZONES[i].Flags)
 		{
 			i32 startX = pInfo->StartCoords.vx;
 			i32 endX = pInfo->EndCoords.vx;
 			i32 startZ = pInfo->StartCoords.vz;
 			i32 endZ = pInfo->EndCoords.vz;
-			i32 xMin = Zones[i].xMin;
-			i32 xMax = Zones[i].xMax;
-			i32 zMin = Zones[i].zMin;
-			i32 zMax = Zones[i].zMax;
-			i32 ZoneWidth = Zones[i].ZoneWidth;
+			i32 xMin = G_ZONES[i].xMin;
+			i32 xMax = G_ZONES[i].xMax;
+			i32 zMin = G_ZONES[i].zMin;
+			i32 zMax = G_ZONES[i].zMax;
+			i32 ZoneWidth = G_ZONES[i].ZoneWidth;
 
 			if (startX >= xMin || endX >= xMin)
 			{
@@ -75,11 +84,11 @@ void M3dZone_LineToItem(
 				{
 					i32 pointCellX = (startX - xMin) / ZoneWidth;
 					i32 pointCellZ = (startZ - zMin) / ZoneWidth;
-					i32 gridWidthDeg = Zones[i].Width;
+					i32 gridWidthDeg = G_ZONES[i].Width;
 
 					if (pointCellX == gridWidthDeg)
 						--pointCellX;
-					i32 gridHeightDeg = Zones[i].Height;
+					i32 gridHeightDeg = G_ZONES[i].Height;
 					if (pointCellZ == gridHeightDeg)
 						--pointCellZ;
 					if (pointCellX < 0 || pointCellX >= gridWidthDeg || pointCellZ < 0 || pointCellZ >= gridHeightDeg)
@@ -87,7 +96,7 @@ void M3dZone_LineToItem(
 					else
 						DoAssert(1u, "Zone index out of range");
 					M3dColij_LineToItemZoned(
-							reinterpret_cast<CItem**>(Zones[i].Ptr[pointCellX][pointCellZ]),
+							reinterpret_cast<CItem**>(G_ZONES[i].Ptr[pointCellX][pointCellZ]),
 							pInfo);
 				}
 				else
@@ -198,19 +207,19 @@ void M3dZone_LineToItem(
 					i32 endCellZ = (endZ - zMin) / ZoneWidth;
 					i32 xRemainder = xOffsetInZone % ZoneWidth;
 					i32 zRemainder = (startZ - zMin) % ZoneWidth;
-					i32 gridWidth = Zones[i].Width;
+					i32 gridWidth = G_ZONES[i].Width;
 					if (startCellX == gridWidth)
 					{
 						--startCellX;
 						xRemainder += ZoneWidth;
 					}
-					i32 gridHeight = Zones[i].Height;
+					i32 gridHeight = G_ZONES[i].Height;
 
 					if (startCellZ == gridHeight)
 					{
 						--startCellZ;
 						zRemainder += ZoneWidth;
-						gridHeight = Zones[i].Height;
+						gridHeight = G_ZONES[i].Height;
 					}
 
 					if (endCellX == gridWidth)
@@ -242,13 +251,13 @@ void M3dZone_LineToItem(
 					{
 						if (cellX < 0)
 							goto next_zone;
-						if (cellX >= Zones[i].Width)
+						if (cellX >= G_ZONES[i].Width)
 							break;
-						if (cellZ < 0 || cellZ >= Zones[i].Height)
+						if (cellZ < 0 || cellZ >= G_ZONES[i].Height)
 							break;
 
 						M3dColij_LineToItemZoned(
-								reinterpret_cast<CItem**>(Zones[i].Ptr[0][cellZ + rowOffset]),
+								reinterpret_cast<CItem**>(G_ZONES[i].Ptr[0][cellZ + rowOffset]),
 								pInfo);
 						if (errorAccum < 0)
 						{
@@ -262,9 +271,9 @@ void M3dZone_LineToItem(
 							rowOffset += 20 * stepX;
 						}
 					}
-					if (cellX >= 0 && cellX < Zones[i].Width && cellZ >= 0 && cellZ < Zones[i].Height)
+					if (cellX >= 0 && cellX < G_ZONES[i].Width && cellZ >= 0 && cellZ < G_ZONES[i].Height)
 						M3dColij_LineToItemZoned(
-								reinterpret_cast<CItem**>(Zones[i].Ptr[cellX][cellZ]),
+								reinterpret_cast<CItem**>(G_ZONES[i].Ptr[cellX][cellZ]),
 								pInfo);
 				}
 			}
@@ -283,13 +292,13 @@ INLINE void M3dZone_FreePSX(i32 EnvIndex)
 {
 	if (EnvIndex <= (NUM_ZONES-1))
 	{
-		Zones[EnvIndex].Flags = 0;
+		G_ZONES[EnvIndex].Flags = 0;
 
 		for (i32 i = 0; i < 20; i++)
 		{
 			for (i32 j = 0; j < 20; j++)
 			{
-				Zones[EnvIndex].Ptr[i][j] = 0;
+				G_ZONES[EnvIndex].Ptr[i][j] = 0;
 			}
 		}
 	}
@@ -319,36 +328,36 @@ void M3dZone_SetZone(
 {
 	DoAssert(EnvIndex == 0, "EnvIndex not zero");
 
-	Zones[EnvIndex].xMin = *pPack;
-	Zones[EnvIndex].zMin = pPack[1];
-	Zones[EnvIndex].xMax = pPack[2];
-	Zones[EnvIndex].zMax = pPack[3];
+	G_ZONES[EnvIndex].xMin = *pPack;
+	G_ZONES[EnvIndex].zMin = pPack[1];
+	G_ZONES[EnvIndex].xMax = pPack[2];
+	G_ZONES[EnvIndex].zMax = pPack[3];
 
-	Zones[EnvIndex].Width = reinterpret_cast<i16*>(pPack)[8];
-	Zones[EnvIndex].Height = reinterpret_cast<i16*>(pPack)[9];
+	G_ZONES[EnvIndex].Width = reinterpret_cast<i16*>(pPack)[8];
+	G_ZONES[EnvIndex].Height = reinterpret_cast<i16*>(pPack)[9];
 
-	Zones[EnvIndex].Flags = 1;
-	Zones[EnvIndex].ZoneWidth = (Zones[EnvIndex].xMax - Zones[EnvIndex].xMin) / Zones[EnvIndex].Width;
+	G_ZONES[EnvIndex].Flags = 1;
+	G_ZONES[EnvIndex].ZoneWidth = (G_ZONES[EnvIndex].xMax - G_ZONES[EnvIndex].xMin) / G_ZONES[EnvIndex].Width;
 
-	DoAssert(Zones[EnvIndex].Width <= 20, "ZONE WIDTH TOO LARGE");
-	DoAssert(Zones[EnvIndex].Height <= 20, "ZONE HEIGHT\tTOO LARGE");
+	DoAssert(G_ZONES[EnvIndex].Width <= 20, "ZONE WIDTH TOO LARGE");
+	DoAssert(G_ZONES[EnvIndex].Height <= 20, "ZONE HEIGHT\tTOO LARGE");
 
 	u32* v14 = &pPack[5];
 
-	for (i32 i = 0; i < Zones[EnvIndex].Height; i++ )
+	for (i32 i = 0; i < G_ZONES[EnvIndex].Height; i++ )
 	{
-		for (i32 j = 0; j < Zones[EnvIndex].Width; j++ )
+		for (i32 j = 0; j < G_ZONES[EnvIndex].Width; j++ )
 		{
 			i32 v17 = v14[2];
 			u32 *v18 = &v14[3];
 
-			Zones[EnvIndex].Ptr[j][i] = reinterpret_cast<u32>(v18);
+			G_ZONES[EnvIndex].Ptr[j][i] = reinterpret_cast<u32>(v18);
 
 			while (v17-- > 0)
 			{
 				// 0x10 (16 u32s = 64 bytes per record) matches the disasm's
 				// shl eax,6 on the index, confirmed by rebuild verification.
-				u32 *tmp = &reinterpret_cast<u32 *>(PSXRegion[EnvRegions[EnvIndex]].pSuper)[0x10 * *v18];
+				u32 *tmp = &reinterpret_cast<u32 *>(G_PSXREGION[EnvRegions[EnvIndex]].pSuper)[0x10 * *v18];
 				*v18 = *tmp;
 				++v18;
 

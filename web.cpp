@@ -555,19 +555,19 @@ CDomeRing::~CDomeRing(void)
 i32 Web_GetGroundY(const CVector* a1)
 {
 
-	gLineInfo.StartCoords = *a1;
+	G_LINE_INFO.StartCoords = *a1;
 
-	gLineInfo.EndCoords.vx = a1->vx;
-	gLineInfo.EndCoords.vy = a1->vy + 0x1388000;
-	gLineInfo.EndCoords.vz = a1->vz;
+	G_LINE_INFO.EndCoords.vx = a1->vx;
+	G_LINE_INFO.EndCoords.vy = a1->vy + 0x1388000;
+	G_LINE_INFO.EndCoords.vz = a1->vz;
 
-	M3dColij_InitLineInfo(&gLineInfo);
-	M3dZone_LineToItem(&gLineInfo, 1);
+	M3dColij_InitLineInfo(&G_LINE_INFO);
+	M3dZone_LineToItem(&G_LINE_INFO, 1);
 
-	if (!gLineInfo.pItem)
-		return gLineInfo.EndCoords.vy;
+	if (!G_LINE_INFO.pItem)
+		return G_LINE_INFO.EndCoords.vy;
 
-	return gLineInfo.Position.vy;
+	return G_LINE_INFO.Position.vy;
 }
 
 // @Ok
@@ -1524,39 +1524,39 @@ CImpactWeb::CImpactWeb(
 
 	this->mLifetime = (u16)Lifetime;
 
-	gLineInfo.StartCoords = this->mPos;
+	G_LINE_INFO.StartCoords = this->mPos;
 
-	gLineInfo.EndCoords.vx = this->mPos.vx + this->mLifetime * this->mVel.vx;
-	gLineInfo.EndCoords.vy = this->mPos.vy + this->mLifetime * this->mVel.vy;
-	gLineInfo.EndCoords.vz = this->mPos.vz + this->mLifetime * this->mVel.vz;
+	G_LINE_INFO.EndCoords.vx = this->mPos.vx + this->mLifetime * this->mVel.vx;
+	G_LINE_INFO.EndCoords.vy = this->mPos.vy + this->mLifetime * this->mVel.vy;
+	G_LINE_INFO.EndCoords.vz = this->mPos.vz + this->mLifetime * this->mVel.vz;
 
-	M3dColij_InitLineInfo(&gLineInfo);
+	M3dColij_InitLineInfo(&G_LINE_INFO);
 
-	LineOfSightCheck = 1;
-	M3dZone_LineToItem(&gLineInfo, 0);
-	LineOfSightCheck = 0;
+	G_LINE_OF_SIGHT_CHECK = 1;
+	M3dZone_LineToItem(&G_LINE_INFO, 0);
+	G_LINE_OF_SIGHT_CHECK = 0;
 
-	if (gLineInfo.pItem != 0)
+	if (G_LINE_INFO.pItem != 0)
 	{
 		CItem *pItem = EnviroList;
 
-		while (pItem != 0 && pItem != gLineInfo.pItem)
+		while (pItem != 0 && pItem != G_LINE_INFO.pItem)
 			pItem = pItem->mNextItem;
 
 		print_if_false(pItem != 0, "Not in list");
 
-		this->mpHitItem = gLineInfo.pItem;
-		this->mpHitFace = gLineInfo.pFace;
+		this->mpHitItem = G_LINE_INFO.pItem;
+		this->mpHitFace = G_LINE_INFO.pFace;
 
-		this->mHitPos.vx = gLineInfo.Position.vx;
-		this->mHitPos.vy = gLineInfo.Position.vy;
-		this->mHitPos.vz = gLineInfo.Position.vz;
+		this->mHitPos.vx = G_LINE_INFO.Position.vx;
+		this->mHitPos.vy = G_LINE_INFO.Position.vy;
+		this->mHitPos.vz = G_LINE_INFO.Position.vz;
 
-		this->mHitNormal.vx = gLineInfo.Normal.vx;
-		this->mHitNormal.vy = gLineInfo.Normal.vy;
-		this->mHitNormal.vz = gLineInfo.Normal.vz;
+		this->mHitNormal.vx = G_LINE_INFO.Normal.vx;
+		this->mHitNormal.vy = G_LINE_INFO.Normal.vy;
+		this->mHitNormal.vz = G_LINE_INFO.Normal.vz;
 
-		this->mLifetime = (u16)(gLineInfo.Distance / Speed);
+		this->mLifetime = (u16)(G_LINE_INFO.Distance / Speed);
 
 		print_if_false((this->mpHitItem->mFlags & 0x10) == 0, "Hit env obj!");
 	}

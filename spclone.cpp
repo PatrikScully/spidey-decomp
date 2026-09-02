@@ -209,7 +209,7 @@ void CSpClone::AI(void)
 
 	if (!this->mpJoints)
 	{
-		this->ApplyPose(gUnkPose);
+		this->ApplyPose(G_UNK_POSE);
 	}
 
 	i16* panTilt = reinterpret_cast<i16*>(this->mpJoints) + 0x12;
@@ -243,7 +243,7 @@ void CSpClone::AI(void)
 
 	if (this->mFlags & 4)
 	{
-		this->ApplyPose(gUnkPose);
+		this->ApplyPose(G_UNK_POSE);
 	}
 	else
 	{
