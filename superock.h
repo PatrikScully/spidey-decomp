@@ -87,4 +87,6 @@ EXPORT void SuperDocOck_CreateSuperDocOck(const u32 *stack, u32 *result);
 EXPORT void SuperDocOck_RelocatableModuleInit(reloc_mod *);
 EXPORT void SuperDocOck_RelocatableModuleClear(void);
 EXPORT void SuperDocOck_DisplayProgressBars(const u32*, u32*);
+
+void patch_superock(void);
 #endif

@@ -1,4 +1,5 @@
 #include "superock.h"
+#include "my_patch.h"
 #include "ps2m3d.h"
 #include "spidey.h"
 #include "trig.h"
@@ -750,4 +751,27 @@ void validate_CSuperDocOck(void){
 
 	VALIDATE(CSuperDocOck, field_3F4, 0x3F4);
 	VALIDATE(CSuperDocOck, field_404, 0x404);
+}
+
+// @Bogus
+// The constructor stays in the exe. Our CSuperDocOck is missing AI, which the
+// original vtable at 0x53C4D0 has in slot 2 (CSuperDocOck_AI, 0x4CCF80), so
+// stamping our vtable would give the boss CBaddy::AI and it would stand still.
+// SuperDocOck_CreateSuperDocOck and SuperDocOck_RelocatableModuleInit go with
+// it, they build (or hand out the pointer that builds) that same object.
+// Shouldnt_DoPhysics_Be_Virtual is skipped too: the exe has it as a 5 byte jmp
+// thunk at 0x4CCDE0 and a hook needs 6.
+void patch_superock(void)
+{
+	PATCH_PUSH_RET(0x004CBD90, SuperDocOck_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004D0E70, SuperDocOck_DisplayProgressBars);
+
+	PATCH_PUSH_RET_POLY(0x004CC080, CSuperDocOck::~CSuperDocOck, "??1CSuperDocOck@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004CCC50, CSuperDocOck::PlaySounds, "?PlaySounds@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CCD40, CSuperDocOck::RenderClaws, "?RenderClaws@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CCDF0, CSuperDocOck::DoPhysics, "?DoPhysics@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CE0D0, CSuperDocOck::PlayIdleOrGloatAnim, "?PlayIdleOrGloatAnim@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CE3D0, CSuperDocOck::CreateExplosion, "?CreateExplosion@CSuperDocOck@@QAEXHH@Z");
+	PATCH_PUSH_RET_POLY(0x004D03E0, CSuperDocOck::HangAndGetBeaten, "?HangAndGetBeaten@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004D0860, CSuperDocOck::Hit, "?Hit@CSuperDocOck@@UAEHPAUSHitInfo@@@Z");
 }
