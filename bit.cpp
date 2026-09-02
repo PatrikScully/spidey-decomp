@@ -607,24 +607,24 @@ void CSimpleTexturedRibbon::SetSemiTransparent(void)
 // @Matching
 void Bit_RemoveDeadBits(void)
 {
-	RemoveDeadBits(NonRenderedBitList);
-	RemoveDeadBits(TextBoxList);
-	RemoveDeadBits(FlatBitList);
-	RemoveDeadBits(Linked2EndedBitListLeftover);
+	RemoveDeadBits(G_NONRENDEREDBIT_LIST);
+	RemoveDeadBits(G_TEXTBOX_LIST);
+	RemoveDeadBits(G_FLATBIT_LIST);
+	RemoveDeadBits(G_LINKED2ENDEDBIT_LIST_LEFTOVER);
 
-	RemoveDeadBits(PixelList);
-	RemoveDeadBits(PolyLineList);
+	RemoveDeadBits(G_PIXEL_LIST);
+	RemoveDeadBits(G_POLYLINE_LIST);
 
-	RemoveDeadBits(GPolyLineList);
+	RemoveDeadBits(G_GPOLYLINE_LIST);
 
-	RemoveDeadBits(QuadBitList);
-	RemoveDeadBits(GenPolyList);
-	RemoveDeadBits(ChunkBitList);
+	RemoveDeadBits(G_QUADBIT_LIST);
+	RemoveDeadBits(G_GENPOLY_LIST);
+	RemoveDeadBits(G_CHUNKBIT_LIST);
 
-	RemoveDeadBits(GlowList);
-	RemoveDeadBits(GlassList);
-	RemoveDeadBits(GLineList);
-	RemoveDeadBits(SpecialDisplayList);
+	RemoveDeadBits(G_GLOW_LIST);
+	RemoveDeadBits(G_GLASS_LIST);
+	RemoveDeadBits(G_GLINE_LIST);
+	RemoveDeadBits(G_SPECIALDISPLAY_LIST);
 }
 
 // @Ok
@@ -669,24 +669,24 @@ INLINE void MoveBits(CBit *pBit)
 // @Ok
 void Bit_Move(void)
 {
-	MoveBits(NonRenderedBitList);
-	MoveBits(TextBoxList);
-	MoveBits(FlatBitList);
-	MoveBits(Linked2EndedBitListLeftover);
+	MoveBits(G_NONRENDEREDBIT_LIST);
+	MoveBits(G_TEXTBOX_LIST);
+	MoveBits(G_FLATBIT_LIST);
+	MoveBits(G_LINKED2ENDEDBIT_LIST_LEFTOVER);
 
-	MoveBits(PixelList);
-	MoveBits(PolyLineList);
+	MoveBits(G_PIXEL_LIST);
+	MoveBits(G_POLYLINE_LIST);
 
-	MoveBits(GPolyLineList);
+	MoveBits(G_GPOLYLINE_LIST);
 
-	MoveBits(QuadBitList);
-	MoveBits(GenPolyList);
-	MoveBits(ChunkBitList);
+	MoveBits(G_QUADBIT_LIST);
+	MoveBits(G_GENPOLY_LIST);
+	MoveBits(G_CHUNKBIT_LIST);
 
-	MoveBits(GlowList);
-	MoveBits(GlassList);
-	MoveBits(GLineList);
-	MoveBits(SpecialDisplayList);
+	MoveBits(G_GLOW_LIST);
+	MoveBits(G_GLASS_LIST);
+	MoveBits(G_GLINE_LIST);
+	MoveBits(G_SPECIALDISPLAY_LIST);
 }
 
 // tentative name, no idb match (0x0056F224). Passed by address to gte_SetRotMatrix right
@@ -707,15 +707,15 @@ void Bit_Display(void)
 	gte_SetRotMatrix(&gBitDisplayMatrix);
 	m3d_ZeroTransVector();
 
-	if (gBitServer)
-		gBitServer->DisplayRegisteredSlots();
+	if (G_BITSERVER)
+		G_BITSERVER->DisplayRegisteredSlots();
 }
 
 // @Ok
 // @AlmostMatching: CFriction::Set was not inlined and attachto seems different too
 CQuadBit::CQuadBit(void)
 {
-	this->AttachTo(&QuadBitList);
+	this->AttachTo(&G_QUADBIT_LIST);
 	this->mCodeBGR = 0x1C0001;
 	this->field_68 = 0x2030001;
 	this->mTint = 0x808080;
@@ -788,7 +788,7 @@ INLINE void DeleteBitList(CBit *pBitList)
 // right after the mNext load), which this source shape reproduces exactly.
 void Bit_ClearTextBoxes(void)
 {
-	CBit *p = TextBoxList;
+	CBit *p = G_TEXTBOX_LIST;
 	while (p)
 	{
 		CBit *pNext = p->mNext;
@@ -804,35 +804,35 @@ void Bit_ClearTextBoxes(void)
 // @AlmostMatching: my inlining stops at ChunkBitList while OG stops at GlowList
 void Bit_DeleteAll(void)
 {
-	DeleteBitList(NonRenderedBitList);
-	DeleteBitList(TextBoxList);
-	DeleteBitList(FlatBitList);
-	DeleteBitList(Linked2EndedBitListLeftover);
-	DeleteBitList(PixelList);
-	DeleteBitList(PolyLineList);
-	DeleteBitList(GPolyLineList);
-	DeleteBitList(QuadBitList);
-	DeleteBitList(GenPolyList);
-	DeleteBitList(ChunkBitList);
-	DeleteBitList(GlowList);
-	DeleteBitList(GlassList);
-	DeleteBitList(GLineList);
-	DeleteBitList(SpecialDisplayList);
+	DeleteBitList(G_NONRENDEREDBIT_LIST);
+	DeleteBitList(G_TEXTBOX_LIST);
+	DeleteBitList(G_FLATBIT_LIST);
+	DeleteBitList(G_LINKED2ENDEDBIT_LIST_LEFTOVER);
+	DeleteBitList(G_PIXEL_LIST);
+	DeleteBitList(G_POLYLINE_LIST);
+	DeleteBitList(G_GPOLYLINE_LIST);
+	DeleteBitList(G_QUADBIT_LIST);
+	DeleteBitList(G_GENPOLY_LIST);
+	DeleteBitList(G_CHUNKBIT_LIST);
+	DeleteBitList(G_GLOW_LIST);
+	DeleteBitList(G_GLASS_LIST);
+	DeleteBitList(G_GLINE_LIST);
+	DeleteBitList(G_SPECIALDISPLAY_LIST);
 
-	DoAssert(NonRenderedBitList == 0, "NonRenderedBitList  Leftover protected bits!");
-	DoAssert(TextBoxList == 0, "TextBoxList  Leftover protected bits!");
-	DoAssert(FlatBitList == 0, "FlatBitList  Leftover protected bits!");
-	DoAssert(Linked2EndedBitListLeftover == 0, "Linked2EndedBitListLeftover protected bits!");
-	DoAssert(PixelList == 0, "PixelList  Leftover protected bits!");
-	DoAssert(PolyLineList == 0, "PolyLineList  Leftover protected bits!");
-	DoAssert(GPolyLineList == 0, "GPolyLineList  Leftover protected bits!");
-	DoAssert(QuadBitList == 0, "QuadBitList  Leftover protected bits!");
-	DoAssert(GenPolyList == 0, "GenPolyList  Leftover protected bits!");
-	DoAssert(ChunkBitList == 0, "ChunkBitList  Leftover protected bits!");
-	DoAssert(GlowList == 0, "GlowList  Leftover protected bits!");
-	DoAssert(GlassList == 0, "GlassList  Leftover protected bits!");
-	DoAssert(GLineList == 0, "GLineList  Leftover protected bits!");
-	DoAssert(SpecialDisplayList == 0, "SpecialDisplayList  Leftover protected bits!");
+	DoAssert(G_NONRENDEREDBIT_LIST == 0, "NonRenderedBitList  Leftover protected bits!");
+	DoAssert(G_TEXTBOX_LIST == 0, "TextBoxList  Leftover protected bits!");
+	DoAssert(G_FLATBIT_LIST == 0, "FlatBitList  Leftover protected bits!");
+	DoAssert(G_LINKED2ENDEDBIT_LIST_LEFTOVER == 0, "Linked2EndedBitListLeftover protected bits!");
+	DoAssert(G_PIXEL_LIST == 0, "PixelList  Leftover protected bits!");
+	DoAssert(G_POLYLINE_LIST == 0, "PolyLineList  Leftover protected bits!");
+	DoAssert(G_GPOLYLINE_LIST == 0, "GPolyLineList  Leftover protected bits!");
+	DoAssert(G_QUADBIT_LIST == 0, "QuadBitList  Leftover protected bits!");
+	DoAssert(G_GENPOLY_LIST == 0, "GenPolyList  Leftover protected bits!");
+	DoAssert(G_CHUNKBIT_LIST == 0, "ChunkBitList  Leftover protected bits!");
+	DoAssert(G_GLOW_LIST == 0, "GlowList  Leftover protected bits!");
+	DoAssert(G_GLASS_LIST == 0, "GlassList  Leftover protected bits!");
+	DoAssert(G_GLINE_LIST == 0, "GLineList  Leftover protected bits!");
+	DoAssert(G_SPECIALDISPLAY_LIST == 0, "SpecialDisplayList  Leftover protected bits!");
 
 	DoAssert(G_BITCOUNT == 0, "Still some bits left");
 }
@@ -2829,38 +2829,38 @@ void Bit_Init(void)
 {
 	G_BITCOUNT = 0;
 	G_NONRENDEREDBIT_LIST = 0;
-	TextBoxList = 0;
-	FlatBitList = 0;
-	Linked2EndedBitListLeftover = 0;
-	PixelList = 0;
-	PolyLineList = 0;
-	GPolyLineList = 0;
-	QuadBitList = 0;
-	GenPolyList = 0;
-	ChunkBitList = 0;
-	GlowList = 0;
-	GlassList = 0;
-	GLineList = 0;
+	G_TEXTBOX_LIST = 0;
+	G_FLATBIT_LIST = 0;
+	G_LINKED2ENDEDBIT_LIST_LEFTOVER = 0;
+	G_PIXEL_LIST = 0;
+	G_POLYLINE_LIST = 0;
+	G_GPOLYLINE_LIST = 0;
+	G_QUADBIT_LIST = 0;
+	G_GENPOLY_LIST = 0;
+	G_CHUNKBIT_LIST = 0;
+	G_GLOW_LIST = 0;
+	G_GLASS_LIST = 0;
+	G_GLINE_LIST = 0;
 	G_SPECIALDISPLAY_LIST = 0;
 
-	if (gBitServer)
+	if (G_BITSERVER)
 	{
-		gBitServer = new CBitServer();
+		G_BITSERVER = new CBitServer();
 
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&TextBoxList), DisplayTextBoxList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&FlatBitList), DisplayFlatBitList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&Linked2EndedBitListLeftover), DisplayLinked2EndedBitListLeftover);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&PixelList), DisplayPixelList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&PolyLineList), DisplayPolyLineList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&GPolyLineList), DisplayGPolyLineList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_TEXTBOX_LIST), DisplayTextBoxList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_FLATBIT_LIST), DisplayFlatBitList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_LINKED2ENDEDBIT_LIST_LEFTOVER), DisplayLinked2EndedBitListLeftover);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_PIXEL_LIST), DisplayPixelList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_POLYLINE_LIST), DisplayPolyLineList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_GPOLYLINE_LIST), DisplayGPolyLineList);
 
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&QuadBitList), DisplayQuadBitList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&ChunkBitList), DisplayChunkBitList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&GlowList), DisplayGlowList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_QUADBIT_LIST), DisplayQuadBitList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_CHUNKBIT_LIST), DisplayChunkBitList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_GLOW_LIST), DisplayGlowList);
 
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&GlassList), DisplayGlassList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&GLineList), DisplayGLineList);
-		gBitServer->RegisterSlot(reinterpret_cast<void**>(&G_SPECIALDISPLAY_LIST), DisplaySpecialDisplayList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_GLASS_LIST), DisplayGlassList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_GLINE_LIST), DisplayGLineList);
+		G_BITSERVER->RegisterSlot(reinterpret_cast<void**>(&G_SPECIALDISPLAY_LIST), DisplaySpecialDisplayList);
 	}
 
 	setDrawTPage();
@@ -3090,7 +3090,7 @@ CTextBox::CTextBox(
 		u32 a6,
 		CFriction* pFric)
 {
-	this->AttachTo(reinterpret_cast<CBit**>(&TextBoxList));
+	this->AttachTo(reinterpret_cast<CBit**>(&G_TEXTBOX_LIST));
 
 	this->mPos.vx = a2;
 	this->mPos.vy = a3;
@@ -3111,7 +3111,7 @@ CTextBox::CTextBox(
 // @Ok
 CTextBox::~CTextBox(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBit**>(&TextBoxList));
+	this->DeleteFrom(reinterpret_cast<CBit**>(&G_TEXTBOX_LIST));
 }
 
 // @Ok
@@ -3162,13 +3162,13 @@ CChunkBit::CChunkBit(
 	this->mPosD.vy = (v18.vy * (v16 + 128)) >> 12;
 	this->mPosD.vz = (v18.vz * (v16 + 128)) >> 12;
 
-	this->AttachTo(&ChunkBitList);
+	this->AttachTo(&G_CHUNKBIT_LIST);
 }
 
 // @Ok
 CChunkBit::~CChunkBit(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBit**>(&ChunkBitList));
+	this->DeleteFrom(reinterpret_cast<CBit**>(&G_CHUNKBIT_LIST));
 }
 
 // Stores the plain r|g<<8|b<<16 pack in mColorA, then three independently
@@ -3422,13 +3422,13 @@ void CBitServer::DisplayRegisteredSlots(void)
 // @Ok
 CPixel::~CPixel(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBit**>(&PixelList));
+	this->DeleteFrom(reinterpret_cast<CBit**>(&G_PIXEL_LIST));
 }
 
 // @Ok
 INLINE CPixel::CPixel(void)
 {
-	this->AttachTo(reinterpret_cast<CBit**>(&PixelList));
+	this->AttachTo(reinterpret_cast<CBit**>(&G_PIXEL_LIST));
 }
 
 // @Ok
@@ -3817,14 +3817,14 @@ CGlow::CGlow(u32 NumPoints, u32 NumFringes)
 	this->mCentreCodeBGR = 0x32000000;
 	this->mMask = -1;
 
-	this->AttachTo(reinterpret_cast<CBit**>(&GlowList));
+	this->AttachTo(reinterpret_cast<CBit**>(&G_GLOW_LIST));
 }
 
 // @Ok
 CGlow::~CGlow(void)
 {
 	Mem_Delete(static_cast<void*>(this->mpSections));
-	this->DeleteFrom(reinterpret_cast<CBit**>(&GlowList));
+	this->DeleteFrom(reinterpret_cast<CBit**>(&G_GLOW_LIST));
 }
 
 // @Ok
@@ -3910,7 +3910,7 @@ CGlow::CGlow(
 	this->mpSections = pSections;
 	this->mpFringes = reinterpret_cast<SFringeQuad*>(this->mpSections + this->mNumSections);
 
-	this->AttachTo(reinterpret_cast<CBit**>(&GlowList));
+	this->AttachTo(reinterpret_cast<CBit**>(&G_GLOW_LIST));
 
 	this->mPos = *pVector;
 
@@ -3936,7 +3936,7 @@ CGlow::CGlow(
 // @Ok
 INLINE CFlatBit::~CFlatBit(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBit**>(&FlatBitList));
+	this->DeleteFrom(reinterpret_cast<CBit**>(&G_FLATBIT_LIST));
 }
 
 // @Ok
@@ -4038,7 +4038,7 @@ INLINE CBit::CBit()
 INLINE void* CBit::operator new(size_t size) {
 
 	void *pnew;
-	if (TotalBitUsage == 0)
+	if (G_TOTALBITUSAGE == 0)
 		pnew = Mem_New(size);
 	else
 		pnew = Mem_New(size);
@@ -4552,14 +4552,14 @@ INLINE CFT4Bit::CFT4Bit(void)
 // @Validate: when inlined
 INLINE CLinked2EndedBit::CLinked2EndedBit(void)
 {
-	this->AttachTo(&Linked2EndedBitListLeftover);
+	this->AttachTo(&G_LINKED2ENDEDBIT_LIST_LEFTOVER);
 }
 
 // @Ok
 // @AlmostMatching: slightly different inline
 INLINE CLinked2EndedBit::~CLinked2EndedBit(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBit**>(&Linked2EndedBitListLeftover));
+	this->DeleteFrom(reinterpret_cast<CBit**>(&G_LINKED2ENDEDBIT_LIST_LEFTOVER));
 }
 
 // @Ok
@@ -4677,7 +4677,7 @@ INLINE void CFT4Bit::SetTransDecay(i32 decay)
 // @Matching
 CFlatBit::CFlatBit(void)
 {
-	this->AttachTo(reinterpret_cast<CBit**>(&FlatBitList));
+	this->AttachTo(reinterpret_cast<CBit**>(&G_FLATBIT_LIST));
 
 	this->mSemiTransparencyRate = 0x20;
 	this->mAngFric = 1;
@@ -4715,7 +4715,7 @@ CGlassBit::CGlassBit(
 		i32 dy,
 		i32 dz)
 {
-	this->AttachTo(&GlassList);
+	this->AttachTo(&G_GLASS_LIST);
 
 	this->mPos = *Pos;
 
@@ -4842,7 +4842,7 @@ void CGlassBit::Move(void)
 // @Matching
 CGlassBit::~CGlassBit(void)
 {
-	this->DeleteFrom(&GlassList);
+	this->DeleteFrom(&G_GLASS_LIST);
 }
 
 void validate_CFlatBit(void){

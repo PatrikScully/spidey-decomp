@@ -404,9 +404,9 @@ void CSpClone::DoMGSShadow(void)
 
 	if (!this->field_338)
 	{
-		TotalBitUsage = 0;
+		G_TOTALBITUSAGE = 0;
 		this->field_338 = new CQuadBit();
-		TotalBitUsage = -1;
+		G_TOTALBITUSAGE = -1;
 
 		this->field_338->SetTexture(0, 0);
 	}

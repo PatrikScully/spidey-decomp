@@ -1825,9 +1825,9 @@ void CCarnage::DoMGSShadow(void)
 
 	if (!this->field_368)
 	{
-		TotalBitUsage = 0;
+		G_TOTALBITUSAGE = 0;
 		this->field_368 = new CQuadBit();
-		TotalBitUsage = -1;
+		G_TOTALBITUSAGE = -1;
 
 		this->field_368->SetTexture(0, 0);
 		this->field_368->mFrigDeltaZ = 0x20;
@@ -3377,10 +3377,11 @@ void patch_carnage(void)
 {
 	// Only the functions whose whole call closure already shares the exe's memory are hooked.
 	// Everything else in carnage.cpp reads MechList, BaddyList, ControlBaddyList, gBossRelated,
-	// gWhatIf, gObjFile, gObjFileRegion, BulletList, NumNodes, TotalBitUsage, QuadBitList or
-	// GPolyLineList, and those are still plain repo globals owned by other files, so a hook
-	// there would read our own zeroed copy instead of the game's. See the notes in the commit
-	// message for the exact list.
+	// gWhatIf, gObjFile, gObjFileRegion, BulletList or NumNodes, and those are still plain repo
+	// globals owned by other files, so a hook there would read our own zeroed copy instead of
+	// the game's. See the notes in the commit message for the exact list.
+	// TotalBitUsage, QuadBitList and GPolyLineList used to be on that list too, they now go
+	// through G_TOTALBITUSAGE / G_QUADBIT_LIST / G_GPOLYLINE_LIST in bit.h.
 	PATCH_PUSH_RET(0x00419B60, CSonicRipple::CalcPos);
 	PATCH_PUSH_RET_POLY(0x00419C00, CSonicRipple::Move, "?Move@CSonicRipple@@UAEXXZ");
 	PATCH_PUSH_RET_POLY(0x0041A240, CCarnageHitSpark::Move, "?Move@CCarnageHitSpark@@UAEXXZ");

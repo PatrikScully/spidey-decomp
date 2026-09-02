@@ -80,7 +80,7 @@ void CGPolyLine::SetStartAndEnd(
 CGPolyLine::~CGPolyLine()
 {
 	Mem_Delete(this->mSegs);
-	this->DeleteFrom(&GPolyLineList);
+	this->DeleteFrom(&G_GPOLYLINE_LIST);
 }
 
 // @Ok
@@ -126,7 +126,7 @@ CGPolyLine::CGPolyLine(i32 numsegs)
 	}
 
 	this->mNumSegs = numsegs;
-	this->AttachTo(&GPolyLineList);
+	this->AttachTo(&G_GPOLYLINE_LIST);
 	this->mStartR = -1;
 
 	this->mStartG = -1;
@@ -229,7 +229,7 @@ CPolyLine::CPolyLine(i32 numsegs)
 
 
 	this->mNumSegs = numsegs;
-	this->AttachTo(&PolyLineList);
+	this->AttachTo(&G_POLYLINE_LIST);
 }
 
 // @Ok
@@ -238,14 +238,14 @@ INLINE CGLine::CGLine(void)
 {
 	this->mCodeBGR0 = 0x50808080;
 	this->mPadBGR1 = 0x55808080;
-	this->AttachTo(&GLineList);
+	this->AttachTo(&G_GLINE_LIST);
 }
 
 // @Ok
 // @Matching
 CGLine::~CGLine(void)
 {
-	this->DeleteFrom(&GLineList);
+	this->DeleteFrom(&G_GLINE_LIST);
 }
 
 // @Ok
@@ -278,7 +278,7 @@ void CPolyLine::SetSemiTransparent(void)
 CPolyLine::~CPolyLine(void)
 {
 	Mem_Delete(this->mSegs);
-	this->DeleteFrom(&PolyLineList);
+	this->DeleteFrom(&G_POLYLINE_LIST);
 }
 
 // @Ok

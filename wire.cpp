@@ -5,11 +5,11 @@
 #include "ps2lowsfx.h"
 #include "m3dcolij.h"
 #include "validate.h"
+#include "bit.h"
 
 extern CBody* ControlBaddyList;
 extern CPlayer* MechList;
 extern CSVector gTrajectoryVector;
-extern i32 TotalBitUsage;
 
 // @Ok
 void CLaserFence::AI(void)
@@ -58,7 +58,7 @@ void CLaserFence::AI(void)
 						Bit_SetSparkSize(2u);
 						Bit_SetSparkRGB(32, 32, 128);
 						Bit_SetSparkFadeRGB(1, 1, 4);
-						TotalBitUsage = 1;
+						G_TOTALBITUSAGE = 1;
 					}
 				}
 			}
