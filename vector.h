@@ -165,6 +165,14 @@ class CSVector{
 		EXPORT void KillSmall(void);
 };
 
+// The three CSVector free operators CBaddy::ExecuteCommand's 0x4280 handler
+// calls out of line (0x4E7A40 = Mac .__ml__FRC8CSVectorRCi, 0x4E79F0,
+// 0x4E7AE0). Kept EXPORT (out of line) like the CVector ones above so a
+// caller can emit the real call.
+EXPORT CSVector operator*(const CSVector& lhs, const int& other);
+EXPORT CSVector operator-(const CSVector& lhs, const CSVector& other);
+EXPORT CSVector operator/(const CSVector& lhs, const int& other);
+
 struct SVector {
 	i16 vx, vy, vz;
 

@@ -103,6 +103,54 @@ CSVector* CSVector::operator%=(const CFriction& other){
 	return this;
 }
 
+// @Ok
+// @Matching
+// 0x4E7A40, 69 bytes (names.json: .__ml__FRC8CSVectorRCi, the Mac name for
+// operator*(const CSVector&, const int&)). The original reads only the low
+// word of `other` and does 16-bit imuls, which is what the i16 result of
+// this expression compiles to.
+CSVector operator*(const CSVector& lhs, const int& other)
+{
+	CSVector res;
+
+	res.vx = lhs.vx * other;
+	res.vy = lhs.vy * other;
+	res.vz = lhs.vz * other;
+
+	return res;
+}
+
+// @Ok
+// @Matching
+// 0x4E79F0, 65 bytes (sub_4E79F0 in names.json). Identified from the body:
+// three 16-bit subs, result returned through the hidden pointer, same shape
+// as the CVector operator- below.
+CSVector operator-(const CSVector& lhs, const CSVector& other)
+{
+	CSVector res;
+
+	res.vx = lhs.vx - other.vx;
+	res.vy = lhs.vy - other.vy;
+	res.vz = lhs.vz - other.vz;
+
+	return res;
+}
+
+// @Ok
+// @Matching
+// 0x4E7AE0, 67 bytes (sub_4E7AE0 in names.json). Identified from the body:
+// movsx of each component, cdq/idiv by *other, low word stored.
+CSVector operator/(const CSVector& lhs, const int& other)
+{
+	CSVector res;
+
+	res.vx = lhs.vx / other;
+	res.vy = lhs.vy / other;
+	res.vz = lhs.vz / other;
+
+	return res;
+}
+
 
 // @Ok
 void CVector::KillSmall(){

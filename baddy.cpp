@@ -13,6 +13,19 @@
 #include "m3dcolij.h"
 #include "mysterio.h"
 #include "ps2gamefmv.h"
+#ifdef SPIDEY_STANDALONE
+// headers of the real implementations behind the ExecuteCommand
+// forward-to-original helpers (standalone build only, see below)
+#include "bit.h"
+#include "exp.h"
+#include "flash.h"
+#include "powerup.h"
+#include "camera.h"
+#include "ps2redbook.h"
+#include "chunk.h"
+#include "effects.h"
+#include "ps2funcs.h"
+#endif
 
 
 #ifndef SPIDEY_STANDALONE
@@ -1554,14 +1567,39 @@ static void CBaddy_SkipToMatchingEndif(CBaddy *self)
 // with no repo declaration (see the big comment above). Argument count,
 // order and type read off this function's own call sites in the Hex-Rays
 // decompile, not guessed independently.
+//
+// Standalone build (SPIDEY_STANDALONE): none of the original exe is in
+// memory, so every helper below calls the repo implementation instead. The
+// address -> function mapping comes from the maintainer's IDB (mangled
+// names) plus the Mac symbol list for the two unnamed effects helpers. The
+// non-standalone branches are untouched.
+//
+// Eight of the targets are __thiscall methods or constructors and the
+// helper has no object to call them on (the original passes it in ecx or
+// gets it from operator new). Those helpers only exist in the normal build
+// and their ExecuteCommand call sites carry their own SPIDEY_STANDALONE
+// branch calling the method on the right object: 0x460D00 CSuper::CycleAnim
+// (this), 0x404320 CBaddy::Die (this), 0x4E7900 CSVector::operator+= (a
+// local CSVector accumulator), 0x40F480 CSpark::CSpark, 0x43CEA0
+// CWibbling3DExplosion::CWibbling3DExplosion, 0x43C250
+// CFlameExplosion::CFlameExplosion (all three via new), 0x46B450
+// CPowerUp::SetGravity (the CPowerUp PowerUp_Create just returned).
 // @Bogus
 static i32 gsub_4E3940(i32 *outBuf, u16 nodeId)
 {
+#ifdef SPIDEY_STANDALONE
+	// Trig_GetPosition(CVector*, i32) -> u16*, callers add 6 to skip the position
+	return reinterpret_cast<i32>(Trig_GetPosition(reinterpret_cast<CVector*>(outBuf), nodeId));
+#else
 	typedef i32 (*func_ptr)(i32*, u16);
 	func_ptr func = (func_ptr)0x4E3940;
 	return func(outBuf, nodeId);
+#endif
 }
 
+#ifndef SPIDEY_STANDALONE
+// 0x460D00 = CSuper::CycleAnim(i32, i8), __thiscall on `this` (ecx = esi =
+// the CBaddy at 0x4057F8). Standalone: see case 0x4201.
 // @Bogus
 static void gsub_460D00(u16 a2, u16 a3)
 {
@@ -1570,6 +1608,8 @@ static void gsub_460D00(u16 a2, u16 a3)
 	func(a2, a3);
 }
 
+// 0x404320 = CBaddy::Die(int), __thiscall on `this` (0x405839 mov ecx,esi).
+// Standalone: see case 0x4205.
 // @Bogus
 static void gsub_404320(i32 a2)
 {
@@ -1577,23 +1617,42 @@ static void gsub_404320(i32 a2)
 	func_ptr func = (func_ptr)0x404320;
 	func(a2);
 }
+#endif
 
 // @Bogus
 static i32 gsub_4DE770(void)
 {
+#ifdef SPIDEY_STANDALONE
+	return Trig_GetLevelID();
+#else
 	typedef i32 (*func_ptr)(void);
 	func_ptr func = (func_ptr)0x4DE770;
 	return func();
+#endif
 }
 
 // @Bogus
 static i32 gsub_4E7A40(CBaddy *self, void *outBuf, void *a3, i32 *a4)
 {
+#ifdef SPIDEY_STANDALONE
+	// operator*(const CSVector&, const int&), cdecl with a hidden return
+	// pointer: (outBuf, a3, a4) are its three real args. `self` is not an
+	// argument of the original (add esp,0Ch after the call at 0x4060CF),
+	// the helper only carries it along.
+	(void)self;
+	*static_cast<CSVector*>(outBuf) = *static_cast<const CSVector*>(a3) * *a4;
+	return reinterpret_cast<i32>(outBuf);
+#else
 	typedef i32 (*func_ptr)(CBaddy*, void*, void*, i32*);
 	func_ptr func = (func_ptr)0x4E7A40;
 	return func(self, outBuf, a3, a4);
+#endif
 }
 
+#ifndef SPIDEY_STANDALONE
+// 0x4E7900 = CSVector::operator+=(const CSVector&), __thiscall; the original
+// applies it to a local CSVector copy of mAngles (lea ecx,[esp+var_70] at
+// 0x4060D2), not to the object. Standalone: see case 0x4280.
 // @Bogus
 static void gsub_4E7900(i32 a2)
 {
@@ -1601,95 +1660,152 @@ static void gsub_4E7900(i32 a2)
 	func_ptr func = (func_ptr)0x4E7900;
 	func(a2);
 }
+#endif
 
 // @Bogus
 static i32 *gsub_4E7760(void *a2, void *a3, void *a4)
 {
+#ifdef SPIDEY_STANDALONE
+	// operator-(const CVector&, const CVector&), hidden return pointer = a2
+	*static_cast<CVector*>(a2) = *static_cast<const CVector*>(a3) - *static_cast<const CVector*>(a4);
+	return static_cast<i32*>(a2);
+#else
 	typedef i32* (*func_ptr)(void*, void*, void*);
 	func_ptr func = (func_ptr)0x4E7760;
 	return func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static i32 *gsub_4E7800(void *a2, void *a3, void *a4)
 {
+#ifdef SPIDEY_STANDALONE
+	// operator/(const CVector&, const int&), hidden return pointer = a2
+	*static_cast<CVector*>(a2) = *static_cast<const CVector*>(a3) / *static_cast<const int*>(a4);
+	return static_cast<i32*>(a2);
+#else
 	typedef i32* (*func_ptr)(void*, void*, void*);
 	func_ptr func = (func_ptr)0x4E7800;
 	return func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static i32 *gsub_4E79F0(void *a2, void *a3, void *a4)
 {
+#ifdef SPIDEY_STANDALONE
+	// operator-(const CSVector&, const CSVector&), hidden return pointer = a2
+	*static_cast<CSVector*>(a2) = *static_cast<const CSVector*>(a3) - *static_cast<const CSVector*>(a4);
+	return static_cast<i32*>(a2);
+#else
 	typedef i32* (*func_ptr)(void*, void*, void*);
 	func_ptr func = (func_ptr)0x4E79F0;
 	return func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static i32 *gsub_4E7AE0(void *a2, void *a3, void *a4)
 {
+#ifdef SPIDEY_STANDALONE
+	// operator/(const CSVector&, const int&), hidden return pointer = a2
+	*static_cast<CSVector*>(a2) = *static_cast<const CSVector*>(a3) / *static_cast<const int*>(a4);
+	return static_cast<i32*>(a2);
+#else
 	typedef i32* (*func_ptr)(void*, void*, void*);
 	func_ptr func = (func_ptr)0x4E7AE0;
 	return func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static void gsub_471C50(i32 a2, i32 a3, i32 a4)
 {
+#ifdef SPIDEY_STANDALONE
+	SFX_Play(a2, static_cast<i16>(a3), a4);
+#else
 	typedef void (*func_ptr)(i32, i32, i32);
 	func_ptr func = (func_ptr)0x471C50;
 	func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static void gsub_471EA0(i32 a2, CVector *a3, i32 a4)
 {
+#ifdef SPIDEY_STANDALONE
+	SFX_PlayPos(a2, a3, a4);
+#else
 	typedef void (*func_ptr)(i32, CVector*, i32);
 	func_ptr func = (func_ptr)0x471EA0;
 	func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static void gsub_40F3D0(void *a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Bit_SetSparkTrajectory(static_cast<const CSVector*>(a2));
+#else
 	typedef void (*func_ptr)(void*);
 	func_ptr func = (func_ptr)0x40F3D0;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_40F3F0(i16 *a2)
 {
+#ifdef SPIDEY_STANDALONE
+	// the caller's i16[3] is the cone CSVector
+	Bit_SetSparkTrajectoryCone(reinterpret_cast<const CSVector*>(a2));
+#else
 	typedef void (*func_ptr)(i16*);
 	func_ptr func = (func_ptr)0x40F3F0;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_40F410(i32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Bit_SetSparkSize(a2);
+#else
 	typedef void (*func_ptr)(i32);
 	func_ptr func = (func_ptr)0x40F410;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_40F440(i32 a2, i32 a3, i32 a4)
 {
+#ifdef SPIDEY_STANDALONE
+	Bit_SetSparkRGB(static_cast<u8>(a2), static_cast<u8>(a3), static_cast<u8>(a4));
+#else
 	typedef void (*func_ptr)(i32, i32, i32);
 	func_ptr func = (func_ptr)0x40F440;
 	func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static void gsub_40F460(i32 a2, i32 a3, i32 a4)
 {
+#ifdef SPIDEY_STANDALONE
+	Bit_SetSparkFadeRGB(static_cast<u8>(a2), static_cast<u8>(a3), static_cast<u8>(a4));
+#else
 	typedef void (*func_ptr)(i32, i32, i32);
 	func_ptr func = (func_ptr)0x40F460;
 	func(a2, a3, a4);
+#endif
 }
 
+#ifndef SPIDEY_STANDALONE
+// 0x40F480 = CSpark::CSpark(CVector&, i32, i32, i32), a constructor run on
+// the block CBit::operator new(76) just returned. Standalone: see case 0x4292.
 // @Bogus
 static void gsub_40F480(CVector *a2, i32 a3, i32 a4, i32 a5)
 {
@@ -1698,6 +1814,9 @@ static void gsub_40F480(CVector *a2, i32 a3, i32 a4, i32 a5)
 	func(a2, a3, a4, a5);
 }
 
+// 0x43CEA0 = CWibbling3DExplosion::CWibbling3DExplosion, a constructor run
+// on the block CClass::operator new(276) just returned. Standalone: see
+// case 0x429A sub-op 3.
 // @Bogus
 static void gsub_43CEA0(i32 *a2, const char *a3, i32 a4, i32 a5, i32 a6, i32 a7, i32 a8, i32 a9, i32 a10, i16 a11, i16 a12)
 {
@@ -1705,23 +1824,40 @@ static void gsub_43CEA0(i32 *a2, const char *a3, i32 a4, i32 a5, i32 a6, i32 a7,
 	func_ptr func = (func_ptr)0x43CEA0;
 	func(a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
 }
+#endif
 
 // @Bogus
 static void gsub_43D830(i32 a2, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7)
 {
+#ifdef SPIDEY_STANDALONE
+	Flash_Screen(static_cast<u8>(a2), static_cast<u8>(a3), static_cast<u8>(a4), a5, static_cast<u8>(a6), a7);
+#else
 	typedef void (*func_ptr)(i32, i32, i32, i32, i32, i32);
 	func_ptr func = (func_ptr)0x43D830;
 	func(a2, a3, a4, a5, a6, a7);
+#endif
 }
 
 // @Bogus
 static i32 gsub_46BD80(i32 a2, CBaddy *a3, u16 a4, u16 a5, i32 a6)
 {
+#ifdef SPIDEY_STANDALONE
+	// PowerUp_Create(type, CVector* pos, flags, param1, param2) -> CPowerUp*.
+	// The original passes &this->mPos as the position (0x4058E3 push esi,
+	// with esi = this+8 in that block), so the CBaddy the helper receives
+	// is turned into its position here.
+	return reinterpret_cast<i32>(PowerUp_Create(a2, &a3->mPos, a4, a5, a6));
+#else
 	typedef i32 (*func_ptr)(i32, CBaddy*, u16, u16, i32);
 	func_ptr func = (func_ptr)0x46BD80;
 	return func(a2, a3, a4, a5, a6);
+#endif
 }
 
+#ifndef SPIDEY_STANDALONE
+// 0x46B450 = CPowerUp::SetGravity(i32, i32), __thiscall on the CPowerUp
+// sub_46BD80 just returned (0x4058FB mov ecx,eax). Standalone: see case
+// 0x42A0.
 // @Bogus
 static void gsub_46B450(i32 a2, i32 a3)
 {
@@ -1729,47 +1865,77 @@ static void gsub_46B450(i32 a2, i32 a3)
 	func_ptr func = (func_ptr)0x46B450;
 	func(a2, a3);
 }
+#endif
 
 // @Bogus
 static void gsub_43B410(i32 *a2, i16 a3, i16 a4, i16 a5, i16 a6, i16 a7, i16 a8)
 {
+#ifdef SPIDEY_STANDALONE
+	// Effects_LaserFlash (effects.cpp), the original passes a5..a8 on to
+	// u8 CGlowFlash colour params
+	Effects_LaserFlash(reinterpret_cast<CVector*>(a2), a3, a4,
+			static_cast<u8>(a5), static_cast<u8>(a6), static_cast<u8>(a7), static_cast<u8>(a8));
+#else
 	typedef void (*func_ptr)(i32*, i16, i16, i16, i16, i16, i16);
 	func_ptr func = (func_ptr)0x43B410;
 	func(a2, a3, a4, a5, a6, a7, a8);
+#endif
 }
 
 // @Bogus
 static void *gsub_4E3880(u16 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	return Trig_GetLinksPointer(a2);
+#else
 	typedef void* (*func_ptr)(u16);
 	func_ptr func = (func_ptr)0x4E3880;
 	return func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_470950(void)
 {
+#ifdef SPIDEY_STANDALONE
+	GameFMV_StopFMV();
+#else
 	typedef void (*func_ptr)(void);
 	func_ptr func = (func_ptr)0x470950;
 	func();
+#endif
 }
 
 // @Bogus
 static void gsub_416880(CVector *a2, i32 a3)
 {
+#ifdef SPIDEY_STANDALONE
+	// CCamera::Shake(CVector&, EShakeType), __thiscall on CameraList
+	// (0x405D19 mov ecx,dword_56F3B8); the caller already null-checks it.
+	G_CAMERA_LIST->Shake(*a2, static_cast<EShakeType>(a3));
+#else
 	typedef void (*func_ptr)(CVector*, i32);
 	func_ptr func = (func_ptr)0x416880;
 	func(a2, a3);
+#endif
 }
 
 // @Bogus
 static void gsub_4708B0(i32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	GameFMV_SetStartTrack(static_cast<u8>(a2));
+#else
 	typedef void (*func_ptr)(i32);
 	func_ptr func = (func_ptr)0x4708B0;
 	func(a2);
+#endif
 }
 
+#ifndef SPIDEY_STANDALONE
+// 0x43C250 = CFlameExplosion::CFlameExplosion(const CVector*, i32, i32, i32),
+// a constructor run on the block CBit::operator new(144) just returned.
+// Standalone: see case 0x429A sub-op 2.
 // @Bogus
 static void gsub_43C250(i32 *a2, i16 a3, i32 a4, i16 a5)
 {
@@ -1777,109 +1943,164 @@ static void gsub_43C250(i32 *a2, i16 a3, i32 a4, i16 a5)
 	func_ptr func = (func_ptr)0x43C250;
 	func(a2, a3, a4, a5);
 }
+#endif
 
 // @Bogus
 static void gsub_4DFFE0(void *a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Trig_SendSignalToLinks(static_cast<u16*>(a2));
+#else
 	typedef void (*func_ptr)(void*);
 	func_ptr func = (func_ptr)0x4DFFE0;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_4DFD30(void *a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Trig_SendPulse(static_cast<u16*>(a2));
+#else
 	typedef void (*func_ptr)(void*);
 	func_ptr func = (func_ptr)0x4DFD30;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_4DFFB0(void *a2, u16 a3)
 {
+#ifdef SPIDEY_STANDALONE
+	// SendSignalToNode(CBody* listHead, i32 node); the callers pass the
+	// three object list heads
+	SendSignalToNode(static_cast<CBody*>(a2), a3);
+#else
 	typedef void (*func_ptr)(void*, u16);
 	func_ptr func = (func_ptr)0x4DFFB0;
 	func(a2, a3);
+#endif
 }
 
 // @Bogus
 static void gsub_4DFC20(u16 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Trig_SendPulseToNode(a2);
+#else
 	typedef void (*func_ptr)(u16);
 	func_ptr func = (func_ptr)0x4DFC20;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_438EE0(void *a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Effects_UnElectrify(static_cast<CSuper*>(a2));
+#else
 	typedef void (*func_ptr)(void*);
 	func_ptr func = (func_ptr)0x438EE0;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_438E20(void *a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Effects_Electrify(static_cast<CSuper*>(a2));
+#else
 	typedef void (*func_ptr)(void*);
 	func_ptr func = (func_ptr)0x438E20;
 	func(a2);
+#endif
 }
 
 // @Bogus
 static void gsub_43B740(i32 *a2, i32 a3)
 {
+#ifdef SPIDEY_STANDALONE
+	Effects_MakeRocks(reinterpret_cast<CVector*>(a2), a3);
+#else
 	typedef void (*func_ptr)(i32*, i32);
 	func_ptr func = (func_ptr)0x43B740;
 	func(a2, a3);
+#endif
 }
 
 // @Bogus
 static i32 gsub_4C9230(i32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	return reinterpret_cast<i32>(Spool_FindEnviroItem(a2));
+#else
 	typedef i32 (*func_ptr)(i32);
 	func_ptr func = (func_ptr)0x4C9230;
 	return func(a2);
+#endif
 }
 
 // @Bogus
 static i32 gsub_4E6150(CVector *a2, i32 *a3)
 {
+#ifdef SPIDEY_STANDALONE
+	return Utils_Dist(*a2, *reinterpret_cast<const CVector*>(a3));
+#else
 	typedef i32 (*func_ptr)(CVector*, i32*);
 	func_ptr func = (func_ptr)0x4E6150;
 	return func(a2, a3);
+#endif
 }
 
 // @Bogus
 static void gsub_470430(i32 *a2, i32 *a3)
 {
+#ifdef SPIDEY_STANDALONE
+	VectorNormal(reinterpret_cast<VECTOR*>(a2), reinterpret_cast<VECTOR*>(a3));
+#else
 	typedef void (*func_ptr)(i32*, i32*);
 	func_ptr func = (func_ptr)0x470430;
 	func(a2, a3);
+#endif
 }
 
 // @Bogus
 static void gsub_479EE0(i16 a2, i16 a3, i16 a4)
 {
+#ifdef SPIDEY_STANDALONE
+	Redbook_XAPlay(a2, a3, a4);
+#else
 	typedef void (*func_ptr)(i16, i16, i16);
 	func_ptr func = (func_ptr)0x479EE0;
 	func(a2, a3, a4);
+#endif
 }
 
 // @Bogus
 static void gsub_479D30(i16 a2, i16 a3, CVector *a4, i16 a5)
 {
+#ifdef SPIDEY_STANDALONE
+	Redbook_XAPlayPos(a2, a3, a4, a5);
+#else
 	typedef void (*func_ptr)(i16, i16, CVector*, i16);
 	func_ptr func = (func_ptr)0x479D30;
 	func(a2, a3, a4, a5);
+#endif
 }
 
 // @Bogus
 static void gsub_4273D0(i32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	Chunk_ChunkItemByChecksum(a2);
+#else
 	typedef void (*func_ptr)(i32);
 	func_ptr func = (func_ptr)0x4273D0;
 	func(a2);
+#endif
 }
 
 // sub_4C9180 is the one callee here that is genuinely __thiscall (Hex-Rays
@@ -1898,10 +2119,15 @@ struct SMechRangeCheckAdapter
 // @Bogus
 static i32 gsub_4C9180(CPlayer *pMech, i32 x, i32 z)
 {
+#ifdef SPIDEY_STANDALONE
+	// 0x4C9180 = CPlayer::IfPlayerCeilingCheck(i32, i32), on the player
+	return pMech->IfPlayerCeilingCheck(x, z);
+#else
 	typedef i32 (SMechRangeCheckAdapter::*memfn)(i32, i32);
 	union { memfn m; void *p; } u;
 	u.p = (void*)0x4C9180;
 	return (reinterpret_cast<SMechRangeCheckAdapter*>(pMech)->*u.m)(x, z);
+#endif
 }
 
 // @Ok
@@ -2109,7 +2335,12 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		{
 			u16 a2 = CBaddy_ReadOperand(this);
 			u16 a3 = CBaddy_ReadOperand(this);
+#ifdef SPIDEY_STANDALONE
+			// __thiscall on this (0x4057F8 mov ecx,esi)
+			this->CycleAnim(a2, static_cast<i8>(a3));
+#else
 			gsub_460D00(a2, a3);
+#endif
 			return true;
 		}
 
@@ -2129,7 +2360,12 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			return true;
 
 		case 0x4205:
+#ifdef SPIDEY_STANDALONE
+			// CBaddy::Die(int), __thiscall on this (0x405839 mov ecx,esi)
+			this->Die(0);
+#else
 			gsub_404320(0);
+#endif
 			return true;
 
 		case 0x4226: // C_ZERO_VELOCITY
@@ -2179,12 +2415,26 @@ int CBaddy::ExecuteCommand(u16 cmd)
 				i32 savedField80 = this->field_80;
 				this->field_80 = 2;
 
+#ifdef SPIDEY_STANDALONE
+				// The original keeps a second local copy of mAngles
+				// (var_70 at 0x406084) and CSVector::operator+= (0x4E7900,
+				// __thiscall, ecx = &var_70 at 0x4060D2) accumulates into
+				// that copy, not into the object and not into the copy it
+				// later restores mAngles from. The multiplicand is
+				// [esi+88h] = mAngVel (0x4060BA), not mAcc (0x6C).
+				CSVector angAcc = savedAngles;
+#endif
 				for (i32 i = 0; i < this->field_230; i++)
 				{
 					i32 buf[3] = { 0, 0, 0 };
 					i32 cnt = 2;
+#ifdef SPIDEY_STANDALONE
+					i32 r = gsub_4E7A40(this, buf, &this->mAngVel, &cnt);
+					angAcc += *reinterpret_cast<const CSVector*>(r);
+#else
 					i32 r = gsub_4E7A40(this, buf, &this->mAcc, &cnt);
 					gsub_4E7900(r);
+#endif
 					this->Shouldnt_DoPhysics_Be_Virtual();
 				}
 
@@ -2201,7 +2451,15 @@ int CBaddy::ExecuteCommand(u16 cmd)
 				char v255[8] = { 0 };
 				char v253[8] = { 0 };
 				i32 v248 = this->field_2A0;
+#ifdef SPIDEY_STANDALONE
+				// original: (accumulated angles) - (angles before the loop),
+				// 0x4061B8 sub_4E79F0(&var_2C, &var_70, this+0x2DC). Reading
+				// a CSVector out of the i32 savedField80 (the non-standalone
+				// operands) would run 2 bytes past that local.
+				i32 *r3 = gsub_4E79F0(v255, &angAcc, &savedAngles);
+#else
 				i32 *r3 = gsub_4E79F0(v255, &savedField80, &savedAngles);
+#endif
 				i32 *r4 = gsub_4E7AE0(v253, r3, &v248);
 
 				this->mPos = savedPos;
@@ -2270,9 +2528,15 @@ int CBaddy::ExecuteCommand(u16 cmd)
 
 				for (i32 i = 0; i < count; i++)
 				{
+#ifdef SPIDEY_STANDALONE
+					// CSpark::CSpark(CVector&, i32, i32, i32) on the freshly
+					// allocated bit (sizeof(CSpark) == 76)
+					new CSpark(this->mPos, 32, 0x2000, 32);
+#else
 					void *p = CBit::operator new(76);
 					if (p != 0)
 						gsub_40F480(&this->mPos, 32, 0x2000, 32);
+#endif
 				}
 
 				G_TOTALBITUSAGE = 1;
@@ -2378,9 +2642,15 @@ int CBaddy::ExecuteCommand(u16 cmd)
 					this->field_24C = reinterpret_cast<i16*>(reinterpret_cast<char*>(this->field_24C) + 2);
 					i16 c = *this->field_24C;
 					this->field_24C++;
+#ifdef SPIDEY_STANDALONE
+					// CFlameExplosion::CFlameExplosion(const CVector*, i32,
+					// i32, i32) on the freshly allocated bit (sizeof == 144)
+					new CFlameExplosion(reinterpret_cast<CVector*>(posBuf), a, c != 0, c);
+#else
 					void *p = CBit::operator new(144);
 					if (p != 0)
 						gsub_43C250(posBuf, a, c != 0, c);
+#endif
 					break;
 				}
 
@@ -2403,9 +2673,17 @@ int CBaddy::ExecuteCommand(u16 cmd)
 					buf[1] = posBuf[1] + ((Rnd(jitter) - v120) << 12);
 					buf[2] = posBuf[2] + ((Rnd(jitter) - v120) << 12);
 
+#ifdef SPIDEY_STANDALONE
+					// CWibbling3DExplosion ctor on the freshly allocated
+					// object (sizeof == 276); the ctor takes a non-const
+					// char* name like every other caller in exp.cpp
+					new CWibbling3DExplosion(reinterpret_cast<CVector*>(buf), const_cast<char*>("expgrnd"),
+							v110, v112, v113, v114, v115, v116, v117, v118, v119);
+#else
 					void *p = CClass::operator new(276);
 					if (p != 0)
 						gsub_43CEA0(buf, "expgrnd", v110, v112, v113, v114, v115, v116, v117, v118, v119);
+#endif
 					break;
 				}
 
@@ -2445,8 +2723,16 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			u16 a6 = *reinterpret_cast<u16*>(this->field_24C);
 			this->field_24C = reinterpret_cast<i16*>(reinterpret_cast<u16*>(this->field_24C) + 1);
 
+#ifdef SPIDEY_STANDALONE
+			// CPowerUp::SetGravity(i32, i32), __thiscall on the CPowerUp
+			// PowerUp_Create just returned (0x4058FB mov ecx,eax)
+			CPowerUp *pPowerUp = reinterpret_cast<CPowerUp*>(gsub_46BD80(val, this, a4, a5, -1));
+			if (pPowerUp != 0)
+				pPowerUp->SetGravity(a6 << 12, 5);
+#else
 			if (gsub_46BD80(val, this, a4, a5, -1) != 0)
 				gsub_46B450(a6 << 12, 5);
+#endif
 
 			return true;
 		}
@@ -2670,8 +2956,17 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		case 0x450E:
 		{
 			u16 val = CBaddy_ReadOperand(this);
+#ifdef SPIDEY_STANDALONE
+			// The original does not call Shake here: it stores the operand
+			// into CameraList+680 (0x4068BF mov [esi+2A8h],edi, esi =
+			// CameraList), i.e. CCamera::field_2A8. All four real Shake
+			// calls in this function are in case 0x4298.
+			if (G_CAMERA_LIST != 0)
+				G_CAMERA_LIST->field_2A8 = val;
+#else
 			if (G_CAMERA_LIST != 0)
 				gsub_416880(reinterpret_cast<CVector*>(reinterpret_cast<char*>(G_CAMERA_LIST) + 680), val);
+#endif
 			return true;
 		}
 

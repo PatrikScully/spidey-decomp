@@ -97,4 +97,13 @@ EXPORT extern CBody* PowerUpList;
 #define G_POWER_UP_LIST (*reinterpret_cast<CBody**>(0x0060FB94))
 void validate_CPowerUp(void);
 void patch_powerup(void);
+
+#ifdef SPIDEY_STANDALONE
+// 0x46BD80 (names.json: PowerUp_Create). The body is trig.cpp's file-local
+// Trig_CreatePowerUp; this is the externally callable name the standalone
+// build uses from CBaddy::ExecuteCommand (opcode 0x42A0) instead of the
+// forward-to-original pointer call. Standalone only so the normal build's
+// trig.cpp codegen does not change.
+EXPORT CBody* PowerUp_Create(i32, CVector*, i32, i32, i32);
+#endif
 #endif

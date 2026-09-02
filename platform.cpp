@@ -7,6 +7,9 @@
 #include "spidey.h"
 #include "spool.h"
 #include "trig.h"
+#ifdef SPIDEY_STANDALONE
+#include "effects.h"
+#endif
 
 #include "validate.h"
 
@@ -229,9 +232,16 @@ CPlatform::CPlatform(i16 * a2,i32 a3)
 // Not decompiled; forwarded so CPlatform::ExecuteCommand case 0x430A works.
 static i32 gsub_43B740(CVector *a1, i32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	// 0x43B740 is Effects_MakeRocks (effects.cpp); the original's return
+	// value is a leftover eax nobody reads.
+	Effects_MakeRocks(a1, a2);
+	return 0;
+#else
 	typedef i32 (*func_ptr)(CVector*, i32);
 	func_ptr func = (func_ptr)0x0043B740;
 	return func(a1, a2);
+#endif
 }
 
 // @Ok

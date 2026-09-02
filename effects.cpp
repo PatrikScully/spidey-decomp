@@ -7,6 +7,8 @@
 #include "trig.h"
 #include "m3dutils.h"
 #include "camera.h"
+#include "exp.h"
+#include "web.h"
 
 #include "validate.h"
 
@@ -356,6 +358,52 @@ void CChunkSmoke::Move(void)
 	{
 		this->mPos += (this->field_68 - this->mPos) >> 2;
 	}
+}
+
+// @Ok
+// @Matching
+// 0x43B410, 317 bytes (sub_43B410 in names.json; the Mac build names it
+// Effects_LaserFlash(CVector const&, int, int, uchar, uchar, uchar, uchar),
+// the symbol sits between CChunkSmoke::Move and CBouncingRock::CBouncingRock
+// on both platforms). Translated from the disassembly: one CGlowFlash whose
+// size params scale with a2, then either a random start angle (a3 == 0) or
+// a fixed-ish angle plus a section mask that hides one half minus one
+// section (a3 != 0). The original writes the angle/mask through the new
+// pointer without a null check, kept as is.
+void Effects_LaserFlash(CVector* pPos, i32 a2, i32 a3, u8 a4, u8 a5, u8 a6, u8 a7)
+{
+	CGlowFlash* pFlash = new CGlowFlash(
+			pPos, 8, 255, 255, 255, 0, a4, a5, a6, 0,
+			(30 * a2) >> 8, 0, 1,
+			(40 * a2) >> 8, (130 * a2) >> 8, (20 * a2) >> 8, (65 * a2) >> 8,
+			(4 * a2) >> 8, a7);
+
+	if (a3 != 0)
+	{
+		pFlash->mAngle = Rnd(401) - 1224;
+		i32 half = pFlash->mNumSections >> 1;
+		pFlash->mMask = ((1 << half) - 1) & ~(1 << (half - 1)) & ~1;
+	}
+	else
+	{
+		pFlash->mAngle = Rnd(4096);
+	}
+}
+
+// @Ok
+// @Matching
+// 0x43B740, 115 bytes (sub_43B740 in names.json; the Mac build names it
+// Effects_MakeRocks(CVector const&, ulong), between CBouncingRock::Move and
+// CVertexWobble::CVertexWobble on both platforms). Ten CBouncingRock bits at
+// the ground height under pPos; a2 is the texture selector the rock
+// constructor switches on. CPlayer::CreateCombatImpactEffect has the same
+// loop inlined.
+void Effects_MakeRocks(CVector* pPos, u32 a2)
+{
+	i32 groundY = Web_GetGroundY(pPos);
+
+	for (i32 i = 10; i != 0; i--)
+		new CBouncingRock(pPos, groundY, a2);
 }
 
 // @Ok

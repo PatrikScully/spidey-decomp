@@ -264,6 +264,12 @@ EXPORT void Effects_UnElectrify(CSuper*);
 // is Effects_FootStomp(CVector const&, ulong) and the only call site passes
 // 0xC16175F4). Kept in the signature because the original still takes it.
 EXPORT void Effects_FootStomp(CVector*, u32);
+// 0x43B410 (Mac: Effects_LaserFlash(CVector const&, int, int, uchar, uchar,
+// uchar, uchar)). Called by CBaddy::ExecuteCommand for opcodes 0x42A7/0x42A8.
+EXPORT void Effects_LaserFlash(CVector*, i32, i32, u8, u8, u8, u8);
+// 0x43B740 (Mac: Effects_MakeRocks(CVector const&, ulong)). Called by
+// CBaddy::ExecuteCommand and CPlatform::ExecuteCommand for opcode 0x430A.
+EXPORT void Effects_MakeRocks(CVector*, u32);
 
 void patch_effects(void);
 

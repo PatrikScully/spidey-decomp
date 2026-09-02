@@ -461,6 +461,16 @@ static CBody* Trig_CreatePowerUp(i32 type, CVector* pos, i32 flags, i32 param1, 
 	return new CPowerUp(static_cast<u16>(remappedType), pos, gZeroVectorConst, flags, param1, param2);
 }
 
+#ifdef SPIDEY_STANDALONE
+// @Bogus
+// Standalone-only external name for Trig_CreatePowerUp above (0x46BD80,
+// PowerUp_Create in names.json), see powerup.h.
+CBody* PowerUp_Create(i32 type, CVector* pos, i32 flags, i32 param1, i32 param2)
+{
+	return Trig_CreatePowerUp(type, pos, flags, param1, param2);
+}
+#endif
+
 // A handful of the classes Trig_CreateObject below can spawn (CThug,
 // CCop, CHostage) each add ONE new virtual beyond CBaddy's 17 declared
 // vtable slots (0..16) purely so this function can stamp a

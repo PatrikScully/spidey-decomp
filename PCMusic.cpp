@@ -116,12 +116,12 @@ void PCMUSIC_Finish(void)
 	WinYield();
 }
 
-// @Ok
-// @Matching
 #ifdef SPIDEY_STANDALONE
 static i32 gStandaloneMusicPlaying;
 #endif
 
+// @Ok
+// @Matching
 i32 PCMUSIC_GetStatus(void)
 {
 #ifdef SPIDEY_STANDALONE
