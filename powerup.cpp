@@ -23,7 +23,7 @@ void CPowerUp::DoPhysics(void)
 	{
 		if (!this->field_104 && this->field_10C < 0 && this->field_10C > -5)
 		{
-			if (TTime & 1)
+			if (G_TTIME & 1)
 			{
 				i32 height = Utils_GetGroundHeight(&this->field_110, 0, 0x1F40, 0);
 				if (height == -1)
@@ -146,14 +146,14 @@ void CPowerUp::CheckAge(void)
 
 		if (this->mLifetime < 0x3C && this->mLifetime > 0x1E)
 		{
-				if (TTime & 2)
+				if (G_TTIME & 2)
 					this->mDropping = 1;
 				else
 					this->mDropping = 0;
 		}
 		if (this->mLifetime <= 0x1E)
 		{
-			if (TTime & 1)
+			if (G_TTIME & 1)
 				this->mDropping = 1;
 			else
 				this->mDropping = 0;
@@ -179,7 +179,7 @@ void CPowerUp::CheckAge(void)
 // @Ok
 CPowerUp::~CPowerUp(void)
 {
-	this->DeleteFrom(&PowerUpList);
+	this->DeleteFrom(&G_POWER_UP_LIST);
 	this->DeleteStuff();
 }
 
@@ -448,7 +448,7 @@ CPowerUp::CPowerUp(
 		}
 	}
 
-	this->AttachTo(reinterpret_cast<CBody**>(&PowerUpList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_POWER_UP_LIST));
 }
 
 // @Ok
