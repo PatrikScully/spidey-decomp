@@ -5328,7 +5328,12 @@ void patch_CFT4Bit(void)
 void patch_bit(void)
 {
 	// list keeping and per frame drivers
-	PATCH_PUSH_RET(0x00408280, Bit_UpdateQuickAnimLookups);
+	// NOT hooked: our copy leaves the exe's gAnimTable empty, and the exe's
+	// Utils_InitLoadIcons then faults dereferencing gAnimTable[13] (0x0056EA98)
+	// at 0x004E5A97 right after the title screen. Spool_AnimAccess is not hooked,
+	// so our version of this loop cannot resolve the anims. Needs the spool anim
+	// path converted first.
+	// PATCH_PUSH_RET(0x00408280, Bit_UpdateQuickAnimLookups);
 	PATCH_PUSH_RET(0x004082E0, DeleteBitList);
 	PATCH_PUSH_RET(0x00408310, Bit_DeleteAll);
 	PATCH_PUSH_RET(0x00408610, Bit_RemoveDeadBits);
