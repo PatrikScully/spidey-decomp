@@ -864,8 +864,8 @@ outerLoop:
 		Reloc_Unload("shell");
 
 		// the "what if" version of level 1 area 2
-		if (Utils_CompareStrings("l1a2_t", gSaveGame.field_4) && gWhatIf)
-			Utils_CopyString("l1a2a_t", gSaveGame.field_4, 9);
+		if (Utils_CompareStrings("l1a2_t", G_SAVE_GAME.field_4) && gWhatIf)
+			Utils_CopyString("l1a2a_t", G_SAVE_GAME.field_4, 9);
 
 		if (*gQuitAfterShell)
 		{
@@ -877,11 +877,11 @@ outerLoop:
 	{
 		// a level was forced from the command line: take its name straight out
 		// of the level table and throw the restart point away
-		Utils_CopyString(Levels[*gStartLevelIndex].mName, gSaveGame.field_4, 9);
+		Utils_CopyString(Levels[*gStartLevelIndex].mName, G_SAVE_GAME.field_4, 9);
 
-		pSaveBytes = reinterpret_cast<u8*>(&gSaveGame);
+		pSaveBytes = reinterpret_cast<u8*>(&G_SAVE_GAME);
 
-		gSaveGame.mRestartPointName[0] = 0;
+		G_SAVE_GAME.mRestartPointName[0] = 0;
 		*reinterpret_cast<i32*>(pSaveBytes + 0x50) = 0;
 		pSaveBytes[0x79] = 0;
 		*reinterpret_cast<i32*>(pSaveBytes + 0x48) = 0;
@@ -898,7 +898,7 @@ outerLoop:
 levelEntry:
 	gsub_515D80();
 	((void(*)(i32))gsub_430880)(Trig_GetLevelId());
-	Front_LoadGame(&gSaveGame, 0, false);
+	Front_LoadGame(&G_SAVE_GAME, 0, false);
 
 innerLoop:
 	PlayAway();
@@ -937,7 +937,7 @@ innerLoop:
 			goto quitTail;
 
 		((void(*)(i32))gsub_430880)(Trig_GetLevelId());
-		Front_LoadGame(&gSaveGame, 1, false);
+		Front_LoadGame(&G_SAVE_GAME, 1, false);
 		goto innerLoop;
 
 	case 3:
@@ -945,7 +945,7 @@ innerLoop:
 		Init_Cleanup(0);
 		Screen_SepiaFade();
 
-		if (Utils_CompareStrings(gSaveGame.field_4, "l8a7_t"))
+		if (Utils_CompareStrings(G_SAVE_GAME.field_4, "l8a7_t"))
 		{
 			// the last area of level 8 counts as l8a6_t. No -1 check on the
 			// index here, only the assert, same as the original.
@@ -953,8 +953,8 @@ innerLoop:
 
 			print_if_false(levelIndex != -1, "Could not find l8a6_t ???");
 
-			if (gSaveGame.field_56[levelIndex] < 0xFF)
-				gSaveGame.field_56[levelIndex]++;
+			if (G_SAVE_GAME.field_56[levelIndex] < 0xFF)
+				G_SAVE_GAME.field_56[levelIndex]++;
 
 			PShell_MaybeUnlockStuff();
 
@@ -962,7 +962,7 @@ innerLoop:
 			goto outerLoop;
 		}
 
-		levelIndex = Front_GetLevelIndex(gSaveGame.field_4);
+		levelIndex = Front_GetLevelIndex(G_SAVE_GAME.field_4);
 
 		if (levelIndex != -1)
 		{
@@ -970,8 +970,8 @@ innerLoop:
 
 			print_if_false(levelIndex >= 0 && levelIndex < 34, "Bad LevelIndex");
 
-			if (gSaveGame.field_56[levelIndex] < 0xFF)
-				gSaveGame.field_56[levelIndex]++;
+			if (G_SAVE_GAME.field_56[levelIndex] < 0xFF)
+				G_SAVE_GAME.field_56[levelIndex]++;
 		}
 
 		PShell_MaybeUnlockStuff();
@@ -989,7 +989,7 @@ innerLoop:
 			}
 			else
 			{
-				pLevel = Front_FindLevel(gSaveGame.field_4);
+				pLevel = Front_FindLevel(G_SAVE_GAME.field_4);
 
 				if (pLevel && (pLevel->field_8 & 2))
 					PShell_MaybeSaveGame();
@@ -997,7 +997,7 @@ innerLoop:
 		}
 
 		((void(*)(i32))gsub_430880)(Trig_GetLevelId());
-		Front_LoadGame(&gSaveGame, 0, true);
+		Front_LoadGame(&G_SAVE_GAME, 0, true);
 		goto innerLoop;
 
 	case 4:
@@ -1050,10 +1050,10 @@ quitTail:
 		Front_ClearScreen();
 		Init_Cleanup(0);
 
-		gSaveGame.mRestartPointName[0] = 0;
+		G_SAVE_GAME.mRestartPointName[0] = 0;
 
 		((void(*)(i32))gsub_430880)(Trig_GetLevelId());
-		Front_LoadGame(&gSaveGame, 0, false);
+		Front_LoadGame(&G_SAVE_GAME, 0, false);
 		goto innerLoop;
 
 	case 10:
