@@ -21,20 +21,42 @@
 #include "screen.h"
 #include "ps2m3d.h"
 
+// The six spark globals. Only CSpark::CSpark reads them and only the five
+// Bit_SetSpark* setters write them, all in this file, but the exe keeps its
+// own copies at these fixed addresses and CSpark is created from eight other
+// files, so the macros point at game memory. Addresses proved from the
+// disasm: Bit_SetSparkSize (0x40F410) stores 0x547EB8, Bit_SetSparkRGB
+// (0x40F440) stores 0x547EC0/EC1/EC2, Bit_SetSparkFadeRGB (0x40F460) stores
+// 0x547EC4/EC5/EC6, Bit_SetSparkTrajectory (0x40F3D0) stores 0x56E9B8,
+// Bit_SetSparkTrajectoryCone (0x40F3F0) stores 0x56EB38, and CSpark::CSpark
+// (0x40F480) reads all of them plus 0x547EBC. idb_globals.txt confirms
+// SparkSize, SparkSemiTrans, gSparkRGB, gSparkTrajectory and
+// gSparkTrajectoryCone by name.
+
 // @Ok
 EXPORT bool SparkSemiTrans = true;
+//#define G_SPARK_SEMI_TRANS (SparkSemiTrans)
+#define G_SPARK_SEMI_TRANS (*reinterpret_cast<bool*>(0x00547EBC))
 
 // @Ok
 EXPORT CSVector SparkTrajectoryCone;
+//#define G_SPARK_TRAJECTORY_CONE (SparkTrajectoryCone)
+#define G_SPARK_TRAJECTORY_CONE (*reinterpret_cast<CSVector*>(0x0056EB38))
 
 // @Ok
 EXPORT CSVector SparkTrajectory;
+//#define G_SPARK_TRAJECTORY (SparkTrajectory)
+#define G_SPARK_TRAJECTORY (*reinterpret_cast<CSVector*>(0x0056E9B8))
 
 // @Ok
 EXPORT u8 gSparkRGB[3] = { 0x80, 0x80, 0x80 };
+//#define G_SPARK_RGB (gSparkRGB)
+#define G_SPARK_RGB (reinterpret_cast<u8*>(0x00547EC0))
 
 // @Ok
 EXPORT u8 gSparkFadeRGB[3] = { 4, 4, 4 };
+//#define G_SPARK_FADE_RGB (gSparkFadeRGB)
+#define G_SPARK_FADE_RGB (reinterpret_cast<u8*>(0x00547EC4))
 
 // @Ok
 EXPORT char *gAnimNames[29] =
@@ -104,6 +126,8 @@ EXPORT CSpecialDisplay *SpecialDisplayList = 0;
 EXPORT CPixel* PixelList;
 
 u32 SparkSize = 1;
+//#define G_SPARK_SIZE (SparkSize)
+#define G_SPARK_SIZE (*reinterpret_cast<u32*>(0x00547EB8))
 
 // @FIXME - is it really?
 // volatile i32 gTimerRelated;   // see G_TIMER_RELATED in bit.h
@@ -128,21 +152,21 @@ EXPORT CBitServer* gBitServer = 0;
 // @Validate: when inlined
 INLINE void Bit_CalculateSparkVelocity(CVector &a1, i32 a2)
 {
-	CSVector v11 = SparkTrajectory;
+	CSVector v11 = G_SPARK_TRAJECTORY;
 
-	if (SparkTrajectoryCone.vx)
+	if (G_SPARK_TRAJECTORY_CONE.vx)
 	{
-		v11.vx += Rnd(SparkTrajectoryCone.vx) - (SparkTrajectory.vx >> 1);
+		v11.vx += Rnd(G_SPARK_TRAJECTORY_CONE.vx) - (G_SPARK_TRAJECTORY.vx >> 1);
 	}
 
-	if (SparkTrajectoryCone.vy)
+	if (G_SPARK_TRAJECTORY_CONE.vy)
 	{
-		v11.vy += Rnd(SparkTrajectoryCone.vy) - (SparkTrajectory.vy >> 1);
+		v11.vy += Rnd(G_SPARK_TRAJECTORY_CONE.vy) - (G_SPARK_TRAJECTORY.vy >> 1);
 	}
 
-	if (SparkTrajectoryCone.vz)
+	if (G_SPARK_TRAJECTORY_CONE.vz)
 	{
-		v11.vz += Rnd(SparkTrajectoryCone.vz) - (SparkTrajectory.vz >> 1);
+		v11.vz += Rnd(G_SPARK_TRAJECTORY_CONE.vz) - (G_SPARK_TRAJECTORY.vz >> 1);
 	}
 
 	Utils_GetVecFromMagDir(&a1, a2, &v11);
@@ -157,11 +181,11 @@ CSpark::CSpark(
 		i32 a4,
 		i32 a5)
 {
-	if ((SparkSize & 0xF) != 1)
+	if ((G_SPARK_SIZE & 0xF) != 1)
 	{
 		this->code = 96;
 		this->tag = 0x3000000;
-		this->mWidthHeight = SparkSize;
+		this->mWidthHeight = G_SPARK_SIZE;
 	}
 	else
 	{
@@ -170,13 +194,13 @@ CSpark::CSpark(
 		this->mWidthHeight = 1;
 	}
 
-	this->r0 = gSparkRGB[0];
-	this->g0 = gSparkRGB[1];
-	this->b0 = gSparkRGB[2];
+	this->r0 = G_SPARK_RGB[0];
+	this->g0 = G_SPARK_RGB[1];
+	this->b0 = G_SPARK_RGB[2];
 
-	this->mFadeR = gSparkFadeRGB[0];
-	this->mFadeG = gSparkFadeRGB[1];
-	this->mFadeB = gSparkFadeRGB[2];
+	this->mFadeR = G_SPARK_FADE_RGB[0];
+	this->mFadeG = G_SPARK_FADE_RGB[1];
+	this->mFadeB = G_SPARK_FADE_RGB[2];
 
 	this->mPos = a2;
 
@@ -188,7 +212,7 @@ CSpark::CSpark(
 
 	this->mLifetime = Rnd(a5);
 
-	if (SparkSemiTrans)
+	if (G_SPARK_SEMI_TRANS)
 	{
 		this->code |= 2u;
 	}
@@ -513,7 +537,7 @@ void CSimpleTexturedRibbon::SetTexture(u32 checksum)
 	DoAssert(TextureEntry != 0, "Could not find texture for ribbon");
 	if (!TextureEntry)
 	{
-		TextureEntry = gAnimTable[13]->pTexture;
+		TextureEntry = G_ANIM_TABLE[13]->pTexture;
 	}
 
 	this->SetTexture(TextureEntry);
@@ -689,11 +713,17 @@ void Bit_Move(void)
 	MoveBits(G_SPECIALDISPLAY_LIST);
 }
 
-// tentative name, no idb match (0x0056F224). Passed by address to gte_SetRotMatrix right
-// before Bit_Display's render pass, same idiom as screen.cpp's gte_SetRotMatrix(gTargetRotMatrix)
-// + m3d_ZeroTransVector() pair, so this is a MATRIX the display pass resets the GTE to before
-// projecting anything (an identity-ish rotation, shared by every DisplayXList callback).
-EXPORT MATRIX gBitDisplayMatrix;
+// 0x0056F224. Passed by address to gte_SetRotMatrix right before Bit_Display's
+// render pass, same idiom as screen.cpp's gte_SetRotMatrix(gTargetRotMatrix)
+// + m3d_ZeroTransVector() pair, so this is a MATRIX the display pass resets the
+// GTE to before projecting anything (shared by every DisplayXList callback).
+// It is the same object six other files already reach at a fixed address
+// (utils.cpp gCameraViewMatrix, chopper.cpp gCameraViewMatrix, spidey.cpp and
+// panel.cpp stru_56F224, screen.cpp gTargetRotMatrix): the camera view matrix.
+// Nothing in this repo writes it, the camera code in the exe does, so it has to
+// be read out of game memory or a hooked Bit_Display would load an all zero
+// rotation into the GTE. Was a plain repo MATRIX until this pass.
+static MATRIX * const gBitDisplayMatrix = (MATRIX*)0x0056F224;
 
 // address 0x411CF0, name from names.json. Runs every registered CBitServer display slot once
 // per frame (CBitServer::DisplayRegisteredSlots, already @Ok, is the exact same 32-slot loop
@@ -704,7 +734,7 @@ void Bit_Display(void)
 {
 	print_if_false(reinterpret_cast<u8*>(G_PPOLY) <= G_POLY_BUFFER_END, "Poly buffer overflowed before Bit_Display");
 
-	gte_SetRotMatrix(&gBitDisplayMatrix);
+	gte_SetRotMatrix(gBitDisplayMatrix);
 	m3d_ZeroTransVector();
 
 	if (G_BITSERVER)
@@ -1797,7 +1827,7 @@ void CSimpleTexturedRibbon::Display(void)
 		CVector edgeA(spine[i].mPos.vx - dx, spine[i].mPos.vy - dy, spine[i].mPos.vz - dz);
 		CVector edgeB(spine[i].mPos.vx + dx, spine[i].mPos.vy + dy, spine[i].mPos.vz + dz);
 
-		gte_SetRotMatrix(&gBitDisplayMatrix);
+		gte_SetRotMatrix(gBitDisplayMatrix);
 		m3d_ZeroTransVector();
 		ProjectRibbonEdge(edgeA, invZArray, invZIndex, recCursor, 0);
 
@@ -2850,7 +2880,7 @@ void Bit_Init(void)
 	}
 
 	setDrawTPage();
-	memset(gAnimTable, 0, sizeof(gAnimTable));
+	memset(G_ANIM_TABLE, 0, NUM_ANIM_ENTRIES * sizeof(SAnimFrame*));
 }
 
 // @Ok
@@ -2858,7 +2888,7 @@ void Bit_SetSparkSize(u32 size)
 {
 	DoAssert(size < 0x10, "Daft spark size");
 
-	SparkSize = size | (size << 16);
+	G_SPARK_SIZE = size | (size << 16);
 }
 
 // @Ok
@@ -4165,7 +4195,7 @@ void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, int a4, int a5)
 void CQuadBit::SetTexture(int a, int b){
 	DoAssert(a >= 0 && static_cast<u32>(a) < NUM_ANIM_ENTRIES, "Bad lookup value sent to CQuadBit::SetTexture");
 
-	SAnimFrame* pAnim = gAnimTable[a];
+	SAnimFrame* pAnim = G_ANIM_TABLE[a];
 
 	DoAssert(b >= 0 && b < *(reinterpret_cast<i32*>(pAnim) - 1), "Bad frame sent to CQuadBit::SetTexture");
 
@@ -4481,18 +4511,18 @@ void MoveList(CBit *pBit)
 // @Matching
 void Bit_SetSparkRGB(u8 r, u8 g, u8 b)
 {
-	gSparkRGB[0] = r;
-	gSparkRGB[1] = g;
-	gSparkRGB[2] = b;
+	G_SPARK_RGB[0] = r;
+	G_SPARK_RGB[1] = g;
+	G_SPARK_RGB[2] = b;
 }
 
 // @Ok
 // @Matching
 void Bit_SetSparkFadeRGB(u8 r, u8 g, u8 b)
 {
-	gSparkFadeRGB[0] = r;
-	gSparkFadeRGB[1] = g;
-	gSparkFadeRGB[2] = b;
+	G_SPARK_FADE_RGB[0] = r;
+	G_SPARK_FADE_RGB[1] = g;
+	G_SPARK_FADE_RGB[2] = b;
 }
 
 // @Ok
@@ -4514,7 +4544,7 @@ void CGlow::SetCentreRGB(unsigned char a2, unsigned char a3, unsigned char a4)
 // Bit_SetSparkTrajectoryCone right below.
 void Bit_SetSparkTrajectory(const CSVector *pVec)
 {
-	SparkTrajectory = *pVec;
+	G_SPARK_TRAJECTORY = *pVec;
 }
 
 // @Ok
@@ -4522,7 +4552,7 @@ void Bit_SetSparkTrajectory(const CSVector *pVec)
 // 0x40f3f0. Just stores the cone vector into gSparkTrajectoryCone.
 void Bit_SetSparkTrajectoryCone(const CSVector *pVec)
 {
-	SparkTrajectoryCone = *pVec;
+	G_SPARK_TRAJECTORY_CONE = *pVec;
 }
 
 // @Ok
@@ -4676,15 +4706,15 @@ void Bit_UpdateQuickAnimLookups(void)
 {
 	for (i32 i = 0; i < NUM_ANIM_ENTRIES; i++)
 	{
-		if (gAnimTable[i])
+		if (G_ANIM_TABLE[i])
 		{
-			DoAssert(gAnimTable[i]->pTexture != 0, "Anim has no texture, don't know the region!");
+			DoAssert(G_ANIM_TABLE[i]->pTexture != 0, "Anim has no texture, don't know the region!");
 			Spool_RemoveAccess(
-					reinterpret_cast<void**>(&gAnimTable[i]),
-					gAnimTable[i]->pTexture->mRegion);
+					reinterpret_cast<void**>(&G_ANIM_TABLE[i]),
+					G_ANIM_TABLE[i]->pTexture->mRegion);
 		}
 
-		Spool_AnimAccess(gAnimNames[i], &gAnimTable[i]);
+		Spool_AnimAccess(gAnimNames[i], &G_ANIM_TABLE[i]);
 	}
 }
 
