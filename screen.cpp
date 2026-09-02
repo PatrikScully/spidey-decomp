@@ -1,4 +1,5 @@
 #include "screen.h"
+#include "ps2m3d.h"
 #include "db.h"
 #include "panel.h"
 #include "camera.h"
@@ -37,11 +38,11 @@ void Screen_DrawArrow(void)
 	if (!gScreenTarget)
 		return;
 
-	u32 *next = pPoly + 15;
-	if ((u8*)next >= PolyBufferEnd)
+	u32 *next = G_PPOLY + 15;
+	if ((u8*)next >= G_POLY_BUFFER_END)
 		return;
-	POLY_F3 *tri = (POLY_F3*)pPoly;
-	pPoly = next;
+	POLY_F3 *tri = (POLY_F3*)G_PPOLY;
+	G_PPOLY = next;
 
 	VECTOR relPos;
 	relPos.vx = (gTargetRelated.vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
@@ -75,7 +76,7 @@ void Screen_DrawArrow(void)
 	tri->x2 = (i16)(screenX + 12);
 	tri->y2 = (i16)(screenY - 12);
 
-	gsub_46CB90((void*)0x0056EB54);
+	gsub_46CB90(G_RENDER_BUF);
 
 	POLY_F4 *quad = (POLY_F4*)((u8*)tri + 0x14);
 	quad->code = 0xA0;
@@ -92,7 +93,7 @@ void Screen_DrawArrow(void)
 	quad->y1 = (i16)(screenY - 24);
 	quad->y3 = (i16)(screenY - 24);
 
-	gsub_46CB90((void*)0x0056EB54);
+	gsub_46CB90(G_RENDER_BUF);
 }
 
 // @Ok
@@ -117,12 +118,12 @@ void Screen_DrawTarget(void)
 
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
 
-	u8 *pPolyByte = (u8*)pPoly;
-	if (pPolyByte + 80 >= PolyBufferEnd)
+	u8 *pPolyByte = (u8*)G_PPOLY;
+	if (pPolyByte + 80 >= G_POLY_BUFFER_END)
 		return;
 
 	u8 *pQuad = pPolyByte + 4;  // quad data starts 4 bytes in (header)
-	pPoly = (u32*)(pPolyByte + 80);
+	G_PPOLY = (u32*)(pPolyByte + 80);
 
 	i32 screenXY;
 	gte_stsxy(&screenXY);
@@ -210,7 +211,7 @@ void Screen_SepiaFade(void)
 	gsub_430680();
 
 	void *p = DCMem_New(0x1000, 0, 1, 0, true);
-	i32 x = (i32)pDoubleBuffer - (i32)&DoubleBuffer[0];
+	i32 x = (i32)G_PDOUBLE_BUFFER - (i32)&G_DOUBLE_BUFFER[0];
 	void *chunk[4];
 	chunk[0] = p;
 	p = (u8*)p + 0x400;
@@ -307,7 +308,7 @@ static i16 * const gCircularFadeShapePoints = (i16*)0x54ECBC;
 // @Ok
 static void CircularFade_DrawQuad(POLY_F4 *p, f32 xScale, f32 yScale)
 {
-	gsub_46CB90((void*)0x0056EB54);
+	gsub_46CB90(G_RENDER_BUF);
 
 	f32 x0 = (f32)p->x0 * xScale, y0 = (f32)p->y0 * yScale;
 	f32 x1 = (f32)p->x1 * xScale, y1 = (f32)p->y1 * yScale;
@@ -331,7 +332,7 @@ static void CircularFade_DrawQuad(POLY_F4 *p, f32 xScale, f32 yScale)
 // @Ok
 static void CircularFade_DrawTri(POLY_F3 *p, f32 xScale, f32 yScale)
 {
-	gsub_46CB90((void*)0x0056EB54);
+	gsub_46CB90(G_RENDER_BUF);
 
 	f32 x0 = (f32)p->x0 * xScale, y0 = (f32)p->y0 * yScale;
 	f32 x1 = (f32)p->x1 * xScale, y1 = (f32)p->y1 * yScale;
@@ -393,7 +394,7 @@ void Screen_UpdateFades(void)
 
 	// Bail if there isn't room left in the poly scratch buffer for the
 	// worst case (21 quads + the 4 rectangles, all POLY_F4-sized).
-	if ((u8*)pPoly + 1200 >= PolyBufferEnd)
+	if ((u8*)G_PPOLY + 1200 >= G_POLY_BUFFER_END)
 		return;
 
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
@@ -413,8 +414,8 @@ void Screen_UpdateFades(void)
 
 		for (i32 band = 0; band < 4; band++)
 		{
-			POLY_F4 *p = (POLY_F4*)pPoly;
-			pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+			POLY_F4 *p = (POLY_F4*)G_PPOLY;
+			G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(POLY_F4));
 
 			p->tag = 0x5000000;
 			p->r0 = 0;
@@ -467,8 +468,8 @@ void Screen_UpdateFades(void)
 			{
 				++prog; // pad byte
 
-				POLY_F3 *p = (POLY_F3*)pPoly;
-				pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F3));
+				POLY_F3 *p = (POLY_F3*)G_PPOLY;
+				G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(POLY_F3));
 
 				p->tag = 0x4000000;
 				p->r0 = 0;
@@ -495,8 +496,8 @@ void Screen_UpdateFades(void)
 			{
 				++prog; // pad byte
 
-				POLY_F4 *p = (POLY_F4*)pPoly;
-				pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+				POLY_F4 *p = (POLY_F4*)G_PPOLY;
+				G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(POLY_F4));
 
 				p->tag = 0x5000000;
 				p->r0 = 0;

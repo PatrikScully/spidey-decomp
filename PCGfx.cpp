@@ -148,10 +148,10 @@ extern EXPORT f32 gPcGfxBrightnessPower[8];
 // (dword_73C77C=gZLayerNearest, flt_AC07B8=gZLayerFurthest).
 void PCGfx_BeginScene(u32 a1, i32 a2)
 {
-	if (gSceneRelated)
+	if (G_SCENE_RELATED)
 		return;
 
-	if (gBFoggingRelated)
+	if (G_BFOGGING_RELATED)
 	{
 		f32 fogRf = (f32)((gU32FoggingParamThree >> 16) & 0xFF);
 		f32 fogGf = (f32)((gU32FoggingParamThree >> 8) & 0xFF);
@@ -184,24 +184,24 @@ void PCGfx_BeginScene(u32 a1, i32 a2)
 
 		f32 invPower = 1.0f / gPcGfxBrightnessPower[gBrightnessRelated];
 
-		u8 skyB = (u8)gPcGfxSkyColor;
-		u8 skyA = (u8)(gPcGfxSkyColor >> 24);
-		u8 skyG = (u8)(gPcGfxSkyColor >> 8);
-		u8 skyR = (u8)(gPcGfxSkyColor >> 16);
+		u8 skyB = (u8)G_PCGFX_SKY_COLOR;
+		u8 skyA = (u8)(G_PCGFX_SKY_COLOR >> 24);
+		u8 skyG = (u8)(G_PCGFX_SKY_COLOR >> 8);
+		u8 skyR = (u8)(G_PCGFX_SKY_COLOR >> 16);
 
 		i32 newR = (i32)(pow((f64)((f32)skyR / 255.0f), (f64)invPower) * 255.0 + 0.5);
 		i32 newG = (i32)(pow((f64)((f32)skyG / 255.0f), (f64)invPower) * 255.0 + 0.5);
 		i32 newB = (i32)(pow((f64)((f32)skyB / 255.0f), (f64)invPower) * 255.0 + 0.5);
 
-		gPcGfxSkyColor = newB | ((newG | ((newR | (skyA << 8)) << 8)) << 8);
+		G_PCGFX_SKY_COLOR = newB | ((newG | ((newR | (skyA << 8)) << 8)) << 8);
 
-		DXPOLY_SetBackgroundColor(gPcGfxSkyColor);
-		gBFoggingRelated = 0;
+		DXPOLY_SetBackgroundColor(G_PCGFX_SKY_COLOR);
+		G_BFOGGING_RELATED = 0;
 	}
 
 	PCGfx_ProcessTexture(0, -1, DCGfx_BlendingMode_0);
 	DXPOLY_BeginScene();
-	gSceneRelated = 1;
+	G_SCENE_RELATED = 1;
 	gZLayerNearest = 0.0099999998;
 	gZLayerFurthest = -0.2;
 }
@@ -865,9 +865,9 @@ void PCGfx_DrawQPoly2D(
 
 	if (gLowGraphics)
 	{
-		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)G_USE_TEXTURE_RELATED;
 		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
 
 		p->field_C = 4;
@@ -910,10 +910,10 @@ void PCGfx_DrawQPoly2D(
 	else
 	{
 		LPDIRECTDRAWSURFACE7 Direct3DTexture;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			Direct3DTexture = 0;
 		else
-			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+			Direct3DTexture = PCTex_GetDirect3DTexture(G_USE_TEXTURE_RELATED);
 		p->field_4 = Direct3DTexture;
 		p->mBlendMode = gChosenBlendingMode;
 		p->field_A = gProcessedTextureFlags;
@@ -1231,9 +1231,9 @@ void PCGfx_DrawQuad2D(
 
 	if (gLowGraphics)
 	{
-		v16->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		v16->field_4 = (LPDIRECTDRAWSURFACE7)(i32)G_USE_TEXTURE_RELATED;
 		*(i32*)&v16->mBlendMode = gPcGfxDrawRelated;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			*(i32*)&v16->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
 
 		v16->field_C = 4;
@@ -1278,10 +1278,10 @@ void PCGfx_DrawQuad2D(
 	else
 	{
 		LPDIRECTDRAWSURFACE7 Direct3DTexture;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			Direct3DTexture = 0;
 		else
-			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+			Direct3DTexture = PCTex_GetDirect3DTexture(G_USE_TEXTURE_RELATED);
 		v16->field_4 = Direct3DTexture;
 		v16->mBlendMode = gChosenBlendingMode;
 		v16->field_A = gProcessedTextureFlags;
@@ -1430,9 +1430,9 @@ void PCGfx_DrawTPoly2D(
 
 	if (gLowGraphics)
 	{
-		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)G_USE_TEXTURE_RELATED;
 		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
 
 		p->field_C = 3;
@@ -1475,10 +1475,10 @@ void PCGfx_DrawTPoly2D(
 	else
 	{
 		LPDIRECTDRAWSURFACE7 Direct3DTexture;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			Direct3DTexture = 0;
 		else
-			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+			Direct3DTexture = PCTex_GetDirect3DTexture(G_USE_TEXTURE_RELATED);
 		p->field_4 = Direct3DTexture;
 		p->mBlendMode = gChosenBlendingMode;
 		p->field_A = gProcessedTextureFlags;
@@ -1808,12 +1808,12 @@ void PCGfx_DrawTexture2D(
 // @Note powerpc has fps counter here and fog level
 INLINE void PCGfx_EndScene(i32 a1)
 {
-	if (gSceneRelated)
+	if (G_SCENE_RELATED)
 	{
 		DXPOLY_EndScene(a1 != 0);
 		PCGfx_ProcessTexture(0, -1, DCGfx_BlendingMode_0);
 		gEndSceneRelated = -1;
-		gSceneRelated = 0;
+		G_SCENE_RELATED = 0;
 		gEndSceneRelatedTwo = 0;
 	}
 }
@@ -1830,7 +1830,7 @@ void PCGfx_Exit(void)
 // @Ok
 f32 PCGfx_GetZLayerFurthest(void)
 {
-	if ( !gSceneRelated )
+	if ( !G_SCENE_RELATED )
 		PCGfx_BeginScene(3, -1);
 
 	return gZLayerFurthest;
@@ -1839,7 +1839,7 @@ f32 PCGfx_GetZLayerFurthest(void)
 // @Ok
 f32 PCGfx_GetZLayerNearest(void)
 {
-	if ( !gSceneRelated )
+	if ( !G_SCENE_RELATED )
 		PCGfx_BeginScene(3, -1);
 
 	return gZLayerNearest;
@@ -1870,7 +1870,7 @@ void PCGfx_InitAtStart(void)
 // @Matching
 u8 PCGfx_IsInScene(void)
 {
-	return gSceneRelated;
+	return G_SCENE_RELATED;
 }
 
 EXPORT i32 gBlendingModes[DCGfx_BlendingMode_MAX + 1] =
@@ -1973,7 +1973,7 @@ void PCGfx_RenderModelPreview(
 	TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
 	PCGfx_BeginScene(1u, -1);
 
-	M3d_RenderSetup(&G_MIKE_CAMERA[0], &G_VIEWPORT, (u32*)&pDoubleBuffer[1].Draw.tpage);
+	M3d_RenderSetup(&G_MIKE_CAMERA[0], &G_VIEWPORT, (u32*)&G_PDOUBLE_BUFFER[1].Draw.tpage);
 	M3d_Render(a1);
 	M3d_RenderCleanup();
 	Mess_SetSort(4095);
@@ -1992,12 +1992,12 @@ void PCGfx_RenderModelPreview(
 	sprintf(v3, "ITM: %i %i %i", a1->mPos.vx >> 12, a1->mPos.vy >> 12, a1->mPos.vz >> 12);
 	Mess_DrawText(220, 45, v3, 0, 0x1000u);
 
-	if (gSceneRelated != 0)
+	if (G_SCENE_RELATED != 0)
 	{
 		DXPOLY_EndScene(1);
 		PCGfx_ProcessTexture(0, -1, DCGfx_BlendingMode_0);
 		gEndSceneRelated = -1;
-		gSceneRelated = 0;
+		G_SCENE_RELATED = 0;
 		gEndSceneRelatedTwo = 0;
 	}
 }
@@ -2057,7 +2057,7 @@ void PCGfx_SetFogParams(
 	gFlFoggingParamOne = a1;
 	gFlFoggingParamTwo = a2;
 	gU32FoggingParamThree = three;
-	gBFoggingRelated = 1;
+	G_BFOGGING_RELATED = 1;
 }
 
 u32 gDepthCompareValues[DCGfx_RenderSetting_7 + 1] =
@@ -2112,7 +2112,7 @@ void PCGfx_SetRenderParameter(
 // @Ok
 INLINE void PCGfx_SetSkyColor(u32 a1)
 {
-	gPcGfxSkyColor = a1;
+	G_PCGFX_SKY_COLOR = a1;
 	DXPOLY_SetBackgroundColor(a1 | 0xFF000000);
 }
 
@@ -2126,11 +2126,11 @@ INLINE void PCGfx_UseTexture(i32 a1, DCGfx_BlendingMode a2)
 		v2 = -1;
 		gNonRendderSettingE = gIsRenderSettingE;
 	}
-	if ( gUseTextureRelated != v2 || gTextureBlendingMode != a2 )
+	if ( G_USE_TEXTURE_RELATED != v2 || gTextureBlendingMode != a2 )
 	{
-		gUseTextureRelated = v2;
+		G_USE_TEXTURE_RELATED = v2;
 		gTextureBlendingMode = a2;
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 		{
 			PCGfx_BeginScene(3u, -1);
 		}
@@ -2343,9 +2343,9 @@ void submitPoly(_DXVERT **verts, i32 count)
 
 	if (gLowGraphics)
 	{
-		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)gUseTextureRelated;
+		p->field_4 = (LPDIRECTDRAWSURFACE7)(i32)G_USE_TEXTURE_RELATED;
 		*(i32*)&p->mBlendMode = gPcGfxDrawRelated;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			*(i32*)&p->mBlendMode = gPcGfxDrawRelated & 0xFFFFFFFB;
 
 		p->field_C = count;
@@ -2391,10 +2391,10 @@ void submitPoly(_DXVERT **verts, i32 count)
 	else
 	{
 		LPDIRECTDRAWSURFACE7 Direct3DTexture;
-		if (gUseTextureRelated < 0)
+		if (G_USE_TEXTURE_RELATED < 0)
 			Direct3DTexture = 0;
 		else
-			Direct3DTexture = PCTex_GetDirect3DTexture(gUseTextureRelated);
+			Direct3DTexture = PCTex_GetDirect3DTexture(G_USE_TEXTURE_RELATED);
 		p->field_4 = Direct3DTexture;
 		p->mBlendMode = gChosenBlendingMode;
 		p->field_A = gProcessedTextureFlags;

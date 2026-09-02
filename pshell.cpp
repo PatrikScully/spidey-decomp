@@ -1,4 +1,5 @@
 #include "pshell.h"
+#include "ps2m3d.h"
 #include "mess.h"
 #include "utils.h"
 #include "spool.h"
@@ -420,13 +421,13 @@ void PShell_ApplyGameState(void)
 	i16 v14 = G_SAVE_GAME.field_A4;
 	G_GAMESTATE[0] = v12;
 
-	DoubleBuffer[0].Disp.screen.x = v14;
-	DoubleBuffer[1].Disp.screen.x = v14;
+	G_DOUBLE_BUFFER[0].Disp.screen.x = v14;
+	G_DOUBLE_BUFFER[1].Disp.screen.x = v14;
 
 	i16 v15 = G_SAVE_GAME.field_A8;
 
-	DoubleBuffer[0].Disp.screen.y = v15;
-	DoubleBuffer[1].Disp.screen.y = v15;
+	G_DOUBLE_BUFFER[0].Disp.screen.y = v15;
+	G_DOUBLE_BUFFER[1].Disp.screen.y = v15;
 
 	Pad_SetAnalogueMapping(gSControl, 3, 2, 1, 0,
 			G_GAMESTATE[4], G_GAMESTATE[5], G_GAMESTATE[6], G_GAMESTATE[7]);
@@ -462,8 +463,8 @@ void PShell_DrawHighlight(i32 a1, i32 a2, i32 a3, i32 a4)
 	Texture* pTex = Spool_FindTextureEntry(0xE90B5F6E);
 	print_if_false(pTex != 0, "Missing title bar texture");
 
-	POLY_GT4* p = (POLY_GT4*)pPoly;
-	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_GT4));
+	POLY_GT4* p = (POLY_GT4*)G_PPOLY;
+	G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(POLY_GT4));
 	i32 v1 = a4 + 4;
 
 	p->tag = 0xC000000;
@@ -512,7 +513,7 @@ void PShell_DrawHighlight(i32 a1, i32 a2, i32 a3, i32 a4)
 	p->x3 = (i16)x1;
 	p->y3 = (i16)y0;
 
-	gsub_46CB90((void*)0x0056EB54);
+	gsub_46CB90(G_RENDER_BUF);
 
 	i32 sort = G_SORT;
 	if (sort >= 0xFFE && sort <= 0xFFF)
@@ -1089,7 +1090,7 @@ void PShell_MaybeSaveGame(void)
 
 			i32 vblanksSnapshot = G_VBLANKS;
 
-			if (!gSceneRelated)
+			if (!G_SCENE_RELATED)
 				PCGfx_BeginScene(1, -1);
 
 			Mess_SetScale(0x100);
@@ -1098,7 +1099,7 @@ void PShell_MaybeSaveGame(void)
 			Mess_SetRGB(0x4D, 0x53, 0x69, 0);
 			Mess_DrawText(0x100, 0x3C, gTextSaveGameProgress, 0, 0x1000);
 
-			if (gSceneRelated)
+			if (G_SCENE_RELATED)
 				PCGfx_EndScene(1);
 
 			zoomEase = PShell_MoveTowards(zoomEase, 0x1CC);

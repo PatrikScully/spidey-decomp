@@ -1,4 +1,6 @@
 #include "front.h"
+#include "ps2m3d.h"
+#include "db.h"
 #include "validate.h"
 #include "utils.h"
 #include "mess.h"
@@ -39,8 +41,6 @@ SLevel Levels[FRONT_NUM_LEVELS];
 // record itself is not understood (no consumer of this buffer has been
 // decompiled yet), so CMenu::Display below pokes it by raw byte offset
 // instead of a named struct.
-#define gMenuHighlightBufPos (*reinterpret_cast<u8**>(0x0056FB04))
-#define gMenuHighlightBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
 
 // idb_globals.txt: 0x0054D341 gPrintStubbed. Guards debug stubbed_printf
 // calls in both CMenu::Display and Front_LoadGame below (not menu-specific,
@@ -61,14 +61,14 @@ INLINE void CMenu::KillBox(void)
 // (mCursorLine/mNumLines/field_1B), the SEntry stride (0x20, matches
 // gouraud color fields), the fixed-point blend (weight from Sine(),
 // (a+b)>>1 + ((weight*(a-b))>>13), *350/256 clamp to 255) and the
-// highlight-record bump allocator (gMenuHighlightBufPos/End, 0x28-byte
+// highlight-record bump allocator (G_PPOLY/G_POLY_BUFFER_END, 0x28-byte
 // record) all match the original. cmpsum still shows 288 mnemonic diffs,
 // but built length matches the original exactly (1091 bytes, 358 decoded
 // instructions), so this is register allocation / statement scheduling
 // residue, not a logic gap. Per this session's functional-decomp bar, not
 // pursuing further; byte-match attempt log in front.attempts.md.
 // The "just selected this entry" effect writes ~15 fields into a
-// bump-allocated ~0x28-byte record (gMenuHighlightBufPos/End) whose struct
+// bump-allocated ~0x28-byte record (G_PPOLY/G_POLY_BUFFER_END) whose struct
 // is completely undocumented - no consumer of that buffer has been
 // decompiled yet, so the fields below are raw offset pokes with guessed
 // meanings (position pairs for what is probably a highlight arrow/box),
@@ -156,12 +156,12 @@ void CMenu::Display(void)
 			i32 highlightOffset = (this->mEntry[i].val_a * drawResult) / 512
 				+ (this->mEntry[i].val_a * 14) / 256;
 
-			u8* rec = gMenuHighlightBufPos;
+			u8* rec = reinterpret_cast<u8*>(G_PPOLY);
 			u8* next = rec + 0x28;
 
-			if (next <= gMenuHighlightBufEnd)
+			if (next <= G_POLY_BUFFER_END)
 			{
-				gMenuHighlightBufPos = next;
+				G_PPOLY = reinterpret_cast<u32*>(next);
 
 				if (!gPrintStubbed)
 					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
@@ -195,8 +195,8 @@ void CMenu::Display(void)
 				*reinterpret_cast<i16*>(rec + 0x24) = highlightOffset2Plus20;
 				*reinterpret_cast<i16*>(rec + 0x26) = yPlus1;
 
-				stubbed_printf(reinterpret_cast<char*>(0x0056EB54));
-				stubbed_printf(reinterpret_cast<char*>(0x0056EB54));
+				stubbed_printf(G_RENDER_BUF);
+				stubbed_printf(G_RENDER_BUF);
 			}
 		}
 

@@ -1167,7 +1167,6 @@ static volatile u32 * const gDCTexAnimColorSrcC = (u32*)0x006191D4;
 
 static volatile i32 * const gDCDebugLightFlag = (i32*)0x0065CEB0; // gates the sub_509000 debug-line block
 
-static i32 * const gDCLastBoundTexture = (i32*)0x00568170; // idb_globals.txt: gUseTextureRelated -- last texture id passed to PCGfx_UseTexture
 static i32 * const gDCLastNoLightFlag  = (i32*)0x00AC08DC; // last "no-light" flag passed to PCGfx_UseTexture, batching cache
 static i32 * const gDCFaceSortKey      = (i32*)0x00AC08E0; // PCGfx.cpp already references this address generically as an OT/sort key
 static i32 * const gDCFaceSortKeyExtra = (i32*)0x00AC08E4;
@@ -1811,10 +1810,10 @@ afterFaceLoop:
 			do
 			{
 				i32 noLight = inFogRange ? 1 : gDCFaceNoLightOut[idx];
-				i32 lastTex = *gDCLastBoundTexture;
+				i32 lastTex = G_USE_TEXTURE_RELATED;
 				u16 tex = gDCFaceTexIndexOut[idx];
 
-				if (*gDCLastBoundTexture != tex || *gDCLastNoLightFlag != noLight)
+				if (G_USE_TEXTURE_RELATED != tex || *gDCLastNoLightFlag != noLight)
 				{
 					if (*gDCForceNoTexFlag != 0)
 					{
@@ -1825,7 +1824,7 @@ afterFaceLoop:
 						i32 noLightArg = (*gDCForceNoLightFlag != 0) ? 0 : noLight;
 						PCGfx_UseTexture(tex, (DCGfx_BlendingMode)noLightArg);
 					}
-					lastTex = *gDCLastBoundTexture;
+					lastTex = G_USE_TEXTURE_RELATED;
 					(*gDCBatchCallCount)++;
 				}
 
@@ -2159,7 +2158,7 @@ void DC_PSXModel_RenderModel(SModel const *pModel, matrix4x4 const *pTransform, 
 					}
 				}
 
-				if (*gDCLastBoundTexture != texIndex || *gDCLastNoLightFlag != alphaMode)
+				if (G_USE_TEXTURE_RELATED != texIndex || *gDCLastNoLightFlag != alphaMode)
 				{
 					if (*gDCForceNoLightFlag != 0)
 						PCGfx_UseTexture(texIndex, DCGfx_BlendingMode_0);
@@ -2639,9 +2638,9 @@ void M3d_RenderBackground(void *pList)
 void M3d_RenderCleanup(void)
 {
 	SetDrawArea();
-	pPoly += 3;
+	G_PPOLY += 3;
 
-	stubbed_printf(gRenderBuf);
+	stubbed_printf(G_RENDER_BUF);
 
 	if (gWideScreen)
 	{
@@ -2788,12 +2787,12 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	*(u16*)((char*)pView + 0x0A) = (u16)(*gM3dFadeNear);
 	*gM3dRenderArg = (i32)a3;
 
-	u32 *v5 = pPoly;
+	u32 *v5 = G_PPOLY;
 	if (gPrintStubbed == 0)
 		stubbed_printf((char*)"stubbed out: SetDrawArea");
-	pPoly = v5 + 12;
+	G_PPOLY = v5 + 12;
 	if (gPrintStubbed == 0)
-		stubbed_printf((char*)gRenderBuf);
+		stubbed_printf((char*)G_RENDER_BUF);
 
 	u16 xL = *(u16*)((char*)pView + 0x00);
 	u16 yB = *(u16*)((char*)pView + 0x02);

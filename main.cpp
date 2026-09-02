@@ -321,8 +321,8 @@ static void gsub_515D80(void)
 // @Matching
 void CalcPolyBufferEnd(void)
 {
-	PolyBufferEnd = reinterpret_cast<u8*>(
-			(reinterpret_cast<u32>(pDoubleBuffer->Polys) + POLYBUFFERSIZE - 0x100) & 0x7FFFFFFF);
+	G_POLY_BUFFER_END = reinterpret_cast<u8*>(
+			(reinterpret_cast<u32>(G_PDOUBLE_BUFFER->Polys) + POLYBUFFERSIZE - 0x100) & 0x7FFFFFFF);
 }
 
 // @Ok
@@ -442,7 +442,7 @@ void Display(void)
 	Screen_UpdateFades();
 	Panel_Display();
 
-	M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
+	M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 
 	if (gRenderListFlags[9])
 		M3d_RenderBackground(BackgroundList);
@@ -607,7 +607,7 @@ void Display(void)
 	{
 		*gOtPrimitiveCount = 0;
 
-		u32 *pEntry = reinterpret_cast<u32*>(pDoubleBuffer->OrderingTable[4095]);
+		u32 *pEntry = reinterpret_cast<u32*>(G_PDOUBLE_BUFFER->OrderingTable[4095]);
 
 		while (pEntry != reinterpret_cast<u32*>(0xFFFFFF))
 		{
@@ -630,8 +630,8 @@ void Display(void)
 	Flash_Display();
 
 	*gPolyBufferUsed = static_cast<i32>(
-			(reinterpret_cast<u32>(pPoly) & 0x7FFFFFFF)
-			- (reinterpret_cast<u32>(pDoubleBuffer->Polys) & 0x7FFFFFFF));
+			(reinterpret_cast<u32>(G_PPOLY) & 0x7FFFFFFF)
+			- (reinterpret_cast<u32>(G_PDOUBLE_BUFFER->Polys) & 0x7FFFFFFF));
 }
 
 // @Ok
@@ -665,8 +665,8 @@ void PlayAway(void)
 		M3d_FadeColour = 0xFFFFFF;
 		M3dInit_SetFoggingParams(0, 6000, 2048);
 
-		Db_SkyColor = 0;
-		gBFoggingRelated = 1;
+		G_DB_SKY_COLOR = 0;
+		G_BFOGGING_RELATED = 1;
 		Db_UpdateSky();
 
 		gLevelStatus = 11;
@@ -730,8 +730,8 @@ void PlayAway(void)
 		DrawSync();
 
 		print_if_false(
-				(reinterpret_cast<u32>(pPoly) & 0x7FFFFFFF)
-					<= (reinterpret_cast<u32>(PolyBufferEnd) & 0x7FFFFFFF),
+				(reinterpret_cast<u32>(G_PPOLY) & 0x7FFFFFFF)
+					<= (reinterpret_cast<u32>(G_POLY_BUFFER_END) & 0x7FFFFFFF),
 				"Undetected Poly Buffer Overflow");
 
 		gsub_430680();
@@ -751,10 +751,10 @@ void PlayAway(void)
 		}
 	}
 
-	Db_SkyColor = 0;
+	G_DB_SKY_COLOR = 0;
 	Db_UpdateSky();
 
-	if (gSceneRelated)
+	if (G_SCENE_RELATED)
 		PCGfx_EndScene(1);
 
 	Spool_Sync();

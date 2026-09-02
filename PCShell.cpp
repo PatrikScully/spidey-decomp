@@ -281,7 +281,7 @@ void PCSHELL_DoControllerConfig(bool isKeyboard)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		PShell_NormalFont();
@@ -301,7 +301,7 @@ void PCSHELL_DoControllerConfig(bool isKeyboard)
 			gCursorSprite->draw(gShellMouseX, gShellMouseY, 0, 0);
 		}
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		done = processControllerScreen();
@@ -444,7 +444,7 @@ void PCSHELL_DoDisplayOptions(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		if (!gSceneRelated)
+		if (!G_SCENE_RELATED)
 			PCGfx_BeginScene(1, -1);
 
 		shell_optimized_func(easeX, 0xDE, 0);
@@ -484,7 +484,7 @@ void PCSHELL_DoDisplayOptions(void)
 			gCursorSprite->draw(gShellMouseX, gShellMouseY, 0, 0);
 		}
 
-		if (gSceneRelated)
+		if (G_SCENE_RELATED)
 			PCGfx_EndScene(1);
 
 		Pad_Update();
@@ -747,7 +747,7 @@ void shell_optimized_func(i32, i32, i32)
 // @Ok
 void displayControllerScreen(void)
 {
-	if (!gSceneRelated)
+	if (!G_SCENE_RELATED)
 		PCGfx_BeginScene(1, -1);
 
 	PShell_NormalFont();
@@ -767,7 +767,7 @@ void displayControllerScreen(void)
 
 	PCSHELL_DrawMouseCursor();
 
-	if (gSceneRelated)
+	if (G_SCENE_RELATED)
 		PCGfx_EndScene(1);
 }
 

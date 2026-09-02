@@ -1209,12 +1209,6 @@ static i32 * const gWideScreenShadow = reinterpret_cast<i32*>(0x0060F76C);
 static i16 * const gOTPushback = reinterpret_cast<i16*>(0x00660F78);
 static i16 * const gOTPushback2 = reinterpret_cast<i16*>(0x00660F7A);
 
-// Db_SkyColor (0x0056FC74, db.h) has a second dword right after it that
-// the SetSkyColor command writes with the same value (SpideyAI0 writes it
-// too). Not named in the IDB; tentative name, the "requested/target" half
-// of a current+target colour pair is only a guess.
-static u32 * const gDbSkyColorTarget = reinterpret_cast<u32*>(0x0056FC78);
-
 // Written by the SetGameLevel command and read nowhere else in the
 // binary (single xref). Tentative name.
 static i32 * const gTrigGameLevel = reinterpret_cast<i32*>(0x005FCD14);
@@ -2688,8 +2682,8 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 				trigLog("SetSkyColor");
 				{
 					u32 skyColour = (static_cast<u32>(p[0]) << 16) + p[1];
-					*gDbSkyColorTarget = skyColour;
-					Db_SkyColor = skyColour;
+					G_DB_SKY_COLOR_TARGET = skyColour;
+					G_DB_SKY_COLOR = skyColour;
 				}
 				p += 2;
 				Db_UpdateSky();

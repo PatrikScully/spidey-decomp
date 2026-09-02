@@ -1,4 +1,5 @@
 #include "spidey.h"
+#include "db.h"
 #include "validate.h"
 #include "mem.h"
 #include "camera.h"
@@ -3847,13 +3848,8 @@ void CPlayer::DoShadowCheck(void)
 // @Ok
 void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
 {
-	// the shared bump allocated scratch record buffer, same addresses as
-	// flash.cpp's gEffectRecordBufPos/gEffectRecordBufEnd and bit.cpp's
-	// gFlatBitScratchBufPos/gFlatBitScratchBufEnd (pPoly/PolyBufferEnd in
-	// the idb). Kept function local so nothing else in this file sees it.
-	static u8 ** const gIndicatorBufPos = (u8**)0x0056FB04;
-	static u8 ** const gIndicatorBufEnd = (u8**)0x005FCD1C;
-
+	// the shared bump allocated scratch record buffer is db.cpp's
+	// pPoly/PolyBufferEnd, used here through G_PPOLY/G_POLY_BUFFER_END.
 	// the two ordering table slots this list submits through, handed to the
 	// addPrim stub exactly like flash.cpp hands it 0x56EB54. No idb name at
 	// either address, tentative names only.
@@ -4057,13 +4053,13 @@ void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
 
 		while (*reinterpret_cast<u32*>(&pPoly->x0) != 0)
 		{
-			u8 *rec = *gIndicatorBufPos;
+			u8 *rec = reinterpret_cast<u8*>(G_PPOLY);
 
-			if (rec + 20 > *gIndicatorBufEnd)
+			if (rec + 20 > G_POLY_BUFFER_END)
 				return;
 
 			memcpy(rec, pPoly, 20);
-			*gIndicatorBufPos = rec + 20;
+			G_PPOLY = reinterpret_cast<u32*>(rec + 20);
 
 			gsub_46CB90(gSpideySenseOT);
 
@@ -4100,11 +4096,11 @@ void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
 
 	if (drewAnything)
 	{
-		u8 *rec = *gIndicatorBufPos;
+		u8 *rec = reinterpret_cast<u8*>(G_PPOLY);
 
-		if (rec + 8 <= *gIndicatorBufEnd)
+		if (rec + 8 <= G_POLY_BUFFER_END)
 		{
-			*gIndicatorBufPos = rec + 8;
+			G_PPOLY = reinterpret_cast<u32*>(rec + 8);
 
 			setDrawTPage();
 

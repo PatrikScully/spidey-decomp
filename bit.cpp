@@ -702,7 +702,7 @@ EXPORT MATRIX gBitDisplayMatrix;
 // @Ok
 void Bit_Display(void)
 {
-	print_if_false(reinterpret_cast<u8*>(pPoly) <= PolyBufferEnd, "Poly buffer overflowed before Bit_Display");
+	print_if_false(reinterpret_cast<u8*>(G_PPOLY) <= G_POLY_BUFFER_END, "Poly buffer overflowed before Bit_Display");
 
 	gte_SetRotMatrix(&gBitDisplayMatrix);
 	m3d_ZeroTransVector();
@@ -1024,9 +1024,8 @@ void DisplaySpecialDisplayList(void** a1)
 //
 // The gte_ldv0/ldv1/ldv2+rtpt+stsxy3 chain (sub_46D8A0/46D8D0/46D900/46DCE0/46DFA0) the old note
 // flagged only feeds a 28-byte scratch/tag record bump-allocated from the SAME shared buffer
-// flash.cpp's Flash_Display already documents (0x56FB04/0x5FCD1C, aliased there as
-// gEffectRecordBufPos/End - NOT "the pPoly queue" as an earlier pass in this file guessed, that
-// name was wrong). Confirmed dead for the real draw exactly like the family notes already said:
+// flash.cpp's Flash_Display already documents (0x56FB04/0x5FCD1C, db.cpp's pPoly/PolyBufferEnd,
+// reached through G_PPOLY/G_POLY_BUFFER_END). Confirmed dead for the real draw exactly like the family notes already said:
 // the actual screen positions come from a completely separate per-corner Algebra_Transform4/invZ
 // pipeline (same rawPos[3]/4096.0f + fabsf-eps idiom already used throughout this file, e.g.
 // DisplayGLineList). The record's own r/g/b bytes (CGlassBit::mR/mG/mB, offsets 0x67-0x69,
@@ -1084,12 +1083,6 @@ void DisplayGlassList(void** a1)
 		pBit = reinterpret_cast<CGlassBit*>(pBit->mNext);
 	}
 }
-
-// File-local copy of the shared scratch-buffer macros (see the identical definition above
-// DisplayFlatBitList further down this file; duplicated here because this function needs it
-// earlier in the file and an identical macro redefinition is well-defined in C++).
-#define gGlowScratchBufPos (*reinterpret_cast<u8**>(0x0056FB04))
-#define gGlowScratchBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
 
 // Ring-point double buffer (dword_614CD4/614CD8 in the old notes): CLAUDE.md's array-boundary-
 // folding warning applies exactly here - raw disasm (`mov [esp+..], 614CDAh`) proves this is ONE
@@ -1195,10 +1188,10 @@ void DisplayGlowList(void** a1)
 		gte_ldlv0(&relPos);
 		gte_rtps();
 
-		u8* rec8 = gGlowScratchBufPos;
-		if (rec8 + 8 > gGlowScratchBufEnd)
+		u8* rec8 = reinterpret_cast<u8*>(G_PPOLY);
+		if (rec8 + 8 > G_POLY_BUFFER_END)
 			return;
-		gGlowScratchBufPos = rec8 + 8;
+		G_PPOLY = reinterpret_cast<u32*>(rec8 + 8);
 
 		VECTOR stlv;
 		gte_stlvnl(&stlv);
@@ -1299,10 +1292,10 @@ void DisplayGlowList(void** a1)
 
 					if (pBit->mSkipTriangles == 0 && sectionVisible)
 					{
-						u8* rec28 = gGlowScratchBufPos;
-						if (rec28 + 28 > gGlowScratchBufEnd)
+						u8* rec28 = reinterpret_cast<u8*>(G_PPOLY);
+						if (rec28 + 28 > G_POLY_BUFFER_END)
 							return;
-						gGlowScratchBufPos = rec28 + 28;
+						G_PPOLY = reinterpret_cast<u32*>(rec28 + 28);
 
 						u8 cr = (u8)(pBit->mCentreCodeBGR & 0xFF);
 						u8 cg = (u8)((pBit->mCentreCodeBGR >> 8) & 0xFF);
@@ -1340,10 +1333,10 @@ void DisplayGlowList(void** a1)
 
 						if (sectionVisible)
 						{
-							u8* rec36 = gGlowScratchBufPos;
-							if (rec36 + 36 > gGlowScratchBufEnd)
+							u8* rec36 = reinterpret_cast<u8*>(G_PPOLY);
+							if (rec36 + 36 > G_POLY_BUFFER_END)
 								return;
-							gGlowScratchBufPos = rec36 + 36;
+							G_PPOLY = reinterpret_cast<u32*>(rec36 + 36);
 
 							u32 newCol = fringes[row * numSections + sectionIndex].CodeBGR;
 							u32 oldCol = (row != 0) ? fringes[(row - 1) * numSections + sectionIndex].CodeBGR : sections[sectionIndex].PadBGR;
@@ -1914,11 +1907,11 @@ void DisplayTextBoxList(void** a1)
 
 	while (pBox)
 	{
-		if ((u8*)pPoly + sizeof(POLY_F4) > PolyBufferEnd)
+		if ((u8*)G_PPOLY + sizeof(POLY_F4) > G_POLY_BUFFER_END)
 			return;
 
-		POLY_F4* p = (POLY_F4*)pPoly;
-		pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+		POLY_F4* p = (POLY_F4*)G_PPOLY;
+		G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(POLY_F4));
 
 		if (!gPrintStubbed)
 			gsub_46CB90((void*)"stubbed out: setPolyF4");
@@ -1958,7 +1951,7 @@ void DisplayTextBoxList(void** a1)
 		p->x3 = (i16)(x + w);
 		p->y3 = (i16)(y + h);
 
-		gsub_46CB90((void*)0x0056EB54);
+		gsub_46CB90(G_RENDER_BUF);
 
 		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
 
@@ -1976,13 +1969,6 @@ void DisplayTextBoxList(void** a1)
 		pBox = reinterpret_cast<CTextBox*>(pBox->mNext);
 	}
 }
-
-// Shared bump-allocated scratch buffer, same address/bounds as flash.cpp's
-// gEffectRecordBufPos/gEffectRecordBufEnd (0x56FB04/0x5FCD1C, see DisplayGlassList's comment
-// above). File-local copy of the same macros (plain address globals, not the G_* hook-sharing
-// form, so per-file duplication is fine per repo convention).
-#define gFlatBitScratchBufPos (*reinterpret_cast<u8**>(0x0056FB04))
-#define gFlatBitScratchBufEnd (*reinterpret_cast<u8**>(0x005FCD1C))
 
 // @Ok
 // Functional (session-wide functional-only bar, 2026-08-31, third pass). Address 0x40dbd0.
@@ -2010,7 +1996,7 @@ void DisplayTextBoxList(void** a1)
 //   for the actual draw call below (never read back anywhere in this function or elsewhere in the
 //   repo) and are skipped, same documented choice as DisplayGlassList's scratch record.
 // - When the visibility gate fails, the original rewinds the bump allocation
-//   (`gFlatBitScratchBufPos = rec`) instead of leaving it consumed - reproduced below.
+//   (`G_PPOLY = rec`) instead of leaving it consumed - reproduced below.
 // - Colour is CFT4Bit::mCodeBGR's low 3 bytes as (R,G,B) with alpha forced to 0x80 (semi
 //   -transparent, blend mode 2) when CFlatBit::mSemiTransparencyRate == 32, else 0xFF (opaque,
 //   blend mode 0) - read straight from the bit instead of round-tripping through the dead scratch
@@ -2055,10 +2041,10 @@ void DisplayFlatBitList(void** a1)
 
 		f32 invZ = (fabsf(xf[3]) > 0.00000001f) ? 1.0f / xf[3] : -1.0e12f;
 
-		u8* rec = gFlatBitScratchBufPos;
-		if (rec + 40 > gFlatBitScratchBufEnd)
+		u8* rec = reinterpret_cast<u8*>(G_PPOLY);
+		if (rec + 40 > G_POLY_BUFFER_END)
 			break;
-		gFlatBitScratchBufPos = rec + 40;
+		G_PPOLY = reinterpret_cast<u32*>(rec + 40);
 
 		i32 depth;
 		gte_stlvnl2(&depth);
@@ -2073,7 +2059,7 @@ void DisplayFlatBitList(void** a1)
 
 		if (!visible)
 		{
-			gFlatBitScratchBufPos = rec;
+			G_PPOLY = reinterpret_cast<u32*>(rec);
 			pBit = reinterpret_cast<CFlatBit*>(pBit->mNext);
 			continue;
 		}
@@ -2323,9 +2309,9 @@ void DisplayLinked2EndedBitListLeftover(void** a1)
 			startY = prevEndY;
 		}
 
-		if ((u8*)pPoly + 40 > PolyBufferEnd)
+		if ((u8*)G_PPOLY + 40 > G_POLY_BUFFER_END)
 			return;
-		pPoly = (u32*)((u8*)pPoly + 40);
+		G_PPOLY = (u32*)((u8*)G_PPOLY + 40);
 
 		VECTOR relEnd;
 		relEnd.vx = (pBit->field_64.vx >> 12) - gCameraViewPos->vx;
@@ -2637,9 +2623,9 @@ void DisplayPolyLineList(void** a1)
 			SPolyLineVert& vert = pBit->mVerts[i];
 			CVector pt2 = vert.mPos;
 
-			if ((u8*)pPoly + 24 > PolyBufferEnd)
+			if ((u8*)G_PPOLY + 24 > G_POLY_BUFFER_END)
 				return;
-			pPoly = (u32*)((u8*)pPoly + 24);
+			G_PPOLY = (u32*)((u8*)G_PPOLY + 24);
 
 			i32 blendMode = 0;
 			u32 alpha = 0xFF;
@@ -2755,9 +2741,9 @@ void DisplayGPolyLineList(void** a1)
 			CVector pt2 = vert.mPos;
 			u32 flags2 = vert.mColorFlags;
 
-			if ((u8*)pPoly + 28 > PolyBufferEnd)
+			if ((u8*)G_PPOLY + 28 > G_POLY_BUFFER_END)
 				return;
-			pPoly = (u32*)((u8*)pPoly + 28);
+			G_PPOLY = (u32*)((u8*)G_PPOLY + 28);
 
 			i32 blendMode = 0;
 			u32 alpha = 0xFF;

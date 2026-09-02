@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include "ps2m3d.h"
 
 #include "psx_types.h"
 #include "panel.h"
@@ -490,7 +491,7 @@ static void PanelDisp_DrawIcon(SAnimFrame *pFrame, i32 x, i32 y, i32 w, i32 h)
 // @Ok
 void Panel_Display(void)
 {
-	print_if_false(reinterpret_cast<u8*>(pPoly) <= PolyBufferEnd, "Poly buffer overflowed before Panel_Display");
+	print_if_false(reinterpret_cast<u8*>(G_PPOLY) <= G_POLY_BUFFER_END, "Poly buffer overflowed before Panel_Display");
 
 	i32 inMech = 0;
 	if (G_MECHLIST_PLAYER != 0 && (G_MECHLIST_PLAYER->field_E18 != 0 || G_MECHLIST_PLAYER->field_1AC != 0))
@@ -791,8 +792,8 @@ void Panel_DisplayCompass(void)
 		i32 sideOffset = (tri == 0) ? sideA : sideB;
 		i32 tailOffset = (tri == 0) ? tailA : tailB;
 
-		POLY_F3 *p = (POLY_F3 *)pPoly;
-		pPoly = (u32 *)((u8 *)pPoly + sizeof(POLY_F3));
+		POLY_F3 *p = (POLY_F3 *)G_PPOLY;
+		G_PPOLY = (u32 *)((u8 *)G_PPOLY + sizeof(POLY_F3));
 
 		*(u32 *)&p->r0 = dialColor;
 		p->y0 = (i16)(199 - tipY);
@@ -1241,13 +1242,13 @@ void Panel_DisplayTimer(void)
 // @Matching
 int Panel_DrawFlatShadedPoly(i32 x, i32 y, i32 w, i32 h, u8 r, u8 g, u8 b, i32, i32 a9)
 {
-	if ((u8*)pPoly + sizeof(POLY_F4) > PolyBufferEnd)
+	if ((u8*)G_PPOLY + sizeof(POLY_F4) > G_POLY_BUFFER_END)
 	{
 		return 0;
 	}
 
-	POLY_F4* p = (POLY_F4*)pPoly;
-	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_F4));
+	POLY_F4* p = (POLY_F4*)G_PPOLY;
+	G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(POLY_F4));
 
 	if (!gPrintStubbed)
 	{
@@ -1267,7 +1268,7 @@ int Panel_DrawFlatShadedPoly(i32 x, i32 y, i32 w, i32 h, u8 r, u8 g, u8 b, i32, 
 	p->x3 = (i16)(x + w);
 	p->y3 = (i16)(y + h);
 
-	gsub_46CB90((void*)0x0056EB54);
+	gsub_46CB90(G_RENDER_BUF);
 
 	if (a9)
 	{
@@ -1276,19 +1277,19 @@ int Panel_DrawFlatShadedPoly(i32 x, i32 y, i32 w, i32 h, u8 r, u8 g, u8 b, i32, 
 			gsub_46CB90((void*)"Panel_DrawFlatShadedPoly: extra");
 		}
 
-		if ((u8*)pPoly + 8 > PolyBufferEnd)
+		if ((u8*)G_PPOLY + 8 > G_POLY_BUFFER_END)
 		{
 			return 0;
 		}
 
-		pPoly = (u32*)((u8*)pPoly + 8);
+		G_PPOLY = (u32*)((u8*)G_PPOLY + 8);
 
 		if (!gPrintStubbed)
 		{
 			gsub_46CB90((void*)"Panel_DrawFlatShadedPoly: extra2");
 		}
 
-		gsub_46CB90((void*)0x0056EB54);
+		gsub_46CB90(G_RENDER_BUF);
 	}
 
 	return (int)p;
@@ -1513,13 +1514,13 @@ int Panel_DrawTexturedPoly(Texture* pTexture, int a2)
 
 	print_if_false(a2 < 0x1000, "Panel_DrawTexturedPoly");
 
-	if ((u8*)pPoly + sizeof(POLY_FT4) > PolyBufferEnd)
+	if ((u8*)G_PPOLY + sizeof(POLY_FT4) > G_POLY_BUFFER_END)
 	{
 		return 0;
 	}
 
-	POLY_FT4* p = (POLY_FT4*)pPoly;
-	pPoly = (u32*)((u8*)pPoly + sizeof(POLY_FT4));
+	POLY_FT4* p = (POLY_FT4*)G_PPOLY;
+	G_PPOLY = (u32*)((u8*)G_PPOLY + sizeof(POLY_FT4));
 
 	p->tag = 0x09000000;
 	*(u32*)&p->r0 = 0x2C808080;
@@ -1534,7 +1535,7 @@ int Panel_DrawTexturedPoly(Texture* pTexture, int a2)
 	*(u32*)&p->u2 = u2v2u3v3;
 	*(u16*)&p->u3 = u3v3;
 
-	gsub_46CB90((void*)0x0056EB54);
+	gsub_46CB90(G_RENDER_BUF);
 
 	return (int)p;
 }

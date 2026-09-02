@@ -1,4 +1,5 @@
 #include "post.h"
+#include "ps2m3d.h"
 #include "bit.h"
 #include "PCGfx.h"
 #include "m3dinit.h"
@@ -32,7 +33,7 @@ void Post_DoPausePaletteProcessing(void)
 {
 	gPaletteProcessingPaused = 1;
 	gPostSpideyLogoRelated = 0;
-	gPostPauseRelated = Db_SkyColor;
+	gPostPauseRelated = G_DB_SKY_COLOR;
 }
 
 // @Ok
@@ -104,7 +105,7 @@ void Post_SpideyLogo(void)
 	if (gPostSpideyLogoRelated > 768)
 		gPostSpideyLogoRelated = 768;
 
-	if (reinterpret_cast<u8*>(pPoly) + 1920 > PolyBufferEnd)
+	if (reinterpret_cast<u8*>(G_PPOLY) + 1920 > G_POLY_BUFFER_END)
 		return;
 
 	u32 Fade = static_cast<u32>((90 * gPostSpideyLogoRelated) >> 6);
@@ -134,8 +135,8 @@ void Post_SpideyLogo(void)
 				i32 Selector = *pRecord;
 				pRecord++;
 
-				POLY_F4 *p = reinterpret_cast<POLY_F4*>(pPoly);
-				pPoly = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pPoly) + sizeof(POLY_F4));
+				POLY_F4 *p = reinterpret_cast<POLY_F4*>(G_PPOLY);
+				G_PPOLY = reinterpret_cast<u32*>(reinterpret_cast<u8*>(G_PPOLY) + sizeof(POLY_F4));
 
 				u32 Colour = Selector != 0 ? ColourB : ColourA;
 
@@ -165,7 +166,7 @@ void Post_SpideyLogo(void)
 				p->x3 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
 				p->y3 = gSpideyLogoVerts[2 * v + 1];
 
-				gsub_46CB90(reinterpret_cast<void*>(0x0056EB54));
+				gsub_46CB90(G_RENDER_BUF);
 
 				u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFF8000) << 8)) << 8);
 
@@ -194,8 +195,8 @@ void Post_SpideyLogo(void)
 				i32 Selector = *pRecord;
 				pRecord++;
 
-				POLY_F3 *p = reinterpret_cast<POLY_F3*>(pPoly);
-				pPoly = reinterpret_cast<u32*>(reinterpret_cast<u8*>(pPoly) + sizeof(POLY_F3));
+				POLY_F3 *p = reinterpret_cast<POLY_F3*>(G_PPOLY);
+				G_PPOLY = reinterpret_cast<u32*>(reinterpret_cast<u8*>(G_PPOLY) + sizeof(POLY_F3));
 
 				u32 Colour = Selector != 0 ? ColourB : ColourA;
 
@@ -220,7 +221,7 @@ void Post_SpideyLogo(void)
 				p->x2 = static_cast<i16>(gSpideyLogoVerts[2 * v] * Mirror + 256);
 				p->y2 = gSpideyLogoVerts[2 * v + 1];
 
-				gsub_46CB90(reinterpret_cast<void*>(0x0056EB54));
+				gsub_46CB90(G_RENDER_BUF);
 
 				u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFF8000) << 8)) << 8);
 

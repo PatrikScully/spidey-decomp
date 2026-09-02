@@ -59,12 +59,6 @@ extern CSVector gTrajectoryVector;
 // finished, and at 0x78 or more resets the flash and sets gLevelStatus to 2.
 static i32 * const gSpideyDeathTimer = reinterpret_cast<i32*>(0x006A7F98);
 
-// The dword right after Db_SkyColor (db.h, 0x0056FC74). SpideyAI0 copies it
-// into Db_SkyColor when the pending water effect fires, which is the same pair
-// trig.cpp's SetSkyColor command writes. trig.cpp already has an identical
-// file-local pointer under this name; it belongs in db.h next to Db_SkyColor.
-static u32 * const gDbSkyColorTarget = reinterpret_cast<u32*>(0x0056FC78);
-
 // gSaveGame + 0x7B, the "vibration on" option byte. Same pointer spidey.cpp
 // uses under this name in two places.
 static u8 * const gSaveGameVibration = reinterpret_cast<u8*>(0x006828D3);
@@ -437,7 +431,7 @@ void SpideyAI0(CPlayer *pPlayer)
 
 	if (gWaterEffect == 1)
 	{
-		Db_SkyColor = *gDbSkyColorTarget;
+		G_DB_SKY_COLOR = G_DB_SKY_COLOR_TARGET;
 		Db_UpdateSky();
 		gWaterEffect = 0;
 	}
