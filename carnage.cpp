@@ -1,4 +1,5 @@
 #include "carnage.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "trig.h"
 #include "panel.h"
@@ -3368,4 +3369,23 @@ void validate_CSymbioteBlade(void)
 	VALIDATE(CSymbioteBlade, mCurveStepDelta, 0x104);
 	VALIDATE(CSymbioteBlade, mCurvePts, 0x108);
 	VALIDATE(CSymbioteBlade, field_138, 0x138);
+}
+
+
+// @Bogus
+void patch_carnage(void)
+{
+	// Only the functions whose whole call closure already shares the exe's memory are hooked.
+	// Everything else in carnage.cpp reads MechList, BaddyList, ControlBaddyList, gBossRelated,
+	// gWhatIf, gObjFile, gObjFileRegion, BulletList, NumNodes, TotalBitUsage, QuadBitList or
+	// GPolyLineList, and those are still plain repo globals owned by other files, so a hook
+	// there would read our own zeroed copy instead of the game's. See the notes in the commit
+	// message for the exact list.
+	PATCH_PUSH_RET(0x00419B60, CSonicRipple::CalcPos);
+	PATCH_PUSH_RET_POLY(0x00419C00, CSonicRipple::Move, "?Move@CSonicRipple@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0041A240, CCarnageHitSpark::Move, "?Move@CCarnageHitSpark@@UAEXXZ");
+	PATCH_PUSH_RET(0x0041AFF0, CSymbioteBlade::GenerateControlPoints);
+	PATCH_PUSH_RET(0x0041B860, SetTheCarnageGooSourcesChecksums);
+	PATCH_PUSH_RET_POLY(0x0041B900, CCarnageElectrified::~CCarnageElectrified, "??1CCarnageElectrified@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0041C3B0, CCarnage::Grab, "?Grab@CCarnage@@UAEEPAVCVector@@@Z");
 }
