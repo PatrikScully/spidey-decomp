@@ -10,8 +10,7 @@
 #include "spool.h"
 #include "decomp.h"
 #include <string.h>
-
-extern i16 gRotMatrix[3][3];
+#include "ps2funcs.h"
 
 #include "validate.h"
 
@@ -198,7 +197,7 @@ i32 Web_CollideWithSuper(CSuper *pSuper, CVector const *pStart, CVector const *p
 {
 	MATRIX superMatrix;
 	M3dMaths_TransposeMatrix1(&pSuper->mTransform, &superMatrix);
-	memcpy(gRotMatrix, &superMatrix, sizeof(gRotMatrix));
+	memcpy(G_ROT_MATRIX, &superMatrix, sizeof(G_ROT_MATRIX));
 
 	SVECTOR localStart;
 	localStart.vx = static_cast<i16>((pStart->vx - pSuper->mPos.vx) >> 12);
@@ -253,7 +252,7 @@ i32 Web_CollideWithSuper(CSuper *pSuper, CVector const *pStart, CVector const *p
 
 		MATRIX hookMatrixT;
 		M3dMaths_TransposeMatrix1(reinterpret_cast<MATRIX*>(pHookMatrix), &hookMatrixT);
-		memcpy(gRotMatrix, &hookMatrixT, sizeof(gRotMatrix));
+		memcpy(G_ROT_MATRIX, &hookMatrixT, sizeof(G_ROT_MATRIX));
 
 		MTC2(*reinterpret_cast<i32*>(&hookStart.vx), GT_ZERO);
 		MTC2(*reinterpret_cast<i32*>(&hookStart.vz), GT_ONE);

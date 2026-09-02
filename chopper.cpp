@@ -806,7 +806,7 @@ void CChopper::SetHeight(void)
 		case 0:
 			break;
 		case 2:
-			v2 = this->field_330.vy - (this->field_354 >> 12) * rcossin_tbl[this->field_378 & 0xFFF].sin;
+			v2 = this->field_330.vy - (this->field_354 >> 12) * G_RCOSSIN_TBL[this->field_378 & 0xFFF].sin;
 			if (this->mPos.vy != v2)
 			{
 				this->mPos.vy = Utils_ShiftFilter(this->mPos.vy, v2, 1, 12288);
@@ -816,7 +816,7 @@ void CChopper::SetHeight(void)
 		case 1:
 			this->AdjustSineWaveAmplitude(0x10000, 182);
 			this->field_378 += 51;
-			this->mPos.vy = this->field_330.vy - (this->field_354 >> 12) * rcossin_tbl[this->field_378 & 0xFFF].sin;
+			this->mPos.vy = this->field_330.vy - (this->field_354 >> 12) * G_RCOSSIN_TBL[this->field_378 & 0xFFF].sin;
 			break;
 		case 4:
 			this->field_378 = 1024;
@@ -1157,7 +1157,7 @@ void CChopperMissile::DrawTargetRecticle(void)
 	Texture* tex = this->field_124;
 
 	u8 shimmer = static_cast<u8>(static_cast<u16>(
-			rcossin_tbl[(static_cast<u16>(*gChopperGlowTimer) << 6) & 0xFFF].sin) >> 8);
+			G_RCOSSIN_TBL[(static_cast<u16>(*gChopperGlowTimer) << 6) & 0xFFF].sin) >> 8);
 	u32 color = 0xFF000000u | (0xFFu << 16) | (static_cast<u32>(shimmer) << 8);
 
 	i32 uWidth = tex->u1 - tex->u0;
@@ -1477,8 +1477,8 @@ void CSearchlight::CalculateSearchlight(CSVector* a2)
 
 	for (i32 i = 0; i < 32; i++)
 	{
-		i32 s = rcossin_tbl[(i << 7) & 0xFFF].sin;
-		i32 c = rcossin_tbl[(i << 7) & 0xFFF].cos;
+		i32 s = G_RCOSSIN_TBL[(i << 7) & 0xFFF].sin;
+		i32 c = G_RCOSSIN_TBL[(i << 7) & 0xFFF].cos;
 
 		CVector dir = ((right * s) + (up2 * c)) >> 12;
 
@@ -2221,8 +2221,8 @@ CBulletFrag::CBulletFrag(CVector* a2)
 	i32 v3 = Rnd(4096);
 	i32 v4 = Rnd(10) + 10;
 
-	this->mVel.vx = v4 * rcossin_tbl[v3 & FLATBIT_VELOCITIES_MAX_INDEX].sin;
-	this->mVel.vz = v4 * rcossin_tbl[v3 & FLATBIT_VELOCITIES_MAX_INDEX].cos;
+	this->mVel.vx = v4 * G_RCOSSIN_TBL[v3 & FLATBIT_VELOCITIES_MAX_INDEX].sin;
+	this->mVel.vz = v4 * G_RCOSSIN_TBL[v3 & FLATBIT_VELOCITIES_MAX_INDEX].cos;
 
 	this->mVel.vy = -81920 - (Rnd(30) << 12);
 	this->field_5A = 500;
@@ -2647,8 +2647,8 @@ void CSearchlight::AI(void)
 		i32 jitterMag = Rnd(0x100);
 		i32 jitterAngle = Rnd(0x1000) & 0xFFF;
 
-		CVector jitterA = perpB * ((jitterMag * rcossin_tbl[jitterAngle].sin) >> 0xC);
-		CVector jitterB = perpA * ((jitterMag * rcossin_tbl[jitterAngle].cos) >> 0xC);
+		CVector jitterA = perpB * ((jitterMag * G_RCOSSIN_TBL[jitterAngle].sin) >> 0xC);
+		CVector jitterB = perpA * ((jitterMag * G_RCOSSIN_TBL[jitterAngle].cos) >> 0xC);
 
 		CVector sparkStart = camPos;
 		CVector sparkEnd = MechList->mPos + jitterA + jitterB;

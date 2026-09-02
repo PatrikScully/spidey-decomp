@@ -24,7 +24,30 @@ struct SSinCos
 // @FIXME
 // that's not the name
 // it's something like rcosin_table
+// ---------------------------------------------------------------------------
+// The PSX GTE register file, emulated in software.  None of the gte_* functions
+// are hooked, so a whole GTE sequence normally stays in one world.  It does not
+// stay there once callers get hooked: M3dAsm_SetTransVector in the exe would
+// write the exe's translationVector while a hooked caller's gte_rtps read ours.
+// Pointing the register file at the exe's memory removes the whole problem and
+// is what the original does anyway.
+//
+// Two of these were already broken before any of this:
+//  - rcossin_tbl is 4096 sin/cos pairs that Port_InitAtStart builds at startup
+//    (via DCInitSinCosTable, inlined at 0x0046CCEA).  Port_InitAtStart is not
+//    hooked, so our copy stayed all zeros while 100 functions in the original
+//    read the table.  Nothing in the whole .text ever writes the address, and
+//    it sits past the raw-backed end of .data, so it is generated, not baked.
+//  - the three rtps projection constants hold 276 / 512 / 240 in the exe and 0
+//    in our copy, so a hooked gte_rtps projected every vertex onto (0, 0).
+//
+// Addresses came from the disassembly: gte_ldv0 writes 0x00610BB0, gte_lddp
+// writes 0x00610C00, gte_ldopv1 writes 0x00610B80, gte_ldopv2 writes
+// 0x00610B90, gte_rtps reads 0x0054F03C/40/44 in that order.
+// ---------------------------------------------------------------------------
 EXPORT extern SSinCos rcossin_tbl[FLATBIT_VELOCITIES_SIZE];
+//#define G_RCOSSIN_TBL (rcossin_tbl)
+#define G_RCOSSIN_TBL (*reinterpret_cast<SSinCos(*)[FLATBIT_VELOCITIES_SIZE]>(0x00610C48))
 
 EXPORT extern i32 Pal16X;
 EXPORT extern i32 Pal16Y;
@@ -115,6 +138,29 @@ struct SVECTOR {		/* short word type 3D vector */
 
 };
 	       
+// The rest of the emulated GTE register file, see the note above rcossin_tbl.
+// These were declared with a local `extern` in every .cpp that used them; one
+// declaration here replaces all of those.
+EXPORT extern i16 gRotMatrix[3][3];
+//#define G_ROT_MATRIX (gRotMatrix)
+#define G_ROT_MATRIX (*reinterpret_cast<i16(*)[3][3]>(0x00610B20))
+
+EXPORT extern VECTOR translationVector;
+//#define G_TRANSLATION_VECTOR (translationVector)
+#define G_TRANSLATION_VECTOR (*reinterpret_cast<VECTOR*>(0x00610B34))
+
+EXPORT extern SVECTOR gLineToSphereDirMatrix[3];
+//#define G_LINE_TO_SPHERE_DIR_MATRIX (gLineToSphereDirMatrix)
+#define G_LINE_TO_SPHERE_DIR_MATRIX (*reinterpret_cast<SVECTOR(*)[3]>(0x00610B40))
+
+EXPORT extern VECTOR gGeneralLongVector;
+//#define G_GENERAL_LONG_VECTOR (gGeneralLongVector)
+#define G_GENERAL_LONG_VECTOR (*reinterpret_cast<VECTOR*>(0x00610BA0))
+
+EXPORT extern int vertexRegister[4];
+//#define G_VERTEX_REGISTER (vertexRegister)
+#define G_VERTEX_REGISTER (*reinterpret_cast<int(*)[4]>(0x00610BB0))
+
 typedef struct {		/* color type vector */	
   u8	r, g, b, cd;
 } CVECTOR;

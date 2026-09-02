@@ -182,9 +182,9 @@ void CChunkControl::AddChunk(CItem* pItem)
 		i32 v4 = Rnd(4096) & 0xFFF;
 		i32 v5 = Rnd(32) + 32;
 
-		entry->field_4.vx = v5 * rcossin_tbl[v4].sin;
+		entry->field_4.vx = v5 * G_RCOSSIN_TBL[v4].sin;
 		entry->field_4.vy = (-48 - Rnd(32)) << 12;
-		entry->field_4.vz = v5 * rcossin_tbl[v4].cos;
+		entry->field_4.vz = v5 * G_RCOSSIN_TBL[v4].cos;
 		entry->field_14.vx = Rnd(512) - 256;
 		entry->field_14.vy = Rnd(512) - 256;
 		entry->field_14.vz = Rnd(512) - 256;

@@ -127,21 +127,21 @@ CVenomHitSpark::CVenomHitSpark(const CVector *pVec)
 	i32 v10 = Rnd(30);
 	i32 v11 = (4 * v9) & 0x3FFC;
 
-	i32 v12 = ((v10 + 5) * rcossin_tbl[v11].cos) >> 12;
-	i32 v22 = ((v10 + 5) * rcossin_tbl[v11].sin) >> 12;
+	i32 v12 = ((v10 + 5) * G_RCOSSIN_TBL[v11].cos) >> 12;
+	i32 v22 = ((v10 + 5) * G_RCOSSIN_TBL[v11].sin) >> 12;
 
 	this->mVel = (v12 * v41) + (v22 * v40);
 
 	i32 v13 = Rnd(50) + 50;
-	i32 v14 = (v13 * rcossin_tbl[v11].cos) >> 12;
-	i32 v20 = (v13 * rcossin_tbl[v11].sin) >> 12;
+	i32 v14 = (v13 * G_RCOSSIN_TBL[v11].cos) >> 12;
+	i32 v20 = (v13 * G_RCOSSIN_TBL[v11].sin) >> 12;
 
 	CVector v33 = (v14 * v41) + (v20 * v40);
 
 	i32 v15 = (4 * (v9 + 1024)) & 0x3FFC;
 
-	i32 v18 = (10 * rcossin_tbl[v15].sin) >> 12;
-	i32 v19 = (10 * rcossin_tbl[v15].cos) >> 12;
+	i32 v18 = (10 * G_RCOSSIN_TBL[v15].sin) >> 12;
+	i32 v19 = (10 * G_RCOSSIN_TBL[v15].cos) >> 12;
 
 	CVector v30 = (v19 * v41) + (v18 * v40);
 

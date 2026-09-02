@@ -5,11 +5,7 @@
 #include "trig.h"
 #include "spool.h"
 
-// translationVector/gGeneralLongVector are EXPORT globals defined in ps2funcs.cpp but
-// (as of this writing) not declared extern in ps2funcs.h; declared here locally rather
-// than editing that header, per this task's file scope.
-extern VECTOR translationVector;
-extern VECTOR gGeneralLongVector;
+#include "ps2funcs.h"
 
 // @Ok
 u16	Inquiry=0xFFFF;
@@ -492,7 +488,10 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 // touches this address, confirmed via grep), matching how ps2funcs.cpp's own
 // gRotMatrix/translationVector/gGeneralLongVector are plain globals rather than
 // address-bound pointers.
-static i16 gCoarseRotMatrix[3][3];
+// Bound to the exe's address for the same reason as gCoarseTranslationVector
+// below: the exe has its own copy of this coarse trio and can load the matrix
+// from an unhooked path before our hooked TestItemFaces reads it.
+static i16 (* const gCoarseRotMatrix)[3] = reinterpret_cast<i16(*)[3]>(0x00610B60);
 
 // address 0x00610BB0..BB8 in the original: a translation-like vector distinct from
 // translationVector (0x00610B34, ps2funcs.cpp), fed by gSetCoarseTranslationVector and
@@ -500,7 +499,11 @@ static i16 gCoarseRotMatrix[3][3];
 // dword (0x00610BBC) that is never read back by anything we can find (a harmless
 // over-read into whatever follows the caller's 3-dword vector in memory); we only keep
 // the 3 components that are actually used.
-static CVector gCoarseTranslationVector;
+// This is the same memory as ps2funcs' vertexRegister (the GTE V0 register,
+// 0x00610BB0). The coarse pipeline mirrors the GTE trio and reuses its V0
+// scratch, so ours has to alias it too now that vertexRegister points at the
+// exe. A repo-local copy here would silently unalias the two.
+static CVector * const gCoarseTranslationVector = (CVector*)0x00610BB0;
 
 // address 0x005FBE2C in the original: a 3-dword (CVector) scratch vector sitting
 // between gLineColijRotMatrix (0x5FBE18) and gLineInfo (0x5FBE38 = this + 0xC).
@@ -575,9 +578,9 @@ static void SetCoarseRotMatrix(const MATRIX *pSrc)
 static void SetTranslationVectorFromOffset(const u8 *pBase)
 {
 	const i32 *p = reinterpret_cast<const i32*>(pBase + 0x14);
-	translationVector.vx = p[0];
-	translationVector.vy = p[1];
-	translationVector.vz = p[2];
+	G_TRANSLATION_VECTOR.vx = p[0];
+	G_TRANSLATION_VECTOR.vy = p[1];
+	G_TRANSLATION_VECTOR.vz = p[2];
 }
 
 // The REAL sub_0x0046D840 (24 bytes). WARNING: tools/names.json maps this address to
@@ -589,9 +592,9 @@ static void SetTranslationVectorFromOffset(const u8 *pBase)
 // @Ok
 static void SetCoarseTranslationVector(const CVector *pSrc)
 {
-	gCoarseTranslationVector.vx = pSrc->vx;
-	gCoarseTranslationVector.vy = pSrc->vy;
-	gCoarseTranslationVector.vz = pSrc->vz;
+	gCoarseTranslationVector->vx = pSrc->vx;
+	gCoarseTranslationVector->vy = pSrc->vy;
+	gCoarseTranslationVector->vz = pSrc->vz;
 }
 
 // sub_0x0046DD40 (168 bytes): dot-products gCoarseTranslationVector against each row
@@ -604,13 +607,13 @@ static void SetCoarseTranslationVector(const CVector *pSrc)
 // @Ok
 static void CoarseTransformPoint(void)
 {
-	i32 tx = gCoarseTranslationVector.vx;
-	i32 ty = gCoarseTranslationVector.vy;
-	i32 tz = gCoarseTranslationVector.vz;
+	i32 tx = gCoarseTranslationVector->vx;
+	i32 ty = gCoarseTranslationVector->vy;
+	i32 tz = gCoarseTranslationVector->vz;
 
-	gGeneralLongVector.vx = (tx * gCoarseRotMatrix[0][0] + ty * gCoarseRotMatrix[0][1] + tz * gCoarseRotMatrix[0][2]) >> 12;
-	gGeneralLongVector.vy = (tx * gCoarseRotMatrix[1][0] + ty * gCoarseRotMatrix[1][1] + tz * gCoarseRotMatrix[1][2]) >> 12;
-	gGeneralLongVector.vz = (tx * gCoarseRotMatrix[2][0] + ty * gCoarseRotMatrix[2][1] + tz * gCoarseRotMatrix[2][2]) >> 12;
+	G_GENERAL_LONG_VECTOR.vx = (tx * gCoarseRotMatrix[0][0] + ty * gCoarseRotMatrix[0][1] + tz * gCoarseRotMatrix[0][2]) >> 12;
+	G_GENERAL_LONG_VECTOR.vy = (tx * gCoarseRotMatrix[1][0] + ty * gCoarseRotMatrix[1][1] + tz * gCoarseRotMatrix[1][2]) >> 12;
+	G_GENERAL_LONG_VECTOR.vz = (tx * gCoarseRotMatrix[2][0] + ty * gCoarseRotMatrix[2][1] + tz * gCoarseRotMatrix[2][2]) >> 12;
 }
 
 // sub_0x0046E4D0 (24 bytes): thin wrapper, confirmed via IDA to just be
@@ -660,9 +663,9 @@ static i32 ClipQuadAgainstCoarseMatrix(const u8 *pFaceTable, i16 *pScratchOut, i
 		i16 ty = static_cast<i16>((x * gCoarseRotMatrix[1][0] + y * gCoarseRotMatrix[1][1] + z * gCoarseRotMatrix[1][2]) >> 12);
 		i16 tz = static_cast<i16>((x * gCoarseRotMatrix[2][0] + y * gCoarseRotMatrix[2][1] + z * gCoarseRotMatrix[2][2]) >> 12);
 
-		tx = static_cast<i16>(tx + translationVector.vx);
-		ty = static_cast<i16>(ty + translationVector.vy);
-		tz = static_cast<i16>(tz + translationVector.vz);
+		tx = static_cast<i16>(tx + G_TRANSLATION_VECTOR.vx);
+		ty = static_cast<i16>(ty + G_TRANSLATION_VECTOR.vy);
+		tz = static_cast<i16>(tz + G_TRANSLATION_VECTOR.vz);
 
 		i32 outcode = 0;
 		if (tx < 0) outcode |= 4;

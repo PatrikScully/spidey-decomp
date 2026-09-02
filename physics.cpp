@@ -919,8 +919,8 @@ void CPlayer::DoPhysics(void)
 		{
 			this->field_E90 = this->field_E90 + Rnd(64) + 256;
 			angle = this->field_E90 & 0xFFF;
-			this->field_E94.vx = rcossin_tbl[angle].sin << 5;
-			this->field_E94.vz = rcossin_tbl[angle].cos << 5;
+			this->field_E94.vx = G_RCOSSIN_TBL[angle].sin << 5;
+			this->field_E94.vz = G_RCOSSIN_TBL[angle].cos << 5;
 		}
 	}
 

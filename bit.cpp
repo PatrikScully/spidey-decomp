@@ -2099,8 +2099,8 @@ void DisplayFlatBitList(void** a1)
 		if (pBit->mAngle != 0)
 		{
 			i32 idx = pBit->mAngle & 0xFFF;
-			i32 sinA = rcossin_tbl[idx].sin;
-			i32 cosA = rcossin_tbl[idx].cos;
+			i32 sinA = G_RCOSSIN_TBL[idx].sin;
+			i32 cosA = G_RCOSSIN_TBL[idx].cos;
 
 			i32 t54 = sinA * offX;
 			i32 t31 = cosA * offX;
@@ -3843,7 +3843,7 @@ void CQuadBit::OrientUsing(CVector *a2, SVECTOR *a3, i32 a4, i32 a5, i32 a6)
 
 	Utils_CalcPerps(&dir, &perp2, &perp1);
 
-	SSinCos const *sc = &rcossin_tbl[a6 & 0xFFF];
+	SSinCos const *sc = &G_RCOSSIN_TBL[a6 & 0xFFF];
 	i32 s = sc->sin;
 	i32 c = sc->cos;
 
@@ -4453,7 +4453,7 @@ i32 Bit_MakeSpriteRing(CVector *pCenter, i32 count, i32 velScale, i32 animIndex,
 	for (i32 i = 0; i < count; i++)
 	{
 		i32 angle = ((i * 0x1000) / count) & 0xFFF;
-		CVector vel(rcossin_tbl[angle].cos * velScale, 0, rcossin_tbl[angle].sin * velScale);
+		CVector vel(G_RCOSSIN_TBL[angle].cos * velScale, 0, G_RCOSSIN_TBL[angle].sin * velScale);
 
 		CFlatBit *p = new CFlatBit();
 

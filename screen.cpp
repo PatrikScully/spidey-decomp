@@ -139,12 +139,12 @@ void Screen_DrawTarget(void)
 		u8 *v = pQuad + i * 20;
 		*(u32*)v = 41120;  // 0xA0A0 gray
 
-		i16 c0x = screenX + (((gTargetOne - 12) * rcossin_tbl[angleA & 0xFFF].sin) >> 12);
-		i16 c0y = screenY + 320 * (((gTargetOne - 12) * rcossin_tbl[angleA & 0xFFF].cos) >> 12) / 512;
-		i16 c1x = screenX + ((gTargetOne * rcossin_tbl[(angleB - 256) & 0xFFF].sin) >> 12);
-		i16 c1y = screenY + 320 * ((gTargetOne * rcossin_tbl[(angleB - 256) & 0xFFF].cos) >> 12) / 512;
-		i16 c2x = screenX + ((gTargetOne * rcossin_tbl[angleB & 0xFFF].sin) >> 12);
-		i16 c2y = screenY + 320 * ((gTargetOne * rcossin_tbl[angleB & 0xFFF].cos) >> 12) / 512;
+		i16 c0x = screenX + (((gTargetOne - 12) * G_RCOSSIN_TBL[angleA & 0xFFF].sin) >> 12);
+		i16 c0y = screenY + 320 * (((gTargetOne - 12) * G_RCOSSIN_TBL[angleA & 0xFFF].cos) >> 12) / 512;
+		i16 c1x = screenX + ((gTargetOne * G_RCOSSIN_TBL[(angleB - 256) & 0xFFF].sin) >> 12);
+		i16 c1y = screenY + 320 * ((gTargetOne * G_RCOSSIN_TBL[(angleB - 256) & 0xFFF].cos) >> 12) / 512;
+		i16 c2x = screenX + ((gTargetOne * G_RCOSSIN_TBL[angleB & 0xFFF].sin) >> 12);
+		i16 c2y = screenY + 320 * ((gTargetOne * G_RCOSSIN_TBL[angleB & 0xFFF].cos) >> 12) / 512;
 
 		*(i16*)(v + 4) = c0x;
 		*(i16*)(v + 6) = c0y;

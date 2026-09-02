@@ -529,7 +529,7 @@ void Panel_Display(void)
 
 		u8 pulse;
 		if (MechList->field_5E8 != 0)
-			pulse = static_cast<u8>((abs(rcossin_tbl[(G_TIMER_RELATED << 5) & 0xFFF].sin) << 7) >> 12);
+			pulse = static_cast<u8>((abs(G_RCOSSIN_TBL[(G_TIMER_RELATED << 5) & 0xFFF].sin) << 7) >> 12);
 		else
 			pulse = 0x80;
 		pWebcart->g0 = pulse;
@@ -629,7 +629,7 @@ void Panel_Display(void)
 
 	if (damageFrac > 76)
 	{
-		i32 wave = rcossin_tbl[(G_TIMER_RELATED * (175 * (damageFrac - 76) / 52 + 25)) & 0xFFF].sin;
+		i32 wave = G_RCOSSIN_TBL[(G_TIMER_RELATED * (175 * (damageFrac - 76) / 52 + 25)) & 0xFFF].sin;
 		u32 beat = static_cast<u32>(((wave * wave) | 0xFF00) >> 8);
 		DCDrawGouraudPoly(4.0f, 58, *gPanelScreenY + 25, 31, 6, beat, beat, beat, beat);
 	}
@@ -770,19 +770,19 @@ void Panel_DisplayCompass(void)
 
 	i32 xOff1 = (25 * dir.vx) >> 12;
 	i32 idxA = (angle - 1024) & 0xFFF;
-	i32 sideA = (9 * rcossin_tbl[idxA].cos) >> 12;
+	i32 sideA = (9 * G_RCOSSIN_TBL[idxA].cos) >> 12;
 	i32 idxB = (angle + 1024) & 0xFFF;
-	i32 sideB = (9 * rcossin_tbl[idxB].cos) >> 12;
+	i32 sideB = (9 * G_RCOSSIN_TBL[idxB].cos) >> 12;
 	i32 xOff2 = (6 * dir.vx) >> 12;
 
 	i32 tipY = *gPanelScreenY + 3604 * (320 * ((25 * dir.vz) >> 12) / 512) / 4096;
-	i32 tailA = *gPanelScreenY + (((320 * ((9 * rcossin_tbl[idxA].sin) >> 12)) >> 9));
-	i32 tailB = *gPanelScreenY + 320 * ((9 * rcossin_tbl[idxB].sin) >> 12) / 512;
+	i32 tailA = *gPanelScreenY + (((320 * ((9 * G_RCOSSIN_TBL[idxA].sin) >> 12)) >> 9));
+	i32 tailB = *gPanelScreenY + 320 * ((9 * G_RCOSSIN_TBL[idxB].sin) >> 12) / 512;
 	i32 tipY2 = *gPanelScreenY + 320 * ((6 * dir.vz) >> 12) / 512;
 
 	i32 pulseHalfWidth = (dist <= 0x4000) ? (((0x4000 - dist) >> 8) + 8) : 8;
 
-	i32 pulseSin = rcossin_tbl[(pulseHalfWidth * (i16)G_TIMER_RELATED) & 0xFFF].sin;
+	i32 pulseSin = G_RCOSSIN_TBL[(pulseHalfWidth * (i16)G_TIMER_RELATED) & 0xFFF].sin;
 	i32 pulseBrightness = (255 * abs(pulseSin)) >> 12;
 	u32 dialColor = (pulseBrightness << 8) | 0xFF;
 
@@ -810,7 +810,7 @@ void Panel_DisplayCompass(void)
 
 		if (*gCompassFlashTimer != 0)
 		{
-			i32 sinT = rcossin_tbl[(G_TIMER_RELATED << 6) & 0xFFF].sin;
+			i32 sinT = G_RCOSSIN_TBL[(G_TIMER_RELATED << 6) & 0xFFF].sin;
 			i32 signMask = (205 * sinT) >> 31;
 			tintColor = (abs((127 * sinT) >> 12) + 128)
 					| (((signMask ^ ((205 * sinT) >> 12)) + 0xFFFFFF * signMask + 50) << 8)

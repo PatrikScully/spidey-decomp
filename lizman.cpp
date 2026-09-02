@@ -145,7 +145,7 @@ void CLizMan::CalculateJumpPositionArray(CVector* pTarget)
 	do
 	{
 		this->field_3B4[i].vx = x;
-		this->field_3B4[i].vy = y - (rcossin_tbl[t & 0xFFF].sin << 8);
+		this->field_3B4[i].vy = y - (G_RCOSSIN_TBL[t & 0xFFF].sin << 8);
 		this->field_3B4[i].vz = z;
 
 		x += xDelta;
@@ -681,13 +681,13 @@ void CLizMan::DoLizmanPhysics(void)
 	switch (this->mAnim)
 	{
 		case 2:
-			rollFactor = (my_abs(rcossin_tbl[(this->mFrame << 7) & 0xFFF].sin) >> 1) + 1024;
+			rollFactor = (my_abs(G_RCOSSIN_TBL[(this->mFrame << 7) & 0xFFF].sin) >> 1) + 1024;
 			break;
 		case 8:
-			rollFactor = (my_abs(rcossin_tbl[((this->mFrame << 12) / 20) & 0xFFF].sin) >> 2) + 2048;
+			rollFactor = (my_abs(G_RCOSSIN_TBL[((this->mFrame << 12) / 20) & 0xFFF].sin) >> 2) + 2048;
 			break;
 		case 0x23:
-			rollFactor = ((my_abs(rcossin_tbl[((this->mFrame << 12) / 24) & 0xFFF].sin) * 3) >> 2) + 1024;
+			rollFactor = ((my_abs(G_RCOSSIN_TBL[((this->mFrame << 12) / 24) & 0xFFF].sin) * 3) >> 2) + 1024;
 			break;
 		default:
 			rollFactor = 0x1000;

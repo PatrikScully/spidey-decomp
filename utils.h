@@ -60,8 +60,12 @@ EXPORT void Utils_VblankProcessing(void);
 //#define G_DIFFICULTY_LEVEL (DifficultyLevel)
 #define G_DIFFICULTY_LEVEL (*reinterpret_cast<i32*>(0x0054D474))
 
-#define Sine(a) ((*(SSinCos *)(&rcossin_tbl+((a)&4095))).sin)
-#define Cosine(a) ((*(SSinCos *)(&rcossin_tbl+((a)&4095))).cos)
+// These used to read (*(SSinCos*)(&rcossin_tbl + (a & 4095))). &rcossin_tbl is a
+// pointer to the WHOLE array, so the "+ n" strode 16384 bytes per step instead of
+// 4, and every call after index 0 read far outside the table. The original always
+// indexes with a stride of 4 (movsx ecx, word ptr [eax*4+610C48h]).
+#define Sine(a) (G_RCOSSIN_TBL[(a) & FLATBIT_VELOCITIES_MAX_INDEX].sin)
+#define Cosine(a) (G_RCOSSIN_TBL[(a) & FLATBIT_VELOCITIES_MAX_INDEX].cos)
 
 // gates the delayed XA restart, also checked by Logic, Display and
 // Front_Update (moved here from utils.cpp so front.cpp can use it too, per

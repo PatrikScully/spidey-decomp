@@ -1266,12 +1266,12 @@ i32 *CPlayer::CalculateTugWebPathPoints(void)
 	i32 angle = 0;
 	while (1)
 	{
-		i32 r = (rcossin_tbl[angle & 0xFFF].cos * length) >> 12;
+		i32 r = (G_RCOSSIN_TBL[angle & 0xFFF].cos * length) >> 12;
 		i32 px = this->mPos.vx + r * dir.vx;
 		i32 pz = this->mPos.vz + r * dir.vz;
 		if (angle < 1024)
 			length -= step;
-		i32 py = this->mPos.vy - (rcossin_tbl[angle & 0xFFF].sin << 8);
+		i32 py = this->mPos.vy - (G_RCOSSIN_TBL[angle & 0xFFF].sin << 8);
 		*path++ = px;
 		*path++ = py;
 		*path++ = pz;
@@ -2499,8 +2499,8 @@ u8 CPlayer::CheckJumpingSwingWeb(void)
 		if (this->field_5CC > 5)
 			this->field_5CC = 0;
 
-		i32 s = rcossin_tbl[angle & 0xFFF].sin;
-		i32 c = rcossin_tbl[angle & 0xFFF].cos;
+		i32 s = G_RCOSSIN_TBL[angle & 0xFFF].sin;
+		i32 c = G_RCOSSIN_TBL[angle & 0xFFF].cos;
 
 		lineInfo.EndCoords.vx = this->mPos.vx
 			+ ((((this->field_C84.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
@@ -2524,8 +2524,8 @@ u8 CPlayer::CheckJumpingSwingWeb(void)
 			{
 				angle = (i16)(angle + 57);
 
-				s = rcossin_tbl[angle & 0xFFF].sin;
-				c = rcossin_tbl[angle & 0xFFF].cos;
+				s = G_RCOSSIN_TBL[angle & 0xFFF].sin;
+				c = G_RCOSSIN_TBL[angle & 0xFFF].cos;
 
 				lineInfo.EndCoords.vx = this->mPos.vx
 					+ ((((this->field_C84.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);
@@ -2561,8 +2561,8 @@ u8 CPlayer::CheckJumpingSwingWeb(void)
 			if (this->field_5C8 > 5)
 				this->field_5C8 = 0;
 
-			s = rcossin_tbl[narrowAngle & 0xFFF].sin;
-			c = rcossin_tbl[narrowAngle & 0xFFF].cos;
+			s = G_RCOSSIN_TBL[narrowAngle & 0xFFF].sin;
+			c = G_RCOSSIN_TBL[narrowAngle & 0xFFF].cos;
 
 			lineInfo.EndCoords.vx = this->mPos.vx
 				+ ((((this->field_C78.vx * s) >> 12) - ((this->field_C6C.vx * c) >> 12)) << 12);

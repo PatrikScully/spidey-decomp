@@ -231,8 +231,8 @@ void CSymbioteBlade::GenerateControlPoints(void)
 		i32 angle = Rnd(4096) & 0xFFF;
 		i32 randMag = Rnd(dist / 2);
 
-		i32 cosA = rcossin_tbl[angle].cos;
-		i32 sinA = rcossin_tbl[angle].sin;
+		i32 cosA = G_RCOSSIN_TBL[angle].cos;
+		i32 sinA = G_RCOSSIN_TBL[angle].sin;
 
 		CVector cosOffset = ((cosA * perp1) >> 12) * randMag;
 		CVector sinOffset = ((sinA * perp2) >> 12) * randMag;
@@ -2113,7 +2113,7 @@ void CCarnage::StretchJumpFlow(void)
 				{
 					CVector a3 = ((this->field_240 - this->field_370) >> 12);
 
-					i32 sin = rcossin_tbl[(((this->mFrame - 8) << 10) / 30) & 0xFFF].sin;
+					i32 sin = G_RCOSSIN_TBL[(((this->mFrame - 8) << 10) / 30) & 0xFFF].sin;
 					i32 v18 = (sin * sin) >> 12;
 
 					a3 *= v18;
@@ -2806,11 +2806,11 @@ void CSonicRipple::CalcPos(
 		i16 a3,
 		i32 a4)
 {
-	i32 v4 = this->field_5E + ((this->field_80 * rcossin_tbl[a3 & 0xFFF].sin) >> 12);
+	i32 v4 = this->field_5E + ((this->field_80 * G_RCOSSIN_TBL[a3 & 0xFFF].sin) >> 12);
 
-	a2->vx = this->mPos.vx + this->field_74.vx * ((v4 * rcossin_tbl[a4 & 0xFFF].cos) >> 12);
-	a2->vy = this->mPos.vy + this->field_74.vy * ((v4 * rcossin_tbl[a4 & 0xFFF].cos) >> 12) - v4 * rcossin_tbl[a4 & 0xFFF].sin;
-	a2->vz = this->mPos.vz + this->field_74.vz * ((v4 * rcossin_tbl[a4 & 0xFFF].cos) >> 12);
+	a2->vx = this->mPos.vx + this->field_74.vx * ((v4 * G_RCOSSIN_TBL[a4 & 0xFFF].cos) >> 12);
+	a2->vy = this->mPos.vy + this->field_74.vy * ((v4 * G_RCOSSIN_TBL[a4 & 0xFFF].cos) >> 12) - v4 * G_RCOSSIN_TBL[a4 & 0xFFF].sin;
+	a2->vz = this->mPos.vz + this->field_74.vz * ((v4 * G_RCOSSIN_TBL[a4 & 0xFFF].cos) >> 12);
 }
 
 // @Ok
@@ -3079,21 +3079,21 @@ CCarnageHitSpark::CCarnageHitSpark(CVector* pVec)
 	i32 v10 = Rnd(30);
 	i32 v11 = (4 * v9) & 0x3FFC;
 
-	i32 v12 = ((v10 + 5) * rcossin_tbl[v11].cos) >> 12;
-	i32 v22 = ((v10 + 5) * rcossin_tbl[v11].sin) >> 12;
+	i32 v12 = ((v10 + 5) * G_RCOSSIN_TBL[v11].cos) >> 12;
+	i32 v22 = ((v10 + 5) * G_RCOSSIN_TBL[v11].sin) >> 12;
 
 	this->mVel = (v12 * v41) + (v22 * v40);
 
 	i32 v13 = Rnd(50) + 50;
-	i32 v14 = (v13 * rcossin_tbl[v11].cos) >> 12;
-	i32 v20 = (v13 * rcossin_tbl[v11].sin) >> 12;
+	i32 v14 = (v13 * G_RCOSSIN_TBL[v11].cos) >> 12;
+	i32 v20 = (v13 * G_RCOSSIN_TBL[v11].sin) >> 12;
 
 	CVector v33 = (v14 * v41) + (v20 * v40);
 
 	i32 v15 = (4 * (v9 + 1024)) & 0x3FFC;
 
-	i32 v18 = (10 * rcossin_tbl[v15].sin) >> 12;
-	i32 v19 = (10 * rcossin_tbl[v15].cos) >> 12;
+	i32 v18 = (10 * G_RCOSSIN_TBL[v15].sin) >> 12;
+	i32 v19 = (10 * G_RCOSSIN_TBL[v15].cos) >> 12;
 
 	CVector v30 = (v19 * v41) + (v18 * v40);
 

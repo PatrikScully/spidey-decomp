@@ -172,7 +172,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 	i32 shake = 128;
 	if (doc->field_378 > 0xC00) {
 		i32 idx = (G_TIMER_RELATED << 4) & 0xFFF;
-		i32 sin = rcossin_tbl[idx].sin;
+		i32 sin = G_RCOSSIN_TBL[idx].sin;
 		i32 abs_sin = my_abs(sin);
 		shake = (abs_sin << 7) >> 12;
 	}

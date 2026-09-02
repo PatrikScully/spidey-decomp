@@ -263,8 +263,8 @@ INLINE void Post_WaterEffect(void)
 {
 	if (!gPostWaterEffect)
 	{
-		i32 v1 = rcossin_tbl[(gPostTimerRelated / 2) & 0xFFF].sin >> 6;
-		i32 v2 = rcossin_tbl[(gPostTimerRelated / 2) & 0xFFF].cos >> 6;
+		i32 v1 = G_RCOSSIN_TBL[(gPostTimerRelated / 2) & 0xFFF].sin >> 6;
+		i32 v2 = G_RCOSSIN_TBL[(gPostTimerRelated / 2) & 0xFFF].cos >> 6;
 
 		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 		f32 v3 = gGameResolutionY;

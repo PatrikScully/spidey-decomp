@@ -409,7 +409,7 @@ void CDropDownController::AI(void)
 			i32 speed = this->mSpeed;
 
 			this->mPhase += 300;
-			this->mPos.vy = ((speed * rcossin_tbl[this->mPhase & 0xFFF].sin + 30) >> 12) - 150000;
+			this->mPos.vy = ((speed * G_RCOSSIN_TBL[this->mPhase & 0xFFF].sin + 30) >> 12) - 150000;
 
 			speed = (3100 * speed) >> 12;
 			this->mSpeed = speed;
@@ -436,7 +436,7 @@ void CDropDownController::AI(void)
 	}
 
 	this->mWobblePhase += 20;
-	this->mAngles.vy = static_cast<i16>((75 * rcossin_tbl[this->mWobblePhase & 0xFFF].sin) >> 12);
+	this->mAngles.vy = static_cast<i16>((75 * G_RCOSSIN_TBL[this->mWobblePhase & 0xFFF].sin) >> 12);
 
 	if (this->mShakeFlag != 0)
 	{
@@ -447,7 +447,7 @@ void CDropDownController::AI(void)
 		this->mShakeAmp -= 1;
 	}
 
-	i32 shake = this->mShakeAmp * rcossin_tbl[this->mShakePhase & 0xFFF].sin;
+	i32 shake = this->mShakeAmp * G_RCOSSIN_TBL[this->mShakePhase & 0xFFF].sin;
 	this->mShakePhase += 800;
 	this->mAngles.vz = static_cast<i16>(shake / 4096 + 80);
 
@@ -1225,7 +1225,7 @@ i32 Shell_ChooseTrainingControlType(void)
 		{
 			v3 += 400;
 			if (v3 <= 2048)
-				v10 = 256 - (rcossin_tbl[v3 & 0xFFF].sin << 7 >> 12);
+				v10 = 256 - (G_RCOSSIN_TBL[v3 & 0xFFF].sin << 7 >> 12);
 			else
 			{
 				v3 = 2048;
@@ -1245,7 +1245,7 @@ i32 Shell_ChooseTrainingControlType(void)
 			v3 += 400;
 			v9 = 144;
 			if (v3 <= 2048)
-				v10 = 256 - (rcossin_tbl[v3 & 0xFFF].sin << 7 >> 12);
+				v10 = 256 - (G_RCOSSIN_TBL[v3 & 0xFFF].sin << 7 >> 12);
 			else
 			{
 				v3 = 2048;
@@ -2123,8 +2123,8 @@ denied:
 		rot &= 0xFFF;
 		G_MIKE_CAMERA[0].Angles.vy = rot;
 
-		i32 cosA = rcossin_tbl[rot & 0xFFF].cos;
-		G_MIKE_CAMERA[0].Position.vx = -(zoom * rcossin_tbl[rot & 0xFFF].sin) >> 12;
+		i32 cosA = G_RCOSSIN_TBL[rot & 0xFFF].cos;
+		G_MIKE_CAMERA[0].Position.vx = -(zoom * G_RCOSSIN_TBL[rot & 0xFFF].sin) >> 12;
 		G_MIKE_CAMERA[0].Position.vz = -(zoom * cosA) >> 12;
 
 	ail:
@@ -2619,8 +2619,8 @@ denied:
 		}
 		rot &= 0xFFF;
 
-		G_MIKE_CAMERA[0].Position.vx = -(zoom * rcossin_tbl[rot].sin) >> 12;
-		G_MIKE_CAMERA[0].Position.vz = -(zoom * rcossin_tbl[rot].cos) >> 12;
+		G_MIKE_CAMERA[0].Position.vx = -(zoom * G_RCOSSIN_TBL[rot].sin) >> 12;
+		G_MIKE_CAMERA[0].Position.vz = -(zoom * G_RCOSSIN_TBL[rot].cos) >> 12;
 
 		if (G_VBLANKS == startVblanks)
 			Pause(1);
@@ -2741,7 +2741,7 @@ i32 Shell_Difficulty(i32 a1)
 				Mess_SetTextJustify(1);
 				i32 v8 = v35 & 0xFFF;
 				v35 += 200;
-				i32 sin = rcossin_tbl[v8].sin;
+				i32 sin = G_RCOSSIN_TBL[v8].sin;
 				i32 v10 = ((68 * sin) >> 13) + 94;
 				i32 v11 = 350 * (((59 * sin) >> 13) + 98) / 256;
 				if (v11 > 255) v11 = -1;
@@ -2775,7 +2775,7 @@ i32 Shell_Difficulty(i32 a1)
 		v19 = v28 + 400;
 		v28 += 400;
 		if (v28 <= 2048)
-			v31 = 256 - (rcossin_tbl[v19 & 0xFFF].sin << 7 >> 12);
+			v31 = 256 - (G_RCOSSIN_TBL[v19 & 0xFFF].sin << 7 >> 12);
 		else
 		{
 			v4 -= 15;
@@ -2811,7 +2811,7 @@ i32 Shell_Difficulty(i32 a1)
 		i32 v20 = v28 + 400;
 		v28 += 400;
 		if (v28 <= 2048)
-			v31 = 256 - (rcossin_tbl[v20 & 0xFFF].sin << 7 >> 12);
+			v31 = 256 - (G_RCOSSIN_TBL[v20 & 0xFFF].sin << 7 >> 12);
 		else
 		{
 			v28 = 2048;
@@ -4074,7 +4074,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 		else
 			textEase -= 2;
 		textSlide += 690;
-		textOffset = textEase * rcossin_tbl[textSlide & 0xFFF].cos / 4096;
+		textOffset = textEase * G_RCOSSIN_TBL[textSlide & 0xFFF].cos / 4096;
 
 		if (textCountdown != 0)
 			--textCountdown;
@@ -8921,7 +8921,7 @@ void CDummy::TailRenderer(void)
 		gte_op12();
 		gte_stlvnl(reinterpret_cast<VECTOR*>(&normal));
 
-		i32 taper = 16 - ((rcossin_tbl[(42 * (node + 1)) & 0xFFF].sin * 8) >> 12);
+		i32 taper = 16 - ((G_RCOSSIN_TBL[(42 * (node + 1)) & 0xFFF].sin * 8) >> 12);
 
 		if (node == 22)
 		{
@@ -8979,8 +8979,8 @@ void CDummy::TailRenderer(void)
 		for (u32 i = 0; i < 4; i++)
 		{
 			i32 angle = (i << 10) & 0xFFF;
-			i32 sinA = rcossin_tbl[angle].sin;
-			i32 cosA = rcossin_tbl[angle].cos;
+			i32 sinA = G_RCOSSIN_TBL[angle].sin;
+			i32 cosA = G_RCOSSIN_TBL[angle].cos;
 
 			i32 nx = ((sinA * binormal.vx) >> 12) + ((cosA * normal.vx) >> 12);
 			i32 ny = ((binormal.vy * sinA) >> 12) + ((normal.vy * cosA) >> 12);
@@ -9887,8 +9887,8 @@ CScorpExplosion::CScorpExplosion(CVector* pPos)
 	{
 		dir.vy = static_cast<i16>(Rnd(4096));
 
-		i32 sinYaw = rcossin_tbl[dir.vy & 0xFFF].sin;
-		i32 cosYaw = 5 * rcossin_tbl[dir.vy & 0xFFF].cos;
+		i32 sinYaw = G_RCOSSIN_TBL[dir.vy & 0xFFF].sin;
+		i32 cosYaw = 5 * G_RCOSSIN_TBL[dir.vy & 0xFFF].cos;
 
 		spot.vx = pPos->vx - 80 * sinYaw;
 		spot.vz = pPos->vz - 16 * cosYaw;
@@ -9981,8 +9981,8 @@ CShellSimbySlimeBase::CShellSimbySlimeBase(CVector* pPos, CSVector* pAngles, i32
 
 	// the two 80 unit axes of the patch, worked out from the yaw alone
 	i32 yaw = pAngles->vy;
-	i32 cosYaw = rcossin_tbl[yaw & 0xFFF].cos;
-	i32 sinNegYaw = rcossin_tbl[(-yaw) & 0xFFF].sin;
+	i32 cosYaw = G_RCOSSIN_TBL[yaw & 0xFFF].cos;
+	i32 sinNegYaw = G_RCOSSIN_TBL[(-yaw) & 0xFFF].sin;
 
 	CVector axisU;
 	CVector axisV;

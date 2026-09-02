@@ -614,15 +614,15 @@ void Simby_SplattyExplosion(CVector *a1, CVector *a2, i32 a3)
 	{
 		i32 angle1 = (Rnd(1601) - 1824) & 0xFFF;
 
-		i32 sin1 = rcossin_tbl[angle1].sin;
-		i32 cos1 = rcossin_tbl[angle1].cos;
+		i32 sin1 = G_RCOSSIN_TBL[angle1].sin;
+		i32 cos1 = G_RCOSSIN_TBL[angle1].cos;
 
 		CVector circleOffset = ((sin1 * perpSide) + (cos1 * perpUp)) >> 12;
 
 		i32 angle2 = Rnd(512) & 0xFFF;
 
-		i32 sin2 = rcossin_tbl[angle2].sin;
-		i32 cos2 = rcossin_tbl[angle2].cos;
+		i32 sin2 = G_RCOSSIN_TBL[angle2].sin;
+		i32 cos2 = G_RCOSSIN_TBL[angle2].cos;
 
 		CVector coneOffset = ((sin2 * (*a2)) + (cos2 * circleOffset)) >> 12;
 

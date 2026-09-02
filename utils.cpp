@@ -21,7 +21,6 @@ extern CBody *SuspendedList;
 extern CBaddy *BaddyList;
 
 extern SLineInfo gLineInfo;
-extern i16 gRotMatrix[3][3];
 
 // moved out of export.h 2026-08-27, see the comment there.
 // @Ok
@@ -340,12 +339,12 @@ u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 	i32 hi, lo;
 	if (angle < 2048)
 	{
-		lo = atten - ((rcossin_tbl[angle & 0xFFF].sin * (atten / 2)) >> 12);
+		lo = atten - ((G_RCOSSIN_TBL[angle & 0xFFF].sin * (atten / 2)) >> 12);
 		hi = atten;
 	}
 	else
 	{
-		hi = atten + ((rcossin_tbl[angle & 0xFFF].sin * (atten / 2)) >> 12);
+		hi = atten + ((G_RCOSSIN_TBL[angle & 0xFFF].sin * (atten / 2)) >> 12);
 		lo = atten;
 	}
 
@@ -583,7 +582,7 @@ void Utils_RotateWorldToObject(CBody * a1, CVector * a2, CVector * a3)
 	sVec.vx = a2->vx >> 12;
 	sVec.vy = a2->vy >> 12;
 
-	memcpy(gRotMatrix, &mOne, sizeof(gRotMatrix));
+	memcpy(G_ROT_MATRIX, &mOne, sizeof(G_ROT_MATRIX));
 
 	MTC2(*reinterpret_cast<i32*>(&sVec.vx), GT_ZERO);
 	MTC2(*reinterpret_cast<i32*>(&sVec.vz), GT_ONE);
@@ -1299,9 +1298,9 @@ int Utils_LinearFilter(
 // @Matching
 void Utils_GetVecFromMagDir(CVector * a1, int a2, CSVector * a3)
 {
-	a1->vx = -(((rcossin_tbl[a3->vx & 0xFFF].cos * a2) >> 12) * rcossin_tbl[a3->vy & 0xFFF].sin);
-	a1->vy = rcossin_tbl[a3->vx & 0xFFF].sin * a2;
-	a1->vz = -(((rcossin_tbl[a3->vx & 0xFFF].cos * a2) >> 12) * rcossin_tbl[a3->vy & 0xFFF].cos);
+	a1->vx = -(((G_RCOSSIN_TBL[a3->vx & 0xFFF].cos * a2) >> 12) * G_RCOSSIN_TBL[a3->vy & 0xFFF].sin);
+	a1->vy = G_RCOSSIN_TBL[a3->vx & 0xFFF].sin * a2;
+	a1->vz = -(((G_RCOSSIN_TBL[a3->vx & 0xFFF].cos * a2) >> 12) * G_RCOSSIN_TBL[a3->vy & 0xFFF].cos);
 }
 
 // @Ok
@@ -1341,7 +1340,7 @@ i32 Utils_XZDist(const CVector* a1, const CVector *a2)
 // so the void return is fine.)
 void Utils_RotateY(CVector * a1, CVector * a2, i32 a3)
 {
-	SSinCos const * sc = &rcossin_tbl[a3 & 0xFFF];
+	SSinCos const * sc = &G_RCOSSIN_TBL[a3 & 0xFFF];
 	a1->vx = ((a2->vx >> 3) * sc->cos + (a2->vz >> 3) * sc->sin) >> 9;
 	a1->vy = a2->vy;
 	a1->vz = ((a2->vz >> 3) * sc->cos - (a2->vx >> 3) * sc->sin) >> 9;

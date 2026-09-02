@@ -424,8 +424,8 @@ static void SpawnChunkSmokeBurst(CVector *pos, CVector *dirA, CVector *dirB, i32
 		i32 angle = Rnd(4096) & 0xFFF;
 		i32 mag = Rnd(spread);
 
-		i32 offX = (mag * rcossin_tbl[angle].sin) >> 12;
-		i32 offZ = (mag * rcossin_tbl[angle].cos) >> 12;
+		i32 offX = (mag * G_RCOSSIN_TBL[angle].sin) >> 12;
+		i32 offZ = (mag * G_RCOSSIN_TBL[angle].cos) >> 12;
 
 		CVector smokePos;
 		smokePos.vx = pos->vx + offX * dirA->vx + offZ * dirB->vx;
@@ -577,9 +577,9 @@ void CManipOb::Chunk(SLineInfo *pLineInfo, CVector*)
 			{
 				i32 idx = angle & 0xFFF;
 
-				CVector vel = (halfSpeed * ((rcossin_tbl[idx].sin * perpUp) >> 12));
+				CVector vel = (halfSpeed * ((G_RCOSSIN_TBL[idx].sin * perpUp) >> 12));
 				vel += halfXZSpeed * normal;
-				vel += halfSpeed * ((rcossin_tbl[idx].cos * perpSide) >> 12);
+				vel += halfSpeed * ((G_RCOSSIN_TBL[idx].cos * perpSide) >> 12);
 
 				CManipObChunk *pChunk = static_cast<CManipObChunk*>(CClass::operator new(sizeof(CManipObChunk)));
 				if (pChunk)
@@ -599,9 +599,9 @@ void CManipOb::Chunk(SLineInfo *pLineInfo, CVector*)
 				i32 idx = angle & 0xFFF;
 
 				CVector vel;
-				vel.vx = halfXZSpeed * rcossin_tbl[idx].sin;
+				vel.vx = halfXZSpeed * G_RCOSSIN_TBL[idx].sin;
 				vel.vy = -this->mVel.vy;
-				vel.vz = halfXZSpeed * rcossin_tbl[idx].cos;
+				vel.vz = halfXZSpeed * G_RCOSSIN_TBL[idx].cos;
 
 				CManipObChunk *pChunk = static_cast<CManipObChunk*>(CClass::operator new(sizeof(CManipObChunk)));
 				if (pChunk)

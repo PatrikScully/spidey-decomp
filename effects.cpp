@@ -178,7 +178,7 @@ void CVertexWobble::Move(void)
 	{
 		entry->phase += entry->phaseSpeed;
 
-		i32 sinVal = rcossin_tbl[entry->phase & 0xFFF].sin;
+		i32 sinVal = G_RCOSSIN_TBL[entry->phase & 0xFFF].sin;
 		i32 newRadius = (sinVal * entry->amplitude) / 4096 + entry->distance + entry->amplitude;
 
 		i16 *vertex = reinterpret_cast<i16*>(reinterpret_cast<u8*>(this->field_4C) + 0x1C + entry->vertexIndex * 8);
@@ -329,8 +329,8 @@ CBouncingRock::CBouncingRock(
 	i32 v6 = Rnd(4096);
 	i32 v7 = Rnd(10) + 10;
 	i32 v8 = v6 & 0xFFF;
-	this->mVel.vx = v7 * rcossin_tbl[v8].sin;
-	this->mVel.vz = v7 * rcossin_tbl[v8].cos;
+	this->mVel.vx = v7 * G_RCOSSIN_TBL[v8].sin;
+	this->mVel.vz = v7 * G_RCOSSIN_TBL[v8].cos;
 
 	this->mVel.vy = -81920 - (Rnd(20) << 12);
 	this->field_5A = 500;
@@ -559,8 +559,8 @@ CFootprint::CFootprint(CVector* pVector, i32 a3)
 	this->mPosC.vy = pVector->vy;
 	this->mPosD.vy = pVector->vy;
 
-	i32 vxVel = rcossin_tbl[a3 & 0xFFF].sin;
-	i32 vzVel = rcossin_tbl[a3 & 0xFFF].cos;
+	i32 vxVel = G_RCOSSIN_TBL[a3 & 0xFFF].sin;
+	i32 vzVel = G_RCOSSIN_TBL[a3 & 0xFFF].cos;
 
 	this->mPos.vx = vxVel - vzVel;
 	i32 v12 = vxVel + vzVel;
@@ -617,8 +617,8 @@ void Effects_FootStomp(CVector* pPos, u32 Checksum)
 	{
 		Dir.vy = static_cast<i16>(Rnd(4096));
 
-		Spawn.vx = pPos->vx - rcossin_tbl[Dir.vy & 0xFFF].sin * 80;
-		Spawn.vz = pPos->vz - rcossin_tbl[Dir.vy & 0xFFF].cos * 80;
+		Spawn.vx = pPos->vx - G_RCOSSIN_TBL[Dir.vy & 0xFFF].sin * 80;
+		Spawn.vz = pPos->vz - G_RCOSSIN_TBL[Dir.vy & 0xFFF].cos * 80;
 
 		new CPingLine(&Spawn, &Dir, 0x80, 0x80, 0x80, 0xF, 0xC8, Rnd(50) + 30);
 	}

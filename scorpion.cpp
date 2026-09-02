@@ -948,7 +948,7 @@ void CScorpion::TailRenderer(void)
 		gte_op12();
 		gte_stlvnl(reinterpret_cast<VECTOR*>(&normal));
 
-		i32 taper = 16 - ((rcossin_tbl[(42 * (node + 1)) & 0xFFF].sin * 8) >> 12);
+		i32 taper = 16 - ((G_RCOSSIN_TBL[(42 * (node + 1)) & 0xFFF].sin * 8) >> 12);
 
 		if (node == 22)
 		{
@@ -1007,8 +1007,8 @@ void CScorpion::TailRenderer(void)
 		for (u32 i = 0; i < 4; i++)
 		{
 			i32 angle = (i << 10) & 0xFFF;
-			i32 sinA = rcossin_tbl[angle].sin;
-			i32 cosA = rcossin_tbl[angle].cos;
+			i32 sinA = G_RCOSSIN_TBL[angle].sin;
+			i32 cosA = G_RCOSSIN_TBL[angle].cos;
 
 			i32 nx = ((sinA * binormal.vx) >> 12) + ((cosA * normal.vx) >> 12);
 			i32 ny = ((binormal.vy * sinA) >> 12) + ((normal.vy * cosA) >> 12);

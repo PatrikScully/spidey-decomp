@@ -36,18 +36,34 @@ EXPORT int vertexRegister[4];
 // guesses: not in idb_globals.txt. Positioned right after vertexRegister ("V0"),
 // same shape, used by MTC2 the same way for register indices 2/3 ("V1") and 4/5 ("V2").
 EXPORT int gVertexRegister1[4];
+//#define G_VERTEX_REGISTER1 (gVertexRegister1)
+#define G_VERTEX_REGISTER1 (*reinterpret_cast<int(*)[4]>(0x00610BC0))
 EXPORT int gVertexRegister2[4];
+//#define G_VERTEX_REGISTER2 (gVertexRegister2)
+#define G_VERTEX_REGISTER2 (*reinterpret_cast<int(*)[4]>(0x00610BD0))
 
 EXPORT VECTOR translationVector;
 EXPORT VECTOR gGeneralLongVector;
 
 EXPORT int gRtpsRelatedNoClue;
+//#define G_RTPS_PROJ_DISTANCE (gRtpsRelatedNoClue)
+#define G_RTPS_PROJ_DISTANCE (*reinterpret_cast<int*>(0x0054F03C))
 EXPORT int gRtpsRelatedNoClue2;
+//#define G_RTPS_SCREEN_OFFSET_X (gRtpsRelatedNoClue2)
+#define G_RTPS_SCREEN_OFFSET_X (*reinterpret_cast<int*>(0x0054F040))
 EXPORT int gRtpsRelatedNoClue3;
+//#define G_RTPS_SCREEN_OFFSET_Y (gRtpsRelatedNoClue3)
+#define G_RTPS_SCREEN_OFFSET_Y (*reinterpret_cast<int*>(0x0054F044))
 
 EXPORT VECTOR gFtwOp12;
+//#define G_FTW_OP12 (gFtwOp12)
+#define G_FTW_OP12 (*reinterpret_cast<VECTOR*>(0x00610B90))
 EXPORT VECTOR gWtfOP12;
+//#define G_WTF_OP12 (gWtfOP12)
+#define G_WTF_OP12 (*reinterpret_cast<VECTOR*>(0x00610B80))
 EXPORT VECTOR gOp12Result;
+//#define G_OP12_RESULT (gOp12Result)
+#define G_OP12_RESULT (*reinterpret_cast<VECTOR*>(0x00610BE0))
 
 static unsigned char stubGte = 1;
 
@@ -63,64 +79,64 @@ void MTC2(i32 a1, GTREGType a2)
 	switch (a2)
 	{
 	case GT_ZERO:
-		vertexRegister[0] = (i16)a1;
-		vertexRegister[1] = a1 >> 16;
+		G_VERTEX_REGISTER[0] = (i16)a1;
+		G_VERTEX_REGISTER[1] = a1 >> 16;
 		break;
 	case GT_ONE:
-		vertexRegister[2] = (i16)a1;
+		G_VERTEX_REGISTER[2] = (i16)a1;
 		break;
 	case GT_TWO:
-		gVertexRegister1[0] = (i16)a1;
-		gVertexRegister1[1] = a1 >> 16;
+		G_VERTEX_REGISTER1[0] = (i16)a1;
+		G_VERTEX_REGISTER1[1] = a1 >> 16;
 		break;
 	case GT_THREE:
-		gVertexRegister1[2] = (i16)a1;
+		G_VERTEX_REGISTER1[2] = (i16)a1;
 		break;
 	case GT_FOUR:
-		gVertexRegister2[0] = a1 & 0xFFFF;
-		gVertexRegister2[1] = a1 >> 16;
+		G_VERTEX_REGISTER2[0] = a1 & 0xFFFF;
+		G_VERTEX_REGISTER2[1] = a1 >> 16;
 		break;
 	case GT_FIVE:
-		gVertexRegister2[2] = (i16)a1;
+		G_VERTEX_REGISTER2[2] = (i16)a1;
 		break;
 	case GT_SIX:
 		print_if_false(0, "MTC2 tried to write to IR0.");
 		break;
 	case GT_SEVEN:
-		gOp12Result.vx = a1;
+		G_OP12_RESULT.vx = a1;
 		break;
 	case GT_EIGHT:
-		gOp12Result.vy = a1;
+		G_OP12_RESULT.vy = a1;
 		break;
 	case GT_NINE:
-		gOp12Result.vz = a1;
+		G_OP12_RESULT.vz = a1;
 		break;
 	case GT_TEN:
 		print_if_false(0, "MTC2 tried to write to MAC0.");
 		break;
 	case GT_ELEVEN:
-		gGeneralLongVector.vx = a1;
+		G_GENERAL_LONG_VECTOR.vx = a1;
 		break;
 	case GT_TWELVE:
-		gGeneralLongVector.vy = a1;
+		G_GENERAL_LONG_VECTOR.vy = a1;
 		break;
 	case GT_THIRTEEN:
-		gGeneralLongVector.vz = a1;
+		G_GENERAL_LONG_VECTOR.vz = a1;
 		break;
 	case GT_FOURTEEN:
 		print_if_false(0, "MTC2 tried to write to RotMat.");
 		break;
 	case GT_FIFTEEN:
-		gRotMatrix[2][2] = (i16)a1;
+		G_ROT_MATRIX[2][2] = (i16)a1;
 		break;
 	case GT_SIXTEEN:
-		translationVector.vx = a1;
+		G_TRANSLATION_VECTOR.vx = a1;
 		break;
 	case GT_SEVENTEEN:
-		translationVector.vy = a1;
+		G_TRANSLATION_VECTOR.vy = a1;
 		break;
 	case GT_EIGHTEEN:
-		translationVector.vz = a1;
+		G_TRANSLATION_VECTOR.vz = a1;
 		break;
 	case GT_NINETEEN:
 	case GT_TWENTY:
@@ -151,9 +167,9 @@ void TransMatrix(MATRIX* a1, VECTOR* a2)
 // @Matching
 void gte_op0(void)
 {
-	gGeneralLongVector.vx = gWtfOP12.vy * gFtwOp12.vz - gWtfOP12.vz * gFtwOp12.vy;
-	gGeneralLongVector.vy = gWtfOP12.vz * gFtwOp12.vx - gFtwOp12.vz * gWtfOP12.vx;
-	gGeneralLongVector.vz = gFtwOp12.vy * gWtfOP12.vx - gWtfOP12.vy * gFtwOp12.vx;
+	G_GENERAL_LONG_VECTOR.vx = G_WTF_OP12.vy * G_FTW_OP12.vz - G_WTF_OP12.vz * G_FTW_OP12.vy;
+	G_GENERAL_LONG_VECTOR.vy = G_WTF_OP12.vz * G_FTW_OP12.vx - G_FTW_OP12.vz * G_WTF_OP12.vx;
+	G_GENERAL_LONG_VECTOR.vz = G_FTW_OP12.vy * G_WTF_OP12.vx - G_WTF_OP12.vy * G_FTW_OP12.vx;
 }
 
 // @Ok
@@ -162,7 +178,7 @@ void gte_SetRotMatrix(MATRIX* a1)
 {
 	for (int i = 0; i < 3; i++){
 		for (int j = 0; j < 3; j++){
-			gRotMatrix[i][j] = a1->m[i][j];
+			G_ROT_MATRIX[i][j] = a1->m[i][j];
 		}
 	}
 }
@@ -286,9 +302,9 @@ EXPORT i32 gsub_46EB30(i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, i32 a6,
 	if (a7 > a4 || a8 > a5 || a9 > a6 || a10 < a1 || a11 < a2 || a12 < a3)
 		return 0;
 
-	i32 dx = *reinterpret_cast<i32*>(&gRotMatrix[0][0]);
-	i32 dy = *reinterpret_cast<i32*>(&gRotMatrix[1][1]);
-	i32 dz = *reinterpret_cast<i32*>(&gRotMatrix[2][2]);
+	i32 dx = *reinterpret_cast<i32*>(&G_ROT_MATRIX[0][0]);
+	i32 dy = *reinterpret_cast<i32*>(&G_ROT_MATRIX[1][1]);
+	i32 dz = *reinterpret_cast<i32*>(&G_ROT_MATRIX[2][2]);
 
 	i32 ey = a11 - a2;
 	i32 ez = a12 - a3;
@@ -384,9 +400,9 @@ void M3dAsm_LineColijPreprocessItemsZoned(CItem **ppItem, i32 ModelTable, SLineI
 
 // @Ok
 void gte_ldv0(const SVECTOR* a1){
-	vertexRegister[0] = a1->vx;
-	vertexRegister[1] = a1->vy;
-	vertexRegister[2] = a1->vz;
+	G_VERTEX_REGISTER[0] = a1->vx;
+	G_VERTEX_REGISTER[1] = a1->vy;
+	G_VERTEX_REGISTER[2] = a1->vz;
 }
 
 // @Ok
@@ -405,42 +421,42 @@ EXPORT void INLINE FixedXForm(i16 matrix[3][3], const VECTOR* a, VECTOR *r){
 // @Ok
 void gte_rtv0tr(void)
 {
-	FixedXForm(gRotMatrix, (VECTOR*)&vertexRegister[0], &gGeneralLongVector);
+	FixedXForm(G_ROT_MATRIX, (VECTOR*)&G_VERTEX_REGISTER[0], &G_GENERAL_LONG_VECTOR);
 
-	gGeneralLongVector.vx += translationVector.vx >> 12;
-	gGeneralLongVector.vy += translationVector.vy >> 12;
-	gGeneralLongVector.vz += translationVector.vz >> 12;
+	G_GENERAL_LONG_VECTOR.vx += G_TRANSLATION_VECTOR.vx >> 12;
+	G_GENERAL_LONG_VECTOR.vy += G_TRANSLATION_VECTOR.vy >> 12;
+	G_GENERAL_LONG_VECTOR.vz += G_TRANSLATION_VECTOR.vz >> 12;
 }
 
 // @Ok
 void gte_stlvnl(VECTOR *a1)
 {
-  a1->vx = gGeneralLongVector.vx;
-  a1->vy = gGeneralLongVector.vy;
-  a1->vz = gGeneralLongVector.vz;
+  a1->vx = G_GENERAL_LONG_VECTOR.vx;
+  a1->vy = G_GENERAL_LONG_VECTOR.vy;
+  a1->vz = G_GENERAL_LONG_VECTOR.vz;
 }
 
 // @Ok
 void gte_rtps(void){
 
-	FixedXForm(gRotMatrix, (VECTOR*)&vertexRegister[0], &gGeneralLongVector);
-	gGeneralLongVector.vz = translationVector.vz + gGeneralLongVector.vy;
+	FixedXForm(G_ROT_MATRIX, (VECTOR*)&G_VERTEX_REGISTER[0], &G_GENERAL_LONG_VECTOR);
+	G_GENERAL_LONG_VECTOR.vz = G_TRANSLATION_VECTOR.vz + G_GENERAL_LONG_VECTOR.vy;
 	
 
-	if (gGeneralLongVector.vz == 0){
-		gGeneralLongVector.vx = 0x8000;
-		gGeneralLongVector.vy = 0x8000;
+	if (G_GENERAL_LONG_VECTOR.vz == 0){
+		G_GENERAL_LONG_VECTOR.vx = 0x8000;
+		G_GENERAL_LONG_VECTOR.vy = 0x8000;
 	}
 	else{
-		gGeneralLongVector.vx = gRtpsRelatedNoClue2 / 2
-                          + (gGeneralLongVector.vx + translationVector.vx) * gRtpsRelatedNoClue / gGeneralLongVector.vz;
-		gGeneralLongVector.vy = gRtpsRelatedNoClue3 / 2
-							  + (translationVector.vy
-							   + ((vertexRegister[0] * gRotMatrix[1][0]
-								 + vertexRegister[1] * gRotMatrix[1][1]
-								 + vertexRegister[2] * gRotMatrix[1][2]) >> 12))
+		G_GENERAL_LONG_VECTOR.vx = G_RTPS_SCREEN_OFFSET_X / 2
+                          + (G_GENERAL_LONG_VECTOR.vx + G_TRANSLATION_VECTOR.vx) * G_RTPS_PROJ_DISTANCE / G_GENERAL_LONG_VECTOR.vz;
+		G_GENERAL_LONG_VECTOR.vy = G_RTPS_SCREEN_OFFSET_Y / 2
+							  + (G_TRANSLATION_VECTOR.vy
+							   + ((G_VERTEX_REGISTER[0] * G_ROT_MATRIX[1][0]
+								 + G_VERTEX_REGISTER[1] * G_ROT_MATRIX[1][1]
+								 + G_VERTEX_REGISTER[2] * G_ROT_MATRIX[1][2]) >> 12))
 							  * gRtpsRelatedNoClue
-							  / gGeneralLongVector.vz;
+							  / G_GENERAL_LONG_VECTOR.vz;
 	}
 
 }
@@ -455,25 +471,25 @@ void gte_rtpt(void){
 // @Ok
 void gte_op12(void)
 {
-  gGeneralLongVector.vz = (gFtwOp12.vy * gWtfOP12.vx - gWtfOP12.vy * gFtwOp12.vx) >> 12;
-  gGeneralLongVector.vx = (gWtfOP12.vy * gFtwOp12.vz - gWtfOP12.vz * gFtwOp12.vy) >> 12;
-  gGeneralLongVector.vy = (gWtfOP12.vz * gFtwOp12.vx - gFtwOp12.vz * gWtfOP12.vx) >> 12;
-  gOp12Result = gGeneralLongVector;
+  G_GENERAL_LONG_VECTOR.vz = (G_FTW_OP12.vy * G_WTF_OP12.vx - G_WTF_OP12.vy * G_FTW_OP12.vx) >> 12;
+  G_GENERAL_LONG_VECTOR.vx = (G_WTF_OP12.vy * G_FTW_OP12.vz - G_WTF_OP12.vz * G_FTW_OP12.vy) >> 12;
+  G_GENERAL_LONG_VECTOR.vy = (G_WTF_OP12.vz * G_FTW_OP12.vx - G_FTW_OP12.vz * G_WTF_OP12.vx) >> 12;
+  G_OP12_RESULT = G_GENERAL_LONG_VECTOR;
 }
 
 
 // @Ok
 void gte_ldlvl(VECTOR *a1)
 {
-  gOp12Result = *a1;
+  G_OP12_RESULT = *a1;
 }
 
 // @Ok
 void gte_sqr0(void)
 {
-  gGeneralLongVector.vx = gOp12Result.vx * gOp12Result.vx;
-  gGeneralLongVector.vy = gOp12Result.vy * gOp12Result.vy;
-  gGeneralLongVector.vz = gOp12Result.vz * gOp12Result.vz;
+  G_GENERAL_LONG_VECTOR.vx = G_OP12_RESULT.vx * G_OP12_RESULT.vx;
+  G_GENERAL_LONG_VECTOR.vy = G_OP12_RESULT.vy * G_OP12_RESULT.vy;
+  G_GENERAL_LONG_VECTOR.vz = G_OP12_RESULT.vz * G_OP12_RESULT.vz;
 }
 
 
@@ -481,9 +497,9 @@ void gte_sqr0(void)
 // @Ok
 void gte_rtv0(void)
 {
-	FixedXForm(gRotMatrix, (VECTOR*)&vertexRegister[0], &gGeneralLongVector);
+	FixedXForm(G_ROT_MATRIX, (VECTOR*)&G_VERTEX_REGISTER[0], &G_GENERAL_LONG_VECTOR);
 
-	gOp12Result = gGeneralLongVector;
+	G_OP12_RESULT = G_GENERAL_LONG_VECTOR;
 }
 
 // @Ok
@@ -499,12 +515,14 @@ void gte_stlvnl2(int *a1)
 }
 
 EXPORT int gScalar;
+//#define G_SCALAR (gScalar)
+#define G_SCALAR (*reinterpret_cast<int*>(0x00610C00))
 // @Ok
 void gte_gpf0()
 {
-  gGeneralLongVector.vx = gOp12Result.vx * gScalar;
-  gGeneralLongVector.vy = gScalar * gOp12Result.vy;
-  gGeneralLongVector.vz = gScalar * gOp12Result.vz;
+  G_GENERAL_LONG_VECTOR.vx = G_OP12_RESULT.vx * G_SCALAR;
+  G_GENERAL_LONG_VECTOR.vy = G_SCALAR * G_OP12_RESULT.vy;
+  G_GENERAL_LONG_VECTOR.vz = G_SCALAR * G_OP12_RESULT.vz;
 }
 
 // @Ok
@@ -514,12 +532,14 @@ void gte_gpf0()
 // caller: M3dColij_LineToSphere (m3dcolij.cpp).
 void gte_gpf(void)
 {
-  gGeneralLongVector.vx = (gOp12Result.vx * gScalar) >> 12;
-  gGeneralLongVector.vy = (gOp12Result.vy * gScalar) >> 12;
-  gGeneralLongVector.vz = (gOp12Result.vz * gScalar) >> 12;
+  G_GENERAL_LONG_VECTOR.vx = (G_OP12_RESULT.vx * G_SCALAR) >> 12;
+  G_GENERAL_LONG_VECTOR.vy = (G_OP12_RESULT.vy * G_SCALAR) >> 12;
+  G_GENERAL_LONG_VECTOR.vz = (G_OP12_RESULT.vz * G_SCALAR) >> 12;
 }
 
 EXPORT int lzc;
+//#define G_LZC (lzc)
+#define G_LZC (*reinterpret_cast<int*>(0x00610C04))
 
 // @Ok
 // @Matching
@@ -527,7 +547,7 @@ EXPORT int lzc;
 // the leading zeroes lazily on read (gte_stlzc); this emulation just stashes the value.
 void gte_ldlzc(i32 a1)
 {
-  lzc = a1;
+  G_LZC = a1;
 }
 
 // @Ok
@@ -538,8 +558,8 @@ void gte_stlzc(int *a1)
   int v2; // eax
   int v3; // eax
 
-  v1 = lzc;
-  print_if_false(lzc != 0, "lzc not zero");
+  v1 = G_LZC;
+  print_if_false(G_LZC != 0, "G_LZC not zero");
   if ( v1 < 0 )
   {
     v2 = 0;
@@ -568,9 +588,9 @@ void gte_stlzc(int *a1)
 // @Ok
 void gte_stsv(SVECTOR *a1)
 {
-  a1->vx = (short)gOp12Result.vx;
-  a1->vy = (short)gOp12Result.vy;
-  a1->vz = (short)gOp12Result.vz;
+  a1->vx = (short)G_OP12_RESULT.vx;
+  a1->vy = (short)G_OP12_RESULT.vy;
+  a1->vz = (short)G_OP12_RESULT.vz;
 }
 
 
@@ -593,26 +613,26 @@ void gte_mvmva(int _sf, int mx, int a3, int cv, int lm)
   print_if_false(!a3 || a3 == 3, "bad v");
   print_if_false(cv == 3, "cv!=3");
   print_if_false(lm == 0, "lm!=0");
-  v7 = (VECTOR *)vertexRegister;
+  v7 = (VECTOR *)G_VERTEX_REGISTER;
 
   if ( a3 )
-    v7 = &gOp12Result;
+    v7 = &G_OP12_RESULT;
 
-  gGeneralLongVector.vx = gRotMatrix[0][0] * v7->vx + gRotMatrix[0][1] * v7->vy + gRotMatrix[0][2] * v7->vz;
-  gGeneralLongVector.vy = gRotMatrix[1][0] * v7->vx + gRotMatrix[1][1] * v7->vy + gRotMatrix[1][2] * v7->vz;
-  gGeneralLongVector.vz = gRotMatrix[2][0] * v7->vx + gRotMatrix[2][1] * v7->vy + gRotMatrix[2][2] * v7->vz;
+  G_GENERAL_LONG_VECTOR.vx = G_ROT_MATRIX[0][0] * v7->vx + G_ROT_MATRIX[0][1] * v7->vy + G_ROT_MATRIX[0][2] * v7->vz;
+  G_GENERAL_LONG_VECTOR.vy = G_ROT_MATRIX[1][0] * v7->vx + G_ROT_MATRIX[1][1] * v7->vy + G_ROT_MATRIX[1][2] * v7->vz;
+  G_GENERAL_LONG_VECTOR.vz = G_ROT_MATRIX[2][0] * v7->vx + G_ROT_MATRIX[2][1] * v7->vy + G_ROT_MATRIX[2][2] * v7->vz;
 
   if ( _sf == 1 )
   {
-    gGeneralLongVector.vx = gGeneralLongVector.vx >> 12;
-    gGeneralLongVector.vy = gGeneralLongVector.vy >> 12;
-    gGeneralLongVector.vz = gGeneralLongVector.vz >> 12;
+    G_GENERAL_LONG_VECTOR.vx = G_GENERAL_LONG_VECTOR.vx >> 12;
+    G_GENERAL_LONG_VECTOR.vy = G_GENERAL_LONG_VECTOR.vy >> 12;
+    G_GENERAL_LONG_VECTOR.vz = G_GENERAL_LONG_VECTOR.vz >> 12;
   }
 
-  gOp12Result.vz = gGeneralLongVector.vz;
-  gOp12Result.vx = gGeneralLongVector.vx;
-  gOp12Result.vy = gGeneralLongVector.vy;
-  gOp12Result.pad = gGeneralLongVector.pad;
+  G_OP12_RESULT.vz = G_GENERAL_LONG_VECTOR.vz;
+  G_OP12_RESULT.vx = G_GENERAL_LONG_VECTOR.vx;
+  G_OP12_RESULT.vy = G_GENERAL_LONG_VECTOR.vy;
+  G_OP12_RESULT.pad = G_GENERAL_LONG_VECTOR.pad;
 }
 
 
@@ -625,28 +645,28 @@ void gte_stsxy(int *a1)
 // @Ok
 void gte_lddp(int a1)
 {
-  gScalar = a1;
+  G_SCALAR = a1;
 }
 
 
 // @Ok
 void gte_ldsvrtrow0(const SVECTOR *a1)
 {
-  gRotMatrix[0][0] = a1->vx;
-  gRotMatrix[0][1] = a1->vy;
-  gRotMatrix[0][2] = a1->vz;
+  G_ROT_MATRIX[0][0] = a1->vx;
+  G_ROT_MATRIX[0][1] = a1->vy;
+  G_ROT_MATRIX[0][2] = a1->vz;
 }
 
 // @Ok
 void gte_ldopv1(VECTOR *a1)
 {
-  gWtfOP12 = *a1;
+  G_WTF_OP12 = *a1;
 }
 
 // @Ok
 void gte_ldopv2(VECTOR *a1)
 {
-  gFtwOp12 = *a1;
+  G_FTW_OP12 = *a1;
 }
 
 
@@ -672,7 +692,7 @@ void gte_stsxy3(int *a1, int *a2, int *a3)
 
 // @Ok
 void gte_rtir(void){
-	FixedXForm(gRotMatrix, &gOp12Result, &gGeneralLongVector);
+	FixedXForm(G_ROT_MATRIX, &G_OP12_RESULT, &G_GENERAL_LONG_VECTOR);
 }
 
 // Scratch 3-row short-vector "matrix" at address 0x00610B40 in the original:
@@ -692,9 +712,9 @@ EXPORT SVECTOR gLineToSphereDirMatrix[3];
 // uses it to stash the line's (already normalized) direction.
 void gsub_46D930(const SVECTOR *a1)
 {
-	gLineToSphereDirMatrix[0].vx = a1->vx;
-	gLineToSphereDirMatrix[0].vy = a1->vy;
-	gLineToSphereDirMatrix[0].vz = a1->vz;
+	G_LINE_TO_SPHERE_DIR_MATRIX[0].vx = a1->vx;
+	G_LINE_TO_SPHERE_DIR_MATRIX[0].vy = a1->vy;
+	G_LINE_TO_SPHERE_DIR_MATRIX[0].vz = a1->vz;
 }
 
 // @Ok
@@ -709,26 +729,26 @@ void gsub_46D930(const SVECTOR *a1)
 // anywhere, so it is not reproduced here.
 void gsub_46DEB0(void)
 {
-	VECTOR *v = (VECTOR *)vertexRegister;
+	VECTOR *v = (VECTOR *)G_VERTEX_REGISTER;
 
-	gGeneralLongVector.vx = (gLineToSphereDirMatrix[0].vx * v->vx
-	                        + gLineToSphereDirMatrix[0].vy * v->vy
-	                        + gLineToSphereDirMatrix[0].vz * v->vz) >> 12;
-	gGeneralLongVector.vy = (gLineToSphereDirMatrix[1].vx * v->vx
-	                        + gLineToSphereDirMatrix[1].vy * v->vy
-	                        + gLineToSphereDirMatrix[1].vz * v->vz) >> 12;
-	gGeneralLongVector.vz = (gLineToSphereDirMatrix[2].vx * v->vx
-	                        + gLineToSphereDirMatrix[2].vy * v->vy
-	                        + gLineToSphereDirMatrix[2].vz * v->vz) >> 12;
+	G_GENERAL_LONG_VECTOR.vx = (G_LINE_TO_SPHERE_DIR_MATRIX[0].vx * v->vx
+	                        + G_LINE_TO_SPHERE_DIR_MATRIX[0].vy * v->vy
+	                        + G_LINE_TO_SPHERE_DIR_MATRIX[0].vz * v->vz) >> 12;
+	G_GENERAL_LONG_VECTOR.vy = (G_LINE_TO_SPHERE_DIR_MATRIX[1].vx * v->vx
+	                        + G_LINE_TO_SPHERE_DIR_MATRIX[1].vy * v->vy
+	                        + G_LINE_TO_SPHERE_DIR_MATRIX[1].vz * v->vz) >> 12;
+	G_GENERAL_LONG_VECTOR.vz = (G_LINE_TO_SPHERE_DIR_MATRIX[2].vx * v->vx
+	                        + G_LINE_TO_SPHERE_DIR_MATRIX[2].vy * v->vy
+	                        + G_LINE_TO_SPHERE_DIR_MATRIX[2].vz * v->vz) >> 12;
 }
 
 // @Ok
 // @Matching
 void gsub_46D9B0(VECTOR *a1)
 {
-	a1->vx = gOp12Result.vx;
-	a1->vy = gOp12Result.vy;
-	a1->vz = gOp12Result.vz;
+	a1->vx = G_OP12_RESULT.vx;
+	a1->vy = G_OP12_RESULT.vy;
+	a1->vz = G_OP12_RESULT.vz;
 }
 
 // @Ok
@@ -740,9 +760,9 @@ void gsub_46D9B0(VECTOR *a1)
 // that function's callees.
 void gsub_46E090(void)
 {
-	gGeneralLongVector.vx += (gOp12Result.vx * gScalar) >> 12;
-	gGeneralLongVector.vy += (gOp12Result.vy * gScalar) >> 12;
-	gGeneralLongVector.vz += (gOp12Result.vz * gScalar) >> 12;
+	G_GENERAL_LONG_VECTOR.vx += (G_OP12_RESULT.vx * G_SCALAR) >> 12;
+	G_GENERAL_LONG_VECTOR.vy += (G_OP12_RESULT.vy * G_SCALAR) >> 12;
+	G_GENERAL_LONG_VECTOR.vz += (G_OP12_RESULT.vz * G_SCALAR) >> 12;
 }
 
 // @Ok
@@ -753,9 +773,9 @@ void gsub_46E090(void)
 // accumulator helpers M3dUtils_InterpolateVectors calls.
 i16* gsub_46E430(i16 *a1)
 {
-	a1[0] = static_cast<i16>(gGeneralLongVector.vx);
-	a1[1] = static_cast<i16>(gGeneralLongVector.vy);
-	a1[2] = static_cast<i16>(gGeneralLongVector.vz);
+	a1[0] = static_cast<i16>(G_GENERAL_LONG_VECTOR.vx);
+	a1[1] = static_cast<i16>(G_GENERAL_LONG_VECTOR.vy);
+	a1[2] = static_cast<i16>(G_GENERAL_LONG_VECTOR.vz);
 	return a1;
 }
 
@@ -788,11 +808,11 @@ void gsub_46F820(void *pOffset, SMatrix *pPoseFrame, MATRIX *pTransform)
 	i16 localZ = static_cast<i16>(pPoseFrame->t[2]
 		+ ((pPoseFrame->m[2][0] * offX + pPoseFrame->m[2][1] * offY + pPoseFrame->m[2][2] * offZ) >> 12));
 
-	gGeneralLongVector.vx = pTransform->t[0]
+	G_GENERAL_LONG_VECTOR.vx = pTransform->t[0]
 		+ ((pTransform->m[0][0] * localX + pTransform->m[0][1] * localY + pTransform->m[0][2] * localZ) >> 12);
-	gGeneralLongVector.vy = pTransform->t[1]
+	G_GENERAL_LONG_VECTOR.vy = pTransform->t[1]
 		+ ((pTransform->m[1][0] * localX + pTransform->m[1][1] * localY + pTransform->m[1][2] * localZ) >> 12);
-	gGeneralLongVector.vz = pTransform->t[2]
+	G_GENERAL_LONG_VECTOR.vz = pTransform->t[2]
 		+ ((pTransform->m[2][0] * localX + pTransform->m[2][1] * localY + pTransform->m[2][2] * localZ) >> 12);
 }
 
@@ -890,9 +910,9 @@ void MulMatrix(MATRIX *a1, MATRIX *a2)
 // @Ok
 void m3d_ZeroTransVector(void)
 {
-  translationVector.vx = 0;
-  translationVector.vy = 0;
-  translationVector.vz = 0;
+  G_TRANSLATION_VECTOR.vx = 0;
+  G_TRANSLATION_VECTOR.vy = 0;
+  G_TRANSLATION_VECTOR.vz = 0;
 }
 
 // @Ok
@@ -1043,9 +1063,9 @@ void M3dAsm_ProcessPolys(unsigned int*, SVECTOR*, int)
 // @Ok
 void M3dAsm_SetTransVector(VECTOR* a1)
 {
-	translationVector.vx = a1->vx;
-	translationVector.vy = a1->vy;
-	translationVector.vz = a1->vz;
+	G_TRANSLATION_VECTOR.vx = a1->vx;
+	G_TRANSLATION_VECTOR.vy = a1->vy;
+	G_TRANSLATION_VECTOR.vz = a1->vz;
 }
 
 
@@ -1391,8 +1411,8 @@ INLINE void DCInitSinCosTable(void)
 	for (i32 i = 0; i < FLATBIT_VELOCITIES_SIZE; i++)
 	{
 		f64 v9 = (f64)i * 0.001536096911877394;
-		rcossin_tbl[i].sin = sin(v9) * 4096.0;
-		rcossin_tbl[i].cos = cos(v9) * 4096.0;
+		G_RCOSSIN_TBL[i].sin = sin(v9) * 4096.0;
+		G_RCOSSIN_TBL[i].cos = cos(v9) * 4096.0;
 	}
 
 }

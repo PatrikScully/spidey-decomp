@@ -495,9 +495,9 @@ void PCGfx_DoModelPreview(void)
 				if (!PCINPUT_IsKeyPressed(0x42, 0) && !PCINPUT_IsKeyPressed(0x36, 0))
 				{
 					i32 v14 = G_MIKE_CAMERA[0].Angles.vy & 0xFFF;
-					G_MIKE_CAMERA[0].Position.vx += (32 * rcossin_tbl[v14].sin) >> 12;
-					G_MIKE_CAMERA[0].Position.vz += (32 * rcossin_tbl[v14].cos) >> 12;
-					G_MIKE_CAMERA[0].Position.vy -= (32 * rcossin_tbl[G_MIKE_CAMERA[0].Angles.vx & 0xFFF].sin) >> 12;
+					G_MIKE_CAMERA[0].Position.vx += (32 * G_RCOSSIN_TBL[v14].sin) >> 12;
+					G_MIKE_CAMERA[0].Position.vz += (32 * G_RCOSSIN_TBL[v14].cos) >> 12;
+					G_MIKE_CAMERA[0].Position.vy -= (32 * G_RCOSSIN_TBL[G_MIKE_CAMERA[0].Angles.vx & 0xFFF].sin) >> 12;
 				}
 				else
 				{
@@ -514,9 +514,9 @@ void PCGfx_DoModelPreview(void)
 				else
 				{
 					i32 v15 = G_MIKE_CAMERA[0].Angles.vy & 0xFFF;
-					G_MIKE_CAMERA[0].Position.vx -= (32 * rcossin_tbl[v15].sin) >> 12;
-					G_MIKE_CAMERA[0].Position.vy += (32 * rcossin_tbl[G_MIKE_CAMERA[0].Angles.vx & 0xFFF].sin) >> 12;
-					G_MIKE_CAMERA[0].Position.vz -= (32 * rcossin_tbl[v15].cos) >> 12;
+					G_MIKE_CAMERA[0].Position.vx -= (32 * G_RCOSSIN_TBL[v15].sin) >> 12;
+					G_MIKE_CAMERA[0].Position.vy += (32 * G_RCOSSIN_TBL[G_MIKE_CAMERA[0].Angles.vx & 0xFFF].sin) >> 12;
+					G_MIKE_CAMERA[0].Position.vz -= (32 * G_RCOSSIN_TBL[v15].cos) >> 12;
 				}
 			}
 
