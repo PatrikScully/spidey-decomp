@@ -93,4 +93,5 @@ EXPORT extern CBody* PowerUpList;
 //#define G_POWER_UP_LIST (PowerUpList)
 #define G_POWER_UP_LIST (*reinterpret_cast<CBody**>(0x0060FB94))
 void validate_CPowerUp(void);
+void patch_powerup(void);
 #endif
