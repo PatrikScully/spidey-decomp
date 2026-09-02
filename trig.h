@@ -24,6 +24,12 @@ extern i16 **OffsetList;
 #define G_OFFSETLIST (*reinterpret_cast<i16***>(0x006B466C))
 
 EXPORT extern i32 NumNodes;
+// This macro used to live in trig.cpp (a .cpp), invisible to every other
+// file that reads NumNodes through trig.h (lizman.cpp, jonah.cpp both noted
+// our copy is always 0 and skipped the affected functions). Moved here so
+// it actually reaches its consumers.
+//#define G_NUMNODES (NumNodes)
+#define G_NUMNODES (*reinterpret_cast<i32*>(0x006B4670))
 
 EXPORT i32 Trig_GetLevelId(void);
 

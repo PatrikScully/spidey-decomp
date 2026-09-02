@@ -1,6 +1,7 @@
 #include <cstdlib>
 
 #include "powerup.h"
+#include "my_patch.h"
 #include "spool.h"
 #include "trig.h"
 #include "exp.h"
@@ -23,7 +24,7 @@ void CPowerUp::DoPhysics(void)
 	{
 		if (!this->field_104 && this->field_10C < 0 && this->field_10C > -5)
 		{
-			if (TTime & 1)
+			if (G_TTIME & 1)
 			{
 				i32 height = Utils_GetGroundHeight(&this->field_110, 0, 0x1F40, 0);
 				if (height == -1)
@@ -146,14 +147,14 @@ void CPowerUp::CheckAge(void)
 
 		if (this->mLifetime < 0x3C && this->mLifetime > 0x1E)
 		{
-				if (TTime & 2)
+				if (G_TTIME & 2)
 					this->mDropping = 1;
 				else
 					this->mDropping = 0;
 		}
 		if (this->mLifetime <= 0x1E)
 		{
-			if (TTime & 1)
+			if (G_TTIME & 1)
 				this->mDropping = 1;
 			else
 				this->mDropping = 0;
@@ -179,7 +180,7 @@ void CPowerUp::CheckAge(void)
 // @Ok
 CPowerUp::~CPowerUp(void)
 {
-	this->DeleteFrom(&PowerUpList);
+	this->DeleteFrom(&G_POWER_UP_LIST);
 	this->DeleteStuff();
 }
 
@@ -448,7 +449,7 @@ CPowerUp::CPowerUp(
 		}
 	}
 
-	this->AttachTo(reinterpret_cast<CBody**>(&PowerUpList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_POWER_UP_LIST));
 }
 
 // @Ok
@@ -550,4 +551,37 @@ void validate_CPowerUp(void)
 	VALIDATE(CPowerUp, mLifetime, 0x12C);
 
 	VALIDATE_VTABLE(CPowerUp, DeleteStuff, 4);
+}
+
+// @Bogus
+// Vtable check first: CPowerUp's vtable (0x53BC5C) has 5 entries (dtor,
+// Die, AI, Hit, DeleteStuff, CItem's whole set), all covered by our class
+// (dtor/Die/AI/DeleteStuff declared, Hit matches the shared default seen
+// on every other class in this wave). No gap, so the constructor and
+// destructor are hookable.
+//
+// PowerUpList/TTime both needed new G_* macros (added to powerup.h this
+// session): CPowerUp objects are spawned from trig.cpp's level loader
+// (`new CPowerUp(...)`, unhooked) and TTime's writer is main.cpp's Logic,
+// which is fully decompiled but not yet hooked over the real game loop, so
+// both sides could still be the one actually running. Every @Ok function
+// in this file hooks cleanly once those point at game memory.
+//
+// Not implemented anywhere in this repo, found while mapping addresses:
+// CPowerUp::TakeEffect (0x46B860, referenced by the gCheatUnlockFlags
+// comment above) and a free function named PowerUp_Create (0x46BD80,
+// different from trig.cpp's own inline `new CPowerUp(...)` at its line
+// 405, not investigated further this session).
+void patch_powerup(void)
+{
+	PATCH_PUSH_RET_POLY(0x0046AFC0, CPowerUp::CPowerUp, "??0CPowerUp@@QAE@GPAVCVector@@0IHH@Z");
+	PATCH_PUSH_RET_POLY(0x0046B660, CPowerUp::~CPowerUp, "??1CPowerUp@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0046B450, CPowerUp::SetGravity, "?SetGravity@CPowerUp@@QAEXHH@Z");
+	PATCH_PUSH_RET_POLY(0x0046B470, CPowerUp::CreateBit, "?CreateBit@CPowerUp@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0046B600, CPowerUp::DeleteStuff, "?DeleteStuff@CPowerUp@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0046B640, CPowerUp::SetNode, "?SetNode@CPowerUp@@QAEXH@Z");
+	PATCH_PUSH_RET_POLY(0x0046B6F0, CPowerUp::Die, "?Die@CPowerUp@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0046B760, CPowerUp::CheckAge, "?CheckAge@CPowerUp@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0046BB20, CPowerUp::AI, "?AI@CPowerUp@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0046BC30, CPowerUp::DoPhysics, "?DoPhysics@CPowerUp@@QAEXXZ");
 }

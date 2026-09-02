@@ -1,10 +1,9 @@
 #include "torch.h"
+#include "my_patch.h"
 #include "export.h"
 #include "validate.h"
 #include "trig.h"
 #include "mem.h"
-
-extern u8 submarinerDieRelated;
 
 EXPORT SLight M3d_TorchLight =
 {
@@ -20,7 +19,7 @@ EXPORT SLight M3d_TorchLight =
 // @Matching
 void Torch_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -72,7 +71,7 @@ INLINE i32* CTorch::GetNewCommandBlock(u32 a1)
 // @Matching
 CTorch::~CTorch(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	delete this->gTorchQuadBit;
 	this->KillAllCommandBlocks();
 }
@@ -82,7 +81,7 @@ CTorch::~CTorch(void)
 // field_330/334=2, RunAnim(4,0,-1), mFlags|=0x480, mpLight before
 // AttachTo, mType=328 (0x148) then field_31C.bothFlags=1, mNode=a3,
 // mRMinor=0, field_34C=SquirtAngles result, Die(0) guarded by
-// submarinerDieRelated (shared global at 0x60CFC4) and level id != 2051
+// G_SUBMARINER_DIE_RELATED (shared global at 0x60CFC4) and level id != 2051
 // (0x803). All offsets and order match the original exactly.
 CTorch::CTorch(i16* a2, i32 a3)
 {
@@ -98,7 +97,7 @@ CTorch::CTorch(i16* a2, i32 a3)
 
 	this->mpLight = &M3d_TorchLight;
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mType = 328;
 	this->field_31C.bothFlags = 1;
@@ -107,7 +106,7 @@ CTorch::CTorch(i16* a2, i32 a3)
 	this->mRMinor = 0;
 	this->field_34C = reinterpret_cast<i32>(v5);
 
-	if (submarinerDieRelated && Trig_GetLevelID() != 2051)
+	if (G_SUBMARINER_DIE_RELATED && Trig_GetLevelID() != 2051)
 		this->Die(0);
 }
 
@@ -217,4 +216,33 @@ void validate_CTorch(void){
 
 	VALIDATE(CTorch, field_34C, 0x34C);
 	VALIDATE(CTorch, field_350, 0x350);
+}
+
+// @Bogus
+// Big gap found here, not something this session can fix: CTorch's vtable
+// (0x53C5BC) has slot 2 (AI) pointing at a real 1191 byte function at
+// 0x4DC6B0 named "CTorch::AI" in names.json, and there is a matching
+// "CTorch::SynthesizeAnalogueInput" (0x4DCB60, 2345 bytes) and
+// "CTorch::DoMGSShadow" (0x4DD760, 842 bytes). None of the three exist
+// anywhere in our torch.h/torch.cpp. The original CTorch looks like it has
+// a full CSpClone-style walk-script AI (same slot 11
+// Shouldnt_DoPhysics_Be_Virtual-jumps-to-DoPhysics shape as CSpClone too),
+// our repo only ever implemented the physics/cleanup half. Per the
+// constructor rule: since our class does not declare AI, stamping our
+// vtable via the constructor would silently fall back to CBaddy's default
+// AI and drop the torch's real behavior, so the constructor, destructor
+// and Torch_CreateTorch (it does `new CTorch(...)`) all stay in the exe.
+// Shouldnt_DoPhysics_Be_Virtual and DoPhysics are still safe to hook on
+// their own addresses: dispatch to them goes through the exe's own
+// (untouched) vtable regardless of who built the object.
+// GetNewCommandBlock, KillCommandBlock and KillAllCommandBlocks have no
+// standalone address, same inlined-at-call-site shape as CSpClone/
+// CBlackCat's equivalents.
+void patch_torch(void)
+{
+	PATCH_PUSH_RET(0x004DC400, Torch_RelocatableModuleInit);
+	PATCH_PUSH_RET(0x004DC420, Torch_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x004DD5E0, CTorch::Shouldnt_DoPhysics_Be_Virtual, "?Shouldnt_DoPhysics_Be_Virtual@CTorch@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004DD5F0, CTorch::DoPhysics, "?DoPhysics@CTorch@@QAEXXZ");
 }

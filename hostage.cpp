@@ -1,4 +1,5 @@
 #include "hostage.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "utils.h"
 #include "ps2redbook.h"
@@ -8,8 +9,6 @@
 #include "spidey.h"
 #include "trig.h"
 #include "ps2m3d.h"
-
-extern i32 DifficultyLevel;
 
 // guess: random XA speech sub-id table, picked with Rnd(5) when the player
 // gets close to a waiting hostage in CHostage::FollowWaypoints.
@@ -287,13 +286,13 @@ void CHostage::SetHostageType(i32 a2)
 // @Ok
 CHostage::~CHostage(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 }
 
 // @Ok
 void Hostage_RelocatableModuleClear(void)
 {
-	for (CBody* cur = BaddyList; cur; )
+	for (CBody* cur = G_BADDY_LIST; cur; )
 	{
 		CBody* next = reinterpret_cast<CBody*>(cur->mNextItem);
 		if (cur->mType == 305)
@@ -324,11 +323,11 @@ void CHostage::BegMotherfucker(void)
 						200);
 			}
 
-			if (DifficultyLevel == 2)
+			if (G_DIFFICULTY_LEVEL == 2)
 			{
 				this->field_230 = 100;
 			}
-			else if (DifficultyLevel == 3)
+			else if (G_DIFFICULTY_LEVEL == 3)
 			{
 				this->field_230 = 65;
 			}
@@ -367,7 +366,7 @@ void INLINE CHostage::HostageXAPlay(i32 a2, i32 a3, i32 a4)
 // @Ok
 void CHostage::TellSomebodyToShootMe(void)
 {
-	if (DifficultyLevel != 1 && DifficultyLevel)
+	if (G_DIFFICULTY_LEVEL != 1 && G_DIFFICULTY_LEVEL)
 	{
 		CBaddy *pBaddy = this->GetClosest(304, 0);
 
@@ -396,7 +395,7 @@ INLINE void CHostage::CheckIfFreed(void)
 {
 	if (Utils_CrapDist(G_MECHLIST_PLAYER->mPos, this->mPos) < 0xC8 || this->mInputFlags & 1)
 	{
-		if (DifficultyLevel == 1 || DifficultyLevel == 0)
+		if (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0)
 			this->field_218 |= 1;
 		this->Baddy_SendSignal();
 		this->field_324 = 4;
@@ -506,7 +505,7 @@ CHostage::CHostage(i16* a2, i32 a3)
 {
 	i16 *afterAngles = this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a2)));
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	this->ShadowOn();
 
 	this->mShadowScale = 48;
@@ -544,4 +543,33 @@ void validate_CHostage(void){
 	VALIDATE(CHostage, field_324, 0x324);
 	VALIDATE(CHostage, field_328, 0x328);
 	VALIDATE(CHostage, field_32C, 0x32C);
+}
+
+// @Bogus
+// The constructor, destructor and Hostage_CreateHostage (it just does
+// `new CHostage(...)`) stay in the exe. hostageVtable (0x53B874, 18
+// entries, confirmed against the maintainer's IDB name) has slot 17
+// (0x442A80) pointing at SetHostageType, so the original calls it through
+// the vtable. Our CHostage does not declare SetHostageType virtual, so
+// building an object with our vtable would silently fall back to the base
+// class there. Everything else that only touches the object (not builds
+// or destroys it) is safe to hook: SetHostageType itself works fine
+// hooked directly, since the patch overwrites the target address, and
+// virtual dispatch through the exe's own (unhooked, still-correct)
+// vtable still lands on it either way.
+// CheckIfFreed, HostageXAPlay, GetUp and DisappearBitch have no
+// standalone address, they get inlined into their callers in the
+// original same as here.
+void patch_hostage(void)
+{
+	PATCH_PUSH_RET(0x00442410, Hostage_RelocatableModuleInit);
+	PATCH_PUSH_RET(0x00442430, Hostage_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x00442D10, CHostage::AI, "?AI@CHostage@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00442650, CHostage::DieHostage, "?DieHostage@CHostage@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004427A0, CHostage::FollowWaypoints, "?FollowWaypoints@CHostage@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00442960, CHostage::WaitForPlayer, "?WaitForPlayer@CHostage@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00442A80, CHostage::SetHostageType, "?SetHostageType@CHostage@@QAEXH@Z");
+	PATCH_PUSH_RET_POLY(0x00442B10, CHostage::BegMotherfucker, "?BegMotherfucker@CHostage@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00442C70, CHostage::TellSomebodyToShootMe, "?TellSomebodyToShootMe@CHostage@@QAEXXZ");
 }

@@ -1,4 +1,5 @@
 #include "wire.h"
+#include "my_patch.h"
 #include "trig.h"
 #include "spidey.h"
 #include "utils.h"
@@ -6,8 +7,8 @@
 #include "m3dcolij.h"
 #include "validate.h"
 #include "bit.h"
+#include "baddy.h"
 
-extern CBody* ControlBaddyList;
 extern CSVector gTrajectoryVector;
 
 // @Ok
@@ -95,7 +96,7 @@ CLaserFence::CLaserFence(i16* a2, i32 a3, bool a4)
 // matching
 void CLaserFence::CommonInitialisation(bool a2)
 {
-	this->AttachTo(&ControlBaddyList);
+	this->AttachTo(&G_CONTROL_BADDY_LIST);
 	if ( this->mPos.vx < this->field_F8.vx )
 	{
 		this->mVxMin = this->mPos.vx;
@@ -153,7 +154,7 @@ void CLaserFence::CommonInitialisation(bool a2)
 // @Ok
 CLaserFence::~CLaserFence(void)
 {
-	this->DeleteFrom(&ControlBaddyList);
+	this->DeleteFrom(&G_CONTROL_BADDY_LIST);
 
 	delete this->field_118;
 }
@@ -257,7 +258,7 @@ CTripWire::CTripWire(i16 *, u16 a3)
 	this->field_104.vy = 0;
 	this->field_104.vz = 0;
 
-	this->AttachTo(&ControlBaddyList);
+	this->AttachTo(&G_CONTROL_BADDY_LIST);
 	this->field_FB = 0;
 
 	Trig_GetPosition(&this->mPos, a3);
@@ -294,7 +295,7 @@ CTripWire::CTripWire(i16 *, u16 a3)
 // @Ok
 CTripWire::~CTripWire(void)
 {
-	this->DeleteFrom(&ControlBaddyList);
+	this->DeleteFrom(&G_CONTROL_BADDY_LIST);
 
 	delete this->field_110;
 }
@@ -335,4 +336,25 @@ void validate_CTripWire(void)
 
 	VALIDATE(CTripWire, field_104, 0x104);
 	VALIDATE(CTripWire, field_110, 0x110);
+}
+
+// @Bogus
+// Vtable check first: both classes inherit CBody directly, both vtables
+// (CLaserFence 0x53C7F4, CTripWire 0x53C808, back to back in .rdata) have
+// exactly 5 entries, CItem's whole set. dtor and AI are covered by our
+// classes, Die/Hit/DeleteStuff match the shared CItem defaults seen on
+// every other class in this wave. No gap on either class, so both
+// constructors and destructors are hookable.
+// BuildTripWire and SetPushback have no standalone address, inlined at
+// their one call site in the original same as here.
+void patch_wire(void)
+{
+	PATCH_PUSH_RET_POLY(0x004FB1E0, CLaserFence::CLaserFence, "??0CLaserFence@@QAE@PAFH_N@Z");
+	PATCH_PUSH_RET_POLY(0x004FB2E0, CLaserFence::CommonInitialisation, "?CommonInitialisation@CLaserFence@@QAEX_N@Z");
+	PATCH_PUSH_RET_POLY(0x004FB4A0, CLaserFence::~CLaserFence, "??1CLaserFence@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004FB510, CLaserFence::AI, "?AI@CLaserFence@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004FB630, CTripWire::CTripWire, "??0CTripWire@@QAE@PAFG@Z");
+	PATCH_PUSH_RET_POLY(0x004FB850, CTripWire::~CTripWire, "??1CTripWire@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004FB8C0, CTripWire::AI, "?AI@CTripWire@@UAEXXZ");
 }

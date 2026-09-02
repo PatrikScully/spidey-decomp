@@ -7,6 +7,15 @@
 #include "export.h"
 
 EXPORT extern i32 TTime;
+// bit.cpp also defines TTime (duplicate storage, not touched here) and had
+// this macro, but only inside bit.cpp itself where nothing outside that TU
+// could see it. This file already hosts the extern every other file
+// (front.cpp, shell.cpp, platform.cpp, main.cpp, init.cpp) declares TTime
+// through, so the macro belongs here. Address from bit.cpp's comment,
+// matches the maintainer's IDB (idb_globals.txt: 0x0060CFA8 TTime).
+//#define G_TTIME (TTime)
+#define G_TTIME (*reinterpret_cast<volatile i32*>(0x0060CFA8))
+
 class CPowerUp : public CBody
 {
 	public:
@@ -76,5 +85,13 @@ class CPowerUp : public CBody
 };
 
 EXPORT extern CBody* PowerUpList;
+// Address from the maintainer's IDB (idb_globals.txt: 0x0060FB94
+// PowerUpList). CPowerUp objects are spawned from trig.cpp's level loader
+// (unhooked), and walked by main.cpp's Logic (decompiled but not hooked
+// over the real game loop yet). Either side can be the one still running,
+// so a hooked constructor/destructor needs game memory here.
+//#define G_POWER_UP_LIST (PowerUpList)
+#define G_POWER_UP_LIST (*reinterpret_cast<CBody**>(0x0060FB94))
 void validate_CPowerUp(void);
+void patch_powerup(void);
 #endif

@@ -65,5 +65,6 @@ void validate_CTurretLaser(void);
 EXPORT void Turret_CreateTurret(const u32 *,u32 *);
 EXPORT void Turret_RelocatableModuleClear(void);
 EXPORT void Turret_RelocatableModuleInit(reloc_mod*);
+void patch_turret(void);
 
 #endif

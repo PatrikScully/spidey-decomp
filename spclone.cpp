@@ -1,4 +1,5 @@
 #include "spclone.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "m3dutils.h"
 #include "trig.h"
@@ -6,9 +7,6 @@
 #include "ps2redbook.h"
 #include "m3dcolij.h"
 #include "ps2m3d.h"
-
-extern CBaddy* BaddyList;
-extern u8 submarinerDieRelated;
 
 EXPORT SLight M3d_SpCloneLight =
 {
@@ -66,7 +64,7 @@ void CSpClone::AI(void)
 		this->CleanUpMessages(1, 0);
 	}
 
-	if (submarinerDieRelated)
+	if (G_SUBMARINER_DIE_RELATED)
 	{
 		this->Die(0);
 		return;
@@ -276,7 +274,7 @@ CSpClone::CSpClone(i16 * a2,i32 a3)
 
 	this->mpLight = &M3d_SpCloneLight;
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mType = 327;
 	this->field_31C.bothFlags = 1;
@@ -284,7 +282,7 @@ CSpClone::CSpClone(i16 * a2,i32 a3)
 	this->mRMinor = 0;
 	this->field_348 = reinterpret_cast<i32>(v5);
 
-	if ( submarinerDieRelated )
+	if ( G_SUBMARINER_DIE_RELATED )
 		this->Die(0);
 }
 
@@ -802,7 +800,7 @@ void CSpClone::SynthesizeAnalogueInput(void)
 // @Ok
 CSpClone::~CSpClone(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	delete this->field_338;
 
@@ -823,7 +821,7 @@ void SpClone_CreateSpClone(const u32 * a2,u32 * a3)
 // @Matching
 void SpClone_RelocatableModuleClear(void)
 {
-	for (CBody* cur = BaddyList; cur; )
+	for (CBody* cur = G_BADDY_LIST; cur; )
 	{
 		CBody* next = reinterpret_cast<CBody*>(cur->mNextItem);
 		if (cur->mType == 327)
@@ -933,4 +931,33 @@ void validate_CSpClone(void){
 	VALIDATE(CSpClone, field_348, 0x348);
 
 	VALIDATE(CSpClone, field_34C, 0x34C);
+}
+
+// @Bogus
+// hostageVtable-style check done first: CSpClone's vtable (0x53C158) has 17
+// live entries (0-16, entry 17 decodes as float garbage, same cutoff shape
+// as CBlackCat's 0x53B448). Slot 0 is the dtor, slot 2 is AI, slot 11 is
+// Shouldnt_DoPhysics_Be_Virtual (compiled as a jmp-thunk straight into
+// DoPhysics, named j_CSpClone_DoPhysics by IDA, same shape as CBlackCat's
+// slot 11), everything else matches the shared CBaddy/CItem default stubs
+// byte for byte against CBlackCat's own vtable. Our class declares every
+// one of those overrides, so unlike hostage.cpp there is no gap: the
+// constructor and destructor are safe to hook here.
+// GetNewCommandBlock, KillCommandBlockByID and KillAllCommandBlocks have no
+// standalone address, the original inlines them at their call sites same as
+// CBlackCat's equivalents.
+void patch_spclone(void)
+{
+	PATCH_PUSH_RET(0x004AFC70, SpClone_RelocatableModuleInit);
+	PATCH_PUSH_RET(0x004AFC90, SpClone_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004AFCC0, SpClone_CreateSpClone);
+
+	PATCH_PUSH_RET_POLY(0x004AFD60, CSpClone::CSpClone, "??0CSpClone@@QAE@PAFH@Z");
+	PATCH_PUSH_RET_POLY(0x004AFE70, CSpClone::~CSpClone, "??1CSpClone@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004AFF30, CSpClone::AI, "?AI@CSpClone@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004B0350, CSpClone::KillCommandBlock, "?KillCommandBlock@CSpClone@@QAEPAHPAH@Z");
+	PATCH_PUSH_RET_POLY(0x004B03C0, CSpClone::SynthesizeAnalogueInput, "?SynthesizeAnalogueInput@CSpClone@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004B0D70, CSpClone::Shouldnt_DoPhysics_Be_Virtual, "?Shouldnt_DoPhysics_Be_Virtual@CSpClone@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004B0D80, CSpClone::DoPhysics, "?DoPhysics@CSpClone@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004B0EF0, CSpClone::DoMGSShadow, "?DoMGSShadow@CSpClone@@QAEXXZ");
 }

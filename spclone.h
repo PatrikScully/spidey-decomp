@@ -45,5 +45,6 @@ void validate_CSpClone(void);
 EXPORT void SpClone_CreateSpClone(const u32 *,u32 *);
 EXPORT void SpClone_RelocatableModuleClear(void);
 EXPORT void SpClone_RelocatableModuleInit(reloc_mod *);
+void patch_spclone(void);
 
 #endif
