@@ -1008,7 +1008,7 @@ CPlayer::CPlayer(void)
 	this->mFlags = (u16)(this->mFlags | 0x480);
 	this->mMaxHealth = this->mHealth;
 
-	this->field_E0C = reinterpret_cast<i32*>(gSControl);
+	this->field_E0C = reinterpret_cast<i32*>(G_SCONTROL);
 	this->field_8EA = 0;
 	this->mpLight = &M3d_PlayerLight;
 	this->field_D2C = 0x202020;

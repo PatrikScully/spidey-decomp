@@ -414,7 +414,7 @@ void PShell_ApplyGameState(void)
 	i16 v13 = gSaveGame.mAnalogueMapping[3];
 	G_GAMESTATE[1] = v11;
 
-	Pad_SetDigitalMapping(gSControl, v12, v11, v6, v4);
+	Pad_SetDigitalMapping(G_SCONTROL, v12, v11, v6, v4);
 
 	G_GAMESTATE[7] = v13;
 	i16 v14 = gSaveGame.field_A4;
@@ -428,7 +428,7 @@ void PShell_ApplyGameState(void)
 	DoubleBuffer[0].Disp.screen.y = v15;
 	DoubleBuffer[1].Disp.screen.y = v15;
 
-	Pad_SetAnalogueMapping(gSControl, 3, 2, 1, 0,
+	Pad_SetAnalogueMapping(G_SCONTROL, 3, 2, 1, 0,
 			G_GAMESTATE[4], G_GAMESTATE[5], G_GAMESTATE[6], G_GAMESTATE[7]);
 }
 

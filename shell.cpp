@@ -552,7 +552,7 @@ EXPORT void CheckForPadUnplugged(void)
 				gsub_46CB90((void*)"stubbed out: DrawSync");
 
 			Pad_ClearTriggers(G_SCONTROL);
-			Pad_IdleTime = 0;
+			G_PAD_IDLE_TIME = 0;
 			return;
 		}
 
@@ -3144,7 +3144,7 @@ void Shell_DoShell(const u32 *a1,u32 *)
 
 	i32 v56 = 0;
 	*gDoShellForceLevelExit = 0;
-	Pad_IdleTime = 0;
+	G_PAD_IDLE_TIME = 0;
 	gPshellArmorRealted = 0;
 	i32 v57 = (gSaveGame.field_78 != 0) + 1;
 	Shell_LegalScreen();
@@ -4097,7 +4097,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 		}
 
 		if (pSpidey != 0)
-			Pad_Clear(gSControl);
+			Pad_Clear(G_SCONTROL);
 
 		for (key = 0; key < 256; ++key)
 		{
@@ -4225,7 +4225,7 @@ done:
 	Pause(1);
 	DrawSync();
 	DrawSync();
-	Pad_ClearTriggers(gSControl);
+	Pad_ClearTriggers(G_SCONTROL);
 
 	return result;
 }
@@ -4241,9 +4241,9 @@ void Shell_LegalScreen(void)
 		Front_ClearScreen();
 
 		DrawSync();
-		Pad_ClearTriggers(gSControl);
+		Pad_ClearTriggers(G_SCONTROL);
 		Pad_Update();
-		Pad_ClearTriggers(gSControl);
+		Pad_ClearTriggers(G_SCONTROL);
 
 		Sprite2* v0 = new Sprite2("LegalPC.bmp", 1, 0, 0, 3);
 		u32 v3 = G_VBLANKS + 180;
@@ -4273,7 +4273,7 @@ void Shell_LegalScreen(void)
 		Front_ClearScreen();
 
 		DrawSync();
-		Pad_ClearTriggers(gSControl);
+		Pad_ClearTriggers(G_SCONTROL);
 	}
 }
 
@@ -5403,7 +5403,7 @@ void Shell_MovieViewer(void)
 		if (playId != -1)
 		{
 			u8 r = GameFMV_PlayMovie((u8)playId, 1, 1, 1.0f);
-			Pad_IdleTime = 0;
+			G_PAD_IDLE_TIME = 0;
 			cdNotFound = (r == 0);
 			playId = -1;
 			continue;
@@ -5903,7 +5903,7 @@ finished:
 		delete pDummy;
 	Mem_Delete(records);
 	Init_KillAll();
-	Pad_IdleTime = 0;
+	G_PAD_IDLE_TIME = 0;
 	Redbook_XAStop();
 	Mess_DeleteAll();
 	Pause(1);
@@ -7723,9 +7723,9 @@ void Shell_TitleScreen(void)
 {
 	Front_ClearScreen();
 	DrawSync();
-	Pad_ClearTriggers(gSControl);
+	Pad_ClearTriggers(G_SCONTROL);
 	Pad_Update();
-	Pad_ClearTriggers(gSControl);
+	Pad_ClearTriggers(G_SCONTROL);
 
 	Sprite2* v0 = new Sprite2("title.bmp", 1, 0, 0, 3);
 
@@ -7760,7 +7760,7 @@ void Shell_TitleScreen(void)
 		PCSHELL_Relax();
 	}
 
-	gSControl[0].Start.Triggered = 0;
+	G_SCONTROL[0].Start.Triggered = 0;
 	delete v0;
 
 	Redbook_XAStop();
@@ -7778,7 +7778,7 @@ void Shell_TitleScreen(void)
 
 	Front_ClearScreen();
 	DrawSync();
-	Pad_ClearTriggers(gSControl);
+	Pad_ClearTriggers(G_SCONTROL);
 }
 
 // @Ok

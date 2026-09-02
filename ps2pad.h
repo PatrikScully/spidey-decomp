@@ -100,6 +100,12 @@ static const i32 NUM_CONTROLLERS = 1;
 EXPORT extern SControl gSControl[NUM_CONTROLLERS];
 //#define G_SCONTROL (gSControl)
 #define G_SCONTROL (reinterpret_cast<SControl*>(0x00661100))
+
+// 0x0066129C. Frames since the last button press. Pad_Update (pcdcPad.cpp)
+// bumps it, Pad_Button and a dozen menu and cutscene routines in the exe zero
+// it, so it has to be the exe's dword.
 EXPORT extern i32 Pad_IdleTime;
+//#define G_PAD_IDLE_TIME (Pad_IdleTime)
+#define G_PAD_IDLE_TIME (*reinterpret_cast<i32*>(0x0066129C))
 
 #endif

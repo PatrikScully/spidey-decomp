@@ -479,18 +479,18 @@ void PCGfx_DoModelPreview(void)
 		while (!stop)
 		{
 			Pad_Update();
-			if (gSControl[0].Left.Pressed)
+			if (G_SCONTROL[0].Left.Pressed)
 			{
 				G_MIKE_CAMERA[0].Angles.vy -= 16;
 				G_MIKE_CAMERA[0].Angles.vy &= 0xFFF;
 			}
-			else if (gSControl[0].Right.Pressed)
+			else if (G_SCONTROL[0].Right.Pressed)
 			{
 				G_MIKE_CAMERA[0].Angles.vy -= 16;
 				G_MIKE_CAMERA[0].Angles.vy &= 0xFFF;
 			}
 
-			if (gSControl[0].Up.Pressed)
+			if (G_SCONTROL[0].Up.Pressed)
 			{
 				if (!PCINPUT_IsKeyPressed(0x42, 0) && !PCINPUT_IsKeyPressed(0x36, 0))
 				{
@@ -505,7 +505,7 @@ void PCGfx_DoModelPreview(void)
 					G_MIKE_CAMERA[0].Angles.vx &= 0xFFF;
 				}
 			}
-			else if (gSControl[0].Down.Pressed)
+			else if (G_SCONTROL[0].Down.Pressed)
 			{
 				if (!PCINPUT_IsKeyPressed(0x2Au, 0) && !PCINPUT_IsKeyPressed(0x36u, 0))
 				{
@@ -522,7 +522,7 @@ void PCGfx_DoModelPreview(void)
 
 			if (GetTickCount() - modelTickUpdate > 250)
 			{
-				if (gSControl[0].Square.Pressed)
+				if (G_SCONTROL[0].Square.Pressed)
 				{
 					u8 IsSuper = PSXRegion[v9].IsSuper;
 					if (idx && !IsSuper)
@@ -546,7 +546,7 @@ void PCGfx_DoModelPreview(void)
 
 					doModelSwap = 1;
 				}
-				else if (gSControl[0].Circle.Pressed)
+				else if (G_SCONTROL[0].Circle.Pressed)
 				{
 					idx = (idx + 1) % v24[v9];
 					if (!idx || PSXRegion[v9].IsSuper)
