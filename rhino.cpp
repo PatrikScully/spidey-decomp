@@ -2959,3 +2959,64 @@ void validate_SRhinoData(void)
 
 	VALIDATE(SRhinoData, field_8, 0x8);
 }
+
+#include "my_patch.h"
+
+// Not hooked, and why:
+//
+// 1. CRhino::AI (0x4819C0) and CRhino::GetShocked (0x47E420). GetShocked calls
+//    Effects_Electrify, which does "new CElectrify". Our CElectrify has no
+//    Move (0x00439410) and no destructor (0x004390E0), so a shocked rhino
+//    would get an object with our vtable and lose both. AI goes out with it,
+//    it calls GetShocked directly.
+//
+// 2. Rhino_RelocatableModuleInit (0x47DCF0) and Rhino_CreateRhino (0x47DD40).
+//    The original inlines "new CRhino" into Rhino_CreateRhino, which stamps a
+//    vtable. Our CRhino has no Hit override, the exe's slot 3 is sub_47EE70,
+//    so a rhino built by our code would answer Hit with CBody::Hit. Init only
+//    stores the pointer to CreateRhino, so hooking it has the same effect.
+//
+// 3. CRhinoNasalSteam::Move. The original merged its body with
+//    CShellRhinoNasalSteam::Move at 0x48F5E0, which is shell.cpp territory.
+//
+// 4. CheckIfPlayerHit, FuckUpSomeBarrels, StandStill, ShakePad,
+//    GetShockDamage, GetNextFootstepSFX, PlaySingleAnim and both CRhino
+//    constructors have no standalone address, the original inlines them.
+//
+// @Bogus
+void patch_rhino(void)
+{
+	PATCH_PUSH_RET(0x0047DD10, Rhino_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x0047DFE0, CRhino::~CRhino, "??1CRhino@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x0047E0A0, CRhino::PlayXAPlease);
+	PATCH_PUSH_RET(0x0047E1F0, CRhino::SetUpStuckHorn);
+	PATCH_PUSH_RET(0x0047E680, CRhino::StuckInWall);
+	PATCH_PUSH_RET(0x0047E8A0, CRhino::GonnaHitWall);
+	PATCH_PUSH_RET(0x0047ECA0, CRhino::GetLaunched);
+
+	// sub_47F190 in names.json. It is the only unclaimed function left in the
+	// file and CRhino::Hit calls it at 0x47F170, the same way CScorpion::Hit
+	// calls CScorpion::SlideFromHit.
+	PATCH_PUSH_RET(0x0047F190, CRhino::SlideFromHit);
+
+	PATCH_PUSH_RET(0x0047F320, CRhino::FollowWaypoints);
+	PATCH_PUSH_RET(0x0047F490, CRhino::ChasePlayer);
+	PATCH_PUSH_RET(0x0047F800, CRhino::ChargePlayer);
+	PATCH_PUSH_RET(0x00480090, CRhino::Laugh);
+	PATCH_PUSH_RET(0x00480170, CRhino::AttackPlayer);
+	PATCH_PUSH_RET(0x00480480, CRhino::DoDazedEffect);
+	PATCH_PUSH_RET(0x00480820, CRhino::TakeHit);
+	PATCH_PUSH_RET(0x00480A40, CRhino::GetTrapped);
+	PATCH_PUSH_RET(0x00480DA0, CRhino::DieRhino);
+	PATCH_PUSH_RET(0x00480F50, CRhino::HitWall);
+	PATCH_PUSH_RET(0x004810C0, CRhino::StompGround);
+	PATCH_PUSH_RET(0x00481300, CRhino::DetermineFightState);
+	PATCH_PUSH_RET(0x00481550, CRhino::PlaySounds);
+	PATCH_PUSH_RET(0x00481910, CRhino::RhinoInit);
+	PATCH_PUSH_RET(0x004823C0, CRhino::LineOfSightCheck);
+	PATCH_PUSH_RET(0x004825E0, CRhino::DoMGSShadow);
+
+	PATCH_PUSH_RET_POLY(0x00482920, CRhinoNasalSteam::~CRhinoNasalSteam, "??1CRhinoNasalSteam@@UAE@XZ");
+}

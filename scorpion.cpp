@@ -1085,3 +1085,37 @@ void validate_CConstantLaser(void)
 	VALIDATE(CConstantLaser, field_5C, 0x5C);
 	VALIDATE(CConstantLaser, field_60, 0x60);
 }
+
+#include "my_patch.h"
+
+// Not hooked, and why:
+//
+// 1. Scorpion_CreateScorpion (0x4831A0) and Scorpion_RelocatableModuleInit
+//    (0x482D00). CreateScorpion does "new CScorpion", which stamps a vtable,
+//    and our CScorpion has neither AI (exe slot 2, 0x488590) nor Hit (slot 3,
+//    sub_483A80), so a scorpion built by our code would just sit there. Init
+//    only stores the pointer to CreateScorpion, same effect.
+//
+// 2. Both CScorpion constructors, for the same reason.
+//
+// 3. PathLooksGood, PlayXA_NoRepeat, NextRoom, GetCurrentTarget, FindJonah,
+//    SetJonahHandle, WhatShouldIDo, TargetPlayer, CConstantLaser::CConstantLaser
+//    and CConstantLaser::SetRGB have no standalone address, the original
+//    inlines them.
+//
+// @Bogus
+void patch_scorpion(void)
+{
+	PATCH_PUSH_RET(0x00482D20, Scorpion_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x00483260, Scorpion_GetCurrentTarget);
+	PATCH_PUSH_RET(0x00483820, CScorpion::ScorpPathCheck);
+	PATCH_PUSH_RET(0x004866E0, CScorpion::TakeHit);
+	PATCH_PUSH_RET(0x00486DA0, CScorpion::GetTrapped);
+	PATCH_PUSH_RET(0x00487740, CScorpion::Gloat);
+	PATCH_PUSH_RET(0x00487880, CScorpion::GetEnvironmentalObjectTarget);
+	PATCH_PUSH_RET(0x00487FC0, CScorpion::DoIntroSequence);
+	PATCH_PUSH_RET(0x00488140, CScorpion::DetermineTarget);
+	PATCH_PUSH_RET(0x00489810, CScorpion::TailRenderer);
+
+	PATCH_PUSH_RET_POLY(0x0048A2D0, CConstantLaser::~CConstantLaser, "??1CConstantLaser@@UAE@XZ");
+}

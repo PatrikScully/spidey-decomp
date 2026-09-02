@@ -123,4 +123,6 @@ EXPORT void Rhino_RelocatableModuleClear(void);
 EXPORT void Rhino_RelocatableModuleInit(reloc_mod *);
 
 
+void patch_rhino(void);
+
 #endif

@@ -1576,3 +1576,69 @@ void validate_CFlamingImpactWeb(void)
 	VALIDATE(CFlamingImpactWeb, mLinePos, 0x7C);
 	VALIDATE(CFlamingImpactWeb, mLineNormal, 0x88);
 }
+
+#include "my_patch.h"
+
+// Not hooked, and why:
+//
+// 1. A constructor stamps our vtable, so any class with a virtual missing on
+//    our side is out. CSimby has no AI (exe slot 2, 0x4AE3D0) and no Hit
+//    (slot 3, 0x4A8AB0). CEmber, CFlamingImpactWeb, CSimbyDrop and
+//    CSimbyShot have no Move. That rules out both CSimby constructors,
+//    Simby_CreateSimby, Simby_CreateEmber, Simby_CreateFlamingImpactWeb,
+//    Simby_SplattyExplosion (it does "new CSimbyDrop") and the CEmber,
+//    CFlamingImpactWeb, CSimbyDrop and CSimbyShot constructors.
+//    Simby_RelocatableModuleInit goes with them, it stores the pointers to
+//    Simby_CreateSimby, Simby_CreateEmber and Simby_CreateFlamingImpactWeb.
+//    MakeVertexWibbler does "new CVertexWobble" and effects.cpp still has no
+//    CVertexWobble destructor (0x0043BA70).
+//
+// 2. CSymBurn::~CSymBurn (0x4A31B0) unlinks from MiscList, which shell.cpp
+//    still keeps as a plain repo global. CSymBurn::AI does not touch it, so
+//    that one is fine.
+//
+// 3. CSimby::~CSimby (0x4A7AE0) is real work in the exe but our class has no
+//    destructor at all, the compiler generates an empty one.
+//
+// 4. Simby_TestDrop is empty and the original points it at 0x430880, a shared
+//    empty function other modules use too.
+//
+// 5. SetUpHandPos, Shoot, PlayGruntSound, PlayAndAttachXAPlease,
+//    FireTrappedToDeath, RunAppropriateHitAnim, SetUpJumpData,
+//    SetAlertModeTimer, ClearAttackData, SetUpUnitFromDirection,
+//    CPunchOb::SendPulse, the three CSimbySlimeBase scale helpers and the
+//    CSymBurn and CSkidMark constructors have no standalone address, the
+//    original inlines them.
+//
+// @Bogus
+void patch_simby(void)
+{
+	PATCH_PUSH_RET(0x004A2470, Simby_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004A2560, Simby_CreatePunchOb);
+	PATCH_PUSH_RET(0x004A25E0, Simby_CreateSimbyDroplet);
+
+	PATCH_PUSH_RET_POLY(0x004A2A10, CEmber::~CEmber, "??1CEmber@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A3210, CSymBurn::AI, "?AI@CSymBurn@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A3B50, CSimbyDroplet::CSimbyDroplet, "??0CSimbyDroplet@@QAE@PAFH@Z");
+	PATCH_PUSH_RET_POLY(0x004A3C40, CSimbyDroplet::~CSimbyDroplet, "??1CSimbyDroplet@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A3C50, CSimbyDroplet::Move, "?Move@CSimbyDroplet@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A3CB0, CFireySpark::CFireySpark, "??0CFireySpark@@QAE@PAVCVector@@0H@Z");
+	PATCH_PUSH_RET_POLY(0x004A3DB0, CFireySpark::~CFireySpark, "??1CFireySpark@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A3DC0, CFireySpark::Move, "?Move@CFireySpark@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A40C0, CFlamingImpactWeb::~CFlamingImpactWeb, "??1CFlamingImpactWeb@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A46A0, CSkidMark::Move, "?Move@CSkidMark@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A73B0, CPunchOb::CPunchOb, "??0CPunchOb@@QAE@PAFH@Z");
+	PATCH_PUSH_RET_POLY(0x004A7490, CPunchOb::~CPunchOb, "??1CPunchOb@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A74F0, CPunchOb::Hit, "?Hit@CPunchOb@@UAEHPAUSHitInfo@@@Z");
+	PATCH_PUSH_RET_POLY(0x004A75E0, CPunchOb::AI, "?AI@CPunchOb@@UAEXXZ");
+
+	PATCH_PUSH_RET(0x004A8680, SpideyAI_ThrownBySimby);
+	PATCH_PUSH_RET(0x004A8720, SpideyAI_WaitForSimbyGrab);
+	PATCH_PUSH_RET(0x004AA660, CSimby::SimbyKnockSpideyDown);
+	PATCH_PUSH_RET(0x004ADB00, CSimby::TakeHit);
+	PATCH_PUSH_RET(0x004AF3B0, CSimby::FlashUpdate);
+}
