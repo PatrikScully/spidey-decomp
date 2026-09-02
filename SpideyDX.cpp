@@ -858,10 +858,10 @@ i32 WINAPI RealWinMain(
 	SPIDEYDX_LoadSettings();
 
 	gRenderTest = 0;
-	gGameResolutionX = 640;
+	G_GAME_RESOLUTION_X = 640;
 	gDxResolutionX = 640;
 
-	gGameResolutionY = 480;
+	G_GAME_RESOLUTION_Y = 480;
 	gDxResolutionY = 480;
 
 	gMMXSupport = isMMX();

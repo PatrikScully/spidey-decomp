@@ -8,8 +8,16 @@
 
 EXPORT extern i32 gRenderTest;
 
+// The game's logical resolution, written by DXINIT_SetDisplayOptions (not hooked)
+// and read from 17 files. Same problem as Xres/Yres in m3dinit.h.
+// Addresses from Flash_Display's disassembly (0x0043DAB1 reads X, 0x0043DA37
+// reads Y).
 EXPORT extern i32 gGameResolutionX;
+//#define G_GAME_RESOLUTION_X (gGameResolutionX)
+#define G_GAME_RESOLUTION_X (*reinterpret_cast<i32*>(0x00568154))
 EXPORT extern i32 gGameResolutionY;
+//#define G_GAME_RESOLUTION_Y (gGameResolutionY)
+#define G_GAME_RESOLUTION_Y (*reinterpret_cast<i32*>(0x00568158))
 
 EXPORT extern u32 gDxResolutionX;
 EXPORT extern u32 gDxResolutionY;

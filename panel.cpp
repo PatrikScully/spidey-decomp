@@ -66,9 +66,9 @@ void DCDrawGouraudPoly(f32 zOffset, POLY_GT4 *poly, Texture *tex, i32 a4)
 
 	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_2);
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 y3 = poly->y3 * scaleY;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 x3 = poly->x3 * scaleX;
 	f32 y2 = poly->y2 * scaleY;
 	f32 x2 = poly->x2 * scaleX;
@@ -122,9 +122,9 @@ void DCDrawGouraudPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u32 c0, u32 c1, 
 {
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 yEnd = (y + h) * scaleY;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 xEnd = (x + w) * scaleX;
 	f32 xScaled = x * scaleX;
 	f32 yScaled = y * scaleY;
@@ -163,9 +163,9 @@ void DCPanel_DrawFlatShadedPoly(f32 zOffset, i32 x, i32 y, i32 w, i32 h, u8 r, u
 		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
 	}
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 hScaled = h * scaleY;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 wScaled = w * scaleX;
 	f32 yScaled = y * scaleY;
 	f32 xScaled = x * scaleX;
@@ -238,9 +238,9 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *fra
 	Texture *tex = frame->pTexture;
 	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 y3 = poly->y3 * scaleY;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 x3 = poly->x3 * scaleX;
 	f32 y2 = poly->y2 * scaleY;
 	f32 x2 = poly->x2 * scaleX;
@@ -278,9 +278,9 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, SAnimFrame const *fra
 		color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
 	}
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 y3 = poly->y3 * scaleY;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 x3 = poly->x3 * scaleX;
 	f32 y2 = poly->y2 * scaleY;
 	f32 x2 = poly->x2 * scaleX;
@@ -312,9 +312,9 @@ void DCPanel_DrawTexturedPoly(f32 zOffset, POLY_FT4 *poly, Texture const *tex, u
 		color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
 	}
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 y3 = poly->y3 * scaleY;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 x3 = poly->x3 * scaleX;
 	f32 y2 = poly->y2 * scaleY;
 	f32 x2 = poly->x2 * scaleX;
@@ -678,8 +678,8 @@ static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
 {
 	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_0);
 
-	f32 yScale = gGameResolutionY / (f32)Yres;
-	f32 xScale = gGameResolutionX / (f32)Xres;
+	f32 yScale = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+	f32 xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFFFF00) << 8)) << 8);
 
 	PCGfx_DrawQPoly2D(
@@ -876,8 +876,8 @@ static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMod
 {
 	PCGfx_UseTexture(tex->clut, blend);
 
-	f32 yScale = gGameResolutionY / (f32)Yres;
-	f32 xScale = gGameResolutionX / (f32)Xres;
+	f32 yScale = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+	f32 xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFFFF00) << 8)) << 8);
 
 	PCGfx_DrawQPoly2D(
@@ -1174,8 +1174,8 @@ void Panel_DisplayTimer(void)
 				POLY_FT4* v5 = (POLY_FT4*)Panel_DrawTexturedPoly(pTexture, 0);
 				Panel_SetStretchedScreenCoords(0 + 219, 0 + *gPanelScreenY + 19, v5, pTexture, 27, 24);
 				PCGfx_UseTexture(pTexture->clut, DCGfx_BlendingMode_1);
-				float yScale = (float)gGameResolutionY / (float)Yres;
-				float xScale = (float)gGameResolutionX / (float)Xres;
+				float yScale = (float)G_GAME_RESOLUTION_Y / (float)G_YRES;
+				float xScale = (float)G_GAME_RESOLUTION_X / (float)G_XRES;
 				u32 col = v5->b0 | ((v5->g0 | ((v5->r0 | 0xFFFFFF00) << 8)) << 8);
 				PCGfx_DrawQPoly2D(
 					(float)v5->x0 * xScale, (float)v5->y0 * yScale, 0, 0, col,

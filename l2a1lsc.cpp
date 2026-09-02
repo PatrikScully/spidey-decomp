@@ -58,8 +58,8 @@ static void L2A1LSC_DrawBarPiece(Texture *tex, POLY_FT4 *poly, f32 zOffset)
 {
 	PCGfx_UseTexture(tex->clut, DCGfx_BlendingMode_1);
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	u32 color = 0xFF000000 | (poly->r0 << 16) | (poly->g0 << 8) | poly->b0;
 
 	PCGfx_DrawQPoly2D(

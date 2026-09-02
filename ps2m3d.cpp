@@ -2646,13 +2646,13 @@ void M3d_RenderCleanup(void)
 	{
 		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
 
-		f32 v2 = (f32)gGameResolutionY;
-		f32 v5 = (f32)(unsigned int)Yres;
+		f32 v2 = (f32)G_GAME_RESOLUTION_Y;
+		f32 v5 = (f32)(unsigned int)G_YRES;
 		f32 v1 = v2 / v5;
 		f32 v6 = (f32)gWideScreen;
 		f32 v12 = v1 * v6;
-		f32 v7 = (f32)gGameResolutionX;
-		f32 v3 = (f32)(unsigned int)Xres;
+		f32 v7 = (f32)G_GAME_RESOLUTION_X;
+		f32 v3 = (f32)(unsigned int)G_XRES;
 		f32 v8 = v7 / v3 * 512.0f;
 		PCGfx_DrawQuad2D(
 				0,
@@ -2667,13 +2667,13 @@ void M3d_RenderCleanup(void)
 				0.0,
 				false);
 
-		f32 v13 = (f32)gGameResolutionY;
-		f32 v9 = (f32)(unsigned int)Yres;
+		f32 v13 = (f32)G_GAME_RESOLUTION_Y;
+		f32 v9 = (f32)(unsigned int)G_YRES;
 		f32 v4 = v13 / v9;
 		f32 v14 = (f32)gWideScreen;
 		f32 v18 = v14 * v4;
-		f32 v15 = (f32)gGameResolutionX;
-		f32 v10 = (f32)(unsigned int)Xres;
+		f32 v15 = (f32)G_GAME_RESOLUTION_X;
+		f32 v10 = (f32)(unsigned int)G_XRES;
 		f32 v11 = v15 / v10 * 512.0f;
 		f32 v16 = (f32)(240 - gWideScreen);
 		f32 v17 = v16 * v4;
@@ -2924,8 +2924,8 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	memcpy(&stru_56E778, (void*)0x0056E778, sizeof(matrix4x4));
 	gsub_4021D0(&stru_56E778);
 
-	f32 a1a = (f32)gGameResolutionX / (f32)Xres;
-	f32 a1b = (f32)gGameResolutionY / (f32)Yres;
+	f32 a1a = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
+	f32 a1b = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 left = (f32)xL * a1a;
 	f32 right = (f32)(xR - xL) * a1a;
 	f32 top = (f32)yT * a1b;

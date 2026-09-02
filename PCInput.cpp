@@ -368,8 +368,8 @@ i32 PCINPUT_IsMouseOver(
 		i32 a3,
 		i32 a4)
 {
-	i32 mouseX = gMouseX + gMouseHotSpotX * gGameResolutionX / 640;
-	i32 mouseY = gMouseY + gMouseHotSpotY * gGameResolutionY / 480;
+	i32 mouseX = gMouseX + gMouseHotSpotX * G_GAME_RESOLUTION_X / 640;
+	i32 mouseY = gMouseY + gMouseHotSpotY * G_GAME_RESOLUTION_Y / 480;
 
 	return mouseX > a1 && mouseX < a3 && mouseY > a2 && mouseY < a4;
 }

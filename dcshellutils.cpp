@@ -152,24 +152,24 @@ void SlicedImage2::draw(
 	if ( (v6 & 4) != 0 )
 	{
 		f32 v32 = (f32)v5;
-		f32 v24 = (f32)Xres;
-		f32 v33 = (f32)gGameResolutionX;
+		f32 v24 = (f32)G_XRES;
+		f32 v33 = (f32)G_GAME_RESOLUTION_X;
 		v5 = (v32 * v24 / v33);
 
 		f32 v34 = (f32)v21;
-		f32 v25 = (f32)Yres;
+		f32 v25 = (f32)G_YRES;
 
-		f32 v35 = (f32)gGameResolutionY;
+		f32 v35 = (f32)G_GAME_RESOLUTION_Y;
 		v10 = v34 * v25 / v35;
 	}
 	else if (v6 & 0x20)
 	{
 		f32 v36 = (f32)v5;
-		f32 v26 = (f32)Xres;
+		f32 v26 = (f32)G_XRES;
 		v5 = (v36 * v26 / 640.0f);
 
 		f32 v37 = (f32)v21;
-		f32 v27 = (f32)Yres;
+		f32 v27 = (f32)G_YRES;
 		v10 = v37 * v27 / 480.0f;
 	}
 	v7 = v10;

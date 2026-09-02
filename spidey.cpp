@@ -4069,8 +4069,8 @@ void CPlayer::DrawOffscreenSpideySenseIndicatorList(void)
 
 			POLY_F3 *pRec = reinterpret_cast<POLY_F3*>(rec);
 
-			f32 scaleY = static_cast<f32>(gGameResolutionY) / static_cast<f32>(Yres);
-			f32 scaleX = static_cast<f32>(gGameResolutionX) / static_cast<f32>(Xres);
+			f32 scaleY = static_cast<f32>(G_GAME_RESOLUTION_Y) / static_cast<f32>(G_YRES);
+			f32 scaleX = static_cast<f32>(G_GAME_RESOLUTION_X) / static_cast<f32>(G_XRES);
 
 			drewAnything = 1;
 
@@ -4163,9 +4163,9 @@ void CPlayer::DrawReticle(u16 x, u16 y, u32 scale)
 	print_if_false(frame->pTexture != 0, "No Texture data for DrawReticle");
 	PCGfx_UseTexture(frame->pTexture->clut, DCGfx_BlendingMode_1);
 
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 fy2 = y2 * scaleY;
-	f32 scaleX = gGameResolutionX / (f32)Xres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 fx1 = x1 * scaleX;
 	f32 fx0 = x0 * scaleX;
 	u32 color = poly->b0 | ((poly->g0 | ((poly->r0 | 0xFFFFB000) << 8)) << 8);

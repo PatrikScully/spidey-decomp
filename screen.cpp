@@ -129,8 +129,8 @@ void Screen_DrawTarget(void)
 	i16 screenX = (i16)screenXY;
 	i16 screenY = (i16)(screenXY >> 16);
 
-	f32 yScale = (f32)gGameResolutionY / (f32)Yres;
-	f32 xScale = (f32)gGameResolutionX / (f32)Xres;
+	f32 yScale = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
+	f32 xScale = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
 
 	i32 angleA = gTargetTwo;
 	i32 angleB = gTargetTwo + 128;
@@ -400,8 +400,8 @@ void Screen_UpdateFades(void)
 
 	i32 radius = 16 * gCircularFadeRelatedOne;
 
-	f32 yScale = (f32)gGameResolutionY / (f32)Yres;
-	f32 xScale = (f32)gGameResolutionX / (f32)Xres;
+	f32 yScale = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
+	f32 xScale = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
 
 	if (radius < 0x1000)
 	{

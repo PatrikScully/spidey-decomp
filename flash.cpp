@@ -105,8 +105,8 @@ void Flash_Display(void)
 
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
 
-	f32 scaleY = static_cast<f32>(gGameResolutionY) / static_cast<f32>(Yres);
-	f32 scaleX = static_cast<f32>(gGameResolutionX) / static_cast<f32>(Xres);
+	f32 scaleY = static_cast<f32>(G_GAME_RESOLUTION_Y) / static_cast<f32>(G_YRES);
+	f32 scaleX = static_cast<f32>(G_GAME_RESOLUTION_X) / static_cast<f32>(G_XRES);
 
 	u32 color = 0x20000000u | (static_cast<u32>(r) << 16) | (static_cast<u32>(g) << 8) | b;
 

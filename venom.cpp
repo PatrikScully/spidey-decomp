@@ -233,8 +233,8 @@ static void Venom_DrawBarPiece(Texture *renderTex, Texture *sizeTex, i32 x, i32 
 	Panel_SetStretchedScreenCoords(x, y, poly, sizeTex, w, h);
 	PCGfx_UseTexture(renderTex->clut, DCGfx_BlendingMode_1);
 
-	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
-	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+	f32 scaleX = G_GAME_RESOLUTION_X / static_cast<f32>(G_XRES);
+	f32 scaleY = G_GAME_RESOLUTION_Y / static_cast<f32>(G_YRES);
 	u32 color = 0xFF000000u | (static_cast<u32>(poly->r0) << 16) | (static_cast<u32>(poly->g0) << 8) | poly->b0;
 
 	PCGfx_DrawQPoly2D(

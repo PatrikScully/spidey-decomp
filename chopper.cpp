@@ -1173,8 +1173,8 @@ void CChopperMissile::DrawTargetRecticle(void)
 	i32 y0 = screenY + topOffset;
 	i32 y2 = y0 + pixHeight;
 
-	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
-	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+	f32 scaleX = G_GAME_RESOLUTION_X / static_cast<f32>(G_XRES);
+	f32 scaleY = G_GAME_RESOLUTION_Y / static_cast<f32>(G_YRES);
 
 	POLY_FT4* poly1 = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(tex, 0));
 	if (poly1)
@@ -1560,8 +1560,8 @@ void CSearchlight::CheckPointInScreenTri(u32 p, u32 a, u32 b, u32 c)
 //   overlay); no gameplay-affecting logic here to get wrong.
 void CSniperTarget::DrawTargetRecticle(void)
 {
-	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
-	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+	f32 scaleX = G_GAME_RESOLUTION_X / static_cast<f32>(G_XRES);
+	f32 scaleY = G_GAME_RESOLUTION_Y / static_cast<f32>(G_YRES);
 
 	CVector camPos = *gCameraViewPos;
 	CVector relPos = (this->field_104 >> 12) - camPos;
@@ -2488,8 +2488,8 @@ void CSearchlight::SpecialRenderer(void)
 	i32 b = (48 * this->field_134) >> 12;
 	u32 beamColor = (a & 0xFFu) | ((a & 0xFFu) << 8) | ((b & 0xFFu) << 16) | 0x22000000u;
 
-	f32 scaleX = gGameResolutionX / static_cast<f32>(Xres);
-	f32 scaleY = gGameResolutionY / static_cast<f32>(Yres);
+	f32 scaleX = G_GAME_RESOLUTION_X / static_cast<f32>(G_XRES);
+	f32 scaleY = G_GAME_RESOLUTION_Y / static_cast<f32>(G_YRES);
 
 	u32 mechPacked = static_cast<u16>(mechXY[0]) | (static_cast<u32>(static_cast<u16>(mechXY[1])) << 16);
 	u32 hitPacked = static_cast<u16>(hitXY[0]) | (static_cast<u32>(static_cast<u16>(hitXY[1])) << 16);

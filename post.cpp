@@ -169,8 +169,8 @@ void Post_SpideyLogo(void)
 
 				u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFF8000) << 8)) << 8);
 
-				f32 yScale = gGameResolutionY / (f32)Yres;
-				f32 xScale = gGameResolutionX / (f32)Xres;
+				f32 yScale = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+				f32 xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
 
 				PCGfx_DrawQPoly2D(
 						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
@@ -179,8 +179,8 @@ void Post_SpideyLogo(void)
 						p->x3 * xScale, p->y3 * yScale, 1.0f, 1.0f, col,
 						6.0f);
 
-				yScale = gGameResolutionY / (f32)Yres;
-				xScale = gGameResolutionX / (f32)Xres;
+				yScale = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+				xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
 
 				PCGfx_DrawQPoly2D(
 						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
@@ -224,8 +224,8 @@ void Post_SpideyLogo(void)
 
 				u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFF8000) << 8)) << 8);
 
-				f32 yScale = gGameResolutionY / (f32)Yres;
-				f32 xScale = gGameResolutionX / (f32)Xres;
+				f32 yScale = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+				f32 xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
 
 				PCGfx_DrawQPoly2D(
 						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
@@ -234,8 +234,8 @@ void Post_SpideyLogo(void)
 						p->x2 * xScale, p->y2 * yScale, 1.0f, 1.0f, col,
 						6.0f);
 
-				yScale = gGameResolutionY / (f32)Yres;
-				xScale = gGameResolutionX / (f32)Xres;
+				yScale = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+				xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
 
 				PCGfx_DrawQPoly2D(
 						p->x0 * xScale, p->y0 * yScale, 0.0f, 0.0f, col,
@@ -267,12 +267,12 @@ INLINE void Post_WaterEffect(void)
 		i32 v2 = G_RCOSSIN_TBL[(gPostTimerRelated / 2) & 0xFFF].cos >> 6;
 
 		PCGfx_UseTexture(1, DCGfx_BlendingMode_1);
-		f32 v3 = gGameResolutionY;
-		f32 a3 = Yres;
+		f32 v3 = G_GAME_RESOLUTION_Y;
+		f32 a3 = G_YRES;
 		f32 v8 = v3 / a3 * 240.0f;
-		f32 a3a = gGameResolutionX;
+		f32 a3a = G_GAME_RESOLUTION_X;
 
-		f32 v4 = Xres;
+		f32 v4 = G_XRES;
 		f32 a3b = a3a / v4 * 512.0f;
 
 		PCGfx_DrawQuad2D(

@@ -652,15 +652,15 @@ INLINE void M3dInit_SetResolution(u32 X,u32 Y)
 {
 	if (Y << 2 < X * 3)
 	{
-		Xres = X;
-		Yres = Y;
+		G_XRES = X;
+		G_YRES = Y;
 		PixelAspectX = 0x1000;
 		PixelAspectY = (X * 0x3000) / (Y << 2);
 		return;
 	}
 
-	Xres = X;
-	Yres = Y;
+	G_XRES = X;
+	G_YRES = Y;
 	PixelAspectX = (Y << 0xE) / (X * 3);
 	PixelAspectX = 0x1000;
 }

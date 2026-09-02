@@ -22,8 +22,8 @@
 extern void *my_malloc(size_t s);
 extern void my_free(void *block);
 
-EXPORT i32 gAnotherGameResolutionX = gGameResolutionX;
-EXPORT i32 gAnotherGameResolutionY = gGameResolutionY;
+EXPORT i32 gAnotherGameResolutionX = G_GAME_RESOLUTION_X;
+EXPORT i32 gAnotherGameResolutionY = G_GAME_RESOLUTION_Y;
 
 EXPORT i32 gDrawTexture2DRelatedOne;
 EXPORT i32 gDrawTexture2DRelatedTwo;
@@ -1727,8 +1727,8 @@ void PCGfx_DrawTexture2D(
 			f32 uScale = uFull - u0;
 			f32 vScale = vFull - v0;
 
-			f32 scaleX = (f32)gGameResolutionX / (f32)Xres;
-			f32 scaleY = (f32)gGameResolutionY / (f32)Yres;
+			f32 scaleX = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
+			f32 scaleY = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 			i32 screenLeft = (i32)((f32)clampedLeft * scaleX);
 			i32 screenTop = (i32)((f32)clampedTop * scaleY);
@@ -1742,8 +1742,8 @@ void PCGfx_DrawTexture2D(
 			}
 			else
 			{
-				screenRight = screenLeft + adjusted_width * gGameResolutionX / 640;
-				screenBottom = screenTop + adjusted_height * gGameResolutionY / 480;
+				screenRight = screenLeft + adjusted_width * G_GAME_RESOLUTION_X / 640;
+				screenBottom = screenTop + adjusted_height * G_GAME_RESOLUTION_Y / 480;
 			}
 
 			f32 z;
@@ -2188,8 +2188,8 @@ void PCPanel_DrawTexturedPoly(f32 scale, Texture const *tex, i32 a3, i32 a4, i32
 	{
 		PCGfx_UseTexture(kind, DCGfx_BlendingMode_0);
 
-		f32 scaleY = gGameResolutionY / (f32)Yres;
-		f32 scaleX = gGameResolutionX / (f32)Xres;
+		f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+		f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 
 		u32 t = tint;
 		u32 color = 0xFF000000u | (t << 16) | (t << 8) | t;

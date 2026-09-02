@@ -6,8 +6,18 @@
 #include "export.h"
 
 EXPORT extern u32 M3d_FadeColour;
+// The render target size, written by m3dinit's own setup and read from 15 files.
+// The writers are not hooked, so a repo-local copy stays 0 and every
+// gGameResolution/Xres aspect ratio comes out as 0/0. The already hooked
+// Flash_Display divides by both, so its fade quad silently never drew.
+// Addresses from Flash_Display's disassembly (0x0043DA57 reads Yres,
+// 0x0043DA6A reads Xres).
 EXPORT extern u32 Xres;
+//#define G_XRES (Xres)
+#define G_XRES (*reinterpret_cast<u32*>(0x0061B5FC))
 EXPORT extern u32 Yres;
+//#define G_YRES (Yres)
+#define G_YRES (*reinterpret_cast<u32*>(0x00628614))
 
 union ItemOffsetUnion
 {

@@ -1534,8 +1534,8 @@ void Shell_ComicCollection(void)
 							u16 yon = *(u16*)((char*)&G_VIEWPORT + 10);
 							u16 zoom = *(u16*)((char*)&G_VIEWPORT + 12);
 
-							f32 aspectX = (f32)gGameResolutionX / (f32)Xres;
-							f32 aspectY = (f32)gGameResolutionY / (f32)Yres;
+							f32 aspectX = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
+							f32 aspectY = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
 							i32 offX = (i32)((f32)(x - 233) * aspectX);
 							i32 offY = (i32)((f32)(y - 89) * aspectY);
 							i32 wX = (i32)((f32)(xR - xL) * aspectX);

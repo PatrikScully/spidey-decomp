@@ -983,8 +983,8 @@ void DisplayGLineList(void** a1)
 						u32 color2 = (alpha << 24) | ((pBit->mColor2 & 0xFF) << 16) |
 								(((pBit->mColor2 >> 8) & 0xFF) << 8) | ((pBit->mColor2 >> 16) & 0xFF);
 
-						f32 scaleX = gGameResolutionX / (f32)Xres;
-						f32 scaleY = gGameResolutionY / (f32)Yres;
+						f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+						f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 						PCGfx_DrawLine(
 								x1 * scaleX, y1 * scaleY, invZ1 - 7.0710726f, color1,
@@ -1315,8 +1315,8 @@ void DisplayGlowList(void** a1)
 						u8 pb = (u8)((pad >> 16) & 0xFF);
 						u32 ringColor = GlowColor(GlowFade(pr, fadeScale), GlowFade(pg, fadeScale), GlowFade(pb, fadeScale));
 
-						f32 scaleX = gGameResolutionX / (f32)Xres;
-						f32 scaleY = gGameResolutionY / (f32)Yres;
+						f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+						f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 						f32 z = invZ * 1.03f;
 
 						f32 cxs = centerX * scaleX, cys = centerY * scaleY;
@@ -1354,8 +1354,8 @@ void DisplayGlowList(void** a1)
 							u32 colorNew = GlowColor(GlowFade(nr, fadeScale), GlowFade(ng, fadeScale), GlowFade(nb, fadeScale));
 							u32 colorOld = GlowColor(GlowFade(orr, fadeScale), GlowFade(og, fadeScale), GlowFade(ob, fadeScale));
 
-							f32 scaleX = gGameResolutionX / (f32)Xres;
-							f32 scaleY = gGameResolutionY / (f32)Yres;
+							f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+							f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 							f32 z = invZ * 1.03f;
 
 							f32 pInnerX = GLOW_RING_X(ringA, row) * scaleX, pInnerY = GLOW_RING_Y(ringA, row) * scaleY;
@@ -1602,8 +1602,8 @@ void DisplayQuadBitList(void** a1)
 			invZ[i] = iz * 1.03f;
 		}
 
-		f32 scaleX = gGameResolutionX / (f32)Xres;
-		f32 scaleY = gGameResolutionY / (f32)Yres;
+		f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+		f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 		i32 clut = pBit->mpTexture ? pBit->mpTexture->clut : 1;
 
@@ -1848,8 +1848,8 @@ void CSimpleTexturedRibbon::Display(void)
 
 	PCGfx_UseTexture(this->pTextures[0].mClut, (DCGfx_BlendingMode)blendMode);
 
-	f32 scaleX = gGameResolutionX / (f32)Xres;
-	f32 scaleY = gGameResolutionY / (f32)Yres;
+	f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+	f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 	i16* sxyBase = reinterpret_cast<i16*>(gRevisitInitOne);
 
@@ -1963,8 +1963,8 @@ void DisplayTextBoxList(void** a1)
 		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
 
 		u32 color = 0xA0000000 | (p->r0 << 16) | (p->g0 << 8) | p->b0;
-		f32 scaleX = gGameResolutionX / (f32)Xres;
-		f32 scaleY = gGameResolutionY / (f32)Yres;
+		f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+		f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 		PCGfx_DrawQPoly2D(
 				p->x0 * scaleX, p->y0 * scaleY, 0.0f, 0.0f, color,
@@ -2204,8 +2204,8 @@ void DisplayFlatBitList(void** a1)
 			u32 color = (alpha << 24) | ((pBit->mCodeBGR & 0xFF) << 16) |
 					(((pBit->mCodeBGR >> 8) & 0xFF) << 8) | ((pBit->mCodeBGR >> 16) & 0xFF);
 
-			f32 scaleX = gGameResolutionX / (f32)Xres;
-			f32 scaleY = gGameResolutionY / (f32)Yres;
+			f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+			f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 			PCGfx_DrawQPoly3D(
 				cx[0] * scaleX, cy[0] * scaleY, invZ, 0.01f, 0.01f, color,
@@ -2476,8 +2476,8 @@ void DisplayLinked2EndedBitListLeftover(void** a1)
 		u32 colorB = (pBit->mCodeBGR >> 16) & 0xFF;
 		u32 color = (alpha << 24) | (colorR << 16) | (colorG << 8) | colorB;
 
-		f32 scaleX = gGameResolutionX / (f32)Xres;
-		f32 scaleY = gGameResolutionY / (f32)Yres;
+		f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+		f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 		PCGfx_DrawQPoly3D(
 				ax * scaleX, ay * scaleY, invZ, 0.0f, 0.0f, color,
@@ -2552,8 +2552,8 @@ void DisplayPixelList(void** a1)
 			PCGfx_UseTexture(1, (DCGfx_BlendingMode)blendMode);
 
 			f32 width = (f32)(pPixel->mWidthHeight & 0xF);
-			f32 scaleX = gGameResolutionX / (f32)Xres;
-			f32 scaleY = gGameResolutionY / (f32)Yres;
+			f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
+			f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 
 			PCGfx_DrawQuad2D(
 					screenX, screenY,

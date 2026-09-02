@@ -730,11 +730,11 @@ void DXINIT_SetDisplayOptions(u32 width, u32 height, u32 bpp, i32, i32 brightnes
 		shutdownDirect3D7(modeChanged && gDxOptionRelated ? 1 : 0);
 
 		gDxResolutionY = height;
-		gGameResolutionY = height;
+		G_GAME_RESOLUTION_Y = height;
 		gBrightnessRelated = brightness;
 		gDxResolutionX = width;
 		gColorCount = bpp;
-		gGameResolutionX = width;
+		G_GAME_RESOLUTION_X = width;
 		gLowGraphics = 0;
 
 		if (!gDxOptionRelated && modeChanged)
@@ -2188,8 +2188,8 @@ void initDirectDraw7(HWND hwnd)
 	{
 		gDxResolutionX = 640;
 		gDxResolutionY = 480;
-		gGameResolutionX = 640;
-		gGameResolutionY = 480;
+		G_GAME_RESOLUTION_X = 640;
+		G_GAME_RESOLUTION_Y = 480;
 	}
 
 	if (!gColorCount)
