@@ -65,5 +65,6 @@ class CTripWire : public CBody
 
 void validate_CLaserFence(void);
 void validate_CTripWire(void);
+void patch_wire(void);
 
 #endif
