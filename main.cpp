@@ -1627,6 +1627,9 @@ void game_patches(void)
 	patch_bit();
 	patch_bit2();
 	patch_spidey();
+	patch_baddy();
+	patch_thug();
+	patch_cop();
 }
 
 // @Bogus
