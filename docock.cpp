@@ -11,9 +11,6 @@
 
 #include <cstring>
 
-extern CBaddy* BaddyList;
-extern CBody* ControlBaddyList;
-
 EXPORT SLight M3d_DocOckLight =
 {
   { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
@@ -30,7 +27,7 @@ EXPORT SLight M3d_DocOckLight =
 // @Matching
 void DocOck_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -83,7 +80,7 @@ CDocOc::~CDocOc(void)
 {
 	gBossRelated = 0;
 	Panel_DestroyHealthBar();
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	this->KillAllCommandBlocks();
 
 	for (i32 i = 0; i<4; i++)
@@ -116,7 +113,7 @@ CDocOc::CDocOc(i16 *a2, i32 a3)
 
 	this->mHealth = 600;
 	this->mRMinor = 0;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_1F4 = a3;
 	this->mNode = a3;
@@ -372,7 +369,7 @@ void CDocOc::HangAndGetBeaten(void)
 INLINE void CDocOc::ResolveSwitches(void)
 {
 	i32 index = 0;
-	for (CBaddy* pBaddy = reinterpret_cast<CBaddy*>(ControlBaddyList);
+	for (CBaddy* pBaddy = reinterpret_cast<CBaddy*>(G_CONTROL_BADDY_LIST);
 			pBaddy;
 			pBaddy = reinterpret_cast<CBaddy*>(pBaddy->mNextItem))
 	{
@@ -445,3 +442,4 @@ void validate_CDocOc(void){
 	VALIDATE(CDocOc, field_570, 0x570);
 	VALIDATE(CDocOc, field_580, 0x580);
 }
+
