@@ -12,23 +12,37 @@
 #include <cstring>
 
 
+// 0x00682C3C and 0x00682C40 in the exe (gCopGlobal / gCopList in the
+// maintainer's IDB). CCop_Hit, CCop_Fall, CCop_ChasePlayer and CCop_AI write
+// both and none of those are hooked, so the exe's copies are the real ones.
 EXPORT CCop* gCopGlobal;
-static unsigned char gAttackFlagsRelated;
+//#define G_COP_GLOBAL (gCopGlobal)
+#define G_COP_GLOBAL (*reinterpret_cast<CCop**>(0x00682C3C))
+
+EXPORT CCop* gCopList;
+//#define G_COP_LIST (gCopList)
+#define G_COP_LIST (*reinterpret_cast<CCop**>(0x00682C40))
+
+// 0x00682C18. cop.cpp used to call this gAttackFlagsRelated and thug.cpp had
+// its own private static of the same thing, but the exe has one global that
+// both files share. Declared in baddy.h with its G_ macro, defined here
+// because 0x00682C18 sits just before gCopGlobal in the exe's data.
+EXPORT u8 gAttackFlagRelated;
 
 // Per-species state flags, address 0x549220 in the original (used by
 // CCop::Grab's CheckStateFlags call). Same idiom as gThugStateFlags
-// (thug.cpp) and gRhinoStateFlags (rhino.cpp).
+// (thug.cpp) and gRhinoStateFlags (rhino.cpp). Read only pairs of i16 that
+// the exe ships in its .data; our copy has no initialiser, so it is all
+// zeros and has to be read from the exe.
 EXPORT SStateFlags gCopStateFlags;
-
-extern CBaddy *BaddyList;
-
-EXPORT CCop* gCopList;
+//#define G_COP_STATE_FLAGS (&gCopStateFlags)
+#define G_COP_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00549220))
 
 // @Ok
 // @Matching
 void Cop_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -226,14 +240,14 @@ void CCop::Acknowledge(void)
 // @Ok
 INLINE void CCop::CheckToShoot(i32 a2, i32 a3)
 {
-	if ( G_MECHLIST_PLAYER->field_57C && !gCopList && !G_MECHLIST_PLAYER->mHeldObject)
+	if ( G_MECHLIST_PLAYER->field_57C && !G_COP_LIST && !G_MECHLIST_PLAYER->mHeldObject)
 	{
 		if ( ((this->field_218 & 0x800) && a2 < this->field_37C)
 				||
 			 (this->field_324 && a2 < 1500 && (a3 != -1 || this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55))))
 		{
 			this->Neutralize();
-			gCopList = this;
+			G_COP_LIST = this;
 			this->field_31C.bothFlags = 9;
 			this->dumbAssPad = 0;
 		}
@@ -408,7 +422,7 @@ INLINE void CCop::StopShooting(void)
 // dumbAssPad=0 (field-store order differs, functionally identical).
 u8 CCop::Grab(CVector* a2)
 {
-	if ( (this->CheckStateFlags(&gCopStateFlags, 17) & 2)
+	if ( (this->CheckStateFlags(G_COP_STATE_FLAGS, 17) & 2)
 		|| !this->AddPointToPath(a2, 0) )
 	{
 		return 0;
@@ -479,15 +493,15 @@ void CCop::PlayHitWallSound(void)
 // @Ok
 INLINE void CCop::SetAttacker(void)
 {
-	if (gCopGlobal != this)
+	if (G_COP_GLOBAL != this)
 	{
 		this->ClearAttackFlags();
-		if (gCopGlobal)
+		if (G_COP_GLOBAL)
 		{
-			gCopGlobal->ClearAttackFlags();
+			G_COP_GLOBAL->ClearAttackFlags();
 		}
 
-		gCopGlobal = this;
+		G_COP_GLOBAL = this;
 		this->field_390 = 1;
 	}
 }
@@ -592,11 +606,11 @@ CCop::~CCop(void)
 		Mem_Delete(static_cast<void*>(this->field_384));
 	this->field_384 = 0;
 
-	if (gCopList == this)
-		gCopList = 0;
+	if (G_COP_LIST == this)
+		G_COP_LIST = 0;
 
 	this->ClearAttackFlags();
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 }
 
 // @Ok
@@ -868,7 +882,7 @@ CCop::CCop(i16* a2, i32 a3)
 	i16 *v5 = this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a2)));
 	this->ShadowOn();
 	this->mShadowScale = 50;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 
 	this->field_230 = 0;
@@ -883,7 +897,7 @@ CCop::CCop(i16* a2, i32 a3)
 	this->field_2A8 |= 1;
 
 	this->field_370 = this->mType != 306 ? 400 : 300;
-	this->field_340 = gAttackRelated;
+	this->field_340 = G_ATTACK_RELATED;
 	this->field_360 = 3500;
 	this->field_364 = 400;
 	this->field_368 = 2047;
@@ -937,19 +951,19 @@ void CCopPing::Move(void)
 
 // @Ok
 // Same shape as the already-verified CThug::ClearAttackFlags (thug.cpp):
-// gCopGlobal/gAttackFlagsRelated here play the role of
+// gCopGlobal/gAttackFlagRelated here play the role of
 // gGlobalThug/gAttackFlagRelated there. Also confirmed inlined verbatim
 // inside the original ~CCop (0x428980) and matches this file's own
 // SetAttacker, which calls it on both this and the previous gCopGlobal.
 void CCop::ClearAttackFlags(void)
 {
-	if (gCopGlobal == this)
+	if (G_COP_GLOBAL == this)
 	{
-		gCopGlobal = NULL;
+		G_COP_GLOBAL = NULL;
 	}
 	else if((this->field_390 & 2))
 	{
-		gAttackFlagsRelated &= ~this->field_391;
+		G_ATTACK_FLAG_RELATED &= ~this->field_391;
 	}
 
 	this->field_390 = 0;

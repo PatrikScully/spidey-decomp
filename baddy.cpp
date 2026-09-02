@@ -12,6 +12,7 @@
 #include "spool.h"
 #include "m3dcolij.h"
 #include "mysterio.h"
+#include "ps2gamefmv.h"
 
 
 CBody* ControlBaddyList;
@@ -222,7 +223,7 @@ i32 CBaddy::SmackSpidey(
 
 	CVector firstVec;
 
-	if (!gNumDomes)
+	if (!G_NUM_DOMES)
 	{
 		for (i32 i = 0; ; i++)
 		{
@@ -306,10 +307,10 @@ i32 CBaddy::SmackSpidey(
 // @Matching
 INLINE i32 CBaddy::DistanceToPlayer(i32 a2){
 
-	if (this->field_208 && gAttackRelated - this->field_208 <= a2 )
+	if (this->field_208 && G_ATTACK_RELATED - this->field_208 <= a2 )
 		return this->field_204;
 
-	this->field_208 = gAttackRelated;
+	this->field_208 = G_ATTACK_RELATED;
 	this->field_204 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 
 	return this->field_204;
@@ -644,7 +645,7 @@ CBody* CBaddy::StruckGameObject(i32 a2, i32 a3)
 				G_MECHLIST_PLAYER,
 				this)) == 0 )
 	  {
-		  if (a3 && (result = Utils_CheckObjectCollision(&this->field_2FC, &this->mPos, BaddyList, this)))
+		  if (a3 && (result = Utils_CheckObjectCollision(&this->field_2FC, &this->mPos, G_BADDY_LIST, this)))
 		  {
 			  DoAssert(result != this, "smoething's wrong in the state of denmark");
 			  return result;
@@ -928,13 +929,13 @@ i32 CBaddy::BumpedIntoSpidey(i32 a2)
 {
 	i32 v4;
 
-	if (this->field_208 && gAttackRelated - this->field_208 <= 4)
+	if (this->field_208 && G_ATTACK_RELATED - this->field_208 <= 4)
 	{
 		v4 = this->field_204;
 	}
 	else
 	{
-		this->field_208 = gAttackRelated;
+		this->field_208 = G_ATTACK_RELATED;
 		v4 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 		this->field_204 = v4;
 	}
@@ -1219,7 +1220,7 @@ CBaddy* CBaddy::GetClosest(i32 baddyType, i32 inSight)
 	i32 distance = 10656;
 	CBaddy* result = 0;
 
-	for ( CBaddy* i = BaddyList; i; i = reinterpret_cast<CBaddy*>(i->mNextItem))
+	for ( CBaddy* i = G_BADDY_LIST; i; i = reinterpret_cast<CBaddy*>(i->mNextItem))
 	{
 		if ( (!baddyType || i->mType == baddyType) && i != this )
 		{
@@ -2454,8 +2455,8 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			u16 val = CBaddy_ResolveOperand(this);
 			if (cmd == 0x42B3)
 			{
-				gsub_4DFFB0(ControlBaddyList, val);
-				gsub_4DFFB0(BaddyList, val);
+				gsub_4DFFB0(G_CONTROL_BADDY_LIST, val);
+				gsub_4DFFB0(G_BADDY_LIST, val);
 				gsub_4DFFB0(G_ENVIRONMENTAL_OBJECT_LIST, val);
 			}
 			else
@@ -2549,7 +2550,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 
 		case 0x430B:
 		{
-			CBaddy *node = BaddyList;
+			CBaddy *node = G_BADDY_LIST;
 			while (node != 0 && node->mType != 314)
 				node = static_cast<CBaddy*>(node->mNextItem);
 
@@ -2635,7 +2636,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			for (i32 i = 0; i < n; i++)
 			{
 				u16 k = entries[1 + i];
-				for (CBaddy *node = BaddyList; node != 0; node = static_cast<CBaddy*>(node->mNextItem))
+				for (CBaddy *node = G_BADDY_LIST; node != 0; node = static_cast<CBaddy*>(node->mNextItem))
 				{
 					if (node->mNode != k)
 						continue;
@@ -2855,15 +2856,13 @@ void CBaddy::SetVariable(u16 a2)
 // @Matching
 i16 CBaddy::GetVariable(u16 a2)
 {
-	extern i32 gGameFmvPad;
-
 	switch (a2)
 	{
 		case 0x2139:
-			return DifficultyLevel;
+			return G_DIFFICULTY_LEVEL;
 
 		case 0x2136:
-			return gGameFmvPad;
+			return G_GAME_FMV_PAD;
 
 		case 0x2132:
 		{
@@ -3040,7 +3039,7 @@ void CBaddy::DoPhysics(i32 a2)
 		return;
 	}
 
-	this->field_A8 = gTrajectoryVector;
+	this->field_A8 = G_TRAJECTORY_VECTOR;
 	this->mCollision = 0;
 
 	i32 elapsed;
@@ -3123,7 +3122,7 @@ void CBaddy::Baddy_SendSignal(void)
 // @Matching
 CBaddy* FindBaddyOfType(i32 type)
 {
-	CItem *current = BaddyList;
+	CItem *current = G_BADDY_LIST;
 
 	while (current)
 	{
@@ -3405,12 +3404,12 @@ CSoftSpot::CSoftSpot(CBaddy* owner, i32 health, i32 node, i32 type)
 		this->field_194 = 12;
 	}
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	print_if_false(owner != 0, "no owner for soft spot");
 
-	owner->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
-	owner->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	owner->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
+	owner->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_330 = Mem_MakeHandle(owner);
 
@@ -3430,7 +3429,7 @@ CSoftSpot::CSoftSpot(CBaddy* owner, i32 health, i32 node, i32 type)
 		this->mCBodyFlags |= 0x10;
 	}
 
-	if (DifficultyLevel)
+	if (G_DIFFICULTY_LEVEL)
 		this->field_2A8 |= 0x10000;
 
 	this->field_2A8 |= 0x200;

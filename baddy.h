@@ -210,6 +210,23 @@ EXPORT extern i32 gAttackRelated;
 
 EXPORT extern i32 gBossRelated;
 
+// 0x0060D9E0 (gTrajectoryVector in the maintainer's IDB). Defined here, read
+// by lizman.cpp, platform.cpp, wire.cpp and spid_ai0.cpp, and written by code
+// we do not hook, so it has to be the exe's copy. No extern declaration here
+// on purpose: those files already declare it without EXPORT and MSVC6
+// rejects the storage class mismatch.
+//#define G_TRAJECTORY_VECTOR (gTrajectoryVector)
+#define G_TRAJECTORY_VECTOR (*reinterpret_cast<CSVector*>(0x0060D9E0))
+
+// 0x00682C18 (gAttackFlagRelated in the maintainer's IDB). One bitmask shared
+// by cop.cpp and thug.cpp: both ClearAttackFlags bodies clear a bit in it and
+// both SetAttacker bodies read it. Our sources used to keep a private static
+// in each file, so the two halves could never see each other. It lives here
+// because both cop.h and thug.h include this header.
+EXPORT extern u8 gAttackFlagRelated;
+//#define G_ATTACK_FLAG_RELATED (gAttackFlagRelated)
+#define G_ATTACK_FLAG_RELATED (*reinterpret_cast<u8*>(0x00682C18))
+
 EXPORT extern u8 gObjFileRegion;
 //#define G_OBJ_FILE_REGION (gObjFileRegion)
 #define G_OBJ_FILE_REGION (*reinterpret_cast<u8*>(0x006B3824))

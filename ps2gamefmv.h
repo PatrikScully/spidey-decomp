@@ -25,6 +25,12 @@ EXPORT void GameFMV_Init(void);
 EXPORT void GameFMV_SetStartTrack(u8);
 EXPORT void GameFMV_StopFMV(void);
 
+// 0x006150F4. Written by GameFMV_PlayMovie, which is not hooked, and read by
+// CBaddy::GetVariable (script variable 0x2136).
+EXPORT extern i32 gGameFmvPad;
+//#define G_GAME_FMV_PAD (gGameFmvPad)
+#define G_GAME_FMV_PAD (*reinterpret_cast<i32*>(0x006150F4))
+
 //#define G_GAME_FMV_ACTIVE (GameFMV_Active)
 #define G_GAME_FMV_ACTIVE (*reinterpret_cast<i32*>(0x006151F8))
 

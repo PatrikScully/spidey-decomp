@@ -12,22 +12,34 @@
 #include <cmath>
 #include <new>
 
+// 0x00682C50 and 0x00682C54 in the exe (gGlobalThug / gThugList in the
+// maintainer's IDB). CThug_Hit, CThug_Fall, CThug_ProcessMessages and
+// CThug_AI write both of them and none of those are hooked, so the exe's
+// copies are the only real ones.
 EXPORT CThug* gGlobalThug;
-EXPORT CThug* gThugList;
+//#define G_GLOBAL_THUG (gGlobalThug)
+#define G_GLOBAL_THUG (*reinterpret_cast<CThug**>(0x00682C50))
 
-// moved up from its original spot right above CThug::ClearAttackFlags so
-// CThug::DetermineFightState (earlier in the file) can also see it; same
-// global, same file-local static, no address/behavior change.
-static unsigned char gAttackFlagRelated;
+EXPORT CThug* gThugList;
+//#define G_THUG_LIST (gThugList)
+#define G_THUG_LIST (*reinterpret_cast<CThug**>(0x00682C54))
+
+// gAttackFlagRelated is shared with cop.cpp, so its macro lives in baddy.h.
 
 // @FIXME
+// 0x00557CA0. A read only state table the exe ships in its .data (pairs of
+// i16 built at compile time); our copy has no initialiser at all, so it is
+// all zeros and CheckStateFlags would never match a state. Read from the
+// exe until somebody writes the real table out.
 EXPORT SStateFlags gThugStateFlags;
+//#define G_THUG_STATE_FLAGS (&gThugStateFlags)
+#define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @Ok
 // @Matching
 void Thug_RelocatableModuleClear(void)
 {
-	for (CBody* cur = BaddyList; cur; )
+	for (CBody* cur = G_BADDY_LIST; cur; )
 	{
 		CBody* next = reinterpret_cast<CBody*>(cur->mNextItem);
 		if (cur->mType == 304 || cur->mType == 312)
@@ -288,7 +300,7 @@ i32 CThug::DetermineFightState(void)
 		i32 pathResult;
 
 		if (G_MECHLIST_PLAYER->field_57C != 0
-				|| gThugList != 0
+				|| G_THUG_LIST != 0
 				|| G_MECHLIST_PLAYER->mHeldObject != 0
 				|| this->field_330 == 0
 				|| dist >= 1500)
@@ -302,16 +314,16 @@ i32 CThug::DetermineFightState(void)
 			goto checkStateChanged;
 
 		this->Neutralize();
-		gThugList = this;
+		G_THUG_LIST = this;
 
-		if (gGlobalThug == this)
+		if (G_GLOBAL_THUG == this)
 		{
-			gGlobalThug = 0;
+			G_GLOBAL_THUG = 0;
 			goto clearAttackAndFight;
 		}
 
 		if (this->field_3BC & 2)
-			gAttackFlagRelated = ~this->field_3BD & gAttackFlagRelated;
+			G_ATTACK_FLAG_RELATED = ~this->field_3BD & G_ATTACK_FLAG_RELATED;
 
 		goto clearAttackAndFight;
 	}
@@ -345,7 +357,7 @@ i32 CThug::DetermineFightState(void)
 		i32 pathResult;
 
 		if (G_MECHLIST_PLAYER->field_57C != 0
-				|| gThugList != 0
+				|| G_THUG_LIST != 0
 				|| G_MECHLIST_PLAYER->mHeldObject != 0
 				|| this->field_330 == 0
 				|| dist >= 1500)
@@ -359,16 +371,16 @@ i32 CThug::DetermineFightState(void)
 			goto checkStateChanged;
 
 		this->Neutralize();
-		gThugList = this;
+		G_THUG_LIST = this;
 
-		if (gGlobalThug == this)
+		if (G_GLOBAL_THUG == this)
 		{
-			gGlobalThug = 0;
+			G_GLOBAL_THUG = 0;
 			goto clearAttackAndFight;
 		}
 
 		if (this->field_3BC & 2)
-			gAttackFlagRelated = ~this->field_3BD & gAttackFlagRelated;
+			G_ATTACK_FLAG_RELATED = ~this->field_3BD & G_ATTACK_FLAG_RELATED;
 
 		goto clearAttackAndFight;
 	}
@@ -377,7 +389,7 @@ i32 CThug::DetermineFightState(void)
 	this->dumbAssPad = 0;
 
 	if (G_MECHLIST_PLAYER->field_57C == 0
-			&& gThugList == 0
+			&& G_THUG_LIST == 0
 			&& G_MECHLIST_PLAYER->mHeldObject == 0
 			&& this->field_330 != 0
 			&& dist < 1500)
@@ -387,12 +399,12 @@ i32 CThug::DetermineFightState(void)
 		if (pathResult != 0)
 		{
 			this->Neutralize();
-			gThugList = this;
+			G_THUG_LIST = this;
 
-			if (gGlobalThug == this)
-				gGlobalThug = 0;
+			if (G_GLOBAL_THUG == this)
+				G_GLOBAL_THUG = 0;
 			else if (this->field_3BC & 2)
-				gAttackFlagRelated &= ~this->field_3BD;
+				G_ATTACK_FLAG_RELATED &= ~this->field_3BD;
 
 			goto clearAttackAndFight;
 		}
@@ -471,7 +483,7 @@ void CThug::CreateCombatImpactEffect(CVector* a2, i32 a3)
 INLINE i32 CThug::ShouldIShootPlayer(void)
 {
 	if ( G_MECHLIST_PLAYER->field_57C
-		|| gThugList
+		|| G_THUG_LIST
 		|| this->DistanceToPlayer(2) >= 2000
 		|| G_MECHLIST_PLAYER->mHeldObject
 		|| this->DistanceToPlayer(2) <= 650
@@ -481,7 +493,7 @@ INLINE i32 CThug::ShouldIShootPlayer(void)
 	}
 
 	this->Neutralize();
-	gThugList = this;
+	G_THUG_LIST = this;
 	this->field_31C.bothFlags = 9;
 	this->dumbAssPad = 0;
 	return 1;
@@ -498,11 +510,11 @@ CThug::~CThug(void)
 		Mem_Delete(this->field_3A4);
 	this->field_3A4 = 0;
 
-	if (gThugList == this)
-		gThugList = 0;
+	if (G_THUG_LIST == this)
+		G_THUG_LIST = 0;
 
 	this->ClearAttackFlags();
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 }
 
 // @Ok
@@ -557,14 +569,14 @@ INLINE void CThug::DrawBarrelFlash(
 // in this file, so verified by code review rather than a byte diff.
 INLINE void CThug::CheckToShoot(i32 a2, i32 a3)
 {
-	if ( G_MECHLIST_PLAYER->field_57C && !gThugList && !G_MECHLIST_PLAYER->mHeldObject)
+	if ( G_MECHLIST_PLAYER->field_57C && !G_THUG_LIST && !G_MECHLIST_PLAYER->mHeldObject)
 	{
 		if ( ((this->field_218 & 0x800) && a2 < this->field_37C)
 				||
 			 (this->field_330 && a2 < 1500 && (a3 != -1 || this->PathCheck(&this->mPos, &G_MECHLIST_PLAYER->mPos, 0, 55))))
 		{
 			this->Neutralize();
-			gThugList = this;
+			G_THUG_LIST = this;
 			this->ClearAttackFlags();
 			this->field_31C.bothFlags = 9;
 			this->dumbAssPad = 0;
@@ -614,7 +626,7 @@ INLINE i32 CThug::AdjustPosPlaySound(i32 a2)
 // @Ok
 u8 CThug::Grab(CVector* a2)
 {
-	if ( (this->CheckStateFlags(&gThugStateFlags, 17) & 2)
+	if ( (this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 2)
 		|| !this->AddPointToPath(a2, 0) )
 	{
 		return 0;
@@ -631,15 +643,15 @@ u8 CThug::Grab(CVector* a2)
 // @Ok
 INLINE void CThug::SetAttacker(void)
 {
-	if (gGlobalThug != this)
+	if (G_GLOBAL_THUG != this)
 	{
 		this->ClearAttackFlags();
-		if (gGlobalThug)
+		if (G_GLOBAL_THUG)
 		{
-			gGlobalThug->ClearAttackFlags();
+			G_GLOBAL_THUG->ClearAttackFlags();
 		}
 
-		gGlobalThug = this;
+		G_GLOBAL_THUG = this;
 		this->field_3BC = 1;
 	}
 }
@@ -905,7 +917,7 @@ INLINE i32 CThug::CanAck(
 {
 		if (!this->field_330
 			&& !this->field_33C
-			&& (this->CheckStateFlags(&gThugStateFlags, 17) & 0x20))
+			&& (this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 0x20))
 		{
 			this->mHandleTwo = Mem_MakeHandle(pThug);
 			this->field_398 = a3;
@@ -1437,8 +1449,8 @@ CThug::CThug(i16 *a2, i32 a3)
 
 	this->ShadowOn();
 	this->mShadowScale = 50;
-	this->field_3B0 = gAttackRelated;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->field_3B0 = G_ATTACK_RELATED;
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_1F4 = a3;
 	this->mNode = a3;
@@ -1504,13 +1516,13 @@ void CThugPing::Move(void)
 // @Ok
 void CThug::ClearAttackFlags(void)
 {
-	if ( gGlobalThug == this )
+	if ( G_GLOBAL_THUG == this )
 	{
-		gGlobalThug = 0;
+		G_GLOBAL_THUG = 0;
 	}
 	else if (this->field_3BC & 2)
 	{
-		gAttackFlagRelated &= ~this->field_3BD;
+		G_ATTACK_FLAG_RELATED &= ~this->field_3BD;
 	}
 
 	this->field_3BC = 0;
