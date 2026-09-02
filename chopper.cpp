@@ -24,13 +24,6 @@
 #include "ps2funcs.h"
 #include "SpideyDX.h"
 
-extern CBody* ControlBaddyList;
-extern CBaddy* BaddyList;
-
-extern i32 DifficultyLevel;
-
-extern const char *gObjFile;
-extern CPlayer* MechList;
 
 #include "camera.h"
 
@@ -59,7 +52,7 @@ static i32 * const gSniperHitSFXLo_Channel = (i32*)0x00548F2C;
 // @Matching
 void Chopper_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -301,7 +294,7 @@ void CChopper::FireMachineGunAtWaypointV(void)
 // @Ok
 INLINE i32 CChopper::GetToDesiredPos(void)
 {
-	CVector v13 = (MechList->mPos - this->field_33C);
+	CVector v13 = (G_MECHLIST->mPos - this->field_33C);
 
 	v13.vy = this->field_34C;
 	return this->GetToPos(&v13);
@@ -339,11 +332,11 @@ i32 INLINE CChopper::InCameraPath(void)
 // @Test
 void CChopper::StartStrafeOnslaught(void)
 {
-	if (MechList->field_8E8)
+	if (reinterpret_cast<CPlayer*>(G_MECHLIST)->field_8E8)
 	{
 		CVector v18(0, (G_VBLANKS & 1) != 0 ? 4096 : -4096, 0);
 
-		gte_ldopv1(reinterpret_cast<VECTOR*>(&MechList->field_C84));
+		gte_ldopv1(reinterpret_cast<VECTOR*>(&reinterpret_cast<CPlayer*>(G_MECHLIST)->field_C84));
 		gte_ldopv2(reinterpret_cast<VECTOR*>(&v18));
 
 		gte_op12();
@@ -354,7 +347,7 @@ void CChopper::StartStrafeOnslaught(void)
 
 		v18 *= 400;
 		
-		this->field_388 = MechList->mPos - v18;
+		this->field_388 = G_MECHLIST->mPos - v18;
 		this->field_3A4 = Rnd(4) + 8;
 
 		v18 /= (this->field_3A4 >> 1);
@@ -387,10 +380,10 @@ void CChopper::StartStrafeOnslaught(void)
 		v17 >>= 12;
 		v17 *= 200;
 
-		CVector v16 = MechList->mPos;
-		if (!MechList->field_AD4)
+		CVector v16 = G_MECHLIST->mPos;
+		if (!reinterpret_cast<CPlayer*>(G_MECHLIST)->field_AD4)
 		{
-			i32 GroundHeight = Utils_GetGroundHeight(&MechList->mPos, 300, 300, 0);
+			i32 GroundHeight = Utils_GetGroundHeight(&G_MECHLIST->mPos, 300, 300, 0);
 
 			if (GroundHeight != -1)
 				v16.vy = GroundHeight;
@@ -419,7 +412,7 @@ void CChopper::Shoot(void)
 		switch (this->field_384)
 		{
 			case 1:
-				if ((gAttackRelated & 3) == 0)
+				if ((G_ATTACK_RELATED & 3) == 0)
 				{
 					CVector v8;
 					M3dUtils_GetHookPosition(reinterpret_cast<VECTOR *>(&v8), this, 1);
@@ -440,7 +433,7 @@ void CChopper::Shoot(void)
 
 				break;
 			case 2:
-				if ((gAttackRelated & 3) == 0)
+				if ((G_ATTACK_RELATED & 3) == 0)
 				{
 					CVector v8;
 					M3dUtils_GetHookPosition(reinterpret_cast<VECTOR *>(&v8), this, 1);
@@ -499,7 +492,7 @@ void CChopper::SetDesiredPosForTrackMode(void)
 
 	this->field_33C.vy += (Rnd(614400) - 327680) + 20480;
 
-	this->field_34C = MechList->mPos.vy - this->field_33C.vy;
+	this->field_34C = G_MECHLIST->mPos.vy - this->field_33C.vy;
 
 	if (this->field_34C > this->field_350)
 		this->field_34C = this->field_350;
@@ -525,7 +518,7 @@ void CChopper::AI(void)
 	if (this->pMessage)
 		this->CleanUpMessages(1, 0);
 
-	if ((gAttackRelated & 3) == 0)
+	if ((G_ATTACK_RELATED & 3) == 0)
 	{
 		if (this->field_328)
 		{
@@ -609,7 +602,7 @@ void CChopper::FollowWaypoints(void)
 			}
 			else if (this->field_218 & 16)
 			{
-				new CAIProc_LookAt(this, MechList, 0, 0, 55, 200);
+				new CAIProc_LookAt(this, G_MECHLIST, 0, 0, 55, 200);
 			}
 		case 1:
 			if (this->GetToPos(&this->field_33C))
@@ -892,7 +885,7 @@ void CChopper::SetFlag(u16 a2, i16 a3)
 // @Ok
 CChopper::~CChopper(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	if (this->field_328)
 		SFX_Stop(this->field_328);
@@ -939,7 +932,7 @@ void CChopperMissile::AI(void)
 	if (this->field_FC == 2)
 		return;
 
-	if (DifficultyLevel == 1 || DifficultyLevel == 0)
+	if (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0)
 	{
 		if (this->field_108 < 0x2A000)
 		{
@@ -1043,7 +1036,7 @@ void CChopperMissile::Explode(void)
 		Chunk_ChunkItemByChecksum(this->field_11C);
 	}
 
-	u32 v2 = Utils_Dist(this->mPos, MechList->mPos);
+	u32 v2 = Utils_Dist(this->mPos, G_MECHLIST->mPos);
 
 	if (v2 < 0x19A)
 	{
@@ -1057,7 +1050,7 @@ void CChopperMissile::Explode(void)
 		else
 			v7.field_8 = 100 - 95 * (v2 - 280) / 130;
 
-		MechList->Hit(&v7);
+		G_MECHLIST->Hit(&v7);
 	}
 
 	if (v2 < 0x320 && gSaveGame.field_7B)
@@ -1080,12 +1073,6 @@ void CChopperMissile::Explode(void)
 	this->Die();
 }
 
-// tentative name; same address as the already-named-elsewhere
-// gTimerRelated (export.h) / gM3dTimerRelated (ps2m3d.cpp, volatile i32* at
-// 0x6B4CA8). Reused here for the same "read fresh every frame" idiom; it
-// drives the shimmer/pulse color in CChopperMissile::DrawTargetRecticle.
-static volatile i32 * const gChopperGlowTimer = (i32*)0x6B4CA8;
-
 // @Ok
 // @Note: rewritten 2026-08-31 from a fresh Hex-Rays decompile of
 // tools/functions/4342784.bin (0x424400), cross-checked against names.json
@@ -1107,7 +1094,7 @@ static volatile i32 * const gChopperGlowTimer = (i32*)0x6B4CA8;
 //   gets closer, floored once depth passes 2048), not the fixed
 //   halfW=halfH=12 box the old draft used.
 // - The color is not a flat grey: r0=0xFF and b0=0 are fixed, but g0 is the
-//   high byte of rcossin_tbl[(gChopperGlowTimer<<6)&0xFFF].sin, a genuine
+//   high byte of rcossin_tbl[(G_TIMER_RELATED<<6)&0xFFF].sin, a genuine
 //   per-frame shimmer between red and yellow (same "HIBYTE of a sin table
 //   entry" idiom, reproduced as-is including its sawtooth-at-wrap
 //   behaviour rather than "fixed" into a smooth ramp).
@@ -1157,7 +1144,7 @@ void CChopperMissile::DrawTargetRecticle(void)
 	Texture* tex = this->field_124;
 
 	u8 shimmer = static_cast<u8>(static_cast<u16>(
-			rcossin_tbl[(static_cast<u16>(*gChopperGlowTimer) << 6) & 0xFFF].sin) >> 8);
+			rcossin_tbl[(static_cast<u16>(G_TIMER_RELATED) << 6) & 0xFFF].sin) >> 8);
 	u32 color = 0xFF000000u | (0xFFu << 16) | (static_cast<u32>(shimmer) << 8);
 
 	i32 uWidth = tex->u1 - tex->u0;
@@ -1266,7 +1253,7 @@ void CChopperMissile::DrawTargetRecticle(void)
 // @Ok
 CChopperMissile::~CChopperMissile(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	if (this->field_10C)
 		SFX_Stop(this->field_10C);
@@ -1296,13 +1283,13 @@ void CChopperMissile::CommonInitialisation(void)
 {
 	this->mType = 321;
 
-	this->InitItem(gObjFile);
+	this->InitItem(G_OBJ_FILE);
 	this->mFlags &= ~2u;
 	this->mCBodyFlags &= ~0x10u;
 
-	this->mModel = Spool_GetModel(0x8CEF63CD, gObjFileRegion);
+	this->mModel = Spool_GetModel(0x8CEF63CD, G_OBJ_FILE_REGION);
 	this->mRMinor = 0;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_F8 = new CSmokeTrail(&this->mPos, 6, 80, 80, 96);
 
@@ -1334,7 +1321,7 @@ INLINE CChopperMissile::CChopperMissile(
 
 	this->field_104 = this->GetFinalTargetNode(a4);
 
-	if (DifficultyLevel == 3)
+	if (G_DIFFICULTY_LEVEL == 3)
 		this->field_120 = 20;
 
 	this->CommonInitialisation();
@@ -1748,7 +1735,7 @@ void CSniperTarget::DrawTargetRecticle(void)
 //   disassembly's control flow does not obviously reconcile with this
 //   source's current case-2 body (which reads like a paraphrase, not a
 //   transcription: e.g. it uses Vblanks for the SFX timers where the
-//   decompile clearly reads dword_6B4CA8/gChopperGlowTimer instead, a
+//   decompile clearly reads dword_6B4CA8 (G_TIMER_RELATED) instead, a
 //   different global, and the CMachineGunBullet-firing block's gating
 //   doesn't line up with where field_154/field_158 are actually tested in
 //   the disasm). Left untouched rather than guess; whoever continues this
@@ -1771,7 +1758,7 @@ void CSniperTarget::AI(void)
 			aimDir.vx = 0;
 			aimDir.vy = 0;
 			aimDir.vz = 0;
-			Utils_CalcAim(&aimDir, &this->field_104, &MechList->mPos);
+			Utils_CalcAim(&aimDir, &this->field_104, &G_MECHLIST->mPos);
 
 			Utils_TurnTowards(this->mAngles, &this->mAngVel, &this->mAngAcc, aimDir, 8);
 
@@ -1831,7 +1818,7 @@ void CSniperTarget::AI(void)
 			{
 				reinterpret_cast<CVector&>(this->field_110) = this->field_104;
 
-				CVector toMech = (MechList->mPos - this->field_104) >> 12;
+				CVector toMech = (G_MECHLIST->mPos - this->field_104) >> 12;
 				reinterpret_cast<CVector&>(this->field_148) = toMech;
 
 				i32 preNormalizeLen = reinterpret_cast<CVector&>(this->field_148).Length();
@@ -1982,7 +1969,7 @@ void CMachineGunBullet::Move(void)
 	if (this->field_74 <= this->field_7C)
 	{
 		CVector zero(0, 0, 0);
-		if (!M3dColij_LineToSphere(&this->mStart, &this->mEnd, &zero, reinterpret_cast<CBody*>(MechList), 0, 0x1000))
+		if (!M3dColij_LineToSphere(&this->mStart, &this->mEnd, &zero, G_MECHLIST, 0, 0x1000))
 			return;
 
 		hitPlayer = true;
@@ -2017,7 +2004,7 @@ void CMachineGunBullet::Move(void)
 	if (pSniper)
 		pSniper->BulletResult(hitPlayer);
 
-	if (pChopper && hitPlayer && MechList->field_8E8)
+	if (pChopper && hitPlayer && reinterpret_cast<CPlayer*>(G_MECHLIST)->field_8E8)
 	{
 		CVector dirVec = this->mEnd - this->mStart;
 		i32 len = dirVec.Length();
@@ -2276,7 +2263,7 @@ CSniperSplat::CSniperSplat(CVector* a2, SVECTOR* a3)
 // @Ok
 CSniperTarget::~CSniperTarget(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&ControlBaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_CONTROL_BADDY_LIST));
 }
 
 // @Ok
@@ -2306,7 +2293,7 @@ CSniperTarget::CSniperTarget(i32 a2)
 	this->field_11C = Spool_FindTextureEntry("snipertarget02");
 	this->field_120 = 180;
 
-	this->AttachTo(reinterpret_cast<CBody**>(&ControlBaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_CONTROL_BADDY_LIST));
 }
 
 // @Ok
@@ -2364,7 +2351,7 @@ CChopper::CChopper(i16* a2, i32 a3)
 
 	this->mCBodyFlags &= ~0x10u;
 	this->mRMinor = 0;
-	CBody::AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	CBody::AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_1F4 = a3;
 	this->mNode = a3;
@@ -2472,7 +2459,7 @@ void CSearchlight::SpecialRenderer(void)
 	if (depth < 200)
 		return;
 
-	CVector mechRel = (MechList->mPos >> 12) - camPos;
+	CVector mechRel = (G_MECHLIST->mPos >> 12) - camPos;
 
 	gte_ldlv0(reinterpret_cast<VECTOR*>(&mechRel));
 	gte_rtps();
@@ -2565,7 +2552,7 @@ void CSearchlight::SpecialRenderer(void)
 // @Ok
 CSearchlight::~CSearchlight(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&ControlBaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_CONTROL_BADDY_LIST));
 }
 
 // @Ok
@@ -2642,7 +2629,7 @@ void CSearchlight::AI(void)
 		camPos.vy += 0x200000;
 
 		CVector perpA, perpB;
-		Utils_CalcPerps(&MechList->field_C84, &perpB, &perpA);
+		Utils_CalcPerps(&reinterpret_cast<CPlayer*>(G_MECHLIST)->field_C84, &perpB, &perpA);
 
 		i32 jitterMag = Rnd(0x100);
 		i32 jitterAngle = Rnd(0x1000) & 0xFFF;
@@ -2651,7 +2638,7 @@ void CSearchlight::AI(void)
 		CVector jitterB = perpA * ((jitterMag * rcossin_tbl[jitterAngle].cos) >> 0xC);
 
 		CVector sparkStart = camPos;
-		CVector sparkEnd = MechList->mPos + jitterA + jitterB;
+		CVector sparkEnd = G_MECHLIST->mPos + jitterA + jitterB;
 
 		SFX_Play(0x8074, 0x2000, 0);
 		new CMachineGunBullet(&sparkStart, &sparkEnd);
@@ -2685,7 +2672,7 @@ CSearchlight::CSearchlight(i32 a2)
 	}
 
 	this->mType = 322;
-	this->AttachTo(reinterpret_cast<CBody**>(&ControlBaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_CONTROL_BADDY_LIST));
 
 	Trig_GetPosition(&this->mPos, a2);
 	u16 *LinksPointer = Trig_GetLinksPointer(a2);
@@ -2960,4 +2947,38 @@ void validate_CChopperMissile(void)
 	VALIDATE(CChopperMissile, field_124, 0x124);
 
 	VALIDATE_VTABLE(CChopperMissile, DrawTargetRecticle, 5);
+}
+
+#include "my_patch.h"
+
+// @Bogus
+// Only the functions with a clean call closure are hooked. The ones left out
+// call into subsystems that still keep their state in our DLL copy of the
+// globals while the exe keeps writing its own (sound, the CBit spawn lists,
+// the chunk lists, the pad, redbook, and the whole panel/PCGfx renderer).
+// See the notes in the commit message for the full list.
+void patch_chopper(void)
+{
+	PATCH_PUSH_RET(0x004209D0, Chopper_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x00420AA0, Chopper_CreateSearchlight);
+	PATCH_PUSH_RET(0x00420B10, Chopper_CreateSniper);
+
+	PATCH_PUSH_RET(0x00420BB0, CSniperSplat::Move);
+	PATCH_PUSH_RET(0x00420D50, CBulletFrag::Move);
+
+	PATCH_PUSH_RET_POLY(0x00421790, CSniperTarget::CSniperTarget, "??0CSniperTarget@@QAE@H@Z");
+	PATCH_PUSH_RET_POLY(0x004218A0, CSniperTarget::~CSniperTarget, "??1CSniperTarget@@UAE@XZ");
+
+	PATCH_PUSH_RET_POLY(0x00422D00, CSearchlight::CSearchlight, "??0CSearchlight@@QAE@H@Z");
+	PATCH_PUSH_RET_POLY(0x00422E90, CSearchlight::~CSearchlight, "??1CSearchlight@@UAE@XZ");
+	PATCH_PUSH_RET(0x00423830, CSearchlight::CheckPointInScreenTri);
+
+	PATCH_PUSH_RET(0x00425990, CChopper::SetFlag);
+	PATCH_PUSH_RET(0x00425B20, CChopper::FireMachineGunAtWaypoint);
+	PATCH_PUSH_RET(0x00425B70, CChopper::SetHeight);
+	PATCH_PUSH_RET(0x00425D20, CChopper::DoChopperPhysics);
+	PATCH_PUSH_RET(0x00425EF0, CChopper::AimGunPod);
+	PATCH_PUSH_RET(0x00425FA0, CChopper::FollowWaypoints);
+	PATCH_PUSH_RET(0x00426480, CChopper::SetDesiredPosForTrackMode);
+	PATCH_PUSH_RET(0x00426B30, CChopper::FireMachineGunAtWaypointV);
 }

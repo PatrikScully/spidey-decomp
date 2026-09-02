@@ -314,6 +314,8 @@ EXPORT extern CBody* RealMechList;
 #define G_MECHLIST (*reinterpret_cast<CBody**>(0x006A9038))
 
 EXPORT extern const char *gObjFile;
+//#define G_OBJ_FILE (gObjFile)
+#define G_OBJ_FILE (*reinterpret_cast<const char**>(0x006B4674))
 EXPORT extern u8 gWhatIf;
 
 EXPORT extern CVector ZeroVector;

@@ -197,10 +197,22 @@ public:
 
 EXPORT CBaddy* FindBaddyOfType(int);
 EXPORT extern CBaddy* BaddyList;
+//#define G_BADDY_LIST (BaddyList)
+#define G_BADDY_LIST (*reinterpret_cast<CBaddy**>(0x0056E990))
+
 EXPORT extern CBody* ControlBaddyList;
+//#define G_CONTROL_BADDY_LIST (ControlBaddyList)
+#define G_CONTROL_BADDY_LIST (*reinterpret_cast<CBody**>(0x0056E994))
+
 EXPORT extern i32 gAttackRelated;
+//#define G_ATTACK_RELATED (gAttackRelated)
+#define G_ATTACK_RELATED (*reinterpret_cast<i32*>(0x005FCCF4))
+
 EXPORT extern i32 gBossRelated;
+
 EXPORT extern u8 gObjFileRegion;
+//#define G_OBJ_FILE_REGION (gObjFileRegion)
+#define G_OBJ_FILE_REGION (*reinterpret_cast<u8*>(0x006B3824))
 
 void validate_CBaddy(void);
 void validate_CScriptOnlyBaddy(void);
