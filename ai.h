@@ -160,4 +160,6 @@ void validate_CAIProc_AccZ(void);
 void validate_SMoveToInfo(void);
 void validate_CAIProc_MoveTo(void);
 
+void patch_ai(void);
+
 #endif

@@ -1,4 +1,5 @@
 #include "ai.h"
+#include "my_patch.h"
 #include "validate.h"
 #include <cmath>
 #include "ps2funcs.h"
@@ -648,4 +649,29 @@ void validate_CAIProc_MoveTo(void)
 	VALIDATE(CAIProc_MoveTo, field_2C, 0x2C);
 	VALIDATE(CAIProc_MoveTo, field_30, 0x30);
 	VALIDATE(CAIProc_MoveTo, field_3C, 0x3C);
+}
+
+// @Bogus
+// CAIProc_RotY is missing on purpose. Its Execute lives at 0x401110 in the
+// exe and does real work (adds field_24 to the baddy yaw every frame, counts
+// field_20 down, then raises field_14 in field_288). Our CAIProc_RotY::Execute
+// in ai.h is an empty inline body, so hooking the constructor would stamp our
+// vtable on the object and kill the rotation. The exe keeps that class.
+void patch_ai(void)
+{
+	PATCH_PUSH_RET_POLY(0x00401180, CAIProc_LookAt::CAIProc_LookAt, "??0CAIProc_LookAt@@QAE@PAVCBaddy@@PAVCBody@@PAVCVector@@HHH@Z");
+	PATCH_PUSH_RET_POLY(0x004012F0, CAIProc_LookAt::CAIProc_LookAt, "??0CAIProc_LookAt@@QAE@PAVCBaddy@@HHHH@Z");
+	PATCH_PUSH_RET_POLY(0x004013D0, CAIProc_LookAt::Execute, "?Execute@CAIProc_LookAt@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004015C0, CAIProc_Fall::CAIProc_Fall, "??0CAIProc_Fall@@QAE@PAVCBaddy@@H@Z");
+	PATCH_PUSH_RET_POLY(0x00401650, CAIProc_Fall::Execute, "?Execute@CAIProc_Fall@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004016B0, CAIProc_AccZ::CAIProc_AccZ, "??0CAIProc_AccZ@@QAE@PAVCBaddy@@HHH@Z");
+	PATCH_PUSH_RET_POLY(0x004017C0, CAIProc_AccZ::Execute, "?Execute@CAIProc_AccZ@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004018D0, CAIProc_MoveTo::CAIProc_MoveTo, "??0CAIProc_MoveTo@@QAE@PAVCBaddy@@PAUSMoveToInfo@@H@Z");
+	PATCH_PUSH_RET_POLY(0x00401AD0, CAIProc_MoveTo::Execute, "?Execute@CAIProc_MoveTo@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00401C40, CAIProc_MonitorAttack::CAIProc_MonitorAttack, "??0CAIProc_MonitorAttack@@QAE@PAVCBaddy@@HHHH@Z");
+	PATCH_PUSH_RET_POLY(0x00401D50, CAIProc_MonitorAttack::~CAIProc_MonitorAttack, "??1CAIProc_MonitorAttack@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00401DD0, CAIProc_MonitorAttack::Execute, "?Execute@CAIProc_MonitorAttack@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00401E60, CAIProc_StateSwitchSendMessage::CAIProc_StateSwitchSendMessage, "??0CAIProc_StateSwitchSendMessage@@QAE@PAVCBaddy@@H@Z");
+	PATCH_PUSH_RET_POLY(0x00401ED0, CAIProc::~CAIProc, "??1CAIProc@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00401F10, CAIProc_StateSwitchSendMessage::Execute, "?Execute@CAIProc_StateSwitchSendMessage@@UAEXXZ");
 }
