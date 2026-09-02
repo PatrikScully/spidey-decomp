@@ -1,4 +1,5 @@
 #include "blackcat.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "trig.h"
 #include "m3dutils.h"
@@ -1023,4 +1024,23 @@ void validate_CBlackCat(void){
 
 	VALIDATE(CBlackCat, field_34C, 0x34C);
 	VALIDATE(CBlackCat, field_350, 0x350);
+}
+
+// @Bogus
+// The constructor stays in the exe. Our CBlackCat has no Hit, but the original
+// vtable at 0x53B448 puts a "return 0" stub (0x4B0D60) in slot 3, so stamping
+// our vtable would fall back to CBody::Hit and Black Cat would start taking
+// damage. BlackCat_CreateBlackCat and BlackCat_RelocatableModuleInit go with
+// it, they build (or hand out the pointer that builds) that same object.
+void patch_blackcat(void)
+{
+	PATCH_PUSH_RET(0x004138D0, BlackCat_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x00413AA0, CBlackCat::~CBlackCat, "??1CBlackCat@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00413B60, CBlackCat::AI, "?AI@CBlackCat@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00413FE0, CBlackCat::KillCommandBlock, "?KillCommandBlock@CBlackCat@@QAEPAHPAH@Z");
+	PATCH_PUSH_RET_POLY(0x00414050, CBlackCat::SynthesizeAnalogueInput, "?SynthesizeAnalogueInput@CBlackCat@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00414B00, CBlackCat::Shouldnt_DoPhysics_Be_Virtual, "?Shouldnt_DoPhysics_Be_Virtual@CBlackCat@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00414B10, CBlackCat::DoPhysics, "?DoPhysics@CBlackCat@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00414C50, CBlackCat::DoMGSShadow, "?DoMGSShadow@CBlackCat@@QAEXXZ");
 }
