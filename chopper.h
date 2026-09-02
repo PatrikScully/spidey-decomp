@@ -287,4 +287,6 @@ EXPORT void Chopper_CreateChopper(const u32*, u32*);
 EXPORT void Chopper_RelocatableModuleInit(reloc_mod *);
 EXPORT void Chopper_RelocatableModuleClear(void);
 
+void patch_chopper(void);
+
 #endif
