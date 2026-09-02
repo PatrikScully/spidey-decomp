@@ -5,6 +5,18 @@
 #include "m3dinit.h"
 #include "SpideyDX.h"
 
+// These eleven globals stay repo local. I scanned the whole exe for each
+// address and every single reference sits inside the five functions in this
+// file, all of which patch_flash hooks (Flash_Display has exactly one caller,
+// Display+0x401 at 0x004559A1, and that is the call PATCH_CALL redirects), so
+// the exe never touches its own copies once we are hooked. Addresses read out
+// of the original: FadeCountdown 0x005FAA64, FlashCountdown 0x005FAA5C,
+// Fading 0x005FAA60, CurrentImportance 0x005FAA54, FlashSort 0x005FAA58,
+// CurrentR 0x005FAA14, CurrentG 0x005FAA00, CurrentB 0x005FAA04,
+// dR 0x005FA9FC, dG 0x005FA9F8, dB 0x005FA9F4 (Flash_Reset 0x0043D800,
+// Flash_Screen 0x0043D830 and Flash_Update 0x0043D8C0 store them in that
+// order). dB and dG match idb_globals.txt.
+
 // @Ok
 EXPORT i32 FadeCountdown;
 // @Ok

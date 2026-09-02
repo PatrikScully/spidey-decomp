@@ -305,6 +305,13 @@ void validate_SHitInfo(void);
 void validate_SLight(void);
 
 EXPORT extern CItem* EnviroList;
+
+// Spool_Init, ClearRegion and the region loader in spool.cpp write this, and
+// none of them is hooked, so the exe's copy is the live one. Exp_HitEnvItem
+// reads it as mov eax,[6B2EFCh] at 0x0043C498. Confirmed as EnviroList in
+// idb_globals.txt.
+//#define G_ENVIRO_LIST (EnviroList)
+#define G_ENVIRO_LIST (*reinterpret_cast<CItem**>(0x006B2EFC))
 EXPORT extern CBody* EnvironmentalObjectList;
 EXPORT extern CBody* SuspendedList;
 

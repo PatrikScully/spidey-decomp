@@ -9,6 +9,15 @@
 #include "weapons.h"
 
 EXPORT extern CBody* BulletList;
+
+// The exe owns this list head. SpideyMain runs Ob_AI(&BulletList) and
+// M3d_Render(BulletList) on the exe's copy every frame and neither is hooked,
+// so anything we attach to our own copy would never move or draw. Address read
+// out of the original: C3DExplosion's constructor pushes 56EFE4h into
+// CBody::AttachTo at 0x0043CC13, its destructor pushes the same into
+// CBody::DeleteFrom at 0x0043CD53. Confirmed as BulletList in idb_globals.txt.
+//#define G_BULLET_LIST (BulletList)
+#define G_BULLET_LIST (*reinterpret_cast<CBody**>(0x0056EFE4))
 enum HitId
 {
 	ALWAYS_TWENTY_NINE = 29,

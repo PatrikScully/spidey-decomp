@@ -11,6 +11,13 @@
 i32 g3DExplosions;
 i32 gWibblingExpCount;
 
+// Only exp.cpp touches this counter (16 references in the original, all inside
+// the CWibbling3DExplosion constructor, its destructor and Exp_Big3DExplosion,
+// e.g. mov ecx,[5FA954h] at 0x0043CF43). It is still a mutable global, so it
+// goes through the exe's copy while the subsystem is only half ours.
+//#define G_WIBBLING_EXP_COUNT (gWibblingExpCount)
+#define G_WIBBLING_EXP_COUNT (*reinterpret_cast<i32*>(0x005FA954))
+
 // @Ok
 // @Matching
 void C3DExplosion::AI(void)
@@ -74,7 +81,7 @@ C3DExplosion::C3DExplosion(
 		i32 a11,
 		i32 a12)
 {
-	this->AttachTo(&BulletList);
+	this->AttachTo(&G_BULLET_LIST);
 	this->InitItem(a3);
 	this->mModel = a4;
 	this->mPos = *a2;
@@ -107,7 +114,7 @@ C3DExplosion::C3DExplosion(
 // @Matching
 INLINE C3DExplosion::~C3DExplosion(void)
 {
-	this->DeleteFrom(&BulletList);
+	this->DeleteFrom(&G_BULLET_LIST);
 }
 
 // @Ok
@@ -151,7 +158,7 @@ CGrenadeExplosion::CGrenadeExplosion(const CVector* a2)
 	this->hExp = Mem_MakeHandle(pExp);
 
 	new C3DExplosion(a2, "expgrnd", 1, 0, 0, 500, 256, 0, 7, 0, 0);
-	++g3DExplosions;
+	++G_3D_EXPLOSIONS;
 }
 
 // @Ok
@@ -168,7 +175,7 @@ void CGrenadeExplosion::Move(void)
 // @Matching
 CGrenadeExplosion::~CGrenadeExplosion(void)
 {
-	--g3DExplosions;
+	--G_3D_EXPLOSIONS;
 }
 
 // @Ok
@@ -383,14 +390,14 @@ INLINE CWibbling3DExplosion::CWibbling3DExplosion(
 		i32 a12)
 	: C3DExplosion(a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12)
 {
-	gWibblingExpCount++;
+	G_WIBBLING_EXP_COUNT++;
 }
 
 // @Ok
 // @Matching
 CWibbling3DExplosion::~CWibbling3DExplosion(void)
 {
-	gWibblingExpCount--;
+	G_WIBBLING_EXP_COUNT--;
 }
 
 // @Ok
@@ -574,7 +581,7 @@ void Exp_HitEnvItem(CItem* pItem, u32* pFace, i32 Damage)
 {
 	if (pItem && (pItem->mFlags & 1) == 0)
 	{
-		CItem* pScan = EnviroList;
+		CItem* pScan = G_ENVIRO_LIST;
 		while (pScan)
 		{
 			if (pScan == pItem)
@@ -585,8 +592,8 @@ void Exp_HitEnvItem(CItem* pItem, u32* pFace, i32 Damage)
 		if (!pScan)
 			return;
 
-		print_if_false(PSXRegion[pItem->mRegion].Usable != 0, "Eh? Env item spooled out??");
-		SModel* v4 = PSXRegion[pItem->mRegion].ppModels[pItem->mModel];
+		print_if_false(G_PSXREGION[pItem->mRegion].Usable != 0, "Eh? Env item spooled out??");
+		SModel* v4 = G_PSXREGION[pItem->mRegion].ppModels[pItem->mModel];
 
 		if (v4->Flags)
 		{
@@ -723,4 +730,57 @@ void validate_CRipple(void)
 	VALIDATE(CRipple, field_60, 0x60);
 	VALIDATE(CRipple, field_64, 0x64);
 	VALIDATE(CRipple, field_68, 0x68);
+}
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_exp(void)
+{
+	PATCH_PUSH_RET_POLY(0x0043BEE0, CGlowFlash::CGlowFlash, "??0CGlowFlash@@QAE@PAVCVector@@HEEEHEEEHHHHHHHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C030, CGlowFlash::~CGlowFlash, "??1CGlowFlash@@UAE@XZ");
+	PATCH_PUSH_RET(0x0043C040, CGlowFlash::ChooseRadii);
+	PATCH_PUSH_RET_POLY(0x0043C0D0, CGlowFlash::Move, "?Move@CGlowFlash@@UAEXXZ");
+
+	PATCH_PUSH_RET(0x0043C150, Exp_GlowFlash);
+
+	PATCH_PUSH_RET_POLY(0x0043C250, CFlameExplosion::CFlameExplosion, "??0CFlameExplosion@@QAE@PBVCVector@@HHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C2C0, CFlameExplosion::~CFlameExplosion, "??1CFlameExplosion@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x0043C330, Exp_Frag);
+	PATCH_PUSH_RET(0x0043C3E0, Exp_BigExplosion);
+	PATCH_PUSH_RET(0x0043C430, Exp_SmallExplosion);
+	PATCH_PUSH_RET(0x0043C480, Exp_HitEnvItem);
+
+	PATCH_PUSH_RET_POLY(0x0043C580, CRipple::CRipple, "??0CRipple@@QAE@PBVCVector@@EEEHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C6B0, CRipple::Move, "?Move@CRipple@@UAEXXZ");
+
+	// The linker folded ~CRipple and ~CGrenadeWave into one body at 0x0043C7E0
+	// (both are empty, and the vtable store MSVC puts at the top of
+	// ~CGrenadeWave is dead because ~CRipple overwrites it right away). The
+	// exe stores CRipple's vtable 0x0053B800 there, and CRipple's scalar
+	// deleting destructor at 0x0043C690 serves both classes, so ~CRipple is
+	// the one that goes in. ~CGrenadeWave has no address of its own.
+	PATCH_PUSH_RET_POLY(0x0043C7E0, CRipple::~CRipple, "??1CRipple@@UAE@XZ");
+
+	PATCH_PUSH_RET_POLY(0x0043C750, CGrenadeWave::CGrenadeWave, "??0CGrenadeWave@@QAE@PBVCVector@@EEEHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C7F0, CGrenadeWave::Move, "?Move@CGrenadeWave@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x0043C820, CItemFrag::CItemFrag, "??0CItemFrag@@QAE@PAIPAVCVector@@1H@Z");
+	PATCH_PUSH_RET_POLY(0x0043C9E0, CItemFrag::~CItemFrag, "??1CItemFrag@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0043C9F0, CItemFrag::Move, "?Move@CItemFrag@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x0043CBF0, C3DExplosion::C3DExplosion, "??0C3DExplosion@@QAE@PBVCVector@@PADHHHHHHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043CD30, C3DExplosion::~C3DExplosion, "??1C3DExplosion@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0043CD90, C3DExplosion::AI, "?AI@C3DExplosion@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x0043CEA0, CWibbling3DExplosion::CWibbling3DExplosion, "??0CWibbling3DExplosion@@QAE@PBVCVector@@PADHHHHHHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043CF20, CWibbling3DExplosion::~CWibbling3DExplosion, "??1CWibbling3DExplosion@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x0043CF90, Exp_Big3DExplosion);
+	PATCH_PUSH_RET(0x0043D490, GetRandomPosition);
+
+	PATCH_PUSH_RET_POLY(0x0043D500, CGrenadeExplosion::CGrenadeExplosion, "??0CGrenadeExplosion@@QAE@PBVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x0043D620, CGrenadeExplosion::~CGrenadeExplosion, "??1CGrenadeExplosion@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0043D640, CGrenadeExplosion::Move, "?Move@CGrenadeExplosion@@UAEXXZ");
 }
