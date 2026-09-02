@@ -206,6 +206,8 @@ EXPORT void Panel_SetStretchedScreenCoords(i32,i32,POLY_FT4 *,SAnimFrame *,i32,i
 EXPORT void Panel_SetStretchedScreenCoords(i32,i32,POLY_FT4 *, const Texture *,i32,i32);
 EXPORT void Panel_UpdateTimer(void);
 
+void patch_panel(void);
+
 void validate_SAnimFrame(void);
 void validate_Texture(void);
 void validate_POLY_FT4(void);

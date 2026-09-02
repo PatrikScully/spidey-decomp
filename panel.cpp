@@ -1782,3 +1782,55 @@ void validate_POLY_F4(void)
 	VALIDATE(POLY_F4, y3, 0x16);
 }
 
+#include "my_patch.h"
+
+// @Bogus
+void patch_panel(void)
+{
+	// Not hooked, and why:
+	//
+	// Panel_Display (0x4658C0) and Panel_DisplayTimer (0x461D00) read and
+	// write the l1a3bomb.cpp countdown globals (gBombDieRelatedOne 0x60F771,
+	// gBombDieRelatedTwo 0x60F772, gBombAIRelated 0x60F774,
+	// gBombDieTimerRelated 0x60F778, gBombRelated 0x54E8D4) and Panel_Display
+	// also reads spidey.cpp's gSpideyAnim / gSpideyAnimTwo (0x60F750 /
+	// 0x60F754). Those are still plain repo globals owned by other files, and
+	// their writers (CL1A3Bomb::AI, Training_MonitorLevel,
+	// Spidey_LoadAlternativeHealthIcon, CPlayer::CPlayer) are not hooked, so
+	// our copies would stay zero. They need G_* macros in l1a3bomb.h and
+	// spidey.h first.
+	//
+	// gsub_4015B0 (0x4015B0) is a single "ret", too short for a 6 byte hook.
+	//
+	// PanelDisp_DrawIcon, PanelCompass_DrawNeedleHalf and
+	// PanelHB_DrawIconOverlay are our own helpers, the original repeats them
+	// inline, so there is no address to hook.
+	PATCH_PUSH_RET(0x00461CA0, Panel_Init);
+
+	PATCH_PUSH_RET_POLY(0x004624A0, DCPanel_DrawTexturedPoly, "?DCPanel_DrawTexturedPoly@@YAXMPAUPOLY_FT4@@PBUSAnimFrame@@I@Z");
+	PATCH_PUSH_RET_POLY(0x004626A0, DCPanel_DrawTexturedPoly, "?DCPanel_DrawTexturedPoly@@YAXMPAUPOLY_FT4@@PBUSAnimFrame@@HHHHHI@Z");
+	PATCH_PUSH_RET_POLY(0x00462930, DCPanel_DrawTexturedPoly, "?DCPanel_DrawTexturedPoly@@YAXMPAUPOLY_FT4@@PBUTexture@@I@Z");
+
+	PATCH_PUSH_RET_POLY(0x00462B30, Panel_DrawTexturedPoly, "?Panel_DrawTexturedPoly@@YAHPAUSAnimFrame@@HHH@Z");
+	PATCH_PUSH_RET_POLY(0x00462B90, Panel_DrawTexturedPoly, "?Panel_DrawTexturedPoly@@YAHPAUSAnimFrame@@H@Z");
+	PATCH_PUSH_RET_POLY(0x00462BB0, Panel_DrawTexturedPoly, "?Panel_DrawTexturedPoly@@YAHPAUTexture@@H@Z");
+
+	PATCH_PUSH_RET_POLY(0x00462C30, Panel_SetStretchedScreenCoords, "?Panel_SetStretchedScreenCoords@@YAXHHPAUPOLY_FT4@@PAUSAnimFrame@@HH@Z");
+	PATCH_PUSH_RET_POLY(0x00462CD0, Panel_SetStretchedScreenCoords, "?Panel_SetStretchedScreenCoords@@YAXHHPAUPOLY_FT4@@PBUTexture@@HH@Z");
+
+	PATCH_PUSH_RET(0x00462D60, DCPanel_DrawFlatShadedPoly);
+	PATCH_PUSH_RET(0x00462EC0, Panel_DrawFlatShadedPoly);
+
+	PATCH_PUSH_RET_POLY(0x00462FB0, DCDrawGouraudPoly, "?DCDrawGouraudPoly@@YAXMHHHHIIII@Z");
+	PATCH_PUSH_RET_POLY(0x004631C0, DCDrawGouraudPoly, "?DCDrawGouraudPoly@@YAXMPAUPOLY_GT4@@PAUTexture@@H@Z");
+
+	PATCH_PUSH_RET(0x00463610, Panel_CreateHealthBar);
+	PATCH_PUSH_RET(0x004637F0, Panel_DestroyHealthBar);
+	PATCH_PUSH_RET(0x00463800, Panel_CreateCompass);
+	PATCH_PUSH_RET(0x00463850, Panel_DestroyCompass);
+	PATCH_PUSH_RET(0x00463860, Panel_DisplayCompass);
+	PATCH_PUSH_RET(0x00464270, Panel_DisplayHealthBar);
+
+	// The out of line debug print helper at 0x46CB90 that this file owns.
+	PATCH_PUSH_RET(0x0046CB90, gsub_46CB90);
+}

@@ -431,6 +431,8 @@ void validate_CKnottedWebSplat(void);
 void validate_CDomePiece(void);
 void validate_CDome(void);
 void validate_CDomeRing(void);
+void patch_web(void);
+
 void validate_CWeb(void);
 void validate_CSwinger(void);
 void validate_CSplat(void);

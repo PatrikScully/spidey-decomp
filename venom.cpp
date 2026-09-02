@@ -1115,3 +1115,52 @@ void validate_CVenomHitSpark(void)
 	VALIDATE_SIZE(CVenomHitSpark, 0x84);
 }
 
+#include "my_patch.h"
+
+// @Bogus
+void patch_venom(void)
+{
+	// Not hooked, and why:
+	//
+	// CVenom::CVenom (0x4E9600) and Venom_CreateVenom (0x4E7D90, which is
+	// just "new CVenom"). The exe's CVenom vtable (0x53C6B8, 19 slots) has
+	// CVenom_AI (0x4EC040) in slot 2 and CVenom_Hit (0x4EB7F0) in slot 3.
+	// Our CVenom declares neither, so hooking the constructor would stamp a
+	// vtable where both fall back to CBaddy and the boss would stop
+	// thinking and stop reacting to hits. Venom_RelocatableModuleInit
+	// (0x4E7D30) is skipped for the same reason: all it does is install
+	// Venom_CreateVenom's address into the reloc table.
+	//
+	// CVenom::Shouldnt_DoPhysics_Be_Virtual is the 5 byte jump thunk at
+	// 0x4EBDC0, too short for a 6 byte hook (and patching it would run into
+	// CVenom_DoPhysics at 0x4EBDD0, which is hooked below anyway).
+	//
+	// CVenomHitSpark::Move shares its body with CCarnageHitSpark::Move
+	// (0x41A240, link folded); carnage.cpp already hooks that address.
+	//
+	// CVenomWrap::Die, CVenomElectrified::CVenomElectrified,
+	// CVenom::PlayNextFootstepSFX and CVenom::GetTargetPosFromNode have no
+	// address of their own in the PC build, the compiler inlined them into
+	// their callers (CVenom_AI and CVenom::ScanNodesForJumpTarget).
+	PATCH_PUSH_RET(0x004E7D50, Venom_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004E7E10, Venom_DisplayProgressBar);
+
+	PATCH_PUSH_RET_POLY(0x004E8990, CVenomHitSpark::CVenomHitSpark, "??0CVenomHitSpark@@QAE@PBVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x004E8D60, CVenomHitSpark::~CVenomHitSpark, "??1CVenomHitSpark@@UAE@XZ");
+
+	PATCH_PUSH_RET_POLY(0x004E9960, CVenom::~CVenom, "??1CVenom@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x004EB690, CVenom::ResolveSwitchNodes);
+	PATCH_PUSH_RET(0x004EBDD0, CVenom::DoPhysics);
+
+	PATCH_PUSH_RET_POLY(0x004ECED0, CVenom::EnterWaitState, "?EnterWaitState@CVenom@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004ECF00, CVenom::ExitWaitState, "?ExitWaitState@CVenom@@UAEXII@Z");
+
+	PATCH_PUSH_RET(0x004ED330, CVenom::VenomDie);
+
+	PATCH_PUSH_RET_POLY(0x004EF6A0, CVenom::TugImpulse, "?TugImpulse@CVenom@@UAEEPAVCVector@@00@Z");
+	PATCH_PUSH_RET_POLY(0x004F0E90, CVenom::CreateCombatImpactEffect, "?CreateCombatImpactEffect@CVenom@@UAEXPAVCVector@@H@Z");
+
+	PATCH_PUSH_RET(0x004F0F00, CVenom::PulseL6A4Node);
+	PATCH_PUSH_RET(0x004F0FB0, CVenom::AdjustWaterModel);
+}

@@ -586,3 +586,25 @@ void Screen_TargetOn(bool value)
 	G_SCREEN_TARGET = value;
 }
 
+#include "my_patch.h"
+
+// @Bogus
+void patch_screen(void)
+{
+	// Every global this file touches now points into the exe (see the macro
+	// block at the top), so all seven functions are safe to run against the
+	// game's own state.
+	//
+	// Two addresses do not match tools/names.json, they follow CLAUDE.md's
+	// 2026-08-27 note: 0x48AA50 is Screen_SetTarget (names.json says
+	// Screen_DrawTarget) and the real Screen_DrawTarget is the unnamed
+	// sub_48AA90. 0x48AFE0 is Screen_UpdateFades with screen_DrawCircularFade
+	// inlined into it.
+	PATCH_PUSH_RET(0x0048A820, Screen_SepiaFade);
+	PATCH_PUSH_RET(0x0048AA40, Screen_TargetOn);
+	PATCH_PUSH_RET(0x0048AA50, Screen_SetTarget);
+	PATCH_PUSH_RET(0x0048AA90, Screen_DrawTarget);
+	PATCH_PUSH_RET(0x0048AE30, Screen_DrawArrow);
+	PATCH_PUSH_RET(0x0048AFB0, Screen_StartCircularFadeIn);
+	PATCH_PUSH_RET(0x0048AFE0, Screen_UpdateFades);
+}
