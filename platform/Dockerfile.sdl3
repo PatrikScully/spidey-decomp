@@ -1,0 +1,25 @@
+# Builds the standalone game (32 bit, SDL3 + OpenGL backend) without touching
+# the host's packages. From the repo root:
+#
+#   git archive --format=tar --prefix=src/ HEAD > /tmp/ctx.tar
+#   tar -rf /tmp/ctx.tar --transform 's,^platform/,,' platform/Dockerfile.sdl3
+#   docker build -t spidey-sa -f Dockerfile.sdl3 - < /tmp/ctx.tar
+#   id=$(docker create spidey-sa); docker cp $id:/out ./sa-run; docker rm $id
+#
+# /out then holds spider (the game) and the i386 libSDL3.so.0 it needs.
+FROM ubuntu:26.04
+
+RUN dpkg --add-architecture i386 \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      g++ g++-multilib cmake make pkg-config \
+      libsdl3-dev:i386 libgl-dev:i386 \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY src /src
+WORKDIR /src
+RUN cmake -B out-sa -DSPIDEY_STANDALONE=ON -DSPIDEY_BACKEND=sdl3 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+ && cmake --build out-sa -j"$(nproc)" \
+ && mkdir -p /out \
+ && cp out-sa/spider /out/ \
+ && cp -L /usr/lib/i386-linux-gnu/libSDL3.so.0 /out/

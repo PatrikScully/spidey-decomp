@@ -71,7 +71,11 @@ int main(int argc, char** argv)
 	gMMXSupport = 1;
 
 	PCTIMER_Init();
-	DXINIT_DirectX8(0, 0, 2);   // creates the window in the standalone build
+	// bit 0 of the flags is the game's "windowed" option (gDxOptionRelated:
+	// Blt to the window instead of a fullscreen Flip). Windowed by default,
+	// SPIDEY_FULLSCREEN=1 for fullscreen. Bit 1 = depth buffer.
+	i32 dxFlags = getenv("SPIDEY_FULLSCREEN") ? 2 : 3;
+	DXINIT_DirectX8(0, 0, dxFlags);   // creates the window in the standalone build
 
 	SpideyMain();
 
