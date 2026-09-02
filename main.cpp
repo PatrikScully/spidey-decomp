@@ -162,7 +162,7 @@ static char ** const gDebugBanner = reinterpret_cast<char**>(0x0060CF9C);
 // ten dwords in a row, each one a "draw this list" switch that Display reads
 // once, right before the matching M3d_Render call. Kept as one indexed block
 // rather than ten names because they are contiguous and used identically:
-// 0 EnviroList, 1 EnvironmentalObjectList, 2 the player, 3 the player's extra
+// 0 EnviroList, 1 G_ENVIRONMENTAL_OBJECT_LIST, 2 the player, 3 the player's extra
 // body parts, 4 MiscellaneousRenderingList, 5 MiscList, 6 BaddyList,
 // 7 BulletList, 8 PowerUpList, 9 BackgroundList.
 static i32 * const gRenderListFlags = reinterpret_cast<i32*>(0x0054D350);
@@ -375,7 +375,7 @@ void Logic(void)
 		Ob_AI(&PowerUpList, 0);
 		Ob_AI(&BulletList, 0);
 		Ob_AI(&MiscList, 0);
-		Ob_AI(&EnvironmentalObjectList, 0);
+		Ob_AI(&G_ENVIRONMENTAL_OBJECT_LIST, 0);
 		Ob_AI(reinterpret_cast<CBody**>(&BackgroundList), 0);
 		Ob_AI(reinterpret_cast<CBody**>(&BaddyList), 0);
 		Ob_AI(&ControlBaddyList, 0);
@@ -486,7 +486,7 @@ void Display(void)
 		M3d_Render(EnviroList);
 
 	if (gRenderListFlags[1])
-		M3d_Render(EnvironmentalObjectList);
+		M3d_Render(G_ENVIRONMENTAL_OBJECT_LIST);
 
 	Music_MusicUpdate();
 
