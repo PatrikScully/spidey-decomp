@@ -265,4 +265,6 @@ EXPORT void Effects_UnElectrify(CSuper*);
 // 0xC16175F4). Kept in the signature because the original still takes it.
 EXPORT void Effects_FootStomp(CVector*, u32);
 
+void patch_effects(void);
+
 #endif
