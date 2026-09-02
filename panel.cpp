@@ -27,22 +27,65 @@
 
 #include "validate.h"
 
-EXPORT i32 gHealthBarItemType;
-EXPORT i32 gHealthBarRelated;
-EXPORT i32 gHealthBarRelatedTwo;
-EXPORT Texture* gHealthBarTextures[5];
+// The HUD state block at 0x0060F654..0x0060F78F. Every address below is the
+// operand of the store or load named in its comment. All of these stay file
+// local, nothing outside panel.cpp reads them today.
 
+// Panel_CreateHealthBar (0x463610) writes the boss item type at 0x60F654
+// ("mov [60F654h],eax") and the five boss textures at 0x60F658..0x60F668
+// (one store per Spool_FindTextureEntry result), then the two health
+// snapshots at 0x60F744 (first bar) and 0x60F748 (second bar).
+EXPORT i32 gHealthBarItemType;
+//#define G_HEALTH_BAR_ITEM_TYPE (gHealthBarItemType)
+#define G_HEALTH_BAR_ITEM_TYPE (*reinterpret_cast<i32*>(0x0060F654))
+
+EXPORT i32 gHealthBarRelated;
+//#define G_HEALTH_BAR_RELATED (gHealthBarRelated)
+#define G_HEALTH_BAR_RELATED (*reinterpret_cast<i32*>(0x0060F744))
+
+EXPORT i32 gHealthBarRelatedTwo;
+//#define G_HEALTH_BAR_RELATED_TWO (gHealthBarRelatedTwo)
+#define G_HEALTH_BAR_RELATED_TWO (*reinterpret_cast<i32*>(0x0060F748))
+
+EXPORT Texture* gHealthBarTextures[5];
+//#define G_HEALTH_BAR_TEXTURES (gHealthBarTextures)
+#define G_HEALTH_BAR_TEXTURES (reinterpret_cast<Texture**>(0x0060F658))
+
+// Panel_CreateCompass (0x463800) writes the three components at
+// 0x60F708/0x60F70C/0x60F710 and sets the status byte at 0x60F77C;
+// Panel_DestroyCompass (0x463850) clears the same byte.
 // @FIXME
 EXPORT CVector gCompassPosition;
+//#define G_COMPASS_POSITION (gCompassPosition)
+#define G_COMPASS_POSITION (*reinterpret_cast<CVector*>(0x0060F708))
 
 EXPORT u8 gCompassStatus;
+//#define G_COMPASS_STATUS (gCompassStatus)
+#define G_COMPASS_STATUS (*reinterpret_cast<u8*>(0x0060F77C))
 
+// Panel_Init (0x461CA0) hands these three addresses to Spool_AnimAccess in
+// this order: 0x60F758 "Sp", 0x60F75C "Compass", 0x60F760 "Webcart".
 EXPORT SAnimFrame* gAnimSp;
-EXPORT SAnimFrame* gAnimCompass;
-EXPORT SAnimFrame* gAnimWebcart;
+//#define G_ANIM_SP (gAnimSp)
+#define G_ANIM_SP (*reinterpret_cast<SAnimFrame**>(0x0060F758))
 
+EXPORT SAnimFrame* gAnimCompass;
+//#define G_ANIM_COMPASS (gAnimCompass)
+#define G_ANIM_COMPASS (*reinterpret_cast<SAnimFrame**>(0x0060F75C))
+
+EXPORT SAnimFrame* gAnimWebcart;
+//#define G_ANIM_WEBCART (gAnimWebcart)
+#define G_ANIM_WEBCART (*reinterpret_cast<SAnimFrame**>(0x0060F760))
+
+// Panel_DestroyHealthBar (0x4637F0) zeroes exactly these two
+// ("mov [60F788h],eax; mov [60F78Ch],eax").
 EXPORT CBody* gHealthBarOne;
+//#define G_HEALTH_BAR_ONE (gHealthBarOne)
+#define G_HEALTH_BAR_ONE (*reinterpret_cast<CBody**>(0x0060F788))
+
 EXPORT CBody* gHealthBarTwo;
+//#define G_HEALTH_BAR_TWO (gHealthBarTwo)
+#define G_HEALTH_BAR_TWO (*reinterpret_cast<CBody**>(0x0060F78C))
 
 
 // real translation (0x4631c0, 1091 bytes). Two near-duplicate blocks
@@ -377,8 +420,8 @@ EXPORT void gsub_4015B0(void*)
 // @Ok
 void Panel_CreateCompass(CVector * pVec)
 {
-	gCompassPosition = *pVec >> 12;
-	gCompassStatus = 1;
+	G_COMPASS_POSITION = *pVec >> 12;
+	G_COMPASS_STATUS = 1;
 }
 
 // screen Y offset for the HUD (runtime value, 0 at boot). Moved up from its
@@ -463,7 +506,7 @@ static void PanelDisp_DrawIcon(SAnimFrame *pFrame, i32 x, i32 y, i32 w, i32 h)
 // dword_60F774 = gBombAIRelated, dword_60F778 = gBombDieTimerRelated,
 // dword_54E8D4 = gBombRelated (all l1a3bomb.h), dword_56FB04/dword_5FCD1C =
 // pPoly/PolyBufferEnd (db.h), dword_60F76C = gPanelScreenY (above),
-// dword_60F758/60F760 = gAnimSp/gAnimWebcart (top of this file),
+// dword_60F758/60F760 = G_ANIM_SP/G_ANIM_WEBCART (top of this file),
 // dword_60F750/60F754 = gSpideyAnim/gSpideyAnimTwo (spidey.cpp, see the extern
 // block below), word_610C48 = rcossin_tbl (ps2funcs.h, read with the same
 // "2*i" u16 stride Panel_DisplayCompass already uses), dword_568158/568154/
@@ -523,10 +566,10 @@ void Panel_Display(void)
 
 	Panel_DisplayCompass();
 
-	POLY_FT4 *pWebcart = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(gAnimWebcart->pTexture, 0));
+	POLY_FT4 *pWebcart = reinterpret_cast<POLY_FT4*>(Panel_DrawTexturedPoly(G_ANIM_WEBCART->pTexture, 0));
 	if (pWebcart != 0)
 	{
-		Panel_SetStretchedScreenCoords(80, *gPanelScreenY + 58, pWebcart, gAnimWebcart, 20, 16);
+		Panel_SetStretchedScreenCoords(80, *gPanelScreenY + 58, pWebcart, G_ANIM_WEBCART, 20, 16);
 
 		u8 pulse;
 		if (G_MECHLIST_PLAYER->field_5E8 != 0)
@@ -586,8 +629,8 @@ void Panel_Display(void)
 			pWebcart->v3 = static_cast<u8>(pWebcart->v3 - 1);
 		}
 
-		print_if_false(gAnimWebcart->pTexture != 0, "No WebCartAnim texture.");
-		PanelHB_DrawIconOverlay(pWebcart, gAnimWebcart->pTexture, DCGfx_BlendingMode_0, 6.0f);
+		print_if_false(G_ANIM_WEBCART->pTexture != 0, "No WebCartAnim texture.");
+		PanelHB_DrawIconOverlay(pWebcart, G_ANIM_WEBCART->pTexture, DCGfx_BlendingMode_0, 6.0f);
 	}
 
 	SAnimFrame *pHealthIcon = gSpideyAnimTwo;
@@ -595,16 +638,16 @@ void Panel_Display(void)
 	{
 		pHealthIcon = gSpideyAnim;
 		if (pHealthIcon == 0)
-			pHealthIcon = gAnimSp;
+			pHealthIcon = G_ANIM_SP;
 	}
 	PanelDisp_DrawIcon(pHealthIcon, 67, *gPanelScreenY + 45, 28, 30);
 
 	for (i32 pip = 0; pip < 50; pip += 25)
-		PanelDisp_DrawIcon(&gAnimSp[3], pip + 85, *gPanelScreenY + 36, 15, 15);
+		PanelDisp_DrawIcon(&G_ANIM_SP[3], pip + 85, *gPanelScreenY + 36, 15, 15);
 
-	PanelDisp_DrawIcon(&gAnimSp[4], 132, *gPanelScreenY + 36, 11, 16);
-	PanelDisp_DrawIcon(&gAnimSp[1], 53, *gPanelScreenY + 59, 14, 16);
-	PanelDisp_DrawIcon(&gAnimSp[2], 53, *gPanelScreenY + 73, 14, 12);
+	PanelDisp_DrawIcon(&G_ANIM_SP[4], 132, *gPanelScreenY + 36, 11, 16);
+	PanelDisp_DrawIcon(&G_ANIM_SP[1], 53, *gPanelScreenY + 59, 14, 16);
+	PanelDisp_DrawIcon(&G_ANIM_SP[2], 53, *gPanelScreenY + 73, 14, 12);
 
 	if (G_MECHLIST_PLAYER->field_5E9 != 0)
 	{
@@ -705,11 +748,11 @@ static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
 // int) / Panel_SetStretchedScreenCoords(...,SAnimFrame*,...), both already
 // in this file.
 //
-// Globals: byte_60F77C = gCompassStatus (already declared, set by
+// Globals: byte_60F77C = G_COMPASS_STATUS (already declared, set by
 // Panel_CreateCompass/cleared by Panel_DestroyCompass). dword_60F708/70C/
-//710 = gCompassPosition's vx/vy/vz (confirmed via Panel_CreateCompass's own
+//710 = G_COMPASS_POSITION's vx/vy/vz (confirmed via Panel_CreateCompass's own
 // disasm at 0x463800, which writes exactly these three dwords - matches
-// this file's existing `gCompassPosition = *pVec >> 12;`). qword_56F1B4/
+// this file's existing `G_COMPASS_POSITION = *pVec >> 12;`). qword_56F1B4/
 // dword_56F1BC = gMikeCamera[0].Position (idb_globals.txt: 0x56F1B0
 // gMikeCamera; weapons.cpp's Transform() already documents "gMikeCamera[0]
 // .Position split across qword_56F1B4 low/high"); unk_56F224 = the camera
@@ -725,7 +768,7 @@ static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
 // 610C4A = rcossin_tbl's .sin/.cos fields read as a raw u16 array (confirmed
 // by address: 610C4A is 610C48+2, i.e. rcossin_tbl[i].cos read via the same
 // "2*i" stride already used for .sin - the same struct, no new global).
-// dword_60F75C = gAnimCompass (already declared). byte_54D341 = gPrintStubbed
+// dword_60F75C = G_ANIM_COMPASS (already declared). byte_54D341 = gPrintStubbed
 // (ps2funcs.h); its debug-print calls (gsub_46CB90/nullsub_1) are no-ops in
 // this build (see Panel_DisplayHealthBar's comment above) and are omitted.
 //
@@ -736,9 +779,9 @@ static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
 // exactly as ordered in the original rather than dropped as "dead code".
 //
 // The math: builds a camera-relative direction vector from the player/
-// camera position to gCompassPosition, GTE-rotates and normalises it,
+// camera position to G_COMPASS_POSITION, GTE-rotates and normalises it,
 // turns it into a heading angle via ratan2, then builds a 2-triangle flat
-// dial background (pPoly, POLY_F3) plus a 2-quad needle sprite (gAnimCompass,
+// dial background (pPoly, POLY_F3) plus a 2-quad needle sprite (G_ANIM_COMPASS,
 // split left/right down the middle via a U-coordinate swap on the second
 // half) pointing along that heading. The needle brightens (gCompassFlashTimer)
 // right after Panel_CreateCompass and always has a small time-based pulse
@@ -746,15 +789,15 @@ static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
 // @Ok
 void Panel_DisplayCompass(void)
 {
-	if (!gCompassStatus)
+	if (!G_COMPASS_STATUS)
 		return;
 
 	gte_SetRotMatrix(stru_56F224);
 
 	CVector dir;
-	dir.vx = (gCompassPosition.vx - stru_56F1B4->vx) >> 6;
-	dir.vy = (gCompassPosition.vy - stru_56F1B4->vy) >> 6;
-	dir.vz = (gCompassPosition.vz - stru_56F1B4->vz) >> 6;
+	dir.vx = (G_COMPASS_POSITION.vx - stru_56F1B4->vx) >> 6;
+	dir.vy = (G_COMPASS_POSITION.vy - stru_56F1B4->vy) >> 6;
+	dir.vz = (G_COMPASS_POSITION.vz - stru_56F1B4->vz) >> 6;
 
 	gte_ldlvl(reinterpret_cast<VECTOR *>(&dir));
 	gte_rtir();
@@ -804,7 +847,7 @@ void Panel_DisplayCompass(void)
 		p->x2 = (i16)(xOff2 + 432);
 	}
 
-	POLY_FT4 *pNeedle = (POLY_FT4 *)Panel_DrawTexturedPoly(gAnimCompass->pTexture, 0);
+	POLY_FT4 *pNeedle = (POLY_FT4 *)Panel_DrawTexturedPoly(G_ANIM_COMPASS->pTexture, 0);
 	if (pNeedle)
 	{
 		u32 tintColor = (*(u32 *)&pNeedle->r0 & 0xFF000000) | 0x323280;
@@ -821,7 +864,7 @@ void Panel_DisplayCompass(void)
 				*gCompassFlashTimer = 0;
 		}
 
-		Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle, gAnimCompass, 32, 40);
+		Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle, G_ANIM_COMPASS, 32, 40);
 
 		i16 x0 = pNeedle->x0;
 		u8 codeOr2 = pNeedle->code | 2;
@@ -836,12 +879,12 @@ void Panel_DisplayCompass(void)
 		pNeedle->x0 = x0 + halfWidth;
 		pNeedle->x1 = newX1;
 
-		PanelCompass_DrawNeedleHalf(pNeedle, gAnimCompass->pTexture);
+		PanelCompass_DrawNeedleHalf(pNeedle, G_ANIM_COMPASS->pTexture);
 
-		POLY_FT4 *pNeedle2 = (POLY_FT4 *)Panel_DrawTexturedPoly(gAnimCompass->pTexture, 0);
+		POLY_FT4 *pNeedle2 = (POLY_FT4 *)Panel_DrawTexturedPoly(G_ANIM_COMPASS->pTexture, 0);
 		if (pNeedle2)
 		{
-			Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle2, gAnimCompass, 32, 40);
+			Panel_SetStretchedScreenCoords(458, 215 - *gPanelScreenY, pNeedle2, G_ANIM_COMPASS, 32, 40);
 
 			pNeedle2->tpage &= 0xFF9F;
 			pNeedle2->x0 -= halfWidth;
@@ -857,7 +900,7 @@ void Panel_DisplayCompass(void)
 			pNeedle2->u1 = origU0;
 			*(u32 *)&pNeedle2->r0 = tintColor;
 
-			PanelCompass_DrawNeedleHalf(pNeedle2, gAnimCompass->pTexture);
+			PanelCompass_DrawNeedleHalf(pNeedle2, G_ANIM_COMPASS->pTexture);
 		}
 	}
 }
@@ -904,15 +947,15 @@ static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMod
 // to gGameResolutionY/Yres/gGameResolutionX/Xres, the exact same globals
 // this function scales its icon coordinates with).
 //
-// dword_60F788/60F78C = gHealthBarOne/gHealthBarTwo, dword_60F744/60F748 =
-// gHealthBarRelated/gHealthBarRelatedTwo, dword_60F654 = gHealthBarItemType,
-// dword_60F658.."660.."668 = gHealthBarTextures[0..4] (all already declared
+// dword_60F788/60F78C = G_HEALTH_BAR_ONE/G_HEALTH_BAR_TWO, dword_60F744/60F748 =
+// G_HEALTH_BAR_RELATED/G_HEALTH_BAR_RELATED_TWO, dword_60F654 = G_HEALTH_BAR_ITEM_TYPE,
+// dword_60F658.."660.."668 = G_HEALTH_BAR_TEXTURES[0..4] (all already declared
 // at the top of this file, confirmed 1:1 against Panel_CreateHealthBar's
 // own disasm at 0x463610 which writes exactly these five slots per boss
-// case, matching gHealthBarTextures' assignment order in the existing
-// Panel_CreateHealthBar source above). dword_60F758 = gAnimSp (idb_globals
-// confirms 0x60F758 = gAnimSp; SAnimFrame is 8 bytes/VALIDATE_SIZE 0x8, so
-// "dword_60F758 + 8/16/24" are &gAnimSp[1]/[2]/[3]).
+// case, matching G_HEALTH_BAR_TEXTURES' assignment order in the existing
+// Panel_CreateHealthBar source above). dword_60F758 = G_ANIM_SP (idb_globals
+// confirms 0x60F758 = G_ANIM_SP; SAnimFrame is 8 bytes/VALIDATE_SIZE 0x8, so
+// "dword_60F758 + 8/16/24" are &G_ANIM_SP[1]/[2]/[3]).
 //
 // The boss-specific "extra icon" gate fields at absolute offsets 828/829
 // (0x33C/0x33D, Venom-only) were already named fields (CVenom::field_33C/
@@ -932,7 +975,7 @@ static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMod
 // CBody::mCBodyFlags bit 0x40 (already-named field, VALIDATE'd at 0x46) is
 // tested as a "boss destroyed" flag that tears the health bar down.
 // CBody::mHealth (i16 @ 0xE2/226, already named) supplies current health;
-// gHealthBarRelated/RelatedTwo hold the health captured when the bar was
+// G_HEALTH_BAR_RELATED/RelatedTwo hold the health captured when the bar was
 // created (used as the 100% baseline for the percentage-width bar math).
 //
 // The many small per-call x/y/w/h adjustments (0x54E910..0x54E99C) are
@@ -951,25 +994,25 @@ static void PanelHB_DrawIconOverlay(POLY_FT4 *p, Texture *tex, DCGfx_BlendingMod
 // file, tools/functions/4199856.bin), the call is a provable no-op and is
 // omitted below rather than fought into a mismatched declaration.
 //
-// The final block (only reached when gHealthBarItemType == 310 and
-// gHealthBarTextures[2] is set) draws a second, smaller health bar for
-// gHealthBarTwo/gHealthBarRelatedTwo - almost certainly the Jonah Jameson
-// hostage bar shown during the Scorpion fight (gHealthBarTextures[2] for
+// The final block (only reached when G_HEALTH_BAR_ITEM_TYPE == 310 and
+// G_HEALTH_BAR_TEXTURES[2] is set) draws a second, smaller health bar for
+// G_HEALTH_BAR_TWO/G_HEALTH_BAR_RELATED_TWO - almost certainly the Jonah Jameson
+// hostage bar shown during the Scorpion fight (G_HEALTH_BAR_TEXTURES[2] for
 // case 310 is the "jonah" texture, set in Panel_CreateHealthBar above).
 // @Ok
 void Panel_DisplayHealthBar(void)
 {
-	if (gHealthBarOne == 0)
+	if (G_HEALTH_BAR_ONE == 0)
 		return;
 
-	if (gHealthBarOne->mCBodyFlags & 0x40)
+	if (G_HEALTH_BAR_ONE->mCBodyFlags & 0x40)
 	{
-		gHealthBarOne = 0;
-		gHealthBarTwo = 0;
+		G_HEALTH_BAR_ONE = 0;
+		G_HEALTH_BAR_TWO = 0;
 		return;
 	}
 
-	switch (gHealthBarItemType)
+	switch (G_HEALTH_BAR_ITEM_TYPE)
 	{
 	case 307:
 	case 308:
@@ -982,18 +1025,18 @@ void Panel_DisplayHealthBar(void)
 		return;
 	}
 
-	if (gHealthBarItemType == 313)
+	if (G_HEALTH_BAR_ITEM_TYPE == 313)
 	{
-		if (((CVenom *)gHealthBarOne)->field_33C != 0)
+		if (((CVenom *)G_HEALTH_BAR_ONE)->field_33C != 0)
 		{
-			POLY_FT4 *pMJ = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[2], 0);
+			POLY_FT4 *pMJ = (POLY_FT4 *)Panel_DrawTexturedPoly(G_HEALTH_BAR_TEXTURES[2], 0);
 			if (pMJ)
-				Panel_SetStretchedScreenCoords(445, *gPanelScreenY + 71, pMJ, gHealthBarTextures[2], 31, 30);
-			PanelHB_DrawIconOverlay(pMJ, gHealthBarTextures[2], DCGfx_BlendingMode_1, 2.9999001f);
+				Panel_SetStretchedScreenCoords(445, *gPanelScreenY + 71, pMJ, G_HEALTH_BAR_TEXTURES[2], 31, 30);
+			PanelHB_DrawIconOverlay(pMJ, G_HEALTH_BAR_TEXTURES[2], DCGfx_BlendingMode_1, 2.9999001f);
 
 			for (i32 y = 0; y < 48; y += 16)
 			{
-				SAnimFrame *pFrame = &gAnimSp[1];
+				SAnimFrame *pFrame = &G_ANIM_SP[1];
 				POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
 				if (p)
 					Panel_SetStretchedScreenCoords(486, y + *gPanelScreenY + 115, p, pFrame, 15, 16);
@@ -1001,46 +1044,46 @@ void Panel_DisplayHealthBar(void)
 			}
 
 			{
-				SAnimFrame *pFrame = &gAnimSp[2];
+				SAnimFrame *pFrame = &G_ANIM_SP[2];
 				POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
 				if (p)
 					Panel_SetStretchedScreenCoords(486, *gPanelScreenY + 161, p, pFrame, 15, 14);
 				PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_0, 3.0f);
 			}
 
-			DCPanel_DrawFlatShadedPoly(3.0f, 467, *gPanelScreenY - ((CVenom *)gHealthBarOne)->field_338 / 4096 + 155, 12, ((CVenom *)gHealthBarOne)->field_338 / 4096, 64, 64, 160, 0, 0);
+			DCPanel_DrawFlatShadedPoly(3.0f, 467, *gPanelScreenY - ((CVenom *)G_HEALTH_BAR_ONE)->field_338 / 4096 + 155, 12, ((CVenom *)G_HEALTH_BAR_ONE)->field_338 / 4096, 64, 64, 160, 0, 0);
 			DCPanel_DrawFlatShadedPoly(4.0f, 467, *gPanelScreenY + 99, 12, 56, 0, 0, 0, 0, 0);
 		}
 
-		if (((CVenom *)gHealthBarOne)->field_33D == 0)
+		if (((CVenom *)G_HEALTH_BAR_ONE)->field_33D == 0)
 			return;
 	}
 
-	i32 healthWidth = 163 * (((gHealthBarRelated - gHealthBarOne->mHealth) << 7) / gHealthBarRelated) / 128;
+	i32 healthWidth = 163 * (((G_HEALTH_BAR_RELATED - G_HEALTH_BAR_ONE->mHealth) << 7) / G_HEALTH_BAR_RELATED) / 128;
 
 	Texture *pBossTex;
-	switch (gHealthBarItemType)
+	switch (G_HEALTH_BAR_ITEM_TYPE)
 	{
 	case 310:
-		pBossTex = (((CScorpion *)gHealthBarOne)->field_3EC != 0) ? gHealthBarTextures[3] : gHealthBarTextures[0];
+		pBossTex = (((CScorpion *)G_HEALTH_BAR_ONE)->field_3EC != 0) ? G_HEALTH_BAR_TEXTURES[3] : G_HEALTH_BAR_TEXTURES[0];
 		break;
 	case 307:
-		pBossTex = (((CRhino *)gHealthBarOne)->field_3D0 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		pBossTex = (((CRhino *)G_HEALTH_BAR_ONE)->field_3D0 != 0) ? G_HEALTH_BAR_TEXTURES[2] : G_HEALTH_BAR_TEXTURES[0];
 		break;
 	case 313:
-		pBossTex = (((CVenom *)gHealthBarOne)->field_388 != 0) ? gHealthBarTextures[4] : gHealthBarTextures[0];
+		pBossTex = (((CVenom *)G_HEALTH_BAR_ONE)->field_388 != 0) ? G_HEALTH_BAR_TEXTURES[4] : G_HEALTH_BAR_TEXTURES[0];
 		break;
 	case 314:
-		pBossTex = (((CCarnage *)gHealthBarOne)->field_340 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		pBossTex = (((CCarnage *)G_HEALTH_BAR_ONE)->field_340 != 0) ? G_HEALTH_BAR_TEXTURES[2] : G_HEALTH_BAR_TEXTURES[0];
 		break;
 	case 308:
-		pBossTex = (((CDocOc *)gHealthBarOne)->field_4BC != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		pBossTex = (((CDocOc *)G_HEALTH_BAR_ONE)->field_4BC != 0) ? G_HEALTH_BAR_TEXTURES[2] : G_HEALTH_BAR_TEXTURES[0];
 		break;
 	case 311:
-		pBossTex = (((CMysterio *)gHealthBarOne)->field_328 != 0) ? gHealthBarTextures[2] : gHealthBarTextures[0];
+		pBossTex = (((CMysterio *)G_HEALTH_BAR_ONE)->field_328 != 0) ? G_HEALTH_BAR_TEXTURES[2] : G_HEALTH_BAR_TEXTURES[0];
 		break;
 	default:
-		pBossTex = gHealthBarTextures[0];
+		pBossTex = G_HEALTH_BAR_TEXTURES[0];
 		break;
 	}
 
@@ -1049,14 +1092,14 @@ void Panel_DisplayHealthBar(void)
 		Panel_SetStretchedScreenCoords(448, *gPanelScreenY + 16, pBoss, pBossTex, 28, 31);
 	PanelHB_DrawIconOverlay(pBoss, pBossTex, DCGfx_BlendingMode_1, 1.0f);
 
-	POLY_FT4 *pLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[1], 0);
+	POLY_FT4 *pLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(G_HEALTH_BAR_TEXTURES[1], 0);
 	if (pLabel)
-		Panel_SetStretchedScreenCoords(283, *gPanelScreenY + 24, pLabel, gHealthBarTextures[1], 12, 16);
-	PanelHB_DrawIconOverlay(pLabel, gHealthBarTextures[1], DCGfx_BlendingMode_1, 1.0f);
+		Panel_SetStretchedScreenCoords(283, *gPanelScreenY + 24, pLabel, G_HEALTH_BAR_TEXTURES[1], 12, 16);
+	PanelHB_DrawIconOverlay(pLabel, G_HEALTH_BAR_TEXTURES[1], DCGfx_BlendingMode_1, 1.0f);
 
 	for (i32 x = 0; x < 150; x += 25)
 	{
-		SAnimFrame *pFrame = &gAnimSp[3];
+		SAnimFrame *pFrame = &G_ANIM_SP[3];
 		POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
 		if (p)
 			Panel_SetStretchedScreenCoords(x + 325, *gPanelScreenY + 40, p, pFrame, 16, 16);
@@ -1065,35 +1108,35 @@ void Panel_DisplayHealthBar(void)
 
 	if (healthWidth != 0)
 		DCPanel_DrawFlatShadedPoly(3.0f, 288, *gPanelScreenY + 29, healthWidth, 8, 0, 0, 0, 0, 0);
-	if (healthWidth <= gHealthBarRelated / 2)
+	if (healthWidth <= G_HEALTH_BAR_RELATED / 2)
 		DCDrawGouraudPoly(4.0f, 288, *gPanelScreenY + 29, 81, 8, 0x0000FF00, 0x0000FFFF, 0x0000FF00, 0x0000FFFF);
 	DCDrawGouraudPoly(4.0f, 369, *gPanelScreenY + 29, 82, 8, 0x0000FFFF, 0x000000FF, 0x0000FFFF, 0x000000FF);
 
-	if (gHealthBarItemType == 310 && gHealthBarTextures[2] != 0)
+	if (G_HEALTH_BAR_ITEM_TYPE == 310 && G_HEALTH_BAR_TEXTURES[2] != 0)
 	{
-		POLY_FT4 *pJonah = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[2], 0);
+		POLY_FT4 *pJonah = (POLY_FT4 *)Panel_DrawTexturedPoly(G_HEALTH_BAR_TEXTURES[2], 0);
 		if (pJonah)
-			Panel_SetStretchedScreenCoords(448, *gPanelScreenY + 45, pJonah, gHealthBarTextures[0], 28, 30);
-		PanelHB_DrawIconOverlay(pJonah, gHealthBarTextures[2], DCGfx_BlendingMode_1, 1.0f);
+			Panel_SetStretchedScreenCoords(448, *gPanelScreenY + 45, pJonah, G_HEALTH_BAR_TEXTURES[0], 28, 30);
+		PanelHB_DrawIconOverlay(pJonah, G_HEALTH_BAR_TEXTURES[2], DCGfx_BlendingMode_1, 1.0f);
 
-		POLY_FT4 *pJonahLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(gHealthBarTextures[1], 0);
+		POLY_FT4 *pJonahLabel = (POLY_FT4 *)Panel_DrawTexturedPoly(G_HEALTH_BAR_TEXTURES[1], 0);
 		if (pJonahLabel)
-			Panel_SetStretchedScreenCoords(407, *gPanelScreenY + 53, pJonahLabel, gHealthBarTextures[1], 12, 15);
-		PanelHB_DrawIconOverlay(pJonahLabel, gHealthBarTextures[1], DCGfx_BlendingMode_1, 1.0f);
+			Panel_SetStretchedScreenCoords(407, *gPanelScreenY + 53, pJonahLabel, G_HEALTH_BAR_TEXTURES[1], 12, 15);
+		PanelHB_DrawIconOverlay(pJonahLabel, G_HEALTH_BAR_TEXTURES[1], DCGfx_BlendingMode_1, 1.0f);
 
 		{
-			SAnimFrame *pFrame = &gAnimSp[3];
+			SAnimFrame *pFrame = &G_ANIM_SP[3];
 			POLY_FT4 *p = (POLY_FT4 *)Panel_DrawTexturedPoly(pFrame->pTexture, 0);
 			if (p)
 				Panel_SetStretchedScreenCoords(450, *gPanelScreenY + 69, p, pFrame, 16, 15);
 			PanelHB_DrawIconOverlay(p, pFrame->pTexture, DCGfx_BlendingMode_1, 1.0f);
 		}
 
-		i32 jonahWidth = 38 * (((gHealthBarRelatedTwo - gHealthBarTwo->mHealth) << 7) / gHealthBarRelatedTwo) / 128;
+		i32 jonahWidth = 38 * (((G_HEALTH_BAR_RELATED_TWO - G_HEALTH_BAR_TWO->mHealth) << 7) / G_HEALTH_BAR_RELATED_TWO) / 128;
 
 		if (jonahWidth != 0)
 			DCPanel_DrawFlatShadedPoly(3.0f, 413, *gPanelScreenY + 57, jonahWidth, 8, 0, 0, 0, 0, 0);
-		if (jonahWidth <= gHealthBarRelatedTwo / 2)
+		if (jonahWidth <= G_HEALTH_BAR_RELATED_TWO / 2)
 			DCDrawGouraudPoly(4.0f, 413, *gPanelScreenY + 57, 19, 8, 0x0000FF00, 0x0000FFFF, 0x0000FF00, 0x0000FFFF);
 		DCDrawGouraudPoly(4.0f, 432, *gPanelScreenY + 57, 19, 8, 0x0000FFFF, 0x000000FF, 0x0000FFFF, 0x000000FF);
 	}
@@ -1169,7 +1212,7 @@ void Panel_DisplayTimer(void)
 			}
 			v57[4] = secs + 48;
 
-			Texture* pTexture = gAnimTable[14][19].pTexture;
+			Texture* pTexture = G_ANIM_TABLE[14][19].pTexture;
 			if (pTexture != 0)
 			{
 				POLY_FT4* v5 = (POLY_FT4*)Panel_DrawTexturedPoly(pTexture, 0);
@@ -1299,9 +1342,9 @@ int Panel_DrawFlatShadedPoly(i32 x, i32 y, i32 w, i32 h, u8 r, u8 g, u8 b, i32, 
 // @Matching
 void Panel_Init(void)
 {
-	Spool_AnimAccess("Sp", &gAnimSp);
-	Spool_AnimAccess("Compass", &gAnimCompass);
-	Spool_AnimAccess("Webcart", &gAnimWebcart);
+	Spool_AnimAccess("Sp", &G_ANIM_SP);
+	Spool_AnimAccess("Compass", &G_ANIM_COMPASS);
+	Spool_AnimAccess("Webcart", &G_ANIM_WEBCART);
 }
 
 // @Ok
@@ -1424,54 +1467,54 @@ void Panel_CreateHealthBar(CBody* pBody, i32 a2)
 {
 	if ( a2 != 316 )
 	{
-		gHealthBarOne = pBody;
-		gHealthBarItemType = a2;
-		gHealthBarRelated = pBody->mHealth;
+		G_HEALTH_BAR_ONE = pBody;
+		G_HEALTH_BAR_ITEM_TYPE = a2;
+		G_HEALTH_BAR_RELATED = pBody->mHealth;
 	}
 	else
 	{
-		gHealthBarTwo = pBody;
-		gHealthBarRelatedTwo = pBody->mHealth;
+		G_HEALTH_BAR_TWO = pBody;
+		G_HEALTH_BAR_RELATED_TWO = pBody->mHealth;
 	}
 
 	switch ( a2 )
 	{
 		case 310:
-			gHealthBarTextures[0] = Spool_FindTextureEntry("scorpion");
-			gHealthBarTextures[1] = Spool_FindTextureEntry("boss");
-			gHealthBarTextures[2] = Spool_FindTextureEntry("jonah");
-			gHealthBarTextures[3] = Spool_FindTextureEntry("scorpion_wounded");
+			G_HEALTH_BAR_TEXTURES[0] = Spool_FindTextureEntry("scorpion");
+			G_HEALTH_BAR_TEXTURES[1] = Spool_FindTextureEntry("boss");
+			G_HEALTH_BAR_TEXTURES[2] = Spool_FindTextureEntry("jonah");
+			G_HEALTH_BAR_TEXTURES[3] = Spool_FindTextureEntry("scorpion_wounded");
 			break;
 		case 307:
-			gHealthBarTextures[0] = Spool_FindTextureEntry("rhino");
-			gHealthBarTextures[1] = Spool_FindTextureEntry("boss");
-			gHealthBarTextures[2] = Spool_FindTextureEntry("rhino_wounded");
+			G_HEALTH_BAR_TEXTURES[0] = Spool_FindTextureEntry("rhino");
+			G_HEALTH_BAR_TEXTURES[1] = Spool_FindTextureEntry("boss");
+			G_HEALTH_BAR_TEXTURES[2] = Spool_FindTextureEntry("rhino_wounded");
 			break;
 		case 311:
-			gHealthBarTextures[0] = Spool_FindTextureEntry("mysterio");
-			gHealthBarTextures[1] = Spool_FindTextureEntry("boss");
-			gHealthBarTextures[2] = Spool_FindTextureEntry("mysterio_wounded");
+			G_HEALTH_BAR_TEXTURES[0] = Spool_FindTextureEntry("mysterio");
+			G_HEALTH_BAR_TEXTURES[1] = Spool_FindTextureEntry("boss");
+			G_HEALTH_BAR_TEXTURES[2] = Spool_FindTextureEntry("mysterio_wounded");
 			break;
 		case 313:
-			gHealthBarTextures[0] = Spool_FindTextureEntry("venom");
-			gHealthBarTextures[1] = Spool_FindTextureEntry("boss");
-			gHealthBarTextures[2] = Spool_FindTextureEntry("maryjane_01");
-			gHealthBarTextures[3] = Spool_FindTextureEntry("maryJane_bar");
-			gHealthBarTextures[4] = Spool_FindTextureEntry("venom_wounded");
+			G_HEALTH_BAR_TEXTURES[0] = Spool_FindTextureEntry("venom");
+			G_HEALTH_BAR_TEXTURES[1] = Spool_FindTextureEntry("boss");
+			G_HEALTH_BAR_TEXTURES[2] = Spool_FindTextureEntry("maryjane_01");
+			G_HEALTH_BAR_TEXTURES[3] = Spool_FindTextureEntry("maryJane_bar");
+			G_HEALTH_BAR_TEXTURES[4] = Spool_FindTextureEntry("venom_wounded");
 			break;
 		case 308:
-			gHealthBarTextures[0] = Spool_FindTextureEntry("dococ");
-			gHealthBarTextures[1] = Spool_FindTextureEntry("boss");
-			gHealthBarTextures[2] = Spool_FindTextureEntry("docOc_wounded");
+			G_HEALTH_BAR_TEXTURES[0] = Spool_FindTextureEntry("dococ");
+			G_HEALTH_BAR_TEXTURES[1] = Spool_FindTextureEntry("boss");
+			G_HEALTH_BAR_TEXTURES[2] = Spool_FindTextureEntry("docOc_wounded");
 			break;
 		case 314:
-			gHealthBarTextures[0] = Spool_FindTextureEntry("carnage");
-			gHealthBarTextures[1] = Spool_FindTextureEntry("boss");
-			gHealthBarTextures[2] = Spool_FindTextureEntry("carnage_wounded");
+			G_HEALTH_BAR_TEXTURES[0] = Spool_FindTextureEntry("carnage");
+			G_HEALTH_BAR_TEXTURES[1] = Spool_FindTextureEntry("boss");
+			G_HEALTH_BAR_TEXTURES[2] = Spool_FindTextureEntry("carnage_wounded");
 			break;
 		default:
-			gHealthBarOne = 0;
-			gHealthBarItemType = 0;
+			G_HEALTH_BAR_ONE = 0;
+			G_HEALTH_BAR_ITEM_TYPE = 0;
 			break;
 	}
 }
@@ -1479,14 +1522,14 @@ void Panel_CreateHealthBar(CBody* pBody, i32 a2)
 // @Ok
 void Panel_DestroyHealthBar(void)
 {
-	gHealthBarOne = 0;
-	gHealthBarTwo = 0;
+	G_HEALTH_BAR_ONE = 0;
+	G_HEALTH_BAR_TWO = 0;
 }
 
 // @Ok
 void Panel_DestroyCompass(void)
 {
-	gCompassStatus = 0;
+	G_COMPASS_STATUS = 0;
 }
 
 // auto_inline off: both overloads below are real out-of-line functions in
@@ -1737,4 +1780,57 @@ void validate_POLY_F4(void)
 
 	VALIDATE(POLY_F4, x3, 0x14);
 	VALIDATE(POLY_F4, y3, 0x16);
+}
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_panel(void)
+{
+	// Not hooked, and why:
+	//
+	// Panel_Display (0x4658C0) and Panel_DisplayTimer (0x461D00) read and
+	// write the l1a3bomb.cpp countdown globals (gBombDieRelatedOne 0x60F771,
+	// gBombDieRelatedTwo 0x60F772, gBombAIRelated 0x60F774,
+	// gBombDieTimerRelated 0x60F778, gBombRelated 0x54E8D4) and Panel_Display
+	// also reads spidey.cpp's gSpideyAnim / gSpideyAnimTwo (0x60F750 /
+	// 0x60F754). Those are still plain repo globals owned by other files, and
+	// their writers (CL1A3Bomb::AI, Training_MonitorLevel,
+	// Spidey_LoadAlternativeHealthIcon, CPlayer::CPlayer) are not hooked, so
+	// our copies would stay zero. They need G_* macros in l1a3bomb.h and
+	// spidey.h first.
+	//
+	// gsub_4015B0 (0x4015B0) is a single "ret", too short for a 6 byte hook.
+	//
+	// PanelDisp_DrawIcon, PanelCompass_DrawNeedleHalf and
+	// PanelHB_DrawIconOverlay are our own helpers, the original repeats them
+	// inline, so there is no address to hook.
+	PATCH_PUSH_RET(0x00461CA0, Panel_Init);
+
+	PATCH_PUSH_RET_POLY(0x004624A0, DCPanel_DrawTexturedPoly, "?DCPanel_DrawTexturedPoly@@YAXMPAUPOLY_FT4@@PBUSAnimFrame@@I@Z");
+	PATCH_PUSH_RET_POLY(0x004626A0, DCPanel_DrawTexturedPoly, "?DCPanel_DrawTexturedPoly@@YAXMPAUPOLY_FT4@@PBUSAnimFrame@@HHHHHI@Z");
+	PATCH_PUSH_RET_POLY(0x00462930, DCPanel_DrawTexturedPoly, "?DCPanel_DrawTexturedPoly@@YAXMPAUPOLY_FT4@@PBUTexture@@I@Z");
+
+	PATCH_PUSH_RET_POLY(0x00462B30, Panel_DrawTexturedPoly, "?Panel_DrawTexturedPoly@@YAHPAUSAnimFrame@@HHH@Z");
+	PATCH_PUSH_RET_POLY(0x00462B90, Panel_DrawTexturedPoly, "?Panel_DrawTexturedPoly@@YAHPAUSAnimFrame@@H@Z");
+	PATCH_PUSH_RET_POLY(0x00462BB0, Panel_DrawTexturedPoly, "?Panel_DrawTexturedPoly@@YAHPAUTexture@@H@Z");
+
+	PATCH_PUSH_RET_POLY(0x00462C30, Panel_SetStretchedScreenCoords, "?Panel_SetStretchedScreenCoords@@YAXHHPAUPOLY_FT4@@PAUSAnimFrame@@HH@Z");
+	PATCH_PUSH_RET_POLY(0x00462CD0, Panel_SetStretchedScreenCoords, "?Panel_SetStretchedScreenCoords@@YAXHHPAUPOLY_FT4@@PBUTexture@@HH@Z");
+
+	PATCH_PUSH_RET(0x00462D60, DCPanel_DrawFlatShadedPoly);
+	PATCH_PUSH_RET(0x00462EC0, Panel_DrawFlatShadedPoly);
+
+	PATCH_PUSH_RET_POLY(0x00462FB0, DCDrawGouraudPoly, "?DCDrawGouraudPoly@@YAXMHHHHIIII@Z");
+	PATCH_PUSH_RET_POLY(0x004631C0, DCDrawGouraudPoly, "?DCDrawGouraudPoly@@YAXMPAUPOLY_GT4@@PAUTexture@@H@Z");
+
+	PATCH_PUSH_RET(0x00463610, Panel_CreateHealthBar);
+	PATCH_PUSH_RET(0x004637F0, Panel_DestroyHealthBar);
+	PATCH_PUSH_RET(0x00463800, Panel_CreateCompass);
+	PATCH_PUSH_RET(0x00463850, Panel_DestroyCompass);
+	PATCH_PUSH_RET(0x00463860, Panel_DisplayCompass);
+	PATCH_PUSH_RET(0x00464270, Panel_DisplayHealthBar);
+
+	// The out of line debug print helper at 0x46CB90 that this file owns.
+	PATCH_PUSH_RET(0x0046CB90, gsub_46CB90);
 }

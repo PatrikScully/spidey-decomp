@@ -332,7 +332,7 @@ CDomeShockWave::CDomeShockWave(i32 a2)
 
 	this->field_90 = a2;
 
-	this->ResetHitFlags(BaddyList);
+	this->ResetHitFlags(G_BADDY_LIST);
 	this->ResetHitFlags(G_ENVIRONMENTAL_OBJECT_LIST);
 
 	for (i32 i = 0; i < 16; i++)
@@ -363,7 +363,7 @@ CDomePiece::CDomePiece(
 	else
 		this->InitItem("webdome3");
 
-	print_if_false(a3 < reinterpret_cast<u32*>(PSXRegion[this->mRegion].ppModels)[-1], "Bad Model sent to CDomePiece");
+	print_if_false(a3 < reinterpret_cast<u32*>(G_PSXREGION[this->mRegion].ppModels)[-1], "Bad Model sent to CDomePiece");
 
 	this->mModel = a3;
 	this->AttachTo(&MiscList);
@@ -395,7 +395,7 @@ CDome::CDome(
 	{
 		this->InitItem("firedome");
 		this->mModel = 1;
-		gFireDomes++;
+		G_FIRE_DOMES++;
 		this->mFlags |= 0x200;
 		this->mScale.vy = 0;
 	}
@@ -407,7 +407,7 @@ CDome::CDome(
 	this->mFlags |= 1;
 	this->AttachTo(&MiscList);
 	this->field_100 = 0;
-	++gNumDomes;
+	++G_NUM_DOMES;
 }
 
 // @Ok
@@ -422,8 +422,8 @@ CDome::~CDome(void)
 	delete this->field_118;
 
 	if (this->field_104)
-		gFireDomes--;
-	gNumDomes--;
+		G_FIRE_DOMES--;
+	G_NUM_DOMES--;
 }
 
 // The single live CDomeRing. Written by CDomeRing's constructor (which
@@ -1227,7 +1227,7 @@ void CWeb::SwitchToBlob(void)
 // @Ok
 // verified against the IDA disasm of 0x4F5DA0 (136 bytes). Chains
 // CBody::CBody, zeroes the two anchor vectors and the three scalars behind
-// them, links the new web into WebList and stamps mType 1. Everything else
+// them, links the new web into G_WEB_LIST and stamps mType 1. Everything else
 // (the mode in field_104, the webbing cost in field_102, the hook and
 // target handles) is filled in by the caller, CPlayer::CheckJumpingR1ZipWeb
 // or CPlayer::CheckJumpingR2ZipWeb.
@@ -1245,7 +1245,7 @@ CWeb::CWeb(void)
 	this->field_124 = 0;
 	this->field_128 = 0;
 
-	this->AttachTo(&WebList);
+	this->AttachTo(&G_WEB_LIST);
 
 	this->mType = 1;
 }
@@ -1604,4 +1604,63 @@ void CDome::Burst(void)
 	new CDomeRing(&this->mPos, this->field_104);
 
 	this->Die();
+}
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_web(void)
+{
+	// Not hooked, and why:
+	//
+	// 1. Missing virtuals. Hooking a constructor stamps our own vtable on the
+	//    object, so every slot our class does not declare silently falls back
+	//    to the base. These classes are all short of the exe's vtable:
+	//    CWeb (0x53C768 slot 2 = CWeb_AI 0x4F6C10),
+	//    CDome (0x53C7D4 slot 2 = CDome_AI 0x4FA830),
+	//    CDomePiece (0x53C7C0 slot 2 = sub_4FA5E0),
+	//    CDomeRing (0x53C73C slot 2 = sub_4F5800),
+	//    CTrapWebEffect (0x53C798 slot 1 = CTrapWebEffect_Move 0x4F8860),
+	//    CWebFrag (0x53C7B8 slot 1 = sub_4FA340),
+	//    CImpactWeb (0x53C7B0 slot 1 = sub_4F9BD0),
+	//    CDomeShockWave (0x53C7E8 slot 1 = sub_4FB0E0).
+	//    That also rules out the functions that build one of them:
+	//    CWeb::Fire (new CTrapWebEffect and new CKnottedWeb, and CKnottedWeb
+	//    in bit2.h is missing its own Move too), Web_Trap (new
+	//    CTrapWebEffect), CDome::Burst (new CDomeShockWave, new CDomeRing)
+	//    and CTrapWebEffect::Burst (new CWebFrag).
+	//
+	// 2. MiscList. CDome, CDomePiece and CDomeRing attach to and detach from
+	//    MiscList, which is a plain repo global owned by shell.cpp with no
+	//    G_* macro yet. The exe's main loop walks its own MiscList, so a
+	//    hooked constructor or destructor here would link the dome into a
+	//    list nothing renders. That blocks the four destructors as well
+	//    (0x4FA580, 0x4FA770, 0x4F5720).
+	//
+	// 3. CKnottedWebSplat::Move lives at 0x4A5E40, which the linker folded
+	//    together with CSimbyShotSplat::Move. That address belongs to
+	//    simby.cpp, so it is left for whoever hooks that file. Hooking the
+	//    constructor below is still correct: it stamps our vtable, whose
+	//    slot 1 is our own CKnottedWebSplat::Move.
+	//
+	// 4. CDomeShockWave::ResetHitFlags is INLINE, the original has no
+	//    separate function for it.
+	PATCH_PUSH_RET(0x004F54A0, Web_GetGroundY);
+
+	PATCH_PUSH_RET_POLY(0x004F5BC0, CKnottedWebSplat::CKnottedWebSplat, "??0CKnottedWebSplat@@QAE@PBVCVector@@0@Z");
+
+	PATCH_PUSH_RET(0x004F6260, CWeb::SwitchToBlob);
+
+	PATCH_PUSH_RET(0x004F72C0, CSwinger::SetSpideyAnimFrame);
+	PATCH_PUSH_RET(0x004F72F0, CSwinger::IsOneTimeToDie);
+	PATCH_PUSH_RET(0x004F7550, CSwinger_SwingBack);
+
+	PATCH_PUSH_RET(0x004F7680, BoundingBoxCollisionCheck);
+	PATCH_PUSH_RET(0x004F7AE0, Web_CollideWithSuper);
+
+	PATCH_PUSH_RET(0x004F8190, CTrapWebEffect::CalcHook);
+	PATCH_PUSH_RET(0x004F82A0, CTrapWebEffect::MoveProjector);
+	PATCH_PUSH_RET(0x004F83C0, CTrapWebEffect::AddAnotherStrand);
+
+	PATCH_PUSH_RET_POLY(0x004FAF30, CDomeShockWave::~CDomeShockWave, "??1CDomeShockWave@@UAE@XZ");
 }

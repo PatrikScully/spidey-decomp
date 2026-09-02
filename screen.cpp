@@ -17,25 +17,79 @@
 static MATRIX * const gTargetRotMatrix = (MATRIX*)0x56F224;
 
 
+// All the globals below live in one block at 0x006A7460..0x006A7573 in the
+// exe. Every address here comes from the store or load instruction named in
+// its comment. They stay file local: nothing outside screen.cpp reads them.
+
+// Screen_TargetOn (0x48AA40) writes it ("mov [6A7572h],al"), the reticle
+// draw (0x48AA90) reads it.
 EXPORT bool gScreenTarget;
+//#define G_SCREEN_TARGET (gScreenTarget)
+#define G_SCREEN_TARGET (*reinterpret_cast<bool*>(0x006A7572))
 
+// The arrow has its OWN on/off byte, one past the reticle's.
+// Screen_DrawArrow (0x48AE30) opens with "mov al,[6A7573h]", not 0x6A7572.
+// No named function in tools/functions writes it, so the writer is still
+// unidentified.
+EXPORT bool gScreenArrow;
+//#define G_SCREEN_ARROW (gScreenArrow)
+#define G_SCREEN_ARROW (*reinterpret_cast<bool*>(0x006A7573))
 
+// Screen_SetTarget (0x48AA50) writes the three components at 0x6A7488 /
+// 0x6A748C / 0x6A7490 and the two words at 0x6A7494 (its u16 argument) and
+// 0x6A7484 (its i16 argument). sub_48AA90 (the reticle draw) reads all five.
 EXPORT CVector gTargetRelated;
-EXPORT u16 gTargetOne;
-EXPORT u16 gTargetTwo;
+//#define G_TARGET_RELATED (gTargetRelated)
+#define G_TARGET_RELATED (*reinterpret_cast<CVector*>(0x006A7488))
 
+EXPORT u16 gTargetOne;
+//#define G_TARGET_ONE (gTargetOne)
+#define G_TARGET_ONE (*reinterpret_cast<u16*>(0x006A7494))
+
+EXPORT u16 gTargetTwo;
+//#define G_TARGET_TWO (gTargetTwo)
+#define G_TARGET_TWO (*reinterpret_cast<u16*>(0x006A7484))
+
+// The arrow points at a different vector than the reticle does:
+// Screen_DrawArrow reads 0x6A74D8 / 0x6A74DC / 0x6A74E0, written by the
+// small unnamed setter sub_48A800.
+EXPORT CVector gArrowTargetPos;
+//#define G_ARROW_TARGET_POS (gArrowTargetPos)
+#define G_ARROW_TARGET_POS (*reinterpret_cast<CVector*>(0x006A74D8))
+
+// Screen_StartCircularFadeIn (0x48AFB0) writes all five
+// ("mov dword ptr [6A7460h],20h", "mov [6A751Ch],eax", "mov [6A756Ch],ecx",
+// "mov byte ptr [6A7570h],1", "mov [6A7571h],al"); Screen_UpdateFades
+// (0x48AFE0) reads and writes the last four. 0x6A7460 has no reader.
 EXPORT i32 gCircularFadeRelated;
+//#define G_CIRCULAR_FADE_RELATED (gCircularFadeRelated)
+#define G_CIRCULAR_FADE_RELATED (*reinterpret_cast<i32*>(0x006A7460))
+
 EXPORT i32 gCircularFadeRelatedOne;
+//#define G_CIRCULAR_FADE_RELATED_ONE (gCircularFadeRelatedOne)
+#define G_CIRCULAR_FADE_RELATED_ONE (*reinterpret_cast<i32*>(0x006A751C))
+
 EXPORT i32 gCircularFadeRelatedTwo;
+//#define G_CIRCULAR_FADE_RELATED_TWO (gCircularFadeRelatedTwo)
+#define G_CIRCULAR_FADE_RELATED_TWO (*reinterpret_cast<i32*>(0x006A756C))
 
 EXPORT u8 gCircularFadeRelatedThree;
+//#define G_CIRCULAR_FADE_RELATED_THREE (gCircularFadeRelatedThree)
+#define G_CIRCULAR_FADE_RELATED_THREE (*reinterpret_cast<u8*>(0x006A7570))
+
 EXPORT u8 gCircularFadeRelatedFour;
+//#define G_CIRCULAR_FADE_RELATED_FOUR (gCircularFadeRelatedFour)
+#define G_CIRCULAR_FADE_RELATED_FOUR (*reinterpret_cast<u8*>(0x006A7571))
 
 
 // @Ok
+// The arrow reads its own flag and its own target vector, not the reticle's:
+// 0x48AE30 starts with "mov al,[6A7573h]" and then loads 0x6A74D8/DC/E0,
+// while the reticle path (0x48AA40 / 0x48AA50 / 0x48AA90) uses 0x6A7572 and
+// 0x6A7488/8C/90. This file used to point both at the reticle pair.
 void Screen_DrawArrow(void)
 {
-	if (!gScreenTarget)
+	if (!G_SCREEN_ARROW)
 		return;
 
 	u32 *next = G_PPOLY + 15;
@@ -45,9 +99,9 @@ void Screen_DrawArrow(void)
 	G_PPOLY = next;
 
 	VECTOR relPos;
-	relPos.vx = (gTargetRelated.vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
-	relPos.vy = (gTargetRelated.vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
-	relPos.vz = (gTargetRelated.vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
+	relPos.vx = (G_ARROW_TARGET_POS.vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
+	relPos.vy = (G_ARROW_TARGET_POS.vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
+	relPos.vz = (G_ARROW_TARGET_POS.vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
 
 	gte_ldlv0(&relPos);
 	gte_rtps();
@@ -103,16 +157,16 @@ void Screen_DrawArrow(void)
 // offsets around the screen x/y and scale by gGameResolution/Yres,Xres.
 void Screen_DrawTarget(void)
 {
-	if (!gScreenTarget)
+	if (!G_SCREEN_TARGET)
 		return;
 
 	gte_SetRotMatrix(gTargetRotMatrix);
 	m3d_ZeroTransVector();
 
 	VECTOR relPos;
-	relPos.vx = (gTargetRelated.vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
-	relPos.vy = (gTargetRelated.vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
-	relPos.vz = (gTargetRelated.vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
+	relPos.vx = (G_TARGET_RELATED.vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
+	relPos.vy = (G_TARGET_RELATED.vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
+	relPos.vz = (G_TARGET_RELATED.vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
 	gte_ldlv0(&relPos);
 	gte_rtps();
 
@@ -133,19 +187,19 @@ void Screen_DrawTarget(void)
 	f32 yScale = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 xScale = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
 
-	i32 angleA = gTargetTwo;
-	i32 angleB = gTargetTwo + 128;
+	i32 angleA = G_TARGET_TWO;
+	i32 angleB = G_TARGET_TWO + 128;
 	for (i32 i = 0; i < 4; i++)
 	{
 		u8 *v = pQuad + i * 20;
 		*(u32*)v = 41120;  // 0xA0A0 gray
 
-		i16 c0x = screenX + (((gTargetOne - 12) * G_RCOSSIN_TBL[angleA & 0xFFF].sin) >> 12);
-		i16 c0y = screenY + 320 * (((gTargetOne - 12) * G_RCOSSIN_TBL[angleA & 0xFFF].cos) >> 12) / 512;
-		i16 c1x = screenX + ((gTargetOne * G_RCOSSIN_TBL[(angleB - 256) & 0xFFF].sin) >> 12);
-		i16 c1y = screenY + 320 * ((gTargetOne * G_RCOSSIN_TBL[(angleB - 256) & 0xFFF].cos) >> 12) / 512;
-		i16 c2x = screenX + ((gTargetOne * G_RCOSSIN_TBL[angleB & 0xFFF].sin) >> 12);
-		i16 c2y = screenY + 320 * ((gTargetOne * G_RCOSSIN_TBL[angleB & 0xFFF].cos) >> 12) / 512;
+		i16 c0x = screenX + (((G_TARGET_ONE - 12) * G_RCOSSIN_TBL[angleA & 0xFFF].sin) >> 12);
+		i16 c0y = screenY + 320 * (((G_TARGET_ONE - 12) * G_RCOSSIN_TBL[angleA & 0xFFF].cos) >> 12) / 512;
+		i16 c1x = screenX + ((G_TARGET_ONE * G_RCOSSIN_TBL[(angleB - 256) & 0xFFF].sin) >> 12);
+		i16 c1y = screenY + 320 * ((G_TARGET_ONE * G_RCOSSIN_TBL[(angleB - 256) & 0xFFF].cos) >> 12) / 512;
+		i16 c2x = screenX + ((G_TARGET_ONE * G_RCOSSIN_TBL[angleB & 0xFFF].sin) >> 12);
+		i16 c2y = screenY + 320 * ((G_TARGET_ONE * G_RCOSSIN_TBL[angleB & 0xFFF].cos) >> 12) / 512;
 
 		*(i16*)(v + 4) = c0x;
 		*(i16*)(v + 6) = c0y;
@@ -266,20 +320,20 @@ void Screen_SetTarget(
 		u16 a2,
 		i16 a3)
 {
-	gTargetRelated = *a1;
-	gTargetOne = a2;
-	gTargetTwo = a3;
+	G_TARGET_RELATED = *a1;
+	G_TARGET_ONE = a2;
+	G_TARGET_TWO = a3;
 }
 
 // @Ok
 void Screen_StartCircularFadeIn(i32,i32 a2)
 {
-	gCircularFadeRelated = 32;
-	gCircularFadeRelatedOne = 0;
-	gCircularFadeRelatedTwo = a2 << 12;
+	G_CIRCULAR_FADE_RELATED = 32;
+	G_CIRCULAR_FADE_RELATED_ONE = 0;
+	G_CIRCULAR_FADE_RELATED_TWO = a2 << 12;
 
-	gCircularFadeRelatedThree = 1;
-	gCircularFadeRelatedFour = 0;
+	G_CIRCULAR_FADE_RELATED_THREE = 1;
+	G_CIRCULAR_FADE_RELATED_FOUR = 0;
 }
 
 // gCircularFadeShapeProgram/gCircularFadeShapePoints (0x54ED9C/0x54ECBC):
@@ -355,11 +409,11 @@ static void CircularFade_DrawTri(POLY_F3 *p, f32 xScale, f32 yScale)
 // mislabelled 0x48AFE0 as screen_DrawCircularFade; it is actually the real
 // Screen_UpdateFades with screen_DrawCircularFade fully inlined (the Mac
 // build keeps them separate per prototypes.json: 164 + 3228 bytes). The
-// dispatch part below (gCircularFadeRelatedThree/Four/One/Two) was already
+// dispatch part below (G_CIRCULAR_FADE_RELATED_THREE/Four/One/Two) was already
 // correct; what follows the old screen_DrawCircularFade() call is new.
 //
 // Once the state update above says "still fading", this draws the circular
-// wipe: while gCircularFadeRelatedOne (scaled x16 into a 512x240 reference
+// wipe: while G_CIRCULAR_FADE_RELATED_ONE (scaled x16 into a 512x240 reference
 // space as `radius`) is under 256, four rectangles cover
 // everything outside a centred cross the circle is growing into (left,
 // right, top, bottom bands -- cases 0-3 in the switch, all sharing the same
@@ -370,24 +424,24 @@ static void CircularFade_DrawTri(POLY_F3 *p, f32 xScale, f32 yScale)
 // halves of the screen.
 void Screen_UpdateFades(void)
 {
-	if (gCircularFadeRelatedThree)
+	if (G_CIRCULAR_FADE_RELATED_THREE)
 	{
-		gCircularFadeRelatedOne += gCircularFadeRelatedTwo >> 12;
-		gCircularFadeRelatedTwo += 3072;
-		if ( gCircularFadeRelatedOne >= 640 )
+		G_CIRCULAR_FADE_RELATED_ONE += G_CIRCULAR_FADE_RELATED_TWO >> 12;
+		G_CIRCULAR_FADE_RELATED_TWO += 3072;
+		if ( G_CIRCULAR_FADE_RELATED_ONE >= 640 )
 		{
-			gCircularFadeRelatedThree = 0;
+			G_CIRCULAR_FADE_RELATED_THREE = 0;
 			return;
 		}
 	}
 	else
 	{
-		if (!gCircularFadeRelatedFour)
+		if (!G_CIRCULAR_FADE_RELATED_FOUR)
 			return;
-		gCircularFadeRelatedOne -= gCircularFadeRelatedTwo >> 12;
-		if (gCircularFadeRelatedOne <= 0)
+		G_CIRCULAR_FADE_RELATED_ONE -= G_CIRCULAR_FADE_RELATED_TWO >> 12;
+		if (G_CIRCULAR_FADE_RELATED_ONE <= 0)
 		{
-			gCircularFadeRelatedFour = 0;
+			G_CIRCULAR_FADE_RELATED_FOUR = 0;
 			return;
 		}
 	}
@@ -399,7 +453,7 @@ void Screen_UpdateFades(void)
 
 	PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
 
-	i32 radius = 16 * gCircularFadeRelatedOne;
+	i32 radius = 16 * G_CIRCULAR_FADE_RELATED_ONE;
 
 	f32 yScale = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
 	f32 xScale = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
@@ -529,5 +583,28 @@ void Screen_UpdateFades(void)
 // @Matching
 void Screen_TargetOn(bool value)
 {
-	gScreenTarget = value;
+	G_SCREEN_TARGET = value;
+}
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_screen(void)
+{
+	// Every global this file touches now points into the exe (see the macro
+	// block at the top), so all seven functions are safe to run against the
+	// game's own state.
+	//
+	// Two addresses do not match tools/names.json, they follow CLAUDE.md's
+	// 2026-08-27 note: 0x48AA50 is Screen_SetTarget (names.json says
+	// Screen_DrawTarget) and the real Screen_DrawTarget is the unnamed
+	// sub_48AA90. 0x48AFE0 is Screen_UpdateFades with screen_DrawCircularFade
+	// inlined into it.
+	PATCH_PUSH_RET(0x0048A820, Screen_SepiaFade);
+	PATCH_PUSH_RET(0x0048AA40, Screen_TargetOn);
+	PATCH_PUSH_RET(0x0048AA50, Screen_SetTarget);
+	PATCH_PUSH_RET(0x0048AA90, Screen_DrawTarget);
+	PATCH_PUSH_RET(0x0048AE30, Screen_DrawArrow);
+	PATCH_PUSH_RET(0x0048AFB0, Screen_StartCircularFadeIn);
+	PATCH_PUSH_RET(0x0048AFE0, Screen_UpdateFades);
 }

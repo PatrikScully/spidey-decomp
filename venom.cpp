@@ -18,17 +18,21 @@
 
 
 
-// Real repo global, no header extern (post.cpp: "EXPORT i32 gPostWaterEffect;").
-extern i32 gPostWaterEffect;
-
+// The ten chase-bar textures. Venom_RelocatableModuleClear (0x4E7D50) zeroes
+// exactly ten dwords from 0x6B4EE4 ("mov ecx,0Ah; xor eax,eax; mov
+// edi,6B4EE4h; rep stosd") and Venom_DisplayProgressBar (0x4E7E10) copies the
+// same ten dwords out of that address into its stack scratch. File local, no
+// other .cpp touches it.
 #define LEN_VENOM_TEXS 10
 EXPORT Texture* gVenomTexs[LEN_VENOM_TEXS];
+//#define G_VENOM_TEXS (gVenomTexs)
+#define G_VENOM_TEXS (reinterpret_cast<Texture**>(0x006B4EE4))
 
 // @Ok
 // @Matching
 CVenom::~CVenom(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	Panel_DestroyHealthBar();
 	this->KillAllCommandBlocks();
 
@@ -255,15 +259,15 @@ static void Venom_DrawBarPiece(Texture *renderTex, Texture *sizeTex, i32 x, i32 
 // function.
 //
 // Globals confirmed by nearest-neighbor audit against idb_globals.txt: dword_54D474 =
-// DifficultyLevel, dword_5FAE98 = gPostWaterEffect, dword_568158/dword_568154 =
+// DifficultyLevel, dword_5FAE98 = G_POST_WATER_EFFECT, dword_568158/dword_568154 =
 // gGameResolutionY/gGameResolutionX, dword_628614/dword_61B5FC = Yres/Xres (matches the existing
 // gGameResolutionX/Y over Xres/Yres screen-scale idiom already used in chopper.cpp), dword_60F76C
 // = the same screen Y-offset panel.cpp already names gPanelScreenY, dword_6A9038 = MechList
 // (G_MECHLIST in ob.h; used here as the player position, per idb_globals.txt and the existing
 // comment in panel.cpp/chopper.cpp/hostage.cpp about this address).
 //
-// unk_6B4EE4 (10 dwords, zeroed by Venom_RelocatableModuleClear, same size/pattern as gVenomTexs)
-// is very likely the real fixed address of gVenomTexs, but this function is not being hooked (no
+// unk_6B4EE4 (10 dwords, zeroed by Venom_RelocatableModuleClear, same size/pattern as G_VENOM_TEXS)
+// is very likely the real fixed address of G_VENOM_TEXS, but this function is not being hooked (no
 // patch_*() added), so there is no runtime hazard in just using the existing repo array directly
 // instead of binding a new fixed-address alias - same conceptual data either way.
 //
@@ -281,13 +285,13 @@ static void Venom_DrawBarPiece(Texture *renderTex, Texture *sizeTex, i32 x, i32 
 // The texture-name table at 0x559D08 (10 x 32-byte slots, walked by the original's texture-load
 // loop) was also read directly from the binary (get_bytes): "VenomChase_Bar_01".."_06",
 // "VenomChase_Bar_LeftEnd", "VenomChase_Bar_RightEnd", "Spidey_Chase", "Venom_Chase" - the same
-// order as gVenomTexs's 10 slots (confirmed by Venom_RelocatableModuleClear zeroing all 10).
+// order as G_VENOM_TEXS's 10 slots (confirmed by Venom_RelocatableModuleClear zeroing all 10).
 //
 // Logic: find the venom baddy (FindBaddyOfType(313)) and the player (MechList); if either is
 // missing, do nothing (matches the original's early-return). Otherwise: XZ distance from player to
 // venom, clamped to a per-difficulty max (hard=7500, easy/normal=9000, other=6000, exact original
 // if/else-if chain reproduced even though the difficulty==0 and ==1 cases both land on 9000),
-// scaled to a 0..307 bar length. If gPostWaterEffect is off, advance the venom's chase-bar
+// scaled to a 0..307 bar length. If G_POST_WATER_EFFECT is off, advance the venom's chase-bar
 // animation accumulator (field_32C += field_80, CBody's existing per-frame delta field) - nothing
 // in this function reads field_32C back, so whatever advances field_328 from it is elsewhere, not
 // yet decompiled. Then draw, in original order: the Spidey icon (always, slides along the bar via
@@ -307,13 +311,13 @@ void Venom_DisplayProgressBar(const u32*, u32*)
 		"Spidey_Chase", "Venom_Chase",
 	};
 
-	// Local copy of gVenomTexs; any missing entry is loaded here but (matching the original) not
-	// written back to gVenomTexs itself.
+	// Local copy of G_VENOM_TEXS; any missing entry is loaded here but (matching the original) not
+	// written back to G_VENOM_TEXS itself.
 	Texture *texs[LEN_VENOM_TEXS];
 	i32 i;
 	for (i = 0; i < LEN_VENOM_TEXS; i++)
 	{
-		texs[i] = gVenomTexs[i];
+		texs[i] = G_VENOM_TEXS[i];
 		if (!texs[i])
 			texs[i] = Spool_FindTextureEntry(const_cast<char*>(kBarTexNames[i]));
 		print_if_false(texs[i] != 0, "No texture");
@@ -340,7 +344,7 @@ void Venom_DisplayProgressBar(const u32*, u32*)
 
 	i32 barLen = 307 * dist / maxDist;
 
-	if (!gPostWaterEffect)
+	if (!G_POST_WATER_EFFECT)
 		pVenom->field_32C += pVenom->field_80;
 
 	// Spidey icon: slides toward Venom's fixed icon as the distance closes.
@@ -363,7 +367,7 @@ void Venom_DisplayProgressBar(const u32*, u32*)
 // @Matching
 void Venom_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -377,7 +381,7 @@ void Venom_RelocatableModuleClear(void)
 
 	for (i32 i = 0; i < LEN_VENOM_TEXS; i++)
 	{
-		gVenomTexs[i] = 0;
+		G_VENOM_TEXS[i] = 0;
 	}
 }
 
@@ -421,7 +425,7 @@ INLINE i32* CVenom::GetNewCommandBlock(u32 a1)
 // @Matching
 // Node type 1002 (ID_SWITCH_TO) with subtype 4 marks a "go to switch" node. For each
 // one found, walk its link chain to the final target node, find the position, then
-// find the nearest CSwitch (mType 407) in ControlBaddyList to that position.
+// find the nearest CSwitch (mType 407) in G_CONTROL_BADDY_LIST to that position.
 void CVenom::ResolveSwitchNodes(void)
 {
 	this->field_3CC = 0;
@@ -457,7 +461,7 @@ void CVenom::ResolveSwitchNodes(void)
 
 			u32 bestDist = 0xFFFFFFFF;
 
-			for (CItem *cur = ControlBaddyList; cur; cur = reinterpret_cast<CItem*>(cur->mNextItem))
+			for (CItem *cur = G_CONTROL_BADDY_LIST; cur; cur = reinterpret_cast<CItem*>(cur->mNextItem))
 			{
 				if (cur->mType == 407)
 				{
@@ -550,7 +554,7 @@ CVenom::CVenom(i32 *a2, i32)
 	}
 
 	this->mType = 313;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	this->mFlags |= 0x480;
 
 	this->mpLight = &M3d_VenomLight;
@@ -920,13 +924,13 @@ void CVenom::AdjustWaterModel(void)
 
 	if (!pBody)
 	{
-		u32 Model = Spool_GetModel(0x26D2DBB7, gObjFileRegion);
+		u32 Model = Spool_GetModel(0x26D2DBB7, G_OBJ_FILE_REGION);
 
 		for (pBody = G_ENVIRONMENTAL_OBJECT_LIST;
 				pBody;
 				pBody = reinterpret_cast<CBody*>(pBody->mNextItem))
 		{
-			if (pBody->mRegion == gObjFileRegion && pBody->mModel == Model)
+			if (pBody->mRegion == G_OBJ_FILE_REGION && pBody->mModel == Model)
 			{
 				this->field_340 = Mem_MakeHandle(pBody);
 				this->field_348 = pBody->mPos.vy;
@@ -1109,4 +1113,54 @@ void validate_CVenomElectrified(void)
 void validate_CVenomHitSpark(void)
 {
 	VALIDATE_SIZE(CVenomHitSpark, 0x84);
+}
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_venom(void)
+{
+	// Not hooked, and why:
+	//
+	// CVenom::CVenom (0x4E9600) and Venom_CreateVenom (0x4E7D90, which is
+	// just "new CVenom"). The exe's CVenom vtable (0x53C6B8, 19 slots) has
+	// CVenom_AI (0x4EC040) in slot 2 and CVenom_Hit (0x4EB7F0) in slot 3.
+	// Our CVenom declares neither, so hooking the constructor would stamp a
+	// vtable where both fall back to CBaddy and the boss would stop
+	// thinking and stop reacting to hits. Venom_RelocatableModuleInit
+	// (0x4E7D30) is skipped for the same reason: all it does is install
+	// Venom_CreateVenom's address into the reloc table.
+	//
+	// CVenom::Shouldnt_DoPhysics_Be_Virtual is the 5 byte jump thunk at
+	// 0x4EBDC0, too short for a 6 byte hook (and patching it would run into
+	// CVenom_DoPhysics at 0x4EBDD0, which is hooked below anyway).
+	//
+	// CVenomHitSpark::Move shares its body with CCarnageHitSpark::Move
+	// (0x41A240, link folded); carnage.cpp already hooks that address.
+	//
+	// CVenomWrap::Die, CVenomElectrified::CVenomElectrified,
+	// CVenom::PlayNextFootstepSFX and CVenom::GetTargetPosFromNode have no
+	// address of their own in the PC build, the compiler inlined them into
+	// their callers (CVenom_AI and CVenom::ScanNodesForJumpTarget).
+	PATCH_PUSH_RET(0x004E7D50, Venom_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004E7E10, Venom_DisplayProgressBar);
+
+	PATCH_PUSH_RET_POLY(0x004E8990, CVenomHitSpark::CVenomHitSpark, "??0CVenomHitSpark@@QAE@PBVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x004E8D60, CVenomHitSpark::~CVenomHitSpark, "??1CVenomHitSpark@@UAE@XZ");
+
+	PATCH_PUSH_RET_POLY(0x004E9960, CVenom::~CVenom, "??1CVenom@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x004EB690, CVenom::ResolveSwitchNodes);
+	PATCH_PUSH_RET(0x004EBDD0, CVenom::DoPhysics);
+
+	PATCH_PUSH_RET_POLY(0x004ECED0, CVenom::EnterWaitState, "?EnterWaitState@CVenom@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004ECF00, CVenom::ExitWaitState, "?ExitWaitState@CVenom@@UAEXII@Z");
+
+	PATCH_PUSH_RET(0x004ED330, CVenom::VenomDie);
+
+	PATCH_PUSH_RET_POLY(0x004EF6A0, CVenom::TugImpulse, "?TugImpulse@CVenom@@UAEEPAVCVector@@00@Z");
+	PATCH_PUSH_RET_POLY(0x004F0E90, CVenom::CreateCombatImpactEffect, "?CreateCombatImpactEffect@CVenom@@UAEXPAVCVector@@H@Z");
+
+	PATCH_PUSH_RET(0x004F0F00, CVenom::PulseL6A4Node);
+	PATCH_PUSH_RET(0x004F0FB0, CVenom::AdjustWaterModel);
 }

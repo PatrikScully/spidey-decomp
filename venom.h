@@ -188,6 +188,8 @@ EXPORT void Venom_DisplayProgressBar(const u32*, u32*);
 
 EXPORT void Venom_RelocatableModuleInit(reloc_mod *);
 EXPORT void Venom_RelocatableModuleClear(void);
+void patch_venom(void);
+
 
 
 #endif
