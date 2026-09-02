@@ -191,4 +191,6 @@ void validate_SCalcBuffer(void);
 EXPORT void CalcScreenNormal(SCalcBuffer *,i32 *,i32 *,i32);
 EXPORT i32 Transform(CVector *,i32 *);
 
+void patch_weapons(void);
+
 #endif
