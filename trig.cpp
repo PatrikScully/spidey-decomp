@@ -68,21 +68,21 @@ i32 gLevelStatus;
 // Returns (level << 8) | area. Demo levels (field_4[0]=='d'/'D') use 0x99.
 i32 Trig_GetLevelId(void)
 {
-	i32 level = gSaveGame.field_4[1];
-	if (gSaveGame.field_4[0] == 'd' || gSaveGame.field_4[0] == 'D')
+	i32 level = G_SAVE_GAME.field_4[1];
+	if (G_SAVE_GAME.field_4[0] == 'd' || G_SAVE_GAME.field_4[0] == 'D')
 	{
 		level = 0x99;
 	}
 	else
 	{
 		if ((u32)level >= 0x30 && (u32)level <= 57)
-			return ((level - 48) << 8) | ((char)gSaveGame.field_4[3] - 48);
+			return ((level - 48) << 8) | ((char)G_SAVE_GAME.field_4[3] - 48);
 		if ((u32)level >= 0x41 && (u32)level <= 90)
-			return ((level - 49) << 8) | ((char)gSaveGame.field_4[3] - 48);
+			return ((level - 49) << 8) | ((char)G_SAVE_GAME.field_4[3] - 48);
 		if ((u32)level >= 97 && (u32)level <= 122)
-			return ((level - 81) << 8) | ((char)gSaveGame.field_4[3] - 48);
+			return ((level - 81) << 8) | ((char)G_SAVE_GAME.field_4[3] - 48);
 	}
-	return (level << 8) | ((char)gSaveGame.field_4[3] - 48);
+	return (level << 8) | ((char)G_SAVE_GAME.field_4[3] - 48);
 }
 
 EXPORT u16* TrigFile;
@@ -873,11 +873,6 @@ static i32 * const gKillNotifyCallCount = (i32*)0x0060CFBC;
 // and used, instead of the plain %s.trg. No idb_globals.txt entry nearby.
 static u8 * const gTrigLoadedLowRes = (u8*)0x006B4680;
 
-// gSaveGame.field_7C (shell.h), read directly at the fixed game address
-// because gSaveGame itself is not G_* macroed yet (see CLAUDE.md,
-// "gSaveGame needs G_* macro treatment").
-static u8 * const gSaveGameField7C = (u8*)0x006828D4;
-
 // Restart point name table, indexed by G_NUMCHEATRESTARTS (checked
 // against 20 below). No idb_globals.txt entry nearby, tentative name.
 static char ** const gCheatRestartNames = reinterpret_cast<char**>(0x006B4614);
@@ -1104,7 +1099,7 @@ haveFile:
 
 	Spool_ClearAllPSXs();
 
-	Spidey_LoadAlternativeHealthIcon((*gSaveGameField7C & 0xFF) + 1);
+	Spidey_LoadAlternativeHealthIcon((G_SAVE_GAME.field_7C & 0xFF) + 1);
 
 	G_NUMCHEATRESTARTS = 0;
 
@@ -2322,9 +2317,9 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 				char* pName = reinterpret_cast<char*>(p);
 				trigLog("LoadNewTrg(%s)", pName);
 
-				u8* pSaveBytes = reinterpret_cast<u8*>(&gSaveGame);
+				u8* pSaveBytes = reinterpret_cast<u8*>(&G_SAVE_GAME);
 
-				if (Utils_CompareStrings(pName, gSaveGame.field_4))
+				if (Utils_CompareStrings(pName, G_SAVE_GAME.field_4))
 				{
 					if (gLevelStatus == 0 && G_MECHLIST == 0)
 					{
@@ -2342,7 +2337,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 					gLevelStatus = 3;
 				}
 
-				Utils_CopyString(pName, gSaveGame.field_4, 9);
+				Utils_CopyString(pName, G_SAVE_GAME.field_4, 9);
 
 				p = SkipString(pName);
 
@@ -3136,12 +3131,8 @@ void* Trig_GetLinkInfoList(
 
 }
 
-// gSaveGame (shell.h SSaveGame, defined in front.cpp) needs the full G_* macro treatment
-// repo-wide (see CLAUDE.md, "gSaveGame needs G_* macro treatment"). Its field_4 is untyped
-// there (@FIXME: figure out proper size) and holds the current level code string "lXaXm";
-// offset 6 is a literal 'a' this function skips. Fixed game address used directly until
-// shell.h/front.cpp get the shared macro (gSaveGame base is 0x00682858, this is +4).
-static char * const gLevelCodeStr = reinterpret_cast<char*>(0x0068285C);
+// The current level code string "lXaXm" lives in G_SAVE_GAME.field_4 (front.h,
+// gSaveGame + 4 = 0x0068285C). Offset 6 is a literal 'a' this function skips.
 
 // @Ok
 // Functionally correct (verified logic against the disasm); previous session's residue
@@ -3154,14 +3145,14 @@ static char * const gLevelCodeStr = reinterpret_cast<char*>(0x0068285C);
 // or'd". See trig.attempts.md.
 int Trig_GetLevelID(void)
 {
-	char levelPrefix = gLevelCodeStr[0];
-	i32 areaCode = static_cast<i8>(gLevelCodeStr[1]);
+	char levelPrefix = G_SAVE_GAME.field_4[0];
+	i32 areaCode = static_cast<i8>(G_SAVE_GAME.field_4[1]);
 
 	if (levelPrefix != 'd' && levelPrefix != 'D')
 	{
 		if (static_cast<u32>(areaCode) >= '0' && static_cast<u32>(areaCode) <= '9')
 		{
-			i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+			i32 missionDigit = static_cast<i8>(G_SAVE_GAME.field_4[3]);
 			areaCode += -'0';
 			missionDigit -= '0';
 			return missionDigit | (areaCode << 8);
@@ -3169,7 +3160,7 @@ int Trig_GetLevelID(void)
 
 		if (static_cast<u32>(areaCode) >= 'A' && static_cast<u32>(areaCode) <= 'Z')
 		{
-			i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+			i32 missionDigit = static_cast<i8>(G_SAVE_GAME.field_4[3]);
 			areaCode += -0x31;
 			missionDigit -= '0';
 			return missionDigit | (areaCode << 8);
@@ -3177,7 +3168,7 @@ int Trig_GetLevelID(void)
 
 		if (static_cast<u32>(areaCode) >= 'a' && static_cast<u32>(areaCode) <= 'z')
 		{
-			i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+			i32 missionDigit = static_cast<i8>(G_SAVE_GAME.field_4[3]);
 			areaCode += -0x51;
 			missionDigit -= '0';
 			return missionDigit | (areaCode << 8);
@@ -3188,7 +3179,7 @@ int Trig_GetLevelID(void)
 		areaCode = 0x99;
 	}
 
-	i32 missionDigit = static_cast<i8>(gLevelCodeStr[3]);
+	i32 missionDigit = static_cast<i8>(G_SAVE_GAME.field_4[3]);
 	missionDigit -= '0';
 	return missionDigit | (areaCode << 8);
 }

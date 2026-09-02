@@ -596,7 +596,7 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 	i32 v18 = 1;
 	i32 v19 = 1;
 	i32 v17 = 0;
-	if ((u8)(gSaveGame.field_84 >> 8) >= 0x80)
+	if ((u8)(G_SAVE_GAME.field_84 >> 8) >= 0x80)
 	{
 		pMenu->AddEntry("lizardman");
 		goto skip1;
@@ -621,7 +621,7 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 		v18 = 0;
 	}
 	skip1:
-	if ((gSaveGame.field_84 & 0x40000) == 0)
+	if ((G_SAVE_GAME.field_84 & 0x40000) == 0)
 	{
 		i32 v9 = -1;
 		for (i32 idx = 0; idx < NUM_CHALLS; idx++)
@@ -1502,7 +1502,7 @@ void Shell_ComicCollection(void)
 				if (i == selected)
 					PShell_DrawMenuBox(x, y, 45, 34, 0, 0, 0, 0);
 
-				if (gSaveGame.field_8C & (1 << i))
+				if (G_SAVE_GAME.field_8C & (1 << i))
 				{
 					Shell_DrawComicHighlightBox((i16)(x + 3), (i16)(y + 1), pFrame, cellAmount[i]);
 				}
@@ -1610,7 +1610,7 @@ void Shell_ComicCollection(void)
 				i32 x = 58 * (i & 7) + 32;
 				i32 y = 40 * (i >> 3) + 50;
 
-				if ((gSaveGame.field_8C & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 45, y + 34))
+				if ((G_SAVE_GAME.field_8C & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 45, y + 34))
 					selected = i;
 			}
 		}
@@ -1678,7 +1678,7 @@ void Shell_ComicCollection(void)
 		{
 			i32 mouseOverSelected = 0;
 
-			if (PCSHELL_CheckTriggers(256, 1, 1) && (gSaveGame.field_8C & (1 << selected)))
+			if (PCSHELL_CheckTriggers(256, 1, 1) && (G_SAVE_GAME.field_8C & (1 << selected)))
 				mouseOverSelected = PCSHELL_IsMouseOver(
 					58 * (selected & 7) + 32,
 					40 * (selected >> 3) + 50,
@@ -1693,7 +1693,7 @@ void Shell_ComicCollection(void)
 
 				do
 				{
-					if ((1 << viewCell) & gSaveGame.field_8C)
+					if ((1 << viewCell) & G_SAVE_GAME.field_8C)
 					{
 						SFX_Play(31, 0x2000, 0);
 
@@ -1720,7 +1720,7 @@ void Shell_ComicCollection(void)
 								viewCell++;
 								G_SCONTROL[0].Right.Triggered = 0;
 								selected = viewCell;
-								if (viewCell < 32 && ((1 << viewCell) & gSaveGame.field_8C))
+								if (viewCell < 32 && ((1 << viewCell) & G_SAVE_GAME.field_8C))
 								{
 									paged = 1;
 									break;
@@ -1733,7 +1733,7 @@ void Shell_ComicCollection(void)
 								viewCell--;
 								G_SCONTROL[0].Left.Triggered = 0;
 								selected = viewCell;
-								if (viewCell >= 0 && (gSaveGame.field_8C & (1 << viewCell)))
+								if (viewCell >= 0 && (G_SAVE_GAME.field_8C & (1 << viewCell)))
 								{
 									paged = 1;
 									break;
@@ -1843,7 +1843,7 @@ EXPORT extern i32 gPcIcons[5];
 void Shell_CostumeViewer(void)
 {
 	print_if_false(gShellInitialized != 0, "Called Shell_CostumeViewer() without shell initialised");
-	print_if_false(gSaveGame.field_7C < 10, "Bad GameState.CurrentCostume");
+	print_if_false(G_SAVE_GAME.field_7C < 10, "Bad GameState.CurrentCostume");
 
 	Mess_SetScale(256);
 	Mess_SetCurrentFont("sp_fnt03.fnt");
@@ -1855,7 +1855,7 @@ void Shell_CostumeViewer(void)
 
 	for (i32 i = 0; i < 10; i++)
 	{
-		if (gSaveGame.field_80 & (1 << i))
+		if (G_SAVE_GAME.field_80 & (1 << i))
 		{
 			pMenu->AddEntry(gCostumeNames[i]);
 			pMenu->mEntry[i].field_14 = 0x80;
@@ -1880,7 +1880,7 @@ void Shell_CostumeViewer(void)
 	{
 		i32 line = 0;
 		SEntry* pEntry = pMenu->mEntry;
-		while (!Utils_CompareStrings(pEntry->name, gCostumeNames[gSaveGame.field_7C]))
+		while (!Utils_CompareStrings(pEntry->name, gCostumeNames[G_SAVE_GAME.field_7C]))
 		{
 			++line;
 			++pEntry;
@@ -1958,7 +1958,7 @@ void Shell_CostumeViewer(void)
 
 		if (pDescBox != 0)
 		{
-			char* pDesc = (char*)gCostumeDescriptions[3 * (u8)gSaveGame.field_7C];
+			char* pDesc = (char*)gCostumeDescriptions[3 * (u8)G_SAVE_GAME.field_7C];
 			if (pDesc != 0)
 			{
 				Mess_SetTextJustify(1);
@@ -2031,7 +2031,7 @@ drawDesc:
 		{
 			texTransition--;
 			if (texTransition == 0)
-				Spidey_LoadAlternativeTextureSet(gAltTextureSet, (u8)gSaveGame.field_7C + 1);
+				Spidey_LoadAlternativeTextureSet(gAltTextureSet, (u8)G_SAVE_GAME.field_7C + 1);
 		}
 
 		Mess_Update();
@@ -2076,15 +2076,15 @@ drawDesc:
 					goto denied;
 			}
 
-			if (idx == -1 || !(gSaveGame.field_80 & (1 << idx)))
+			if (idx == -1 || !(G_SAVE_GAME.field_80 & (1 << idx)))
 			{
 denied:
 				SFX_Play(0x1B, 0x2000, 0);
 			}
-			else if (idx != (u8)gSaveGame.field_7C)
+			else if (idx != (u8)G_SAVE_GAME.field_7C)
 			{
 				texTransition = 2;
-				gSaveGame.field_7C = (u8)idx;
+				G_SAVE_GAME.field_7C = (u8)idx;
 				SFX_Play(0x1F, 0x2000, 0);
 			}
 		}
@@ -2246,9 +2246,9 @@ void Shell_CharacterViewer(void)
 
 	// the Joel Jewett cheat toggles the last row of the list on and off
 	if (*gJoelJewtCheatCode != 0)
-		gSaveGame.field_84 |= 0x4000000;
+		G_SAVE_GAME.field_84 |= 0x4000000;
 	else
-		gSaveGame.field_84 &= ~0x4000000;
+		G_SAVE_GAME.field_84 &= ~0x4000000;
 
 	Mess_SetScale(256);
 	Mess_SetCurrentFont("sp_fnt03.fnt");
@@ -2260,7 +2260,7 @@ void Shell_CharacterViewer(void)
 
 	for (i32 i = 0; i < NUM_CHARACTERS; i++)
 	{
-		if (gSaveGame.field_84 & (1 << i))
+		if (G_SAVE_GAME.field_84 & (1 << i))
 		{
 			pMenu->AddEntry(gCharacters[i].Name);
 			pMenu->mEntry[pMenu->mNumLines - 1].unk_c = 0x69;
@@ -2571,7 +2571,7 @@ void Shell_CharacterViewer(void)
 			}
 
 			// idx can never be -1 out of the loop above, but the original still tests for it
-			if (idx == -1 || !(gSaveGame.field_84 & (1 << idx))
+			if (idx == -1 || !(G_SAVE_GAME.field_84 & (1 << idx))
 					|| *gCharacters[idx].ModelName == 0)
 			{
 denied:
@@ -2733,7 +2733,7 @@ i32 Shell_Difficulty(i32 a1)
 			if (a1 != 0 && v4 == 124)
 			{
 				i32 v7 = 0;
-				while (gSaveGame.field_56[v7] == 0)
+				while (G_SAVE_GAME.field_56[v7] == 0)
 				{
 					if (++v7 >= 34)
 						goto label36;
@@ -2868,7 +2868,7 @@ i32 Shell_Difficulty(i32 a1)
 			else
 				*(u8*)0x0060CFC7 = 1;
 			label65:
-			gSaveGame.mDifficulty = v25;
+			G_SAVE_GAME.mDifficulty = v25;
 			if (pMenu->mLine != 0)
 			{
 				SFX_Play(0x1F, 0x2000, 0);
@@ -2896,7 +2896,7 @@ i32 Shell_Difficulty(i32 a1)
 	Pad_ClearTriggers(G_SCONTROL);
 	Redbook_XAStop();
 	if (v34 != 0)
-		gSaveGame.field_78 = 1;
+		G_SAVE_GAME.field_78 = 1;
 	return v34;
 }
 
@@ -3048,7 +3048,7 @@ void Shell_DoShell(const u32 *a1,u32 *)
 	PCINPUT_SetMousePosition(304, 224);
 	gShellFromGame = 0;
 	PShell_Initialise();
-	Spidey_LoadAlternativeTextureSet(gAltTextureSet, (i32)(u8)gSaveGame.field_7C + 1);
+	Spidey_LoadAlternativeTextureSet(gAltTextureSet, (i32)(u8)G_SAVE_GAME.field_7C + 1);
 	print_if_false(gBiographies == 0, "pBios not NULL?");
 
 	i32 fileHandle = FileIO_Open("charbio.dat");
@@ -3139,14 +3139,14 @@ void Shell_DoShell(const u32 *a1,u32 *)
 	if (*gDoShellForceLevelExit != 0)
 	{
 		*gDoShellShowTitle = 1;
-		gSaveGame.field_7B = (u8)*gDoShellSaveLevelCode;
+		G_SAVE_GAME.field_7B = (u8)*gDoShellSaveLevelCode;
 	}
 
 	i32 v56 = 0;
 	*gDoShellForceLevelExit = 0;
 	Pad_IdleTime = 0;
 	gPshellArmorRealted = 0;
-	i32 v57 = (gSaveGame.field_78 != 0) + 1;
+	i32 v57 = (G_SAVE_GAME.field_78 != 0) + 1;
 	Shell_LegalScreen();
 
 	while (1)
@@ -3172,19 +3172,19 @@ void Shell_DoShell(const u32 *a1,u32 *)
 			case 1:  // new game
 				if (Shell_Difficulty(1) == 0)
 					continue;  // retry menu
-				Utils_CopyString("l1a1_t", gSaveGame.field_4, 9);
-				Utils_CopyString("Re_Start_death", gSaveGame.mRestartPointName, 50);
-				Utils_CopyString(gDoShellLevelCodeStr, (char*)&gSaveGame.field_3F, 9);
-				*(i32*)((u8*)&gSaveGame + 0x4C) = *gDoShellSaveB;
-				*(i32*)((u8*)&gSaveGame + 0x48) = *gDoShellSaveA;
-				*(i32*)((u8*)&gSaveGame + 0x50) = *gDoShellSaveC;
-				((u8*)&gSaveGame)[0x7A] = *gDoShellSaveE;
-				((u8*)&gSaveGame)[0x79] = *gDoShellSaveD;
-				memset(&gSaveGame.field_56[0], 0, 0x20);
-				*(i16*)((u8*)&gSaveGame + 0x76) = 0;
-				gSaveGame.mDifficulty = (i8)DifficultyLevel;
-				gSaveGame.field_78 = 1;
-				Spidey_LoadAlternativeTextureSet(gAltTextureSet, (i32)(u8)gSaveGame.field_7C + 1);
+				Utils_CopyString("l1a1_t", G_SAVE_GAME.field_4, 9);
+				Utils_CopyString("Re_Start_death", G_SAVE_GAME.mRestartPointName, 50);
+				Utils_CopyString(gDoShellLevelCodeStr, (char*)&G_SAVE_GAME.field_3F, 9);
+				*(i32*)((u8*)&G_SAVE_GAME + 0x4C) = *gDoShellSaveB;
+				*(i32*)((u8*)&G_SAVE_GAME + 0x48) = *gDoShellSaveA;
+				*(i32*)((u8*)&G_SAVE_GAME + 0x50) = *gDoShellSaveC;
+				((u8*)&G_SAVE_GAME)[0x7A] = *gDoShellSaveE;
+				((u8*)&G_SAVE_GAME)[0x79] = *gDoShellSaveD;
+				memset(&G_SAVE_GAME.field_56[0], 0, 0x20);
+				*(i16*)((u8*)&G_SAVE_GAME + 0x76) = 0;
+				G_SAVE_GAME.mDifficulty = (i8)DifficultyLevel;
+				G_SAVE_GAME.field_78 = 1;
+				Spidey_LoadAlternativeTextureSet(gAltTextureSet, (i32)(u8)G_SAVE_GAME.field_7C + 1);
 				goto enterLevel;
 			case 2:  // continue
 				goto enterLevel;
@@ -3254,9 +3254,9 @@ void Shell_DoShell(const u32 *a1,u32 *)
 					v61 = DoShell_TrainingChooser(0);
 					if (v61 != 0)
 					{
-						if (gSaveGame.field_7C != 0)
+						if (G_SAVE_GAME.field_7C != 0)
 						{
-							gSaveGame.field_7C = 0;
+							G_SAVE_GAME.field_7C = 0;
 							Spidey_LoadAlternativeTextureSet(gAltTextureSet, 1);
 						}
 						v56 = 1;
@@ -3355,8 +3355,8 @@ void Shell_DoShell(const u32 *a1,u32 *)
 enterLevel:
 	if (*gDoShellForceLevelExit != 0)
 	{
-		i32 v65 = (u8)gSaveGame.field_7B;
-		gSaveGame.field_7B = 0;
+		i32 v65 = (u8)G_SAVE_GAME.field_7B;
+		G_SAVE_GAME.field_7B = 0;
 		*gDoShellSaveLevelCode = v65;
 	}
 	if (gPshellArmorRealted == 0)
@@ -3444,7 +3444,7 @@ i32 Shell_Gallery(EShellResult a1)
 		print_if_false(0, "Bad default");
 		break;
 	}
-	if (gSaveGame.mCheatStoryboardFlag == 0)
+	if (G_SAVE_GAME.mCheatStoryboardFlag == 0)
 	{
 		pMenu->SetRedText(4);
 		pMenu->mEntry[4].unk_c = 100;
@@ -3539,7 +3539,7 @@ i32 Shell_Gallery(EShellResult a1)
 				v9 = 11;
 				break;
 			case 4:
-				if (gSaveGame.mCheatStoryboardFlag != 0)
+				if (G_SAVE_GAME.mCheatStoryboardFlag != 0)
 					v9 = 12;
 				break;
 			default:
@@ -3637,13 +3637,13 @@ void Shell_DrawGameCoverHighlightBox(i16 x, i16 y, SAnimFrame *pFrame, i32 amoun
 // field_30 is set the box is deleted and never recreated for the rest of
 // this function (confirmed against the real 0x49C220 disassembly: there is
 // only this one CExpandingBox construction in the whole function).
-// dword_6828E8 is the per-cover "unlocked" bitmask (tentative name
-// gGameCoversUnlockedMask, no idb match; same role/shape as
-// Shell_ComicCollection's dword_6828E4 for comics). "l*cov.bmp" cover art
-// filenames use a fixed per-slot digit ('1','2','4','5','7','8') baked into
-// the switch below, matching the original's literal byte patches (not a
-// linear index -- reproduced as-is, not "fixed").
-static u32 * const gGameCoversUnlockedMask = (u32*)0x006828E8;
+// dword_6828E8 is the per-cover "unlocked" bitmask. That address is
+// gSaveGame + 0x90, so it is G_SAVE_GAME.field_90 (front.h), not a global of
+// its own; same role/shape as Shell_ComicCollection's field_8C for comics.
+// "l*cov.bmp" cover art filenames use a fixed per-slot digit
+// ('1','2','4','5','7','8') baked into the switch below, matching the
+// original's literal byte patches (not a linear index -- reproduced as-is,
+// not "fixed").
 
 // @Ok
 void Shell_GameCovers(void)
@@ -3728,7 +3728,7 @@ void Shell_GameCovers(void)
 				if (i == selected)
 					PShell_DrawMenuBox(x, y, 90, 70, 0, 0, 0, 0);
 
-				if (*gGameCoversUnlockedMask & (1 << i))
+				if (G_SAVE_GAME.field_90 & (1 << i))
 				{
 					Shell_DrawGameCoverHighlightBox((i16)(x + 5), (i16)(y + 3), pFrame, cellAmount[i]);
 				}
@@ -3786,7 +3786,7 @@ void Shell_GameCovers(void)
 				i32 y = (i > 2) ? 128 : 50;
 				i32 x = 150 * col + 62;
 
-				if ((*gGameCoversUnlockedMask & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 90, y + 70))
+				if ((G_SAVE_GAME.field_90 & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 90, y + 70))
 					selected = i;
 			}
 		}
@@ -3874,7 +3874,7 @@ void Shell_GameCovers(void)
 					i32 x = 150 * col + 62;
 					i32 y = (i > 2) ? 128 : 50;
 
-					if (i == selected && (*gGameCoversUnlockedMask & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 90, y + 70))
+					if (i == selected && (G_SAVE_GAME.field_90 & (1 << i)) && PCSHELL_IsMouseOver(x, y, x + 90, y + 70))
 						mouseOverSelected = 1;
 				}
 			}
@@ -3884,7 +3884,7 @@ void Shell_GameCovers(void)
 				G_SCONTROL[0].Start.Triggered = 0;
 				G_SCONTROL[0].X.Triggered = 0;
 
-				if (*gGameCoversUnlockedMask & (1 << selected))
+				if (G_SAVE_GAME.field_90 & (1 << selected))
 				{
 					SFX_Play(31, 0x2000, 0);
 
@@ -4293,13 +4293,13 @@ i32 Shell_LevelSelect(void)
 	i32 v2 = 1000000;
 	for (i32 i = 0; i < 34; i++)
 	{
-		if ((u8)gSaveGame.field_56[i] < v2)
-			v2 = (u8)gSaveGame.field_56[i];
+		if ((u8)G_SAVE_GAME.field_56[i] < v2)
+			v2 = (u8)G_SAVE_GAME.field_56[i];
 	}
 	// find the first level with that (lowest) completion byte
 	i32 v4 = 0;
 	i32 v5 = 0;
-	while ((u8)gSaveGame.field_56[v5] != v2)
+	while ((u8)G_SAVE_GAME.field_56[v5] != v2)
 	{
 		if (++v5 >= 34)
 			break;
@@ -4309,7 +4309,7 @@ i32 Shell_LevelSelect(void)
 	for (i32 v6 = 0; v6 < 34; v6++)
 	{
 		print_if_false(*Levels[v6].mDisplayName != 0, "Bad level name");
-		if (*gShowAllLevels != 0 || gSaveGame.field_56[v6] != 0 || v6 == v4)
+		if (*gShowAllLevels != 0 || G_SAVE_GAME.field_56[v6] != 0 || v6 == v4)
 			pMenu->AddEntry(Levels[v6].mDisplayName);
 	}
 	pMenu->scrollbar_one = 1;
@@ -4384,7 +4384,7 @@ i32 Shell_LevelSelect(void)
 	G_SCONTROL[0].Start.Triggered = 0;
 	G_SCONTROL[0].X.Triggered = 0;
 	v14 = pMenu->mEntry[pMenu->mLine].name;
-	gSaveGame.field_4[0] = 0;
+	G_SAVE_GAME.field_4[0] = 0;
 	if (*Levels[0].mDisplayName != 0)
 	{
 		i32 idx = -1;
@@ -4399,13 +4399,13 @@ i32 Shell_LevelSelect(void)
 				break;
 		}
 		if (idx != -1)
-			Utils_CopyString(Levels[idx].mName, gSaveGame.field_4, 9);
+			Utils_CopyString(Levels[idx].mName, G_SAVE_GAME.field_4, 9);
 	}
-	gSaveGame.mRestartPointName[0] = 0;
-	*(i32*)((char*)&gSaveGame + 0x50) = 0;
-	*(u8*)((char*)&gSaveGame + 0x79) = 0;
-	*(i32*)((char*)&gSaveGame + 0x48) = 0;
-	*(i32*)((char*)&gSaveGame + 0x4C) = 0;
+	G_SAVE_GAME.mRestartPointName[0] = 0;
+	*(i32*)((char*)&G_SAVE_GAME + 0x50) = 0;
+	*(u8*)((char*)&G_SAVE_GAME + 0x79) = 0;
+	*(i32*)((char*)&G_SAVE_GAME + 0x48) = 0;
+	*(i32*)((char*)&G_SAVE_GAME + 0x4C) = 0;
 	v18 = 1;
 	SFX_Play(0x1F, 0x2000, 0);
 
@@ -4636,14 +4636,14 @@ i32 Shell_LoadGame(void)
 						if (*(u32*)slot == (u32)checksum)
 						{
 							SFX_Play(0x1F, 0x2000, 0);
-							memcpy(&gSaveGame, slot, sizeof(gSaveGame));
+							memcpy(&G_SAVE_GAME, slot, sizeof(G_SAVE_GAME));
 							for (i32 j = 0; j < NUM_CHALLS; j++)
 							{
 								Merge((SScore*)(gMergeBuffer + j * 25 + 3), &gGlobalRecords.mScores[j * 5], gChallenges[j].field_C);
 							}
 							gGlobalRecords = *(SRecords*)gMergeBuffer;
 							PShell_ApplyGameState();
-							Spidey_LoadAlternativeTextureSet(gAltTextureSet, gSaveGame.field_7C + 1);
+							Spidey_LoadAlternativeTextureSet(gAltTextureSet, G_SAVE_GAME.field_7C + 1);
 							state = 6;
 							Pad_ClearTriggers(G_SCONTROL);
 						}
@@ -4852,22 +4852,22 @@ i32 Shell_MainMenu(EShellResult a1)
 	i32 minComplete = 1000000;
 	for (i32 i = 0; i < 34; i++)
 	{
-		if ((u8)gSaveGame.field_56[i] < minComplete)
-			minComplete = (u8)gSaveGame.field_56[i];
+		if ((u8)G_SAVE_GAME.field_56[i] < minComplete)
+			minComplete = (u8)G_SAVE_GAME.field_56[i];
 	}
 	i32 continueLevel = 0;
-	while ((u8)gSaveGame.field_56[continueLevel] != minComplete)
+	while ((u8)G_SAVE_GAME.field_56[continueLevel] != minComplete)
 	{
 		if (++continueLevel >= 34)
 			break;
 	}
-	Utils_CopyString(Levels[continueLevel].mName, gSaveGame.field_4, 9);
+	Utils_CopyString(Levels[continueLevel].mName, G_SAVE_GAME.field_4, 9);
 
 	// allComplete is 1 only when no level slot is still 0.
 	i32 allComplete = 1;
 	for (i32 j = 0; j < 34; j++)
 	{
-		if (gSaveGame.field_56[j] == 0)
+		if (G_SAVE_GAME.field_56[j] == 0)
 			allComplete = 0;
 	}
 
@@ -4913,7 +4913,7 @@ i32 Shell_MainMenu(EShellResult a1)
 		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 
 		curType = gMainMenuTable[line].type;
-		if (curType == 1 || curType == 5 || (curType == 2 && gSaveGame.field_78 != 0))
+		if (curType == 1 || curType == 5 || (curType == 2 && G_SAVE_GAME.field_78 != 0))
 			M3d_Render(pDummy);
 		else if (curType != 2)
 			M3d_Render(pIcon);
@@ -4942,7 +4942,7 @@ i32 Shell_MainMenu(EShellResult a1)
 
 		for (k = 0; k < 8; k++)
 		{
-			if (k != 0 || gSaveGame.field_78 != 0)
+			if (k != 0 || G_SAVE_GAME.field_78 != 0)
 			{
 				Mess_SetTextJustify(0);
 				Mess_SetRGB(0x45, 0x3C, 0x6B, 0);
@@ -5011,7 +5011,7 @@ i32 Shell_MainMenu(EShellResult a1)
 			{
 				if (PCSHELL_CheckTriggers(4097, 0, 0))
 				{
-					if (v20 == 0 || ((--v20, line = v20, v20 == 0) && gSaveGame.field_78 == 0))
+					if (v20 == 0 || ((--v20, line = v20, v20 == 0) && G_SAVE_GAME.field_78 == 0))
 					{
 						v20 = 7;
 						line = 7;
@@ -5023,7 +5023,7 @@ i32 Shell_MainMenu(EShellResult a1)
 					{
 						v20 = 0;
 						line = 0;
-						if (gSaveGame.field_78 == 0)
+						if (G_SAVE_GAME.field_78 == 0)
 						{
 							v20 = 1;
 							line = 1;
@@ -5062,14 +5062,14 @@ i32 Shell_MainMenu(EShellResult a1)
 				line = v20;
 				if (v20 == 2 && *gMainMenuDCCardFlag == 0)
 					line = ++v20;
-				else if (v20 == 0 && gSaveGame.field_78 == 0)
+				else if (v20 == 0 && G_SAVE_GAME.field_78 == 0)
 					line = ++v20;
 			}
 		}
 
 		// Resolve the final line and whether a move sound plays.
 		i32 playMoveSound = 0;
-		if (v20 != 0 || gSaveGame.field_78 != 0)
+		if (v20 != 0 || G_SAVE_GAME.field_78 != 0)
 		{
 			if (v21 != v20)
 				playMoveSound = 1;
@@ -5154,12 +5154,12 @@ i32 Shell_MainMenu(EShellResult a1)
 	if ((gRenderTest & 0x80) != 0)
 	{
 		i32 v19 = selType - 1;
-		if (v19 == 0 || (v19 == 1 && gSaveGame.field_78 != 0))
+		if (v19 == 0 || (v19 == 1 && G_SAVE_GAME.field_78 != 0))
 			accepted = 1;
 	}
 	else
 	{
-		if (selType != 2 || gSaveGame.field_78 != 0)
+		if (selType != 2 || G_SAVE_GAME.field_78 != 0)
 			accepted = 1;
 	}
 
@@ -5315,7 +5315,7 @@ void Shell_MovieViewer(void)
 	pMenu->AddEntry(gMovieTable[0].pDisplayName);
 	for (i32 i = 1; i < 21; i++)
 	{
-		if (gMovieTable[i].mUnlockId != -1 && ((1 << gMovieTable[i].mUnlockId) & gSaveGame.field_88) != 0)
+		if (gMovieTable[i].mUnlockId != -1 && ((1 << gMovieTable[i].mUnlockId) & G_SAVE_GAME.field_88) != 0)
 			pMenu->AddEntry(gMovieTable[i].pDisplayName);
 	}
 	pMenu->scrollbar_one = 1;
@@ -6229,7 +6229,7 @@ void Shell_SFXMusic(void)
 				else if (v14 > 0x3FFF)
 					v14 = 0x3FFF;
 				gGameState[12] = v14;
-				gSaveGame.field_94 = v14;
+				G_SAVE_GAME.field_94 = v14;
 			}
 			if (v23 != 0)
 				SFX_Play(0x1C, 0x2000, 0);
@@ -6245,7 +6245,7 @@ void Shell_SFXMusic(void)
 				else if (v15 > 255)
 					v15 = 255;
 				gGameState[13] = v15;
-				gSaveGame.field_9C = v15;
+				G_SAVE_GAME.field_9C = v15;
 				v25 = 1;
 			}
 			if (v23 != 0 || v25 == 0)
@@ -6266,7 +6266,7 @@ void Shell_SFXMusic(void)
 				else if (v17 > 255)
 					v17 = 255;
 				gGameState[11] = v17;
-				gSaveGame.field_98 = v17;
+				G_SAVE_GAME.field_98 = v17;
 			}
 			break;
 		case 3:
@@ -6274,7 +6274,7 @@ void Shell_SFXMusic(void)
 			{
 				SFX_Play(0x1F, 0x2000, 0);
 				DCSetBootROMSoundMode(gBootRomSoundMode == 0);
-				gSaveGame.field_A0 = gBootRomSoundMode;
+				G_SAVE_GAME.field_A0 = gBootRomSoundMode;
 			}
 			break;
 		case 4:
@@ -6284,9 +6284,9 @@ void Shell_SFXMusic(void)
 				gGameState[12] = 11087;
 				gGameState[11] = 177;
 				gGameState[13] = 201;
-				gSaveGame.field_94 = 11087;
-				gSaveGame.field_98 = 177;
-				gSaveGame.field_9C = 201;
+				G_SAVE_GAME.field_94 = 11087;
+				G_SAVE_GAME.field_98 = 177;
+				G_SAVE_GAME.field_9C = 201;
 			}
 			break;
 		default:
@@ -6339,7 +6339,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 	}
 
 	// checksum of the save being written, 46 dwords after mChecksum
-	gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
+	G_SAVE_GAME.mChecksum = Shell_CalculateGameChecksum(&G_SAVE_GAME);
 
 	PShell_NormalFont();
 
@@ -6401,7 +6401,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 					Mess_DrawText(190, 70, "in this save slot ?", 0, 0x1000);
 				Mess_SetRGB(0x80, 0x80, 0x80, 0);
 				Mess_SetRGBBottom(0x45, 60, 107);
-				Shell_DisplayGameInfo(190, slotValid != 0 ? 130 : 85, &gSaveGame);
+				Shell_DisplayGameInfo(190, slotValid != 0 ? 130 : 85, &G_SAVE_GAME);
 			}
 			if (pSlotMenu != 0)
 				pSlotMenu->Display();
@@ -6575,7 +6575,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 				Pad_ClearTriggers(G_SCONTROL);
 				break;
 			}
-			i32 v34 = Shell_InputName(gSaveGame.field_3F, 1, 0, 0);
+			i32 v34 = Shell_InputName(G_SAVE_GAME.field_3F, 1, 0, 0);
 			if (v34 == -1)
 			{
 				state = 7;
@@ -6590,8 +6590,8 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 				if (v34 == 1)
 				{
 					SFX_Play(0x1F, 0x2000, 0);
-					gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
-					memcpy(pSlot, &gSaveGame, sizeof(SSaveGame));
+					G_SAVE_GAME.mChecksum = Shell_CalculateGameChecksum(&G_SAVE_GAME);
+					memcpy(pSlot, &G_SAVE_GAME, sizeof(SSaveGame));
 					for (i32 j = 0; j < NUM_CHALLS; j++)
 						Merge((SScore*)(gMergeBuffer + j * 25 + 3), &gGlobalRecords.mScores[j * 5], gChallenges[j].field_C);
 					state = 10;
@@ -6635,9 +6635,9 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 					if (pSlotMenu != 0)
 					{
 						// prefill the name prompt with the existing save's name
-						Utils_CopyString(gSaveGameSlots[pSlotMenu->mLine].field_3F, gSaveGame.field_3F, 9);
-						gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
-						i32 v48 = Shell_InputName(gSaveGame.field_3F, 1, 0, 0);
+						Utils_CopyString(gSaveGameSlots[pSlotMenu->mLine].field_3F, G_SAVE_GAME.field_3F, 9);
+						G_SAVE_GAME.mChecksum = Shell_CalculateGameChecksum(&G_SAVE_GAME);
+						i32 v48 = Shell_InputName(G_SAVE_GAME.field_3F, 1, 0, 0);
 						if (v48 == -1)
 						{
 							state = 7;
@@ -6650,8 +6650,8 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 							if (v48 == 1)
 							{
 								SFX_Play(0x1F, 0x2000, 0);
-								gSaveGame.mChecksum = Shell_CalculateGameChecksum(&gSaveGame);
-								memcpy(&gSaveGameSlots[pSlotMenu->mLine], &gSaveGame, sizeof(SSaveGame));
+								G_SAVE_GAME.mChecksum = Shell_CalculateGameChecksum(&G_SAVE_GAME);
+								memcpy(&gSaveGameSlots[pSlotMenu->mLine], &G_SAVE_GAME, sizeof(SSaveGame));
 								for (i32 k = 0; k < NUM_CHALLS; k++)
 									Merge((SScore*)(gMergeBuffer + k * 25 + 3), &gGlobalRecords.mScores[k * 5], gChallenges[k].field_C);
 								gGlobalRecords = *(SRecords*)gMergeBuffer;
@@ -7042,8 +7042,8 @@ void Shell_ScreenAdjust(void)
 		DoubleBuffer[1].Disp.screen.y = savedY;
 	}
 
-	*reinterpret_cast<i32*>(&gSaveGame.field_A4) = DoubleBuffer[0].Disp.screen.x;
-	*reinterpret_cast<i32*>(&gSaveGame.field_A8) = DoubleBuffer[0].Disp.screen.y;
+	*reinterpret_cast<i32*>(&G_SAVE_GAME.field_A4) = DoubleBuffer[0].Disp.screen.x;
+	*reinterpret_cast<i32*>(&G_SAVE_GAME.field_A8) = DoubleBuffer[0].Disp.screen.y;
 
 	gShellMenuEase = 0x200;
 }
@@ -7439,7 +7439,7 @@ i32 Shell_Special(EShellResult a1)
 	i32 v4 = *gShowAllLevels;
 	for (i32 i = 0; i < 34; i++)
 	{
-		if (gSaveGame.field_56[i] != 0)
+		if (G_SAVE_GAME.field_56[i] != 0)
 		{
 			v4 = 1;
 			break;

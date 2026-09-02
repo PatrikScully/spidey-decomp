@@ -1222,25 +1222,42 @@ int Utils_CalcAim(CSVector* a1, CVector* a2, CVector* a3)
 	return v7;
 }
 
-// RNG state, seeded by Utils_InitialRand and stepped by Rnd. Real addresses
-// found in the original at 0x006B4C7C (gRndRelatedOne), 0x006B4B90
-// (gRndRelatedTwo), 0x006B4B94 (gRndRelatedThree); kept as plain file-local
-// statics since nothing hooked shares them yet.
+// RNG state, seeded by Utils_InitialRand, stepped by Rnd and by Utils_Jumble
+// (which inlines Rnd three times). Only these three functions touch it in the
+// whole binary, and all three live in this file, so the macros stay file-local.
+//
+// Addresses read out of the disassembly. Utils_InitialRand (0x4E5D80) is five
+// instructions long and stores all three: "mov dword [6B4B90h],12B9B0A1h" at
+// 0x4E5D84 is gRndRelatedTwo, "mov [6B4C7Ch],eax" at 0x4E5D8E is the seed
+// argument going into gRndRelatedOne, and "mov dword [6B4B94h],0AA2FB3Fh" at
+// 0x4E5D93 is gRndRelatedThree. Rnd (0x4E5DA0) reads and writes the same three.
+//
+// They have to point at game memory. Neither Rnd nor Utils_InitialRand is
+// hooked, so the exe seeds and steps its own copy while our DLL copy stays at
+// zero. Hooked code in carnage.cpp, chopper.cpp, exp.cpp and the rest calls our
+// Rnd, so without this every hooked caller runs a different random stream than
+// the game.
 // @FIXME
 static int gRndRelatedOne;
+//#define G_RND_RELATED_ONE (gRndRelatedOne)
+#define G_RND_RELATED_ONE (*reinterpret_cast<int*>(0x006B4C7C))
 // @FIXME
 static int gRndRelatedTwo;
+//#define G_RND_RELATED_TWO (gRndRelatedTwo)
+#define G_RND_RELATED_TWO (*reinterpret_cast<int*>(0x006B4B90))
 // @FIXME
 static int gRndRelatedThree;
+//#define G_RND_RELATED_THREE (gRndRelatedThree)
+#define G_RND_RELATED_THREE (*reinterpret_cast<int*>(0x006B4B94))
 
 // Verified against the IDA decompile of 0x4E5D80 (30 bytes): store order and
 // constants (0x12B9B0A1, 0xAA2FB3F) match the original exactly.
 // @Ok
 void Utils_InitialRand(int a)
 {
-	gRndRelatedTwo = 0x12B9B0A1;
-	gRndRelatedOne = a;
-	gRndRelatedThree = 0xAA2FB3F;
+	G_RND_RELATED_TWO = 0x12B9B0A1;
+	G_RND_RELATED_ONE = a;
+	G_RND_RELATED_THREE = 0xAA2FB3F;
 }
 
 // Verified against the IDA decompile of 0x4E5DA0 (77 bytes): the LCG-style
@@ -1250,10 +1267,10 @@ void Utils_InitialRand(int a)
 INLINE int Rnd(i32 n)
 {
 	i32 result; // eax
-	gRndRelatedOne = gRndRelatedThree + gRndRelatedOne * gRndRelatedTwo;
-	gRndRelatedTwo = (gRndRelatedOne >> 4) + (gRndRelatedOne ^ gRndRelatedTwo);
-	result = (n * (u16)gRndRelatedOne) >> 16;
-	gRndRelatedThree = gRndRelatedThree + (gRndRelatedOne >> 3) - 0x10101010;
+	G_RND_RELATED_ONE = G_RND_RELATED_THREE + G_RND_RELATED_ONE * G_RND_RELATED_TWO;
+	G_RND_RELATED_TWO = (G_RND_RELATED_ONE >> 4) + (G_RND_RELATED_ONE ^ G_RND_RELATED_TWO);
+	result = (n * (u16)G_RND_RELATED_ONE) >> 16;
+	G_RND_RELATED_THREE = G_RND_RELATED_THREE + (G_RND_RELATED_ONE >> 3) - 0x10101010;
 	return result;
 }
 

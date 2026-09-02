@@ -10,6 +10,23 @@
 
 EXPORT extern SSaveGame gSaveGame;
 
+// The save block the exe owns at 0x00682858, 0xBC bytes (SSaveGame in shell.h,
+// which is exactly the gap to the next global at 0x00682914).  Proof from the
+// disassembly: Shell_SaveGame writes the checksum with `mov [682858h],eax` at
+// 0x49FB9E and hands the same base to Front_LoadGame with `push 682858h`, and
+// SpideyMain pushes 682858h at 0x455F0C for the same call.
+//
+// This has to point at game memory.  Front_Init, Front_LoadGame, Shell_LoadGame
+// and Shell_SaveGame are the writers and none of them are hooked, while
+// PShell_ActivateCheat (0x0047C440) already is and writes field_78/80/84/88/8C/
+// 90.  With a repo-local copy the cheats would land in our DLL and the game
+// would never see them, and every hooked reader would see a zeroed save block.
+//
+// One macro for the whole block on purpose: every 0x006828xx address in the
+// repo is gSaveGame plus an offset, so index this instead of naming a slot.
+//#define G_SAVE_GAME (gSaveGame)
+#define G_SAVE_GAME (*reinterpret_cast<SSaveGame*>(0x00682858))
+
 struct SLevel
 {
 	char* mDisplayName;
