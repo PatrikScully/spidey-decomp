@@ -13,6 +13,10 @@ struct SModel;
 
 EXPORT extern i32 gFireDomes;
 EXPORT extern i32 gNumDomes;
+// 0x006B55A8. web.cpp is not hooked yet, so the exe keeps writing its own
+// counter and every hooked reader has to look at that one.
+//#define G_NUM_DOMES (gNumDomes)
+#define G_NUM_DOMES (*reinterpret_cast<i32*>(0x006B55A8))
 EXPORT extern CBody* WebList;
 
 // Address 0x4F7680. Axis-aligned-box-vs-line-segment clip test; see its own comment in

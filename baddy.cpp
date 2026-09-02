@@ -12,6 +12,7 @@
 #include "spool.h"
 #include "m3dcolij.h"
 #include "mysterio.h"
+#include "ps2gamefmv.h"
 
 
 CBody* ControlBaddyList;
@@ -222,7 +223,7 @@ i32 CBaddy::SmackSpidey(
 
 	CVector firstVec;
 
-	if (!gNumDomes)
+	if (!G_NUM_DOMES)
 	{
 		for (i32 i = 0; ; i++)
 		{
@@ -306,10 +307,10 @@ i32 CBaddy::SmackSpidey(
 // @Matching
 INLINE i32 CBaddy::DistanceToPlayer(i32 a2){
 
-	if (this->field_208 && gAttackRelated - this->field_208 <= a2 )
+	if (this->field_208 && G_ATTACK_RELATED - this->field_208 <= a2 )
 		return this->field_204;
 
-	this->field_208 = gAttackRelated;
+	this->field_208 = G_ATTACK_RELATED;
 	this->field_204 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 
 	return this->field_204;
@@ -644,7 +645,7 @@ CBody* CBaddy::StruckGameObject(i32 a2, i32 a3)
 				G_MECHLIST_PLAYER,
 				this)) == 0 )
 	  {
-		  if (a3 && (result = Utils_CheckObjectCollision(&this->field_2FC, &this->mPos, BaddyList, this)))
+		  if (a3 && (result = Utils_CheckObjectCollision(&this->field_2FC, &this->mPos, G_BADDY_LIST, this)))
 		  {
 			  DoAssert(result != this, "smoething's wrong in the state of denmark");
 			  return result;
@@ -928,13 +929,13 @@ i32 CBaddy::BumpedIntoSpidey(i32 a2)
 {
 	i32 v4;
 
-	if (this->field_208 && gAttackRelated - this->field_208 <= 4)
+	if (this->field_208 && G_ATTACK_RELATED - this->field_208 <= 4)
 	{
 		v4 = this->field_204;
 	}
 	else
 	{
-		this->field_208 = gAttackRelated;
+		this->field_208 = G_ATTACK_RELATED;
 		v4 = Utils_CrapXZDist(this->mPos, G_MECHLIST_PLAYER->mPos);
 		this->field_204 = v4;
 	}
@@ -1219,7 +1220,7 @@ CBaddy* CBaddy::GetClosest(i32 baddyType, i32 inSight)
 	i32 distance = 10656;
 	CBaddy* result = 0;
 
-	for ( CBaddy* i = BaddyList; i; i = reinterpret_cast<CBaddy*>(i->mNextItem))
+	for ( CBaddy* i = G_BADDY_LIST; i; i = reinterpret_cast<CBaddy*>(i->mNextItem))
 	{
 		if ( (!baddyType || i->mType == baddyType) && i != this )
 		{
@@ -2454,8 +2455,8 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			u16 val = CBaddy_ResolveOperand(this);
 			if (cmd == 0x42B3)
 			{
-				gsub_4DFFB0(ControlBaddyList, val);
-				gsub_4DFFB0(BaddyList, val);
+				gsub_4DFFB0(G_CONTROL_BADDY_LIST, val);
+				gsub_4DFFB0(G_BADDY_LIST, val);
 				gsub_4DFFB0(G_ENVIRONMENTAL_OBJECT_LIST, val);
 			}
 			else
@@ -2549,7 +2550,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 
 		case 0x430B:
 		{
-			CBaddy *node = BaddyList;
+			CBaddy *node = G_BADDY_LIST;
 			while (node != 0 && node->mType != 314)
 				node = static_cast<CBaddy*>(node->mNextItem);
 
@@ -2635,7 +2636,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			for (i32 i = 0; i < n; i++)
 			{
 				u16 k = entries[1 + i];
-				for (CBaddy *node = BaddyList; node != 0; node = static_cast<CBaddy*>(node->mNextItem))
+				for (CBaddy *node = G_BADDY_LIST; node != 0; node = static_cast<CBaddy*>(node->mNextItem))
 				{
 					if (node->mNode != k)
 						continue;
@@ -2855,15 +2856,13 @@ void CBaddy::SetVariable(u16 a2)
 // @Matching
 i16 CBaddy::GetVariable(u16 a2)
 {
-	extern i32 gGameFmvPad;
-
 	switch (a2)
 	{
 		case 0x2139:
-			return DifficultyLevel;
+			return G_DIFFICULTY_LEVEL;
 
 		case 0x2136:
-			return gGameFmvPad;
+			return G_GAME_FMV_PAD;
 
 		case 0x2132:
 		{
@@ -3040,7 +3039,7 @@ void CBaddy::DoPhysics(i32 a2)
 		return;
 	}
 
-	this->field_A8 = gTrajectoryVector;
+	this->field_A8 = G_TRAJECTORY_VECTOR;
 	this->mCollision = 0;
 
 	i32 elapsed;
@@ -3123,7 +3122,7 @@ void CBaddy::Baddy_SendSignal(void)
 // @Matching
 CBaddy* FindBaddyOfType(i32 type)
 {
-	CItem *current = BaddyList;
+	CItem *current = G_BADDY_LIST;
 
 	while (current)
 	{
@@ -3405,12 +3404,12 @@ CSoftSpot::CSoftSpot(CBaddy* owner, i32 health, i32 node, i32 type)
 		this->field_194 = 12;
 	}
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	print_if_false(owner != 0, "no owner for soft spot");
 
-	owner->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
-	owner->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	owner->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
+	owner->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_330 = Mem_MakeHandle(owner);
 
@@ -3430,8 +3429,77 @@ CSoftSpot::CSoftSpot(CBaddy* owner, i32 health, i32 node, i32 type)
 		this->mCBodyFlags |= 0x10;
 	}
 
-	if (DifficultyLevel)
+	if (G_DIFFICULTY_LEVEL)
 		this->field_2A8 |= 0x10000;
 
 	this->field_2A8 |= 0x200;
+}
+
+#include "my_patch.h"
+
+// @Bogus
+// Left out on purpose:
+//   CBaddy::Grab (0x00403A80) is only 5 bytes ("xor al,al; ret 4"), so a
+//     6 byte push/ret does not fit inside the function.
+//   CBaddy::CreateCombatImpactEffect and CBaddy::SetParamByIndex both fold
+//     into the shared 3 byte "ret 8" stub at 0x00407F30, Victorious into the
+//     1 byte "ret" at 0x004015B0 and UnknownCBaddyFunctionFive into the
+//     3 byte "ret 4" at 0x00407F60. All too small, and all shared with other
+//     classes.
+//   CBaddy::GetLocalPos and CBaddy::SendDeathPulse have no out of line copy
+//     in the exe, the original inlined them everywhere.
+//   CSoftSpot::CSoftSpot (0x0045F700) and CMysterioHeadGlow::CMysterioHeadGlow
+//     (0x0045AAA0): hooking a constructor stamps our vtable on the object, and
+//     our versions of these two classes are missing overrides the exe has
+//     (CSoftSpot::AI 0x0045FC10 and CSoftSpot::Hit 0x0045F940;
+//     CMysterioHeadGlow::Move 0x0045AE50 and ~CMysterioHeadGlow 0x0045ADB0).
+//     Hooking them would silently drop those.
+void patch_baddy(void)
+{
+	PATCH_PUSH_RET(0x00402BE0, CBaddy::RunTimer);
+	PATCH_PUSH_RET(0x00402F60, CBaddy::GetNextWaypoint);
+	PATCH_PUSH_RET(0x004030C0, CBaddy::YawTowards);
+	PATCH_PUSH_RET(0x00403160, CBaddy::CheckStateFlags);
+	PATCH_PUSH_RET(0x00403230, CBaddy::Baddy_SendSignal);
+	PATCH_PUSH_RET(0x00403310, CBaddy::PathCheck);
+	PATCH_PUSH_RET(0x00403350, CBaddy::PathCheckGuts);
+	PATCH_PUSH_RET(0x004039D0, CBaddy::CleanUpAIProcList);
+	PATCH_PUSH_RET(0x00403A10, CBaddy::MarkAIProcList);
+	PATCH_PUSH_RET(0x00403A90, CBaddy::CleanUpMessages);
+	PATCH_PUSH_RET(0x00403B60, CBaddy::GetWaypointNearTarget);
+	PATCH_PUSH_RET(0x00403C30, CBaddy::SmackSpidey);
+	PATCH_PUSH_RET(0x00403E70, CBaddy::TrapWeb);
+	PATCH_PUSH_RET(0x00403EF0, CBaddy::TugWeb);
+	PATCH_PUSH_RET(0x00403F90, FindBaddyOfType);
+	PATCH_PUSH_RET(0x00403FC0, CBaddy::MakeSpriteRing);
+	PATCH_PUSH_RET(0x004040E0, CBaddy::Neutralize);
+	PATCH_PUSH_RET(0x00404170, CBaddy::DistanceToPlayer);
+	PATCH_PUSH_RET(0x004041C0, CBaddy::SetHeight);
+	PATCH_PUSH_RET(0x00404320, CBaddy::Die);
+	PATCH_PUSH_RET(0x00404470, CBaddy::BumpedIntoSpidey);
+	PATCH_PUSH_RET(0x00404510, CBaddy::CheckSightCone);
+	PATCH_PUSH_RET(0x00404810, CBaddy::ShouldFall);
+	PATCH_PUSH_RET(0x004048F0, CBaddy::AddPointToPath);
+	PATCH_PUSH_RET(0x00404AE0, CBaddy::StruckGameObject);
+	PATCH_PUSH_RET(0x00404B60, CBaddy::RunAppropriateAnim);
+	PATCH_PUSH_RET(0x00404C50, CBaddy::DoPhysics);
+	PATCH_PUSH_RET(0x00404FD0, CBaddy::ParseScript);
+	PATCH_PUSH_RET(0x00406E50, CBaddy::GetScriptValue);
+
+	// virtuals, the constructor and the destructor go through the export
+	// table, a member pointer to a virtual is a vcall thunk and would loop
+	// straight back into the patched address.
+	PATCH_PUSH_RET_POLY(0x00402C00, CBaddy::CBaddy, "??0CBaddy@@QAE@XZ");
+	// 0x00402D60, not the 0x00460780 tools/names.json points at: 0x00402D60
+	// stores CBaddy's vtable (0x0053B2A4) and decrements NumBaddies, and it is
+	// what CBaddy's deleting destructor at 0x00402D40 calls. 0x00460780 stores
+	// 0x0053BBE8 and is CSuper::~CSuper.
+	PATCH_PUSH_RET_POLY(0x00402D60, CBaddy::~CBaddy, "??1CBaddy@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00403AD0, CBaddy::GetClosest, "?GetClosest@CBaddy@@UAEPAV1@HH@Z");
+	PATCH_PUSH_RET_POLY(0x00404650, CBaddy::PlayerIsVisible, "?PlayerIsVisible@CBaddy@@UAEHXZ");
+	PATCH_PUSH_RET_POLY(0x00404C40, CBaddy::Shouldnt_DoPhysics_Be_Virtual, "?Shouldnt_DoPhysics_Be_Virtual@CBaddy@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004050B0, CBaddy::ExecuteCommand, "?ExecuteCommand@CBaddy@@UAEHG@Z");
+	PATCH_PUSH_RET_POLY(0x00406EE0, CBaddy::SetVariable, "?SetVariable@CBaddy@@UAEXG@Z");
+	PATCH_PUSH_RET_POLY(0x004072A0, CBaddy::GetVariable, "?GetVariable@CBaddy@@UAEFG@Z");
+	PATCH_PUSH_RET_POLY(0x00407F40, CBaddy::TugImpulse, "?TugImpulse@CBaddy@@UAEEPAVCVector@@00@Z");
 }
