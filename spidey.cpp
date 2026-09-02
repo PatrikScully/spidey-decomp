@@ -34,19 +34,36 @@
 #include "switch.h"
 #include "ps2pad.h"
 
+// 0x006B78F8, "gLowGraphics" (DXinit.h). Same file-local macro trig.cpp,
+// spool.cpp and PCTex.cpp already use, spelled identically.
+//#define G_LOWGRAPHICS (gLowGraphics)
+#define G_LOWGRAPHICS (*reinterpret_cast<i32*>(0x006B78F8))
+
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXOffset;
+//#define G_SPIDEY_CEILING_CAMERA_X_OFFSET (gSpideyCeilingCameraXOffset)
+#define G_SPIDEY_CEILING_CAMERA_X_OFFSET (*reinterpret_cast<u16*>(0x006A8204))
 // @Ok
 EXPORT u16 gSpideyCeilingCameraYOffset;
+//#define G_SPIDEY_CEILING_CAMERA_Y_OFFSET (gSpideyCeilingCameraYOffset)
+#define G_SPIDEY_CEILING_CAMERA_Y_OFFSET (*reinterpret_cast<u16*>(0x006A8200))
 // @Ok
 EXPORT u16 gSpideyCeilingCameraZOffset;
+//#define G_SPIDEY_CEILING_CAMERA_Z_OFFSET (gSpideyCeilingCameraZOffset)
+#define G_SPIDEY_CEILING_CAMERA_Z_OFFSET (*reinterpret_cast<u16*>(0x006A8202))
 // @Ok
 EXPORT u16 gSpideyCeilingCameraXZDistance;
+//#define G_SPIDEY_CEILING_CAMERA_XZ_DISTANCE (gSpideyCeilingCameraXZDistance)
+#define G_SPIDEY_CEILING_CAMERA_XZ_DISTANCE (*reinterpret_cast<u16*>(0x006A825C))
 // @Ok
 EXPORT u16 gSpideyCeilingCameraYDistance;
+//#define G_SPIDEY_CEILING_CAMERA_Y_DISTANCE (gSpideyCeilingCameraYDistance)
+#define G_SPIDEY_CEILING_CAMERA_Y_DISTANCE (*reinterpret_cast<u16*>(0x006A8CAC))
 
 // @Ok
 i32 *gSpideySFXEntry[300];
+//#define G_SPIDEY_SFX_ENTRY (gSpideySFXEntry)
+#define G_SPIDEY_SFX_ENTRY (reinterpret_cast<i32**>(0x006A82B8))
 
 // @Bogus
 // The animation-start idiom this file repeats everywhere: latch the SFX
@@ -56,7 +73,7 @@ i32 *gSpideySFXEntry[300];
 // the real source too.
 static void RunAnimWithSFX(CPlayer *pPlayer, i32 anim, i32 frame)
 {
-	i32 *p = gSpideySFXEntry[anim];
+	i32 *p = G_SPIDEY_SFX_ENTRY[anim];
 
 	pPlayer->field_350 = p;
 
@@ -126,44 +143,76 @@ static void WebShotAimTorso(CPlayer *pPlayer)
 
 // @Ok
 EXPORT i16 gSpideyFloorCamXOffset;
+//#define G_SPIDEY_FLOOR_CAM_X_OFFSET (gSpideyFloorCamXOffset)
+#define G_SPIDEY_FLOOR_CAM_X_OFFSET (*reinterpret_cast<i16*>(0x006A81DC))
 // @Ok
 EXPORT i16 gSpideyFloorCamYOffset;
+//#define G_SPIDEY_FLOOR_CAM_Y_OFFSET (gSpideyFloorCamYOffset)
+#define G_SPIDEY_FLOOR_CAM_Y_OFFSET (*reinterpret_cast<i16*>(0x006A81DE))
 // @Ok
 EXPORT i16 gSpideyFloorCamZOffset;
+//#define G_SPIDEY_FLOOR_CAM_Z_OFFSET (gSpideyFloorCamZOffset)
+#define G_SPIDEY_FLOOR_CAM_Z_OFFSET (*reinterpret_cast<i16*>(0x006A81E0))
 
 // @Ok
 EXPORT i16 gSpideyFloorCamXZDistance;
+//#define G_SPIDEY_FLOOR_CAM_XZ_DISTANCE (gSpideyFloorCamXZDistance)
+#define G_SPIDEY_FLOOR_CAM_XZ_DISTANCE (*reinterpret_cast<i16*>(0x006A81FA))
 // @Ok
 EXPORT i16 gSpideyFloorCamYDistance;
+//#define G_SPIDEY_FLOOR_CAM_Y_DISTANCE (gSpideyFloorCamYDistance)
+#define G_SPIDEY_FLOOR_CAM_Y_DISTANCE (*reinterpret_cast<i16*>(0x006A8274))
 
 // @Ok
 EXPORT i16 gSpideySwingCamXOffset;
+//#define G_SPIDEY_SWING_CAM_X_OFFSET (gSpideySwingCamXOffset)
+#define G_SPIDEY_SWING_CAM_X_OFFSET (*reinterpret_cast<i16*>(0x006A8C5E))
 // @Ok
 EXPORT i16 gSpideySwingCamYOffset;
+//#define G_SPIDEY_SWING_CAM_Y_OFFSET (gSpideySwingCamYOffset)
+#define G_SPIDEY_SWING_CAM_Y_OFFSET (*reinterpret_cast<i16*>(0x006A8C56))
 // @Ok
 EXPORT i16 gSpideySwingCamZOffset;
+//#define G_SPIDEY_SWING_CAM_Z_OFFSET (gSpideySwingCamZOffset)
+#define G_SPIDEY_SWING_CAM_Z_OFFSET (*reinterpret_cast<i16*>(0x006A8C54))
 
 // @Ok
 EXPORT i16 gSpideySwingCamXZDistance;
+//#define G_SPIDEY_SWING_CAM_XZ_DISTANCE (gSpideySwingCamXZDistance)
+#define G_SPIDEY_SWING_CAM_XZ_DISTANCE (*reinterpret_cast<i16*>(0x006A8C68))
 // @Ok
 EXPORT i16 gSpideySwingCamYDistance;
+//#define G_SPIDEY_SWING_CAM_Y_DISTANCE (gSpideySwingCamYDistance)
+#define G_SPIDEY_SWING_CAM_Y_DISTANCE (*reinterpret_cast<i16*>(0x006A8196))
 
 // @Ok
 EXPORT i16 gSpideyWallCamXOffset;
+//#define G_SPIDEY_WALL_CAM_X_OFFSET (gSpideyWallCamXOffset)
+#define G_SPIDEY_WALL_CAM_X_OFFSET (*reinterpret_cast<i16*>(0x006A81E4))
 // @Ok
 EXPORT i16 gSpideyWallCamYOffset;
+//#define G_SPIDEY_WALL_CAM_Y_OFFSET (gSpideyWallCamYOffset)
+#define G_SPIDEY_WALL_CAM_Y_OFFSET (*reinterpret_cast<i16*>(0x006A81E2))
 // @Ok
 EXPORT i16 gSpideyWallCamZOffset;
+//#define G_SPIDEY_WALL_CAM_Z_OFFSET (gSpideyWallCamZOffset)
+#define G_SPIDEY_WALL_CAM_Z_OFFSET (*reinterpret_cast<i16*>(0x006A81E6))
 
 // @Ok
 EXPORT i16 gSpideyWallCamXZDistance;
+//#define G_SPIDEY_WALL_CAM_XZ_DISTANCE (gSpideyWallCamXZDistance)
+#define G_SPIDEY_WALL_CAM_XZ_DISTANCE (*reinterpret_cast<i16*>(0x006A81F8))
 
 // @Ok
 EXPORT i16 gSpideyWallCamYDistance;
+//#define G_SPIDEY_WALL_CAM_Y_DISTANCE (gSpideyWallCamYDistance)
+#define G_SPIDEY_WALL_CAM_Y_DISTANCE (*reinterpret_cast<i16*>(0x006A8C66))
 
 
 // @Ok
 EXPORT u8 gSpideyVramProcessing;
+//#define G_SPIDEY_VRAM_PROCESSING (gSpideyVramProcessing)
+#define G_SPIDEY_VRAM_PROCESSING (*reinterpret_cast<u8*>(0x006A9041))
 
 // @Ok
 EXPORT SAnimFrame *gSpideyAnim;
@@ -173,15 +222,25 @@ EXPORT SAnimFrame *gSpideyAnimTwo;
 
 // @Ok
 EXPORT i16 gSpideyFallingCamXOff;
+//#define G_SPIDEY_FALLING_CAM_X_OFF (gSpideyFallingCamXOff)
+#define G_SPIDEY_FALLING_CAM_X_OFF (*reinterpret_cast<i16*>(0x006A8194))
 // @Ok
 EXPORT i16 gSpideyFallingCamYOff;
+//#define G_SPIDEY_FALLING_CAM_Y_OFF (gSpideyFallingCamYOff)
+#define G_SPIDEY_FALLING_CAM_Y_OFF (*reinterpret_cast<i16*>(0x006A8192))
 // @Ok
 EXPORT i16 gSpideyFallingCamZOff;
+//#define G_SPIDEY_FALLING_CAM_Z_OFF (gSpideyFallingCamZOff)
+#define G_SPIDEY_FALLING_CAM_Z_OFF (*reinterpret_cast<i16*>(0x006A8198))
 
 // @Ok
 EXPORT i16 gSpideyFallingCamXZDist;
+//#define G_SPIDEY_FALLING_CAM_XZ_DIST (gSpideyFallingCamXZDist)
+#define G_SPIDEY_FALLING_CAM_XZ_DIST (*reinterpret_cast<i16*>(0x006A82A0))
 // @Ok
 EXPORT i16 gSpideyFallingCamYDist;
+//#define G_SPIDEY_FALLING_CAM_Y_DIST (gSpideyFallingCamYDist)
+#define G_SPIDEY_FALLING_CAM_Y_DIST (*reinterpret_cast<i16*>(0x006A8190))
 
 
 // @Ok
@@ -196,6 +255,12 @@ EXPORT SLight M3d_PlayerLight =
 
   { 1800, 1800, 1440 }
 };
+// 0x005559E0, "M3d_PlayerLight" in idb_globals.txt. CPlayer::AdjustBrightness
+// rewrites ColorMatrix and BackColor every time the brightness changes, and
+// CPlayer::CPlayer hands the address to the renderer through mpLight, so both
+// halves have to see the same struct.
+//#define G_M3D_PLAYER_LIGHT (M3d_PlayerLight)
+#define G_M3D_PLAYER_LIGHT (*reinterpret_cast<SLight*>(0x005559E0))
 
 
 CItem* SpideyAdditionalBodyPartsList;
@@ -203,9 +268,12 @@ CItem* MiscellaneousRenderingList;
 
 u8 gSpideyPsxIndex;
 CPlayer* MechList;
-extern i32 CurrentSuit;
 
 EXPORT void *gSpideyHeadModel;
+// 0x006A9054, "gSpideyHeadModel" in idb_globals.txt. Allocated by
+// Spidey_CopyHeadModel and freed by Spidey_FreeHeadModel.
+//#define G_SPIDEY_HEAD_MODEL (gSpideyHeadModel)
+#define G_SPIDEY_HEAD_MODEL (*reinterpret_cast<void**>(0x006A9054))
 
 #include "camera.h"
 
@@ -227,12 +295,24 @@ void Bruce_Sync(void)
 // Set by Spidey_SetUserFunction, read by CPlayer::AI's per-tick callback loop.
 static const char* gUserFunctionName;
 static unsigned int gUserFunctionSize;
+// 0x006A9048 / 0x006A904C, both named in idb_globals.txt and confirmed by the
+// two stores in Spidey_SetUserFunction (0x004B9320).
+//#define G_USER_FUNCTION_NAME (gUserFunctionName)
+#define G_USER_FUNCTION_NAME (*reinterpret_cast<const char**>(0x006A9048))
+//#define G_USER_FUNCTION_SIZE (gUserFunctionSize)
+#define G_USER_FUNCTION_SIZE (*reinterpret_cast<unsigned int*>(0x006A904C))
 
 // 0x68293C: nonzero forces the level-exit path in CPlayer::AI's
 // submariner-die check (see gPshellForceLevelExit's full comment lower down).
 static i32 * const gPshellForceLevelExitEarly = (i32*)0x68293C;
 
-extern u8 submarinerDieRelated;
+// 0x0060CFC4, "submarinerDieRelated" in idb_globals.txt. submarin.cpp has its
+// own repo variable for it. This file writes the real byte, because the read
+// side in CPlayer::SynthesizeAnalogueInput is the same byte, and so is the
+// byte CPlayer::CutSceneSkipCleanup clears. It used to have three names in
+// this file (submarinerDieRelated, gWhatIfPending, gSubmarinerDieRelated),
+// now one.
+static u8 * const gSubmarinerDieRelated = (u8*)0x0060CFC4;
 
 // @Ok
 void CPlayer::AI(void)
@@ -244,11 +324,11 @@ void CPlayer::AI(void)
 		{
 			if (G_CAMERA_LIST->mCameraMode == 3)
 			{
-				G_CAMERA_LIST->SetCamXOffset(gSpideyFloorCamXOffset, 0);
-				G_CAMERA_LIST->SetCamYOffset(gSpideyFloorCamYOffset, 0);
-				G_CAMERA_LIST->SetCamZOffset(gSpideyFloorCamZOffset, 0);
-				G_CAMERA_LIST->SetCamXZDistance(gSpideyFloorCamXZDistance, 0);
-				G_CAMERA_LIST->SetCamYDistance(gSpideyFloorCamYDistance, 0);
+				G_CAMERA_LIST->SetCamXOffset(G_SPIDEY_FLOOR_CAM_X_OFFSET, 0);
+				G_CAMERA_LIST->SetCamYOffset(G_SPIDEY_FLOOR_CAM_Y_OFFSET, 0);
+				G_CAMERA_LIST->SetCamZOffset(G_SPIDEY_FLOOR_CAM_Z_OFFSET, 0);
+				G_CAMERA_LIST->SetCamXZDistance(G_SPIDEY_FLOOR_CAM_XZ_DISTANCE, 0);
+				G_CAMERA_LIST->SetCamYDistance(G_SPIDEY_FLOOR_CAM_Y_DISTANCE, 0);
 				this->field_540 = 0;
 			}
 			this->PutCameraBehind(0);
@@ -265,19 +345,19 @@ void CPlayer::AI(void)
 			if (this->field_E0C[0xE1] != 0)
 			{
 				this->field_E0C[0xE1] = 0;
-				submarinerDieRelated = 1;
+				*gSubmarinerDieRelated = 1;
 			}
 		}
 		else
 		{
-			if (DifficultyLevel != 0)
+			if (G_DIFFICULTY_LEVEL != 0)
 			{
 				if (this->field_E0C[0x31] != 0 || this->field_E0C[0x21] != 0)
 				{
 					this->field_E0C[0x101] = 0;
 					this->field_E0C[0x21] = 0;
 					this->field_E0C[0x31] = 0;
-					submarinerDieRelated = 1;
+					*gSubmarinerDieRelated = 1;
 				}
 			}
 		}
@@ -348,12 +428,12 @@ void CPlayer::AI(void)
 		this->field_554(this);
 
 	// User-function hook loop.
-	if (gUserFunctionName != 0)
+	if (G_USER_FUNCTION_NAME != 0)
 	{
 		for (i32 i = 0; i < 8; i++)
 		{
-			if (gUserFunctionSize & (1 << i))
-				Reloc_CallUserFunction(gUserFunctionName, i, 0, 0);
+			if (G_USER_FUNCTION_SIZE & (1 << i))
+				Reloc_CallUserFunction(G_USER_FUNCTION_NAME, i, 0, 0);
 		}
 	}
 }
@@ -386,21 +466,21 @@ void CPlayer::AdjustBrightness(u16 a2)
 	u32 v5 = this->field_570;
 	if (gPlayerBrightness != v5)
 	{
-		M3d_PlayerLight.ColorMatrix[0][0] = (3200 * v5) >> 8;
-		M3d_PlayerLight.ColorMatrix[0][1] = (1040 * v5) >> 8;
-		M3d_PlayerLight.ColorMatrix[0][2] = 8 * v5;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[0][0] = (3200 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[0][1] = (1040 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[0][2] = 8 * v5;
 
-		M3d_PlayerLight.ColorMatrix[1][0] = (2720 * v5) >> 8;
-		M3d_PlayerLight.ColorMatrix[1][1] = (1600 * v5) >> 8;
-		M3d_PlayerLight.ColorMatrix[1][2] = (1920 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[1][0] = (2720 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[1][1] = (1600 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[1][2] = (1920 * v5) >> 8;
 
-		M3d_PlayerLight.ColorMatrix[2][0] = (2400 * v5) >> 8;
-		M3d_PlayerLight.ColorMatrix[2][1] = 10 * v5;
-		M3d_PlayerLight.ColorMatrix[2][2] = 8 * v5;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[2][0] = (2400 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[2][1] = 10 * v5;
+		G_M3D_PLAYER_LIGHT.ColorMatrix[2][2] = 8 * v5;
 
-		M3d_PlayerLight.BackColor[0] = (1800 * v5) >> 8;
-		M3d_PlayerLight.BackColor[1] = (1800 * v5) >> 8;
-		M3d_PlayerLight.BackColor[2] = (1440 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.BackColor[0] = (1800 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.BackColor[1] = (1800 * v5) >> 8;
+		G_M3D_PLAYER_LIGHT.BackColor[2] = (1440 * v5) >> 8;
 		gPlayerBrightness = v5;
 	}
 }
@@ -508,7 +588,7 @@ void CPlayer::BuildOffscreenSpideySenseIndicatorList(void)
 
 		gte_SetRotMatrix(stru_56F224);
 
-		for (CBaddy *b = BaddyList; b; b = (CBaddy*)b->mNextItem)
+		for (CBaddy *b = G_BADDY_LIST; b; b = (CBaddy*)b->mNextItem)
 		{
 			if (b->mRMinor > 0 && (b->mCBodyFlags & 0x200))
 			{
@@ -894,36 +974,36 @@ CPlayer::CPlayer(void)
 	this->field_364 = 2;
 	this->field_DEC = Spool_FindAnim("Reticle", 1);
 
-	gSpideyFloorCamYDistance = -128;
-	gSpideySwingCamYDistance = -128;
-	gSpideyFallingCamYDist = -128;
+	G_SPIDEY_FLOOR_CAM_Y_DISTANCE = -128;
+	G_SPIDEY_SWING_CAM_Y_DISTANCE = -128;
+	G_SPIDEY_FALLING_CAM_Y_DIST = -128;
 
-	gSpideyFloorCamXOffset = 0;
-	gSpideyFloorCamYOffset = 0;
-	gSpideyFloorCamZOffset = 0;
-	gSpideyFloorCamXZDistance = 512;
+	G_SPIDEY_FLOOR_CAM_X_OFFSET = 0;
+	G_SPIDEY_FLOOR_CAM_Y_OFFSET = 0;
+	G_SPIDEY_FLOOR_CAM_Z_OFFSET = 0;
+	G_SPIDEY_FLOOR_CAM_XZ_DISTANCE = 512;
 
-	gSpideyWallCamXOffset = 0;
-	gSpideyWallCamYOffset = 0;
-	gSpideyWallCamZOffset = 0;
-	gSpideyWallCamXZDistance = 700;
-	gSpideyWallCamYDistance = 0;
+	G_SPIDEY_WALL_CAM_X_OFFSET = 0;
+	G_SPIDEY_WALL_CAM_Y_OFFSET = 0;
+	G_SPIDEY_WALL_CAM_Z_OFFSET = 0;
+	G_SPIDEY_WALL_CAM_XZ_DISTANCE = 700;
+	G_SPIDEY_WALL_CAM_Y_DISTANCE = 0;
 
-	gSpideyCeilingCameraXOffset = 0;
-	gSpideyCeilingCameraYOffset = 0;
-	gSpideyCeilingCameraZOffset = 0;
-	gSpideyCeilingCameraXZDistance = 800;
-	gSpideyCeilingCameraYDistance = 100;
+	G_SPIDEY_CEILING_CAMERA_X_OFFSET = 0;
+	G_SPIDEY_CEILING_CAMERA_Y_OFFSET = 0;
+	G_SPIDEY_CEILING_CAMERA_Z_OFFSET = 0;
+	G_SPIDEY_CEILING_CAMERA_XZ_DISTANCE = 800;
+	G_SPIDEY_CEILING_CAMERA_Y_DISTANCE = 100;
 
-	gSpideySwingCamXOffset = 0;
-	gSpideySwingCamYOffset = 0;
-	gSpideySwingCamZOffset = 0;
-	gSpideySwingCamXZDistance = 512;
+	G_SPIDEY_SWING_CAM_X_OFFSET = 0;
+	G_SPIDEY_SWING_CAM_Y_OFFSET = 0;
+	G_SPIDEY_SWING_CAM_Z_OFFSET = 0;
+	G_SPIDEY_SWING_CAM_XZ_DISTANCE = 512;
 
-	gSpideyFallingCamXOff = 0;
-	gSpideyFallingCamYOff = 0;
-	gSpideyFallingCamZOff = 0;
-	gSpideyFallingCamXZDist = 512;
+	G_SPIDEY_FALLING_CAM_X_OFF = 0;
+	G_SPIDEY_FALLING_CAM_Y_OFF = 0;
+	G_SPIDEY_FALLING_CAM_Z_OFF = 0;
+	G_SPIDEY_FALLING_CAM_XZ_DIST = 512;
 
 	*gLookaroundCamAngle0 = 170;
 	*gLookaroundCamAngle1 = 170;
@@ -953,7 +1033,7 @@ CPlayer::CPlayer(void)
 	this->mCBodyFlags = (u16)(this->mCBodyFlags & 0xFFFD);
 	this->mRMinor = 100;
 
-	switch (DifficultyLevel)
+	switch (G_DIFFICULTY_LEVEL)
 	{
 		case 0:
 			this->mHealth = 600;
@@ -979,7 +1059,7 @@ CPlayer::CPlayer(void)
 			break;
 	}
 
-	if (CurrentSuit == 6 || CurrentSuit == 9 || CurrentSuit == 10)
+	if (G_CURRENTSUIT == 6 || G_CURRENTSUIT == 9 || G_CURRENTSUIT == 10)
 	{
 		this->field_5D8 = 2;
 	}
@@ -990,7 +1070,7 @@ CPlayer::CPlayer(void)
 		this->mWebbing = *reinterpret_cast<i32*>(gSaveGameBytes + 0x48);
 		this->field_5D8 = *reinterpret_cast<i32*>(gSaveGameBytes + 0x4C);
 
-		if ((CurrentSuit == 6 || CurrentSuit == 9 || CurrentSuit == 10)
+		if ((G_CURRENTSUIT == 6 || G_CURRENTSUIT == 9 || G_CURRENTSUIT == 10)
 				&& this->field_5D8 > 2)
 		{
 			this->field_5D8 = 2;
@@ -1011,7 +1091,7 @@ CPlayer::CPlayer(void)
 
 	this->field_E0C = reinterpret_cast<i32*>(G_SCONTROL);
 	this->field_8EA = 0;
-	this->mpLight = &M3d_PlayerLight;
+	this->mpLight = &G_M3D_PLAYER_LIGHT;
 	this->field_D2C = 0x202020;
 
 	this->InitItem("spidey");
@@ -1070,10 +1150,10 @@ CPlayer::CPlayer(void)
 
 	if (gSaveGameBytes[0x79] != 0 && *gPshellArmorRealted == 0)
 	{
-		gSpideyAnimTwo = 0;
-		gSpideyAnimTwo = Spool_FindAnim("costarm", 1);
+		G_SPIDEY_ANIM_TWO = 0;
+		G_SPIDEY_ANIM_TWO = Spool_FindAnim("costarm", 1);
 
-		switch (DifficultyLevel)
+		switch (G_DIFFICULTY_LEVEL)
 		{
 			case 0:
 				this->field_5EC = 600;
@@ -1095,16 +1175,16 @@ CPlayer::CPlayer(void)
 				break;
 		}
 
-		if (gSpideyArmorSet == 0)
+		if (G_SPIDEY_ARMOR_SET == 0)
 		{
-			if (gLowGraphics != 0 && gSpideyVramProcessing == 0)
+			if (G_LOWGRAPHICS != 0 && G_SPIDEY_VRAM_PROCESSING == 0)
 			{
-				Spidey_SwapSuitTextures(CurrentSuit, 0);
-				gSpideyVramProcessing = (gSpideyVramProcessing == 0);
+				Spidey_SwapSuitTextures(G_CURRENTSUIT, 0);
+				G_SPIDEY_VRAM_PROCESSING = (G_SPIDEY_VRAM_PROCESSING == 0);
 			}
 
 			this->field_5E9 = 1;
-			gSpideyArmorSet = 1;
+			G_SPIDEY_ARMOR_SET = 1;
 		}
 
 		this->field_5EC = *reinterpret_cast<i32*>(gSaveGameBytes + 0x50);
@@ -1112,7 +1192,7 @@ CPlayer::CPlayer(void)
 		print_if_false(this->field_5EC > 0, "Error");
 	}
 
-	if (gSaveGameBytes[0x7A] != 0 && CurrentSuit == 5)
+	if (gSaveGameBytes[0x7A] != 0 && G_CURRENTSUIT == 5)
 	{
 		this->field_57C = 1;
 	}
@@ -1386,7 +1466,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 			anim = bAlternative ? 71 : 65;
 	}
 
-	i32 *p = gSpideySFXEntry[anim];
+	i32 *p = G_SPIDEY_SFX_ENTRY[anim];
 	this->field_350 = p;
 
 	// low word of the animation table entry for this region and animation
@@ -1485,7 +1565,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 		this->SetWallCamera(16);
 	}
 
-	i32 *p2 = gSpideySFXEntry[anim];
+	i32 *p2 = G_SPIDEY_SFX_ENTRY[anim];
 	this->field_E1C = 0x2000;
 	this->field_350 = p2;
 
@@ -1526,7 +1606,7 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 	this->field_AC8.vz = 0;
 	this->OrientToNormal(true, &this->field_AC8);
 
-	i32 *p = gSpideySFXEntry[0x5D];
+	i32 *p = G_SPIDEY_SFX_ENTRY[0x5D];
 	this->field_350 = p;
 
 	// low word of the animation table entry for this region and animation
@@ -1564,7 +1644,7 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 	this->mLineInfo.Normal.vy = -4096;
 	this->field_E1C = 0x2000;
 
-	i32 *p2 = gSpideySFXEntry[0x5D];
+	i32 *p2 = G_SPIDEY_SFX_ENTRY[0x5D];
 	this->field_350 = p2;
 
 	if (p2)
@@ -1618,7 +1698,7 @@ i32 CPlayer::CheckForwards(bool bAllowStart)
 		u16 cur = this->mAnim;
 		if (cur == 0 || cur == 11 || cur == 12 || cur == 13)
 		{
-			i32 *p = gSpideySFXEntry[0x1F];
+			i32 *p = G_SPIDEY_SFX_ENTRY[0x1F];
 			this->field_350 = p;
 
 			if (p)
@@ -1683,7 +1763,7 @@ i32 CPlayer::CheckForwards(bool bAllowStart)
 		startAnim = 1;
 	}
 
-	i32 *p = gSpideySFXEntry[startAnim];
+	i32 *p = G_SPIDEY_SFX_ENTRY[startAnim];
 	this->field_350 = p;
 
 	if (p)
@@ -1837,7 +1917,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 		G_CAMERA_LIST->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(2 * frames));
 	}
 
-	i32 *p = gSpideySFXEntry[anim];
+	i32 *p = G_SPIDEY_SFX_ENTRY[anim];
 	this->field_350 = p;
 
 	if (p)
@@ -1869,7 +1949,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	else if (bToCeiling)
 		this->SetCeilingCamera(16);
 
-	i32 *p2 = gSpideySFXEntry[anim];
+	i32 *p2 = G_SPIDEY_SFX_ENTRY[anim];
 	this->field_E1C = 4096;
 	this->field_350 = p2;
 
@@ -1928,7 +2008,7 @@ i32 CPlayer::CheckJump(void)
 
 		if (flags & 0x10)
 		{
-			i32 *p = gSpideySFXEntry[0xDF];
+			i32 *p = G_SPIDEY_SFX_ENTRY[0xDF];
 			this->field_350 = p;
 
 			if (p)
@@ -1945,7 +2025,7 @@ i32 CPlayer::CheckJump(void)
 		}
 		else
 		{
-			i32 *p = gSpideySFXEntry[0xD2];
+			i32 *p = G_SPIDEY_SFX_ENTRY[0xD2];
 			this->field_350 = p;
 
 			if (p)
@@ -1976,7 +2056,7 @@ i32 CPlayer::CheckJump(void)
 
 	if (this->field_8E8 != 0)
 	{
-		i32 *p = gSpideySFXEntry[0xD8];
+		i32 *p = G_SPIDEY_SFX_ENTRY[0xD8];
 
 		this->mCollision &= ~2;
 		this->field_AE5 = 1;
@@ -2030,7 +2110,7 @@ i32 CPlayer::CheckJump(void)
 
 	if (this->field_8E9 != 0)
 	{
-		i32 *p = gSpideySFXEntry[0xD4];
+		i32 *p = G_SPIDEY_SFX_ENTRY[0xD4];
 
 		this->mCollision &= ~2;
 		this->field_AE5 = 0;
@@ -2359,7 +2439,7 @@ u8 CPlayer::CheckJumpingSmashKick(void)
 	this->field_8D8 = 0;
 	if (pad[289])
 	{
-		i32 *entry = gSpideySFXEntry[133];
+		i32 *entry = G_SPIDEY_SFX_ENTRY[133];
 		this->field_350 = entry;
 		if (entry)
 		{
@@ -2375,7 +2455,7 @@ u8 CPlayer::CheckJumpingSmashKick(void)
 	}
 	else
 	{
-		i32 *entry = gSpideySFXEntry[129];
+		i32 *entry = G_SPIDEY_SFX_ENTRY[129];
 		this->field_350 = entry;
 		if (entry)
 		{
@@ -2655,7 +2735,7 @@ i32 CPlayer::CheckKick(void)
 
 		if (objFlags & 8)
 		{
-			i32 *p = gSpideySFXEntry[201];
+			i32 *p = G_SPIDEY_SFX_ENTRY[201];
 			this->field_350 = p;
 
 			if (p)
@@ -2671,7 +2751,7 @@ i32 CPlayer::CheckKick(void)
 		}
 		else
 		{
-			i32 *p = gSpideySFXEntry[195];
+			i32 *p = G_SPIDEY_SFX_ENTRY[195];
 			this->field_350 = p;
 
 			if (p)
@@ -2698,7 +2778,7 @@ i32 CPlayer::CheckKick(void)
 
 	this->field_E5C.pWhatever = 0;
 
-	CBody *pBaddy = BaddyList;
+	CBody *pBaddy = G_BADDY_LIST;
 	if (pBaddy)
 	{
 		do
@@ -2769,7 +2849,7 @@ i32 CPlayer::CheckKick(void)
 
 				i32 anim = bAltAnim ? 196 : 190;
 
-				i32 *p = gSpideySFXEntry[anim];
+				i32 *p = G_SPIDEY_SFX_ENTRY[anim];
 				this->field_350 = p;
 
 				if (p)
@@ -2792,7 +2872,7 @@ i32 CPlayer::CheckKick(void)
 
 		if (this->field_E54.pWhatever != 0)
 		{
-			i32 *p = gSpideySFXEntry[37];
+			i32 *p = G_SPIDEY_SFX_ENTRY[37];
 			this->field_350 = p;
 
 			if (p)
@@ -3096,12 +3176,12 @@ i32 CPlayer::CheckStickToWall(void)
 	if (this->mAnim == 0xE8)
 	{
 		anim = 0xEA;
-		p = gSpideySFXEntry[0xEA];
+		p = G_SPIDEY_SFX_ENTRY[0xEA];
 	}
 	else
 	{
 		anim = 0xE3;
-		p = gSpideySFXEntry[0xE3];
+		p = G_SPIDEY_SFX_ENTRY[0xE3];
 	}
 
 	this->field_350 = p;
@@ -3231,7 +3311,7 @@ u8 CPlayer::CheckSwitchToGrabbedMode(CVector const *pPos, CVector *pNormal)
 	this->field_EE0.vy = pPos->vy;
 	this->field_EE0.vz = pPos->vz;
 
-	i32 *p = gSpideySFXEntry[0x96];
+	i32 *p = G_SPIDEY_SFX_ENTRY[0x96];
 	this->field_350 = p;
 
 	if (p)
@@ -4210,13 +4290,13 @@ static i32 * const gLookaroundYawSmoothed = (i32*)0x6A8D54;
 
 // smoothed copy of gLookaroundActiveCamAngle (pitch), same 192/frame max
 // delta as gLookaroundYawSmoothed; sits 4 bytes before the named
-// gSpideySFXEntry table (0x6A82B8, idb_globals.txt) but is a distinct
+// G_SPIDEY_SFX_ENTRY table (0x6A82B8, idb_globals.txt) but is a distinct
 // single i32, not part of that array. No idb_globals.txt entry, tentative
 // name.
 static i32 * const gLookaroundPitchSmoothed = (i32*)0x6A82B4;
 
 // three anim-linked pose/SFX-trigger tables (same "walk id list, mask off
-// high 16 bits, -1 terminated" idiom as gSpideySFXEntry, CLAUDE.md
+// high 16 bits, -1 terminated" idiom as G_SPIDEY_SFX_ENTRY, CLAUDE.md
 // "Matching tricks"), selected by CPlayer::SetupLookaroundCamera right
 // before RunAnim(0x104/0xFA/0x111, 0, -1) on a successful zip/swing-web
 // lock-on. Each global itself holds a POINTER to the table (double
@@ -4635,21 +4715,21 @@ void CPlayer::GetComboPartsInfoPointer(u16)
 // @Matching
 i32 CPlayer::GetDamageInflictedFromDifficulty(i32 a2)
 {
-	if (CurrentSuit == 2 || CurrentSuit == 3 || CurrentSuit == 4)
+	if (G_CURRENTSUIT == 2 || G_CURRENTSUIT == 3 || G_CURRENTSUIT == 4)
 	{
 		a2 *= 2;
 	}
 
-	if (DifficultyLevel != 2)
+	if (G_DIFFICULTY_LEVEL != 2)
 	{
-		if (!DifficultyLevel)
+		if (!G_DIFFICULTY_LEVEL)
 		{
 			return a2 << 13 >> 12;
 		}
 
 		i32 dmg = a2 * 3;
 
-		if (DifficultyLevel == 1)
+		if (G_DIFFICULTY_LEVEL == 1)
 		{
 			return dmg << 11 >> 12;
 		}
@@ -4978,7 +5058,7 @@ i32 CPlayer::Hit(SHitInfo *a2)
 	// "armour active" flag (both also read back by CPlayer::CPlayer).
 	static u8 * const gSaveGameBytes = (u8*)0x00682858;
 
-	if (CurrentSuit == 4)
+	if (G_CURRENTSUIT == 4)
 		return 0;
 
 	if (*gSymbioteRelated != 0)
@@ -5064,16 +5144,16 @@ i32 CPlayer::Hit(SHitInfo *a2)
 
 			if (left < 0)
 			{
-				u8 hadArmor = gSpideyArmorSet;
+				u8 hadArmor = G_SPIDEY_ARMOR_SET;
 
 				this->mHealth += static_cast<i16>(left);
-				gSpideyAnimTwo = 0;
+				G_SPIDEY_ANIM_TWO = 0;
 
 				if (hadArmor)
 				{
 					Spidey_DoArmorVRAMProcessing(false);
 					this->field_5E9 = 0;
-					gSpideyArmorSet = 0;
+					G_SPIDEY_ARMOR_SET = 0;
 				}
 
 				this->field_5EC = 0;
@@ -5326,7 +5406,7 @@ void CPlayer::InitialiseOffscreenSpideySenseIndicatorList(void)
 }
 
 // Installs the nine hard-coded SFX trigger lists (the ones that are not
-// pulled out of the animation data) into gSpideySFXEntry, then clears the
+// pulled out of the animation data) into G_SPIDEY_SFX_ENTRY, then clears the
 // "already played" marker (the high word, see ProcessSFXArray) on every
 // element of every list in the table. Same clearing loop as
 // ResetSFXArrayEntry, run over all 300 slots.
@@ -5346,19 +5426,19 @@ void CPlayer::InitialiseSFXArray(void)
 	static i32 * const gSfxListAnim192 = (i32*)0x005565F4; // { 2, 14, -1 }
 	static i32 * const gSfxListAnim198 = (i32*)0x00556600; // { 1, 21, -1 }
 
-	gSpideySFXEntry[21] = gSfxListAnim21;
-	gSpideySFXEntry[59] = gSfxListAnim59;
-	gSpideySFXEntry[52] = gSfxListAnim52;
-	gSpideySFXEntry[50] = gSfxListAnim50;
-	gSpideySFXEntry[51] = gSfxListAnim51;
-	gSpideySFXEntry[60] = gSfxListAnim60;
-	gSpideySFXEntry[63] = gSfxListAnim63;
-	gSpideySFXEntry[192] = gSfxListAnim192;
-	gSpideySFXEntry[198] = gSfxListAnim198;
+	G_SPIDEY_SFX_ENTRY[21] = gSfxListAnim21;
+	G_SPIDEY_SFX_ENTRY[59] = gSfxListAnim59;
+	G_SPIDEY_SFX_ENTRY[52] = gSfxListAnim52;
+	G_SPIDEY_SFX_ENTRY[50] = gSfxListAnim50;
+	G_SPIDEY_SFX_ENTRY[51] = gSfxListAnim51;
+	G_SPIDEY_SFX_ENTRY[60] = gSfxListAnim60;
+	G_SPIDEY_SFX_ENTRY[63] = gSfxListAnim63;
+	G_SPIDEY_SFX_ENTRY[192] = gSfxListAnim192;
+	G_SPIDEY_SFX_ENTRY[198] = gSfxListAnim198;
 
 	for (i32 i = 0; i < 300; i++)
 	{
-		i32 *pEntry = gSpideySFXEntry[i];
+		i32 *pEntry = G_SPIDEY_SFX_ENTRY[i];
 
 		if (pEntry)
 		{
@@ -5539,7 +5619,7 @@ void CPlayer::InitiateCombo(u16 move, i32 headStart)
 
 	i32 frame = this->field_950[(this->field_84 - this->field_910) / 2];
 
-	i32 *pSFX = gSpideySFXEntry[anim];
+	i32 *pSFX = G_SPIDEY_SFX_ENTRY[anim];
 	this->field_350 = pSFX;
 
 	if (pSFX)
@@ -5656,7 +5736,7 @@ void CPlayer::NotifyKill(u16 a2)
 {
 	if (this->field_354 && Rnd(2))
 	{
-		CBaddy *b = BaddyList;
+		CBaddy *b = G_BADDY_LIST;
 
 		while (b)
 		{
@@ -6054,7 +6134,7 @@ u8 CPlayer::SelectAutoAimTarget(void)
 	{
 		if (this->field_878 != 0)
 		{
-			this->field_878->DeleteFrom((CBody**)&MiscellaneousRenderingList);
+			this->field_878->DeleteFrom((CBody**)&G_MISCELLANEOUS_RENDERING_LIST);
 			delete this->field_878;
 			this->field_878 = 0;
 		}
@@ -6077,7 +6157,7 @@ u8 CPlayer::SelectAutoAimTarget(void)
 			v6->mModel = Spool_GetModel(0xB08EC1FB, *gRegionByte);
 			v6->mType = 503;
 			*((u16*)((char*)v6 + 0xDC)) = 100;
-			v6->AttachTo((CBody**)&MiscellaneousRenderingList);
+			v6->AttachTo((CBody**)&G_MISCELLANEOUS_RENDERING_LIST);
 		}
 		CBody *v6 = this->field_878;
 		v6->mPos.vx = vx;
@@ -6089,7 +6169,7 @@ u8 CPlayer::SelectAutoAimTarget(void)
 	{
 		if (this->field_878 != 0)
 		{
-			this->field_878->DeleteFrom((CBody**)&MiscellaneousRenderingList);
+			this->field_878->DeleteFrom((CBody**)&G_MISCELLANEOUS_RENDERING_LIST);
 			delete this->field_878;
 			this->field_878 = 0;
 		}
@@ -6098,7 +6178,7 @@ u8 CPlayer::SelectAutoAimTarget(void)
 }
 
 // @Ok
-// 0x4C8410. Scores every baddy on BaddyList by proximity (distWeight) plus a
+// 0x4C8410. Scores every baddy on G_BADDY_LIST by proximity (distWeight) plus a
 // view-cone bonus (coneWeight) for baddies in front of the camera matrix at
 // field_89C, and returns the highest-scoring one that has clear line of
 // sight. mRMinor (0xDC) == 0, the 0x40 flag set, or the 0x10 flag clear
@@ -6108,7 +6188,7 @@ CBody *CPlayer::SelectTargetBaddy(i32 maxDist, i32 coneThreshold, i32 distWeight
 	CBody *best = 0;
 	i32 bestScore = 0;
 
-	for (CBody *baddy = BaddyList; baddy; baddy = (CBody*)baddy->mNextItem)
+	for (CBody *baddy = G_BADDY_LIST; baddy; baddy = (CBody*)baddy->mNextItem)
 	{
 		if (baddy->mRMinor == 0 || (baddy->mCBodyFlags & 0x40) || !(baddy->mCBodyFlags & 0x10))
 			continue;
@@ -6148,13 +6228,13 @@ CBody *CPlayer::SelectTargetBaddy(i32 maxDist, i32 coneThreshold, i32 distWeight
 // address found and verified this session: IDA sub_4C8570 (0x4C8570,
 // 0x253 = 595 bytes, matches the size noted below). cmpsum confirms the
 // documented 111 mnemonic diffs.
-// walks ControlBaddyList (CItem::mNextItem/mType, same walk idiom as
+// walks G_CONTROL_BADDY_LIST (CItem::mNextItem/mType, same walk idiom as
 // BuildOffscreenSpideySenseIndicatorList above), skipping mType 407 nodes,
 // looking for the CSwitch with the best score inside maxDist that also
 // passes a line-of-sight check to it. facingWeight doubles as a flag: 0
 // skips the facing/angle refinement entirely, nonzero also weights it.
 // residue: 111 mnemonic diffs, cascading from the prologue: original loads
-// ControlBaddyList once into esi and reuses ebx/edi/ebp across the loop
+// G_CONTROL_BADDY_LIST once into esi and reuses ebx/edi/ebp across the loop
 // (the same register-generation-reuse pattern documented on DrawReticle
 // above and on BuildOffscreenSpideySenseIndicatorList), needing sub
 // esp,0xD4; ours needs a differently-shaped frame and keeps the list head
@@ -6175,7 +6255,7 @@ CVector *CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i
 	CItem *best = 0;
 	i32 bestScore = 0;
 
-	for (CItem *node = ControlBaddyList; node; node = node->mNextItem)
+	for (CItem *node = G_CONTROL_BADDY_LIST; node; node = node->mNextItem)
 	{
 		if (node->mType == 407)
 			continue;
@@ -6248,11 +6328,11 @@ EXPORT u8 gSpideyArmorSet;
 // @Matching
 u8 CPlayer::SetArmor(bool a2)
 {
-	gSpideyAnimTwo = 0;
+	G_SPIDEY_ANIM_TWO = 0;
 	if (a2)
 	{
-		gSpideyAnimTwo = Spool_FindAnim("costarm", 1);
-		switch (DifficultyLevel)
+		G_SPIDEY_ANIM_TWO = Spool_FindAnim("costarm", 1);
+		switch (G_DIFFICULTY_LEVEL)
 		{
 			case 0:
 				this->field_5EC = 600;
@@ -6271,19 +6351,19 @@ u8 CPlayer::SetArmor(bool a2)
 		}
 	}
 
-	if (a2 && gSpideyArmorSet)
+	if (a2 && G_SPIDEY_ARMOR_SET)
 	{
 		return 1;
 	}
 
-	if (!a2 && !gSpideyArmorSet)
+	if (!a2 && !G_SPIDEY_ARMOR_SET)
 	{
 		return 1;
 	}
 
 	Spidey_DoArmorVRAMProcessing(a2);
 	this->field_5E9 = a2;
-	gSpideyArmorSet = a2;
+	G_SPIDEY_ARMOR_SET = a2;
 
 	return 1;
 }
@@ -6295,11 +6375,11 @@ void CPlayer::SetCeilingCamera(i32 a3)
 	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
-		pCamera->SetCamXOffset(gSpideyCeilingCameraXOffset, a3);
-		pCamera->SetCamYOffset(gSpideyCeilingCameraYOffset, a3);
-		pCamera->SetCamZOffset(gSpideyCeilingCameraZOffset, a3);
-		pCamera->SetCamXZDistance(gSpideyCeilingCameraXZDistance, a3);
-		pCamera->SetCamYDistance(gSpideyCeilingCameraYDistance, a3);
+		pCamera->SetCamXOffset(G_SPIDEY_CEILING_CAMERA_X_OFFSET, a3);
+		pCamera->SetCamYOffset(G_SPIDEY_CEILING_CAMERA_Y_OFFSET, a3);
+		pCamera->SetCamZOffset(G_SPIDEY_CEILING_CAMERA_Z_OFFSET, a3);
+		pCamera->SetCamXZDistance(G_SPIDEY_CEILING_CAMERA_XZ_DISTANCE, a3);
+		pCamera->SetCamYDistance(G_SPIDEY_CEILING_CAMERA_Y_DISTANCE, a3);
 		this->field_540 = 2;
 	}
 }
@@ -6313,11 +6393,11 @@ void CPlayer::SetFloorCamera(i32 a3)
 	{
 		if (pCamera->mCameraMode == 3)
 		{
-			pCamera->SetCamXOffset(gSpideyFloorCamXOffset, a3);
-			pCamera->SetCamYOffset(gSpideyFloorCamYOffset, a3);
-			pCamera->SetCamZOffset(gSpideyFloorCamZOffset, a3);
-			pCamera->SetCamXZDistance(gSpideyFloorCamXZDistance, a3);
-			pCamera->SetCamYDistance(gSpideyFloorCamYDistance, a3);
+			pCamera->SetCamXOffset(G_SPIDEY_FLOOR_CAM_X_OFFSET, a3);
+			pCamera->SetCamYOffset(G_SPIDEY_FLOOR_CAM_Y_OFFSET, a3);
+			pCamera->SetCamZOffset(G_SPIDEY_FLOOR_CAM_Z_OFFSET, a3);
+			pCamera->SetCamXZDistance(G_SPIDEY_FLOOR_CAM_XZ_DISTANCE, a3);
+			pCamera->SetCamYDistance(G_SPIDEY_FLOOR_CAM_Y_DISTANCE, a3);
 			this->field_540 = 0;
 		}
 	}
@@ -6342,12 +6422,12 @@ void CPlayer::SetFallingCamera(i32 a3)
 	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
-		pCamera->SetCamXOffset(gSpideyFallingCamXOff, a3);
-		pCamera->SetCamYOffset(gSpideyFallingCamYOff, a3);
-		pCamera->SetCamZOffset(gSpideyFallingCamZOff, a3);
+		pCamera->SetCamXOffset(G_SPIDEY_FALLING_CAM_X_OFF, a3);
+		pCamera->SetCamYOffset(G_SPIDEY_FALLING_CAM_Y_OFF, a3);
+		pCamera->SetCamZOffset(G_SPIDEY_FALLING_CAM_Z_OFF, a3);
 
-		pCamera->SetCamXZDistance(gSpideyFallingCamXZDist, a3);
-		pCamera->SetCamYDistance(gSpideyFallingCamYDist, a3);
+		pCamera->SetCamXZDistance(G_SPIDEY_FALLING_CAM_XZ_DIST, a3);
+		pCamera->SetCamYDistance(G_SPIDEY_FALLING_CAM_Y_DIST, a3);
 
 		this->field_540 = 5;
 	}
@@ -6406,7 +6486,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 		switch (axis)
 		{
 		case 0:
-			gSpideyFloorCamXOffset = value;
+			G_SPIDEY_FLOOR_CAM_X_OFFSET = value;
 			if (this->field_8E8 || this->field_8E9)
 				return;
 			if (!a5)
@@ -6414,7 +6494,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXOffset(value, a4);
 			return;
 		case 1:
-			gSpideyFloorCamYOffset = value;
+			G_SPIDEY_FLOOR_CAM_Y_OFFSET = value;
 			if (this->field_8E8 || this->field_8E9)
 				return;
 			if (!a5)
@@ -6422,7 +6502,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamYOffset(value, a4);
 			return;
 		case 2:
-			gSpideyFloorCamZOffset = value;
+			G_SPIDEY_FLOOR_CAM_Z_OFFSET = value;
 			if (this->field_8E8 || this->field_8E9)
 				return;
 			if (!a5)
@@ -6430,7 +6510,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamZOffset(value, a4);
 			return;
 		case 3:
-			gSpideyFloorCamXZDistance = value;
+			G_SPIDEY_FLOOR_CAM_XZ_DISTANCE = value;
 			if (this->field_8E8 || this->field_8E9)
 				return;
 			if (!a5)
@@ -6438,7 +6518,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXZDistance(value, a4);
 			return;
 		case 4:
-			gSpideyFloorCamYDistance = value;
+			G_SPIDEY_FLOOR_CAM_Y_DISTANCE = value;
 			if (this->field_8E8 || this->field_8E9)
 				return;
 			if (!a5)
@@ -6453,7 +6533,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 		switch (axis)
 		{
 		case 0:
-			gSpideyWallCamXOffset = value;
+			G_SPIDEY_WALL_CAM_X_OFFSET = value;
 			if (!this->field_8E8)
 				return;
 			if (!a5)
@@ -6461,7 +6541,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXOffset(value, a4);
 			return;
 		case 1:
-			gSpideyWallCamYOffset = value;
+			G_SPIDEY_WALL_CAM_Y_OFFSET = value;
 			if (!this->field_8E8)
 				return;
 			if (!a5)
@@ -6469,7 +6549,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamYOffset(value, a4);
 			return;
 		case 2:
-			gSpideyWallCamZOffset = value;
+			G_SPIDEY_WALL_CAM_Z_OFFSET = value;
 			if (!this->field_8E8)
 				return;
 			if (!a5)
@@ -6477,7 +6557,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamZOffset(value, a4);
 			return;
 		case 3:
-			gSpideyWallCamXZDistance = value;
+			G_SPIDEY_WALL_CAM_XZ_DISTANCE = value;
 			if (!this->field_8E8)
 				return;
 			if (!a5)
@@ -6485,7 +6565,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXZDistance(value, a4);
 			return;
 		case 4:
-			gSpideyWallCamYDistance = value;
+			G_SPIDEY_WALL_CAM_Y_DISTANCE = value;
 			if (!this->field_8E8)
 				return;
 			if (!a5)
@@ -6500,7 +6580,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 		switch (axis)
 		{
 		case 0:
-			gSpideyCeilingCameraXOffset = value;
+			G_SPIDEY_CEILING_CAMERA_X_OFFSET = value;
 			if (!this->field_8E9)
 				return;
 			if (!a5)
@@ -6508,7 +6588,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXOffset(value, a4);
 			return;
 		case 1:
-			gSpideyCeilingCameraYOffset = value;
+			G_SPIDEY_CEILING_CAMERA_Y_OFFSET = value;
 			if (!this->field_8E9)
 				return;
 			if (!a5)
@@ -6516,7 +6596,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamYOffset(value, a4);
 			return;
 		case 2:
-			gSpideyCeilingCameraZOffset = value;
+			G_SPIDEY_CEILING_CAMERA_Z_OFFSET = value;
 			if (!this->field_8E9)
 				return;
 			if (!a5)
@@ -6524,7 +6604,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamZOffset(value, a4);
 			return;
 		case 3:
-			gSpideyCeilingCameraXZDistance = value;
+			G_SPIDEY_CEILING_CAMERA_XZ_DISTANCE = value;
 			if (!this->field_8E9)
 				return;
 			if (!a5)
@@ -6532,7 +6612,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXZDistance(value, a4);
 			return;
 		case 4:
-			gSpideyCeilingCameraYDistance = value;
+			G_SPIDEY_CEILING_CAMERA_Y_DISTANCE = value;
 			if (!this->field_8E9)
 				return;
 			if (!a5)
@@ -6549,7 +6629,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 		switch (axis)
 		{
 		case 0:
-			gSpideySwingCamXOffset = value;
+			G_SPIDEY_SWING_CAM_X_OFFSET = value;
 			if (!this->field_54C)
 				return;
 			if (!a5)
@@ -6557,7 +6637,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXOffset(value, a4);
 			return;
 		case 1:
-			gSpideySwingCamYOffset = value;
+			G_SPIDEY_SWING_CAM_Y_OFFSET = value;
 			if (!this->field_54C)
 				return;
 			if (!a5)
@@ -6565,7 +6645,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamYOffset(value, a4);
 			return;
 		case 2:
-			gSpideySwingCamZOffset = value;
+			G_SPIDEY_SWING_CAM_Z_OFFSET = value;
 			if (!this->field_54C)
 				return;
 			if (!a5)
@@ -6573,7 +6653,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamZOffset(value, a4);
 			return;
 		case 3:
-			gSpideySwingCamXZDistance = value;
+			G_SPIDEY_SWING_CAM_XZ_DISTANCE = value;
 			if (!this->field_54C)
 				return;
 			if (!a5)
@@ -6581,7 +6661,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 			pCamera->SetCamXZDistance(value, a4);
 			return;
 		case 4:
-			gSpideySwingCamYDistance = value;
+			G_SPIDEY_SWING_CAM_Y_DISTANCE = value;
 			if (!this->field_54C)
 				return;
 			if (!a5)
@@ -6598,31 +6678,31 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 		switch (axis)
 		{
 		case 0:
-			gSpideyFallingCamXOff = value;
+			G_SPIDEY_FALLING_CAM_X_OFF = value;
 			if (!doCall)
 				return;
 			pCamera->SetCamXOffset(value, a4);
 			return;
 		case 1:
-			gSpideyFallingCamYOff = value;
+			G_SPIDEY_FALLING_CAM_Y_OFF = value;
 			if (!doCall)
 				return;
 			pCamera->SetCamYOffset(value, a4);
 			return;
 		case 2:
-			gSpideyFallingCamZOff = value;
+			G_SPIDEY_FALLING_CAM_Z_OFF = value;
 			if (!doCall)
 				return;
 			pCamera->SetCamZOffset(value, a4);
 			return;
 		case 3:
-			gSpideyFallingCamXZDist = value;
+			G_SPIDEY_FALLING_CAM_XZ_DIST = value;
 			if (!doCall)
 				return;
 			pCamera->SetCamXZDistance(value, a4);
 			return;
 		case 4:
-			gSpideyFallingCamYDist = value;
+			G_SPIDEY_FALLING_CAM_Y_DIST = value;
 			if (!doCall)
 				return;
 			pCamera->SetCamYDistance(value, a4);
@@ -6645,11 +6725,11 @@ void CPlayer::SetSwingCamera(i32 a3)
 	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
-		pCamera->SetCamXOffset(gSpideySwingCamXOffset, a3);
-		pCamera->SetCamYOffset(gSpideySwingCamYOffset, a3);
-		pCamera->SetCamZOffset(gSpideySwingCamZOffset, a3);
-		pCamera->SetCamXZDistance(gSpideySwingCamXZDistance, a3);
-		pCamera->SetCamYDistance(gSpideySwingCamYDistance, a3);
+		pCamera->SetCamXOffset(G_SPIDEY_SWING_CAM_X_OFFSET, a3);
+		pCamera->SetCamYOffset(G_SPIDEY_SWING_CAM_Y_OFFSET, a3);
+		pCamera->SetCamZOffset(G_SPIDEY_SWING_CAM_Z_OFFSET, a3);
+		pCamera->SetCamXZDistance(G_SPIDEY_SWING_CAM_XZ_DISTANCE, a3);
+		pCamera->SetCamYDistance(G_SPIDEY_SWING_CAM_Y_DISTANCE, a3);
 		this->field_540 = 4;
 	}
 }
@@ -6661,11 +6741,11 @@ void CPlayer::SetWallCamera(i32 a3)
 	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
-		pCamera->SetCamXOffset(gSpideyWallCamXOffset, a3);
-		pCamera->SetCamYOffset(gSpideyWallCamYOffset, a3);
-		pCamera->SetCamZOffset(gSpideyWallCamZOffset, a3);
-		pCamera->SetCamXZDistance(gSpideyWallCamXZDistance, a3);
-		pCamera->SetCamYDistance(gSpideyWallCamYDistance, a3);
+		pCamera->SetCamXOffset(G_SPIDEY_WALL_CAM_X_OFFSET, a3);
+		pCamera->SetCamYOffset(G_SPIDEY_WALL_CAM_Y_OFFSET, a3);
+		pCamera->SetCamZOffset(G_SPIDEY_WALL_CAM_Z_OFFSET, a3);
+		pCamera->SetCamXZDistance(G_SPIDEY_WALL_CAM_XZ_DISTANCE, a3);
+		pCamera->SetCamYDistance(G_SPIDEY_WALL_CAM_Y_DISTANCE, a3);
 		this->field_540 = 1;
 	}
 }
@@ -6998,7 +7078,7 @@ gridSearchDone:
 
 	this->field_DCC = 0;
 	CVector hitPos;
-	CBody* sphereHit = M3dColij_LineToSphere(&anchor, &farPoint, &hitPos, BaddyList, 0, 4096);
+	CBody* sphereHit = M3dColij_LineToSphere(&anchor, &farPoint, &hitPos, G_BADDY_LIST, 0, 4096);
 	this->field_DCC = sphereHit;
 
 	if (sphereHit != 0)
@@ -7283,7 +7363,7 @@ void CPlayer::SwitchToDeathMode(bool a2)
 
 	if (wasDying)
 	{
-		i32 *p = gSpideySFXEntry[0xB0];
+		i32 *p = G_SPIDEY_SFX_ENTRY[0xB0];
 		this->field_54C = 0;
 		this->field_E1C = 0x800000;
 		this->field_350 = p;
@@ -7308,7 +7388,7 @@ void CPlayer::SwitchToDeathMode(bool a2)
 
 	if (this->KnockSpideyFromCrawlPosition())
 	{
-		i32 *p = gSpideySFXEntry[0xB0];
+		i32 *p = G_SPIDEY_SFX_ENTRY[0xB0];
 		this->field_350 = p;
 
 		if (p)
@@ -7379,7 +7459,7 @@ caseSmall:
 		if (this->mAnim == 0xB0)
 			return;
 
-		i32 *p = gSpideySFXEntry[0xB0];
+		i32 *p = G_SPIDEY_SFX_ENTRY[0xB0];
 		this->field_350 = p;
 
 		if (p)
@@ -7400,7 +7480,7 @@ caseBig:
 	{
 		if (this->mAnim != 0xB0 && this->mAnim != 0xB2)
 		{
-			i32 *p = gSpideySFXEntry[0xAB];
+			i32 *p = G_SPIDEY_SFX_ENTRY[0xAB];
 			this->mVel.vx = 0;
 			this->mVel.vy = 0;
 			this->mVel.vz = 0;
@@ -7421,7 +7501,7 @@ caseBig:
 			return;
 		}
 
-		i32 *p = gSpideySFXEntry[0xB6];
+		i32 *p = G_SPIDEY_SFX_ENTRY[0xB6];
 		this->mVel.vx = 0;
 		this->mVel.vy = 0;
 		this->mVel.vz = 0;
@@ -7445,7 +7525,7 @@ caseBig:
 
 caseDefault:
 	{
-		i32 *p = gSpideySFXEntry[0xAB];
+		i32 *p = G_SPIDEY_SFX_ENTRY[0xAB];
 		this->mVel.vx = 0;
 		this->mVel.vy = 0;
 		this->mVel.vz = 0;
@@ -7494,8 +7574,8 @@ caseDefault:
 // not safe here, since CBody virtuals earlier in the hierarchy could put
 // the destructor at a different vtable slot than the one this disassembly
 // reads directly at offset 0.
-// gSpideySFXEntry[21] (0x6A830C) and gSpideySFXEntry[0] (0x6A82B8) are
-// both inside the already-declared gSpideySFXEntry[300] array (top of this
+// G_SPIDEY_SFX_ENTRY[21] (0x6A830C) and G_SPIDEY_SFX_ENTRY[0] (0x6A82B8) are
+// both inside the already-declared G_SPIDEY_SFX_ENTRY[300] array (top of this
 // file) - both addresses land exactly on an element boundary, so no new
 // global was needed for either. RunAnim (CSuper, ob.h) argument order
 // confirmed from the push sequence (cdecl reverses declaration order).
@@ -7541,7 +7621,7 @@ void CPlayer::SwitchToSynthesizedInput(i16 *pInput)
 
 		if (this->field_E1C & 0x10)
 		{
-			i32 *p = gSpideySFXEntry[21];
+			i32 *p = G_SPIDEY_SFX_ENTRY[21];
 			this->field_350 = p;
 
 			if (p)
@@ -7557,7 +7637,7 @@ void CPlayer::SwitchToSynthesizedInput(i16 *pInput)
 		}
 		else
 		{
-			i32 *p = gSpideySFXEntry[0];
+			i32 *p = G_SPIDEY_SFX_ENTRY[0];
 			this->field_350 = p;
 
 			if (p)
@@ -7594,12 +7674,6 @@ static i16 * const word_610C48 = (i16*)0x610C48;
 // functions (0x4E5CF0, 0x4931E0) not yet decompiled.
 static i32 * const gPlayerSynthTickScratch = (i32*)0x6B4CA4;
 
-// @FIXME guess: one byte before the already-established gWhatIf
-// (0x60CFC5, idb_globals.txt). Gates both "drop every pending command
-// block and restart the phase-1 script" (top of this function) and
-// "teleport back to the field_1A8 checkpoint trig" (bottom of this
-// function), which fits a debug/replay "what if" rewind feature.
-static u8 * const gWhatIfPending = (u8*)0x60CFC4;
 
 // @FIXME guess: adjacent to the pshell globals gPshellArmorRealted
 // (0x682940)/gShellInitialized(0x682948)/idb_globals.txt. Read-only
@@ -7682,7 +7756,7 @@ static u8 * const gSynthInputScriptFlag = (u8*)0x60F770;
 //      to CSpClone's own case 5) and deletes itself once close
 //      (Utils_Dist < 64), waking phase 1 again.
 //   6  is a countdown timer that holds/replays an anim (resetting its
-//      gSpideySFXEntry high-bit flags first, same idiom as
+//      G_SPIDEY_SFX_ENTRY high-bit flags first, same idiom as
 //      CPlayer::DeathCleanup) while field_AD4 is set or the anim
 //      changed.
 //   7  is a countdown timer that forces field_E1C = 0x40000000 each
@@ -7705,7 +7779,7 @@ static u8 * const gSynthInputScriptFlag = (u8*)0x60F770;
 // skipped). Finally, once both field_1BC and field_1B4 are empty/clear,
 // it runs a "zone 1795 mech boss" proximity check (via G_MECHLIST) that
 // can clear field_1AC, applies gPshellForceLevelExit -> gLevelStatus,
-// and (gWhatIfPending only) teleports back to the field_1A8 checkpoint
+// and (gSubmarinerDieRelated only) teleports back to the field_1A8 checkpoint
 // trig. The original returns a bool in AL that no caller reads; kept
 // void here to match the already-committed declaration (spidey.h),
 // same as CSpClone/CBlackCat's own SynthesizeAnalogueInput.
@@ -7723,7 +7797,7 @@ void CPlayer::SynthesizeAnalogueInput(void)
 		*reinterpret_cast<i16*>(pad + 16 * clearedSlots[i]) = 0;
 	}
 
-	if (*gWhatIfPending)
+	if (*gSubmarinerDieRelated)
 	{
 		this->field_1B4 = 0;
 		this->KillAllCommandBlocks();
@@ -8141,7 +8215,7 @@ void CPlayer::SynthesizeAnalogueInput(void)
 
 				if (this->field_AD4 || this->mAnim != animId)
 				{
-					i32* p = gSpideySFXEntry[animId];
+					i32* p = G_SPIDEY_SFX_ENTRY[animId];
 					this->field_350 = p;
 
 					if (p)
@@ -8279,7 +8353,7 @@ void CPlayer::SynthesizeAnalogueInput(void)
 		if (*gPshellForceLevelExit)
 			gLevelStatus = 7;
 
-		if (*gWhatIfPending && this->field_1A8)
+		if (*gSubmarinerDieRelated && this->field_1A8)
 		{
 			Trig_GetPosition(&this->mPos, this->field_1A8);
 		}
@@ -8496,7 +8570,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 			CVector fwd32 = this->field_C6C * 32;
 			CVector sphereEnd = start - fwd32;
 
-			if (M3dColij_LineToSphere(&start, &sphereEnd, &fwd32, BaddyList, 0, 2048) == 0)
+			if (M3dColij_LineToSphere(&start, &sphereEnd, &fwd32, G_BADDY_LIST, 0, 2048) == 0)
 			{
 				SLineInfo info;
 
@@ -8839,7 +8913,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 					{
 						this->field_916 = 0;
 
-						i32 *pSFX = gSpideySFXEntry[nextAnim];
+						i32 *pSFX = G_SPIDEY_SFX_ENTRY[nextAnim];
 						this->field_350 = pSFX;
 
 						if (pSFX)
@@ -8920,7 +8994,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 		return;
 	}
 
-	CBaddy *pBody = BaddyList;
+	CBaddy *pBody = G_BADDY_LIST;
 
 	while (pBody != 0)
 	{
@@ -9082,7 +9156,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 }
 
 // gSpideySenseIndicatorLastUpdateTime (0x6A9080): no idb_globals.txt entry
-// (nearest named are gSpideyHeadModel 0x6A9054 and gTextureEntries 0x6A90B8),
+// (nearest named are G_SPIDEY_HEAD_MODEL 0x6A9054 and gTextureEntries 0x6A90B8),
 // tentative name from usage. gTimerRelated snapshot of the last time the
 // indicator entries were refreshed, sits right before
 // gSpideySenseListLastUpdateTime (0x6A9084) used by
@@ -9318,7 +9392,7 @@ CPlayer::~CPlayer(void)
 
 	// 0x6A9058..0x6A9068: where the destructor pushes the previous gSaveGame
 	// values before overwriting them with the live ones. No idb_globals.txt
-	// entry (nearest named are gSpideyHeadModel 0x6A9054 and gTextureEntries
+	// entry (nearest named are G_SPIDEY_HEAD_MODEL 0x6A9054 and gTextureEntries
 	// 0x6A90B8), tentative names from usage. Nothing in the repo reads them
 	// back yet.
 	static i32 * const gPrevSavedWebbing = (i32*)0x006A9058;
@@ -9347,7 +9421,7 @@ CPlayer::~CPlayer(void)
 		*reinterpret_cast<i32*>(gSaveGameBytes + 0x4C) = this->field_5D8;
 		*reinterpret_cast<i32*>(gSaveGameBytes + 0x48) = this->mWebbing;
 		*reinterpret_cast<i32*>(gSaveGameBytes + 0x50) = this->field_5EC;
-		gSaveGameBytes[0x79] = (gSpideyArmorSet != 0);
+		gSaveGameBytes[0x79] = (G_SPIDEY_ARMOR_SET != 0);
 		gSaveGameBytes[0x7A] = (this->field_57C != 0);
 	}
 	else if (gLevelStatus == 2)
@@ -9396,7 +9470,7 @@ CPlayer::~CPlayer(void)
 
 	if (pPart != 0)
 	{
-		pPart->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+		pPart->DeleteFrom(reinterpret_cast<CBody**>(&G_SPIDEY_ADDITIONAL_BODY_PARTS_LIST));
 
 		i32 *v = reinterpret_cast<i32*>(pPart);
 		(*(void(**)(i32*, i32))*v)(v, 1);
@@ -9410,7 +9484,7 @@ CPlayer::~CPlayer(void)
 
 		if (pFist != 0)
 		{
-			pFist->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+			pFist->DeleteFrom(reinterpret_cast<CBody**>(&G_SPIDEY_ADDITIONAL_BODY_PARTS_LIST));
 
 			i32 *v = reinterpret_cast<i32*>(pFist);
 			(*(void(**)(i32*, i32))*v)(v, 1);
@@ -9419,17 +9493,17 @@ CPlayer::~CPlayer(void)
 		pHandle++;
 	}
 
-	if (gSpideyArmorSet != 0)
+	if (G_SPIDEY_ARMOR_SET != 0)
 	{
-		print_if_false(gSpideyArmorSet, "Error");
+		print_if_false(G_SPIDEY_ARMOR_SET, "Error");
 
-		if (gLowGraphics != 0 && gSpideyVramProcessing != 0)
+		if (G_LOWGRAPHICS != 0 && G_SPIDEY_VRAM_PROCESSING != 0)
 		{
-			Spidey_SwapSuitTextures(0, CurrentSuit);
-			gSpideyVramProcessing = (gSpideyVramProcessing == 0);
+			Spidey_SwapSuitTextures(0, G_CURRENTSUIT);
+			G_SPIDEY_VRAM_PROCESSING = (G_SPIDEY_VRAM_PROCESSING == 0);
 		}
 
-		gSpideyArmorSet = 0;
+		G_SPIDEY_ARMOR_SET = 0;
 	}
 
 	CBody *pAutoAim = this->field_878;
@@ -9439,7 +9513,7 @@ CPlayer::~CPlayer(void)
 
 	if (pAutoAim != 0)
 	{
-		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&MiscellaneousRenderingList));
+		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&G_MISCELLANEOUS_RENDERING_LIST));
 
 		i32 *v = reinterpret_cast<i32*>(pAutoAim);
 		(*(void(**)(i32*, i32))*v)(v, 1);
@@ -9512,21 +9586,21 @@ static i16 * const gBagHeadOffsetTable2 = (i16*)0x00556368;
 // @Ok
 // address found and verified this session: IDA sub_4B9210 (0x4B9210).
 // confirmed the subtract-then-add source pointer really does cancel down
-// to gSpideyHeadModel+2 (v6 = gSpideyHeadModel - v2; v8 = (result=v2+28)
-// + v6 - 26 = gSpideyHeadModel + 2). cmpsum shows 57 mnemonic diffs,
+// to G_SPIDEY_HEAD_MODEL+2 (v6 = G_SPIDEY_HEAD_MODEL - v2; v8 = (result=v2+28)
+// + v6 - 26 = G_SPIDEY_HEAD_MODEL + 2). cmpsum shows 57 mnemonic diffs,
 // matching this blocker plus scheduling residue.
 // known blocker: this calls print_if_false, which our compiler always
 // inlines (it is static in export.h) while the original calls it out of
 // line (see CLAUDE.md "print_if_false inlining" note). that alone rules
 // out a full match here, independent of anything else in this function.
-// residue beyond print_if_false: the source pointer (into gSpideyHeadModel)
+// residue beyond print_if_false: the source pointer (into G_SPIDEY_HEAD_MODEL)
 // is computed in the original via a two-step subtract-then-add that
-// algebraically cancels down to (gSpideyHeadModel+2); written here as the
+// algebraically cancels down to (G_SPIDEY_HEAD_MODEL+2); written here as the
 // simplified direct form, which is very unlikely to reproduce the exact
 // original instruction sequence, but it is functionally identical to it.
 void Spidey_BagHead(i32 a1, i32 a2)
 {
-	print_if_false(gSpideyHeadModel != 0, "Error");
+	print_if_false(G_SPIDEY_HEAD_MODEL != 0, "Error");
 
 	*gBagHeadModeOne = (a2 == 1);
 	*gBagHeadModeTwo = (a2 == 2);
@@ -9541,7 +9615,7 @@ void Spidey_BagHead(i32 a1, i32 a2)
 
 	if (count > 0)
 	{
-		u8 *pSrc = (u8*)gSpideyHeadModel + 2;
+		u8 *pSrc = (u8*)G_SPIDEY_HEAD_MODEL + 2;
 		i16 *pTable1 = gBagHeadOffsetTable1;
 		i16 *pTable2 = gBagHeadOffsetTable2;
 
@@ -9581,24 +9655,24 @@ void Spidey_BagHead(i32 a1, i32 a2)
 // @Matching
 INLINE void Spidey_DoArmorVRAMProcessing(bool a1)
 {
-	if (gLowGraphics)
+	if (G_LOWGRAPHICS)
 	{
-		if ((a1 && gSpideyVramProcessing) || (!a1 && !gSpideyVramProcessing))
+		if ((a1 && G_SPIDEY_VRAM_PROCESSING) || (!a1 && !G_SPIDEY_VRAM_PROCESSING))
 		{
 		   return;
 		}
 
 		if (a1)
 		{
-			Spidey_SwapSuitTextures(CurrentSuit, 0);
+			Spidey_SwapSuitTextures(G_CURRENTSUIT, 0);
 		}
 		else
 		{
-			Spidey_SwapSuitTextures(0, CurrentSuit);
+			Spidey_SwapSuitTextures(0, G_CURRENTSUIT);
 		}
 
 		
-		gSpideyVramProcessing = !gSpideyVramProcessing;
+		G_SPIDEY_VRAM_PROCESSING = !G_SPIDEY_VRAM_PROCESSING;
 	}
 }
 
@@ -9606,34 +9680,34 @@ INLINE void Spidey_DoArmorVRAMProcessing(bool a1)
 // @Matching
 void Spidey_LoadAlternativeHealthIcon(i32 a1)
 {
-	gSpideyAnimTwo = 0;
-	gSpideyAnim = 0;
+	G_SPIDEY_ANIM_TWO = 0;
+	G_SPIDEY_ANIM = 0;
 	switch ( a1 )
 	{
 		case 2:
 			Spool_PSX("cost99", 0);
-			gSpideyAnim = Spool_FindAnim("cost99", 1);
+			G_SPIDEY_ANIM = Spool_FindAnim("cost99", 1);
 			break;
 		case 3:
 		case 9:
 			Spool_PSX("costblk", 0);
-			gSpideyAnim = Spool_FindAnim("costblk", 1);
+			G_SPIDEY_ANIM = Spool_FindAnim("costblk", 1);
 			break;
 		case 4:
 			Spool_PSX("costcapt", 0);
-			gSpideyAnim = Spool_FindAnim("costcapt", 1);
+			G_SPIDEY_ANIM = Spool_FindAnim("costcapt", 1);
 			break;
 		case 6:
 			Spool_PSX("costbag", 0);
-			gSpideyAnim = Spool_FindAnim("costbag", 1);
+			G_SPIDEY_ANIM = Spool_FindAnim("costbag", 1);
 			break;
 		case 7:
 			Spool_PSX("costscar", 0);
-			gSpideyAnim = Spool_FindAnim("costscar", 1);
+			G_SPIDEY_ANIM = Spool_FindAnim("costscar", 1);
 			break;
 		case 10:
 			Spool_PSX("costpete", 0);
-			gSpideyAnim = Spool_FindAnim("costpete", 1);
+			G_SPIDEY_ANIM = Spool_FindAnim("costpete", 1);
 			break;
 		default:
 			break;
@@ -9677,14 +9751,14 @@ extern char SuitNames[11][32];
 // `mov ecx,[esi*4+5512Ch]` fold, but the following call-argument push for
 // Spidey_SwapSuitTextures still schedules one instruction earlier than the
 // original relative to the two field stores (gRegionReloadRelated,
-// PSXRegion[region].Protected); reordering the three statements in source
+// G_PSXREGION[region].Protected); reordering the three statements in source
 // made it worse (120 diffs), not better, so left as scheduling residue.
 // attempts logged in ~/Documents/spidey-work/wt/spidey.attempts.md.
 void Spidey_LoadAlternativeTextureSet(u32 const *, i32 a2)
 {
-	if (gLowGraphics)
+	if (G_LOWGRAPHICS)
 	{
-		if (CurrentSuit == a2)
+		if (G_CURRENTSUIT == a2)
 			return;
 
 		if (a2 == 6)
@@ -9718,8 +9792,8 @@ afterModeTwo:
 			ClearRegion(*gRegionReloadRelated, 1);
 		}
 
-		i32 oldSuit = CurrentSuit;
-		CurrentSuit = a2;
+		i32 oldSuit = G_CURRENTSUIT;
+		G_CURRENTSUIT = a2;
 
 		if (a2 == 1)
 		{
@@ -9730,7 +9804,7 @@ afterModeTwo:
 		{
 			i32 region = Spool_PSX(gAltTexSetNames[a2], 0);
 			*gRegionReloadRelated = region;
-			PSXRegion[region].Protected = 1;
+			G_PSXREGION[region].Protected = 1;
 			Spidey_SwapSuitTextures(oldSuit, a2);
 		}
 	}
@@ -9750,14 +9824,14 @@ afterModeTwo:
 			a2 = 1;
 		}
 
-		if (CurrentSuit != a2)
+		if (G_CURRENTSUIT != a2)
 		{
 			ClearRegion(*gCurrentCostumeRegionIndex, 1);
-			CurrentSuit = a2;
+			G_CURRENTSUIT = a2;
 
 			i32 region = Spool_PSX(SuitNames[a2], 0);
 			*gCurrentCostumeRegionIndex = (u8)region;
-			PSXRegion[region].Protected = 1;
+			G_PSXREGION[region].Protected = 1;
 		}
 	}
 }
@@ -9788,7 +9862,7 @@ static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
 // address found and verified this session: IDA sub_4B8C80 (0x4B8C80).
 // note: tools/names.json (local working copy) mislabels this address as
 // CPlayer_IfPlayerCeilingCheck; that is wrong, this is
-// Spidey_StoreTextureEntry (confirmed by decompiling it: gLowGraphics
+// Spidey_StoreTextureEntry (confirmed by decompiling it: G_LOWGRAPHICS
 // check, the SGlobalTextureEntry SoA-looking-but-really-AoS indexing
 // tricks, gSuitChecksumTable walk, all match). The real
 // CPlayer::IfPlayerCeilingCheck (already @Ok elsewhere in this file) is
@@ -9803,7 +9877,7 @@ static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
 // for a message with one %X format spec), so this passes the checksum as
 // a printf-style value, which is functionally sensible either way since
 // the call does nothing in retail.
-// preserved bug: the gLowGraphics==0 search loop compares
+// preserved bug: the G_LOWGRAPHICS==0 search loop compares
 // gGlobalTextureEntries[count] (the NEXT free slot, loop-invariant) against
 // the checksum on every iteration instead of gGlobalTextureEntries[i] -
 // the compiled code hoists the loop-invariant load/compare exactly like
@@ -9826,7 +9900,7 @@ static i32 * const gCostumeTextureIds = (i32*)0x006A8D74;
 // worse (52 diffs), reverted.
 void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 {
-	if (!gLowGraphics)
+	if (!G_LOWGRAPHICS)
 	{
 		i32 count = *gGlobalTextureEntryCount;
 
@@ -9856,14 +9930,14 @@ void Spidey_StoreTextureEntry(Texture const *pTexture, i16 a2, i16 a3)
 	}
 
 	u32 checksum = pTexture->Checksum;
-	i32 *pEntry = gSuitChecksumTable + CurrentSuit * 16;
+	i32 *pEntry = gSuitChecksumTable + G_CURRENTSUIT * 16;
 	i32 i;
 
 	for (i = 0; i < 16; i++)
 	{
 		if ((u32)pEntry[i] == checksum)
 		{
-			gCostumeTextureIds[CurrentSuit * 16 + i] = pTexture->clut;
+			gCostumeTextureIds[G_CURRENTSUIT * 16 + i] = pTexture->clut;
 			return;
 		}
 	}
@@ -9907,7 +9981,7 @@ static void ** const gCostumeRegionEntries = (void**)0x006B2454;
 // in export.h), while the original calls it out of line (retail body is a
 // single `ret`, confirmed via tools/functions - a no-op in the shipped
 // game). string confirmed: "SwapSuitTextures() called in hardware mode!"
-// (0x556644, printed when gLowGraphics==0, i.e. hardware mode), region
+// (0x556644, printed when G_LOWGRAPHICS==0, i.e. hardware mode), region
 // name "spidey" (0x556670) passed to Spool_FindRegion.
 // residue: 50 mnemonic diffs (down from 57), after widening outerCount to
 // i32 (original tests the full edx register after the 16-bit load, because
@@ -9924,7 +9998,7 @@ static void ** const gCostumeRegionEntries = (void**)0x006B2454;
 
 void Spidey_SwapSuitTextures(i32 a1, i32 a2)
 {
-	print_if_false(gLowGraphics != 0, "SwapSuitTextures() called in hardware mode!");
+	print_if_false(G_LOWGRAPHICS != 0, "SwapSuitTextures() called in hardware mode!");
 
 	i32 region = Spool_FindRegion("spidey");
 	i32 byteOffset = region * 68;
@@ -10039,14 +10113,14 @@ void spideyLog(char *,...)
 // `rep movsd`, not a separate issue.
 void Spidey_CopyHeadModel(i32 Region)
 {
-	if (!gSpideyHeadModel)
+	if (!G_SPIDEY_HEAD_MODEL)
 	{
 		void **pEntry = reinterpret_cast<void**>(gCostumeRegionEntries[Region * 17]);
 		u16 *ptr = reinterpret_cast<u16*>(pEntry[7]);
 		u16 size = ptr[1];
 
 		u16 *result = static_cast<u16*>(DCMem_New(8 * size, 1, 1, 0, 1));
-		gSpideyHeadModel = static_cast<void*>(result);
+		G_SPIDEY_HEAD_MODEL = static_cast<void*>(result);
 
 		u32 *dst = reinterpret_cast<u32*>(result);
 		u32 *src = reinterpret_cast<u32*>(reinterpret_cast<u8*>(ptr) + 0x1C);
@@ -10060,8 +10134,8 @@ void Spidey_CopyHeadModel(i32 Region)
 // @Ok
 void Spidey_FreeHeadModel(void)
 {
-	Mem_Delete(static_cast<void*>(gSpideyHeadModel));
-	gSpideyHeadModel = 0;
+	Mem_Delete(static_cast<void*>(G_SPIDEY_HEAD_MODEL));
+	G_SPIDEY_HEAD_MODEL = 0;
 }
 
 // @Ok
@@ -10071,7 +10145,7 @@ u8 CPlayer::IncreaseWebbing(i32 amount)
 		return 0;
 
 	i32 v3 = 10;
-	if (CurrentSuit == 6 || CurrentSuit == 9 || CurrentSuit == 10)
+	if (G_CURRENTSUIT == 6 || G_CURRENTSUIT == 9 || G_CURRENTSUIT == 10)
 		v3 = 2;
 
 	if ( (this->mWebbing >= 4096 || this->field_5E8) && this->field_5D8 >= v3)
@@ -10369,16 +10443,15 @@ i16 CPlayer::GetEffectiveHeading(void)
 
 // gWebbingDecreaseDisabled (0x60CFE8): no idb_globals.txt entry, tentative
 // name from usage (gates DecreaseWebbing below alongside field_1AC and the
-// CurrentSuit checks).
+// G_CURRENTSUIT checks).
 static i32 * const gWebbingDecreaseDisabled = (i32*)0x60CFE8;
-// gDifficultyLevel (0x54D474): named DifficultyLevel in idb_globals.txt.
+// gDifficultyLevel (0x54D474): named G_DIFFICULTY_LEVEL in idb_globals.txt.
 static i32 * const gDifficultyLevel = (i32*)0x54D474;
 // byte_682770: no idb_globals.txt entry for this exact address, but it
 // sits directly before Redbook_XAPaused (0x682771, idb_globals.txt) and
 // gates a Redbook_XAPlay call the same way a "currently playing" flag
 // would; tentative name only, not confirmed.
 static char * const gRedbookXaPlayingMaybe = (char*)0x682770;
-extern int CurrentSuit;
 
 // @Ok
 // verified against IDA sub_4BB0A0 (0x4BB0A0, 0xD3 bytes). Found and fixed
@@ -10392,8 +10465,8 @@ char CPlayer::DecreaseWebbing(i32 a2)
 {
 	if (!this->field_1AC &&
 			!*gWebbingDecreaseDisabled &&
-			CurrentSuit != 3 &&
-			CurrentSuit != 4)
+			G_CURRENTSUIT != 3 &&
+			G_CURRENTSUIT != 4)
 	{
 		int v3;
 		int v4;
@@ -10644,7 +10717,7 @@ void CPlayer::CreateJumpingSmashKickTrail(void)
 // @Matching
 INLINE void CPlayer::ResetSFXArrayEntry(u32 a2)
 {
-	i32 *v2 = gSpideySFXEntry[a2];
+	i32 *v2 = G_SPIDEY_SFX_ENTRY[a2];
 	if (v2)
 	{
 		while (*v2 != -1)
@@ -10659,7 +10732,7 @@ INLINE void CPlayer::ResetSFXArrayEntry(u32 a2)
 // @Matching
 INLINE void CPlayer::PlaySingleAnim(i32 a2, i32 a3, i32 a4)
 {
-	i32 *tmp = gSpideySFXEntry[a2];
+	i32 *tmp = G_SPIDEY_SFX_ENTRY[a2];
 	this->field_350 = tmp;
 
 	if (tmp)
@@ -10834,7 +10907,7 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 void CPlayer::PriorToVenomDistanceAttack(CVector a2)
 {
 	// gWaterEffect (0x60FA9C) lives in post.cpp and has no header
-	// declaration, so it is pulled in the same way CurrentSuit is above.
+	// declaration, so it is pulled in the same way G_CURRENTSUIT is above.
 	extern i32 gWaterEffect;
 
 	CBody *pAutoAim = this->field_878;
@@ -10843,7 +10916,7 @@ void CPlayer::PriorToVenomDistanceAttack(CVector a2)
 
 	if (pAutoAim != 0)
 	{
-		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&MiscellaneousRenderingList));
+		pAutoAim->DeleteFrom(reinterpret_cast<CBody**>(&G_MISCELLANEOUS_RENDERING_LIST));
 
 		i32 *v = reinterpret_cast<i32*>(pAutoAim);
 		(*(void(**)(i32*, i32))*v)(v, 1);
@@ -10866,7 +10939,7 @@ void CPlayer::PriorToVenomDistanceAttack(CVector a2)
 
 	if (pPart != 0)
 	{
-		pPart->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+		pPart->DeleteFrom(reinterpret_cast<CBody**>(&G_SPIDEY_ADDITIONAL_BODY_PARTS_LIST));
 
 		i32 *v = reinterpret_cast<i32*>(pPart);
 		(*(void(**)(i32*, i32))*v)(v, 1);
@@ -10915,7 +10988,7 @@ void CPlayer::PriorToVenomDistanceAttack(CVector a2)
 
 		if (pFist != 0)
 		{
-			pFist->DeleteFrom(reinterpret_cast<CBody**>(&SpideyAdditionalBodyPartsList));
+			pFist->DeleteFrom(reinterpret_cast<CBody**>(&G_SPIDEY_ADDITIONAL_BODY_PARTS_LIST));
 
 			i32 *v = reinterpret_cast<i32*>(pFist);
 			(*(void(**)(i32*, i32))*v)(v, 1);
@@ -10991,11 +11064,11 @@ void CPlayer::PriorToVenomDistanceAttack(CVector a2)
 
 	if (pCamera != 0 && pCamera->mCameraMode == 3)
 	{
-		pCamera->SetCamXOffset(gSpideyFloorCamXOffset, 0);
-		pCamera->SetCamYOffset(gSpideyFloorCamYOffset, 0);
-		pCamera->SetCamZOffset(gSpideyFloorCamZOffset, 0);
-		pCamera->SetCamXZDistance(gSpideyFloorCamXZDistance, 0);
-		pCamera->SetCamYDistance(gSpideyFloorCamYDistance, 0);
+		pCamera->SetCamXOffset(G_SPIDEY_FLOOR_CAM_X_OFFSET, 0);
+		pCamera->SetCamYOffset(G_SPIDEY_FLOOR_CAM_Y_OFFSET, 0);
+		pCamera->SetCamZOffset(G_SPIDEY_FLOOR_CAM_Z_OFFSET, 0);
+		pCamera->SetCamXZDistance(G_SPIDEY_FLOOR_CAM_XZ_DISTANCE, 0);
+		pCamera->SetCamYDistance(G_SPIDEY_FLOOR_CAM_Y_DISTANCE, 0);
 
 		this->field_540 = 0;
 	}
@@ -11014,7 +11087,7 @@ void CPlayer::SwitchToStandMode(void)
 
 	if (mAnim == 50 || mAnim == 51 || mAnim == 60 || mAnim == 63 || mAnim == 72 || mAnim == 75)
 	{
-		this->field_350 = gSpideySFXEntry[55];
+		this->field_350 = G_SPIDEY_SFX_ENTRY[55];
 		if (this->field_350 != 0)
 			this->ResetSFXArrayEntry(55);
 		this->RunAnim(0x37, 0, -1);
@@ -11024,7 +11097,7 @@ void CPlayer::SwitchToStandMode(void)
 
 	if (mAnim == 52 || mAnim == 66 || mAnim == 69 || mAnim == 78 || mAnim == 81)
 	{
-		this->field_350 = gSpideySFXEntry[56];
+		this->field_350 = G_SPIDEY_SFX_ENTRY[56];
 		if (this->field_350 != 0)
 			this->ResetSFXArrayEntry(56);
 		this->RunAnim(0x38, 0, -1);
@@ -11035,7 +11108,7 @@ void CPlayer::SwitchToStandMode(void)
 	if (mAnim == 57 && this->mAnimDir == 1)
 	{
 		i32 frame = this->mFrame;
-		this->field_350 = gSpideySFXEntry[57];
+		this->field_350 = G_SPIDEY_SFX_ENTRY[57];
 		if (this->field_350 != 0)
 			this->ResetSFXArrayEntry(57);
 		this->RunAnim(0x39, frame, 0);
@@ -11046,7 +11119,7 @@ void CPlayer::SwitchToStandMode(void)
 	if (mAnim == 58 && this->mAnimDir == 1)
 	{
 		i32 frame = this->mFrame;
-		this->field_350 = gSpideySFXEntry[58];
+		this->field_350 = G_SPIDEY_SFX_ENTRY[58];
 		if (this->field_350 != 0)
 			this->ResetSFXArrayEntry(58);
 		this->RunAnim(0x3A, frame, 0);
@@ -11057,35 +11130,35 @@ void CPlayer::SwitchToStandMode(void)
 	switch (mAnim)
 	{
 		case 0x81:
-			this->field_350 = gSpideySFXEntry[130];
+			this->field_350 = G_SPIDEY_SFX_ENTRY[130];
 			if (this->field_350 != 0)
 				this->ResetSFXArrayEntry(130);
 			this->RunAnim(0x82, 0, -1);
 			this->field_E1C = 1;
 			return;
 		case 0x85:
-			this->field_350 = gSpideySFXEntry[134];
+			this->field_350 = G_SPIDEY_SFX_ENTRY[134];
 			if (this->field_350 != 0)
 				this->ResetSFXArrayEntry(134);
 			this->RunAnim(0x86, 0, -1);
 			this->field_E1C = 1;
 			return;
 		case 0xE:
-			this->field_350 = gSpideySFXEntry[55];
+			this->field_350 = G_SPIDEY_SFX_ENTRY[55];
 			if (this->field_350 != 0)
 				this->ResetSFXArrayEntry(55);
 			this->RunAnim(0x37, 0, -1);
 			this->field_E1C = 1;
 			return;
 		case 0xC4:
-			this->field_350 = gSpideySFXEntry[200];
+			this->field_350 = G_SPIDEY_SFX_ENTRY[200];
 			if (this->field_350 != 0)
 				this->ResetSFXArrayEntry(200);
 			this->RunAnim(0xC8, 0, -1);
 			this->field_E1C = 1;
 			return;
 		case 0xBE:
-			this->field_350 = gSpideySFXEntry[194];
+			this->field_350 = G_SPIDEY_SFX_ENTRY[194];
 			if (this->field_350 != 0)
 				this->ResetSFXArrayEntry(194);
 			this->RunAnim(0xC2, 0, -1);
@@ -11096,21 +11169,21 @@ void CPlayer::SwitchToStandMode(void)
 			i16 frame = this->mFrame;
 			if (frame >= 18 || frame <= 3)
 			{
-				this->field_350 = gSpideySFXEntry[11];
+				this->field_350 = G_SPIDEY_SFX_ENTRY[11];
 				if (this->field_350 != 0)
 					this->ResetSFXArrayEntry(11);
 				this->RunAnim(0xB, 0, -1);
 			}
 			else if (frame < 10 || frame > 14)
 			{
-				this->field_350 = gSpideySFXEntry[13];
+				this->field_350 = G_SPIDEY_SFX_ENTRY[13];
 				if (this->field_350 != 0)
 					this->ResetSFXArrayEntry(13);
 				this->RunAnim(0xD, 0, -1);
 			}
 			else
 			{
-				this->field_350 = gSpideySFXEntry[12];
+				this->field_350 = G_SPIDEY_SFX_ENTRY[12];
 				if (this->field_350 != 0)
 					this->ResetSFXArrayEntry(12);
 				this->RunAnim(0xC, 0, -1);
@@ -11129,7 +11202,7 @@ void CPlayer::SwitchToStandMode(void)
 
 	if (this->field_AD4 != 0)
 	{
-		this->field_350 = gSpideySFXEntry[19];
+		this->field_350 = G_SPIDEY_SFX_ENTRY[19];
 		if (this->field_350 != 0)
 			this->ResetSFXArrayEntry(19);
 		this->RunAnim(0x13, 0, -1);
@@ -11139,14 +11212,14 @@ void CPlayer::SwitchToStandMode(void)
 	{
 		if ((this->mHeldObject->field_10C & 8) == 0)
 		{
-			this->field_350 = gSpideySFXEntry[194];
+			this->field_350 = G_SPIDEY_SFX_ENTRY[194];
 			if (this->field_350 != 0)
 				this->ResetSFXArrayEntry(194);
 			this->RunAnim(0xC2, 0, -1);
 		}
 		else
 		{
-			this->field_350 = gSpideySFXEntry[200];
+			this->field_350 = G_SPIDEY_SFX_ENTRY[200];
 			if (this->field_350 != 0)
 				this->ResetSFXArrayEntry(200);
 			this->RunAnim(0xC8, 0, -1);
@@ -11155,18 +11228,13 @@ void CPlayer::SwitchToStandMode(void)
 	}
 	else
 	{
-		this->field_350 = gSpideySFXEntry[0];
+		this->field_350 = G_SPIDEY_SFX_ENTRY[0];
 		if (this->field_350 != 0)
 			this->ResetSFXArrayEntry(0);
 		this->RunAnim(0, 0, -1);
 		this->field_E1C = 1;
 	}
 }
-
-// duplicate of the byte right before gWhatIf (0x60CFC4, ob.cpp). Name from
-// baddy.cpp's gSubmarinerDieRelated. Tentative, static per file per repo
-// convention.
-static u8 * const gSubmarinerDieRelated = (u8*)0x60CFC4;
 
 // @Ok
 // Globals
@@ -11308,11 +11376,11 @@ void CPlayer::TidyUpZipWebLandingPosition(int a2)
 
 // @Ok
 // trivial two-field store, functionally correct regardless of
-// gUserFunctionName/gUserFunctionSize's exact (relocatable) address.
+// G_USER_FUNCTION_NAME/G_USER_FUNCTION_SIZE's exact (relocatable) address.
 void Spidey_SetUserFunction(const char *a1, unsigned int a2)
 {
-	gUserFunctionName = a1;
-	gUserFunctionSize = a2;
+	G_USER_FUNCTION_NAME = a1;
+	G_USER_FUNCTION_SIZE = a2;
 }
 
 // @Ok

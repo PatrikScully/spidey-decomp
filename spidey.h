@@ -1039,6 +1039,10 @@ class CPlayer : public CSuper
 // defined in spidey.cpp below CPlayer::SetArmor; declared here because
 // CPlayer::Hit, defined earlier in the same file, drops the armour too.
 EXPORT extern u8 gSpideyArmorSet;
+// 0x006A9040, "gSpideyArmorSet" in idb_globals.txt, confirmed by the stores in
+// CPlayer::SetArmor (0x004BAEC0).
+//#define G_SPIDEY_ARMOR_SET (gSpideyArmorSet)
+#define G_SPIDEY_ARMOR_SET (*reinterpret_cast<u8*>(0x006A9040))
 
 // The player. This is the SAME storage as G_MECHLIST in ob.h (0x006A9038): the
 // repo grew two variables for one global, spidey.cpp's CPlayer* MechList and
@@ -1056,12 +1060,25 @@ EXPORT extern CPlayer* MechList;
 //#define G_MECHLIST_PLAYER (MechList)
 #define G_MECHLIST_PLAYER (*reinterpret_cast<CPlayer**>(0x006A9038))
 EXPORT extern CItem* SpideyAdditionalBodyPartsList;
+// 0x006A903C, "SpideyAdditionalBodyPartsList" in idb_globals.txt. The exe links
+// the fists and the buzz bit onto it and M3d_Render walks it every frame.
+//#define G_SPIDEY_ADDITIONAL_BODY_PARTS_LIST (SpideyAdditionalBodyPartsList)
+#define G_SPIDEY_ADDITIONAL_BODY_PARTS_LIST (*reinterpret_cast<CItem**>(0x006A903C))
+
 EXPORT extern CItem* MiscellaneousRenderingList;
+// 0x0060DAB0, "MiscellaneousRenderingList" in idb_globals.txt. Same deal, the
+// auto aim marker lives on it.
+//#define G_MISCELLANEOUS_RENDERING_LIST (MiscellaneousRenderingList)
+#define G_MISCELLANEOUS_RENDERING_LIST (*reinterpret_cast<CItem**>(0x0060DAB0))
 
 // Defined in spidey.cpp (0x0060F750 / 0x0060F754 per idb_globals.txt, both
 // written by Spidey_LoadAlternativeHealthIcon and CPlayer::SetArmor).
 EXPORT extern SAnimFrame *gSpideyAnim;
+//#define G_SPIDEY_ANIM (gSpideyAnim)
+#define G_SPIDEY_ANIM (*reinterpret_cast<SAnimFrame**>(0x0060F750))
 EXPORT extern SAnimFrame *gSpideyAnimTwo;
+//#define G_SPIDEY_ANIM_TWO (gSpideyAnimTwo)
+#define G_SPIDEY_ANIM_TWO (*reinterpret_cast<SAnimFrame**>(0x0060F754))
 
 
 EXPORT void Bruce_Sync(void);
