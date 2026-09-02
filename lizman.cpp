@@ -1,4 +1,5 @@
 #include "lizman.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "message.h"
 #include "ps2funcs.h"
@@ -53,7 +54,7 @@ CLizMan::CLizMan(i16* a1, i32 a2)
 	*reinterpret_cast<i16*>(&this->field_F4) = 0x40;
 
 	this->field_374 = G_TIMER_RELATED - 0x131;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_1F4 = a2;
 	this->mNode = static_cast<u16>(a2);
@@ -94,7 +95,7 @@ void LizMan_CreateLizMan(const u32* stack, u32* result)
 // @Matching
 void LizMan_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -198,7 +199,7 @@ i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 			if (distToPlayer >= bestDist)
 				continue;
 
-			CItem* pOther = BaddyList;
+			CItem* pOther = G_BADDY_LIST;
 			while (pOther)
 			{
 				if (pOther->mType == 0x13D)
@@ -229,7 +230,15 @@ i32 CLizMan::ScanNearbyNodesForJumpTarget(void)
 }
 
 extern CSVector gTrajectoryVector;
-static u16 word_5FBC0C;
+
+// The pending follow-on animation id shared by every lizman, 0xFFFF when
+// there is none. CLizMan::HandleAnimationFollowOn (0x450B50, still in the
+// exe) is the only writer (mov word [5FBC0Ch],0FFFFh at 0x450B50 and
+// 0x450CA2, mov [5FBC0Ch],dx at 0x450B73), and about a dozen exe-side
+// CLizMan states read it, so ours has to be the same memory.
+static u16 gLizManFollowOnAnim;
+//#define G_LIZMAN_FOLLOW_ON_ANIM (gLizManFollowOnAnim)
+#define G_LIZMAN_FOLLOW_ON_ANIM (*reinterpret_cast<u16*>(0x005FBC0C))
 
 // @Ok
 void CLizMan::Guard(void)
@@ -256,7 +265,7 @@ void CLizMan::Guard(void)
 		case 1:
 
 			// @FIXME - word??
-			if (word_5FBC0C != 0xFFFF && this->mAnim != 5)
+			if (G_LIZMAN_FOLLOW_ON_ANIM != 0xFFFF && this->mAnim != 5)
 			{
 				this->PlaySingleAnim(5, 0, -1);
 			}
@@ -571,14 +580,14 @@ void CLizMan::FlyAcrossRoom(void)
 			break;
 		case 2:
 			this->SetHeight(0, 0x64, 0x258);
-			if (word_5FBC0C != 0xFFFF)
+			if (G_LIZMAN_FOLLOW_ON_ANIM != 0xFFFF)
 			{
 				this->mRMinor = 0x80;
 				this->dumbAssPad++;
 			}
 			break;
 		case 3:
-			if (this->SetHeight(0, 0x64, 0x258) == 2 && word_5FBC0C != 0xFFFF)
+			if (this->SetHeight(0, 0x64, 0x258) == 2 && G_LIZMAN_FOLLOW_ON_ANIM != 0xFFFF)
 			{
 				if (this->IsSafeToSwitchToFollowWaypoints())
 				{
@@ -592,7 +601,7 @@ void CLizMan::FlyAcrossRoom(void)
 			}
 			break;
 		case 5:
-			if (this->SetHeight(0, 0x64, 0x258) == 2 && word_5FBC0C != 0xFFFF)
+			if (this->SetHeight(0, 0x64, 0x258) == 2 && G_LIZMAN_FOLLOW_ON_ANIM != 0xFFFF)
 			{
 				this->field_31C.bothFlags = 25;
 				this->dumbAssPad = 0;
@@ -765,18 +774,22 @@ i32 INLINE CLizMan::IsSafeToSwitchToFollowWaypoints(void)
 // the inlined copy of this function inside CLizMan::FlyAcrossRoom's case 0
 // (0x44dec4-0x44df1b) instruction by instruction, both match exactly.
 static CLizMan* gGlobalLizMan;
+//#define G_GLOBAL_LIZ_MAN (gGlobalLizMan)
+#define G_GLOBAL_LIZ_MAN (*reinterpret_cast<CLizMan**>(0x00682C44))
 static unsigned char gLizManAttackFlag;
+//#define G_LIZ_MAN_ATTACK_FLAG (gLizManAttackFlag)
+#define G_LIZ_MAN_ATTACK_FLAG (*reinterpret_cast<unsigned char*>(0x00682B6E))
 
 // @Ok
 void INLINE CLizMan::ClearAttackFlags(void)
 {
-	if (gGlobalLizMan == this)
+	if (G_GLOBAL_LIZ_MAN == this)
 	{
-		gGlobalLizMan = NULL;
+		G_GLOBAL_LIZ_MAN = NULL;
 	}
 	else if ((this->field_39C & 2))
 	{
-		gLizManAttackFlag &= ~this->field_39D;
+		G_LIZ_MAN_ATTACK_FLAG &= ~this->field_39D;
 	}
 
 	this->field_39C = 0;
@@ -807,4 +820,29 @@ void validate_CLizMan(void){
 	VALIDATE(CLizMan, field_3AC, 0x3AC);
 	VALIDATE(CLizMan, field_3B0, 0x3B0);
 	VALIDATE(CLizMan, field_3B4, 0x3B4);
+}
+
+// @Bogus
+// What stays in the exe here.
+// The constructor: our CLizMan declares no virtuals at all, but the original
+// vtable at 0x53B9AC overrides seven slots (dtor 0x44AD60, AI 0x451350, Hit
+// 0x44BA00, CreateCombatImpactEffect 0x451AD0, TugImpulse 0x44B4F0,
+// SetParamByIndex 0x44AF90, Grab 0x44B490). Stamping our vtable would fall
+// back to CBaddy for all of them. LizMan_CreateLizMan and
+// LizMan_RelocatableModuleInit go with it, they build (or hand out the
+// pointer that builds) that same object.
+// Guard and ScanNearbyNodesForJumpTarget: both walk the trig node array with
+// NumNodes (0x6B4670, trig.h). Nothing in our dll ever writes NumNodes, so our
+// copy is always 0 and the walk finds nothing.
+// CheckFallBack: it does new CAIProc_RotY, and our CAIProc_RotY::Execute is an
+// empty inline body while the exe has a real one at 0x401110 (see patch_ai).
+void patch_lizman(void)
+{
+	PATCH_PUSH_RET(0x0044A5C0, LizMan_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x0044DEC0, CLizMan::FlyAcrossRoom, "?FlyAcrossRoom@CLizMan@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0044F2E0, CLizMan::CalculateJumpPositionArray, "?CalculateJumpPositionArray@CLizMan@@QAEXPAVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x0044FFE0, CLizMan::Acknowledge, "?Acknowledge@CLizMan@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00450270, CLizMan::RunToWhereActionIs, "?RunToWhereActionIs@CLizMan@@QAEXPAVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x00450920, CLizMan::DoLizmanPhysics, "?DoLizmanPhysics@CLizMan@@QAEXXZ");
 }

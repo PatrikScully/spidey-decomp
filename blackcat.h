@@ -43,3 +43,5 @@ void validate_CBlackCat(void);
 EXPORT void BlackCat_CreateBlackCat(const u32 *stack, u32 *result);
 EXPORT void BlackCat_RelocatableModuleClear(void);
 EXPORT void BlackCat_RelocatableModuleInit(reloc_mod*);
+
+void patch_blackcat(void);

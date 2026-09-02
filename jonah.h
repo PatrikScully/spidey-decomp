@@ -49,4 +49,6 @@ EXPORT void Jonah_RelocatableModuleClear(void);
 EXPORT void Jonah_WhatShouldScorpDo(const u32*, u32*);
 EXPORT void Jonah_ShouldPlead(const u32*, u32*);
 
+void patch_jonah(void);
+
 #endif

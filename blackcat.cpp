@@ -1,4 +1,5 @@
 #include "blackcat.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "trig.h"
 #include "m3dutils.h"
@@ -9,8 +10,11 @@
 #include "ps2redbook.h"
 #include "spidey.h"
 
-extern u8 submarinerDieRelated;
-extern CBaddy* BaddyList;
+// The "player died in the submarine level" byte, written only by the exe
+// side (CPlayer::AI at 0x4C66A6, CPlayer_CutSceneSkipCleanup at 0x4BC17E),
+// so it has to be read out of game memory. Same fixed pointer baddy.cpp,
+// venom.cpp and spidey.cpp already use for it.
+static u8 * const gSubmarinerDieRelated = (u8*)0x0060CFC4;
 
 EXPORT SLight M3d_BlackCatLight =
 {
@@ -33,7 +37,7 @@ void BlackCat_RelocatableModuleInit(reloc_mod* pMod)
 // @Ok
 void BlackCat_RelocatableModuleClear(void)
 {
-	for (CBody* cur = BaddyList; cur; )
+	for (CBody* cur = G_BADDY_LIST; cur; )
 	{
 		CBody* next = reinterpret_cast<CBody*>(cur->mNextItem);
 		if (cur->mType == 319)
@@ -62,7 +66,7 @@ void BlackCat_RelocatableModuleClear(void)
 // @Ok without chasing a byte match.
 void CBlackCat::AI(void)
 {
-	if (submarinerDieRelated)
+	if (*gSubmarinerDieRelated)
 	{
 		if (Trig_GetLevelID() != 0x803)
 		{
@@ -514,7 +518,7 @@ void CBlackCat::SynthesizeAnalogueInput(void)
 {
 	this->field_344 += this->field_80;
 
-	if (submarinerDieRelated)
+	if (*gSubmarinerDieRelated)
 	{
 		this->field_348 = 0;
 		this->KillAllCommandBlocks();
@@ -844,7 +848,7 @@ void CBlackCat::SynthesizeAnalogueInput(void)
 		{
 			this->field_340 = 0;
 
-			if (submarinerDieRelated && this->field_328)
+			if (*gSubmarinerDieRelated && this->field_328)
 			{
 				Trig_GetPosition(&this->mPos, this->field_328);
 			}
@@ -859,7 +863,7 @@ void CBlackCat::SynthesizeAnalogueInput(void)
 // then the KillAllCommandBlocks loop inlined here, in that exact order.
 CBlackCat::~CBlackCat(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	delete reinterpret_cast<CClass*>(this->field_33C);
 
 	this->KillAllCommandBlocks();
@@ -887,7 +891,7 @@ CBlackCat::CBlackCat(i16* a2, i32 a3)
 	this->mFlags |= 0x480;
 
 	this->mpLight = &M3d_BlackCatLight;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mType = 319;
 	this->field_31C.bothFlags = 1;
@@ -896,7 +900,7 @@ CBlackCat::CBlackCat(i16* a2, i32 a3)
 	this->mRMinor = 0;
 	this->field_34C = reinterpret_cast<i32>(v5);
 
-	if (submarinerDieRelated && Trig_GetLevelID() != 2051)
+	if (*gSubmarinerDieRelated && Trig_GetLevelID() != 2051)
 		this->Die(0);
 }
 
@@ -1020,4 +1024,23 @@ void validate_CBlackCat(void){
 
 	VALIDATE(CBlackCat, field_34C, 0x34C);
 	VALIDATE(CBlackCat, field_350, 0x350);
+}
+
+// @Bogus
+// The constructor stays in the exe. Our CBlackCat has no Hit, but the original
+// vtable at 0x53B448 puts a "return 0" stub (0x4B0D60) in slot 3, so stamping
+// our vtable would fall back to CBody::Hit and Black Cat would start taking
+// damage. BlackCat_CreateBlackCat and BlackCat_RelocatableModuleInit go with
+// it, they build (or hand out the pointer that builds) that same object.
+void patch_blackcat(void)
+{
+	PATCH_PUSH_RET(0x004138D0, BlackCat_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x00413AA0, CBlackCat::~CBlackCat, "??1CBlackCat@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00413B60, CBlackCat::AI, "?AI@CBlackCat@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00413FE0, CBlackCat::KillCommandBlock, "?KillCommandBlock@CBlackCat@@QAEPAHPAH@Z");
+	PATCH_PUSH_RET_POLY(0x00414050, CBlackCat::SynthesizeAnalogueInput, "?SynthesizeAnalogueInput@CBlackCat@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00414B00, CBlackCat::Shouldnt_DoPhysics_Be_Virtual, "?Shouldnt_DoPhysics_Be_Virtual@CBlackCat@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00414B10, CBlackCat::DoPhysics, "?DoPhysics@CBlackCat@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00414C50, CBlackCat::DoMGSShadow, "?DoMGSShadow@CBlackCat@@QAEXXZ");
 }

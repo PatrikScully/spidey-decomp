@@ -89,4 +89,6 @@ EXPORT void DocOck_CreateDocOck(const u32 *stack, u32 *result);
 EXPORT void DocOck_RelocatableModuleClear(void);
 EXPORT void DocOck_RelocatableModuleInit(reloc_mod *);
 
+void patch_docock(void);
+
 #endif

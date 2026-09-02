@@ -1,4 +1,5 @@
 #include "docock.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "trig.h"
 #include "panel.h"
@@ -10,9 +11,6 @@
 #include "panel.h"
 
 #include <cstring>
-
-extern CBaddy* BaddyList;
-extern CBody* ControlBaddyList;
 
 EXPORT SLight M3d_DocOckLight =
 {
@@ -30,7 +28,7 @@ EXPORT SLight M3d_DocOckLight =
 // @Matching
 void DocOck_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -83,7 +81,7 @@ CDocOc::~CDocOc(void)
 {
 	gBossRelated = 0;
 	Panel_DestroyHealthBar();
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	this->KillAllCommandBlocks();
 
 	for (i32 i = 0; i<4; i++)
@@ -116,7 +114,7 @@ CDocOc::CDocOc(i16 *a2, i32 a3)
 
 	this->mHealth = 600;
 	this->mRMinor = 0;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_1F4 = a3;
 	this->mNode = a3;
@@ -372,7 +370,7 @@ void CDocOc::HangAndGetBeaten(void)
 INLINE void CDocOc::ResolveSwitches(void)
 {
 	i32 index = 0;
-	for (CBaddy* pBaddy = reinterpret_cast<CBaddy*>(ControlBaddyList);
+	for (CBaddy* pBaddy = reinterpret_cast<CBaddy*>(G_CONTROL_BADDY_LIST);
 			pBaddy;
 			pBaddy = reinterpret_cast<CBaddy*>(pBaddy->mNextItem))
 	{
@@ -444,4 +442,26 @@ void validate_CDocOc(void){
 	VALIDATE(CDocOc, field_55C, 0x55C);
 	VALIDATE(CDocOc, field_570, 0x570);
 	VALIDATE(CDocOc, field_580, 0x580);
+}
+
+// @Bogus
+// Three things stay in the exe here.
+// The constructor, because our CDocOc is missing two virtuals the original
+// vtable at 0x53B740 has: AI (0x435610, slot 2) and Hit (0x4389A0, slot 3).
+// Stamping our vtable would give the boss CBaddy::AI and CBaddy::Hit.
+// DocOck_CreateDocOck and DocOck_RelocatableModuleInit go with it, they build
+// (or hand out the pointer that builds) that same object.
+// The destructor, because it clears gBossRelated (0x56E998, baddy.cpp) and
+// calls Panel_DestroyHealthBar, which clears gHealthBarOne/gHealthBarTwo
+// (panel.cpp). None of those three globals is on a G_ macro yet, so our copy
+// would go to zero while the exe kept a pointer to the freed boss.
+void patch_docock(void)
+{
+	PATCH_PUSH_RET(0x00434480, DocOck_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x00435390, CDocOc::RenderClaws, "?RenderClaws@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004367E0, CDocOc::TakeHit, "?TakeHit@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00436890, CDocOc::PlayIdleOrGloatAnim, "?PlayIdleOrGloatAnim@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00436980, CDocOc::Initialise, "?Initialise@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004384E0, CDocOc::HangAndGetBeaten, "?HangAndGetBeaten@CDocOc@@QAEXXZ");
 }

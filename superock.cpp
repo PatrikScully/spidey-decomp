@@ -1,4 +1,5 @@
 #include "superock.h"
+#include "my_patch.h"
 #include "ps2m3d.h"
 #include "spidey.h"
 #include "trig.h"
@@ -12,8 +13,6 @@
 
 #include "validate.h"
 
-extern CBaddy* BaddyList;
-
 EXPORT SLight M3d_SuperOckLight =
 {
   { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
@@ -25,7 +24,15 @@ EXPORT SLight M3d_SuperOckLight =
 
 
 #define LEN_SUPER_OCK_TEXS 15
+// The 15 boss HUD bar textures. Filled lazily by
+// SuperDocOck_DisplayProgressBars and cleared by
+// SuperDocOck_RelocatableModuleClear, nothing else in the exe reads them.
+// Address read off SuperDocOck_RelocatableModuleClear (0x4CBD90:
+// mov edi,6B30DCh / mov ecx,0Fh / rep stosd) and confirmed by the load loop
+// at the top of SuperDocOck_DisplayProgressBars (0x4D0E74: mov esi,6B30DCh).
 EXPORT Texture *gSuperDocTexs[15];
+//#define G_SUPER_DOC_TEXS (gSuperDocTexs)
+#define G_SUPER_DOC_TEXS (reinterpret_cast<Texture**>(0x006B30DC))
 
 // The 15 bar texture name strings, 32 bytes each, in .rdata right before the
 // bar coordinate table. "VenomChase_Bar_04", "VenomChase_Bar_03" (x4),
@@ -76,7 +83,7 @@ static i32 * const gSuperDocOckBarScreenOffset = (i32*)0x60f76c;
 //   a separate `add ecx, 80h`; added the missing parens: `(((val << 7) - val) >> 12) + 128`.
 void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 {
-	Texture** tex = gSuperDocTexs;
+	Texture** tex = G_SUPER_DOC_TEXS;
 	const char* name = gSuperDocOckBarNames;
 	do {
 		if (*tex == 0)
@@ -115,55 +122,55 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 			doc->field_324 = 0;
 	}
 
-	// Bar 1 (gSuperDocTexs[9])
-	POLY_FT4* v7 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[9], 0);
+	// Bar 1 (G_SUPER_DOC_TEXS[9])
+	POLY_FT4* v7 = (POLY_FT4*)Panel_DrawTexturedPoly(G_SUPER_DOC_TEXS[9], 0);
 	Panel_SetStretchedScreenCoords(
 		gSuperDocOckBarCoords[0] - progress + 446,
 		gSuperDocOckBarCoords[1] + *gSuperDocOckBarScreenOffset + 16,
-		v7, gSuperDocTexs[9],
+		v7, G_SUPER_DOC_TEXS[9],
 		gSuperDocOckBarCoords[2], gSuperDocOckBarCoords[3]);
-	DCPanel_DrawTexturedPoly(1.0f, v7, gSuperDocTexs[9], 0);
+	DCPanel_DrawTexturedPoly(1.0f, v7, G_SUPER_DOC_TEXS[9], 0);
 
-	// Bar 2 (gSuperDocTexs[8])
-	POLY_FT4* v8 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[8], 0);
+	// Bar 2 (G_SUPER_DOC_TEXS[8])
+	POLY_FT4* v8 = (POLY_FT4*)Panel_DrawTexturedPoly(G_SUPER_DOC_TEXS[8], 0);
 	Panel_SetStretchedScreenCoords(
 		gSuperDocOckBarCoords[4] + 446,
 		gSuperDocOckBarCoords[5] + *gSuperDocOckBarScreenOffset + 16,
-		v8, gSuperDocTexs[8],
+		v8, G_SUPER_DOC_TEXS[8],
 		gSuperDocOckBarCoords[6], gSuperDocOckBarCoords[7]);
-	DCPanel_DrawTexturedPoly(2.0f, v8, gSuperDocTexs[8], 0);
+	DCPanel_DrawTexturedPoly(2.0f, v8, G_SUPER_DOC_TEXS[8], 0);
 
 	print_if_false(doc->field_324 >= 0, "Error");
 	print_if_false(doc->field_324 < 6, "Error");
 
 	// 19 health pips
 	for (int i = 0; i < 342; i += 18) {
-		POLY_FT4* v10 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[0], 0);
+		POLY_FT4* v10 = (POLY_FT4*)Panel_DrawTexturedPoly(G_SUPER_DOC_TEXS[0], 0);
 		Panel_SetStretchedScreenCoords(
 			i + gSuperDocOckBarCoords[8] + 138,
 			gSuperDocOckBarCoords[9] + *gSuperDocOckBarScreenOffset + 28,
-			v10, gSuperDocTexs[doc->field_324],
+			v10, G_SUPER_DOC_TEXS[doc->field_324],
 			gSuperDocOckBarCoords[10], gSuperDocOckBarCoords[11]);
-		DCPanel_DrawTexturedPoly(4.0f, v10, gSuperDocTexs[0], 0);
+		DCPanel_DrawTexturedPoly(4.0f, v10, G_SUPER_DOC_TEXS[0], 0);
 	}
 
-	// Bar 3 (gSuperDocTexs[6])
-	POLY_FT4* v11 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[6], 0);
+	// Bar 3 (G_SUPER_DOC_TEXS[6])
+	POLY_FT4* v11 = (POLY_FT4*)Panel_DrawTexturedPoly(G_SUPER_DOC_TEXS[6], 0);
 	Panel_SetStretchedScreenCoords(
 		gSuperDocOckBarCoords[12] + 133,
 		gSuperDocOckBarCoords[13] + *gSuperDocOckBarScreenOffset + 28,
-		v11, gSuperDocTexs[6],
+		v11, G_SUPER_DOC_TEXS[6],
 		gSuperDocOckBarCoords[14], gSuperDocOckBarCoords[15]);
-	DCPanel_DrawTexturedPoly(3.0f, v11, gSuperDocTexs[6], 0);
+	DCPanel_DrawTexturedPoly(3.0f, v11, G_SUPER_DOC_TEXS[6], 0);
 
-	// Bar 4 (gSuperDocTexs[7])
-	POLY_FT4* v12 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[7], 0);
+	// Bar 4 (G_SUPER_DOC_TEXS[7])
+	POLY_FT4* v12 = (POLY_FT4*)Panel_DrawTexturedPoly(G_SUPER_DOC_TEXS[7], 0);
 	Panel_SetStretchedScreenCoords(
 		gSuperDocOckBarCoords[16] + 480,
 		gSuperDocOckBarCoords[17] + *gSuperDocOckBarScreenOffset + 28,
-		v12, gSuperDocTexs[7],
+		v12, G_SUPER_DOC_TEXS[7],
 		gSuperDocOckBarCoords[18], gSuperDocOckBarCoords[19]);
-	DCPanel_DrawTexturedPoly(3.0f, v12, gSuperDocTexs[7], 0);
+	DCPanel_DrawTexturedPoly(3.0f, v12, G_SUPER_DOC_TEXS[7], 0);
 
 	// Anim
 	SAnimFrame* anim = Spool_FindAnim("Sp", 1);
@@ -192,16 +199,16 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 		var_4 += 16;
 	}
 
-	// Bar 5 (gSuperDocTexs[14])
-	POLY_FT4* v14 = (POLY_FT4*)Panel_DrawTexturedPoly(gSuperDocTexs[14], 0);
+	// Bar 5 (G_SUPER_DOC_TEXS[14])
+	POLY_FT4* v14 = (POLY_FT4*)Panel_DrawTexturedPoly(G_SUPER_DOC_TEXS[14], 0);
 	((u8*)v14)[5] = (u8)shake;
 	((u8*)v14)[6] = (u8)shake;
 	Panel_SetStretchedScreenCoords(
 		gSuperDocOckBarCoords[24] + 448,
 		gSuperDocOckBarCoords[25] + *gSuperDocOckBarScreenOffset + 55,
-		v14, gSuperDocTexs[14],
+		v14, G_SUPER_DOC_TEXS[14],
 		gSuperDocOckBarCoords[26], gSuperDocOckBarCoords[27]);
-	DCPanel_DrawTexturedPoly(2.999f, v14, gSuperDocTexs[14], 0);
+	DCPanel_DrawTexturedPoly(2.999f, v14, G_SUPER_DOC_TEXS[14], 0);
 
 	// Anim 2 (anim+8)
 	anim += 2;
@@ -241,7 +248,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 // @Matching
 void SuperDocOck_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -255,7 +262,7 @@ void SuperDocOck_RelocatableModuleClear(void)
 
 	for (i32 i = 0; i < LEN_SUPER_OCK_TEXS; i++)
 	{
-		gSuperDocTexs[i] = 0;
+		G_SUPER_DOC_TEXS[i] = 0;
 	}
 }
 
@@ -605,7 +612,7 @@ INLINE void CSuperDocOck::PlaySingleAnim(u32 a2, i32 a3, i32 a4)
 // @Ok
 CSuperDocOck::~CSuperDocOck(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	this->KillAllCommandBlocks();
 
 	delete reinterpret_cast<CItem*>(this->field_360);
@@ -635,7 +642,7 @@ CSuperDocOck::CSuperDocOck(i16 *a2, i32 a3)
 
 	this->mHealth = 500;
 	this->mRMinor = 0;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mType = 309;
 	this->field_1F4 = a3;
@@ -744,4 +751,27 @@ void validate_CSuperDocOck(void){
 
 	VALIDATE(CSuperDocOck, field_3F4, 0x3F4);
 	VALIDATE(CSuperDocOck, field_404, 0x404);
+}
+
+// @Bogus
+// The constructor stays in the exe. Our CSuperDocOck is missing AI, which the
+// original vtable at 0x53C4D0 has in slot 2 (CSuperDocOck_AI, 0x4CCF80), so
+// stamping our vtable would give the boss CBaddy::AI and it would stand still.
+// SuperDocOck_CreateSuperDocOck and SuperDocOck_RelocatableModuleInit go with
+// it, they build (or hand out the pointer that builds) that same object.
+// Shouldnt_DoPhysics_Be_Virtual is skipped too: the exe has it as a 5 byte jmp
+// thunk at 0x4CCDE0 and a hook needs 6.
+void patch_superock(void)
+{
+	PATCH_PUSH_RET(0x004CBD90, SuperDocOck_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004D0E70, SuperDocOck_DisplayProgressBars);
+
+	PATCH_PUSH_RET_POLY(0x004CC080, CSuperDocOck::~CSuperDocOck, "??1CSuperDocOck@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004CCC50, CSuperDocOck::PlaySounds, "?PlaySounds@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CCD40, CSuperDocOck::RenderClaws, "?RenderClaws@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CCDF0, CSuperDocOck::DoPhysics, "?DoPhysics@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CE0D0, CSuperDocOck::PlayIdleOrGloatAnim, "?PlayIdleOrGloatAnim@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004CE3D0, CSuperDocOck::CreateExplosion, "?CreateExplosion@CSuperDocOck@@QAEXHH@Z");
+	PATCH_PUSH_RET_POLY(0x004D03E0, CSuperDocOck::HangAndGetBeaten, "?HangAndGetBeaten@CSuperDocOck@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004D0860, CSuperDocOck::Hit, "?Hit@CSuperDocOck@@UAEHPAUSHitInfo@@@Z");
 }

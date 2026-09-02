@@ -13,6 +13,7 @@
 #include "screen.h"
 #include "m3dinit.h"
 #include "SpideyDX.h"
+#include "my_patch.h"
 #include <cmath>
 
 CItem* CWeapons;
@@ -1105,4 +1106,33 @@ void validate_SCalcBuffer(void)
 	VALIDATE(SCalcBuffer, field_20, 0x20);
 
 	VALIDATE(SCalcBuffer, field_38, 0x38);
+}
+
+// @Bogus
+// CTexturedRibbon is missing on purpose. Its Display lives at 0x4F2DB0 in the
+// exe (7018 bytes) and our class never got it, so it still falls back to the
+// empty CSpecialDisplay::Display. Hooking the constructor would stamp our
+// vtable and the ribbon would stop drawing, so the exe keeps building those
+// objects. The other members are safe, they never touch the vtable.
+void patch_weapons(void)
+{
+	PATCH_PUSH_RET_POLY(0x004F16C0, CGouraudRibbon::CGouraudRibbon, "??0CGouraudRibbon@@QAE@HH@Z");
+	PATCH_PUSH_RET_POLY(0x004F1790, CGouraudRibbon::~CGouraudRibbon, "??1CGouraudRibbon@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004F17F0, CGouraudRibbon::SetRGB, "?SetRGB@CGouraudRibbon@@QAEXEEE@Z");
+	PATCH_PUSH_RET_POLY(0x004F1830, CGouraudRibbon::SetWidth, "?SetWidth@CGouraudRibbon@@QAEXG@Z");
+	PATCH_PUSH_RET_POLY(0x004F1860, CGouraudRibbon::Display, "?Display@CGouraudRibbon@@UAEXXZ");
+
+	PATCH_PUSH_RET(0x004F2AB0, CalcScreenNormal);
+
+	PATCH_PUSH_RET_POLY(0x004F2CC0, CTexturedRibbon::~CTexturedRibbon, "??1CTexturedRibbon@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004F2D20, CTexturedRibbon::SetTexture, "?SetTexture@CTexturedRibbon@@QAEXPAUTexture@@@Z");
+	PATCH_PUSH_RET_POLY(0x004F2D50, CTexturedRibbon::SetCoreRGBi, "?SetCoreRGBi@CTexturedRibbon@@QAEXHEEE@Z");
+	PATCH_PUSH_RET_POLY(0x004F2D80, CTexturedRibbon::SetOuterRGBi, "?SetOuterRGBi@CTexturedRibbon@@QAEXHEEE@Z");
+
+	PATCH_PUSH_RET_POLY(0x004F4930, CSmokeRing::CSmokeRing, "??0CSmokeRing@@QAE@HI@Z");
+	PATCH_PUSH_RET_POLY(0x004F4AC0, CSmokeRing::~CSmokeRing, "??1CSmokeRing@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004F4B20, CSmokeRing::SetParams, "?SetParams@CSmokeRing@@QAEXPBVCVector@@HH@Z");
+	PATCH_PUSH_RET_POLY(0x004F4C80, CSmokeRing::SetUV, "?SetUV@CSmokeRing@@QAEXHHH@Z");
+	PATCH_PUSH_RET_POLY(0x004F4D40, CSmokeRing::SetRGB, "?SetRGB@CSmokeRing@@QAEXHHH@Z");
+	PATCH_PUSH_RET_POLY(0x004F4DF0, CSmokeRing::Display, "?Display@CSmokeRing@@UAEXXZ");
 }

@@ -74,4 +74,6 @@ EXPORT void LizMan_RelocatableModuleInit(reloc_mod *);
 EXPORT void LizMan_RelocatableModuleClear(void);
 EXPORT void LizMan_CreateLizMan(const u32*, u32*);
 
+void patch_lizman(void);
+
 #endif
