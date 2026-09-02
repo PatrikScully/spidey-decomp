@@ -731,3 +731,56 @@ void validate_CRipple(void)
 	VALIDATE(CRipple, field_64, 0x64);
 	VALIDATE(CRipple, field_68, 0x68);
 }
+
+#include "my_patch.h"
+
+// @Bogus
+void patch_exp(void)
+{
+	PATCH_PUSH_RET_POLY(0x0043BEE0, CGlowFlash::CGlowFlash, "??0CGlowFlash@@QAE@PAVCVector@@HEEEHEEEHHHHHHHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C030, CGlowFlash::~CGlowFlash, "??1CGlowFlash@@UAE@XZ");
+	PATCH_PUSH_RET(0x0043C040, CGlowFlash::ChooseRadii);
+	PATCH_PUSH_RET_POLY(0x0043C0D0, CGlowFlash::Move, "?Move@CGlowFlash@@UAEXXZ");
+
+	PATCH_PUSH_RET(0x0043C150, Exp_GlowFlash);
+
+	PATCH_PUSH_RET_POLY(0x0043C250, CFlameExplosion::CFlameExplosion, "??0CFlameExplosion@@QAE@PBVCVector@@HHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C2C0, CFlameExplosion::~CFlameExplosion, "??1CFlameExplosion@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x0043C330, Exp_Frag);
+	PATCH_PUSH_RET(0x0043C3E0, Exp_BigExplosion);
+	PATCH_PUSH_RET(0x0043C430, Exp_SmallExplosion);
+	PATCH_PUSH_RET(0x0043C480, Exp_HitEnvItem);
+
+	PATCH_PUSH_RET_POLY(0x0043C580, CRipple::CRipple, "??0CRipple@@QAE@PBVCVector@@EEEHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C6B0, CRipple::Move, "?Move@CRipple@@UAEXXZ");
+
+	// The linker folded ~CRipple and ~CGrenadeWave into one body at 0x0043C7E0
+	// (both are empty, and the vtable store MSVC puts at the top of
+	// ~CGrenadeWave is dead because ~CRipple overwrites it right away). The
+	// exe stores CRipple's vtable 0x0053B800 there, and CRipple's scalar
+	// deleting destructor at 0x0043C690 serves both classes, so ~CRipple is
+	// the one that goes in. ~CGrenadeWave has no address of its own.
+	PATCH_PUSH_RET_POLY(0x0043C7E0, CRipple::~CRipple, "??1CRipple@@UAE@XZ");
+
+	PATCH_PUSH_RET_POLY(0x0043C750, CGrenadeWave::CGrenadeWave, "??0CGrenadeWave@@QAE@PBVCVector@@EEEHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043C7F0, CGrenadeWave::Move, "?Move@CGrenadeWave@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x0043C820, CItemFrag::CItemFrag, "??0CItemFrag@@QAE@PAIPAVCVector@@1H@Z");
+	PATCH_PUSH_RET_POLY(0x0043C9E0, CItemFrag::~CItemFrag, "??1CItemFrag@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0043C9F0, CItemFrag::Move, "?Move@CItemFrag@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x0043CBF0, C3DExplosion::C3DExplosion, "??0C3DExplosion@@QAE@PBVCVector@@PADHHHHHHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043CD30, C3DExplosion::~C3DExplosion, "??1C3DExplosion@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0043CD90, C3DExplosion::AI, "?AI@C3DExplosion@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x0043CEA0, CWibbling3DExplosion::CWibbling3DExplosion, "??0CWibbling3DExplosion@@QAE@PBVCVector@@PADHHHHHHHHH@Z");
+	PATCH_PUSH_RET_POLY(0x0043CF20, CWibbling3DExplosion::~CWibbling3DExplosion, "??1CWibbling3DExplosion@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x0043CF90, Exp_Big3DExplosion);
+	PATCH_PUSH_RET(0x0043D490, GetRandomPosition);
+
+	PATCH_PUSH_RET_POLY(0x0043D500, CGrenadeExplosion::CGrenadeExplosion, "??0CGrenadeExplosion@@QAE@PBVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x0043D620, CGrenadeExplosion::~CGrenadeExplosion, "??1CGrenadeExplosion@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0043D640, CGrenadeExplosion::Move, "?Move@CGrenadeExplosion@@UAEXXZ");
+}
