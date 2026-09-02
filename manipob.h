@@ -74,4 +74,7 @@ class CManipObChunk : public CBody
 
 void validate_CManipOb(void);
 void validate_CManipObChunk(void);
+
+void patch_manipob(void);
+
 #endif

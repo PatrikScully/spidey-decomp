@@ -682,3 +682,29 @@ void validate_CManipObChunk(void)
 	VALIDATE(CManipObChunk, field_F8, 0xF8);
 	VALIDATE(CManipObChunk, field_FC, 0xFC);
 }
+
+#include "my_patch.h"
+
+// @Bogus
+// Only three functions here have a call closure that stays on game memory.
+//
+// What blocks the rest:
+//
+// 1. Rnd (utils.cpp) runs on three file-local statics that nothing seeds on
+//    our side, because Utils_InitialRand is not hooked, so it returns 0 in
+//    hooked code. That rules out CManipOb::TugImpulse, Drop, Throw, ThrowPos
+//    and CManipObChunk::DoPhysics (and CManipObChunk::AI, which calls it).
+//
+// 2. BaddyList (0x0056E990, baddy.cpp), EnvironmentalObjectList (0x0060DAAC,
+//    ob.cpp), gObjFile (0x006B4674) and gObjFileRegion (0x006B3824) are still
+//    plain repo globals. Both constructors and both destructors attach or
+//    detach through them, and CManipOb::Chunk walks BaddyList and MechList
+//    (0x006A9038, spidey.cpp).
+//
+// 3. CManipOb::Smash calls Chunk, so it goes with it.
+void patch_manipob(void)
+{
+	PATCH_PUSH_RET(0x00456B00, CManipOb::Pickup);
+	PATCH_PUSH_RET(0x00456B60, CManipOb::CalculateThrowPositionArray);
+	PATCH_PUSH_RET(0x00457AA0, CManipOb::GetAttachPoint);
+}
