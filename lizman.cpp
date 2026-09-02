@@ -1,4 +1,5 @@
 #include "lizman.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "message.h"
 #include "ps2funcs.h"
@@ -819,4 +820,29 @@ void validate_CLizMan(void){
 	VALIDATE(CLizMan, field_3AC, 0x3AC);
 	VALIDATE(CLizMan, field_3B0, 0x3B0);
 	VALIDATE(CLizMan, field_3B4, 0x3B4);
+}
+
+// @Bogus
+// What stays in the exe here.
+// The constructor: our CLizMan declares no virtuals at all, but the original
+// vtable at 0x53B9AC overrides seven slots (dtor 0x44AD60, AI 0x451350, Hit
+// 0x44BA00, CreateCombatImpactEffect 0x451AD0, TugImpulse 0x44B4F0,
+// SetParamByIndex 0x44AF90, Grab 0x44B490). Stamping our vtable would fall
+// back to CBaddy for all of them. LizMan_CreateLizMan and
+// LizMan_RelocatableModuleInit go with it, they build (or hand out the
+// pointer that builds) that same object.
+// Guard and ScanNearbyNodesForJumpTarget: both walk the trig node array with
+// NumNodes (0x6B4670, trig.h). Nothing in our dll ever writes NumNodes, so our
+// copy is always 0 and the walk finds nothing.
+// CheckFallBack: it does new CAIProc_RotY, and our CAIProc_RotY::Execute is an
+// empty inline body while the exe has a real one at 0x401110 (see patch_ai).
+void patch_lizman(void)
+{
+	PATCH_PUSH_RET(0x0044A5C0, LizMan_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x0044DEC0, CLizMan::FlyAcrossRoom, "?FlyAcrossRoom@CLizMan@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0044F2E0, CLizMan::CalculateJumpPositionArray, "?CalculateJumpPositionArray@CLizMan@@QAEXPAVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x0044FFE0, CLizMan::Acknowledge, "?Acknowledge@CLizMan@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00450270, CLizMan::RunToWhereActionIs, "?RunToWhereActionIs@CLizMan@@QAEXPAVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x00450920, CLizMan::DoLizmanPhysics, "?DoLizmanPhysics@CLizMan@@QAEXXZ");
 }
