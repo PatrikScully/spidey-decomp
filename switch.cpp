@@ -5,9 +5,6 @@
 #include "spool.h"
 #include "validate.h"
 
-extern CBody* ControlBaddyList;
-extern i32 NumNodes;
-
 // @Ok
 // no address in tools/names.json for this function (the Mac build has
 // Switch_SetSwitchFaceFlags__FP5CItem, the PC build has no separate
@@ -73,7 +70,7 @@ CSwitch::CSwitch(i16 *a2, i32 a3)
 	this->mRMinor = 0;
 	this->mNode = static_cast<u16>(a3);
 
-	this->AttachTo(&ControlBaddyList);
+	this->AttachTo(&G_CONTROL_BADDY_LIST);
 
 	i16 *pCursor = this->SquirtAngles(this->SquirtPos(a2));
 
@@ -234,9 +231,9 @@ void CSwitch::PulseLFA1Node(i32 a1)
 	v3.vy = 0;
 	v3.vz = 0;
 
-	if (NumNodes > 1)
+	if (G_NUMNODES > 1)
 	{
-		for (; nodeIndex < NumNodes; nodeIndex++)
+		for (; nodeIndex < G_NUMNODES; nodeIndex++)
 		{
 			if (*G_OFFSETLIST[nodeIndex] != 1)
 				continue;
@@ -305,7 +302,7 @@ CSwitch* Switch_GetCSwitchObjectFromItem(CItem *pItem)
 {
 	print_if_false(pItem != 0, "Bad item");
 
-	for (CItem *cur = ControlBaddyList; cur; cur = reinterpret_cast<CItem*>(cur->mNextItem))
+	for (CItem *cur = G_CONTROL_BADDY_LIST; cur; cur = reinterpret_cast<CItem*>(cur->mNextItem))
 	{
 		if (cur->mType == 407)
 		{
@@ -322,7 +319,7 @@ CSwitch* Switch_GetCSwitchObjectFromItem(CItem *pItem)
 // @Ok
 CSwitch::~CSwitch(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&ControlBaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_CONTROL_BADDY_LIST));
 }
 
 // @Ok

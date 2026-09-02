@@ -99,8 +99,6 @@ i16 **OffsetList;
 
 // @Ok
 EXPORT i32 NumNodes;
-//#define G_NUMNODES (NumNodes)
-#define G_NUMNODES (*reinterpret_cast<i32*>(0x006B4670))
 
 // @Ok
 const i32 MAXPENDING = 16;
