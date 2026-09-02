@@ -1525,4 +1525,57 @@ void patch_ps2funcs(void)
 	PATCH_PUSH_RET(0x0046D430, M3dMaths_SquareRoot0);
 	PATCH_PUSH_RET(0x0046D500, M3dMaths_MulDiv64);
 	PATCH_PUSH_RET(0x0046E730, M3dMaths_RotMatrixYXZ);
+
+	// The emulated GTE. These were not hookable before, because the register
+	// file they work on was a private copy in our DLL: a sequence started by
+	// exe code and finished by ours (or the other way round) would have used
+	// two different sets of registers. Now that the file is bound to the exe's
+	// memory any mix of hooked and unhooked gte_* calls sees the same state.
+	//
+	// Every one of these was checked against the disassembly for references
+	// outside the register file, and none has any. gte_rtpt, gte_stsxy3 and
+	// M3dAsm_ProcessPolys read the stubGte flag, which is 1 in both copies and
+	// never written.
+	PATCH_PUSH_RET(0x0046CFA0, TransMatrix);
+	PATCH_PUSH_RET(0x0046D0E0, MulMatrix);
+	PATCH_PUSH_RET(0x0046D130, ratan2);
+	PATCH_PUSH_RET(0x0046D1E0, RotMatrixYXZ);
+	PATCH_PUSH_RET(0x0046D3E0, M3dMaths_TransposeMatrix1);
+	PATCH_PUSH_RET(0x0046D480, M3dMaths_ScaleMatrix);
+	PATCH_PUSH_RET(0x0046D5A0, M3dMaths_CopyMat);
+	PATCH_PUSH_RET(0x0046D640, gte_ldopv1);
+	PATCH_PUSH_RET(0x0046D670, gte_ldopv2);
+	PATCH_PUSH_RET(0x0046D6A0, gte_op0);
+	PATCH_PUSH_RET(0x0046D700, gte_op12);
+	PATCH_PUSH_RET(0x0046D790, gte_stlvnl);
+	PATCH_PUSH_RET(0x0046D7B0, gte_SetRotMatrix);
+	PATCH_PUSH_RET(0x0046D840, gte_ldlv0);
+	PATCH_PUSH_RET(0x0046D870, gte_ldlvl);
+	PATCH_PUSH_RET(0x0046D8A0, gte_ldv0);
+	PATCH_PUSH_RET(0x0046D960, gte_ldsvrtrow0);
+	PATCH_PUSH_RET(0x0046D990, gte_lddp);
+	PATCH_PUSH_RET(0x0046D9A0, gte_ldlzc);
+	PATCH_PUSH_RET(0x0046D9D0, gte_stlzc);
+	PATCH_PUSH_RET(0x0046DA10, gte_stsv);
+	PATCH_PUSH_RET(0x0046DA40, gte_rtir);
+	PATCH_PUSH_RET(0x0046DAF0, gte_rtv0tr);
+	PATCH_PUSH_RET(0x0046DBC0, gte_rtps);
+	PATCH_PUSH_RET(0x0046DCE0, gte_rtpt);
+	PATCH_PUSH_RET(0x0046DD00, gte_sqr0);
+	PATCH_PUSH_RET(0x0046DDF0, gte_rtv0);
+	PATCH_PUSH_RET(0x0046DF60, gte_stlvnl0);
+	PATCH_PUSH_RET(0x0046DF70, gte_stlvnl2);
+	PATCH_PUSH_RET(0x0046DF80, gte_stsxy);
+	PATCH_PUSH_RET(0x0046DFA0, gte_stsxy3);
+	PATCH_PUSH_RET(0x0046E050, gte_gpf0);
+	PATCH_PUSH_RET(0x0046E0F0, gte_mvmva);
+	PATCH_PUSH_RET(0x0046E270, MTC2);
+	PATCH_PUSH_RET(0x0046E460, m3d_ZeroTransVector);
+	PATCH_PUSH_RET(0x0046E480, M3dMaths_SetIdentityRotation);
+	PATCH_PUSH_RET(0x0046E750, M3dAsm_ProcessPolys);
+	PATCH_PUSH_RET(0x0046E770, M3dAsm_SetTransVector);
+
+	// Not hooked: GetClut (0x0046E7A0) reads 0x0060DBE4, still a private copy,
+	// and M3dAsm_LineColijPreprocessItems / ...Zoned pull in the whole
+	// collision closure, which is being converted separately.
 }
