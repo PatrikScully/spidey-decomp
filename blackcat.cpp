@@ -265,7 +265,7 @@ void CBlackCat::AI(void)
 
 	if (this->mFlags & 4)
 	{
-		this->ApplyPose(gUnkPose);
+		this->ApplyPose(G_UNK_POSE);
 	}
 	else
 	{

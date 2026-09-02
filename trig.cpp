@@ -135,7 +135,6 @@ extern i32 JoelJewCheatCode;
 
 extern CBody* ControlBaddyList;
 extern CBaddy* BaddyList;
-extern CBody* EnvironmentalObjectList;
 extern CBody* PowerUpList;
 
 
@@ -220,7 +219,7 @@ void SendKillFromNode(i32 Node, i32 How)
 				{
 					KillInList(nodeIndex, BaddyList, How);
 					KillInList(nodeIndex, ControlBaddyList, How);
-					KillInList(nodeIndex, EnvironmentalObjectList, How);
+					KillInList(nodeIndex, G_ENVIRONMENTAL_OBJECT_LIST, How);
 				}
 				break;
 			case 2:
@@ -289,13 +288,13 @@ void SendSuspendOrActivate(u16* pLinkInfo, i32 signalType)
 				{
 					SendSuspend(reinterpret_cast<CBody**>(&BaddyList), nodeIndexPtr[i]);
 					SendSuspend(reinterpret_cast<CBody**>(&ControlBaddyList), nodeIndexPtr[i]);
-					SendSuspend(reinterpret_cast<CBody**>(&EnvironmentalObjectList), nodeIndexPtr[i]);
+					SendSuspend(reinterpret_cast<CBody**>(&G_ENVIRONMENTAL_OBJECT_LIST), nodeIndexPtr[i]);
 				}
 				else
 				{
 					SendUnSuspend(BaddyList, nodeIndexPtr[i]);
 					SendUnSuspend(ControlBaddyList, nodeIndexPtr[i]);
-					SendUnSuspend(EnvironmentalObjectList, nodeIndexPtr[i]);
+					SendUnSuspend(G_ENVIRONMENTAL_OBJECT_LIST, nodeIndexPtr[i]);
 				}
 				break;
 		}
@@ -795,7 +794,7 @@ CBody* Trig_CreateObject(i32 NodeIndex)
 		CBody** listHead = 0;
 		if (result == BaddyList) listHead = reinterpret_cast<CBody**>(&BaddyList);
 		if (result == ControlBaddyList) listHead = &ControlBaddyList;
-		if (result == EnvironmentalObjectList) listHead = &EnvironmentalObjectList;
+		if (result == G_ENVIRONMENTAL_OBJECT_LIST) listHead = &G_ENVIRONMENTAL_OBJECT_LIST;
 		if (result == PowerUpList) listHead = &PowerUpList;
 
 		print_if_false(listHead != 0, "NewObject not in baddy,env obj or powerup list");
@@ -1999,7 +1998,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 								inside ? "Inside" : "Outside");
 
 						Utils_SetBaddyVisibilityInBox(&boxMin, &boxMax,
-								visible != 0, inside != 0, EnvironmentalObjectList);
+								visible != 0, inside != 0, G_ENVIRONMENTAL_OBJECT_LIST);
 						Utils_SetBaddyVisibilityInBox(&boxMin, &boxMax,
 								visible != 0, inside != 0, PowerUpList);
 					}
@@ -3325,7 +3324,7 @@ void Trig_SendSignalToLinks(u16* pLinkInfo)
 			case 7:
 				SendSignalToNode(BaddyList, nodeIndex);
 				SendSignalToNode(ControlBaddyList, nodeIndex);
-				SendSignalToNode(EnvironmentalObjectList, nodeIndex);
+				SendSignalToNode(G_ENVIRONMENTAL_OBJECT_LIST, nodeIndex);
 				break;
 		}
 	}

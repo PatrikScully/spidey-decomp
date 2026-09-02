@@ -1405,7 +1405,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 	this->RunAnim(anim, 0, -1);
 
 	this->mFrame = (i16)(frames - 1);
-	this->ApplyPose(gUnkPose);
+	this->ApplyPose(G_UNK_POSE);
 
 	CVector hookPos;
 	hookPos.vx = 0;
@@ -1545,7 +1545,7 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 	this->RunAnim(0x5D, 0, -1);
 
 	this->mFrame = (i16)(frames - 1);
-	this->ApplyPose(gUnkPose);
+	this->ApplyPose(G_UNK_POSE);
 
 	CVector hookPos;
 	hookPos.vx = 0;
@@ -1852,7 +1852,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	this->RunAnim(anim, 0, -1);
 
 	this->mFrame = (i16)(frames - 1);
-	this->ApplyPose(gUnkPose);
+	this->ApplyPose(G_UNK_POSE);
 
 	CVector hookPos;
 	hookPos.vx = 0;
@@ -2728,7 +2728,7 @@ i32 CPlayer::CheckKick(void)
 
 			this->field_E4C.pWhatever = 0;
 
-			CBody *pObject = EnvironmentalObjectList;
+			CBody *pObject = G_ENVIRONMENTAL_OBJECT_LIST;
 			while (pObject != 0)
 			{
 				if (pObject->mType == 401 && (i32)Utils_CrapDist(this->mPos, pObject->mPos) < 768)
@@ -4407,9 +4407,9 @@ i32 CPlayer::FireWeb(bool bUseHeldTarget, i32 cost, CVector *pTarget, bool bHitS
 		lineInfo.Normal.vz = 0;
 
 		M3dColij_InitLineInfo(&lineInfo);
-		LineOfSightCheck = 1;
+		G_LINE_OF_SIGHT_CHECK = 1;
 		M3dZone_LineToItem(&lineInfo, 1);
-		LineOfSightCheck = 0;
+		G_LINE_OF_SIGHT_CHECK = 0;
 
 		if (lineInfo.pItem != 0)
 		{
@@ -7012,10 +7012,10 @@ gridSearchDone:
 	targetInfo.StartCoords = anchor;
 	targetInfo.EndCoords = farPoint;
 
-	LineOfSightCheck = 1;
+	G_LINE_OF_SIGHT_CHECK = 1;
 	M3dColij_InitLineInfo(&targetInfo);
 	M3dZone_LineToItem(&targetInfo, 1);
-	LineOfSightCheck = 0;
+	G_LINE_OF_SIGHT_CHECK = 0;
 
 	if (targetInfo.pItem != 0)
 	{
@@ -8340,10 +8340,6 @@ void CPlayer::UpdateAndTrackCombo(void)
 	// which documents the record layout.
 	static u8 ** const gComboMoves = (u8**)0x006A8CB4;
 
-	// 0x005564E4, named gUnkPose in the maintainer's IDB (see m3dcolij.cpp):
-	// the shared pose buffer every CSuper::ApplyPose call is handed.
-	static i16 * const gUnkPose = (i16*)0x005564E4;
-
 	i32 elapsed = this->field_84 - this->field_910;
 	i32 half = elapsed / 2;
 
@@ -8488,7 +8484,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 
 		if (hookSlide != 0 || accum != 0)
 		{
-			this->ApplyPose(gUnkPose);
+			this->ApplyPose(G_UNK_POSE);
 
 			CVector start;
 			start.vx = this->mPos.vx;
@@ -8881,7 +8877,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 
 	if (poseApplied == 0)
 	{
-		this->ApplyPose(gUnkPose);
+		this->ApplyPose(G_UNK_POSE);
 	}
 
 	u8 *pParts = this->field_954;

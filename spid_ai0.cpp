@@ -672,7 +672,7 @@ void SpideyAI0(CPlayer *pPlayer)
 		pPlayer->field_DBC = 0;
 	}
 
-	BaddyCollisionCheck = 0;
+	G_BADDY_COLLISION_CHECK = 0;
 
 	// 0xE28: a plain countdown, nothing in the prologue reads it.
 	if (PLR_I32(pPlayer, 0xE28) != 0)
@@ -5160,10 +5160,10 @@ void SpideyAI0(CPlayer *pPlayer)
 
 				M3dColij_InitLineInfo(&lineInfo);
 
-				TriggerCollisionCheck = 0;
+				G_TRIGGER_COLLISION_CHECK = 0;
 				lineInfo.RecordTriggerZoneHits = 1;
 				M3dZone_LineToItem(&lineInfo, 1);
-				TriggerCollisionCheck = 0;
+				G_TRIGGER_COLLISION_CHECK = 0;
 			}
 		}
 

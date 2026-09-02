@@ -143,7 +143,7 @@ EXPORT i32 obtainWaterLevelInPoolL6A1(i32 level)
 		model = *(volatile i32*)&level;
 	}
 
-	for (CItem *item = EnvironmentalObjectList; item; item = item->mNextItem)
+	for (CItem *item = G_ENVIRONMENTAL_OBJECT_LIST; item; item = item->mNextItem)
 	{
 		if (item->mType == 0x192 && item->mRegion == gObjFileRegion)
 		{

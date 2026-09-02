@@ -47,7 +47,7 @@ void L5A7LSC_MonitorSpideyinWater(const u32 *,u32 *)
 	{
 		u32 Model = Spool_GetModel(0xC50DC421, gObjFileRegion);
 
-		CBody *pool = EnvironmentalObjectList;
+		CBody *pool = G_ENVIRONMENTAL_OBJECT_LIST;
 		while (pool)
 		{
 			if (pool->mType == 0x192 && pool->mRegion == gObjFileRegion && pool->mModel == Model)

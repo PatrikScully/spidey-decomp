@@ -187,7 +187,7 @@ EXPORT i32 obtainWaterLevelInPool(i32 poolIndex)
 	else
 		model = Spool_GetModel(0xD7B2D512, gObjFileRegion);
 
-	CBody *node = EnvironmentalObjectList;
+	CBody *node = G_ENVIRONMENTAL_OBJECT_LIST;
 
 	while (node)
 	{

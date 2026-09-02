@@ -10,7 +10,6 @@
 
 #include "validate.h"
 
-extern CBody* EnvironmentalObjectList;
 extern const char* gObjFile;
 extern CSVector gTrajectoryVector;
 extern i32 TTime;
@@ -210,7 +209,7 @@ CPlatform::CPlatform(i16 * a2,i32 a3)
 	this->field_350.vz = 0;
 
 	this->InitItem(gObjFile);
-	this->AttachTo(&EnvironmentalObjectList);
+	this->AttachTo(&G_ENVIRONMENTAL_OBJECT_LIST);
 
 	this->mFlags |= 0x111;
 	this->mFlags &= 0xFFFD;
@@ -668,7 +667,7 @@ void CPlatform::SetVariable(u16 a2)
 // @Ok
 CPlatform::~CPlatform(void)
 {
-	this->DeleteFrom(&EnvironmentalObjectList);
+	this->DeleteFrom(&G_ENVIRONMENTAL_OBJECT_LIST);
 	if (this->field_33C)
 	{
 		SFX_Stop(this->field_33C);

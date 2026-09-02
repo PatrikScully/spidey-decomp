@@ -14,13 +14,10 @@
 #include "ps2gamefmv.h"
 #include "camera.h"
 
-extern CBody *EnvironmentalObjectList;
 extern CBody *ControlBaddyList;
 extern CBody *PowerUpList;
 extern CBody *SuspendedList;
 extern CBaddy *BaddyList;
-
-extern SLineInfo gLineInfo;
 
 // moved out of export.h 2026-08-27, see the comment there.
 // @Ok
@@ -524,7 +521,7 @@ i32 Utils_KillEverythingInBox(CVector const * min,CVector const * max)
 {
 		return Utils_KillObjectsInBox(min, max, SuspendedList, false) +
 		Utils_KillObjectsInBox(min, max, PowerUpList, true) +
-		Utils_KillObjectsInBox(min, max, EnvironmentalObjectList, true) +
+		Utils_KillObjectsInBox(min, max, G_ENVIRONMENTAL_OBJECT_LIST, true) +
 		Utils_KillObjectsInBox(min, max, ControlBaddyList, true) +
 		Utils_KillObjectsInBox(min, max, BaddyList, true);
 }
@@ -1062,15 +1059,15 @@ CBody* Utils_CheckObjectCollision(
 
 	if (!result)
 	{
-		gLineInfo.StartCoords = *a1;
-		gLineInfo.EndCoords = *a2;
+		G_LINE_INFO.StartCoords = *a1;
+		G_LINE_INFO.EndCoords = *a2;
 
-		M3dColij_InitLineInfo(&gLineInfo);
+		M3dColij_InitLineInfo(&G_LINE_INFO);
 
-		LineOfSightCheck = 1;
-		M3dColij_LineToItem(EnvironmentalObjectList, &gLineInfo);
-		result = reinterpret_cast<CBody*>(gLineInfo.pItem);
-		LineOfSightCheck = 0;
+		G_LINE_OF_SIGHT_CHECK = 1;
+		M3dColij_LineToItem(G_ENVIRONMENTAL_OBJECT_LIST, &G_LINE_INFO);
+		result = reinterpret_cast<CBody*>(G_LINE_INFO.pItem);
+		G_LINE_OF_SIGHT_CHECK = 0;
 	}
 
 	return result;

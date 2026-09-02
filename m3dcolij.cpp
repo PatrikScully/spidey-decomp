@@ -9,6 +9,15 @@
 
 // @Ok
 u16	Inquiry=0xFFFF;
+// M3dColij_InitLineInfo (0x4524C0) does "inc word [54D014h]" then
+// "mov word [54D014h],1" on wrap, and hands the value out as pInfo->Inquiry
+// ("mov ax,[54D014h]; mov [esi+8Ah],ax"). Not in idb_globals.txt, but no named
+// object covers 0x0054D014 either. Only this file uses it. The exe keeps
+// bumping its own counter while parts of this file are hooked, so the token has
+// to come from the exe's copy or hooked and unhooked queries hand out clashing
+// tokens for the same frame.
+//#define G_INQUIRY (Inquiry)
+#define G_INQUIRY (*reinterpret_cast<u16*>(0x0054D014))
 
 // @Ok
 SLineInfo gLineInfo;
@@ -19,7 +28,12 @@ i32 LineOfSightCheck;
 // M3dColij_LineToSphere resets this to 0x7FFFFFFF ("nothing found yet") at the top of
 // every call, then keeps the best (lowest) line-parameter-t found while scanning items.
 // No idb_globals.txt entry, name is our guess.
+// Proved by M3dColij_LineToSphere at 0x452C9E: "mov dword [5FBD38h],7FFFFFFFh".
+// NOTE: this is the same address as gLineColijLastT below (see the comment there);
+// two names, one global.
 i32 gLineToSphereBestT;
+//#define G_LINE_TO_SPHERE_BEST_T (gLineToSphereBestT)
+#define G_LINE_TO_SPHERE_BEST_T (*reinterpret_cast<i32*>(0x005FBD38))
 
 u32 M3dColij_OneMask;
 u32 M3dColij_ZeroMask;
@@ -28,7 +42,11 @@ u32 M3dColij_ZeroMask;
 // here). M3dColij_LineToSphere resets this to 0 at the top of every call, then keeps the
 // CBody* that currently owns gLineToSphereBestT; it is also the function's return value.
 // No idb_globals.txt entry, name is our guess.
+// Proved by M3dColij_LineToSphere at 0x452C94: "mov dword [5FBDE0h],0", and at
+// 0x452FD0 "mov [5FBDE0h],edi" for the keep-this-body case.
 CBody * gLineToSphereBestBody;
+//#define G_LINE_TO_SPHERE_BEST_BODY (gLineToSphereBestBody)
+#define G_LINE_TO_SPHERE_BEST_BODY (*reinterpret_cast<CBody**>(0x005FBDE0))
 
 i32 BaddyCollisionCheck;
 i32 CameraCollisionCheck;
@@ -39,7 +57,10 @@ i32 TriggerCollisionCheck;
 // visualization toggles); M3dColij_LineToSphere skips its actual radius-distance check
 // when this is set, accepting any item whose bounding box overlapped the line. No
 // idb_globals.txt entry, name is our guess.
+// Proved by M3dColij_LineToSphere at 0x452EBE/0x452F36/0x452FA7: "mov eax,[5FBEF0h]".
 i32 gLineToSphereIgnoreRadius;
+//#define G_LINE_TO_SPHERE_IGNORE_RADIUS (gLineToSphereIgnoreRadius)
+#define G_LINE_TO_SPHERE_IGNORE_RADIUS (*reinterpret_cast<i32*>(0x005FBEF0))
 
 // @Ok
 // Real object at 0x005564E4 in the PC binary (name confirmed by the maintainer's IDB:
@@ -160,13 +181,13 @@ INLINE void NextInquiry(void)
 	// if it's 0, set to 1 and set all objects' inquiry fields to 0.
 	// If this weren't done, a rare bug may occur where the previous collision test with a particular object was
 	// performed 65536 tests ago, and the current test would automatically fail.
-	if	(!++Inquiry)
+	if	(!++G_INQUIRY)
 	{
 		CItem	*pItem;
-		Inquiry=1;
-		for (pItem=EnviroList; pItem; pItem=pItem->mNextItem)
+		G_INQUIRY=1;
+		for (pItem=G_ENVIRO_LIST; pItem; pItem=pItem->mNextItem)
 			pItem->mInquiry=0;
-		for (pItem=EnvironmentalObjectList; pItem; pItem=pItem->mNextItem)
+		for (pItem=G_ENVIRONMENTAL_OBJECT_LIST; pItem; pItem=pItem->mNextItem)
 			pItem->mInquiry=0;
 	}
 }
@@ -285,7 +306,7 @@ void M3dColij_InitLineInfo(SLineInfo *pInfo)
 	pInfo->MaxCoords.vz = pInfo->StartCoords.vz < pInfo->EndCoords.vz ? pInfo->EndCoords.vz : pInfo->StartCoords.vz;
 
 	NextInquiry();
-	pInfo->Inquiry = Inquiry;
+	pInfo->Inquiry = G_INQUIRY;
 }
 
 // @Ok
@@ -332,8 +353,8 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 
 	i32 length = M3dMaths_SquareRoot0(deltaSq.vx + deltaSq.vy + deltaSq.vz);
 
-	gLineToSphereBestT = 0x7FFFFFFF;
-	gLineToSphereBestBody = 0;
+	G_LINE_TO_SPHERE_BEST_T = 0x7FFFFFFF;
+	G_LINE_TO_SPHERE_BEST_BODY = 0;
 
 	if (length == 0)
 		return 0;
@@ -386,7 +407,7 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 		i32 radShifted = rad >> 12;
 		i32 radSq = radShifted * radShifted;
 
-		if (!gLineToSphereIgnoreRadius)
+		if (!G_LINE_TO_SPHERE_IGNORE_RADIUS)
 		{
 			if (crossSq.vx + crossSq.vy + crossSq.vz >= radSq)
 				continue;
@@ -398,7 +419,7 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 		i32 t;
 		gte_stlvnl0(&t);
 
-		if (t >= gLineToSphereBestT)
+		if (t >= G_LINE_TO_SPHERE_BEST_T)
 			continue;
 
 		if (t >= 0)
@@ -416,7 +437,7 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 				VECTOR endSq;
 				gte_stlvnl(&endSq);
 
-				if (!gLineToSphereIgnoreRadius)
+				if (!G_LINE_TO_SPHERE_IGNORE_RADIUS)
 				{
 					if (endSq.vx + endSq.vy + endSq.vz >= radSq)
 						continue;
@@ -431,28 +452,28 @@ CBody * M3dColij_LineToSphere(CVector *pStart, CVector *pEnd, CVector *pOutPos, 
 			VECTOR startSq;
 			gte_stlvnl(&startSq);
 
-			if (!gLineToSphereIgnoreRadius)
+			if (!G_LINE_TO_SPHERE_IGNORE_RADIUS)
 			{
 				if (startSq.vx + startSq.vy + startSq.vz >= radSq)
 					continue;
 			}
 		}
 
-		gLineToSphereBestT = t;
-		gLineToSphereBestBody = item;
+		G_LINE_TO_SPHERE_BEST_T = t;
+		G_LINE_TO_SPHERE_BEST_BODY = item;
 	}
 
-	if (gLineToSphereBestBody)
+	if (G_LINE_TO_SPHERE_BEST_BODY)
 	{
 		gte_ldlvl(reinterpret_cast<VECTOR*>(&dirQ12));
-		gte_lddp(gLineToSphereBestT);
+		gte_lddp(G_LINE_TO_SPHERE_BEST_T);
 		gte_gpf();
 		gte_stlvnl(reinterpret_cast<VECTOR*>(pOutPos));
 		*pOutPos >>= 12;
 		*pOutPos += *pStart;
 	}
 
-	return gLineToSphereBestBody;
+	return G_LINE_TO_SPHERE_BEST_BODY;
 }
 
 // ===================================================================================
@@ -513,33 +534,23 @@ static CVector * const gCoarseTranslationVector = (CVector*)0x00610BB0;
 // gLineColijRotMatrix above).
 static CVector * const gLineColijRelPos = (CVector*)0x005FBE2C;
 
-// address 0x005FBDA8 in the original. Read-only input to TestItemFaces: a face is
-// rejected outright if its packed category bitfield (see TestItemFaces) intersects
-// this mask at all. Same family/role as the already-named M3dColij_OneMask/
-// M3dColij_ZeroMask (M3dColij_ZeroMask's real address, 0x5FBDDC, is also read by the
-// same code - confirmed via IDA and via the existing "gLineToSphereBestBody sits right
-// after M3dColij_ZeroMask" comment above) but not adjacent to either, so it is a third,
-// separate mask, presumably set by a caller further up the collision-query chain
-// (outside this file) before the per-item loop runs. No idb_globals.txt entry, name is
-// our guess. Declared volatile: nothing in this file ever writes it, so if it is meant
-// to vary per query it must be set by not-yet-decompiled code writing this exact
-// address at runtime (this function is only ever reached through the already-hooked
-// M3dColij_LineToItem/LineToItemZoned, i.e. running in-process against real game
-// memory).
-static volatile i32 * const gLineColijExcludeMask = (i32*)0x005FBDA8;
+// The old gLineColijExcludeMask pointer that used to live here was 0x005FBDA8, which
+// is M3dColij_OneMask itself (idb_globals.txt, and M3dZone_LineToItem writes it at
+// 0x4549C9). It was a second name for one global, so TestItemFaces now reads
+// G_M3DCOLIJ_ONE_MASK. The writer (M3dZone_LineToItem) is still unhooked, which is
+// exactly why the macro has to stay on game memory.
 
 // addresses 0x005FBD1C/0x005FBD20/0x005FBD38 in the original. TestItemFaces's "keep as
 // new nearest hit" branch writes these as a duplicate of pInfo->pFace / a pointer into
 // the per-model normal table / the found hit parameter, IN ADDITION to writing
-// pInfo->pFace/pInfo->Distance directly. This is a DIFFERENT reuse of the same address
-// range as gLineToSphereBestT (0x5FBD38, M3dColij_LineToSphere's own tracker above) -
-// same "same address, unrelated call path" pattern already documented on gRotMatrix's
-// diagonal reuse elsewhere in this repo. No reader for these three has turned up
-// anywhere in the current repo; kept only for fidelity (this runs in-process against
-// real game memory) in case other not-yet-decompiled code reads them.
+// pInfo->pFace/pInfo->Distance directly. This is a DIFFERENT reuse of the same
+// addresses as two globals this file already names: 0x005FBD38 is
+// gLineToSphereBestT (M3dColij_LineToSphere's own tracker) and 0x005FBD20 is the slot
+// G_CURRENT_COLIJ_VECTOR reads, so those two write through the macros now. Only
+// 0x005FBD1C has no other name. No reader for the three has turned up anywhere in the
+// current repo; kept only for fidelity (this runs in-process against real game
+// memory) in case other not-yet-decompiled code reads them.
 static i32 * const gLineColijLastFacePtr = (i32*)0x005FBD1C;
-static u8 ** const gLineColijLastNormalPtr = (u8**)0x005FBD20;
-static i32 * const gLineColijLastT = (i32*)0x005FBD38;
 
 // address 0x006AC20C in the original: per-environment array of u32 "trigger command
 // point id" tables, indexed [envIndex][pItem->mModel] (Spool_GetEnvIndex gives
@@ -549,11 +560,12 @@ static i32 * const gLineColijLastT = (i32*)0x005FBD38;
 // entry, name is our guess.
 static u32 ** const gEnvTriggerCommandIds = (u32**)0x006AC20C;
 
-// address 0x006B2F00 in the original: written (never read anywhere we can find, in
-// this function or elsewhere in the repo) as envIndex^1 whenever a trigger-zone hit
-// resolves. Exact purpose unknown (a "last/other environment" cache guess would be
-// unverified), kept only for fidelity.
-static i32 * const gLastTriggerEnvIndexXor = (i32*)0x006B2F00;
+// address 0x006B2F00 in the original, named gSpoolColijEnvIndex in idb_globals.txt:
+// written (never read anywhere we can find, in this function or elsewhere in the
+// repo) as envIndex^1 whenever a trigger-zone hit resolves. Already bound to the
+// exe's address, so nothing to convert; renamed to the IDB's name. Nothing else in
+// the repo touches 0x006B2F00.
+static i32 * const gSpoolColijEnvIndex = (i32*)0x006B2F00;
 
 // sub_0x0046D810 (47 bytes): copies a caller-supplied 3x3 i16 matrix into
 // gCoarseRotMatrix - a gte_SetRotMatrix analogue restricted to the coarse matrix.
@@ -693,7 +705,7 @@ static i32 ClipQuadAgainstCoarseMatrix(const u8 *pFaceTable, i16 *pScratchOut, i
 // records, own size field at +2 of each record, pFaceTable->faceCount records at +6),
 // testing each quad face (4 vertex indices at record+4/5/6/7, into pScratch, the SAME
 // {x,y,z,outcode} array ClipQuadAgainstCoarseMatrix just filled) against the line.
-// Per face: reject via gLineColijExcludeMask/M3dColij_ZeroMask/a fixed 0x30000 category
+// Per face: reject via M3dColij_OneMask/M3dColij_ZeroMask/a fixed 0x30000 category
 // test on a packed dword at record+12; reject if all 4 vertices' outcodes share an
 // out-of-bounds bit; a 2D cross-product convexity test (falls back to the record+4
 // vertex substituted by the record+7 vertex when the "flags&0x10" bit allows it, exact
@@ -714,8 +726,8 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 	if (pInfo->Length == 0)
 		return;
 
-	i32 excludeMask = *gLineColijExcludeMask;
-	i32 zeroMask = M3dColij_ZeroMask;
+	i32 excludeMask = static_cast<i32>(G_M3DCOLIJ_ONE_MASK);
+	i32 zeroMask = G_M3DCOLIJ_ZERO_MASK;
 
 	u16 vertCount = *reinterpret_cast<const u16*>(pFaceTable + 2);
 	u16 extraCount = *reinterpret_cast<const u16*>(pFaceTable + 4);
@@ -834,8 +846,8 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 								pInfo->pFace = reinterpret_cast<u32*>(const_cast<u8*>(pRecord));
 								pInfo->Model = pItem->mModel;
 
-								*gLineColijLastT = t;
-								*gLineColijLastNormalPtr = const_cast<u8*>(pNormalTable) + 8 * normalIdx;
+								G_LINE_TO_SPHERE_BEST_T = t;
+								G_CURRENT_COLIJ_VECTOR = reinterpret_cast<SVECTOR*>(const_cast<u8*>(pNormalTable) + 8 * normalIdx);
 								*gLineColijLastFacePtr = reinterpret_cast<i32>(pInfo->pFace);
 							}
 						}
@@ -967,8 +979,8 @@ void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 	i32 envIndex = Spool_GetEnvIndex(pItem->mRegion);
 	print_if_false(envIndex != -1, "Found a trigger\tzone not\tin\tthe environment");
 
-	TriggerCollisionCheck = 0;
-	*gLastTriggerEnvIndexXor = envIndex ^ 1;
+	G_TRIGGER_COLLISION_CHECK = 0;
+	*gSpoolColijEnvIndex = envIndex ^ 1;
 
 	u32 commandId = gEnvTriggerCommandIds[envIndex][foundToken];
 	Trig_TriggerCommandPoint(commandId, true);

@@ -51,7 +51,6 @@ extern i32 DifficultyLevel;
 
 u8 gActuatorRelated;
 EXPORT SStateFlags gRhinoStateFlags;
-extern CBody* EnvironmentalObjectList;
 extern i32 gAttackRelated;
 extern CBaddy *BaddyList;
 #include "camera.h"
@@ -2188,7 +2187,7 @@ void CRhino::StompGround(void)
 					i32 barrels = 0;
 
 					for (
-							CBody *cur = EnvironmentalObjectList;
+							CBody *cur = G_ENVIRONMENTAL_OBJECT_LIST;
 							cur && barrels < 2;
 							cur = reinterpret_cast<CBody*>(cur->mNextItem))
 					{
@@ -2656,7 +2655,7 @@ void CRhino::FuckUpSomeBarrels(void)
 	i32 barrels = 0;
 
 	for (
-			CBody* cur = EnvironmentalObjectList;
+			CBody* cur = G_ENVIRONMENTAL_OBJECT_LIST;
 			cur && barrels < 2;
 			cur = reinterpret_cast<CBody*>(cur->mNextItem))
 	{
