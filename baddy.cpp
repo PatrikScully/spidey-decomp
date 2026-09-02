@@ -2205,7 +2205,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		{
 			u16 count = CBaddy_ReadOperand(this);
 
-			if (TotalBitUsage < 200)
+			if (G_TOTALBITUSAGE < 200)
 			{
 				gsub_40F3D0(&this->mAngles);
 				i16 params[3] = { 512, 4096, 0 };
@@ -2214,7 +2214,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 				gsub_40F440(128, 128, 128);
 				gsub_40F460(4, 4, 4);
 
-				TotalBitUsage = 0;
+				G_TOTALBITUSAGE = 0;
 
 				for (i32 i = 0; i < count; i++)
 				{
@@ -2223,7 +2223,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 						gsub_40F480(&this->mPos, 32, 0x2000, 32);
 				}
 
-				TotalBitUsage = 1;
+				G_TOTALBITUSAGE = 1;
 			}
 
 			return true;

@@ -274,9 +274,9 @@ void CBody::UpdateShadow(void)
 
 		if(!this->mpShadow){
 
-			TotalBitUsage = 0;
+			G_TOTALBITUSAGE = 0;
 			this->mpShadow = new CQuadBit();;
-			TotalBitUsage = 1;
+			G_TOTALBITUSAGE = 1;
 
 			this->mpShadow->SetTexture(0, 0);
 			this->mpShadow->SetSubtractiveTransparency();

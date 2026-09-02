@@ -402,9 +402,9 @@ void CBlackCat::DoMGSShadow(void)
 
 	if (!this->field_33C)
 	{
-		TotalBitUsage = 0;
+		G_TOTALBITUSAGE = 0;
 		this->field_33C = new CQuadBit();
-		TotalBitUsage = -1;
+		G_TOTALBITUSAGE = -1;
 
 		reinterpret_cast<CQuadBit*>(this->field_33C)->SetTexture(0, 0);
 		reinterpret_cast<CQuadBit*>(this->field_33C)->mFrigDeltaZ = 32;

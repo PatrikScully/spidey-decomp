@@ -8,8 +8,8 @@
 #include "utils.h"
 
 #include "validate.h"
+#include "bit.h"
 
-extern i32 TotalBitUsage;
 CBody* PowerUpList;
 i32 TTime;
 
@@ -470,7 +470,7 @@ void CPowerUp::DeleteStuff(void)
 // @Ok
 void CPowerUp::CreateBit(void)
 {
-	TotalBitUsage = 0; 
+	G_TOTALBITUSAGE = 0; 
 	if (this->mType == 18)
 	{
 		this->pPickupBit = new CFlatBit();
@@ -502,7 +502,7 @@ void CPowerUp::CreateBit(void)
 	if (this->pPickupBit)
 		this->pPickupBit->mProtected = 1;
 
-	TotalBitUsage = 1; 
+	G_TOTALBITUSAGE = 1; 
 }
 
 // @Ok

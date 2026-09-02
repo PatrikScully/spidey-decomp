@@ -789,6 +789,48 @@ void validate_CSpark(void);
 EXPORT extern CBit* GLineList;
 EXPORT extern CBit* PolyLineList;
 
+// The bit display lists. Every visual effect attaches itself to one of these,
+// and Bit_Move / Bit_RemoveDeadBits / Bit_Display / Bit_DeleteAll walk all of
+// them once per frame, so hooked and unhooked code have to share the same head
+// pointers. Addresses proved from Bit_Init (0x00407FC0), which zeroes the 14
+// heads in source order, and from Bit_RemoveDeadBits (0x00408610), which loads
+// them in the same order. The maintainer's idb_globals.txt agrees on all 14.
+//#define G_CHUNKBIT_LIST (ChunkBitList)
+#define G_CHUNKBIT_LIST (*reinterpret_cast<CChunkBit**>(0x0056E9A0))
+//#define G_GLINE_LIST (GLineList)
+#define G_GLINE_LIST (*reinterpret_cast<CBit**>(0x0056E9CC))
+//#define G_GPOLYLINE_LIST (GPolyLineList)
+#define G_GPOLYLINE_LIST (*reinterpret_cast<CBit**>(0x0056E9D8))
+//#define G_TEXTBOX_LIST (TextBoxList)
+#define G_TEXTBOX_LIST (*reinterpret_cast<CTextBox**>(0x0056E9DC))
+//#define G_PIXEL_LIST (PixelList)
+#define G_PIXEL_LIST (*reinterpret_cast<CPixel**>(0x0056E9E0))
+//#define G_GLOW_LIST (GlowList)
+#define G_GLOW_LIST (*reinterpret_cast<CGlow**>(0x0056E9E4))
+//#define G_GLASS_LIST (GlassList)
+#define G_GLASS_LIST (*reinterpret_cast<CBit**>(0x0056EA34))
+//#define G_FLATBIT_LIST (FlatBitList)
+#define G_FLATBIT_LIST (*reinterpret_cast<CFlatBit**>(0x0056EA50))
+//#define G_QUADBIT_LIST (QuadBitList)
+#define G_QUADBIT_LIST (*reinterpret_cast<CBit**>(0x0056EB2C))
+//#define G_POLYLINE_LIST (PolyLineList)
+#define G_POLYLINE_LIST (*reinterpret_cast<CBit**>(0x0056EB30))
+//#define G_LINKED2ENDEDBIT_LIST_LEFTOVER (Linked2EndedBitListLeftover)
+#define G_LINKED2ENDEDBIT_LIST_LEFTOVER (*reinterpret_cast<CBit**>(0x0056EB40))
+//#define G_GENPOLY_LIST (GenPolyList)
+#define G_GENPOLY_LIST (*reinterpret_cast<CBit**>(0x0056EB44))
+
+// The registry Bit_Init fills with one display callback per list. main.cpp
+// already reads the same address (0x0056EB50) to delete it at shutdown.
+//#define G_BITSERVER (gBitServer)
+#define G_BITSERVER (*reinterpret_cast<CBitServer**>(0x0056EB50))
+
+// Set around a `new CSomeBit` to pick the heap the bit comes from. Written by
+// eight other files, read by CBit::operator new. Address proved from
+// CBit::operator new (??2CBit@@SAPAXI@Z) at 0x004088A0, mov eax,[547E40h].
+//#define G_TOTALBITUSAGE (TotalBitUsage)
+#define G_TOTALBITUSAGE (*reinterpret_cast<i32*>(0x00547E40))
+
 void patch_CBit(void);
 void patch_CFT4Bit(void);
 
