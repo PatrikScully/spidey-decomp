@@ -137,6 +137,14 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 	{ 0x40701, 0x0D291D41B, 0x6CF38ACE },
 };
 
+// The exe still owns this table. CCarnageElectrified::Move (0x0041B910) is not in this repo and
+// reads it every frame (push 548CC8h at 0x0041B986, push 548DB0h at 0x0041B97F, so the array
+// really does start at 0x00548CC8 and hold 19 twelve byte entries), while our hooked
+// SetTheCarnageGooSourcesChecksums writes the resolved texture checksums into it. Both halves
+// have to see one copy, so the macro points at the exe's memory for now.
+//#define G_CARNAGE_SKIN_GOO_SOURCE (gCarnageSkinGooSource)
+#define G_CARNAGE_SKIN_GOO_SOURCE (reinterpret_cast<SSkinGooSource*>(0x00548CC8))
+
 // @Ok
 EXPORT CVector gCarnageVector;
 
@@ -2995,30 +3003,30 @@ void SetTheCarnageGooSourcesChecksums(void)
 {
 	for (i32 i = 0; i < NUM_CARNAGE_GOOS; i++)
 	{
-		if (gCarnageSkinGooSource[i].field_4 == 0x45F3EC38)
+		if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 == 0x45F3EC38)
 		{
-			gCarnageSkinGooSource[i].field_4 = Spool_FindTextureChecksum("carnage_bit04_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 = Spool_FindTextureChecksum("carnage_bit04_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_4 == 0xD291D41B)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 == 0xD291D41B)
 		{
-			gCarnageSkinGooSource[i].field_4 = Spool_FindTextureChecksum("carnage_bit03_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 = Spool_FindTextureChecksum("carnage_bit03_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_4 == 0x6CF38ACE)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 == 0x6CF38ACE)
 		{
-			gCarnageSkinGooSource[i].field_4 = Spool_FindTextureChecksum("carnage_bit01_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 = Spool_FindTextureChecksum("carnage_bit01_32");
 		}
 
-		if (gCarnageSkinGooSource[i].field_8 == 0x45F3EC38)
+		if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 == 0x45F3EC38)
 		{
-			gCarnageSkinGooSource[i].field_8 = Spool_FindTextureChecksum("carnage_bit04_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 = Spool_FindTextureChecksum("carnage_bit04_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_8 == 0xD291D41B)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 == 0xD291D41B)
 		{
-			gCarnageSkinGooSource[i].field_8 = Spool_FindTextureChecksum("carnage_bit03_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 = Spool_FindTextureChecksum("carnage_bit03_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_8 == 0x6CF38ACE)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 == 0x6CF38ACE)
 		{
-			gCarnageSkinGooSource[i].field_8 = Spool_FindTextureChecksum("carnage_bit01_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 = Spool_FindTextureChecksum("carnage_bit01_32");
 		}
 	}
 }
