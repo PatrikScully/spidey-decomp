@@ -44,4 +44,5 @@ void validate_CSwitch(void);
 EXPORT CSwitch* Switch_GetCSwitchObjectFromItem(CItem *);
 EXPORT void Switch_SetVisible(bool, CItem*);
 EXPORT void Switch_SetSwitchFaceFlags(CItem *);
+void patch_switch(void);
 #endif

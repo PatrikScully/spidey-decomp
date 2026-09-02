@@ -1,4 +1,5 @@
 #include "switch.h"
+#include "my_patch.h"
 #include "trig.h"
 #include "baddy.h"
 #include "spidey.h"
@@ -397,4 +398,36 @@ void validate_CSwitch(void)
 	VALIDATE(CSwitch, field_118, 0x118);
 
 	VALIDATE(CSwitch, field_124, 0x124);
+}
+
+// @Bogus
+// Vtable check first: CSwitch's vtable (0x53C51C) has exactly 5 live
+// entries (dtor, Die, AI, Hit, DeleteStuff, CItem's whole set since CSwitch
+// inherits CBody directly, not CBaddy), our class declares dtor and AI as
+// virtual and matches the other three against the shared CItem defaults
+// (same values seen in hostage/spclone/blackcat's vtables). No gap there.
+//
+// The constructor stays in the exe anyway: it calls Spool_FindEnviroItem
+// (spool.cpp, not this file) to resolve field_104/field_108, and that
+// function reads the plain repo globals EnviroList/PSXRegion instead of
+// the already-established G_ENVIRO_LIST/G_PSXREGION macros (ob.h/spool.h
+// both have the macros, Spool_FindEnviroItem just does not use them,
+// Spool_GetModelChecksum right above it in spool.cpp does). EnviroList's
+// only writer is spool.cpp's own level loader, unhooked, so our repo copy
+// is always null, so Spool_FindEnviroItem would always return 0 through a
+// hooked constructor. CSwitch::AI dereferences field_108 unconditionally
+// in the field_100==3/4 states with no null check, so a switch spawned
+// with field_108 wrongly null would crash there. trig.cpp's environment
+// loader is the only caller (`new CSwitch(pData, NodeIndex)`, unhooked),
+// so hooking the constructor address would still redirect that call into
+// our buggy path. Not our file to fix; reported, not patched here.
+void patch_switch(void)
+{
+	PATCH_PUSH_RET(0x004D1490, Switch_GetCSwitchObjectFromItem);
+
+	PATCH_PUSH_RET_POLY(0x004D1810, CSwitch::~CSwitch, "??1CSwitch@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004D1870, CSwitch::Flick, "?Flick@CSwitch@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004D19E0, CSwitch::GetAutoAimTargetPointer, "?GetAutoAimTargetPointer@CSwitch@@QAEPAVCVector@@XZ");
+	PATCH_PUSH_RET_POLY(0x004D1A10, CSwitch::AI, "?AI@CSwitch@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004D1C60, CSwitch::PulseLFA1Node, "?PulseLFA1Node@CSwitch@@QAEXH@Z");
 }
