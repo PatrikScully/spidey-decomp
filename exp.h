@@ -136,6 +136,13 @@ class CGlowFlash : public CGlow
 EXPORT extern i32 g3DExplosions;
 EXPORT extern i32 gWibblingExpCount;
 
+// exp.cpp writes this counter (CGrenadeExplosion's constructor and destructor,
+// mov ds:[5FA958h] at 0x0043D5DF and 0x0043D62C) and Display in main.cpp reads
+// it at 0x00455652. Display is not hooked, so the write has to land in the
+// exe's copy. The macro lives here because two files use the global.
+//#define G_3D_EXPLOSIONS (g3DExplosions)
+#define G_3D_EXPLOSIONS (*reinterpret_cast<i32*>(0x005FA958))
+
 EXPORT void Exp_HitEnvItem(CItem*, u32*, i32);
 EXPORT void Exp_GlowFlash(CVector*, i32, u8, u8, u8, i32, i32, i32);
 

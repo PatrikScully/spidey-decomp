@@ -11,6 +11,13 @@
 i32 g3DExplosions;
 i32 gWibblingExpCount;
 
+// Only exp.cpp touches this counter (16 references in the original, all inside
+// the CWibbling3DExplosion constructor, its destructor and Exp_Big3DExplosion,
+// e.g. mov ecx,[5FA954h] at 0x0043CF43). It is still a mutable global, so it
+// goes through the exe's copy while the subsystem is only half ours.
+//#define G_WIBBLING_EXP_COUNT (gWibblingExpCount)
+#define G_WIBBLING_EXP_COUNT (*reinterpret_cast<i32*>(0x005FA954))
+
 // @Ok
 // @Matching
 void C3DExplosion::AI(void)
@@ -74,7 +81,7 @@ C3DExplosion::C3DExplosion(
 		i32 a11,
 		i32 a12)
 {
-	this->AttachTo(&BulletList);
+	this->AttachTo(&G_BULLET_LIST);
 	this->InitItem(a3);
 	this->mModel = a4;
 	this->mPos = *a2;
@@ -107,7 +114,7 @@ C3DExplosion::C3DExplosion(
 // @Matching
 INLINE C3DExplosion::~C3DExplosion(void)
 {
-	this->DeleteFrom(&BulletList);
+	this->DeleteFrom(&G_BULLET_LIST);
 }
 
 // @Ok
@@ -151,7 +158,7 @@ CGrenadeExplosion::CGrenadeExplosion(const CVector* a2)
 	this->hExp = Mem_MakeHandle(pExp);
 
 	new C3DExplosion(a2, "expgrnd", 1, 0, 0, 500, 256, 0, 7, 0, 0);
-	++g3DExplosions;
+	++G_3D_EXPLOSIONS;
 }
 
 // @Ok
@@ -168,7 +175,7 @@ void CGrenadeExplosion::Move(void)
 // @Matching
 CGrenadeExplosion::~CGrenadeExplosion(void)
 {
-	--g3DExplosions;
+	--G_3D_EXPLOSIONS;
 }
 
 // @Ok
@@ -383,14 +390,14 @@ INLINE CWibbling3DExplosion::CWibbling3DExplosion(
 		i32 a12)
 	: C3DExplosion(a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12)
 {
-	gWibblingExpCount++;
+	G_WIBBLING_EXP_COUNT++;
 }
 
 // @Ok
 // @Matching
 CWibbling3DExplosion::~CWibbling3DExplosion(void)
 {
-	gWibblingExpCount--;
+	G_WIBBLING_EXP_COUNT--;
 }
 
 // @Ok
@@ -574,7 +581,7 @@ void Exp_HitEnvItem(CItem* pItem, u32* pFace, i32 Damage)
 {
 	if (pItem && (pItem->mFlags & 1) == 0)
 	{
-		CItem* pScan = EnviroList;
+		CItem* pScan = G_ENVIRO_LIST;
 		while (pScan)
 		{
 			if (pScan == pItem)
@@ -585,8 +592,8 @@ void Exp_HitEnvItem(CItem* pItem, u32* pFace, i32 Damage)
 		if (!pScan)
 			return;
 
-		print_if_false(PSXRegion[pItem->mRegion].Usable != 0, "Eh? Env item spooled out??");
-		SModel* v4 = PSXRegion[pItem->mRegion].ppModels[pItem->mModel];
+		print_if_false(G_PSXREGION[pItem->mRegion].Usable != 0, "Eh? Env item spooled out??");
+		SModel* v4 = G_PSXREGION[pItem->mRegion].ppModels[pItem->mModel];
 
 		if (v4->Flags)
 		{
