@@ -184,6 +184,11 @@ EXPORT extern SPSXRegion PSXRegion[MAXPSX];
 //#define G_PSXREGION (PSXRegion)
 #define G_PSXREGION (reinterpret_cast<SPSXRegion*>(0x006B2440))
 
+// CurrentSuit is defined in spool.cpp. baddy.cpp reuses the name for a
+// file-local pointer, so no extern goes in this header.
+//#define G_CURRENTSUIT (CurrentSuit)
+#define G_CURRENTSUIT (*reinterpret_cast<i32*>(0x005559DC))
+
 EXPORT extern i32 EnvRegions[2];
 EXPORT extern i32 gSpoolCurrentOpenSpot;
 

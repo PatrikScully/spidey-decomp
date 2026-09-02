@@ -81,9 +81,6 @@ EXPORT i32 lowGraphics;
 
 EXPORT i32 CurrentSuit;
 
-//#define G_CURRENTSUIT (CurrentSuit)
-#define G_CURRENTSUIT (*reinterpret_cast<i32*>(0x005559DC))
-
 EXPORT u8 gGiveDefaultTexture;
 
 EXPORT TextureEntry gTextureEntries[256];

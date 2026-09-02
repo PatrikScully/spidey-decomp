@@ -10,8 +10,6 @@
 
 #include "validate.h"
 
-extern i32 CurrentSuit;
-
 // dword_56EA9C: a pointer (set up by the game, not by this repo) to a
 // table of effect Texture* entries, indexed by byte offset (stride 4).
 // Same table simby.cpp's CEmber::CEmber reads via a raw address cast at
@@ -1044,7 +1042,7 @@ void Effects_Electrify(CSuper* pSuper)
 
 	if (pSuper->mType == 50)
 	{
-		if (CurrentSuit != 4)
+		if (G_CURRENTSUIT != 4)
 		{
 			new CElectrify(pSuper, 10);
 		}

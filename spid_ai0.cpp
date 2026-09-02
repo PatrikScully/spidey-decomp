@@ -11,6 +11,7 @@
 #include "m3dzone.h"
 #include "powerup.h"
 #include "reloc.h"
+#include "spool.h"
 #include "switch.h"
 #include "ps2m3d.h"
 #include "mem.h"
@@ -73,10 +74,6 @@ static u8 * const gSaveGameVibration = reinterpret_cast<u8*>(0x006828D3);
 #define G_PULSATING_HEAD_FLAG (*reinterpret_cast<i32*>(0x0060CFF0))
 #define G_TOON_SPIDEY_FLAG (*reinterpret_cast<i32*>(0x02E09BF0))
 #define G_STICKMAN_FLAG (*reinterpret_cast<i32*>(0x02E09BF4))
-
-// CurrentSuit (0x005559DC, real IDB name); spool.cpp already has the same
-// macro under this name, baddy.cpp the same address as a pointer.
-#define G_CURRENTSUIT (*reinterpret_cast<i32*>(0x005559DC))
 
 // Lookaround camera accumulators, same file-local pointers (and names)
 // spidey.cpp uses for CPlayer::EnterLookaroundMode / SetupLookaroundCamera.
