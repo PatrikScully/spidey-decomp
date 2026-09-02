@@ -1,4 +1,5 @@
 #include "jonah.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "panel.h"
 #include "utils.h"
@@ -329,4 +330,21 @@ void validate_CJonah(void){
 
 	VALIDATE(CJonah, field_36C, 0x36C);
 	VALIDATE(CJonah, field_370, 0x370);
+}
+
+// @Bogus
+// What stays in the exe here.
+// Both constructors, because our CJonah declares no virtuals while the
+// original vtable at 0x53B8D4 overrides AI (0x446470, slot 2) and Hit
+// (0x4446E0, slot 3), and we have neither. Jonah_CreateJonah and
+// Jonah_RelocatableModuleInit go with them.
+// TakeHit and LinkedHidingPlaceStillExists, because they walk the trig links
+// through Trig_GetLinkInfoList, which bounds-checks against NumNodes
+// (0x6B4670, trig.h). Nothing in our dll writes NumNodes, so our copy is
+// always 0 and the walk always comes back empty.
+void patch_jonah(void)
+{
+	PATCH_PUSH_RET(0x00444250, Jonah_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x00444390, Jonah_WhatShouldScorpDo);
+	PATCH_PUSH_RET(0x004443C0, Jonah_ShouldPlead);
 }
