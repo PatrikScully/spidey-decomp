@@ -3,7 +3,11 @@
 
 #include "validate.h"
 
+#ifndef SPIDEY_STANDALONE
 CSuper* BackgroundList;
+#else
+extern CSuper* BackgroundList;
+#endif
 EXPORT i16 gBackgroundIndex = 0;
 
 // @Ok

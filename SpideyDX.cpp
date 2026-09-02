@@ -1,4 +1,7 @@
 #include "SpideyDX.h"
+#ifdef SPIDEY_STANDALONE
+#include "platform/plat.h"
+#endif
 #include "main.h"
 #include "PCTimer.h"
 #include "DXinit.h"
@@ -20,13 +23,25 @@
 
 i32 gRenderTest;
 
+#ifndef SPIDEY_STANDALONE
 i32 gGameResolutionX = 640;
+#else
+extern i32 gGameResolutionX;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 gGameResolutionY = 480;
+#else
+extern i32 gGameResolutionY;
+#endif
 
 u32 gDxResolutionX;
 u32 gDxResolutionY;
 
+#ifndef SPIDEY_STANDALONE
 u8 gMMXSupport;
+#else
+extern u8 gMMXSupport;
+#endif
 u8 g3DAccelator = 1;
 
 HWND gHwnd;
@@ -53,7 +68,11 @@ static i32 gDefaultMusicVolume = 0xA7;
 static i32 gDefaultXAVolume = 0xC9;
 static bool gDefaultSoundMode = false;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gMissingCD;
+#else
+extern u8 gMissingCD;
+#endif
 EXPORT i32 gActive;
 
 
@@ -367,6 +386,13 @@ i32 WinYield(void)
 			TranslateMessage(&msg);
 			DispatchMessageA(&msg);
 		}
+	}
+#elif defined(SPIDEY_STANDALONE)
+	if (!Plat_Yield())
+	{
+		// window closed: same exit path as WM_CLOSE -> PostQuitMessage
+		SPIDEYDX_Shutdown();
+		exit(0);
 	}
 #endif
 

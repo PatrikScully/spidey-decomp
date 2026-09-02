@@ -9,7 +9,11 @@
 
 #include "validate.h"
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 GameFMV_Active;
+#else
+extern i32 GameFMV_Active;
+#endif
 EXPORT u8 GameFMV_CurrentTrack;
 
 EXPORT i32 gGameFmvOne;
@@ -19,7 +23,11 @@ EXPORT u16 GameFMV_Width;
 EXPORT u16 GameFMV_Height;
 EXPORT i32 GameFMV_EndFrame;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gGameFmvPad;
+#else
+extern i32 gGameFmvPad;
+#endif
 
 
 #define NUM_MOVIES 27
@@ -32,6 +40,7 @@ EXPORT i32 gGameFmvPad;
 // gGameFmvTwo (u8) and gGameFmvOne (i32) in GameFMV_SetStartTrack, but
 // their real meaning was not determined (both fields are constant 1
 // in every original entry, so no behavior difference is visible here).
+#ifndef SPIDEY_STANDALONE
 SMovieDetails movieDetails[NUM_MOVIES] =
 {
 	{ "ATVILOGO.bik",  320, 240,  208, {0}, 1, 1 },
@@ -62,6 +71,9 @@ SMovieDetails movieDetails[NUM_MOVIES] =
 	{ "SOFDEC.bik",       0,   0,    0, {0}, 1, 1 },
 	{ "LEGAL.bik",        0,   0,    0, {0}, 1, 1 },
 };
+#else
+extern SMovieDetails movieDetails[NUM_MOVIES];
+#endif
 
 // @Ok
 // @Matching

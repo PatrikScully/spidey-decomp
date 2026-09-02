@@ -9,8 +9,16 @@
 #include <cmath>
 
 
+#ifndef SPIDEY_STANDALONE
 CBody* BulletList;
+#else
+extern CBody* BulletList;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gBullets;
+#else
+extern i32 gBullets;
+#endif
 
 
 

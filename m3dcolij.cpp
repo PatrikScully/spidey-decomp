@@ -8,7 +8,11 @@
 #include "ps2funcs.h"
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 u16	Inquiry=0xFFFF;
+#else
+extern u16 Inquiry;
+#endif
 // M3dColij_InitLineInfo (0x4524C0) does "inc word [54D014h]" then
 // "mov word [54D014h],1" on wrap, and hands the value out as pInfo->Inquiry
 // ("mov ax,[54D014h]; mov [esi+8Ah],ax"). Not in idb_globals.txt, but no named
@@ -20,9 +24,17 @@ u16	Inquiry=0xFFFF;
 #define G_INQUIRY (*reinterpret_cast<u16*>(0x0054D014))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 SLineInfo gLineInfo;
+#else
+extern SLineInfo gLineInfo;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 i32 LineOfSightCheck;
+#else
+extern i32 LineOfSightCheck;
+#endif
 
 // address 0x005FBD38 in the original, right before M3dColij_OneMask (0x005FBDA8).
 // M3dColij_LineToSphere resets this to 0x7FFFFFFF ("nothing found yet") at the top of
@@ -31,12 +43,24 @@ i32 LineOfSightCheck;
 // Proved by M3dColij_LineToSphere at 0x452C9E: "mov dword [5FBD38h],7FFFFFFFh".
 // NOTE: this is the same address as gLineColijLastT below (see the comment there);
 // two names, one global.
+#ifndef SPIDEY_STANDALONE
 i32 gLineToSphereBestT;
+#else
+extern i32 gLineToSphereBestT;
+#endif
 //#define G_LINE_TO_SPHERE_BEST_T (gLineToSphereBestT)
 #define G_LINE_TO_SPHERE_BEST_T (*reinterpret_cast<i32*>(0x005FBD38))
 
+#ifndef SPIDEY_STANDALONE
 u32 M3dColij_OneMask;
+#else
+extern u32 M3dColij_OneMask;
+#endif
+#ifndef SPIDEY_STANDALONE
 u32 M3dColij_ZeroMask;
+#else
+extern u32 M3dColij_ZeroMask;
+#endif
 
 // address 0x005FBDE0 in the original, right after M3dColij_ZeroMask (0x005FBDDC ends
 // here). M3dColij_LineToSphere resets this to 0 at the top of every call, then keeps the
@@ -44,13 +68,29 @@ u32 M3dColij_ZeroMask;
 // No idb_globals.txt entry, name is our guess.
 // Proved by M3dColij_LineToSphere at 0x452C94: "mov dword [5FBDE0h],0", and at
 // 0x452FD0 "mov [5FBDE0h],edi" for the keep-this-body case.
+#ifndef SPIDEY_STANDALONE
 CBody * gLineToSphereBestBody;
+#else
+extern CBody * gLineToSphereBestBody;
+#endif
 //#define G_LINE_TO_SPHERE_BEST_BODY (gLineToSphereBestBody)
 #define G_LINE_TO_SPHERE_BEST_BODY (*reinterpret_cast<CBody**>(0x005FBDE0))
 
+#ifndef SPIDEY_STANDALONE
 i32 BaddyCollisionCheck;
+#else
+extern i32 BaddyCollisionCheck;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 CameraCollisionCheck;
+#else
+extern i32 CameraCollisionCheck;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 TriggerCollisionCheck;
+#else
+extern i32 TriggerCollisionCheck;
+#endif
 
 // address 0x005FBEF0 in the original, right after TriggerCollisionCheck (0x005FBEE8 ends
 // at 0x005FBEEC, small gap). Same family as the CollisionCheck flags above (debug/editor
@@ -58,7 +98,11 @@ i32 TriggerCollisionCheck;
 // when this is set, accepting any item whose bounding box overlapped the line. No
 // idb_globals.txt entry, name is our guess.
 // Proved by M3dColij_LineToSphere at 0x452EBE/0x452F36/0x452FA7: "mov eax,[5FBEF0h]".
+#ifndef SPIDEY_STANDALONE
 i32 gLineToSphereIgnoreRadius;
+#else
+extern i32 gLineToSphereIgnoreRadius;
+#endif
 //#define G_LINE_TO_SPHERE_IGNORE_RADIUS (gLineToSphereIgnoreRadius)
 #define G_LINE_TO_SPHERE_IGNORE_RADIUS (*reinterpret_cast<i32*>(0x005FBEF0))
 
@@ -85,6 +129,7 @@ i32 gLineToSphereIgnoreRadius;
 // hooked (blackcat.cpp:269, simby.cpp:52 and :85, spclone.cpp:212 and :246), this array must
 // become a G_* macro on 0x005564E4, or the game's copy and ours will hold separately resolved
 // parent indices. Same bug class as G_SPOOL_LOG_FAILED_TEXTURE_ACCESS in spool.cpp.
+#ifndef SPIDEY_STANDALONE
 i16 gUnkPose[74] = {
 	0, 12,
 
@@ -101,6 +146,7 @@ i16 gUnkPose[74] = {
 	11,  8, 0, 0, 0, 0,
 	10,  8, 0, 0, 0, 0
 };
+#endif
 
 // guess: scratch rotation matrix, sits right before gLineInfo in the binary (0x5FBE18,
 // gLineInfo is 0x5FBE38, exactly sizeof(MATRIX)=0x20 apart) but is not part of the

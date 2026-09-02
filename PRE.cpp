@@ -4,9 +4,21 @@
 
 #include <cstring>
 
+#ifndef SPIDEY_STANDALONE
 PREManager* gPreManager;
+#else
+extern PREManager* gPreManager;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 gPreFileSize;
+#else
+extern i32 gPreFileSize;
+#endif
+#ifndef SPIDEY_STANDALONE
 void* gPreFileBuf;
+#else
+extern void* gPreFileBuf;
+#endif
 
 // @Ok
 // @Test

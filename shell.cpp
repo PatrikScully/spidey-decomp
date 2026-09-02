@@ -66,19 +66,43 @@ EXPORT SLight M3d_SpideyCIconLight =
 
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT SRecords gGlobalRecords;
+#else
+extern SRecords gGlobalRecords;
+#endif
 
 EXPORT i32 dword_6A7788[16];
+#ifndef SPIDEY_STANDALONE
 EXPORT void* gBiographies;
+#else
+extern void* gBiographies;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPshellArmorRealted;
+#else
+extern i32 gPshellArmorRealted;
+#endif
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT SRecordRelated gChallenges[NUM_CHALLS];
+#else
+extern SRecordRelated gChallenges[NUM_CHALLS];
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 OTPushback[3];
+#else
+extern u16 OTPushback[3];
+#endif
 EXPORT u8 gPShellCleanup = 1;
 EXPORT i32 gShellFromGame;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gShellInitialized;
+#else
+extern i32 gShellInitialized;
+#endif
 
 
 EXPORT u8 gCurrentCostume;
@@ -86,18 +110,46 @@ EXPORT u8 gCurrentCostume;
 CBody *MiscList;
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT SSkinGooSource gVenomSkinGooSource;
+#else
+extern SSkinGooSource gVenomSkinGooSource;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT SSkinGooParams gVenomSkinGooParams;
+#else
+extern SSkinGooParams gVenomSkinGooParams;
+#endif
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT SSkinGooSource gCarnageSkinGooSourceShell;
+#else
+extern SSkinGooSource gCarnageSkinGooSourceShell;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT SSkinGooParams gCarnageSkinGooParams;
+#else
+extern SSkinGooParams gCarnageSkinGooParams;
+#endif
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT SSkinGooSource gSuperDocOckSkinGooSource;
+#else
+extern SSkinGooSource gSuperDocOckSkinGooSource;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT SSkinGooParams gSuperDocOckSkinGooParams;
+#else
+extern SSkinGooParams gSuperDocOckSkinGooParams;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gShellMysterioRelated;
+#else
+extern i32 gShellMysterioRelated;
+#endif
 extern SPSXRegion PSXRegion[];
 
 SAnimFrame* gBackgroundAnimFrame;
@@ -2985,8 +3037,12 @@ typedef i32 (*DoShell_NumCostumes_t)(void);
 // @Bogus
 static i32 DoShell_NumCostumes(void)
 {
+#ifdef SPIDEY_STANDALONE
+	return 10;   // the whole of sub_47A350: "mov eax,0Ah; ret"
+#else
 	DoShell_NumCostumes_t func = (DoShell_NumCostumes_t)0x0047A350;
 	return func();
+#endif
 }
 
 // sub_49A3B0: training/arena chooser. Forward to original.
@@ -2994,8 +3050,15 @@ typedef i32 (*DoShell_TrainingChooser_t)(i32);
 // @Bogus
 static i32 DoShell_TrainingChooser(i32 a1)
 {
+#ifdef SPIDEY_STANDALONE
+	// @TODO Phase 2: sub_49A3B0 (2326 bytes, the training/arena menu) is
+	// not decompiled yet. Acts as "player backed out".
+	printf("DoShell_TrainingChooser(%d): not available in the standalone build yet\n", a1);
+	return 0;
+#else
 	DoShell_TrainingChooser_t func = (DoShell_TrainingChooser_t)0x0049A3B0;
 	return func(a1);
+#endif
 }
 
 // Find the description for the given name in charbio.dat.
@@ -7799,6 +7862,7 @@ INLINE void Shell_VerySmallFont(void)
 // the bytes after that are a different global (a 0x38-stride table of camera/light
 // setups, referenced from 0x490FC5 and 0x493EF0). Nothing reads SpideyIcons past
 // offset 0x14, so the last entry's tail is written as zero here.
+#ifndef SPIDEY_STANDALONE
 EXPORT SpideyIconRelated SpideyIcons[8] =
 {
 	{ "items",  5, 0, 0, 0, 0,     0,     0, 0x056, 0x062, "new game",    1 },
@@ -7810,6 +7874,9 @@ EXPORT SpideyIconRelated SpideyIcons[8] =
 	{ "icons",  2, 0, 0, 0, 0,    -4, 0x1EA, 0x190, 0x0CA, "gallery",     7 },
 	{ "icons",  0, 0, 0, 0x100, 0, -16, 0x2BC,   0,     0, 0,             0 },
 };
+#else
+extern SpideyIconRelated SpideyIcons[8];
+#endif
 
 
 const i32 NUM_LEVELS = 34;

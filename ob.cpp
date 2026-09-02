@@ -13,25 +13,63 @@
 #include "exp.h"
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 CVector ZeroVector;
+#else
+extern CVector ZeroVector;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 u8 gWhatIf;
+#else
+extern u8 gWhatIf;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 u32 SuspendedDistance;
+#else
+extern u32 SuspendedDistance;
+#endif
 u8 gPsxItemsIndex;
+#ifndef SPIDEY_STANDALONE
 const char *gObjFile;
+#else
+extern const char * gObjFile;
+#endif
+#ifndef SPIDEY_STANDALONE
 CBody* EnvironmentalObjectList;
+#else
+extern CBody* EnvironmentalObjectList;
+#endif
+#ifndef SPIDEY_STANDALONE
 CBody* SuspendedList;
+#else
+extern CBody* SuspendedList;
+#endif
+#ifndef SPIDEY_STANDALONE
 CItem* EnviroList;
+#else
+extern CItem* EnviroList;
+#endif
 
-//#define G_SUSPENEDED_LIST (SuspendedList)
-#define G_SUSPENEDED_LIST (*reinterpret_cast<CBody**>(0x0060DAB4))
 
+#ifndef SPIDEY_STANDALONE
 CBody* RealMechList;
+#else
+extern CBody* RealMechList;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 i32 gSuperItemRelated = 1;
+#else
+extern i32 gSuperItemRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 f32 gFloatSuperRelated = 1.0f;
+#else
+extern f32 gFloatSuperRelated;
+#endif
 
 // @Ok
 EXPORT SLight M3d_DefaultLight =

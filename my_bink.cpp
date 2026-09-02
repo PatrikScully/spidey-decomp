@@ -3,7 +3,13 @@
 
 static HMODULE hBink = 0;
 
+#ifdef SPIDEY_STANDALONE
+// no Bink in the standalone build yet: the stubs return and stay quiet
+#define LOCK_ROUTINE
+#define printf(...) ((void)0)
+#else
 #define LOCK_ROUTINE { while(1); }
+#endif
 
 static INLINE void init_module(void)
 {

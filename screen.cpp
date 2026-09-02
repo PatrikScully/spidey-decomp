@@ -23,7 +23,11 @@ static MATRIX * const gTargetRotMatrix = (MATRIX*)0x56F224;
 
 // Screen_TargetOn (0x48AA40) writes it ("mov [6A7572h],al"), the reticle
 // draw (0x48AA90) reads it.
+#ifndef SPIDEY_STANDALONE
 EXPORT bool gScreenTarget;
+#else
+extern bool gScreenTarget;
+#endif
 //#define G_SCREEN_TARGET (gScreenTarget)
 #define G_SCREEN_TARGET (*reinterpret_cast<bool*>(0x006A7572))
 
@@ -31,29 +35,49 @@ EXPORT bool gScreenTarget;
 // Screen_DrawArrow (0x48AE30) opens with "mov al,[6A7573h]", not 0x6A7572.
 // No named function in tools/functions writes it, so the writer is still
 // unidentified.
+#ifndef SPIDEY_STANDALONE
 EXPORT bool gScreenArrow;
+#else
+extern bool gScreenArrow;
+#endif
 //#define G_SCREEN_ARROW (gScreenArrow)
 #define G_SCREEN_ARROW (*reinterpret_cast<bool*>(0x006A7573))
 
 // Screen_SetTarget (0x48AA50) writes the three components at 0x6A7488 /
 // 0x6A748C / 0x6A7490 and the two words at 0x6A7494 (its u16 argument) and
 // 0x6A7484 (its i16 argument). sub_48AA90 (the reticle draw) reads all five.
+#ifndef SPIDEY_STANDALONE
 EXPORT CVector gTargetRelated;
+#else
+extern CVector gTargetRelated;
+#endif
 //#define G_TARGET_RELATED (gTargetRelated)
 #define G_TARGET_RELATED (*reinterpret_cast<CVector*>(0x006A7488))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gTargetOne;
+#else
+extern u16 gTargetOne;
+#endif
 //#define G_TARGET_ONE (gTargetOne)
 #define G_TARGET_ONE (*reinterpret_cast<u16*>(0x006A7494))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gTargetTwo;
+#else
+extern u16 gTargetTwo;
+#endif
 //#define G_TARGET_TWO (gTargetTwo)
 #define G_TARGET_TWO (*reinterpret_cast<u16*>(0x006A7484))
 
 // The arrow points at a different vector than the reticle does:
 // Screen_DrawArrow reads 0x6A74D8 / 0x6A74DC / 0x6A74E0, written by the
 // small unnamed setter sub_48A800.
+#ifndef SPIDEY_STANDALONE
 EXPORT CVector gArrowTargetPos;
+#else
+extern CVector gArrowTargetPos;
+#endif
 //#define G_ARROW_TARGET_POS (gArrowTargetPos)
 #define G_ARROW_TARGET_POS (*reinterpret_cast<CVector*>(0x006A74D8))
 
@@ -61,23 +85,43 @@ EXPORT CVector gArrowTargetPos;
 // ("mov dword ptr [6A7460h],20h", "mov [6A751Ch],eax", "mov [6A756Ch],ecx",
 // "mov byte ptr [6A7570h],1", "mov [6A7571h],al"); Screen_UpdateFades
 // (0x48AFE0) reads and writes the last four. 0x6A7460 has no reader.
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCircularFadeRelated;
+#else
+extern i32 gCircularFadeRelated;
+#endif
 //#define G_CIRCULAR_FADE_RELATED (gCircularFadeRelated)
 #define G_CIRCULAR_FADE_RELATED (*reinterpret_cast<i32*>(0x006A7460))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCircularFadeRelatedOne;
+#else
+extern i32 gCircularFadeRelatedOne;
+#endif
 //#define G_CIRCULAR_FADE_RELATED_ONE (gCircularFadeRelatedOne)
 #define G_CIRCULAR_FADE_RELATED_ONE (*reinterpret_cast<i32*>(0x006A751C))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCircularFadeRelatedTwo;
+#else
+extern i32 gCircularFadeRelatedTwo;
+#endif
 //#define G_CIRCULAR_FADE_RELATED_TWO (gCircularFadeRelatedTwo)
 #define G_CIRCULAR_FADE_RELATED_TWO (*reinterpret_cast<i32*>(0x006A756C))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gCircularFadeRelatedThree;
+#else
+extern u8 gCircularFadeRelatedThree;
+#endif
 //#define G_CIRCULAR_FADE_RELATED_THREE (gCircularFadeRelatedThree)
 #define G_CIRCULAR_FADE_RELATED_THREE (*reinterpret_cast<u8*>(0x006A7570))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gCircularFadeRelatedFour;
+#else
+extern u8 gCircularFadeRelatedFour;
+#endif
 //#define G_CIRCULAR_FADE_RELATED_FOUR (gCircularFadeRelatedFour)
 #define G_CIRCULAR_FADE_RELATED_FOUR (*reinterpret_cast<u8*>(0x006A7571))
 

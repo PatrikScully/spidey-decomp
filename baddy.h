@@ -193,6 +193,8 @@ public:
 	i32 field_328;
 	i16 field_32C;
 	i16 field_32E;
+
+	EXPORT CScriptOnlyBaddy(i16*, i32);
 };
 
 EXPORT CBaddy* FindBaddyOfType(int);

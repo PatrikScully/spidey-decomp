@@ -2,7 +2,11 @@
 #include "validate.h"
 #include "ps2m3d.h"
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 submarinerDieRelated;
+#else
+extern u8 submarinerDieRelated;
+#endif
 extern CBaddy* BaddyList;
 
 EXPORT SLight M3d_SubmarinerLight =

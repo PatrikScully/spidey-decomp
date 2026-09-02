@@ -19,8 +19,23 @@
 typedef void* IDirectSoundBuffer;
 typedef void* LPDIRECTSOUNDBUFFER;
 typedef void* LPDIRECTINPUTEFFECT;
-typedef i32 _DDPIXELFORMAT;
-typedef i32 DDPIXELFORMAT;
+
+// Real layout (0x20 bytes): PCTex.cpp copies these into gPcTexContainer and
+// the standalone build describes its texture formats with them.
+struct _DDPIXELFORMAT
+{
+	u32 dwSize;
+	u32 dwFlags;
+	u32 dwFourCC;
+	u32 dwRGBBitCount;
+	u32 dwRBitMask;
+	u32 dwGBitMask;
+	u32 dwBBitMask;
+	u32 dwRGBAlphaBitMask;
+};
+typedef _DDPIXELFORMAT DDPIXELFORMAT;
+#define DDPF_ALPHAPIXELS 0x1
+#define DDPF_RGB 0x40
 typedef i32 DDSURFACEDESC2;
 typedef DDSURFACEDESC2* LPDDSURFACEDESC2;
 typedef i32 D3DDEVICEDESC7;

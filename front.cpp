@@ -21,17 +21,33 @@
 #include "post.h"
 #include "ps2card.h"
 
+#ifndef SPIDEY_STANDALONE
 CMenu* pYesNoMenu;
+#else
+extern CMenu* pYesNoMenu;
+#endif
 
 // idb_globals.txt: 0x005FAED0 gPausedMenu.
+#ifndef SPIDEY_STANDALONE
 CMenu* gPausedMenu;
+#else
+extern CMenu* gPausedMenu;
+#endif
 
 EXPORT i32 gFrontGauge;
 
+#ifndef SPIDEY_STANDALONE
 SSaveGame gSaveGame;
+#else
+extern SSaveGame gSaveGame;
+#endif
 
 // @FIXME add content
+#ifndef SPIDEY_STANDALONE
 SLevel Levels[FRONT_NUM_LEVELS];
+#else
+extern SLevel Levels[FRONT_NUM_LEVELS];
+#endif
 
 // Tentative names, no idb_globals.txt entries. CMenu::Display spawns a
 // small effect record (looks like a highlight/arrow indicator, ~0x28 bytes,

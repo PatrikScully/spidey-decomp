@@ -22,7 +22,11 @@ EXPORT u8 gPcMusicInited;
 EXPORT volatile HBINK gMusicBinkHandle;
 EXPORT u8 gPcMusicStatusTwo;
 EXPORT u8 gPcMusicStatusThree;
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gPcMusicStatusFour;
+#else
+extern u8 gPcMusicStatusFour;
+#endif
 
 EXPORT HANDLE gMusicFileHandle;
 
@@ -114,8 +118,16 @@ void PCMUSIC_Finish(void)
 
 // @Ok
 // @Matching
+#ifdef SPIDEY_STANDALONE
+static i32 gStandaloneMusicPlaying;
+#endif
+
 i32 PCMUSIC_GetStatus(void)
 {
+#ifdef SPIDEY_STANDALONE
+	if (gStandaloneMusicPlaying)
+		return 0;   // "still playing"
+#endif
 	if (gMusicBinkHandle)
 	{
 		if (gPcMusicStatusTwo || gPcMusicStatusThree && !gPcMusicStatusFour)
@@ -183,6 +195,14 @@ u8 PCMUSIC_Play(i32 a1)
 	PCMUSIC_Init();
 	if (!g_pDS)
 		return 0;
+#ifdef SPIDEY_STANDALONE
+	// @TODO Phase 2b: music tracks are Bink audio files; no Bink player yet
+	// (my_bink.cpp's BinkOpen stub locks up on purpose). Pretend the track
+	// plays, or the shell restarts it every frame.
+	printf("PCMUSIC_Play(%d): skipping %s\n", a1, MUSICTRACKS_GetTrackName(a1));
+	gStandaloneMusicPlaying = 1;
+	return 1;
+#endif
 	PCMUSIC_Stop();
 
 	char* v2 = MUSICTRACKS_GetTrackName(a1);
@@ -224,6 +244,9 @@ void PCMUSIC_SetVolume(i32 vol)
 // @Matching
 INLINE void PCMUSIC_Stop(void)
 {
+#ifdef SPIDEY_STANDALONE
+	gStandaloneMusicPlaying = 0;
+#endif
 	if (gPcMusicStatusThree)
 	{
 		if (gPcMusicStatusTwo)

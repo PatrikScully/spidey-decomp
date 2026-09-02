@@ -28,28 +28,52 @@
 // ---------------------------------------------------------------------------
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 SControl gSControl[NUM_CONTROLLERS];
+#else
+extern SControl gSControl[NUM_CONTROLLERS];
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 Pad_IdleTime;
+#else
+extern i32 Pad_IdleTime;
+#endif
 
 // @OK
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gPadVibrate[5];
+#else
+extern u8 gPadVibrate[5];
+#endif
 //#define G_PAD_VIBRATE (gPadVibrate)
 #define G_PAD_VIBRATE (reinterpret_cast<u8*>(0x006610C0))
 
 // @Ok
 // @FIXME - is it really 2?
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPadActuator[2];
+#else
+extern i32 gPadActuator[2];
+#endif
 //#define G_PAD_ACTUATOR (gPadActuator)
 #define G_PAD_ACTUATOR (reinterpret_cast<i32*>(0x006612B0))
 
 // @Ok
 // Read only, see the note at the top of the file.
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gPadOne = 0x3B;
+#else
+extern u8 gPadOne;
+#endif
 // @Ok
 // Read only, see the note at the top of the file.
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gPadTwo;
+#else
+extern u8 gPadTwo;
+#endif
 
 // @Ok
 // @Matching
@@ -287,7 +311,11 @@ void Pad_ClearTriggers(SControl *pControl)
 	}
 }
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPadInited;
+#else
+extern i32 gPadInited;
+#endif
 //#define G_PAD_INITED (gPadInited)
 #define G_PAD_INITED (*reinterpret_cast<i32*>(0x006612AC))
 

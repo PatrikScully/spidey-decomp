@@ -27,8 +27,10 @@ i32 Pad_Update(void)
 
 	for (i32 i = 0; i < NUM_CONTROLLERS; i++)
 	{
-		// @FIXME
-		// gSControl[i].field_16C = 65;
+		// 0x505775: "mov dword ptr [eax+66126Ch],41h", the controller type the
+		// shell tests for "pad unplugged" (CheckForPadUnplugged loops forever
+		// without it)
+		G_SCONTROL[i].Type = 0x41;
 		Pad_Button(&G_SCONTROL[i].Triangle, v3 & 0x80);
 		Pad_Button(&G_SCONTROL[i].Square, v3 & 0x40);
 		Pad_Button(&G_SCONTROL[i].Circle, v3 & 0x20);

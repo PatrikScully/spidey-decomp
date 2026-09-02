@@ -6,14 +6,38 @@
 
 #include "validate.h"
 
+#ifndef SPIDEY_STANDALONE
 SDoubleBuffer* pDoubleBuffer;
+#else
+extern SDoubleBuffer* pDoubleBuffer;
+#endif
 SDoubleBuffer* pOtherBuffer;
+#ifndef SPIDEY_STANDALONE
 SDoubleBuffer DoubleBuffer[2];
+#else
+extern SDoubleBuffer DoubleBuffer[2];
+#endif
+#ifndef SPIDEY_STANDALONE
 u32* pPoly;
+#else
+extern u32* pPoly;
+#endif
+#ifndef SPIDEY_STANDALONE
 u8* PolyBufferEnd;
+#else
+extern u8* PolyBufferEnd;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 u32 Db_SkyColor;
+#else
+extern u32 Db_SkyColor;
+#endif
+#ifndef SPIDEY_STANDALONE
 u32 Db_SkyColorTarget;
+#else
+extern u32 Db_SkyColorTarget;
+#endif
 
 // @Ok
 // @Matching

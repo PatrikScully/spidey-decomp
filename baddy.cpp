@@ -15,14 +15,38 @@
 #include "ps2gamefmv.h"
 
 
+#ifndef SPIDEY_STANDALONE
 CBody* ControlBaddyList;
+#else
+extern CBody* ControlBaddyList;
+#endif
+#ifndef SPIDEY_STANDALONE
 CBaddy* BaddyList;
+#else
+extern CBaddy* BaddyList;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT CSVector gTrajectoryVector;
+#else
+extern CSVector gTrajectoryVector;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 gAttackRelated;
+#else
+extern i32 gAttackRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 u8 gObjFileRegion;
+#else
+extern u8 gObjFileRegion;
+#endif
 
 // @FIXME - incorrect type
+#ifndef SPIDEY_STANDALONE
 i32 gBossRelated;
+#else
+extern i32 gBossRelated;
+#endif
 
 // @Ok
 // @Matching
@@ -1083,6 +1107,29 @@ void CBaddy::ParseScript(u16 *a2)
 	this->field_20C = 0;
 }
 
+// @Ok
+// 0x4075B0, 353 bytes (IDB: .__ct__16CScriptOnlyBaddyFPsi). Trig_CreateObject
+// type 203. Same shape as the other baddy constructors: squirt position and
+// angles, flags, list, node, then the command script through ParseScript
+// (its loop, the death pulse and the field_20C reset are all inline in the
+// original, and identical to CBaddy::ParseScript).
+CScriptOnlyBaddy::CScriptOnlyBaddy(i16* a2, i32 a3)
+{
+	i16 *v5 = this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a2)));
+
+	this->mFlags |= 1;
+	this->mCBodyFlags &= ~0x10;
+	this->field_32C = -1;
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
+
+	this->mRMinor = 0;
+	this->mType = 203;
+	this->mNode = static_cast<u16>(a3);
+	this->field_20C = 1;
+
+	this->ParseScript(reinterpret_cast<u16*>(v5));
+}
+
 // How many CBaddy objects are alive. The exe owns it at 0x0056E98C, right in
 // front of BaddyList (0x0056E990) and ControlBaddyList (0x0056E994), which
 // already have their macros in baddy.h.
@@ -1101,7 +1148,11 @@ void CBaddy::ParseScript(u16 *a2)
 //
 // Only this file touches it today, so the macro is file-local. Move it to
 // baddy.h if another .cpp ever needs it.
+#ifndef SPIDEY_STANDALONE
 i32 NumBaddies;
+#else
+extern i32 NumBaddies;
+#endif
 //#define G_NUM_BADDIES (NumBaddies)
 #define G_NUM_BADDIES (*reinterpret_cast<i32*>(0x0056E98C))
 

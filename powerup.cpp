@@ -11,8 +11,11 @@
 #include "validate.h"
 #include "bit.h"
 
+#ifndef SPIDEY_STANDALONE
 CBody* PowerUpList;
-i32 TTime;
+#else
+extern CBody* PowerUpList;
+#endif
 
 // @Ok
 // @Matching

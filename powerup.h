@@ -6,7 +6,10 @@
 #include "ob.h"
 #include "export.h"
 
-EXPORT extern i32 TTime;
+// volatile to match the one definition in bit.cpp. Without it MSVC mangled
+// this as a different symbol (?TTime@@3HA vs ?TTime@@3HC) and powerup.cpp
+// ended up with its own second, never incremented TTime.
+EXPORT extern volatile i32 TTime;
 // bit.cpp also defines TTime (duplicate storage, not touched here) and had
 // this macro, but only inside bit.cpp itself where nothing outside that TU
 // could see it. This file already hosts the extern every other file

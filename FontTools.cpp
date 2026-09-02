@@ -12,7 +12,9 @@
 #include "my_assert.h"
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 Font* FontManager::FontTab[NUM_FONTS_TAB];
+#endif
 // FontManager::LoadFont is not hooked (patch_FontTools only hooks
 // GetFontName/AllShadowOff/AllShadowOn/GetFont/Font::Font), so the array
 // still gets filled by the original game code at game memory. The macro

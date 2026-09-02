@@ -52,6 +52,7 @@ enum ECheatCode
 };
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 SCheat gCheats[NUM_CHEATS] =
 {
 	{
@@ -151,6 +152,9 @@ SCheat gCheats[NUM_CHEATS] =
 			"Toon Spidey",
 	},
 };
+#else
+extern SCheat gCheats[NUM_CHEATS];
+#endif
 
 // these five and mCheatStoryboardFlag/field_78 now live as real fields in
 // SSaveGame (shell.h), found via ActivateCheat's cheat flag writes landing

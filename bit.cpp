@@ -34,27 +34,47 @@
 // gSparkTrajectoryCone by name.
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT bool SparkSemiTrans = true;
+#else
+extern bool SparkSemiTrans;
+#endif
 //#define G_SPARK_SEMI_TRANS (SparkSemiTrans)
 #define G_SPARK_SEMI_TRANS (*reinterpret_cast<bool*>(0x00547EBC))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT CSVector SparkTrajectoryCone;
+#else
+extern CSVector SparkTrajectoryCone;
+#endif
 //#define G_SPARK_TRAJECTORY_CONE (SparkTrajectoryCone)
 #define G_SPARK_TRAJECTORY_CONE (*reinterpret_cast<CSVector*>(0x0056EB38))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT CSVector SparkTrajectory;
+#else
+extern CSVector SparkTrajectory;
+#endif
 //#define G_SPARK_TRAJECTORY (SparkTrajectory)
 #define G_SPARK_TRAJECTORY (*reinterpret_cast<CSVector*>(0x0056E9B8))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gSparkRGB[3] = { 0x80, 0x80, 0x80 };
+#else
+extern u8 gSparkRGB[3];
+#endif
 //#define G_SPARK_RGB (gSparkRGB)
 #define G_SPARK_RGB (reinterpret_cast<u8*>(0x00547EC0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gSparkFadeRGB[3] = { 4, 4, 4 };
+#else
+extern u8 gSparkFadeRGB[3];
+#endif
 //#define G_SPARK_FADE_RGB (gSparkFadeRGB)
 #define G_SPARK_FADE_RGB (reinterpret_cast<u8*>(0x00547EC4))
 
@@ -102,30 +122,70 @@ EXPORT char *gAnimNames[29] =
 // any dynamic init runs, and Bit_Init also memsets it explicitly, so the
 // old "must be zero initialized" worry does not apply. Writing the
 // initializer here makes that guarantee visible in the source too.
+#ifndef SPIDEY_STANDALONE
 SAnimFrame* gAnimTable[0x1D] = {0};
+#else
+extern SAnimFrame* gAnimTable[0x1D];
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CChunkBit* ChunkBitList;
+#else
+extern CChunkBit* ChunkBitList;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT CGlow* GlowList;
+#else
+extern CGlow* GlowList;
+#endif
+#ifndef SPIDEY_STANDALONE
 CTextBox* TextBoxList = 0;
+#else
+extern CTextBox* TextBoxList;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT volatile i32 BitCount = 0;
+#else
+extern volatile i32 BitCount;
+#endif
 
 //#define G_BITCOUNT (BitCount)
 #define G_BITCOUNT (*reinterpret_cast<volatile i32*>(0x0056EB48))
 
+#ifndef SPIDEY_STANDALONE
 i32 TotalBitUsage = 0;
+#else
+extern i32 TotalBitUsage;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CFlatBit *FlatBitList;
+#else
+extern CFlatBit * FlatBitList;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT CSpecialDisplay *SpecialDisplayList = 0;
+#else
+extern CSpecialDisplay * SpecialDisplayList;
+#endif
 //#define G_SPECIALDISPLAY_LIST (SpecialDisplayList)
 #define G_SPECIALDISPLAY_LIST (*reinterpret_cast<CSpecialDisplay**>(0x0056EB34))
 
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CPixel* PixelList;
+#else
+extern CPixel* PixelList;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 u32 SparkSize = 1;
+#else
+extern u32 SparkSize;
+#endif
 //#define G_SPARK_SIZE (SparkSize)
 #define G_SPARK_SIZE (*reinterpret_cast<u32*>(0x00547EB8))
 
@@ -133,20 +193,56 @@ u32 SparkSize = 1;
 // volatile i32 gTimerRelated;   // see G_TIMER_RELATED in bit.h
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT CNonRenderedBit* NonRenderedBitList = 0;
+#else
+extern CNonRenderedBit* NonRenderedBitList;
+#endif
 //#define G_NONRENDEREDBIT_LIST (NonRenderedBitList)
 #define G_NONRENDEREDBIT_LIST (*reinterpret_cast<CNonRenderedBit**>(0x0056EAD8))
 
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CBit* Linked2EndedBitListLeftover;
+#else
+extern CBit* Linked2EndedBitListLeftover;
+#endif
+#ifndef SPIDEY_STANDALONE
 CBit* PolyLineList;
+#else
+extern CBit* PolyLineList;
+#endif
+#ifndef SPIDEY_STANDALONE
 CBit* GPolyLineList;
+#else
+extern CBit* GPolyLineList;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT CBit* QuadBitList;
+#else
+extern CBit* QuadBitList;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT CBit* GenPolyList;
+#else
+extern CBit* GenPolyList;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT CBit* GlassList;
+#else
+extern CBit* GlassList;
+#endif
+#ifndef SPIDEY_STANDALONE
 CBit* GLineList;
+#else
+extern CBit* GLineList;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CBitServer* gBitServer = 0;
+#else
+extern CBitServer* gBitServer;
+#endif
 
 // @Ok
 // @Validate: when inlined
@@ -1807,7 +1903,8 @@ void CSimpleTexturedRibbon::Display(void)
 	// Confirmed name (maintainer's IDB): a large, general-purpose scratch buffer shared by
 	// several unrelated subsystems (see dcmodel.cpp/spool.cpp for other users). Display borrows
 	// it here as the flat invZ scratch array, 2 floats per cross-section.
-	f32* invZArray = reinterpret_cast<f32*>((u8*)0x5498FC);
+	// 0x5498FC holds the POINTER to the scratch buffer, not the buffer
+	f32* invZArray = static_cast<f32*>(gSpoolSystemMemory);
 	i32 invZIndex = 0;
 
 	u8* recCursor = gRevisitInitOne;
@@ -2959,7 +3056,11 @@ CWibbly::CWibbly(
 // global game clock/counter, read directly from game memory. Nothing else
 // in this repo touches it yet (only read, never written, here), so it
 // stays file-local for now.
+#ifndef SPIDEY_STANDALONE
 volatile i32 TTime = 0;
+#else
+extern volatile i32 TTime;
+#endif
 //#define G_TTIME (TTime)
 #define G_TTIME (*reinterpret_cast<volatile i32*>(0x0060CFA8))
 

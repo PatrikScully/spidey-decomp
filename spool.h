@@ -179,6 +179,8 @@ void validate_SModel(void);
 void validate_POLY_F3(void);
 
 static const i32 MAXPSX = 40;
+// scratch buffer pointer, exe slot 0x5498FC (points at a static 0x62E510 block)
+EXPORT extern void* gSpoolSystemMemory;
 EXPORT extern SPSXRegion PSXRegion[MAXPSX];
 
 //#define G_PSXREGION (PSXRegion)

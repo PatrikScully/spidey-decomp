@@ -6,6 +6,7 @@ Release/
 *.swp
 *.opt
 out/
+out-sa/
 out_win/
 *.sh
 *.dll

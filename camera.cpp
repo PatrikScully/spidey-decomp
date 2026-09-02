@@ -5,8 +5,16 @@
 #include "utils.h"
 #include "my_assert.h"
 
+#ifndef SPIDEY_STANDALONE
 SViewport gViewport;
+#else
+extern SViewport gViewport;
+#endif
+#ifndef SPIDEY_STANDALONE
 CCamera *CameraList;
+#else
+extern CCamera * CameraList;
+#endif
 
 // ---------------------------------------------------------------------------
 // The camera runs half in this repo and half in the exe.  Five camera routines
@@ -44,133 +52,237 @@ EXPORT CFriction LandShakeDecay(3, 0, 3);
 EXPORT CSVector LandShakeSpeed(600, 0, 600);
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCameraModeOne;
+#else
+extern i32 gCameraModeOne;
+#endif
 //#define G_CAMERA_MODE_ONE (gCameraModeOne)
 #define G_CAMERA_MODE_ONE (*reinterpret_cast<i32*>(0x0056F254))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCameraModeTwo;
+#else
+extern i32 gCameraModeTwo;
+#endif
 //#define G_CAMERA_MODE_TWO (gCameraModeTwo)
 #define G_CAMERA_MODE_TWO (*reinterpret_cast<i32*>(0x0056F38C))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCameraModeThree;
+#else
+extern i32 gCameraModeThree;
+#endif
 //#define G_CAMERA_MODE_THREE (gCameraModeThree)
 #define G_CAMERA_MODE_THREE (*reinterpret_cast<i32*>(0x0056F28C))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 NumCameras;
+#else
+extern i32 NumCameras;
+#endif
 //#define G_NUM_CAMERAS (NumCameras)
 #define G_NUM_CAMERAS (*reinterpret_cast<i32*>(0x0056F3B4))
 
+#ifndef SPIDEY_STANDALONE
 SCamera gMikeCamera[2];
+#else
+extern SCamera gMikeCamera[2];
+#endif
 
 // Same address as gCameraModeOne (0x0056F254), see CCamera::SetMode.
 // EXPORT i32 gCameraModeRelated;
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 camXZDist = 0x120;
+#else
+extern i32 camXZDist;
+#endif
 //#define G_CAM_XZ_DIST (camXZDist)
 #define G_CAM_XZ_DIST (*reinterpret_cast<i32*>(0x00548860))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 camYDist = 0xFFFFFFDC;
+#else
+extern i32 camYDist;
+#endif
 //#define G_CAM_Y_DIST (camYDist)
 #define G_CAM_Y_DIST (*reinterpret_cast<i32*>(0x00548864))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gWtfCam[35];
+#else
+extern i32 gWtfCam[35];
+#endif
 //#define G_WTF_CAM (gWtfCam)
 #define G_WTF_CAM (reinterpret_cast<i32*>(0x0056F124))
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamXZDistanceRelated;
+#else
+extern i32 gCamXZDistanceRelated;
+#endif
 //#define G_CAM_XZ_DISTANCE_RELATED (gCamXZDistanceRelated)
 #define G_CAM_XZ_DISTANCE_RELATED (*reinterpret_cast<i32*>(0x0056F3BC))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamXZRelatedTwo;
+#else
+extern i32 gCamXZRelatedTwo;
+#endif
 //#define G_CAM_XZ_RELATED_TWO (gCamXZRelatedTwo)
 #define G_CAM_XZ_RELATED_TWO (*reinterpret_cast<i32*>(0x0056F0DC))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamXZRelatedThree;
+#else
+extern i32 gCamXZRelatedThree;
+#endif
 //#define G_CAM_XZ_RELATED_THREE (gCamXZRelatedThree)
 #define G_CAM_XZ_RELATED_THREE (*reinterpret_cast<i32*>(0x0056F0EC))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamYDistanceRelated;
+#else
+extern i32 gCamYDistanceRelated;
+#endif
 //#define G_CAM_Y_DISTANCE_RELATED (gCamYDistanceRelated)
 #define G_CAM_Y_DISTANCE_RELATED (*reinterpret_cast<i32*>(0x0056F3C0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamYDistanceRelatedTwo;
+#else
+extern i32 gCamYDistanceRelatedTwo;
+#endif
 //#define G_CAM_Y_DISTANCE_RELATED_TWO (gCamYDistanceRelatedTwo)
 #define G_CAM_Y_DISTANCE_RELATED_TWO (*reinterpret_cast<i32*>(0x0056F258))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamYDistanceRelatedThree;
+#else
+extern i32 gCamYDistanceRelatedThree;
+#endif
 //#define G_CAM_Y_DISTANCE_RELATED_THREE (gCamYDistanceRelatedThree)
 #define G_CAM_Y_DISTANCE_RELATED_THREE (*reinterpret_cast<i32*>(0x0056F290))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamXOffsetRelatedOne;
+#else
+extern i32 gCamXOffsetRelatedOne;
+#endif
 //#define G_CAM_X_OFFSET_ONE (gCamXOffsetRelatedOne)
 #define G_CAM_X_OFFSET_ONE (*reinterpret_cast<i32*>(0x0056F3A4))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamXOffsetRelatedTwo;
+#else
+extern i32 gCamXOffsetRelatedTwo;
+#endif
 //#define G_CAM_X_OFFSET_TWO (gCamXOffsetRelatedTwo)
 #define G_CAM_X_OFFSET_TWO (*reinterpret_cast<i32*>(0x0056F3C8))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamXOffsetRelatedThree;
+#else
+extern i32 gCamXOffsetRelatedThree;
+#endif
 //#define G_CAM_X_OFFSET_THREE (gCamXOffsetRelatedThree)
 #define G_CAM_X_OFFSET_THREE (*reinterpret_cast<i32*>(0x0056EFF8))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamXOffsetRelatedFour;
+#else
+extern i32 gCamXOffsetRelatedFour;
+#endif
 //#define G_CAM_X_OFFSET_FOUR (gCamXOffsetRelatedFour)
 #define G_CAM_X_OFFSET_FOUR (*reinterpret_cast<i32*>(0x0056F3C4))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamYOffsetOne;
+#else
+extern i32 gCamYOffsetOne;
+#endif
 //#define G_CAM_Y_OFFSET_ONE (gCamYOffsetOne)
 #define G_CAM_Y_OFFSET_ONE (*reinterpret_cast<i32*>(0x0056F11C))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamYOffsetTwo;
+#else
+extern i32 gCamYOffsetTwo;
+#endif
 //#define G_CAM_Y_OFFSET_TWO (gCamYOffsetTwo)
 #define G_CAM_Y_OFFSET_TWO (*reinterpret_cast<i32*>(0x0056F3CC))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamYOffsetThree;
+#else
+extern i32 gCamYOffsetThree;
+#endif
 //#define G_CAM_Y_OFFSET_THREE (gCamYOffsetThree)
 #define G_CAM_Y_OFFSET_THREE (*reinterpret_cast<i32*>(0x0056F120))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamYOffsetFour = 0xFFFFFFFA;
+#else
+extern i32 gCamYOffsetFour;
+#endif
 //#define G_CAM_Y_OFFSET_FOUR (gCamYOffsetFour)
 #define G_CAM_Y_OFFSET_FOUR (*reinterpret_cast<i32*>(0x00548868))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamZOffsetOne;
+#else
+extern i32 gCamZOffsetOne;
+#endif
 //#define G_CAM_Z_OFFSET_ONE (gCamZOffsetOne)
 #define G_CAM_Z_OFFSET_ONE (*reinterpret_cast<i32*>(0x0056F078))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamZOffsetTwo;
+#else
+extern i32 gCamZOffsetTwo;
+#endif
 //#define G_CAM_Z_OFFSET_TWO (gCamZOffsetTwo)
 #define G_CAM_Z_OFFSET_TWO (*reinterpret_cast<i32*>(0x0056F3D4))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamZOffsetThree;
+#else
+extern i32 gCamZOffsetThree;
+#endif
 //#define G_CAM_Z_OFFSET_THREE (gCamZOffsetThree)
 #define G_CAM_Z_OFFSET_THREE (*reinterpret_cast<i32*>(0x0056F394))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCamZOffsetFour;
+#else
+extern i32 gCamZOffsetFour;
+#endif
 //#define G_CAM_Z_OFFSET_FOUR (gCamZOffsetFour)
 #define G_CAM_Z_OFFSET_FOUR (*reinterpret_cast<i32*>(0x0056F3D0))
 

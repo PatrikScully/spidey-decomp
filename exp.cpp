@@ -8,8 +8,16 @@
 
 #include "validate.h"
 
+#ifndef SPIDEY_STANDALONE
 i32 g3DExplosions;
+#else
+extern i32 g3DExplosions;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 gWibblingExpCount;
+#else
+extern i32 gWibblingExpCount;
+#endif
 
 // Only exp.cpp touches this counter (16 references in the original, all inside
 // the CWibbling3DExplosion constructor, its destructor and Exp_Big3DExplosion,

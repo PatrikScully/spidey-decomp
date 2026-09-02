@@ -1,4 +1,20 @@
 #include "DXsound.h"
+#ifdef SPIDEY_STANDALONE
+#include "platform/plat.h"
+
+// DirectInput buffered data gives the game edge states: 0xFF = went down
+// this poll, 0x7F = still down, 0x80 = went up this poll, 0 = up. The
+// platform layer only reports "down or not", this rebuilds the edges.
+static u8 edgeState(u8 prev, i32 down)
+{
+	i32 wasDown = (prev & 0x7F) != 0;
+	if (down)
+		return wasDown ? 0x7F : 0xFF;
+	return wasDown ? 0x80 : 0;
+}
+
+static f32 gStandaloneRumbleStrength = 0.5f;
+#endif
 #include "DXinit.h"
 #include "SpideyDX.h"
 #include "validate.h"
@@ -12,7 +28,11 @@
 // DXinit.h: DXPOLY_SetTexture is called directly from hooked game logic, so
 // this has to be the exe's copy too. Address from the same disassembly,
 // "mov [6B7A74h],edi" at the end of DXPOLY_SetTexture.
+#ifndef SPIDEY_STANDALONE
 EXPORT LPDIRECTDRAWSURFACE7 gDDSurface7;
+#else
+extern LPDIRECTDRAWSURFACE7 gDDSurface7;
+#endif
 //#define G_DD_SURFACE7 (gDDSurface7)
 #define G_DD_SURFACE7 (*reinterpret_cast<LPDIRECTDRAWSURFACE7*>(0x006B7A74))
 EXPORT bool gTexAlpha = false;
@@ -45,9 +65,17 @@ EXPORT DWORD gMinFilters[2] = { 1, 2 };
 EXPORT u32 gCurrentFilterIndex;
 
 EXPORT bool gDepthWriting;
+#ifndef SPIDEY_STANDALONE
 EXPORT bool gDxPolyRelated;
+#else
+extern bool gDxPolyRelated;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gHudOffset;
+#else
+extern i32 gHudOffset;
+#endif
 EXPORT f32 gFlHudOffset = 1.0f;
 
 EXPORT D3DCOLOR gDxPolyBackgroundColor = 0x0FF000000;
@@ -473,6 +501,17 @@ i32 DXINPUT_PollController(i32 *pX, i32 *pY, i32 *pZ)
 
 		return 1;
 	}
+#elif defined(SPIDEY_STANDALONE)
+	u8 buttons[32];
+	i32 numButtons;
+	u32 pov;
+	if (!Plat_InputPollController(pX, pY, &pov, buttons, &numButtons))
+		return 0;
+	*pZ = pov;
+	gNumControllerButtons = numButtons;
+	for (i32 i = 0; i < 32; i++)
+		gControllerButtonState[i] = edgeState(gControllerButtonState[i], buttons[i] & 0x80);
+	return 1;
 #endif
 
 	return 0;
@@ -523,6 +562,18 @@ i32 DXINPUT_PollKeyboard(void)
 	}
 
 	return dwElements;
+#elif defined(SPIDEY_STANDALONE)
+	u8 now[256];
+	Plat_InputPollKeyboard(now);
+	i32 changed = 0;
+	for (i32 i = 0; i < 256; i++)
+	{
+		u8 next = edgeState(gKeyState[i], now[i] & 0x80);
+		if ((next ^ gKeyState[i]) & 0x80)
+			changed++;
+		gKeyState[i] = next;
+	}
+	return changed;
 #endif
 	return 0;
 }
@@ -593,6 +644,12 @@ i32 DXINPUT_PollMouse(i32 *pX, i32 *pY)
 	}
 
 	return 1;
+#elif defined(SPIDEY_STANDALONE)
+	u8 buttons[3];
+	Plat_InputPollMouse(pX, pY, buttons);
+	for (i32 i = 0; i < 3; i++)
+		gMouseButtonState[i] = edgeState(gMouseButtonState[i], buttons[i] & 0x80);
+	return 1;
 #else
 	return 0;
 #endif
@@ -636,6 +693,13 @@ void DXINPUT_Release(void)
 	memset(gMouseButtonState, 0, sizeof(gMouseButtonState));
 	memset(gControllerButtonState, 0, sizeof(gControllerButtonState));
 
+	gDxInputRelated = 0;
+	gNumControllerButtons = 0;
+#elif defined(SPIDEY_STANDALONE)
+	Plat_InputRumble(0, 0.0f);
+	memset(gKeyState, 0, sizeof(gKeyState));
+	memset(gMouseButtonState, 0, sizeof(gMouseButtonState));
+	memset(gControllerButtonState, 0, sizeof(gControllerButtonState));
 	gDxInputRelated = 0;
 	gNumControllerButtons = 0;
 #endif
@@ -717,6 +781,13 @@ i32 DXINPUT_SetupController(void)
 	{
 		DI_ERROR_LOG_AND_QUIT(hr);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	i32 x, y;
+	u32 pov;
+	u8 buttons[32];
+	if (!Plat_InputPollController(&x, &y, &pov, buttons, &gNumControllerButtons))
+		return 0;
+	gDxInputRelated = 1;   // rumble goes through the platform layer
 #endif
 
 	return 1;
@@ -794,6 +865,10 @@ i32 DXINPUT_SetupForceFeedbackSineEffect(i32 magnitude, f32 period)
 	}
 
 	return 1;
+#elif defined(SPIDEY_STANDALONE)
+	(void)period;
+	gStandaloneRumbleStrength = (f32)magnitude / 10000.0f;
+	return gDxInputRelated;
 #else
 	return 0;
 #endif
@@ -892,6 +967,12 @@ i32 DXINPUT_StartForceFeedbackEffect(void)
 		gForceFeedbackRelated->Start(1, DIES_NODOWNLOAD);
 		return 1;
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxInputRelated)
+	{
+		Plat_InputRumble(1, gStandaloneRumbleStrength);
+		return 1;
+	}
 #endif
 
 	return 0;
@@ -905,6 +986,12 @@ i32 DXINPUT_StopForceFeedbackEffect(void)
 	if (gDxInputRelated && gControllerRelated && gForceFeedbackRelated)
 	{
 		gForceFeedbackRelated->Stop();
+		return 1;
+	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxInputRelated)
+	{
+		Plat_InputRumble(0, 0.0f);
 		return 1;
 	}
 #endif
@@ -1039,6 +1126,11 @@ void DXPOLY_BeginScene(void)
 			hr = G_D3DDEVICE7->Clear(0, 0, 1, gDxPolyBackgroundColor, gFlDepthCompare, 0);
 		D3D_ERROR_LOG_AND_QUIT(hr);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	print_if_false(gInBeginScene == 0, "nested BeginScene() calls!");
+	memset(gSceneBuffer, 0, sizeof(gSceneBuffer));
+	gInBeginScene = 1;
+	Plat_GfxBeginScene(gDxPolyBackgroundColor, gDxPolyRelated);
 #endif
 }
 
@@ -1128,6 +1220,14 @@ void DXPOLY_DrawPoly(
 				&pPoly->field_10[0],
 				pPoly->field_C,
 				0);
+#elif defined(SPIDEY_STANDALONE)
+		DXPOLY_SetTexture(pPoly->field_4);
+		DXPOLY_SetBlendMode(pPoly->mBlendMode);
+		DXPOLY_SetAddressUAndV(
+				(pPoly->field_A & 2) ? 1 : 3,
+				(pPoly->field_A & 4) ? 1 : 3);
+		DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
+		Plat_GfxDrawFan(pPoly->field_10, pPoly->field_C);
 #endif
 	}
 	else
@@ -1151,6 +1251,12 @@ void DXPOLY_EnableTexAlpha(bool a1)
 	{
 		gTexAlpha = a1;
 		G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_ALPHAOP, a1 ? 4 : 3);
+	}
+#elif defined(SPIDEY_STANDALONE)
+	if (a1 != gTexAlpha)
+	{
+		gTexAlpha = a1;
+		Plat_GfxSetTexAlpha(a1);
 	}
 #endif
 }
@@ -1308,6 +1414,15 @@ void DXPOLY_EndScene(bool a1)
 			DXPOLY_Flip();
 		}
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gInBeginScene)
+	{
+		gInBeginScene = 0;
+		renderScene();
+		Plat_GfxEndScene();
+		if (a1)
+			DXPOLY_Flip();
+	}
 #endif
 }
 
@@ -1315,6 +1430,9 @@ void DXPOLY_EndScene(bool a1)
 // @Matching
 void DXPOLY_Flip(void)
 {
+#ifdef SPIDEY_STANDALONE
+	Plat_GfxFlip();
+#endif
 #ifdef _WIN32
 	if (gDxOptionRelated)
 	{
@@ -1467,6 +1585,17 @@ void DXPOLY_Init(u32 a1)
 	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)16, gMagFilters[gCurrentFilterIndex]);
 	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)17, gMinFilters[gCurrentFilterIndex]);
 	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)18, 1);
+#elif defined(SPIDEY_STANDALONE)
+	// the same defaults as the SetRenderState block above, in platform terms
+	Plat_GfxSetDepthTest(gDxPolyRelated);     // 7  ZENABLE
+	Plat_GfxSetDepthWrite(1);                 // 14 ZWRITEENABLE
+	Plat_GfxSetDepthFunc(4);                  // 23 ZFUNC = LESSEQUAL
+	Plat_GfxSetBlendMode(0);                  // 19/20/27 ONE, ZERO, no blend
+	Plat_GfxSetFog(0, gFogColor, gFogStart, gFogEnd);
+	Plat_GfxSetAddress(gAddressU, gAddressV);
+	Plat_GfxSetFilter(gCurrentFilterIndex);
+	Plat_GfxSetTexAlpha(1);                   // ALPHAOP = MODULATE
+	Plat_GfxSetTexture(0);
 #endif
 }
 
@@ -1735,6 +1864,19 @@ void DXPOLY_SetBlendMode(u32 a1)
 
 		gCurrentBlendMode = newBlendMode;
 	}
+#elif defined(SPIDEY_STANDALONE)
+	u32 newBlendMode = a1;
+	if (gCurrentBlendMode != a1)
+	{
+		if (a1 > 5)
+		{
+			DXERR_printf("ERROR: Invalid blend mode passed to DXPOLY_SetBlendMode(): %lu\r\n", a1);
+			newBlendMode = 0;
+		}
+		Plat_GfxSetBlendMode(newBlendMode);
+		DXPOLY_SetDepthWriting(newBlendMode == 0);
+		gCurrentBlendMode = newBlendMode;
+	}
 #endif
 }
 
@@ -1775,6 +1917,33 @@ void DXPOLY_SetDepthCompare(u32 a1)
 				gFlDepthCompare = 0.0f;
 		}
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxPolyRelated)
+	{
+		if (!a1)
+		{
+			if (gDepthWriting)
+			{
+				Plat_GfxSetDepthTest(0);
+				gDepthWriting = 0;
+			}
+			return;
+		}
+
+		if (!gDepthWriting)
+		{
+			Plat_GfxSetDepthTest(1);
+			gDepthWriting = 1;
+		}
+
+		if (a1 != gDepthCompareIndex)
+		{
+			Plat_GfxSetDepthFunc(a1);
+			gDepthCompareIndex = a1;
+			if ( a1 == 5 || (gFlDepthCompare = 1.0f, a1 == 7) )
+				gFlDepthCompare = 0.0f;
+		}
+	}
 #endif
 }
 
@@ -1793,6 +1962,12 @@ void DXPOLY_SetDepthWriting(bool a1)
 			status = "Disabled";
 
 		DXERR_printf("Depth Buffer Writes %s.\r\n", status);
+	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxPolyRelated && a1 != gDepthWriting)
+	{
+		Plat_GfxSetDepthWrite(a1);
+		gDepthWriting = a1;
 	}
 #endif
 }
@@ -1813,6 +1988,12 @@ void DXPOLY_SetFilterMode(u32 filterIndex)
 		if (filterIndex)
 			status = "Bilinear";
 		DXERR_printf("Filter %s.\r\n", status);
+	}
+#elif defined(SPIDEY_STANDALONE)
+	if (filterIndex != gCurrentFilterIndex)
+	{
+		Plat_GfxSetFilter(filterIndex);
+		gCurrentFilterIndex = filterIndex;
 	}
 #endif
 }
@@ -1844,6 +2025,12 @@ void DXPOLY_SetTexture(LPDIRECTDRAWSURFACE7 a1)
 		D3D_ERROR_LOG_AND_QUIT(hr);
 		G_DD_SURFACE7 = a1;
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (a1 != G_DD_SURFACE7)
+	{
+		Plat_GfxSetTexture(reinterpret_cast<PlatTexture*>(a1));
+		G_DD_SURFACE7 = a1;
+	}
 #endif
 }
 
@@ -1858,6 +2045,15 @@ void DXSOUND_Close(i32 a1)
 
 		DS_ERROR_LOG_AND_QUIT(hr);
 
+		gDxSoundHolder[a1].pDSB = 0;
+		gDxSoundHolder[a1].mFrequency = 0;
+		gDxSoundHolder[a1].field_8 = 0;
+		gDxSoundHolder[a1].field_9 = 0;
+	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxSoundHolder[a1].pDSB)
+	{
+		Plat_SndDestroyVoice(reinterpret_cast<PlatSoundVoice*>(gDxSoundHolder[a1].pDSB));
 		gDxSoundHolder[a1].pDSB = 0;
 		gDxSoundHolder[a1].mFrequency = 0;
 		gDxSoundHolder[a1].field_8 = 0;
@@ -1942,6 +2138,9 @@ void DXSOUND_Init(void)
 
 	hr = g_pDSBuffer->Play(0, 0, 1);
 	DS_ERROR_LOG_AND_QUIT(hr);
+#elif defined(SPIDEY_STANDALONE)
+	memset(gDxSoundBuffers, 0, sizeof(gDxSoundBuffers));
+	memset(gDxSoundHolder, 0, sizeof(gDxSoundHolder));
 #endif
 }
 
@@ -1963,6 +2162,13 @@ i32 DXSOUND_IsPlaying(i32 a1)
 	HRESULT hr = pDSB->GetStatus(&v5);
 
 	DS_ERROR_LOG_AND_QUIT(hr);
+#elif defined(SPIDEY_STANDALONE)
+	if (!gDxSoundHolder[a1].pDSB)
+		return 0;
+	if (gDxSoundHolder[a1].field_8)
+		return 1;
+	if (Plat_SndIsPlaying(reinterpret_cast<PlatSoundVoice*>(gDxSoundHolder[a1].pDSB)))
+		v5 = 4;   // DSBSTATUS_PLAYING
 #endif
 
 	return v5 & 4;
@@ -2134,6 +2340,85 @@ void DXSOUND_Load(char *groupName)
 
 		pName++;
 	}
+#elif defined(SPIDEY_STANDALONE)
+	// Same walk as above with a plain RIFF parser instead of mmio.
+	if (!g_pDS)
+		return;
+
+	i32 group = AUDIOGROUPS_GetGroup(groupName);
+	if (group == -1)
+		return;
+
+	i32 index = group != 1 ? 0x40 : 0;
+	char** pName = &gAudioGroupSoundNames[group * 64];
+
+	for (i32 i = 0; i < 64; i++, pName++)
+	{
+		if (!*pName)
+			return;
+		if (!strlen(*pName))
+			continue;
+
+		char path[0x100];
+		strcpy(path, "AUDIO\\");
+		strcat(path, *pName);
+		strcat(path, ".wav");
+
+		i32 dsIndex = index++;
+
+		HANDLE h = gdFsOpen(path, 0);
+		if (!h)
+		{
+			DXERR_printf("\t\tERROR Loading WAV file %s!!!\r\n", path);
+			continue;
+		}
+
+		i32 fileSize = 0;
+		gdFsGetFileSize((i32)h, &fileSize);
+		u8* fileBuf = (u8*)malloc(fileSize + 0x800);
+		gdFsRead((i32)h, (fileSize + 0x7FF) / 0x800, fileBuf);
+		gdFsClose(h);
+
+		// RIFF/WAVE: "fmt " then "data"
+		i32 rate = 0, channels = 0, bits = 0, fmtTag = 0;
+		const u8* pcm = 0;
+		i32 pcmBytes = 0;
+		if (fileSize >= 12 && !memcmp(fileBuf, "RIFF", 4) && !memcmp(fileBuf + 8, "WAVE", 4))
+		{
+			i32 pos = 12;
+			while (pos + 8 <= fileSize)
+			{
+				u32 ckSize;
+				memcpy(&ckSize, fileBuf + pos + 4, 4);
+				const u8* ck = fileBuf + pos + 8;
+				if (!memcmp(fileBuf + pos, "fmt ", 4) && ckSize >= 16)
+				{
+					u16 v16;
+					memcpy(&v16, ck, 2); fmtTag = v16;
+					memcpy(&v16, ck + 2, 2); channels = v16;
+					memcpy(&rate, ck + 4, 4);
+					memcpy(&v16, ck + 14, 2); bits = v16;
+				}
+				else if (!memcmp(fileBuf + pos, "data", 4))
+				{
+					pcm = ck;
+					pcmBytes = (i32)ckSize;
+					if (pos + 8 + pcmBytes > fileSize)
+						pcmBytes = fileSize - pos - 8;
+					break;
+				}
+				pos += 8 + (i32)((ckSize + 1) & ~1u);
+			}
+		}
+
+		if (pcm && pcmBytes > 0 && fmtTag == 1)
+			gDxSoundBuffers[dsIndex] = reinterpret_cast<IDirectSoundBuffer*>(
+					Plat_SndCreateBuffer(pcm, pcmBytes, rate, channels, bits));
+		else
+			DXERR_printf("\t\tERROR Loading WAV file %s!!!\r\n", path);
+
+		free(fileBuf);
+	}
 #endif
 }
 
@@ -2164,6 +2449,20 @@ void DXSOUND_Open(
 			gDxSoundHolder[a1].mFrequency = freq;
 		}
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (g_pDS)
+	{
+		if (a3)
+			a2 += 0x40;
+
+		PlatSoundBuffer* pBuf = reinterpret_cast<PlatSoundBuffer*>(gDxSoundBuffers[a2]);
+		if (pBuf)
+		{
+			PlatSoundVoice* pVoice = Plat_SndCreateVoice(pBuf);
+			gDxSoundHolder[a1].pDSB = pVoice;
+			gDxSoundHolder[a1].mFrequency = Plat_SndGetFrequency(pVoice);
+		}
+	}
 #endif
 }
 
@@ -2180,6 +2479,13 @@ void DXSOUND_Play(i32 a1, i32 a2)
 		HRESULT hr = gDxSoundHolder[a1].pDSB->Play(0, 0, a2 != 0);
 		DS_ERROR_LOG_AND_QUIT(hr);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxSoundHolder[a1].pDSB)
+	{
+		gDxSoundHolder[a1].field_8 = 0;
+		gDxSoundHolder[a1].field_9 = a2 != 0;
+		Plat_SndPlay(reinterpret_cast<PlatSoundVoice*>(gDxSoundHolder[a1].pDSB), a2 != 0);
+	}
 #endif
 }
 
@@ -2194,6 +2500,9 @@ void DXSOUND_SetPan(i32 a1,i32 a2)
 		HRESULT hr = pDSB->SetPan(645 * a2 - 10000);
 		DS_ERROR_LOG_AND_QUIT(hr);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxSoundHolder[a1].pDSB)
+		Plat_SndSetPan(reinterpret_cast<PlatSoundVoice*>(gDxSoundHolder[a1].pDSB), 645 * a2 - 10000);
 #endif
 }
 
@@ -2209,6 +2518,12 @@ void DXSOUND_SetPitch(i32 a1, i32 a2)
 		HRESULT hr = pDSB->SetFrequency(res);
 		DS_ERROR_LOG_AND_QUIT(hr);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxSoundHolder[a1].pDSB)
+	{
+		i32 res = (i32)(static_cast<f32>(a2) / 1200.f * static_cast<f32>(gDxSoundHolder[a1].mFrequency));
+		Plat_SndSetFrequency(reinterpret_cast<PlatSoundVoice*>(gDxSoundHolder[a1].pDSB), res);
+	}
 #endif
 }
 
@@ -2223,6 +2538,9 @@ void DXSOUND_SetVolume(i32 a1,i32 a2)
 		HRESULT hr = pDSB->SetVolume(39 * (a2 - 255));
 		DS_ERROR_LOG_AND_QUIT(hr);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxSoundHolder[a1].pDSB)
+		Plat_SndSetVolume(reinterpret_cast<PlatSoundVoice*>(gDxSoundHolder[a1].pDSB), 39 * (a2 - 255));
 #endif
 }
 
@@ -2234,6 +2552,10 @@ void DXSOUND_ShutDown(void)
 	HRESULT hr = g_pDSBuffer->Stop();
 	DS_ERROR_LOG_AND_QUIT(hr);
 
+	DXSOUND_Unload(0, 1);
+#elif defined(SPIDEY_STANDALONE)
+	for (i32 i = 0; i < 0x20; i++)
+		DXSOUND_Close(i);
 	DXSOUND_Unload(0, 1);
 #endif
 }
@@ -2249,6 +2571,9 @@ void DXSOUND_Stop(i32 a1)
 		HRESULT hr = pDSB->Stop();
 		DS_ERROR_LOG_AND_QUIT(hr);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (gDxSoundHolder[a1].pDSB)
+		Plat_SndStop(reinterpret_cast<PlatSoundVoice*>(gDxSoundHolder[a1].pDSB));
 #endif
 }
 
@@ -2286,6 +2611,21 @@ void DXSOUND_Unload(char *a1, i32 a2)
 			}
 
 			startIndex++;
+		}
+	}
+#elif defined(SPIDEY_STANDALONE)
+	i32 startIndex = 0, count = 0x80;
+	if (!a2)
+	{
+		startIndex = AUDIOGROUPS_GetGroup(a1) != 1 ? 0x40 : 0;
+		count = 64;
+	}
+	for (i32 i = 0; i < count; i++, startIndex++)
+	{
+		if (gDxSoundBuffers[startIndex])
+		{
+			Plat_SndDestroyBuffer(reinterpret_cast<PlatSoundBuffer*>(gDxSoundBuffers[startIndex]));
+			gDxSoundBuffers[startIndex] = 0;
 		}
 	}
 #endif
@@ -2546,6 +2886,13 @@ void DXPOLY_SetAddressUAndV(DWORD addressU, DWORD addressV)
 		G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_ADDRESSV, addressV);
 		gAddressV = addressV;
 	}
+#elif defined(SPIDEY_STANDALONE)
+	if (addressU != gAddressU || addressV != gAddressV)
+	{
+		Plat_GfxSetAddress(addressU, addressV);
+		gAddressU = addressU;
+		gAddressV = addressV;
+	}
 #endif
 }
 
@@ -2608,6 +2955,29 @@ void renderScene(void)
 		if (gDxPolyRelated && gHudOffset > 0)
 			G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 1);
 	}
+#elif defined(SPIDEY_STANDALONE)
+	for (i32 i = 4096; i >= 0; i--)
+	{
+		DXPOLY* pPoly = gSceneBuffer[i];
+		if (gDxPolyRelated && gHudOffset > 0 && i == gHudOffset)
+			Plat_GfxSetDepthTest(0);
+
+		while (pPoly)
+		{
+			DXPOLY_SetTexture(pPoly->field_4);
+			DXPOLY_SetBlendMode(pPoly->mBlendMode);
+			DXPOLY_SetAddressUAndV(
+					(pPoly->field_A & 2) ? 1 : 3,
+					(pPoly->field_A & 4) ? 1 : 3);
+			DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
+			DXPOLY_SetFilterMode((pPoly->field_A & 0x10) == 0);
+			Plat_GfxDrawFan(pPoly->field_10, pPoly->field_C);
+			pPoly = pPoly->pNext;
+		}
+	}
+
+	if (gDxPolyRelated && gHudOffset > 0)
+		Plat_GfxSetDepthTest(1);
 #endif
 }
 

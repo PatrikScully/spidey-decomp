@@ -33,32 +33,70 @@
 // writer agree. Safe per the G_* runtime-safety rule: Spool_FindTextureEntry
 // is the only HOOKED reader/writer of this flag; ProcessNewPSX and
 // Spool_TextureAccess (the other reader) are both unhooked.
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gSpoolLogFailedTextureAccess = 1;
+#else
+extern u8 gSpoolLogFailedTextureAccess;
+#endif
 //#define G_SPOOL_LOG_FAILED_TEXTURE_ACCESS (gSpoolLogFailedTextureAccess)
 #define G_SPOOL_LOG_FAILED_TEXTURE_ACCESS (*reinterpret_cast<u8*>(0x006B2F08))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gRegionReloadRelated = -1;
+#else
+extern i32 gRegionReloadRelated;
+#endif
 EXPORT u8 gReloading = 1;
 
 // @FIXME: add proper value
+// The exe keeps this pointer at 0x5498FC (initialized to its static 0x62E510
+// scratch buffer). dcmodel.cpp and trig.cpp read the same slot.
+#ifndef SPIDEY_STANDALONE
 EXPORT void* gSpoolSystemMemory;
+#else
+extern void* gSpoolSystemMemory;
+#endif
 
 EXPORT i32 gSpoolRegionRelatedOne;
 EXPORT i32 gSpoolRegionRelatedTwo;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 GrenadeExplosionRegion = -1;
+#else
+extern i32 GrenadeExplosionRegion;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 SymBurnRegion = -1;
+#else
+extern i32 SymBurnRegion;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 FireDomeRegion = -1;
+#else
+extern i32 FireDomeRegion;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 FireRingRegion = -1;
+#else
+extern i32 FireRingRegion;
+#endif
 
 
 i32 gSpoolCurrentOpenSpot;
 EXPORT AnimPacket* AnimPackets;
 EXPORT i32 gSpoolInitOne;
 EXPORT i32 gSpoolInitTwo;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gSpoolColijEnvIndex;
+#else
+extern i32 gSpoolColijEnvIndex;
+#endif
 EXPORT i32 gNumAccesses;
 
+#ifndef SPIDEY_STANDALONE
 i32 EnvRegions[2] = { -1, -1 };
+#else
+extern i32 EnvRegions[2];
+#endif
 
 const i32 MAXTEXTUREENTRIES = 512;
 EXPORT Texture* gSpoolTexturesRelated;
@@ -69,10 +107,18 @@ EXPORT SAccess* gAccessRelated[MAXPSX];
 const i32 MAXITEMSPERCHECKSUM = 5;
 EXPORT i16 gEnvModelHashTable[256][MAXITEMSPERCHECKSUM];
 
+#ifndef SPIDEY_STANDALONE
 EXPORT SPSXRegion PSXRegion[MAXPSX];
+#else
+extern SPSXRegion PSXRegion[MAXPSX];
+#endif
 
 #define TEXTURE_CHECKSUM_TABLE_SIZE (MAXTEXTUREENTRIES)
+#ifndef SPIDEY_STANDALONE
 EXPORT Texture* TextureChecksumHashTable[TEXTURE_CHECKSUM_TABLE_SIZE];
+#else
+extern Texture* TextureChecksumHashTable[TEXTURE_CHECKSUM_TABLE_SIZE];
+#endif
 // idb_globals.txt calls this TextureCheckSumHashTable. The only writers in the
 // original are ProcessNewPSX and Spool_RemoveUnusedTextures, neither of which is
 // hooked, while the already hooked Spool_FindTextureEntry reads it. Our copy
@@ -81,16 +127,28 @@ EXPORT Texture* TextureChecksumHashTable[TEXTURE_CHECKSUM_TABLE_SIZE];
 //#define G_TEXTURE_CHECKSUM_HASH_TABLE (TextureChecksumHashTable)
 #define G_TEXTURE_CHECKSUM_HASH_TABLE (*reinterpret_cast<Texture*(*)[TEXTURE_CHECKSUM_TABLE_SIZE]>(0x006AB934))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 lowGraphics;
+#else
+extern i32 lowGraphics;
+#endif
 
 //#define G_LOWGRAPHICS (lowGraphics)
 #define G_LOWGRAPHICS (*reinterpret_cast<i32*>(0x006B78F8))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 CurrentSuit;
+#else
+extern i32 CurrentSuit;
+#endif
 
 EXPORT u8 gGiveDefaultTexture;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT TextureEntry gTextureEntries[256];
+#else
+extern TextureEntry gTextureEntries[256];
+#endif
 
 //#define G_TEXTUREENTRIES (gTextureEntries)
 #define G_TEXTUREENTRIES (reinterpret_cast<TextureEntry*>(0x006A90B8))
@@ -374,11 +432,16 @@ void PreProcessAnimPacket(
 
 		for (u32 j = 0; j < v7; j++)
 		{
-			u32 v8 = pSkipped[v4[1] + 2];
+			// 0x4CAAE7 reads [terminator + 8 + 4*idx]; Spool_SkipPackets
+			// returns one dword past the terminator, so that is [idx + 1],
+			// not [idx + 2] (the old value read the next slot: a count, and
+			// the byte store below went to address 28). 0x4CAAF0 sets bit
+			// 0x20 in the byte at +6 of the entry, not at +0.
+			u32 v8 = pSkipped[v4[1] + 1];
 			v4[1] = v8;
 			if (!v6)
 			{
-				*reinterpret_cast<u8*>(v8) |= 0x20;
+				*reinterpret_cast<u8*>(v8 + 6) |= 0x20;
 				u32 v9 = v4[1];
 
 				u8 v10 = *reinterpret_cast<u8*>(v9 + 4);
@@ -703,7 +766,11 @@ void ProcessNewPSX(i32 a1)
 	//-verified helper is safer than re-deriving the walk a second time.
 	{
 		u32* pTail = Spool_SkipPackets(pPSXBuf);
-		i32* pPal1 = reinterpret_cast<i32*>(pTail) + ppModelsCount + 2 + texCount;
+		// layout after the model checksums: [texCount][texCount slots][pal1Count]...
+		// so the palette table starts ppModelsCount + 1 + texCount ints in. The
+		// old "+ 2" read the first palette checksum as the count (found by the
+		// standalone build, 2026-09-02, webdome2 crashed here every boot).
+		i32* pPal1 = reinterpret_cast<i32*>(pTail) + ppModelsCount + 1 + texCount;
 		i32 pal1Count = *pPal1;
 		i32* pPal1Entries = pPal1 + 1;
 
@@ -1725,7 +1792,7 @@ void texClearChecksums(char* pTexName)
 
 		while (v2)
 		{
-			char v8;
+			u32 v8;   // %lx needs 4 bytes
 			char v10[256];
 
 			sscanf(v2, "%lx %s", &v8, v10);
@@ -1771,15 +1838,19 @@ void texLoadChecksums(char *pTexName)
 			print_if_false(checksumIndex < 256, "Too many checksums.");
 			if (!gTextureEntries[checksumIndex].Active)
 			{
+				// 0x4C98DD pushes &Checksum (esi+24h); the old call passed the
+				// value and sscanf wrote through address 0 (standalone crash).
 				sscanf(
 						v3,
 						"%lx %s",
-						gTextureEntries[checksumIndex].Checksum, 
+						&gTextureEntries[checksumIndex].Checksum,
 						v13);
 
 				strlwr(v13);
 
-				char* pNameStart = reinterpret_cast<char*>(reinterpret_cast<i32>(strrchr(v13, '\\')) - reinterpret_cast<i32>(v13) + 1);
+				// 0x4C990E: v13 + (strrchr(v13, '\\') - v13) + 1, i.e. the
+				// name after the last backslash
+				char* pNameStart = strrchr(v13, '\\') + 1;
 
 				for (i32 i = 0; i < 32; i++)
 				{

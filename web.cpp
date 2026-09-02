@@ -14,9 +14,21 @@
 
 #include "validate.h"
 
+#ifndef SPIDEY_STANDALONE
 i32 gFireDomes;
+#else
+extern i32 gFireDomes;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 gNumDomes;
+#else
+extern i32 gNumDomes;
+#endif
+#ifndef SPIDEY_STANDALONE
 CBody* WebList;
+#else
+extern CBody* WebList;
+#endif
 
 EXPORT i32 gGetGroundDefaultValue;
 

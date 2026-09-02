@@ -44,6 +44,10 @@ typedef double f64;
 #ifdef _WIN32
 #define INLINE __inline
 #else
+// MSVC's __inline still emits an out-of-line copy for callers in other
+// translation units. GCC's plain "inline" does not (undefined reference to
+// PCGfx_EndScene, CGoldFish::NormalMode, ...), so the CMake build adds
+// -fkeep-inline-functions to get the same behaviour.
 #define INLINE inline
 #endif
 

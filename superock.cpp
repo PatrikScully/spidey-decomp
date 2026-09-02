@@ -30,7 +30,11 @@ EXPORT SLight M3d_SuperOckLight =
 // Address read off SuperDocOck_RelocatableModuleClear (0x4CBD90:
 // mov edi,6B30DCh / mov ecx,0Fh / rep stosd) and confirmed by the load loop
 // at the top of SuperDocOck_DisplayProgressBars (0x4D0E74: mov esi,6B30DCh).
+#ifndef SPIDEY_STANDALONE
 EXPORT Texture *gSuperDocTexs[15];
+#else
+extern Texture * gSuperDocTexs[15];
+#endif
 //#define G_SUPER_DOC_TEXS (gSuperDocTexs)
 #define G_SUPER_DOC_TEXS (reinterpret_cast<Texture**>(0x006B30DC))
 

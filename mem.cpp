@@ -7,13 +7,29 @@
 #define TRUE 1
 
 // @Note: this is for mess.cpp
+#ifndef SPIDEY_STANDALONE
 u16 Sort;
+#else
+extern u16 Sort;
+#endif
 
 EXPORT i32 Used[2];
+#ifndef SPIDEY_STANDALONE
 u32 HeapDefs[MAXHEAPS][2] = { {0, 0}, {0, 0} };
+#else
+extern u32 HeapDefs[MAXHEAPS][2];
+#endif
 
+#ifndef SPIDEY_STANDALONE
 i32 LowMemory = 0;
+#else
+extern i32 LowMemory;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 CriticalBigHeapUsage = 0;
+#else
+extern u32 CriticalBigHeapUsage;
+#endif
 EXPORT SBlockHeader *FirstFreeBlock[2];
 
 static i32 Scribble = 1;
@@ -163,6 +179,9 @@ void AddToFreeList(SBlockHeader *pNewFreeBlock, i32 Heap)
 void Mem_Init(void)
 {
 	// @FIXME: remove this when Init_AtStart is done
+#ifndef SPIDEY_STANDALONE
+	// the hooked DLL takes the heap bounds the exe's Init_AtStart computed.
+	// The standalone build has no exe, init.cpp filled HeapDefs itself.
 	{
 		const u32 *real = (u32*)0x0060D214;
 
@@ -171,6 +190,7 @@ void Mem_Init(void)
 		HeapDefs[1][0] = real[2];
 		HeapDefs[1][1] = real[3];
 	}
+#endif
 
 	printf_fancy("Heap sizes: ");
 

@@ -41,28 +41,52 @@
 #define G_LOWGRAPHICS (*reinterpret_cast<i32*>(0x006B78F8))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gSpideyCeilingCameraXOffset;
+#else
+extern u16 gSpideyCeilingCameraXOffset;
+#endif
 //#define G_SPIDEY_CEILING_CAMERA_X_OFFSET (gSpideyCeilingCameraXOffset)
 #define G_SPIDEY_CEILING_CAMERA_X_OFFSET (*reinterpret_cast<u16*>(0x006A8204))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gSpideyCeilingCameraYOffset;
+#else
+extern u16 gSpideyCeilingCameraYOffset;
+#endif
 //#define G_SPIDEY_CEILING_CAMERA_Y_OFFSET (gSpideyCeilingCameraYOffset)
 #define G_SPIDEY_CEILING_CAMERA_Y_OFFSET (*reinterpret_cast<u16*>(0x006A8200))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gSpideyCeilingCameraZOffset;
+#else
+extern u16 gSpideyCeilingCameraZOffset;
+#endif
 //#define G_SPIDEY_CEILING_CAMERA_Z_OFFSET (gSpideyCeilingCameraZOffset)
 #define G_SPIDEY_CEILING_CAMERA_Z_OFFSET (*reinterpret_cast<u16*>(0x006A8202))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gSpideyCeilingCameraXZDistance;
+#else
+extern u16 gSpideyCeilingCameraXZDistance;
+#endif
 //#define G_SPIDEY_CEILING_CAMERA_XZ_DISTANCE (gSpideyCeilingCameraXZDistance)
 #define G_SPIDEY_CEILING_CAMERA_XZ_DISTANCE (*reinterpret_cast<u16*>(0x006A825C))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gSpideyCeilingCameraYDistance;
+#else
+extern u16 gSpideyCeilingCameraYDistance;
+#endif
 //#define G_SPIDEY_CEILING_CAMERA_Y_DISTANCE (gSpideyCeilingCameraYDistance)
 #define G_SPIDEY_CEILING_CAMERA_Y_DISTANCE (*reinterpret_cast<u16*>(0x006A8CAC))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 i32 *gSpideySFXEntry[300];
+#else
+extern i32 * gSpideySFXEntry[300];
+#endif
 //#define G_SPIDEY_SFX_ENTRY (gSpideySFXEntry)
 #define G_SPIDEY_SFX_ENTRY (reinterpret_cast<i32**>(0x006A82B8))
 
@@ -143,108 +167,201 @@ static void WebShotAimTorso(CPlayer *pPlayer)
 }
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFloorCamXOffset;
+#else
+extern i16 gSpideyFloorCamXOffset;
+#endif
 //#define G_SPIDEY_FLOOR_CAM_X_OFFSET (gSpideyFloorCamXOffset)
 #define G_SPIDEY_FLOOR_CAM_X_OFFSET (*reinterpret_cast<i16*>(0x006A81DC))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFloorCamYOffset;
+#else
+extern i16 gSpideyFloorCamYOffset;
+#endif
 //#define G_SPIDEY_FLOOR_CAM_Y_OFFSET (gSpideyFloorCamYOffset)
 #define G_SPIDEY_FLOOR_CAM_Y_OFFSET (*reinterpret_cast<i16*>(0x006A81DE))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFloorCamZOffset;
+#else
+extern i16 gSpideyFloorCamZOffset;
+#endif
 //#define G_SPIDEY_FLOOR_CAM_Z_OFFSET (gSpideyFloorCamZOffset)
 #define G_SPIDEY_FLOOR_CAM_Z_OFFSET (*reinterpret_cast<i16*>(0x006A81E0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFloorCamXZDistance;
+#else
+extern i16 gSpideyFloorCamXZDistance;
+#endif
 //#define G_SPIDEY_FLOOR_CAM_XZ_DISTANCE (gSpideyFloorCamXZDistance)
 #define G_SPIDEY_FLOOR_CAM_XZ_DISTANCE (*reinterpret_cast<i16*>(0x006A81FA))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFloorCamYDistance;
+#else
+extern i16 gSpideyFloorCamYDistance;
+#endif
 //#define G_SPIDEY_FLOOR_CAM_Y_DISTANCE (gSpideyFloorCamYDistance)
 #define G_SPIDEY_FLOOR_CAM_Y_DISTANCE (*reinterpret_cast<i16*>(0x006A8274))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideySwingCamXOffset;
+#else
+extern i16 gSpideySwingCamXOffset;
+#endif
 //#define G_SPIDEY_SWING_CAM_X_OFFSET (gSpideySwingCamXOffset)
 #define G_SPIDEY_SWING_CAM_X_OFFSET (*reinterpret_cast<i16*>(0x006A8C5E))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideySwingCamYOffset;
+#else
+extern i16 gSpideySwingCamYOffset;
+#endif
 //#define G_SPIDEY_SWING_CAM_Y_OFFSET (gSpideySwingCamYOffset)
 #define G_SPIDEY_SWING_CAM_Y_OFFSET (*reinterpret_cast<i16*>(0x006A8C56))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideySwingCamZOffset;
+#else
+extern i16 gSpideySwingCamZOffset;
+#endif
 //#define G_SPIDEY_SWING_CAM_Z_OFFSET (gSpideySwingCamZOffset)
 #define G_SPIDEY_SWING_CAM_Z_OFFSET (*reinterpret_cast<i16*>(0x006A8C54))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideySwingCamXZDistance;
+#else
+extern i16 gSpideySwingCamXZDistance;
+#endif
 //#define G_SPIDEY_SWING_CAM_XZ_DISTANCE (gSpideySwingCamXZDistance)
 #define G_SPIDEY_SWING_CAM_XZ_DISTANCE (*reinterpret_cast<i16*>(0x006A8C68))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideySwingCamYDistance;
+#else
+extern i16 gSpideySwingCamYDistance;
+#endif
 //#define G_SPIDEY_SWING_CAM_Y_DISTANCE (gSpideySwingCamYDistance)
 #define G_SPIDEY_SWING_CAM_Y_DISTANCE (*reinterpret_cast<i16*>(0x006A8196))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyWallCamXOffset;
+#else
+extern i16 gSpideyWallCamXOffset;
+#endif
 //#define G_SPIDEY_WALL_CAM_X_OFFSET (gSpideyWallCamXOffset)
 #define G_SPIDEY_WALL_CAM_X_OFFSET (*reinterpret_cast<i16*>(0x006A81E4))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyWallCamYOffset;
+#else
+extern i16 gSpideyWallCamYOffset;
+#endif
 //#define G_SPIDEY_WALL_CAM_Y_OFFSET (gSpideyWallCamYOffset)
 #define G_SPIDEY_WALL_CAM_Y_OFFSET (*reinterpret_cast<i16*>(0x006A81E2))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyWallCamZOffset;
+#else
+extern i16 gSpideyWallCamZOffset;
+#endif
 //#define G_SPIDEY_WALL_CAM_Z_OFFSET (gSpideyWallCamZOffset)
 #define G_SPIDEY_WALL_CAM_Z_OFFSET (*reinterpret_cast<i16*>(0x006A81E6))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyWallCamXZDistance;
+#else
+extern i16 gSpideyWallCamXZDistance;
+#endif
 //#define G_SPIDEY_WALL_CAM_XZ_DISTANCE (gSpideyWallCamXZDistance)
 #define G_SPIDEY_WALL_CAM_XZ_DISTANCE (*reinterpret_cast<i16*>(0x006A81F8))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyWallCamYDistance;
+#else
+extern i16 gSpideyWallCamYDistance;
+#endif
 //#define G_SPIDEY_WALL_CAM_Y_DISTANCE (gSpideyWallCamYDistance)
 #define G_SPIDEY_WALL_CAM_Y_DISTANCE (*reinterpret_cast<i16*>(0x006A8C66))
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gSpideyVramProcessing;
+#else
+extern u8 gSpideyVramProcessing;
+#endif
 //#define G_SPIDEY_VRAM_PROCESSING (gSpideyVramProcessing)
 #define G_SPIDEY_VRAM_PROCESSING (*reinterpret_cast<u8*>(0x006A9041))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SAnimFrame *gSpideyAnim;
+#else
+extern SAnimFrame * gSpideyAnim;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SAnimFrame *gSpideyAnimTwo;
+#else
+extern SAnimFrame * gSpideyAnimTwo;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFallingCamXOff;
+#else
+extern i16 gSpideyFallingCamXOff;
+#endif
 //#define G_SPIDEY_FALLING_CAM_X_OFF (gSpideyFallingCamXOff)
 #define G_SPIDEY_FALLING_CAM_X_OFF (*reinterpret_cast<i16*>(0x006A8194))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFallingCamYOff;
+#else
+extern i16 gSpideyFallingCamYOff;
+#endif
 //#define G_SPIDEY_FALLING_CAM_Y_OFF (gSpideyFallingCamYOff)
 #define G_SPIDEY_FALLING_CAM_Y_OFF (*reinterpret_cast<i16*>(0x006A8192))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFallingCamZOff;
+#else
+extern i16 gSpideyFallingCamZOff;
+#endif
 //#define G_SPIDEY_FALLING_CAM_Z_OFF (gSpideyFallingCamZOff)
 #define G_SPIDEY_FALLING_CAM_Z_OFF (*reinterpret_cast<i16*>(0x006A8198))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFallingCamXZDist;
+#else
+extern i16 gSpideyFallingCamXZDist;
+#endif
 //#define G_SPIDEY_FALLING_CAM_XZ_DIST (gSpideyFallingCamXZDist)
 #define G_SPIDEY_FALLING_CAM_XZ_DIST (*reinterpret_cast<i16*>(0x006A82A0))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gSpideyFallingCamYDist;
+#else
+extern i16 gSpideyFallingCamYDist;
+#endif
 //#define G_SPIDEY_FALLING_CAM_Y_DIST (gSpideyFallingCamYDist)
 #define G_SPIDEY_FALLING_CAM_Y_DIST (*reinterpret_cast<i16*>(0x006A8190))
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SLight M3d_PlayerLight =
 {
 
@@ -256,6 +373,7 @@ EXPORT SLight M3d_PlayerLight =
 
   { 1800, 1800, 1440 }
 };
+#endif
 // 0x005559E0, "M3d_PlayerLight" in idb_globals.txt. CPlayer::AdjustBrightness
 // rewrites ColorMatrix and BackColor every time the brightness changes, and
 // CPlayer::CPlayer hands the address to the renderer through mpLight, so both
@@ -264,13 +382,29 @@ EXPORT SLight M3d_PlayerLight =
 #define G_M3D_PLAYER_LIGHT (*reinterpret_cast<SLight*>(0x005559E0))
 
 
+#ifndef SPIDEY_STANDALONE
 CItem* SpideyAdditionalBodyPartsList;
+#else
+extern CItem* SpideyAdditionalBodyPartsList;
+#endif
+#ifndef SPIDEY_STANDALONE
 CItem* MiscellaneousRenderingList;
+#else
+extern CItem* MiscellaneousRenderingList;
+#endif
 
 u8 gSpideyPsxIndex;
+#ifndef SPIDEY_STANDALONE
 CPlayer* MechList;
+#else
+extern CPlayer* MechList;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT void *gSpideyHeadModel;
+#else
+extern void * gSpideyHeadModel;
+#endif
 // 0x006A9054, "gSpideyHeadModel" in idb_globals.txt. Allocated by
 // Spidey_CopyHeadModel and freed by Spidey_FreeHeadModel.
 //#define G_SPIDEY_HEAD_MODEL (gSpideyHeadModel)
@@ -294,8 +428,16 @@ void Bruce_Sync(void)
 
 // Relocatable user-function hook globals (0x6A9048/0x6A904C in the original).
 // Set by Spidey_SetUserFunction, read by CPlayer::AI's per-tick callback loop.
+#ifdef SPIDEY_STANDALONE
+#define gUserFunctionName (*reinterpret_cast<const char**>(0x006a9048))
+#else
 static const char* gUserFunctionName;
+#endif
+#ifdef SPIDEY_STANDALONE
+#define gUserFunctionSize (*reinterpret_cast<unsigned int*>(0x006a904c))
+#else
 static unsigned int gUserFunctionSize;
+#endif
 // 0x006A9048 / 0x006A904C, both named in idb_globals.txt and confirmed by the
 // two stores in Spidey_SetUserFunction (0x004B9320).
 //#define G_USER_FUNCTION_NAME (gUserFunctionName)
@@ -6323,7 +6465,11 @@ CVector *CPlayer::SelectTargetSwitch(i32 maxDist, i32 minFacing, SHandle *out, i
 }
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gSpideyArmorSet;
+#else
+extern u8 gSpideyArmorSet;
+#endif
 
 // @Ok
 // @Matching

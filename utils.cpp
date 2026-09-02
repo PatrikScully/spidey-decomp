@@ -27,8 +27,13 @@ void print_if_false(unsigned char cry, char * message, ...) {
 	}
 }
 
-volatile i32 gVlanksRelated;
+// gVlanksRelated was GameFade (0x6B4C9C, IDB name), see G_GAME_FADE in utils.h:
+// SpideyMain and Front_DoGameOver wait on it and Utils_VblankProcessing counts it down
+#ifndef SPIDEY_STANDALONE
 i32 DifficultyLevel;
+#else
+extern i32 DifficultyLevel;
+#endif
 // volatile u32 Vblanks;   // see G_VBLANKS in utils.h
 
 EXPORT i32 gUtilsRelatedOne[6];
@@ -1235,15 +1240,27 @@ int Utils_CalcAim(CSVector* a1, CVector* a2, CVector* a3)
 // Rnd, so without this every hooked caller runs a different random stream than
 // the game.
 // @FIXME
+#ifdef SPIDEY_STANDALONE
+#define gRndRelatedOne (*reinterpret_cast<int*>(0x006b4c7c))
+#else
 static int gRndRelatedOne;
+#endif
 //#define G_RND_RELATED_ONE (gRndRelatedOne)
 #define G_RND_RELATED_ONE (*reinterpret_cast<int*>(0x006B4C7C))
 // @FIXME
+#ifdef SPIDEY_STANDALONE
+#define gRndRelatedTwo (*reinterpret_cast<int*>(0x006b4b90))
+#else
 static int gRndRelatedTwo;
+#endif
 //#define G_RND_RELATED_TWO (gRndRelatedTwo)
 #define G_RND_RELATED_TWO (*reinterpret_cast<int*>(0x006B4B90))
 // @FIXME
+#ifdef SPIDEY_STANDALONE
+#define gRndRelatedThree (*reinterpret_cast<int*>(0x006b4b94))
+#else
 static int gRndRelatedThree;
+#endif
 //#define G_RND_RELATED_THREE (gRndRelatedThree)
 #define G_RND_RELATED_THREE (*reinterpret_cast<int*>(0x006B4B94))
 

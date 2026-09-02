@@ -15,11 +15,19 @@
 // 0x00682C3C and 0x00682C40 in the exe (gCopGlobal / gCopList in the
 // maintainer's IDB). CCop_Hit, CCop_Fall, CCop_ChasePlayer and CCop_AI write
 // both and none of those are hooked, so the exe's copies are the real ones.
+#ifndef SPIDEY_STANDALONE
 EXPORT CCop* gCopGlobal;
+#else
+extern CCop* gCopGlobal;
+#endif
 //#define G_COP_GLOBAL (gCopGlobal)
 #define G_COP_GLOBAL (*reinterpret_cast<CCop**>(0x00682C3C))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CCop* gCopList;
+#else
+extern CCop* gCopList;
+#endif
 //#define G_COP_LIST (gCopList)
 #define G_COP_LIST (*reinterpret_cast<CCop**>(0x00682C40))
 
@@ -27,14 +35,22 @@ EXPORT CCop* gCopList;
 // its own private static of the same thing, but the exe has one global that
 // both files share. Declared in baddy.h with its G_ macro, defined here
 // because 0x00682C18 sits just before gCopGlobal in the exe's data.
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gAttackFlagRelated;
+#else
+extern u8 gAttackFlagRelated;
+#endif
 
 // Per-species state flags, address 0x549220 in the original (used by
 // CCop::Grab's CheckStateFlags call). Same idiom as gThugStateFlags
 // (thug.cpp) and gRhinoStateFlags (rhino.cpp). Read only pairs of i16 that
 // the exe ships in its .data; our copy has no initialiser, so it is all
 // zeros and has to be read from the exe.
+#ifndef SPIDEY_STANDALONE
 EXPORT SStateFlags gCopStateFlags;
+#else
+extern SStateFlags gCopStateFlags;
+#endif
 //#define G_COP_STATE_FLAGS (&gCopStateFlags)
 #define G_COP_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00549220))
 

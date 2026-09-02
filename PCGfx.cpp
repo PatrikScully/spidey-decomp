@@ -22,8 +22,15 @@
 extern void *my_malloc(size_t s);
 extern void my_free(void *block);
 
+#ifdef _WIN32
 EXPORT i32 gAnotherGameResolutionX = G_GAME_RESOLUTION_X;
 EXPORT i32 gAnotherGameResolutionY = G_GAME_RESOLUTION_Y;
+#else
+// the exe data block does not exist yet at static init time (it crashed the
+// sanity build); RealWinMain/main_standalone set 640x480 anyway
+EXPORT i32 gAnotherGameResolutionX = 640;
+EXPORT i32 gAnotherGameResolutionY = 480;
+#endif
 
 EXPORT i32 gDrawTexture2DRelatedOne;
 EXPORT i32 gDrawTexture2DRelatedTwo;
@@ -31,25 +38,69 @@ EXPORT i32 gDrawTexture2DRelatedTwo;
 EXPORT i8 gPcGfxBrightnessValues[256];
 
 EXPORT u8 gProcessTextureRelated;
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gChosenBlendingMode;
+#else
+extern u16 gChosenBlendingMode;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gProcessedTextureFlags;
+#else
+extern u16 gProcessedTextureFlags;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gUseTextureRelated = 0x0FFFFFFFF;
+#else
+extern i32 gUseTextureRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT DCGfx_BlendingMode gTextureBlendingMode;
+#else
+extern DCGfx_BlendingMode gTextureBlendingMode;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPcGfxBlendModeRelated;
+#else
+extern i32 gPcGfxBlendModeRelated;
+#endif
 EXPORT DXPOLY gDxPolys[15360];
 
+#ifndef SPIDEY_STANDALONE
 EXPORT f32 gRenderInitOne[3] = {  10.0f, 8048.0f, 276.0f };
+#else
+extern f32 gRenderInitOne[3];
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT f32 gRenderInitTwo[2] = { 8038.0f, 1.9624f };
+#else
+extern f32 gRenderInitTwo[2];
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPcGfxDrawRelated = 1;
+#else
+extern i32 gPcGfxDrawRelated;
+#endif
 EXPORT i32 gPcGfxSlotNumber =  0x0FFFFFFFF;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gIsRenderSettingE = 1;
+#else
+extern u8 gIsRenderSettingE;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gNonRendderSettingE;
+#else
+extern u8 gNonRendderSettingE;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 u8 gSceneRelated;
+#else
+extern u8 gSceneRelated;
+#endif
 
 EXPORT f32 gZLayerFurthest;
 EXPORT f32 gZLayerNearest;
@@ -58,12 +109,24 @@ EXPORT f32 gFlFoggingParamOne = 100000.0f;
 EXPORT f32 gFlFoggingParamTwo = 100005.0f;
 EXPORT u32 gU32FoggingParamThree;
 
+#ifndef SPIDEY_STANDALONE
 u8 gBFoggingRelated;
+#else
+extern u8 gBFoggingRelated;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 u32 gPcGfxSkyColor;
+#else
+extern u32 gPcGfxSkyColor;
+#endif
 
 EXPORT i32 gEndSceneRelated = -1;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gEndSceneRelatedTwo;
+#else
+extern i32 gEndSceneRelatedTwo;
+#endif
 
 // 0xAC08F0, set to 1 by PCGfx_ClipTriToNearPlane whenever it actually cuts a
 // triangle. Not in the maintainer's IDB globals list, name is our guess.
@@ -2002,6 +2065,7 @@ void PCGfx_RenderModelPreview(
 	}
 }
 
+#ifndef SPIDEY_STANDALONE
 EXPORT f32 gPcGfxBrightnessPower[8] =
 {
 	0.80000001f,
@@ -2013,6 +2077,9 @@ EXPORT f32 gPcGfxBrightnessPower[8] =
 	1.1f,
 	1.15f
 };
+#else
+extern f32 gPcGfxBrightnessPower[8];
+#endif
 
 // @Ok
 // @Test

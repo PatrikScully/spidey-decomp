@@ -12,15 +12,27 @@ EXPORT SCardHead Head;
 
 i32 CardStatus;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gFirstCard;
+#else
+extern u8 gFirstCard;
+#endif
 
 EXPORT u8 gStubbedFormat = 0;
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT char gCardIcon[128];
+#else
+extern char gCardIcon[128];
+#endif
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT char gCardClut[32];
+#else
+extern char gCardClut[32];
+#endif
 
 // @Ok
 // @Matching

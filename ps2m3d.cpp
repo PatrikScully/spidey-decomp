@@ -21,9 +21,17 @@
 //#define G_LOWGRAPHICS (gLowGraphics)
 #define G_LOWGRAPHICS (*reinterpret_cast<i32*>(0x006B78F8))
 
+#ifndef SPIDEY_STANDALONE
 i32 gWideScreen;
+#else
+extern i32 gWideScreen;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u32* pColourTable;
+#else
+extern u32* pColourTable;
+#endif
 
 // XblanksNow / XblanksThen from the PS2 source (m3d.mik): vblank-based frame
 // timer, updated elsewhere (not in this file). Only referenced (read) here.
@@ -183,7 +191,11 @@ EXPORT void vector4d::__vc(const(i32);
 
 
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 char gRenderBuf[4] = { 0, 0, 0, 0 };
+#else
+extern char gRenderBuf[4];
+#endif
 
 // @Ok
 // @Matching
@@ -1065,8 +1077,14 @@ typedef i32 (*gsub_509000_fn)(f32, f32, f32, i32, f32, f32, f32, i32, f32);
 // rendering.
 EXPORT i32 gsub_509000(f32 x0, f32 y0, f32 z0, i32 a4, f32 x1, f32 y1, f32 z1, u32 color, f32 width)
 {
+#ifdef SPIDEY_STANDALONE
+	// @TODO Phase 2: debug light line (only with gDCDebugLightFlag set)
+	(void)x0; (void)y0; (void)z0; (void)a4; (void)x1; (void)y1; (void)z1; (void)color; (void)width;
+	return 0;
+#else
 	gsub_509000_fn f = (gsub_509000_fn)0x00509000;
 	return f(x0, y0, z0, a4, x1, y1, z1, color, width);
+#endif
 }
 
 // New file-scope statics for DCModel_RenderModel / DC_PSXModel_RenderModel.
@@ -1112,7 +1130,12 @@ static f32 * const gDCStitchPositionTable = (f32*)0x0062861C;
 // is computed. Tentative: "attachment point" list (a marked vertex whose
 // resolved screen position gets recorded for some other system to read,
 // e.g. an effect/weapon attach point), not cross-checked against a reader.
-static volatile u8 * gDCAttachPointCursor = (u8*)0x0064F5CC;
+// 0x64F5CC holds the CURSOR (a pointer into the attach point stack, reset to
+// its top 0x658E28 by RenderSuperItem below), it is not the buffer itself.
+// The earlier "u8* cursor = (u8*)0x64F5CC" walked down from the pointer
+// variable and overwrote everything below it (gDCLightCount at 0x64E510
+// included, found by the standalone build).
+static u8 ** const gDCAttachPointCursor = (u8**)0x0064F5CC;
 
 // gFloatSuperRelated is already a repo-wide global (ob.h/ob.cpp, 0x54FFE0),
 // used directly below instead of a new tentative pointer.
@@ -1138,7 +1161,12 @@ static volatile i32 * const gDCTintFlag       = (i32*)0x00660F94; // gates a tin
 static volatile u8 * const  gDCNoFogFlag      = (u8*)0x00660FE1;  // byte, "skip the far-plane fog scan, always dither" flag
 
 static volatile i32 * const gDCLightCount     = (i32*)0x0064E510; // count, shared by the tint block and the debug-light block
-static f32 * const gDCLightTintTable          = (f32*)0x0064F5B0; // 3 floats/entry RGB tint buffer, gDCLightCount entries
+// 3 floats/entry RGB light colour table, gDCLightCount entries: the same
+// table GDC_LIGHT_COLOR_TABLE_X/Y/Z index (0x64F5A8). 0x47762F loads
+// 0x64F5B0 (entry 0's third float) and writes [eax-14h]/[eax-10h]/[eax-0Ch],
+// so the table starts 8 bytes lower; with 0x64F5B0 as the base, entry 2
+// landed on the attach point cursor at 0x64F5CC.
+static f32 * const gDCLightTintTable          = (f32*)0x0064F5A8;
 // Two big fixed-offset tables read by the per-light dot-product loop
 // (per-light "direction"/normal-space vector and per-light "color", 3
 // floats/12 bytes per entry each). The huge literal byte offsets in the
@@ -1317,10 +1345,11 @@ void DCModel_RenderModel(SModel const *pModel, DCModelData *pData, matrix4x4 con
 
 				if ((pv->mFlags & 1) != 0)
 				{
-					*(f32*)(gDCAttachPointCursor + 0) = sx;
-					*(f32*)(gDCAttachPointCursor + 4) = sy;
-					*(f32*)(gDCAttachPointCursor + 8) = sz;
-					gDCAttachPointCursor -= 16;
+					u8* pAttach = *gDCAttachPointCursor;
+					*(f32*)(pAttach + 0) = sx;
+					*(f32*)(pAttach + 4) = sy;
+					*(f32*)(pAttach + 8) = sz;
+					*gDCAttachPointCursor = pAttach - 16;
 				}
 			}
 			else
@@ -2700,21 +2729,97 @@ typedef void (*gsub_4021D0_fn)(matrix4x4*);
 // @Bogus
 // @FIXME forward to original: ConvertMATRIXTomatrix4x4_0 (0x402400, 147B)
 // converts a GTE MATRIX to a matrix4x4.
-static void ConvertMATRIXTomatrix4x4_0(MATRIX *m, matrix4x4 *out) { ConvertMATRIXTomatrix4x4_fn f = (ConvertMATRIXTomatrix4x4_fn)0x00402400; f(m, out); }
+static void ConvertMATRIXTomatrix4x4_0(MATRIX *m, matrix4x4 *out)
+{
+#ifdef SPIDEY_STANDALONE
+	// 0x402400 (147 bytes): out is 16 floats. Row c (c = 0..2) is column c
+	// of the 3x3 (m[0][c], m[1][c], m[2][c], 0) scaled by 1/4096, row 3 is
+	// (t[0], t[1], t[2], 1).
+	const i16* pM = reinterpret_cast<const i16*>(m);
+	const i32* pT = reinterpret_cast<const i32*>(reinterpret_cast<const u8*>(m) + 0x14);
+	f32* pOut = reinterpret_cast<f32*>(out);
+	for (i32 c = 0; c < 3; c++)
+	{
+		for (i32 r = 0; r < 3; r++)
+			pOut[c * 4 + r] = static_cast<f32>(pM[r * 3 + c]) * (1.0f / 4096.0f);
+		pOut[c * 4 + 3] = 0.0f;
+		pOut[12 + c] = static_cast<f32>(pT[c]);
+	}
+	pOut[15] = 1.0f;
+#else
+	ConvertMATRIXTomatrix4x4_fn f = (ConvertMATRIXTomatrix4x4_fn)0x00402400; f(m, out);
+#endif
+}
 
 // @Bogus
 // @FIXME forward to original: sub_470610 (0x470610, 20B), sets a GTE register.
-static void gsub_470610(u16 v) { gsub_470610_fn f = (gsub_470610_fn)0x00470610; f(v); }
+static void gsub_470610(u16 v)
+{
+#ifdef SPIDEY_STANDALONE
+	// 0x470610 (20 bytes): the GTE projection distance (ps2funcs.cpp
+	// G_RTPS_PROJ_DISTANCE, 0x54F03C) and a 94.0f constant at 0x54F04C.
+	*reinterpret_cast<u32*>(0x0054F04C) = 0x42BC0000;
+	*reinterpret_cast<i32*>(0x0054F03C) = v;
+#else
+	gsub_470610_fn f = (gsub_470610_fn)0x00470610; f(v);
+#endif
+}
 
 // @Bogus
 // @FIXME forward to original: sub_46D5D0 (0x46D5D0, 69B), sets the GTE
 // geometry offset from the camera transform.
-static void gsub_46D5D0(i16 *m, i16 *t) { gsub_46D5D0_fn f = (gsub_46D5D0_fn)0x0046D5D0; f(m, t); }
+static void gsub_46D5D0(i16 *m, i16 *t)
+{
+#ifdef SPIDEY_STANDALONE
+	// 0x46D5D0 (69 bytes): 3x3 transpose, t[r][k] = m[k][r]
+	print_if_false(m != t, "TransposeMatrix: source and destination are the same");
+	for (i32 r = 0; r < 3; r++)
+		for (i32 k = 0; k < 3; k++)
+			t[r * 3 + k] = m[k * 3 + r];
+#else
+	gsub_46D5D0_fn f = (gsub_46D5D0_fn)0x0046D5D0; f(m, t);
+#endif
+}
 
 // @Bogus
 // @FIXME forward to original: sub_4021D0 (0x4021D0, 545B), normalizes a
 // matrix4x4 (called on the camera transform matrix).
-static void gsub_4021D0(matrix4x4 *m) { gsub_4021D0_fn f = (gsub_4021D0_fn)0x004021D0; f(m); }
+static void gsub_4021D0(matrix4x4 *m)
+{
+#ifdef SPIDEY_STANDALONE
+	// 0x4021D0 (545 bytes), thiscall on the matrix: inverts a scaled rigid
+	// transform in place. Rows 0..2 become the transposed 3x3 divided by
+	// |row0|^2, row 3 becomes -(t * R') with w = 1. Side effect kept from
+	// the original: the 4x4 is also copied to gGfxMatrix (0x56E668), the
+	// matrix sub_402700 multiplies with. A zero row 0 yields the identity
+	// (the original copies the identity global at 0x56E5F0).
+	f32* M = reinterpret_cast<f32*>(m);
+	f32 lenSq = M[0] * M[0] + M[1] * M[1] + M[2] * M[2];
+	if (lenSq == 0.0f)
+	{
+		for (i32 i = 0; i < 16; i++)
+			M[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+		return;
+	}
+	f32 inv = 1.0f / lenSq;
+	f32 t[3] = { M[12], M[13], M[14] };
+	f32 n[16];
+	for (i32 r = 0; r < 3; r++)
+	{
+		for (i32 c = 0; c < 3; c++)
+			n[r * 4 + c] = inv * M[c * 4 + r];
+		n[r * 4 + 3] = 0.0f;
+	}
+	n[12] = 0.0f; n[13] = 0.0f; n[14] = 0.0f; n[15] = 1.0f;
+	memcpy(M, n, 12 * sizeof(f32));
+	memcpy(reinterpret_cast<void*>(0x0056E668), n, sizeof(n));   // gGfxMatrix = this
+	for (i32 c = 0; c < 4; c++)
+		M[12 + c] = -(t[0] * n[c] + t[1] * n[4 + c] + t[2] * n[8 + c]);
+	M[15] = 1.0f;
+#else
+	gsub_4021D0_fn f = (gsub_4021D0_fn)0x004021D0; f(m);
+#endif
+}
 
 static volatile i32 * const gM3dFadeTimer = (i32*)0x0065CFA4;
 static volatile i32 * const gM3dFadeTimerPrev = (i32*)0x00660F88;
@@ -3031,13 +3136,47 @@ typedef i32 (*ValidMATRIX_fn)(MATRIX*);
 // the result to dest. Not in tools/names.json under any name and it lives
 // in ps2funcs.cpp's address range, which this branch does not own, so it is
 // forwarded here rather than implemented.
-static void gsub_46E4B0(MATRIX *pSrc, MATRIX *pDest) { gsub_46E4B0_fn f = (gsub_46E4B0_fn)0x0046E4B0; f(pSrc, pDest); }
+static void gsub_46E4B0(MATRIX *pSrc, MATRIX *pDest)
+{
+#ifdef SPIDEY_STANDALONE
+	// 0x46E4B0 (24 bytes): MulMatrix0(&gRotMatrix, pSrc, pDest)
+	MulMatrix0(reinterpret_cast<MATRIX*>(0x00610B20), pSrc, pDest);
+#else
+	gsub_46E4B0_fn f = (gsub_46E4B0_fn)0x0046E4B0; f(pSrc, pDest);
+#endif
+}
 
 // @Bogus
 // @FIXME forward to original: ValidMATRIX (0x470320, named in
 // tools/names.json). Row-magnitude sanity check on a MATRIX; its result
 // only feeds a print_if_false here, so it gates no real behaviour.
-static i32 ValidMATRIX(MATRIX *pMatrix) { ValidMATRIX_fn f = (ValidMATRIX_fn)0x00470320; return f(pMatrix); }
+static i32 ValidMATRIX(MATRIX *pMatrix)
+{
+#ifdef SPIDEY_STANDALONE
+	// 0x470320 (265 bytes): the three row lengths (in 1/4096 units) must be
+	// within a factor of two of their predecessor: 0.5*len[i] <= len[i-1]
+	// <= 2*len[i]. Only used by asserts.
+	const i16* pM = reinterpret_cast<const i16*>(pMatrix);
+	f32 len[3];
+	for (i32 r = 0; r < 3; r++)
+	{
+		f32 x = pM[r * 3] * (1.0f / 4096.0f);
+		f32 y = pM[r * 3 + 1] * (1.0f / 4096.0f);
+		f32 z = pM[r * 3 + 2] * (1.0f / 4096.0f);
+		len[r] = sqrtf(x * x + y * y + z * z);
+	}
+	for (i32 i = 1; i < 3; i++)
+	{
+		if (len[i % 3] * 0.5f > len[i - 1])
+			return 0;
+		if (len[i % 3] * 2.0f < len[i - 1])
+			return 0;
+	}
+	return 1;
+#else
+	ValidMATRIX_fn f = (ValidMATRIX_fn)0x00470320; return f(pMatrix);
+#endif
+}
 
 // ---------------------------------------------------------------------
 // RenderSuperItem (0x00474C10) globals. Same sourcing as the M3d_Render

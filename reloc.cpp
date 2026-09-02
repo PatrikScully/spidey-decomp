@@ -39,6 +39,7 @@
 #define LEN_RELOC_TABLE 31
 
 // @Ok
+// never relocated to the exe address: the table holds OUR function pointers
 EXPORT SRelocEntry gRelocTable[LEN_RELOC_TABLE] =
 {
 	{ "thug", Thug_RelocatableModuleInit },

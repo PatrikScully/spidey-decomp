@@ -1,6 +1,10 @@
 #include "tweak.h"
 
+#ifndef SPIDEY_STANDALONE
 i16 gGameState[30];
+#else
+extern i16 gGameState[30];
+#endif
 
 // @Ok
 // @Matching

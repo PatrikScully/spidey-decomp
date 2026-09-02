@@ -9,7 +9,11 @@
 #include "exp.h"
 #include <string.h>
 
+#ifndef SPIDEY_STANDALONE
 i32 gGlassShatterSound;
+#else
+extern i32 gGlassShatterSound;
+#endif
 
 // gGlassShatterSound is fixed at 0x6A7690 in the original binary (confirmed name and
 // address from the maintainer's IDB, idb_globals.txt). Used only inside shatter.cpp.

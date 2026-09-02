@@ -12,7 +12,7 @@
 
 extern const char* gObjFile;
 extern CSVector gTrajectoryVector;
-extern i32 TTime;
+extern volatile i32 TTime; // defined in bit.cpp
 
 // gGravity (0x60F7B0): set by Physics_SetGravity (0x466C70, confirmed by scanning the original
 // function bytes for this address), a CVector. Physics_SetGravity also caches its Length() at

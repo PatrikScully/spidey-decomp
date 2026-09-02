@@ -236,7 +236,11 @@ extern CSVector gTrajectoryVector;
 // exe) is the only writer (mov word [5FBC0Ch],0FFFFh at 0x450B50 and
 // 0x450CA2, mov [5FBC0Ch],dx at 0x450B73), and about a dozen exe-side
 // CLizMan states read it, so ours has to be the same memory.
+#ifdef SPIDEY_STANDALONE
+#define gLizManFollowOnAnim (*reinterpret_cast<u16*>(0x005fbc0c))
+#else
 static u16 gLizManFollowOnAnim;
+#endif
 //#define G_LIZMAN_FOLLOW_ON_ANIM (gLizManFollowOnAnim)
 #define G_LIZMAN_FOLLOW_ON_ANIM (*reinterpret_cast<u16*>(0x005FBC0C))
 
@@ -773,10 +777,18 @@ i32 INLINE CLizMan::IsSafeToSwitchToFollowWaypoints(void)
 // gGlobalLizMan 0x682C44, gLizManAttackFlag 0x682B6E. Verified by walking
 // the inlined copy of this function inside CLizMan::FlyAcrossRoom's case 0
 // (0x44dec4-0x44df1b) instruction by instruction, both match exactly.
+#ifdef SPIDEY_STANDALONE
+#define gGlobalLizMan (*reinterpret_cast<CLizMan**>(0x00682c44))
+#else
 static CLizMan* gGlobalLizMan;
+#endif
 //#define G_GLOBAL_LIZ_MAN (gGlobalLizMan)
 #define G_GLOBAL_LIZ_MAN (*reinterpret_cast<CLizMan**>(0x00682C44))
+#ifdef SPIDEY_STANDALONE
+#define gLizManAttackFlag (*reinterpret_cast<unsigned char*>(0x00682b6e))
+#else
 static unsigned char gLizManAttackFlag;
+#endif
 //#define G_LIZ_MAN_ATTACK_FLAG (gLizManAttackFlag)
 #define G_LIZ_MAN_ATTACK_FLAG (*reinterpret_cast<unsigned char*>(0x00682B6E))
 

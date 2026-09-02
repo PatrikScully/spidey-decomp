@@ -8,15 +8,31 @@
 #include <cstring>
 
 #ifdef _WIN32
+#ifndef SPIDEY_STANDALONE
 EXPORT TCHAR gCurrentDir[260];
+#else
+extern TCHAR gCurrentDir[260];
+#endif
 #endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT char gFsBase[260];
+#else
+extern char gFsBase[260];
+#endif
 
 const i32 MAX_OPEN_FILE_COUNT = 5;
+#ifndef SPIDEY_STANDALONE
 EXPORT SGDOpenFile gOpenFiles[MAX_OPEN_FILE_COUNT];
+#else
+extern SGDOpenFile gOpenFiles[MAX_OPEN_FILE_COUNT];
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT HANDLE gOpenFile;
+#else
+extern HANDLE gOpenFile;
+#endif
 
 //#define G_CURRENT_DIR (gCurrentDir)
 #define G_CURRENT_DIR (reinterpret_cast<TCHAR*>(0x006BC1F4))

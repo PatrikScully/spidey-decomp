@@ -11,7 +11,11 @@
 EXPORT i32 gCrateRecursion = 0;
 
 // @FIXME find real size and shit
+#ifndef SPIDEY_STANDALONE
 u32* gCommandPointRelated[1];
+#else
+extern u32* gCommandPointRelated[1];
+#endif
 
 // @Ok
 // the shr 0x18 happening here is optimized in most cases, not sure what the devs did to

@@ -32,7 +32,11 @@ EXPORT SLight M3d_MysterioLight =
 
 
 
+#ifndef SPIDEY_STANDALONE
 EXPORT SHandle gMystHandle;
+#else
+extern SHandle gMystHandle;
+#endif
 
 // tentative, address not in the maintainer's IDB. Guards "only one
 // CFadePalettes at a time" (message: "Tried to create two global fade

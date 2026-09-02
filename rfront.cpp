@@ -162,9 +162,9 @@ i32 Front_ContinueExit(void)
 
 	Db_FlipClear();
 
-	gVlanksRelated = 80;
+	G_GAME_FADE = 80;
 
-	while (gVlanksRelated)
+	while (G_GAME_FADE)
 		;
 
 	return result;

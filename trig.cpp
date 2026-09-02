@@ -59,8 +59,16 @@
 #include <cstdio>
 #include <string.h>
 
+#ifndef SPIDEY_STANDALONE
 i32 gRunCinemaRelated;
+#else
+extern i32 gRunCinemaRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 i32 gLevelStatus;
+#else
+extern i32 gLevelStatus;
+#endif
 
 // @Ok
 // Parses the level code ("lXaX_t") stored in the save: level char at
@@ -85,48 +93,88 @@ i32 Trig_GetLevelId(void)
 	return (level << 8) | ((char)G_SAVE_GAME.field_4[3] - 48);
 }
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u16* TrigFile;
+#else
+extern u16* TrigFile;
+#endif
 //#define G_TRIGFILE (TrigFile)
 #define G_TRIGFILE (*reinterpret_cast<u16**>(0x006B4668))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 NumCheatRestarts;
+#else
+extern i32 NumCheatRestarts;
+#endif
 //#define G_NUMCHEATRESTARTS (NumCheatRestarts)
 #define G_NUMCHEATRESTARTS (*reinterpret_cast<i32*>(0x006B4664))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 i16 **OffsetList;
+#else
+extern i16 ** OffsetList;
+#endif
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 NumNodes;
+#else
+extern i32 NumNodes;
+#endif
 
 // @Ok
 const i32 MAXPENDING = 16;
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT PendingListEntry PendingListArray[MAXPENDING];
+#else
+extern PendingListEntry PendingListArray[MAXPENDING];
+#endif
 //#define G_PENDINGLISTARRAY (PendingListArray)
 #define G_PENDINGLISTARRAY (reinterpret_cast<PendingListEntry*>(0x006B4688))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SCommandPoint* CommandPoints;
+#else
+extern SCommandPoint* CommandPoints;
+#endif
 //#define G_COMMANDPOINTS (CommandPoints)
 #define G_COMMANDPOINTS (*reinterpret_cast<SCommandPoint**>(0x006B4708))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SCommandPoint* HashTable[256];
+#else
+extern SCommandPoint* HashTable[256];
+#endif
 //#define G_HASHTABLE (HashTable)
 #define G_HASHTABLE (reinterpret_cast<SCommandPoint**>(0x006B4214))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 RestartNode = 0xFFFF;
+#else
+extern i32 RestartNode;
+#endif
 // G_RESTARTNODE moved to trig.h (needed by front.cpp too now, one
 // definition in the owning header per the G_* placement rule).
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 IsRestartDeath;
+#else
+extern i32 IsRestartDeath;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 EndLevelNode;
+#else
+extern i32 EndLevelNode;
+#endif
 extern CSpecialDisplay *SpecialDisplayList;
 
 extern i32 JoelJewCheatCode;
@@ -136,12 +184,20 @@ extern CBaddy* BaddyList;
 extern CBody* PowerUpList;
 
 
+#ifndef SPIDEY_STANDALONE
 EXPORT char *MenuFileNamePointers[40];
+#else
+extern char * MenuFileNamePointers[40];
+#endif
 
 //#define G_MENUFILENAMEPOINTERS (MenuFileNamePointers)
 #define G_MENUFILENAMEPOINTERS (reinterpret_cast<char**>(0x006B3844))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 NumTrigMenuEntries;
+#else
+extern i32 NumTrigMenuEntries;
+#endif
 //#define G_NUMTRIGMENUENTRIES (NumTrigMenuEntries)
 #define G_NUMTRIGMENUENTRIES (*reinterpret_cast<i32*>(0x006B467C))
 
@@ -586,11 +642,11 @@ CBody* Trig_CreateObject(i32 NodeIndex)
 				break;
 
 			case 203:
-			{
-				typedef CBody* (*func_ptr)(i32);
-				func_ptr func = reinterpret_cast<func_ptr>(0x004DEE70);
-				return func(NodeIndex);
-			}
+				// 0x4DF005: new(0x330) + CScriptOnlyBaddy::CScriptOnlyBaddy(pData,
+				// NodeIndex). (The old forward jumped to 0x4DEE70, which is this
+				// very function.)
+				result = new CScriptOnlyBaddy(pData, NodeIndex);
+				break;
 
 			case 303:
 				MJ_CreateMJ(stack2, &outPtr);
@@ -750,10 +806,18 @@ CBody* Trig_CreateObject(i32 NodeIndex)
 
 			case 409:
 			{
+#ifdef SPIDEY_STANDALONE
+				// @TODO Phase 2: Effects_CreateElectroLines (0x439CC0, 350
+				// bytes, creates one CElectroLine per link of the node) is
+				// not decompiled yet. Visual only.
+				printf("Effects_CreateElectroLines(%d): not available in the standalone build yet\n", NodeIndex);
+				return 0;
+#else
 				typedef void (*func_ptr)(i32);
 				func_ptr func = reinterpret_cast<func_ptr>(0x00439CC0);
 				func(NodeIndex);
 				return 0;
+#endif
 			}
 
 			case 411:
@@ -882,13 +946,13 @@ static char ** const gCheatRestartNames = reinterpret_cast<char**>(0x006B4614);
 // @Ok
 void Trig_ParseTRGFile(void)
 {
-	static u16 * const * const gTrigNodes = (u16**)0x006B466C;
-
 	print_if_false(G_TRIGFILE != 0, "No trigger file to parse");
 
 	for (i32 i = 0; i < G_NUMNODES; i++)
 	{
-		u16 *v2 = gTrigNodes[i];
+		// 0x4E35F1: "mov ecx,[6B466Ch]; mov eax,[ecx+edi*4]", the node table
+		// pointer (G_OFFSETLIST), not a table at 0x6B466C
+		u16 *v2 = reinterpret_cast<u16*>(G_OFFSETLIST[i]);
 		i32 v3 = *v2;
 		if (v3 > 20)
 		{
@@ -976,7 +1040,7 @@ void Trig_ParseTRGFile(void)
 
 	for (i32 j = 0; j < G_NUMNODES; j++)
 	{
-		if (*gTrigNodes[j] == 8)
+		if (*reinterpret_cast<u16*>(G_OFFSETLIST[j]) == 8)
 		{
 			CVector pos;
 			memset(&pos, 0, sizeof(pos));
@@ -1215,7 +1279,7 @@ static i32 * const gTrigGameLevel = reinterpret_cast<i32*>(0x005FCD14);
 // address). idb_globals.txt calls the slot gSpoolSystemMemory, but
 // dcmodel.cpp and bit.cpp treat the same address as the buffer itself
 // rather than a pointer to one, so one of the two readings is wrong.
-static char ** const gSpoolSystemMemory = reinterpret_cast<char**>(0x005498FC);
+// (gSpoolSystemMemory itself is declared in spool.h now)
 
 // char* holding "Checkpoint", shown by Mess_Message when a SetRestart
 // command moves the restart node. Part of a string table; tentative name.
@@ -1780,7 +1844,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 
 					FileIO_Open("SkipLib.txt");
 
-					char* pSkipLib = *gSpoolSystemMemory;
+					char* pSkipLib = static_cast<char*>(gSpoolSystemMemory);
 					FileIO_Load(pSkipLib);
 					FileIO_Sync();
 

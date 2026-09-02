@@ -35,19 +35,35 @@
 // ("mov [60F654h],eax") and the five boss textures at 0x60F658..0x60F668
 // (one store per Spool_FindTextureEntry result), then the two health
 // snapshots at 0x60F744 (first bar) and 0x60F748 (second bar).
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gHealthBarItemType;
+#else
+extern i32 gHealthBarItemType;
+#endif
 //#define G_HEALTH_BAR_ITEM_TYPE (gHealthBarItemType)
 #define G_HEALTH_BAR_ITEM_TYPE (*reinterpret_cast<i32*>(0x0060F654))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gHealthBarRelated;
+#else
+extern i32 gHealthBarRelated;
+#endif
 //#define G_HEALTH_BAR_RELATED (gHealthBarRelated)
 #define G_HEALTH_BAR_RELATED (*reinterpret_cast<i32*>(0x0060F744))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gHealthBarRelatedTwo;
+#else
+extern i32 gHealthBarRelatedTwo;
+#endif
 //#define G_HEALTH_BAR_RELATED_TWO (gHealthBarRelatedTwo)
 #define G_HEALTH_BAR_RELATED_TWO (*reinterpret_cast<i32*>(0x0060F748))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT Texture* gHealthBarTextures[5];
+#else
+extern Texture* gHealthBarTextures[5];
+#endif
 //#define G_HEALTH_BAR_TEXTURES (gHealthBarTextures)
 #define G_HEALTH_BAR_TEXTURES (reinterpret_cast<Texture**>(0x0060F658))
 
@@ -55,35 +71,63 @@ EXPORT Texture* gHealthBarTextures[5];
 // 0x60F708/0x60F70C/0x60F710 and sets the status byte at 0x60F77C;
 // Panel_DestroyCompass (0x463850) clears the same byte.
 // @FIXME
+#ifndef SPIDEY_STANDALONE
 EXPORT CVector gCompassPosition;
+#else
+extern CVector gCompassPosition;
+#endif
 //#define G_COMPASS_POSITION (gCompassPosition)
 #define G_COMPASS_POSITION (*reinterpret_cast<CVector*>(0x0060F708))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gCompassStatus;
+#else
+extern u8 gCompassStatus;
+#endif
 //#define G_COMPASS_STATUS (gCompassStatus)
 #define G_COMPASS_STATUS (*reinterpret_cast<u8*>(0x0060F77C))
 
 // Panel_Init (0x461CA0) hands these three addresses to Spool_AnimAccess in
 // this order: 0x60F758 "Sp", 0x60F75C "Compass", 0x60F760 "Webcart".
+#ifndef SPIDEY_STANDALONE
 EXPORT SAnimFrame* gAnimSp;
+#else
+extern SAnimFrame* gAnimSp;
+#endif
 //#define G_ANIM_SP (gAnimSp)
 #define G_ANIM_SP (*reinterpret_cast<SAnimFrame**>(0x0060F758))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT SAnimFrame* gAnimCompass;
+#else
+extern SAnimFrame* gAnimCompass;
+#endif
 //#define G_ANIM_COMPASS (gAnimCompass)
 #define G_ANIM_COMPASS (*reinterpret_cast<SAnimFrame**>(0x0060F75C))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT SAnimFrame* gAnimWebcart;
+#else
+extern SAnimFrame* gAnimWebcart;
+#endif
 //#define G_ANIM_WEBCART (gAnimWebcart)
 #define G_ANIM_WEBCART (*reinterpret_cast<SAnimFrame**>(0x0060F760))
 
 // Panel_DestroyHealthBar (0x4637F0) zeroes exactly these two
 // ("mov [60F788h],eax; mov [60F78Ch],eax").
+#ifndef SPIDEY_STANDALONE
 EXPORT CBody* gHealthBarOne;
+#else
+extern CBody* gHealthBarOne;
+#endif
 //#define G_HEALTH_BAR_ONE (gHealthBarOne)
 #define G_HEALTH_BAR_ONE (*reinterpret_cast<CBody**>(0x0060F788))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CBody* gHealthBarTwo;
+#else
+extern CBody* gHealthBarTwo;
+#endif
 //#define G_HEALTH_BAR_TWO (gHealthBarTwo)
 #define G_HEALTH_BAR_TWO (*reinterpret_cast<CBody**>(0x0060F78C))
 

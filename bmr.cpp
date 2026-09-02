@@ -5,7 +5,11 @@
 #include "ps2funcs.h"
 #include "PCGfx.h"
 
+#ifndef SPIDEY_STANDALONE
 EXPORT Sprite2* gLoadedBmp = 0;
+#else
+extern Sprite2* gLoadedBmp;
+#endif
 
 // @Ok
 // @Matching

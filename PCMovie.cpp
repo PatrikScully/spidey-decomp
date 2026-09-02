@@ -1,4 +1,7 @@
 #include "PCMovie.h"
+#ifdef SPIDEY_STANDALONE
+#include "platform/plat.h"
+#endif
 #include "pkr.h"
 #include "non_win32.h"
 #include "SpideyDX.h"
@@ -10,30 +13,58 @@
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT char gMovieCurrentDirectory[0x200];
+#else
+extern char gMovieCurrentDirectory[0x200];
+#endif
 //#define G_MOVIECURRENTDIRECTORY (gMovieCurrentDirectory)
 #define G_MOVIECURRENTDIRECTORY (reinterpret_cast<char*>(0x00AC0CB0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gFoundMediaPkr;
+#else
+extern u8 gFoundMediaPkr;
+#endif
 //#define G_FOUNDMEDIAPKR (gFoundMediaPkr)
 #define G_FOUNDMEDIAPKR (*reinterpret_cast<u8*>(0x00AC0EB0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT char gCdPath[0x100];
+#else
+extern char gCdPath[0x100];
+#endif
 //#define G_CDPATH (gCdPath)
 #define G_CDPATH (reinterpret_cast<char*>(0x00AC0BB0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gPcMovieInited;
+#else
+extern u8 gPcMovieInited;
+#endif
 //#define G_PC_MOVIE_INITED (gPcMovieInited)
 #define G_PC_MOVIE_INITED (*reinterpret_cast<u8*>(0x00AC0BA0))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT HBINK gMovieBinkRelated;
+#else
+extern HBINK gMovieBinkRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT HANDLE gMovieFileHandle;
+#else
+extern HANDLE gMovieFileHandle;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT LIBPKR_HANDLE* gMediaPkr;
+#else
+extern LIBPKR_HANDLE* gMediaPkr;
+#endif
 //#define G_MEDIA_PKR (gMediaPkr)
 #define G_MEDIA_PKR (*reinterpret_cast<LIBPKR_HANDLE**>(0x00AC0BA8))
 
@@ -49,7 +80,11 @@ EXPORT u32 g_CloneBinkSummaryTwo;
 EXPORT u32 g_BinkDestx;
 EXPORT u32 g_BinkDesty;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT LPDIRECTDRAW7 g_MovieDD7;
+#else
+extern LPDIRECTDRAW7 g_MovieDD7;
+#endif
 EXPORT LPDIRECTDRAWSURFACE7 g_MovieDD7Surface;
 EXPORT i32 g_MoviePrimarySurfaceType;
 
@@ -386,6 +421,11 @@ void PCMOVIE_OpenPKR(void)
 // @Ok
 u8 PCMOVIE_Play(char *a1, i32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	// @TODO Phase 2b: a Bink player. Movies are skipped for now.
+	printf("PCMOVIE_Play: skipping %s\n", a1);
+	return 0;
+#endif
 	PCMOVIE_Init();
 	PCMOVIE_Stop();
 

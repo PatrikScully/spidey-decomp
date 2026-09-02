@@ -52,33 +52,58 @@
 // ---------------------------------------------------------------------------
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 gSfxPlayRelated;
+#else
+extern u32 gSfxPlayRelated;
+#endif
 //#define G_SFX_PLAY_RELATED (gSfxPlayRelated)
 #define G_SFX_PLAY_RELATED (*reinterpret_cast<u32*>(0x00618C3C))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gSfxGlobal;
+#else
+extern i32 gSfxGlobal;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 u32 SFXFalloffArray[32];
+#else
+extern u32 SFXFalloffArray[32];
+#endif
 //#define G_SFX_FALLOFF_ARRAY (SFXFalloffArray)
 #define G_SFX_FALLOFF_ARRAY (reinterpret_cast<u32*>(0x0061909C))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 u32 SFXLevelSpecificArray[192];
+#else
+extern u32 SFXLevelSpecificArray[192];
+#endif
 //#define G_SFX_LEVEL_SPECIFIC_ARRAY (SFXLevelSpecificArray)
 #define G_SFX_LEVEL_SPECIFIC_ARRAY (reinterpret_cast<u32*>(0x00618D9C))
 // @Ok
+#ifndef SPIDEY_STANDALONE
 u16 SFXLevelSpecificAliasArray[64];
+#else
+extern u16 SFXLevelSpecificAliasArray[64];
+#endif
 //#define G_SFX_LEVEL_SPECIFIC_ALIAS_ARRAY (SFXLevelSpecificAliasArray)
 #define G_SFX_LEVEL_SPECIFIC_ALIAS_ARRAY (reinterpret_cast<u16*>(0x00618C7C))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT bool gBootRomSoundMode;
+#else
+extern bool gBootRomSoundMode;
+#endif
 
 // @Ok
 // Read only: nothing in the whole binary writes it, so our copy and the
 // exe's copy at 0x0054F9F0 always hold the same table.
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gSfxVolArr[256] =
 {
 
@@ -110,52 +135,92 @@ EXPORT u8 gSfxVolArr[256] =
   0x05, 0x05, 0x05, 0x05, 0x04, 0x04, 0x04, 0x04, 0x03, 0x03, 
   0x02, 0x02, 0x01, 0x01, 0x00, 0x00
 };
+#else
+extern u8 gSfxVolArr[256];
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gReverbType;
+#else
+extern u8 gReverbType;
+#endif
 //#define G_REVERB_TYPE (gReverbType)
 #define G_REVERB_TYPE (*reinterpret_cast<u8*>(0x0061919E))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gSfxInited;
+#else
+extern u8 gSfxInited;
+#endif
 //#define G_SFX_INITED (gSfxInited)
 #define G_SFX_INITED (*reinterpret_cast<u8*>(0x006191A4))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gVoiceIndex = 1;
+#else
+extern i32 gVoiceIndex;
+#endif
 //#define G_VOICE_INDEX (gVoiceIndex)
 #define G_VOICE_INDEX (*reinterpret_cast<i32*>(0x0054FAF0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SSfxRelated gSfxSomething;
+#else
+extern SSfxRelated gSfxSomething;
+#endif
 //#define G_SFX_SOMETHING (gSfxSomething)
 #define G_SFX_SOMETHING (*reinterpret_cast<SSfxRelated*>(0x00618D80))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gNumVoices;
+#else
+extern i32 gNumVoices;
+#endif
 //#define G_NUM_VOICES (gNumVoices)
 #define G_NUM_VOICES (*reinterpret_cast<i32*>(0x006191A0))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 SFXPaused;
+#else
+extern u8 SFXPaused;
+#endif
 //#define G_SFX_PAUSED (SFXPaused)
 #define G_SFX_PAUSED (*reinterpret_cast<u8*>(0x0061919C))
 #define LEN_SFX_ENTRIES 32
+#ifndef SPIDEY_STANDALONE
 EXPORT SSfxEntry gSfxEntries[LEN_SFX_ENTRIES];
+#else
+extern SSfxEntry gSfxEntries[LEN_SFX_ENTRIES];
+#endif
 //#define G_SFX_ENTRIES (gSfxEntries)
 #define G_SFX_ENTRIES (reinterpret_cast<SSfxEntry*>(0x00618730))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SSFXBank gSoundBank;
+#else
+extern SSFXBank gSoundBank;
+#endif
 //#define G_SOUND_BANK (gSoundBank)
 #define G_SOUND_BANK (*reinterpret_cast<SSFXBank*>(0x00616D70))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SSFXBank gSfxRelatedOutLevel;
+#else
+extern SSFXBank gSfxRelatedOutLevel;
+#endif
 //#define G_SFX_RELATED_OUT_LEVEL (gSfxRelatedOutLevel)
 #define G_SFX_RELATED_OUT_LEVEL (*reinterpret_cast<SSFXBank*>(0x00615308))
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 gSfxArrayOne[192] =
 {
   1u,
@@ -363,12 +428,17 @@ EXPORT u32 gSfxArrayOne[192] =
   0u,
   0u
 };
+#endif
 //#define G_SFX_ARRAY_ONE (gSfxArrayOne)
 #define G_SFX_ARRAY_ONE (reinterpret_cast<u32*>(0x0054F6F0))
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 gSfxArraAliasyOne[64];
+#else
+extern u16 gSfxArraAliasyOne[64];
+#endif
 //#define G_SFX_ARRAY_ALIAS_ONE (gSfxArraAliasyOne)
 #define G_SFX_ARRAY_ALIAS_ONE (reinterpret_cast<u16*>(0x00618D00))
 
@@ -860,7 +930,11 @@ void SFX_ModifyVol(
 
 // Read only: 0x0054D342, read once by SFX_Off and written nowhere in the
 // binary, so it stays repo-local.
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 volatile gStubSfx;
+#else
+extern u8 volatile gStubSfx;
+#endif
 
 // @Ok
 // @Matching

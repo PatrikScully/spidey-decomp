@@ -1,0 +1,30 @@
+#pragma once
+
+// Phase 2 bootstrap: the exe's data segment at its original address.
+//
+// 835 globals in the repo are still bound to SpideyPC.exe addresses (G_*
+// macros and "static T* const x = (T*)0x...;"). Instead of giving every one
+// of them storage up front, the standalone build maps the exe's .rdata/.data
+// range (0x53B000..0x2E0C000, 42 MB, nearly all of it zero bss) at that
+// fixed address and seeds the initialized part from the user's own
+// SpideyPC.exe. All existing address macros then work unchanged, and there
+// is one copy of every global, so the Phase 1 split-brain problem does not
+// exist here. Phase 2b retires this file by moving globals to real storage.
+//
+// Never maps .text: no exe code is ever executed by the standalone build.
+
+#ifndef EXEMEM_H
+#define EXEMEM_H
+
+#include "../my_types.h"
+
+#define EXEMEM_START 0x0053B000u
+#define EXEMEM_END   0x02E0C000u
+
+// exePath may be 0: the block is then all zero (menu tables and constant
+// data will be missing, useful only for link tests). Returns 0 on failure.
+i32 ExeMem_Init(const char* exePath);
+// 1 if the block was seeded from an exe.
+i32 ExeMem_IsSeeded(void);
+
+#endif

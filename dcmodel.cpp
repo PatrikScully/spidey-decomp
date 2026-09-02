@@ -9,7 +9,11 @@
 #include <cmath>
 #include <cstring>
 
+#ifndef SPIDEY_STANDALONE
 EXPORT f32 gPreComputedColorRelated = -1.0f;
+#else
+extern f32 gPreComputedColorRelated;
+#endif
 EXPORT u8 gConvertedColors[256];
 
 // ---------------------------------------------------------------------
@@ -85,10 +89,16 @@ static const i32 gDCStitchNormalTableCount = 256;
 // completely unrelated functions), reused here as scratch working memory
 // for the vertex-welding pass below. Treated as an i32 array of chain
 // nodes; see BuildWeldedVertexSlots for the encoding.
-static u8 * const gSpoolSystemMemory = (u8 *)0x5498FC;
+// 0x5498FC is the POINTER variable gSpoolSystemMemory (spool.h), the buffer
+// itself sits at 0x62E510: "mov edx,[5498FCh]" at 0x431D32 loads the pointer.
+// (An earlier version used the address as the buffer and wrote over .data.)
 
 EXPORT DCSkaterModel gSkaterModels[2];
+#ifndef SPIDEY_STANDALONE
 EXPORT DCSkaterModel gGlobalSkaterModel;
+#else
+extern DCSkaterModel gGlobalSkaterModel;
+#endif
 
 // @Ok
 // @Matching
@@ -187,7 +197,7 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 	// newly-allocated split id >= numVertices), packed as
 	// low16 = owning face index, high16 = next id in the chain (or the
 	// low16 field is -1 to mean "no chain yet" for original ids).
-	i32 *pChain = (i32 *)gSpoolSystemMemory;
+	i32 *pChain = static_cast<i32 *>(gSpoolSystemMemory);
 
 	if (numVertices > 0)
 	{
@@ -241,7 +251,13 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 					for (i32 candCorner = 0; candCorner < candNumCorners; candCorner++)
 					{
 						if (pCand->mVertIndex[candCorner] != srcVertId)
+						{
+							// 0x431F3D: once this corner is matched, a
+							// different vertex id ends the candidate scan
+							if (matched)
+								break;
 							continue;
+						}
 
 						// When formatFlags & 2 is set, skip appearance
 						// comparison entirely and accept the first same-id
@@ -255,10 +271,24 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 						bool ok = (formatFlags & 2) != 0;
 						if (!ok)
 						{
-							ok = (pFace->mColor[0] == pCand->mColor[0]
-								&& pFace->mColor[1] == pCand->mColor[1]
-								&& pFace->mColor[2] == pCand->mColor[2]
-								&& pFace->mColorExtra == pCand->mColorExtra);
+							// mColor[3] + mColorExtra are one dword at +8
+							u32 faceColor = *(u32 *)pFace->mColor;
+							u32 candColor = *(u32 *)pCand->mColor;
+							if (pFace->mFlags & 0x800)
+							{
+								// 0x431EB2: per corner colour index byte,
+								// then that byte against the candidate's
+								// whole dword, then dword against dword.
+								// Reproduced as the original does it.
+								u8 faceByte = ((u8 *)pFace->mColor)[corner];
+								ok = faceByte == ((u8 *)pCand->mColor)[candCorner]
+									&& (u32)faceByte == candColor
+									&& faceColor == candColor;
+							}
+							else
+							{
+								ok = faceColor == candColor;
+							}
 						}
 						if (ok && (pFace->mFlags & 1) != 0)
 						{
@@ -274,12 +304,12 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 							slot |= 0x8000;
 							pFace->mVertSlot[corner] = slot;
 							matched = true;
+							break;
 						}
-						break;
 					}
 
-					if (matched)
-						break;
+					// 0x431F87: the chain walk runs to its end even after a
+					// match (a later face in the chain can re-weld the corner)
 					chainVal = pChain[searchId];
 				} while (chainVal != -1);
 			}
@@ -308,7 +338,11 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 			i32 chainVal = pChain[origId];
 			if (chainVal == -1)
 			{
-				pChain[origId] = (i32)(u16)faceIdx;
+				// 0x43201F is a 16 bit store: the high word keeps its 0xFFFF,
+				// which is what marks "no next id" (a negative value). A full
+				// 32 bit store made the next id 0 and the search loop above
+				// cycled forever (found by the standalone build, 2026-09-02).
+				pChain[origId] = (i32)(0xFFFF0000u | (u16)faceIdx);
 			}
 			else
 			{
@@ -323,8 +357,11 @@ static void DC_WeldVertexSlots(DCModelData *pDcModel, i32 numVertices, i32 numFa
 				if ((u16)pChain[tailId] != faceIdx)
 				{
 					pChain[tailId] = (pChain[tailId] & 0xFFFF) | (nextChainId << 16);
-					pChain[nextChainId] = (i32)(u16)faceIdx;
+					// same 16 bit store as above (0x432068), then the new
+					// end-of-chain sentinel behind it (0x432073)
+					pChain[nextChainId] = (i32)(0xFFFF0000u | (u16)faceIdx);
 					nextChainId++;
+					pChain[nextChainId] = -1;
 				}
 			}
 		}
@@ -509,19 +546,31 @@ void DCModel_CreateFromSModel(
 			}
 			else
 			{
+				// the face's texture slot holds a Texture* since ProcessNewPSX
+				// replaced the checksum with it
 				u8 *pTexInfo = *(u8 **)(pSrcFace + 16);
-				pFace->mTexIndex = *(u16 *)(pTexInfo + 2);
+				print_if_false(pTexInfo != 0, "No Texture data");
+				pFace->mTexIndex = *(u16 *)(pTexInfo + 2);   // Texture::clut = PC texture id
 
 				if ((formatFlags & 1) == 0)
 				{
 					// PVRRect-pack-based UV scale: byte U/V pairs at +20..27,
 					// normalized by the texture's actual pixel width/height
 					// (looked up through the pack info's mode byte).
+					// 0x4319D0: a face with flag 0x20 gets the texture's
+					// TexWin word copied into its own +0x1C; the pack info
+					// pointer is Texture+0x1C (x/y), not TexWin at +0xC (the
+					// old +12 read the packed TexWin as a pointer and crashed
+					// the standalone build on the first textured model).
+					if (srcFlags & 0x20)
+						*(u32 *)(pSrcFace + 0x1C) = *(u32 *)(pTexInfo + 0xC);
 					f32 texWidth = 1.0f;
 					f32 texHeight = 1.0f;
-					u8 *pPvrInfo = *(u8 **)(pTexInfo + 12);
+					u8 *pPvrInfo = *(u8 **)(pTexInfo + 0x1C);
+					print_if_false(pPvrInfo != 0, "Texture has no pVRAMRect info");
 					if (pPvrInfo)
 					{
+						print_if_false(*(u32 *)(pPvrInfo + 4) != 0, "pVRAMRect info has no pack info");
 						u8 packFlags = *pPvrInfo;
 						u16 *pPackInfo = *(u16 **)(pPvrInfo + 4);
 						if (packFlags & 8)

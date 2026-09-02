@@ -1,4 +1,7 @@
 #include "PCTex.h"
+#ifdef SPIDEY_STANDALONE
+#include "platform/plat.h"
+#endif
 #include "validate.h"
 #include "mem.h"
 #include "dcfileio.h"
@@ -18,21 +21,34 @@
 //#define G_D3DDEV_CAPS (gD3DDevCaps)
 #define G_D3DDEV_CAPS (*reinterpret_cast<D3DDEVICEDESC7*>(0x006B5788))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPvrCountRelated;
+#else
+extern i32 gPvrCountRelated;
+#endif
 
 //#define G_PVR_COUNT_RELATED (gPvrCountRelated)
 #define G_PVR_COUNT_RELATED (*reinterpret_cast<i32*>(0x00ADB3BC))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPvrRelatedWidth;
+#else
+extern i32 gPvrRelatedWidth;
+#endif
 
 //#define G_PVR_RELATED_WIDTH (gPvrRelatedWidth)
 #define G_PVR_RELATED_WIDTH (*reinterpret_cast<i32*>(0x00ADB3B8))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT ClutPC* gCreateTextureClut;
+#else
+extern ClutPC* gCreateTextureClut;
+#endif
 
 //#define G_CREATE_TEXTURE_CLUT (gCreateTextureClut)
 #define G_CREATE_TEXTURE_CLUT (*reinterpret_cast<ClutPC**>(0x00ADB3A0))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCreateTextureArr[39] =
 {
   -1283256577,
@@ -75,11 +91,16 @@ EXPORT i32 gCreateTextureArr[39] =
   -1169312655,
   -465978652
 };
+#endif
 
 //#define G_CREATE_TEXTURE_ARR (gCreateTextureArr)
 #define G_CREATE_TEXTURE_ARR (reinterpret_cast<i32*>(0x005689EC))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPcTexPvrAndSoftRendererRelated;
+#else
+extern i32 gPcTexPvrAndSoftRendererRelated;
+#endif
 
 //#define G_PC_TEX_PVR_AND_SOFT_RENDERER_RELATED (gPcTexPvrAndSoftRendererRelated)
 #define G_PC_TEX_PVR_AND_SOFT_RENDERER_RELATED (*reinterpret_cast<i32*>(0x00ADB36C))
@@ -128,48 +149,81 @@ u8 gPcTexContainerData[0x17C] =
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
+#ifndef SPIDEY_STANDALONE
 SPCTexContainer * const gPcTexContainer = reinterpret_cast<SPCTexContainer*>(&gPcTexContainerData[0]);
+#else
+extern SPCTexContainer * const gPcTexContainer;
+#endif
 
 //#define G_PC_TEX_CONTAINER (gPcTexContainer)
 #define G_PC_TEX_CONTAINER (reinterpret_cast<SPCTexContainer*>(0x00568870))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gNumPixelFormats;
+#else
+extern i32 gNumPixelFormats;
+#endif
 
 //#define G_NUM_PIXEL_FORMATS (gNumPixelFormats)
 #define G_NUM_PIXEL_FORMATS (*reinterpret_cast<i32*>(0x00AC12B0))
 
+#ifndef SPIDEY_STANDALONE
 u32 gMaxTextureAspectRatio;
+#else
+extern u32 gMaxTextureAspectRatio;
+#endif
 
 //#define G_MAX_TEXTURE_ASPECT_RATIO (gMaxTextureAspectRatio)
 #define G_MAX_TEXTURE_ASPECT_RATIO (*reinterpret_cast<u32*>(0x00ADB3B0))
 
+#ifndef SPIDEY_STANDALONE
 u32 gMaxTextureWidth;
+#else
+extern u32 gMaxTextureWidth;
+#endif
 
 //#define G_MAX_TEXTURE_WIDTH (gMaxTextureWidth)
 #define G_MAX_TEXTURE_WIDTH (*reinterpret_cast<u32*>(0x00ADB3A8))
 
+#ifndef SPIDEY_STANDALONE
 u32 gTextureHeight;
+#else
+extern u32 gTextureHeight;
+#endif
 
 //#define G_TEXTURE_HEIGHT (gTextureHeight)
 #define G_TEXTURE_HEIGHT (*reinterpret_cast<u32*>(0x00ADB3AC))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT bool gSquareOnly;
+#else
+extern bool gSquareOnly;
+#endif
 
 //#define G_SQUARE_ONLY (gSquareOnly)
 #define G_SQUARE_ONLY (*reinterpret_cast<bool*>(0x00ADB3B4))
 
 const i32 GLOBAL_TEXTURE_COUNT = 1024;
+#ifndef SPIDEY_STANDALONE
 EXPORT SPCTexture gGlobalTextures[GLOBAL_TEXTURE_COUNT];
+#else
+extern SPCTexture gGlobalTextures[GLOBAL_TEXTURE_COUNT];
+#endif
 
 //#define G_GLOBAL_TEXTURES (gGlobalTextures)
 #define G_GLOBAL_TEXTURES (reinterpret_cast<SPCTexture*>(0x00AC12D8))
 
 const i32 PC_ICON_COUNT = 5;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPcIcons[PC_ICON_COUNT];
+#else
+extern i32 gPcIcons[PC_ICON_COUNT];
+#endif
 
 //#define G_PC_ICONS (gPcIcons)
 #define G_PC_ICONS (reinterpret_cast<i32*>(0x00568A88))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT const char *gPcIconNames[PC_ICON_COUNT] =
 {
 	"lti\\butlarrow.bmp",
@@ -178,16 +232,25 @@ EXPORT const char *gPcIconNames[PC_ICON_COUNT] =
 	"lti\\butplus.bmp",
 	"lti\\butminus.bmp",
 };
+#endif
 
 //#define G_PC_ICON_NAMES (gPcIconNames)
 #define G_PC_ICON_NAMES (reinterpret_cast<const char**>(0x00568A9C))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT ClutPC* gClutPcRelated;
+#else
+extern ClutPC* gClutPcRelated;
+#endif
 
 //#define G_CLUT_PC_RELATED (gClutPcRelated)
 #define G_CLUT_PC_RELATED (*reinterpret_cast<ClutPC**>(0x00ADB39C))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gClutCount;
+#else
+extern i32 gClutCount;
+#endif
 
 //#define G_CLUT_COUNT (gClutCount)
 #define G_CLUT_COUNT (*reinterpret_cast<i32*>(0x00ADB3A4))
@@ -295,9 +358,22 @@ void PCTEX_Init(void)
 	}
 	G_NUM_PIXEL_FORMATS = 0;
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(SPIDEY_STANDALONE)
 	DDPIXELFORMAT v36[16];
+#ifdef _WIN32
 	G_D3DDEVICE7->EnumTextureFormats(enumPixelFormatsCB, v36);
+#else
+	// the four formats the platform layer accepts (PlatTexFormat order)
+	static const DDPIXELFORMAT standaloneFormats[4] =
+	{
+		{ 0x20, DDPF_RGB, 0, 16, 0xF800, 0x07E0, 0x001F, 0x0000 },
+		{ 0x20, DDPF_RGB | DDPF_ALPHAPIXELS, 0, 16, 0x7C00, 0x03E0, 0x001F, 0x8000 },
+		{ 0x20, DDPF_RGB | DDPF_ALPHAPIXELS, 0, 16, 0x0F00, 0x00F0, 0x000F, 0xF000 },
+		{ 0x20, DDPF_RGB | DDPF_ALPHAPIXELS, 0, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000 },
+	};
+	for (i32 f = 0; f < 4; f++)
+		enumPixelFormatsCB(const_cast<DDPIXELFORMAT*>(&standaloneFormats[f]), v36);
+#endif
 
 	//DXERR_printf("Got %d pixel formats\n", G_NUM_PIXEL_FORMATS);
 	for (i32 j = 0; j < G_NUM_PIXEL_FORMATS; j++)
@@ -1342,6 +1418,66 @@ scannedHard:
 
 			hr = pTempSurf->Release();
 			D3D_ERROR_LOG_AND_QUIT(hr);
+#elif defined(SPIDEY_STANDALONE)
+			// Same conversion as the low graphics branch above, into a
+			// temporary system buffer, then one upload to the platform
+			// texture. v19 is the format container index, v20 its row size.
+			i32 width = a2;
+			i32 height = a3;
+			u8* pixels = static_cast<u8*>(malloc(v20 * height));
+
+			if (G_GLOBAL_TEXTURES[a1].field_24 == v14)
+			{
+				i32 rowBytes = v20 ? v20 : 2 * width;
+				const u8* pSrc = static_cast<const u8*>(v83);
+				u8* pDst = pixels;
+				for (i32 y = 0; y < height; y++)
+				{
+					memcpy(pDst, pSrc, rowBytes);
+					pSrc += v84;
+					pDst += v20;
+				}
+			}
+			else
+			{
+				u8 converted = 0;
+				if (v14 == 1)
+				{
+					i32 threshold = 20 * (height * width) / 100;
+					const u16* pRow = reinterpret_cast<const u16*>(v83);
+					for (i32 y = 0; y < height && !converted; y++)
+					{
+						for (i32 x = 0; x < width; x++)
+						{
+							u16 alpha = pRow[x] >> 12;
+							if (alpha > 0 && alpha < 0xF && --threshold < 0)
+							{
+								G_GLOBAL_TEXTURES[a1].mFlags |= 0x1000;
+								converted = 1;
+								break;
+							}
+						}
+						pRow = reinterpret_cast<const u16*>(reinterpret_cast<const u8*>(pRow) + v84);
+					}
+					converted = 1;
+				}
+
+				copyConvertBitmap(v83, v84, v14, pixels, v20,
+						G_GLOBAL_TEXTURES[a1].field_24, width, height, converted);
+			}
+
+			PlatTexFormat fmt;
+			switch (G_PC_TEX_CONTAINER[v19].field_48)   // alpha mask of the DDPIXELFORMAT copy
+			{
+				case 0x8000: fmt = PLAT_TEX_ARGB1555; break;
+				case 0xF000: fmt = PLAT_TEX_ARGB4444; break;
+				case 0xFF000000: fmt = PLAT_TEX_ARGB8888; break;
+				default: fmt = PLAT_TEX_RGB565; break;
+			}
+			PlatTexture* pTex = Plat_TexCreate(width, height, fmt);
+			Plat_TexUpload(pTex, pixels, v20);
+			free(pixels);
+			G_GLOBAL_TEXTURES[a1].mD3DTex = reinterpret_cast<IDirectDrawSurface7*>(pTex);
 #endif
 		}
 
@@ -1527,6 +1663,11 @@ void PCTex_InitSystemTextures(void)
 		G_TEXTURE_HEIGHT = G_D3DDEV_CAPS.dwMaxTextureHeight;
 		G_MAX_TEXTURE_ASPECT_RATIO = G_D3DDEV_CAPS.dwMaxTextureAspectRatio;
 		G_SQUARE_ONLY = (G_D3DDEV_CAPS.dpcTriCaps.dwTextureCaps & D3DPTEXTURECAPS_SQUAREONLY) != 0;
+#elif defined(SPIDEY_STANDALONE)
+		G_MAX_TEXTURE_WIDTH = 1024;
+		G_TEXTURE_HEIGHT = 1024;
+		G_MAX_TEXTURE_ASPECT_RATIO = 0;
+		G_SQUARE_ONLY = 0;
 #endif
 	}
 
@@ -1844,6 +1985,8 @@ void PCTex_ReleaseSysTexture(i32 a1, bool a2)
 #ifdef _WIN32
 			HRESULT hr = G_GLOBAL_TEXTURES[a1].mD3DTex->Release();
 			D3D_ERROR_LOG_AND_QUIT(hr);
+#elif defined(SPIDEY_STANDALONE)
+			Plat_TexDestroy(reinterpret_cast<PlatTexture*>(G_GLOBAL_TEXTURES[a1].mD3DTex));
 #endif
 		}
 
@@ -2069,6 +2212,11 @@ void PCTex_UpdateForSoftwareRenderer(void)
 		G_TEXTURE_HEIGHT = G_D3DDEV_CAPS.dwMaxTextureHeight;
 		G_MAX_TEXTURE_ASPECT_RATIO = G_D3DDEV_CAPS.dwMaxTextureAspectRatio;
 		G_SQUARE_ONLY = (G_D3DDEV_CAPS.dpcTriCaps.dwTextureCaps & D3DPTEXTURECAPS_SQUAREONLY) != 0;
+#elif defined(SPIDEY_STANDALONE)
+		G_MAX_TEXTURE_WIDTH = 1024;
+		G_TEXTURE_HEIGHT = 1024;
+		G_MAX_TEXTURE_ASPECT_RATIO = 0;
+		G_SQUARE_ONLY = 0;
 #endif
 	}
 
@@ -2265,8 +2413,8 @@ void downloadTexture(SPCTexture *,u16 *,i32,i32)
 // @Matching
 HRESULT CALLBACK enumPixelFormatsCB(LPDDPIXELFORMAT lpDDPixFmt, void * lpContext)
 {
-#ifdef _WIN32
-	LPDDPIXELFORMAT pPixelFormat = static_cast<LPDDPIXELFORMAT>(lpContext);
+#if defined(_WIN32) || defined(SPIDEY_STANDALONE)
+	DDPIXELFORMAT* pPixelFormat = static_cast<DDPIXELFORMAT*>(lpContext);
 	memcpy(&pPixelFormat[G_NUM_PIXEL_FORMATS], lpDDPixFmt, sizeof(DDPIXELFORMAT));
 #endif
 	G_NUM_PIXEL_FORMATS++;

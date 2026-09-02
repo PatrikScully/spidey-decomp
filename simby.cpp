@@ -24,7 +24,11 @@
 // CBaddy::CheckStateFlags, which is where PlayGruntSound got inlined. Nothing
 // in the binary writes the table, but our copy has no initialiser, so a hooked
 // reader would see zeros instead of the real flags.
+#ifdef SPIDEY_STANDALONE
+#define gSimbyFlags (*reinterpret_cast<SStateFlags*>(0x00555564))
+#else
 static SStateFlags gSimbyFlags;
+#endif
 //#define G_SIMBY_FLAGS (gSimbyFlags)
 #define G_SIMBY_FLAGS (*reinterpret_cast<SStateFlags*>(0x00555564))
 

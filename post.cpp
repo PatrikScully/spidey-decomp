@@ -8,9 +8,17 @@
 #include "panel.h"
 #include "psx_types.h"
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gWaterEffect;
+#else
+extern i32 gWaterEffect;
+#endif
 EXPORT i32 gPostTimerRelated;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPostWaterEffect;
+#else
+extern i32 gPostWaterEffect;
+#endif
 EXPORT u16 gPostWordRelated;
 
 EXPORT u8 gPaletteProcessingPaused;

@@ -9,11 +9,31 @@
 #include "m3dzone.h"
 #include "ps2funcs.h"
 
+#ifndef SPIDEY_STANDALONE
 u32 gBombRelated;
+#else
+extern u32 gBombRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 u8 gBombDieRelatedOne;
+#else
+extern u8 gBombDieRelatedOne;
+#endif
+#ifndef SPIDEY_STANDALONE
 u8 gBombDieRelatedTwo;
+#else
+extern u8 gBombDieRelatedTwo;
+#endif
+#ifndef SPIDEY_STANDALONE
 u32 gBombDieTimerRelated;
+#else
+extern u32 gBombDieTimerRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 u32 gBombAIRelated;
+#else
+extern u32 gBombAIRelated;
+#endif
 
 extern i32 DifficultyLevel;
 

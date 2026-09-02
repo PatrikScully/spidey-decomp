@@ -7,14 +7,38 @@
 #include "PCGfx.h"
 #include "spool.h"
 
+#ifndef SPIDEY_STANDALONE
 u32 M3d_FadeColour;
+#else
+extern u32 M3d_FadeColour;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 WibbleTables[1024];
+#else
+extern i16 WibbleTables[1024];
+#endif
+#ifndef SPIDEY_STANDALONE
 u32 Xres;
+#else
+extern u32 Xres;
+#endif
+#ifndef SPIDEY_STANDALONE
 u32 Yres;
+#else
+extern u32 Yres;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 PixelAspectX;
+#else
+extern i32 PixelAspectX;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 PixelAspectY;
+#else
+extern i32 PixelAspectY;
+#endif
 
 // One entry per DC region: a heap block holding an array of these items.
 // Item size 0x24 confirmed by the pointer stride in DCClearRegion's original code.
@@ -267,13 +291,14 @@ void M3dInit_ParsePSX(i32 a1)
 
 		while (pPacket < pEnd)
 		{
-			u32 *pEntry = (u32 *)pPacket;
-
-			print_if_false(pEntry[1] != 0, "Zero list length");
+			// 0x45351A/0x45354D: one BYTE each, colour id then list length,
+			// then `count` dwords. (An earlier version read both as dwords
+			// and walked off the packet.)
+			print_if_false(pPacket[1] != 0, "Zero list length");
 			print_if_false(pulseCount < 127, "More 'Pulse' colors than planned for");
 
-			u32 id = pEntry[0];
-			u32 count = pEntry[1];
+			u32 id = pPacket[0];
+			u32 count = pPacket[1];
 			pPacket += 4 * count + 4;
 
 			gPulseColorList[pulseCount] = id;

@@ -6,7 +6,11 @@
 #include "validate.h"
 
 #define NUM_ZONES 1
+#ifndef SPIDEY_STANDALONE
 EXPORT SZone Zones[NUM_ZONES];
+#else
+extern SZone Zones[NUM_ZONES];
+#endif
 // M3dZone_Init (0x454980) is the proof: "mov dword [5FC640h],0" is Zones[0].Flags = 0,
 // then "mov edi,5FC660h; mov ecx,190h; rep stosd" zeroes the 20x20 Ptr grid at
 // Zones[0] + 0x20. M3dZone_LineToItem indexes it as [eax+5FC640h] with eax = i*0x660,

@@ -1,4 +1,7 @@
 #include "non_win32.h"
+#ifdef SPIDEY_STANDALONE
+#include "platform/plat.h"
+#endif
 
 // #define BOOT_GAME
 #define MODEL_PREVIEW
@@ -7,6 +10,12 @@
 // a real mixed-mode disc. Off by default. Never uncomment this on a branch
 // meant for an upstream PR.
 #define SPIDEY_NO_CD_CHECK
+
+// the standalone build always runs the real game path
+#ifdef SPIDEY_STANDALONE
+#undef MODEL_PREVIEW
+#undef BOOT_GAME
+#endif
 
 #include <stdlib.h>
 
@@ -127,7 +136,11 @@ const i32 POLYBUFFERSIZE = 0x17000;
 
 // 0x4000 dwords, not 0x1000: SpideyMain's rep stosd at 0x455CC5 clears
 // 0x4000 of them. Real address 0x5FCE04.
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gMainStuff[0x4000];
+#else
+extern i32 gMainStuff[0x4000];
+#endif
 
 // ---------------------------------------------------------------------------
 // Globals the game loop (Logic / Display / PlayAway / SpideyMain) needs and
@@ -287,9 +300,61 @@ extern void trigLog(const char *fmt, ...);
 // @Bogus
 static void Ob_AI(CBody **ppList, i32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	// Translated from the disassembly at 0x460FC0 (416 bytes) for the
+	// standalone build. The suspend branch is CBody::Suspend inlined
+	// (DeleteStuff, mppOriginalList, DeleteFrom, AttachTo, flag), the two
+	// asserts are the same strings CBody::Suspend uses. a2 is unused there.
+	(void)a2;
+	CBody* pItem = *ppList;
+	while (pItem)
+	{
+		CBody* pNext = static_cast<CBody*>(pItem->mNextItem);
+
+		print_if_false((pItem->mCBodyFlags & CBODY_SUSPENDED) == 0, "Suspended flag illegally set");
+
+		if (pItem->mCBodyFlags & 0x40)
+		{
+			// marked for deletion: one frame of grace, then delete
+			if (pItem->mCBodyFlags & 0x80)
+				delete pItem;
+			else
+				pItem->mCBodyFlags |= 0x80;
+		}
+		else
+		{
+			pItem->mPlayerDist = Utils_CrapDist(G_MECHLIST->mPos, pItem->mPos);
+
+			if ((pItem->mCBodyFlags & 2) && pItem->mPlayerDist > SuspendedDistance)
+			{
+				pItem->Suspend(ppList);
+			}
+			else
+			{
+				if (pItem->mFlags & 2)
+				{
+					pItem->EveryFrame();
+					static_cast<CSuper*>(pItem)->UpdateFrame();
+					pItem->AI();
+				}
+				else
+				{
+					pItem->EveryFrame();
+					pItem->AI();
+				}
+
+				if ((pItem->mCBodyFlags & 8) || pItem->mpShadow)
+					pItem->UpdateShadow();
+			}
+		}
+
+		pItem = pNext;
+	}
+#else
 	typedef void (*func_ptr)(CBody**, i32);
 	func_ptr func = (func_ptr)0x00460FC0;
 	func(ppList, a2);
+#endif
 }
 
 // Ob_MaybeUnSuspendOrCull: the other direction, walks the suspended list and
@@ -297,9 +362,26 @@ static void Ob_AI(CBody **ppList, i32 a2)
 // @Bogus
 static void Ob_MaybeUnSuspendOrCull(void)
 {
+#ifdef SPIDEY_STANDALONE
+	// From the disassembly at 0x461160 (158 bytes): CBody::UnSuspend inlined.
+	CBody* pItem = G_SUSPENEDED_LIST;
+	while (pItem)
+	{
+		CBody* pNext = static_cast<CBody*>(pItem->mNextItem);
+
+		if ((pItem->mCBodyFlags & 2)
+				&& Utils_CrapDist(G_MECHLIST->mPos, pItem->mPos) <= SuspendedDistance)
+		{
+			pItem->UnSuspend();
+		}
+
+		pItem = pNext;
+	}
+#else
 	typedef void (*func_ptr)(void);
 	func_ptr func = (func_ptr)0x00461160;
 	func();
+#endif
 }
 
 // The periodic CD recheck, 0x515D80, in SpideyDX.cpp's address range. It runs
@@ -311,9 +393,11 @@ static void Ob_MaybeUnSuspendOrCull(void)
 // @Bogus
 static void gsub_515D80(void)
 {
+#ifndef SPIDEY_STANDALONE
 	typedef void (*func_ptr)(void);
 	func_ptr func = (func_ptr)0x00515D80;
 	func();
+#endif
 }
 
 
@@ -822,7 +906,7 @@ void SpideyMain(void)
 	Init_Cleanup(0);
 	gRunCinemaRelated = 0;
 
-	while (gVlanksRelated)
+	while (G_GAME_FADE)
 		;
 
 #ifndef MODEL_PREVIEW
@@ -928,9 +1012,9 @@ innerLoop:
 		Init_Cleanup(0);
 		Screen_SepiaFade();
 
-		gVlanksRelated = 10;
+		G_GAME_FADE = 10;
 
-		while (gVlanksRelated)
+		while (G_GAME_FADE)
 			;
 
 		if (!Front_ContinueExit())
@@ -976,7 +1060,7 @@ innerLoop:
 
 		PShell_MaybeUnlockStuff();
 
-		while (gVlanksRelated)
+		while (G_GAME_FADE)
 			;
 
 		if (!(gRenderTest & 0x80))
@@ -1073,7 +1157,7 @@ quitTail:
 	}
 
 shutdown:
-	while (gVlanksRelated)
+	while (G_GAME_FADE)
 		Pause(1);
 
 	delete pYesNoMenu;
@@ -1680,11 +1764,14 @@ void runtime_patches(void)
 
 #ifndef _WIN32
 
+// the standalone build has its own main in platform/main_standalone.cpp
+#ifndef SPIDEY_STANDALONE
 int main()
 {
 	compile_time_assertions();
 	return run_assertions();
 }
+#endif
 
 
 #else

@@ -1,4 +1,7 @@
 #include "DXinit.h"
+#ifdef SPIDEY_STANDALONE
+#include "platform/plat.h"
+#endif
 #include "SpideyDX.h"
 #include "dcmodel.h"
 #include "PCGfx.h"
@@ -14,12 +17,28 @@
 #include <cstdlib>
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SPushOffset *gPushOffsetAddr;
+#else
+extern SPushOffset *gPushOffsetAddr;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPushOffsetOne;
+#else
+extern i32 gPushOffsetOne;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 i32 gLowGraphics;
+#else
+extern i32 gLowGraphics;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT void* gLowGraphicsRelated;
+#else
+extern void* gLowGraphicsRelated;
+#endif
 
 u32 gColorCount;
 
@@ -29,14 +48,22 @@ i32 gDxOptionRelated;
 EXPORT LPDIRECTDRAWSURFACE7 pDDS;
 
 LPDIRECTINPUT8 gDirectInputRelated;
+#ifndef SPIDEY_STANDALONE
 LPDIRECTSOUND8 g_pDS;
+#else
+extern LPDIRECTSOUND8 g_pDS;
+#endif
 
 EXPORT DSCAPS gDsCaps;
 
 // @Ok
 EXPORT DXVideoModeContext gDisplayModeContext;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 gDisplayDeviceIndex;
+#else
+extern u32 gDisplayDeviceIndex;
+#endif
 EXPORT LPDIRECTDRAW7 lpDD;
 
 EXPORT DWORD gTotalVideoMemory;
@@ -59,8 +86,16 @@ RECT gRect;
 
 EXPORT LPDIRECT3D7 g_D3D7;
 
+#ifndef SPIDEY_STANDALONE
 LPDIRECT3DDEVICE7 g_D3DDevice7;
+#else
+extern LPDIRECT3DDEVICE7 g_D3DDevice7;
+#endif
+#ifndef SPIDEY_STANDALONE
 D3DDEVICEDESC7 gD3DDevCaps;
+#else
+extern D3DDEVICEDESC7 gD3DDevCaps;
+#endif
 
 // the original lives in the DXPOLY block (0x5027A0) and is a plain call from
 // DXINIT_ShutDown and shutdownDirect3D7, so keep the MSVC inliner away from it
@@ -347,6 +382,24 @@ void DXINIT_DirectX8(
 
 	PreComputeConvertedColors(1.0);
 	PCGfx_SetBrightness(gBrightnessRelated);
+
+#ifdef SPIDEY_STANDALONE
+	// no DirectDraw/D3D/DirectSound/DirectInput objects: the platform layer
+	// is the device. Only the flags the game reads back are set.
+	if (!Plat_Init(gDxResolutionX, gDxResolutionY, gDxOptionRelated == 0))
+	{
+		DXERR_printf("Unable to create the window/renderer!\r\n");
+		exit(1);
+	}
+	g3DAccelator = 1;
+	gLowGraphics = 0;
+	gColorCount = 16;
+	pDDS = reinterpret_cast<LPDIRECTDRAWSURFACE7>(1);  // "we have a depth buffer"
+	g_pDS = reinterpret_cast<LPDIRECTSOUND8>(Plat_SndInit() ? 1 : 0);
+	DXSOUND_Init();
+	DXPOLY_Init(v3);
+	return;
+#endif
 
 	if (gLowGraphics)
 		v3 &= 0xFFFFFFFD;
@@ -852,6 +905,15 @@ void DXINIT_SetDisplayOptions(u32 width, u32 height, u32 bpp, i32, i32 brightnes
 		gBrightnessRelated = oldBrightness;
 		bpp = 16;
 	}
+#elif defined(SPIDEY_STANDALONE)
+	// @TODO resolution changes. Only brightness for now, the window stays
+	// at the size Plat_Init created.
+	(void)width; (void)height; (void)bpp;
+	if (brightness != gBrightnessRelated)
+	{
+		gBrightnessRelated = brightness;
+		PCGfx_SetBrightness(brightness);
+	}
 #endif
 }
 
@@ -862,6 +924,11 @@ INLINE void DXINIT_ShutDown(void)
 	shutdownDirect3D7(1);
 	shutdownDirectSound8();
 	shutdownDirectInput8();
+#ifdef SPIDEY_STANDALONE
+	DXSOUND_ShutDown();
+	Plat_SndShutdown();
+	Plat_Shutdown();
+#endif
 }
 
 // @Ok

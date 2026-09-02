@@ -14,7 +14,11 @@ INLINE void sbExitSystem(void)
 	syMallocFinish();
 }
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gSbInitRelated;
+#else
+extern i32 gSbInitRelated;
+#endif
 
 // @Ok
 void sbInitSystem(

@@ -36,6 +36,7 @@ static i32 * const gRhinoStrangeInitData = reinterpret_cast<i32*>(0x005520B8);
 // 0x00552080 exactly (IDB name M3d_RhinoLight), and a scan of every function
 // in tools/functions finds no write anywhere in the binary, so both copies
 // hold the same constants.
+#ifndef SPIDEY_STANDALONE
 EXPORT SLight M3d_RhinoLight =
 {
   { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
@@ -44,6 +45,9 @@ EXPORT SLight M3d_RhinoLight =
   0,
   { 1800, 1800, 1440 }
 };
+#else
+extern SLight M3d_RhinoLight;
+#endif
 
 
 
@@ -60,7 +64,11 @@ static SRhinoData * const gRhinoData = reinterpret_cast<SRhinoData*>(0x00552208)
 // whole binary ("mov [682C4Ch],eax" at 0x4816B4, compared again in the retry
 // loops above every footstep call), and the maintainer's IDB names 0x00682C4C
 // gRhinoSound.
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 gRhinoSound;
+#else
+extern u32 gRhinoSound;
+#endif
 //#define G_RHINO_SOUND (gRhinoSound)
 #define G_RHINO_SOUND (*reinterpret_cast<u32*>(0x00682C4C))
 
@@ -68,7 +76,11 @@ EXPORT u32 gRhinoSound;
 // gRhinoData starts at 0x00552208. CRhino::AI (0x4819C0) and CRhino::Hit
 // (sub_47EE70) push 0x005521D0 into CBaddy::CheckStateFlags. Nothing writes
 // it, but our copy has no initializer, so a hooked reader would see zeros.
+#ifndef SPIDEY_STANDALONE
 EXPORT SStateFlags gRhinoStateFlags;
+#else
+extern SStateFlags gRhinoStateFlags;
+#endif
 //#define G_RHINO_STATE_FLAGS (gRhinoStateFlags)
 #define G_RHINO_STATE_FLAGS (*reinterpret_cast<SStateFlags*>(0x005521D0))
 

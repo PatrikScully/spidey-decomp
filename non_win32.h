@@ -6,6 +6,12 @@
 #ifndef _WIN32
 
 #include "my_types.h"
+#include <strings.h>
+
+// MSVC CRT names for the case-insensitive string compares
+#define strcmpi strcasecmp
+#define stricmp strcasecmp
+#define strnicmp strncasecmp
 
 u32 GetTickCount();
 void Sleep(u32);

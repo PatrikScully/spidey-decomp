@@ -1,0 +1,80 @@
+// Phase 2 entry point. Replaces RealWinMain (SpideyDX.cpp) for the
+// standalone build: no window class, no CD check, no SEH filter. The order
+// of the game side calls is RealWinMain's.
+//
+//   spider [game-dir]      (or SPIDEY_GAME_DIR=...)
+//   SPIDEY_EXE=path        SpideyPC.exe used to seed the exe data block,
+//                          default <game-dir>/SpideyPC.exe
+
+#include "exemem.h"
+#include "plat.h"
+
+#include "../SpideyDX.h"
+#include "../DXinit.h"
+#include "../PCTimer.h"
+#include "../main.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <unistd.h>
+#include <signal.h>
+#include <execinfo.h>
+#include <sys/prctl.h>
+
+void compile_time_assertions(void);   // main.cpp
+
+// Debug aid: "kill -QUIT <pid>" (or timeout -s QUIT) prints where the main
+// thread is, for hangs the null backend cannot show otherwise.
+static void onQuitSignal(int)
+{
+	void* frames[64];
+	int n = backtrace(frames, 64);
+	fputs("---- SIGQUIT backtrace ----\n", stderr);
+	backtrace_symbols_fd(frames, n, 2);
+	_exit(3);
+}
+
+int main(int argc, char** argv)
+{
+	setvbuf(stdout, 0, _IONBF, 0);   // logs survive a crash
+	signal(SIGQUIT, onQuitSignal);
+	prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);   // let gdb -p attach
+
+	const char* gameDir = argc > 1 ? argv[1] : getenv("SPIDEY_GAME_DIR");
+	if (gameDir && chdir(gameDir) != 0)
+	{
+		perror(gameDir);
+		return 1;
+	}
+
+	const char* exe = getenv("SPIDEY_EXE");
+	if (!exe)
+		exe = "SpideyPC.exe";
+
+	// normally already done by exemem.cpp's early constructor
+	if (!ExeMem_Init(exe))
+		return 1;
+	if (!ExeMem_IsSeeded())
+		puts("WARNING: exe data block not seeded, menus and tables will be empty");
+
+	compile_time_assertions();
+
+	// RealWinMain from here on
+	SPIDEYDX_LoadSettings();
+
+	gRenderTest = 0;
+	G_GAME_RESOLUTION_X = 640;
+	gDxResolutionX = 640;
+	G_GAME_RESOLUTION_Y = 480;
+	gDxResolutionY = 480;
+	gMMXSupport = 1;
+
+	PCTIMER_Init();
+	DXINIT_DirectX8(0, 0, 2);   // creates the window in the standalone build
+
+	SpideyMain();
+
+	SPIDEYDX_Shutdown();
+	return 0;
+}

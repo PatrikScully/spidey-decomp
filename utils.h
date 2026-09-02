@@ -7,7 +7,7 @@
 #include "vector.h"
 #include "ob.h"
 
-EXPORT extern volatile i32 gVlanksRelated;
+// gVlanksRelated: use G_GAME_FADE (same global, 0x6B4C9C)
 EXPORT extern i32 DifficultyLevel;
 // EXPORT extern volatile u32 Vblanks;
 

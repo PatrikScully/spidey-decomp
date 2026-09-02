@@ -18,56 +18,116 @@
 
 #include "my_assert.h"
 
+#ifndef SPIDEY_STANDALONE
 i32 gClutRelated;
+#else
+extern i32 gClutRelated;
+#endif
 
 i32 DoVblankProcessing = 1;
 i32 gPortRelatedOne;
 i32 gSomeSize = 0x6E0000;
 
+#ifndef SPIDEY_STANDALONE
 SSinCos rcossin_tbl[FLATBIT_VELOCITIES_SIZE];
+#else
+extern SSinCos rcossin_tbl[FLATBIT_VELOCITIES_SIZE];
+#endif
 
 i32 Pal16X;
 i32 Pal16Y;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i16 gRotMatrix[3][3];
+#else
+extern i16 gRotMatrix[3][3];
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT int vertexRegister[4];
+#else
+extern int vertexRegister[4];
+#endif
 
 // guesses: not in idb_globals.txt. Positioned right after vertexRegister ("V0"),
 // same shape, used by MTC2 the same way for register indices 2/3 ("V1") and 4/5 ("V2").
+#ifndef SPIDEY_STANDALONE
 EXPORT int gVertexRegister1[4];
+#else
+extern int gVertexRegister1[4];
+#endif
 //#define G_VERTEX_REGISTER1 (gVertexRegister1)
 #define G_VERTEX_REGISTER1 (*reinterpret_cast<int(*)[4]>(0x00610BC0))
+#ifndef SPIDEY_STANDALONE
 EXPORT int gVertexRegister2[4];
+#else
+extern int gVertexRegister2[4];
+#endif
 //#define G_VERTEX_REGISTER2 (gVertexRegister2)
 #define G_VERTEX_REGISTER2 (*reinterpret_cast<int(*)[4]>(0x00610BD0))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT VECTOR translationVector;
+#else
+extern VECTOR translationVector;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT VECTOR gGeneralLongVector;
+#else
+extern VECTOR gGeneralLongVector;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT int gRtpsRelatedNoClue;
+#else
+extern int gRtpsRelatedNoClue;
+#endif
 //#define G_RTPS_PROJ_DISTANCE (gRtpsRelatedNoClue)
 #define G_RTPS_PROJ_DISTANCE (*reinterpret_cast<int*>(0x0054F03C))
+#ifndef SPIDEY_STANDALONE
 EXPORT int gRtpsRelatedNoClue2;
+#else
+extern int gRtpsRelatedNoClue2;
+#endif
 //#define G_RTPS_SCREEN_OFFSET_X (gRtpsRelatedNoClue2)
 #define G_RTPS_SCREEN_OFFSET_X (*reinterpret_cast<int*>(0x0054F040))
+#ifndef SPIDEY_STANDALONE
 EXPORT int gRtpsRelatedNoClue3;
+#else
+extern int gRtpsRelatedNoClue3;
+#endif
 //#define G_RTPS_SCREEN_OFFSET_Y (gRtpsRelatedNoClue3)
 #define G_RTPS_SCREEN_OFFSET_Y (*reinterpret_cast<int*>(0x0054F044))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT VECTOR gFtwOp12;
+#else
+extern VECTOR gFtwOp12;
+#endif
 //#define G_FTW_OP12 (gFtwOp12)
 #define G_FTW_OP12 (*reinterpret_cast<VECTOR*>(0x00610B90))
+#ifndef SPIDEY_STANDALONE
 EXPORT VECTOR gWtfOP12;
+#else
+extern VECTOR gWtfOP12;
+#endif
 //#define G_WTF_OP12 (gWtfOP12)
 #define G_WTF_OP12 (*reinterpret_cast<VECTOR*>(0x00610B80))
+#ifndef SPIDEY_STANDALONE
 EXPORT VECTOR gOp12Result;
+#else
+extern VECTOR gOp12Result;
+#endif
 //#define G_OP12_RESULT (gOp12Result)
 #define G_OP12_RESULT (*reinterpret_cast<VECTOR*>(0x00610BE0))
 
 static unsigned char stubGte = 1;
 
+#ifndef SPIDEY_STANDALONE
 u8 gPrintStubbed = 1;
+#else
+extern u8 gPrintStubbed;
+#endif
 u8 gClearImagePrint = 1;
 
 // @Ok
@@ -514,7 +574,11 @@ void gte_stlvnl2(int *a1)
   *a1 = gGeneralLongVector.vz;
 }
 
+#ifndef SPIDEY_STANDALONE
 EXPORT int gScalar;
+#else
+extern int gScalar;
+#endif
 //#define G_SCALAR (gScalar)
 #define G_SCALAR (*reinterpret_cast<int*>(0x00610C00))
 // @Ok
@@ -537,7 +601,11 @@ void gte_gpf(void)
   G_GENERAL_LONG_VECTOR.vz = (G_OP12_RESULT.vz * G_SCALAR) >> 12;
 }
 
+#ifndef SPIDEY_STANDALONE
 EXPORT int lzc;
+#else
+extern int lzc;
+#endif
 //#define G_LZC (lzc)
 #define G_LZC (*reinterpret_cast<int*>(0x00610C04))
 
@@ -704,7 +772,11 @@ void gte_rtir(void){
 // gGeneralLongVector.vx back out of gsub_46DEB0's result. Rows 1/2 are
 // therefore never populated by anything in this binary; kept as a 3-row
 // array for fidelity to the real layout, not because rows 1/2 do anything.
+#ifndef SPIDEY_STANDALONE
 EXPORT SVECTOR gLineToSphereDirMatrix[3];
+#else
+extern SVECTOR gLineToSphereDirMatrix[3];
+#endif
 
 // @Ok
 // unnamed in the IDB, address 0x0046D930. Loads a short vector into row 0
@@ -1358,7 +1430,11 @@ void M3dAsm_LineColijPreprocessItems(CItem* pItem, i32 ModelTable, SLineInfo* pI
 }
 
 // idb_globals.txt: DCFatalError @ 0x6150E4
+#ifndef SPIDEY_STANDALONE
 i32 DCFatalError;
+#else
+extern i32 DCFatalError;
+#endif
 
 // @Ok
 // @Matching

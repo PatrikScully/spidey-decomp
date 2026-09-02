@@ -37,14 +37,34 @@
 #include "reloc.h"
 #include "SpideyDX.h"
 
+#ifndef SPIDEY_STANDALONE
 EXPORT Texture* gShadowBit;
+#else
+extern Texture* gShadowBit;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPsxSpArmorIndex;
+#else
+extern i32 gPsxSpArmorIndex;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gPsxRingIndex;
+#else
+extern i32 gPsxRingIndex;
+#endif
 
 EXPORT i32 gInitRelatedOne;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gInitRelatedTwo;
+#else
+extern i32 gInitRelatedTwo;
+#endif
 EXPORT i32 gInitRelatedThree;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gSpideyMainRelated;
+#else
+extern i32 gSpideyMainRelated;
+#endif
 
 // @Ok
 // can't get too match, because they wrote in an obtuse way
@@ -192,7 +212,11 @@ u8 Init_AtStart(i32)
 }
 
 EXPORT i32 gMovieIndex = 0xFFFFFFFF;
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gInitBaddyRelated;
+#else
+extern i32 gInitBaddyRelated;
+#endif
 
 // @Ok
 void Init_Cleanup(i32 a1)

@@ -10,7 +10,11 @@
 
 EXPORT u8 gAlarmTwo[2] = { 0xC, 0x80 };
 
+#ifndef SPIDEY_STANDALONE
 i32 gAlarmFirst[4] = { 1, 2, 7, 8 };
+#else
+extern i32 gAlarmFirst[4];
+#endif
 
 EXPORT u8 gCardData[8];
 EXPORT u8 gCardInit;

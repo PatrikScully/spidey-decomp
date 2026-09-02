@@ -11,7 +11,11 @@
 #define PKRFILE_UNCOMPRESSED -2
 #define PKRFILE_COMPRESSED_ZLIB 2
 
+#ifndef SPIDEY_STANDALONE
 LIBPKR_HANDLE* gDataPkr;
+#else
+extern LIBPKR_HANDLE* gDataPkr;
+#endif
 
 // guess: shared error-message buffer for PKR_ReportError/PKR_GetLastError, size 0x200.
 // idb_globals.txt nearest neighbours: gSbMallocRelated 0x02E09BDC, gSbInitRelated 0x02E09BE0 (0x1C before this address, no named object covers it).

@@ -12,15 +12,47 @@
 
 #include <cstring>
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gFileIoSize;
+#else
+extern i32 gFileIoSize;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gFileIoOldSize;
+#else
+extern i32 gFileIoOldSize;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gFileIoInPre;
+#else
+extern i32 gFileIoInPre;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT HANDLE gFileIoWeirdHandle;
+#else
+extern HANDLE gFileIoWeirdHandle;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT char gFileIoFileName[64];
+#else
+extern char gFileIoFileName[64];
+#endif
 
+#ifndef SPIDEY_STANDALONE
 EXPORT void* gFileIoMemory;
+#else
+extern void* gFileIoMemory;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT volatile i32 gFileIOStatus;
+#else
+extern volatile i32 gFileIOStatus;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gFileIoInit;
+#else
+extern u8 gFileIoInit;
+#endif
 
 //#define G_FILE_IO_SIZE (gFileIoSize)
 #define G_FILE_IO_SIZE (*reinterpret_cast<i32*>(0x0057C420))

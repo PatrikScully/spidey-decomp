@@ -33,7 +33,11 @@ const i32 MOUSE_TRIGGER_COUNT = 18;
 EXPORT u8 gMouseTriggerRelated[MOUSE_TRIGGER_COUNT];
 
 const i32 ACTION_MAP_COUNT = 11;
+#ifndef SPIDEY_STANDALONE
 EXPORT SActionMap gActionMaps[ACTION_MAP_COUNT];
+#else
+extern SActionMap gActionMaps[ACTION_MAP_COUNT];
+#endif
 EXPORT char gKeyNames[ACTION_MAP_COUNT][32];
 
 EXPORT CMenu* gControllerMenu;

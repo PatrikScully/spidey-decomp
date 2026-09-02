@@ -20,29 +20,73 @@
 // order). dB and dG match idb_globals.txt.
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 FadeCountdown;
+#else
+extern i32 FadeCountdown;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 FlashCountdown;
+#else
+extern i32 FlashCountdown;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 Fading;
+#else
+extern i32 Fading;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 CurrentImportance;
+#else
+extern u8 CurrentImportance;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 FlashSort;
+#else
+extern i32 FlashSort;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 CurrentR;
+#else
+extern u32 CurrentR;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 CurrentG;
+#else
+extern u32 CurrentG;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 CurrentB;
+#else
+extern u32 CurrentB;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 dR;
+#else
+extern u32 dR;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 dG;
+#else
+extern u32 dG;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 dB;
+#else
+extern u32 dB;
+#endif
 
 // @Ok
 // @Matching

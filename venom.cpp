@@ -24,7 +24,11 @@
 // same ten dwords out of that address into its stack scratch. File local, no
 // other .cpp touches it.
 #define LEN_VENOM_TEXS 10
+#ifndef SPIDEY_STANDALONE
 EXPORT Texture* gVenomTexs[LEN_VENOM_TEXS];
+#else
+extern Texture* gVenomTexs[LEN_VENOM_TEXS];
+#endif
 //#define G_VENOM_TEXS (gVenomTexs)
 #define G_VENOM_TEXS (reinterpret_cast<Texture**>(0x006B4EE4))
 

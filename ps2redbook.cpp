@@ -8,16 +8,40 @@
 #include <cstring>
 
 
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gADXT;
+#else
+extern i32 gADXT;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT bool gXAAllowed;
+#else
+extern bool gXAAllowed;
+#endif
 
+#ifndef SPIDEY_STANDALONE
 u8 gCarnageXaRelated = 1;
+#else
+extern u8 gCarnageXaRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 u32 gCarnageXaRelatedTwo;
+#else
+extern u32 gCarnageXaRelatedTwo;
+#endif
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 i32 gRedbookXaRelatedOne;
+#else
+extern i32 gRedbookXaRelatedOne;
+#endif
 // @Ok
+#ifndef SPIDEY_STANDALONE
 i32 gRedbookXaRelatedTwo;
+#else
+extern i32 gRedbookXaRelatedTwo;
+#endif
 
 // set by Redbook_XAAllow, forced back to 1 on every reset
 //#define G_XA_ALLOWED (gXAAllowed)

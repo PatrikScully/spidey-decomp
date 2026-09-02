@@ -19,7 +19,6 @@ EXPORT f64 gTimerMsInterval;
 EXPORT STimerInfo gTimerInfo;
 EXPORT f64 gTimerVblankRelated;
 
-// @FIXME
 #ifndef _WIN32
 
 struct TIMECAPS
@@ -32,6 +31,37 @@ void onexit(...)
 {
 }
 
+void timeBeginPeriod(...)
+{
+}
+
+#ifdef SPIDEY_STANDALONE
+// The Win32 multimedia timer, on the platform layer's timer thread.
+#include "platform/plat.h"
+
+static void standaloneTimerThunk(void* user)
+{
+	TimerCallback(0, 0, reinterpret_cast<unsigned long>(user), 0, 0);
+}
+
+u32 timeSetEvent(u32 delay, u32, void*, DWORD user, u32)
+{
+	return Plat_TimerStart(delay, standaloneTimerThunk, reinterpret_cast<void*>(user));
+}
+
+void timeKillEvent(UINT id)
+{
+	Plat_TimerStop(id);
+}
+
+bool timeGetDevCaps(TIMECAPS* pCaps, u32)
+{
+	pCaps->wPeriodMin = 1;
+	pCaps->wPeriodMax = 1000;
+	return false;
+}
+#else
+// @FIXME sanity build only, no timer at all
 void timeKillEvent(UINT)
 {
 }
@@ -41,13 +71,11 @@ u32 timeSetEvent(...)
 	return 69;
 }
 
-void timeBeginPeriod(...)
-{
-}
-
 bool timeGetDevCaps(...)
 {
+	return false;
 }
+#endif
 #endif
 
 TIMECAPS ptc;

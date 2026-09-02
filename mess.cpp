@@ -9,25 +9,41 @@
 #include "my_assert.h"
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 TextJustification;
+#else
+extern u8 TextJustification;
+#endif
 //#define G_TEXT_JUSTIFICATION (TextJustification)
 #define G_TEXT_JUSTIFICATION (*reinterpret_cast<u8*>(0x0060D5A8))
 
 EXPORT SMessage* pMessages;
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT SSimpleMessage* pSimpleMessages;
+#else
+extern SSimpleMessage* pSimpleMessages;
+#endif
 //#define G_SIMPLE_MESSAGES (pSimpleMessages)
 #define G_SIMPLE_MESSAGES (*reinterpret_cast<SSimpleMessage**>(0x0060D5A0))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT Font gMessFont;
+#else
+extern Font gMessFont;
+#endif
 //#define G_MESS_FONT (gMessFont)
 #define G_MESS_FONT (*reinterpret_cast<Font*>(0x0060D238))
 
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u16 Scale;
+#else
+extern u16 Scale;
+#endif
 //#define G_SCALE (Scale)
 #define G_SCALE (*reinterpret_cast<u16*>(0x0060D5A4))
 
@@ -38,20 +54,36 @@ extern u16 Sort;
 EXPORT i32 gMessRelated;
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gRGBBottom = 0x808080;
+#else
+extern i32 gRGBBottom;
+#endif
 //#define G_RGB_BOTTOM (gRGBBottom)
 #define G_RGB_BOTTOM (*reinterpret_cast<i32*>(0x0054D7B4))
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gShadowRGB = 0x80;
+#else
+extern u8 gShadowRGB;
+#endif
 //#define G_SHADOW_RGB (gShadowRGB)
 #define G_SHADOW_RGB (*reinterpret_cast<u8*>(0x0054D7A8))
 
 EXPORT char gMessFontName[32];
 EXPORT u8 gMessFontLoaded;
 
+#ifndef SPIDEY_STANDALONE
 EXPORT u32 gSimpleMessageRelated;
+#else
+extern u32 gSimpleMessageRelated;
+#endif
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gSimpleMessageTextWidth;
+#else
+extern i32 gSimpleMessageTextWidth;
+#endif
 
 
 // @Ok

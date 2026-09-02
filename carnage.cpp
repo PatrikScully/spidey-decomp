@@ -41,13 +41,21 @@ EXPORT SLight M3d_CarnageLight =
 EXPORT i32 gCarnageXa[4] = { 0x48, 5, 0x48, 5 };
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCarnageWhatIfXa[4] = { 0x11, 5, 0x11, 5};
+#else
+extern i32 gCarnageWhatIfXa[4];
+#endif
 
 // @Ok
 EXPORT i32 gCarnageStretchJumpXaWhatIf[4] = { 0x11, 4, 0x11, 4};
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCarnageStretchJumpXa[4] = { 0x48, 4, 0x48, 4};
+#else
+extern i32 gCarnageStretchJumpXa[4];
+#endif
 
 // @Ok
 EXPORT i32 gCarnageDoubleAxeWhatIfXa[4] = { 0x10, 2, 0x10, 3 };
@@ -73,6 +81,7 @@ EXPORT i32 gCarnageStretchAdvWhatIfXa[20] =
 };
 
 // @Ok
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 gCarnageBurnInBubbleWhatIfXa[32] =
 {
 	0x10, 0x4, 0x10, 0x5,
@@ -84,6 +93,9 @@ EXPORT i32 gCarnageBurnInBubbleWhatIfXa[32] =
 	0x4A, 0x0A, 0x4A, 0x0D,
 	0x4A, 0x0E, 0x4A, 0x0F
 };
+#else
+extern i32 gCarnageBurnInBubbleWhatIfXa[32];
+#endif
 
 // @Ok
 EXPORT i32 gCarnageBurnInBubbleXa[32] = 
@@ -115,6 +127,7 @@ const i32 gCarnage400 = 0x400;
 
 // @Ok
 // @Matching
+#ifndef SPIDEY_STANDALONE
 EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 {
 	{ 0x0F0E0A, 0x45F3EC38, 0x45F3EC38 },
@@ -137,6 +150,7 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 	{ 0x51202, 0x0D291D41B, 0x6CF38ACE },
 	{ 0x40701, 0x0D291D41B, 0x6CF38ACE },
 };
+#endif
 
 // The exe still owns this table. CCarnageElectrified::Move (0x0041B910) is not in this repo and
 // reads it every frame (push 548CC8h at 0x0041B986, push 548DB0h at 0x0041B97F, so the array

@@ -16,11 +16,19 @@
 // maintainer's IDB). CThug_Hit, CThug_Fall, CThug_ProcessMessages and
 // CThug_AI write both of them and none of those are hooked, so the exe's
 // copies are the only real ones.
+#ifndef SPIDEY_STANDALONE
 EXPORT CThug* gGlobalThug;
+#else
+extern CThug* gGlobalThug;
+#endif
 //#define G_GLOBAL_THUG (gGlobalThug)
 #define G_GLOBAL_THUG (*reinterpret_cast<CThug**>(0x00682C50))
 
+#ifndef SPIDEY_STANDALONE
 EXPORT CThug* gThugList;
+#else
+extern CThug* gThugList;
+#endif
 //#define G_THUG_LIST (gThugList)
 #define G_THUG_LIST (*reinterpret_cast<CThug**>(0x00682C54))
 
@@ -31,7 +39,11 @@ EXPORT CThug* gThugList;
 // i16 built at compile time); our copy has no initialiser at all, so it is
 // all zeros and CheckStateFlags would never match a state. Read from the
 // exe until somebody writes the real table out.
+#ifndef SPIDEY_STANDALONE
 EXPORT SStateFlags gThugStateFlags;
+#else
+extern SStateFlags gThugStateFlags;
+#endif
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
@@ -1537,7 +1549,11 @@ EXPORT u8 gThugTypeRelatedFirstThird[1];
 EXPORT i32 gThugTypeRelatedSecondFirst[2] = { 0x6040504, 0 };
 
 // @FIXME - add data
+#ifndef SPIDEY_STANDALONE
 EXPORT u8 gThugTypeRelatedSecondThird[1];
+#else
+extern u8 gThugTypeRelatedSecondThird[1];
+#endif
 
 // @Ok
 // @Matching

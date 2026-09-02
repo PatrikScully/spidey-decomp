@@ -11,7 +11,11 @@
 // it is still in the exe, so ours has to be the same memory. Address
 // 0x60D004, the same one shell.cpp already reads through gJoelJewtCheatCode,
 // named JoelJewtCheatCode in the maintainer IDB.
+#ifndef SPIDEY_STANDALONE
 EXPORT i32 JoelJewtCheatCode;
+#else
+extern i32 JoelJewtCheatCode;
+#endif
 //#define G_JOEL_JEWT_CHEAT_CODE (JoelJewtCheatCode)
 #define G_JOEL_JEWT_CHEAT_CODE (*reinterpret_cast<i32*>(0x0060D004))
 

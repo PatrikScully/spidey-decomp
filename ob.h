@@ -324,6 +324,9 @@ EXPORT extern CBody* EnvironmentalObjectList;
 //#define G_ENVIRONMENTAL_OBJECT_LIST (EnvironmentalObjectList)
 #define G_ENVIRONMENTAL_OBJECT_LIST (*reinterpret_cast<CBody**>(0x0060DAAC))
 EXPORT extern CBody* SuspendedList;
+// shared by ob.cpp (CBody::Suspend/UnSuspend/DeleteFrom) and main.cpp (Ob_AI)
+//#define G_SUSPENEDED_LIST (SuspendedList)
+#define G_SUSPENEDED_LIST (*reinterpret_cast<CBody**>(0x0060DAB4))
 
 // @Note: yeah it's cbody fucking game
 EXPORT extern CBody* RealMechList;
