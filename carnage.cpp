@@ -1,4 +1,5 @@
 #include "carnage.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "trig.h"
 #include "panel.h"
@@ -136,6 +137,14 @@ EXPORT SSkinGooSource gCarnageSkinGooSource[NUM_CARNAGE_GOOS] =
 	{ 0x51202, 0x0D291D41B, 0x6CF38ACE },
 	{ 0x40701, 0x0D291D41B, 0x6CF38ACE },
 };
+
+// The exe still owns this table. CCarnageElectrified::Move (0x0041B910) is not in this repo and
+// reads it every frame (push 548CC8h at 0x0041B986, push 548DB0h at 0x0041B97F, so the array
+// really does start at 0x00548CC8 and hold 19 twelve byte entries), while our hooked
+// SetTheCarnageGooSourcesChecksums writes the resolved texture checksums into it. Both halves
+// have to see one copy, so the macro points at the exe's memory for now.
+//#define G_CARNAGE_SKIN_GOO_SOURCE (gCarnageSkinGooSource)
+#define G_CARNAGE_SKIN_GOO_SOURCE (reinterpret_cast<SSkinGooSource*>(0x00548CC8))
 
 // @Ok
 EXPORT CVector gCarnageVector;
@@ -2995,30 +3004,30 @@ void SetTheCarnageGooSourcesChecksums(void)
 {
 	for (i32 i = 0; i < NUM_CARNAGE_GOOS; i++)
 	{
-		if (gCarnageSkinGooSource[i].field_4 == 0x45F3EC38)
+		if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 == 0x45F3EC38)
 		{
-			gCarnageSkinGooSource[i].field_4 = Spool_FindTextureChecksum("carnage_bit04_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 = Spool_FindTextureChecksum("carnage_bit04_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_4 == 0xD291D41B)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 == 0xD291D41B)
 		{
-			gCarnageSkinGooSource[i].field_4 = Spool_FindTextureChecksum("carnage_bit03_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 = Spool_FindTextureChecksum("carnage_bit03_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_4 == 0x6CF38ACE)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 == 0x6CF38ACE)
 		{
-			gCarnageSkinGooSource[i].field_4 = Spool_FindTextureChecksum("carnage_bit01_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_4 = Spool_FindTextureChecksum("carnage_bit01_32");
 		}
 
-		if (gCarnageSkinGooSource[i].field_8 == 0x45F3EC38)
+		if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 == 0x45F3EC38)
 		{
-			gCarnageSkinGooSource[i].field_8 = Spool_FindTextureChecksum("carnage_bit04_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 = Spool_FindTextureChecksum("carnage_bit04_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_8 == 0xD291D41B)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 == 0xD291D41B)
 		{
-			gCarnageSkinGooSource[i].field_8 = Spool_FindTextureChecksum("carnage_bit03_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 = Spool_FindTextureChecksum("carnage_bit03_32");
 		}
-		else if (gCarnageSkinGooSource[i].field_8 == 0x6CF38ACE)
+		else if (G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 == 0x6CF38ACE)
 		{
-			gCarnageSkinGooSource[i].field_8 = Spool_FindTextureChecksum("carnage_bit01_32");
+			G_CARNAGE_SKIN_GOO_SOURCE[i].field_8 = Spool_FindTextureChecksum("carnage_bit01_32");
 		}
 	}
 }
@@ -3360,4 +3369,23 @@ void validate_CSymbioteBlade(void)
 	VALIDATE(CSymbioteBlade, mCurveStepDelta, 0x104);
 	VALIDATE(CSymbioteBlade, mCurvePts, 0x108);
 	VALIDATE(CSymbioteBlade, field_138, 0x138);
+}
+
+
+// @Bogus
+void patch_carnage(void)
+{
+	// Only the functions whose whole call closure already shares the exe's memory are hooked.
+	// Everything else in carnage.cpp reads MechList, BaddyList, ControlBaddyList, gBossRelated,
+	// gWhatIf, gObjFile, gObjFileRegion, BulletList, NumNodes, TotalBitUsage, QuadBitList or
+	// GPolyLineList, and those are still plain repo globals owned by other files, so a hook
+	// there would read our own zeroed copy instead of the game's. See the notes in the commit
+	// message for the exact list.
+	PATCH_PUSH_RET(0x00419B60, CSonicRipple::CalcPos);
+	PATCH_PUSH_RET_POLY(0x00419C00, CSonicRipple::Move, "?Move@CSonicRipple@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0041A240, CCarnageHitSpark::Move, "?Move@CCarnageHitSpark@@UAEXXZ");
+	PATCH_PUSH_RET(0x0041AFF0, CSymbioteBlade::GenerateControlPoints);
+	PATCH_PUSH_RET(0x0041B860, SetTheCarnageGooSourcesChecksums);
+	PATCH_PUSH_RET_POLY(0x0041B900, CCarnageElectrified::~CCarnageElectrified, "??1CCarnageElectrified@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x0041C3B0, CCarnage::Grab, "?Grab@CCarnage@@UAEEPAVCVector@@@Z");
 }

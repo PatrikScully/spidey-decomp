@@ -247,4 +247,6 @@ EXPORT void Carnage_RelocatableModuleInit(reloc_mod *);
 EXPORT void Carnage_RelocatableModuleClear(void);
 EXPORT void SetTheCarnageGooSourcesChecksums(void);
 
+void patch_carnage(void);
+
 #endif
