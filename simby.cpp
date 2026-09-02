@@ -19,10 +19,17 @@
 #include "effects.h"
 #include "exp.h"
 
+// Simby's state flag table. The IDB names 0x00555564 gSimbyFlags, and
+// CSimby::AI (0x4AE3D0) and CSimby::Hit (0x4A8AB0) push that address into
+// CBaddy::CheckStateFlags, which is where PlayGruntSound got inlined. Nothing
+// in the binary writes the table, but our copy has no initialiser, so a hooked
+// reader would see zeros instead of the real flags.
 static SStateFlags gSimbyFlags;
-extern CBaddy* BaddyList;
-extern i32 gAttackRelated;
+//#define G_SIMBY_FLAGS (gSimbyFlags)
+#define G_SIMBY_FLAGS (*reinterpret_cast<SStateFlags*>(0x00555564))
 
+// MiscList belongs to shell.cpp and is still a plain repo global, so the two
+// CSymBurn functions that touch it are left out of patch_simby().
 extern CBody *MiscList;
 #include "camera.h"
 
@@ -33,6 +40,8 @@ static i32 * const gSimbyCount = reinterpret_cast<i32*>(0x682C5C);
 // guess: reset flag adjacent to gSimbyAttackData (0x682C60, idb_globals.txt), purpose unclear.
 static i32 * const gSimbyCountResetFlag = reinterpret_cast<i32*>(0x682C64);
 
+// Stays repo-local: the two words below are the exe bytes at 0x005521C0
+// (05 05 08 07, 05 01 00 00) and nothing in the binary writes them.
 EXPORT i32 gSimbySetup[2] = { 84215815, 261 };
 
 // @Ok
@@ -159,7 +168,7 @@ void Simby_CreateFlamingImpactWeb(const u32* stack,u32 *)
 // @Matching
 void Simby_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -465,7 +474,7 @@ void CPunchOb::AI(void)
 
 	M3d_BuildTransform(this);
 
-	if ( !(gAttackRelated & 0xF)
+	if ( !(G_ATTACK_RELATED & 0xF)
 			&& this->field_31C.bothFlags != 1
 			&& Mem_RecoverPointer(&this->field_104))
 	{
@@ -674,7 +683,7 @@ i32 CPunchOb::Hit(SHitInfo* pHitInfo)
 // @Ok
 CPunchOb::~CPunchOb(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 }
 
 // @Ok
@@ -683,7 +692,7 @@ CPunchOb::CPunchOb(
 		i32 a3)
 {
 	this->InitItem("sym_gen");
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mCBodyFlags |= 0x10;
 	this->mNode = a3;
@@ -957,7 +966,7 @@ void CSimby::TakeHit(void)
 // inlined block.
 void CSimby::PlayGruntSound(void)
 {
-	if (this->CheckStateFlags(&gSimbyFlags, 25) & 0x2000)
+	if (this->CheckStateFlags(&G_SIMBY_FLAGS, 25) & 0x2000)
 	{
 		this->RunTimer(&this->field_34C);
 
@@ -1102,7 +1111,7 @@ CSimby::CSimby(int* a2, int a3)
 
 	this->field_344 = Trig_GetLevelID();
 	this->InitItem(this->field_344 == 0x803 ? "sym_dark" : "symbi_02");
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_2A8 |= 0x201;
 	this->field_21E = 0x64;
@@ -1119,7 +1128,7 @@ CSimby::CSimby(int* a2, int a3)
 	this->field_294.Int = gSimbySetup[0];
 	this->field_298.Int = gSimbySetup[1];
 
-	this->field_3EC = gAttackRelated - 155;
+	this->field_3EC = G_ATTACK_RELATED - 155;
 
 	this->field_34C = Rnd(300);
 
@@ -1145,7 +1154,7 @@ CSimby::CSimby(int* a2, int a3)
 	if (!*gSimbyCount)
 		MakeVertexWibbler();
 
-	i32 v7 = gAttackRelated;
+	i32 v7 = G_ATTACK_RELATED;
 	(*gSimbyCount)++;
 
 	if (v7 < 0x3C)
@@ -1566,4 +1575,70 @@ void validate_CFlamingImpactWeb(void)
 
 	VALIDATE(CFlamingImpactWeb, mLinePos, 0x7C);
 	VALIDATE(CFlamingImpactWeb, mLineNormal, 0x88);
+}
+
+#include "my_patch.h"
+
+// Not hooked, and why:
+//
+// 1. A constructor stamps our vtable, so any class with a virtual missing on
+//    our side is out. CSimby has no AI (exe slot 2, 0x4AE3D0) and no Hit
+//    (slot 3, 0x4A8AB0). CEmber, CFlamingImpactWeb, CSimbyDrop and
+//    CSimbyShot have no Move. That rules out both CSimby constructors,
+//    Simby_CreateSimby, Simby_CreateEmber, Simby_CreateFlamingImpactWeb,
+//    Simby_SplattyExplosion (it does "new CSimbyDrop") and the CEmber,
+//    CFlamingImpactWeb, CSimbyDrop and CSimbyShot constructors.
+//    Simby_RelocatableModuleInit goes with them, it stores the pointers to
+//    Simby_CreateSimby, Simby_CreateEmber and Simby_CreateFlamingImpactWeb.
+//    MakeVertexWibbler does "new CVertexWobble" and effects.cpp still has no
+//    CVertexWobble destructor (0x0043BA70).
+//
+// 2. CSymBurn::~CSymBurn (0x4A31B0) unlinks from MiscList, which shell.cpp
+//    still keeps as a plain repo global. CSymBurn::AI does not touch it, so
+//    that one is fine.
+//
+// 3. CSimby::~CSimby (0x4A7AE0) is real work in the exe but our class has no
+//    destructor at all, the compiler generates an empty one.
+//
+// 4. Simby_TestDrop is empty and the original points it at 0x430880, a shared
+//    empty function other modules use too.
+//
+// 5. SetUpHandPos, Shoot, PlayGruntSound, PlayAndAttachXAPlease,
+//    FireTrappedToDeath, RunAppropriateHitAnim, SetUpJumpData,
+//    SetAlertModeTimer, ClearAttackData, SetUpUnitFromDirection,
+//    CPunchOb::SendPulse, the three CSimbySlimeBase scale helpers and the
+//    CSymBurn and CSkidMark constructors have no standalone address, the
+//    original inlines them.
+//
+// @Bogus
+void patch_simby(void)
+{
+	PATCH_PUSH_RET(0x004A2470, Simby_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004A2560, Simby_CreatePunchOb);
+	PATCH_PUSH_RET(0x004A25E0, Simby_CreateSimbyDroplet);
+
+	PATCH_PUSH_RET_POLY(0x004A2A10, CEmber::~CEmber, "??1CEmber@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A3210, CSymBurn::AI, "?AI@CSymBurn@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A3B50, CSimbyDroplet::CSimbyDroplet, "??0CSimbyDroplet@@QAE@PAFH@Z");
+	PATCH_PUSH_RET_POLY(0x004A3C40, CSimbyDroplet::~CSimbyDroplet, "??1CSimbyDroplet@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A3C50, CSimbyDroplet::Move, "?Move@CSimbyDroplet@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A3CB0, CFireySpark::CFireySpark, "??0CFireySpark@@QAE@PAVCVector@@0H@Z");
+	PATCH_PUSH_RET_POLY(0x004A3DB0, CFireySpark::~CFireySpark, "??1CFireySpark@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A3DC0, CFireySpark::Move, "?Move@CFireySpark@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A40C0, CFlamingImpactWeb::~CFlamingImpactWeb, "??1CFlamingImpactWeb@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A46A0, CSkidMark::Move, "?Move@CSkidMark@@UAEXXZ");
+
+	PATCH_PUSH_RET_POLY(0x004A73B0, CPunchOb::CPunchOb, "??0CPunchOb@@QAE@PAFH@Z");
+	PATCH_PUSH_RET_POLY(0x004A7490, CPunchOb::~CPunchOb, "??1CPunchOb@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004A74F0, CPunchOb::Hit, "?Hit@CPunchOb@@UAEHPAUSHitInfo@@@Z");
+	PATCH_PUSH_RET_POLY(0x004A75E0, CPunchOb::AI, "?AI@CPunchOb@@UAEXXZ");
+
+	PATCH_PUSH_RET(0x004A8680, SpideyAI_ThrownBySimby);
+	PATCH_PUSH_RET(0x004A8720, SpideyAI_WaitForSimbyGrab);
+	PATCH_PUSH_RET(0x004AA660, CSimby::SimbyKnockSpideyDown);
+	PATCH_PUSH_RET(0x004ADB00, CSimby::TakeHit);
+	PATCH_PUSH_RET(0x004AF3B0, CSimby::FlashUpdate);
 }

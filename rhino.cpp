@@ -19,6 +19,11 @@
 #include "chunk.h"
 #include "ps2m3d.h"
 #include "message.h"
+// for G_SAVE_GAME. rhino.cpp used to keep its own "u8 gActuatorRelated", but
+// the byte it stands for is 0x006828D3, which is gSaveGame + 0x7B (field_7B,
+// the vibration option). Shell_DoShell writes it and is not hooked, so the
+// reads in CRhino::ShakePad and CRhino::SetUpStuckHorn must see game memory.
+#include "front.h"
 
 
 // Fixed game address, confirmed by the maintainer's IDB (idb_globals.txt:
@@ -27,6 +32,10 @@
 // this must point at the real address rather than hold guessed values.
 static i32 * const gRhinoStrangeInitData = reinterpret_cast<i32*>(0x005520B8);
 
+// Stays repo-local on purpose: the initialiser below matches the exe bytes at
+// 0x00552080 exactly (IDB name M3d_RhinoLight), and a scan of every function
+// in tools/functions finds no write anywhere in the binary, so both copies
+// hold the same constants.
 EXPORT SLight M3d_RhinoLight =
 {
   { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
@@ -46,13 +55,23 @@ static SRhinoData * const gRhinoData = reinterpret_cast<SRhinoData*>(0x00552208)
 
 #define LEN_RHINO_DAZED_DATA 0x5
 
+// The last footstep sound played, so the next one picks a different sample.
+// CRhino::PlaySounds (0x481550) is the only reader and the only writer in the
+// whole binary ("mov [682C4Ch],eax" at 0x4816B4, compared again in the retry
+// loops above every footstep call), and the maintainer's IDB names 0x00682C4C
+// gRhinoSound.
 EXPORT u32 gRhinoSound;
-extern i32 DifficultyLevel;
+//#define G_RHINO_SOUND (gRhinoSound)
+#define G_RHINO_SOUND (*reinterpret_cast<u32*>(0x00682C4C))
 
-u8 gActuatorRelated;
+// Rhino's state flag table, 0x38 bytes of i16 pairs that end exactly where
+// gRhinoData starts at 0x00552208. CRhino::AI (0x4819C0) and CRhino::Hit
+// (sub_47EE70) push 0x005521D0 into CBaddy::CheckStateFlags. Nothing writes
+// it, but our copy has no initializer, so a hooked reader would see zeros.
 EXPORT SStateFlags gRhinoStateFlags;
-extern i32 gAttackRelated;
-extern CBaddy *BaddyList;
+//#define G_RHINO_STATE_FLAGS (gRhinoStateFlags)
+#define G_RHINO_STATE_FLAGS (*reinterpret_cast<SStateFlags*>(0x005521D0))
+
 #include "camera.h"
 
 // @Ok
@@ -103,12 +122,12 @@ void CRhino::AI(void)
 
 	this->field_35C++;
 
-	if (!(this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 4))
+	if (!(this->CheckStateFlags(&G_RHINO_STATE_FLAGS, 0xD) & 4))
 	{
 		this->DoPhysics(0);
 	}
 
-	if (this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 0x40)
+	if (this->CheckStateFlags(&G_RHINO_STATE_FLAGS, 0xD) & 0x40)
 	{
 		if (this->field_324)
 		{
@@ -165,7 +184,7 @@ void CRhino::AI(void)
 				switch (msg->field_14)
 				{
 					case 5:
-						if (this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 0x10)
+						if (this->CheckStateFlags(&G_RHINO_STATE_FLAGS, 0xD) & 0x10)
 							break;
 						if (this->field_31C.bothFlags != 0x10)
 						{
@@ -213,7 +232,7 @@ void CRhino::AI(void)
 
 	this->field_348 = 0;
 
-	if (this->CheckStateFlags(&gRhinoStateFlags, 0xD) & 0x10)
+	if (this->CheckStateFlags(&G_RHINO_STATE_FLAGS, 0xD) & 0x10)
 	{
 		this->field_2A8 |= 0x10000;
 	}
@@ -234,7 +253,7 @@ void CRhino::AI(void)
 		}
 	}
 	else if ((this->field_31C.bothFlags == 2 || this->field_31C.bothFlags == 1)
-		&& !(gAttackRelated & 3))
+		&& !(G_ATTACK_RELATED & 3))
 	{
 		if (this->DetermineFightState(0))
 		{
@@ -291,12 +310,12 @@ void CRhino::AI(void)
 			break;
 		case 7:
 		case 8:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 			this->field_2A8 |= 0x20000000;
 			this->ChargePlayer();
 			break;
 		case 6:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 			this->field_2A8 |= 0x20000000;
 			this->AttackPlayer();
 			break;
@@ -304,7 +323,7 @@ void CRhino::AI(void)
 			this->HitWall();
 			break;
 		case 14:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 			this->TakeHit();
 			break;
 		case 3:
@@ -314,21 +333,21 @@ void CRhino::AI(void)
 			this->GetLaunched();
 			break;
 		case 4:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 			this->field_2A8 |= 0x20000000;
 			this->ChargePlayer();
 			break;
 		case 5:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 			this->ChasePlayer(1);
 			break;
 		case 16:
 		case 17:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 			this->GetTrapped();
 			break;
 		case 18:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 
 			if (!(this->field_2A8 & 8))
 			{
@@ -357,7 +376,7 @@ void CRhino::AI(void)
 			break;
 		case 13:
 		case 20:
-			this->field_358 = gAttackRelated;
+			this->field_358 = G_ATTACK_RELATED;
 			this->StompGround();
 			break;
 		case 21:
@@ -403,7 +422,7 @@ void CRhino::AI(void)
 	{
 		if (!(this->field_218 & 4))
 		{
-			SFX_PlayPos(((gAttackRelated & 1) == 0 ? 1 : 0) | 0x8040, &this->mPos, 0);
+			SFX_PlayPos(((G_ATTACK_RELATED & 1) == 0 ? 1 : 0) | 0x8040, &this->mPos, 0);
 			this->field_218 |= 4;
 		}
 
@@ -478,7 +497,7 @@ void CRhino::AttackPlayer(void)
 
 			this->field_330 = 0;
 
-			SFX_PlayPos((~gAttackRelated & 1) | 0x80C8, &this->mPos, 0);
+			SFX_PlayPos((~G_ATTACK_RELATED & 1) | 0x80C8, &this->mPos, 0);
 
 			switch (this->field_360)
 			{
@@ -673,7 +692,7 @@ void CRhino::ChargePlayer(void)
 					this->MarkAIProcList(0, 0x100, 0);
 					this->dumbAssPad = 0xA;
 					this->field_330 = 5;
-					this->field_344 = gAttackRelated;
+					this->field_344 = G_ATTACK_RELATED;
 					return;
 				}
 
@@ -754,7 +773,7 @@ void CRhino::ChargePlayer(void)
 			this->Neutralize();
 			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 0x1E, 0);
 			this->PlaySingleAnim(0x14, 0, -1);
-			SFX_PlayPos(((gAttackRelated & 1) == 0 ? 1 : 0) | 0x8046, &this->mPos, 0);
+			SFX_PlayPos(((G_ATTACK_RELATED & 1) == 0 ? 1 : 0) | 0x8046, &this->mPos, 0);
 			this->mCBodyFlags |= 0x10;
 			this->dumbAssPad++;
 			break;
@@ -923,7 +942,7 @@ INLINE i32 CRhino::CheckIfPlayerHit(void)
 		v9.field_4 = 11;
 
 		v9.field_C = G_MECHLIST_PLAYER->mPos - this->mPos;
-		this->field_344 = gAttackRelated;
+		this->field_344 = G_ATTACK_RELATED;
 		v9.field_8 = 15;
 
 		if (G_MECHLIST_PLAYER->Hit(&v9))
@@ -1920,46 +1939,46 @@ void CRhino::PlaySounds(void)
 		case 12:
 			if (!(this->field_388 & 1) && this->mFrame >= 3)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 1;
 			}
 			else if (!(this->field_388 & 2) && this->mFrame >= 0xD)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 2;
 			}
 			else if (!(this->field_388 & 4) && this->mFrame >= 0x15)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 4;
 			}
 			else if (!(this->field_388 & 8) && this->mFrame >= 0x1E)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 8;
 			}
 			break;
 		case 5:
 			if (!(this->field_388 & 1) && this->mFrame >= 0)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 1;
 			}
 			else if (!(this->field_388 & 2) && this->mFrame >= 8)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 2;
 			}
 			break;
 		case 2:
 			if (!(this->field_388 & 1) && this->mFrame >= 0)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 1;
 			}
 			else if (!(this->field_388 & 2) && this->mFrame >= 0xF)
 			{
-				SFX_PlayPos(gRhinoSound = this->GetNextFootstepSFX(), &this->mPos, 0);
+				SFX_PlayPos(G_RHINO_SOUND = this->GetNextFootstepSFX(), &this->mPos, 0);
 				this->field_388 |= 2;
 			}
 			break;
@@ -2066,7 +2085,7 @@ void CRhino::SetUpStuckHorn(SLineInfo *a2, i32 a3)
 		G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_BIG);
 	}
 
-	if (gActuatorRelated)
+	if (G_SAVE_GAME.field_7B)
 	{
 		if (Pad_GetActuatorTime(0, 0) <= 2)
 		{
@@ -2319,7 +2338,7 @@ CRhinoNasalSteam::~CRhinoNasalSteam(void)
 // @Matching
 void Rhino_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -2395,7 +2414,7 @@ i32 CRhino::DetermineFightState(i32 a2)
 			this->field_218 &= ~0x10;
 		}
 
-		if (gAttackRelated - this->field_358 < 0x96 && G_MECHLIST_PLAYER->field_AD4)
+		if (G_ATTACK_RELATED - this->field_358 < 0x96 && G_MECHLIST_PLAYER->field_AD4)
 		{
 			this->field_31C.bothFlags = 0xD;
 			this->dumbAssPad = 0;
@@ -2554,7 +2573,7 @@ void CRhino::HitWall(void)
 // listing settles it, since it writes CRhino's own vtable at offset 0.
 CRhino::~CRhino(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	Panel_DestroyHealthBar();
 
 	if (this->field_3E0)
@@ -2586,7 +2605,7 @@ void CRhino::Laugh(void)
 		case 0:
 			this->field_230 = 100;
 			this->PlaySingleAnim(20, 0, -1);
-			SFX_PlayPos(((gAttackRelated & 1) == 0 ? 1 : 0) | 0x8046, &this->mPos, 0);
+			SFX_PlayPos(((G_ATTACK_RELATED & 1) == 0 ? 1 : 0) | 0x8046, &this->mPos, 0);
 			this->dumbAssPad++;
 
 			break;
@@ -2617,7 +2636,7 @@ void CRhino::RhinoInit(void)
 	switch (this->dumbAssPad)
 	{
 		case 0:
-			this->field_358 = gAttackRelated - 155;
+			this->field_358 = G_ATTACK_RELATED - 155;
 			i32 GroundHeight;
 			GroundHeight = Utils_GetGroundHeight(&this->mPos, 300, 300, 0);
 			if ( GroundHeight != -1 )
@@ -2691,7 +2710,7 @@ void CRhino::StandStill(void)
 // @Ok
 INLINE void CRhino::ShakePad(void)
 {
-	if ( gActuatorRelated )
+	if ( G_SAVE_GAME.field_7B )
 	{
 		if ( Pad_GetActuatorTime(0, 0) <= 2u )
 			Pad_ActuatorOn(0, 6u, 0, 1u);
@@ -2706,7 +2725,7 @@ INLINE void CRhino::ShakePad(void)
 // appears there directly, no separate call, same as ShakePad/PlaySingleAnim.
 INLINE i32 CRhino::GetShockDamage(void)
 {
-	switch ( DifficultyLevel )
+	switch ( G_DIFFICULTY_LEVEL )
 	{
 		case 0:
 		case 1:
@@ -2728,7 +2747,7 @@ INLINE i32 CRhino::GetShockDamage(void)
 INLINE u32 CRhino::GetNextFootstepSFX(void)
 {
 	u32 res;
-	for (res = (Rnd(3) + 76) | 0x8000; res == gRhinoSound; res = (Rnd(3) + 76) | 0x8000)
+	for (res = (Rnd(3) + 76) | 0x8000; res == G_RHINO_SOUND; res = (Rnd(3) + 76) | 0x8000)
 		;
 
 	return res;
@@ -2763,7 +2782,7 @@ CRhino::CRhino(i16* a2, i32 a3)
 	this->mFlags |= 0x480;
 	// @FIXME
 	this->mpLight = &M3d_RhinoLight;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_21E = 100;
 	this->field_1F4 = a3;
@@ -2785,7 +2804,7 @@ CRhino::CRhino(i16* a2, i32 a3)
 	this->field_294.Int = gRhinoStrangeInitData[0];
 	this->field_298.Int = gRhinoStrangeInitData[1];
 
-	this->field_344 = gAttackRelated - 240;
+	this->field_344 = G_ATTACK_RELATED - 240;
 
 	for (i32 i = 0; i < LEN_RHINO_DAZED_DATA; i++)
 	{
@@ -2939,4 +2958,65 @@ void validate_SRhinoData(void)
 	VALIDATE(SRhinoData, field_6, 0x6);
 
 	VALIDATE(SRhinoData, field_8, 0x8);
+}
+
+#include "my_patch.h"
+
+// Not hooked, and why:
+//
+// 1. CRhino::AI (0x4819C0) and CRhino::GetShocked (0x47E420). GetShocked calls
+//    Effects_Electrify, which does "new CElectrify". Our CElectrify has no
+//    Move (0x00439410) and no destructor (0x004390E0), so a shocked rhino
+//    would get an object with our vtable and lose both. AI goes out with it,
+//    it calls GetShocked directly.
+//
+// 2. Rhino_RelocatableModuleInit (0x47DCF0) and Rhino_CreateRhino (0x47DD40).
+//    The original inlines "new CRhino" into Rhino_CreateRhino, which stamps a
+//    vtable. Our CRhino has no Hit override, the exe's slot 3 is sub_47EE70,
+//    so a rhino built by our code would answer Hit with CBody::Hit. Init only
+//    stores the pointer to CreateRhino, so hooking it has the same effect.
+//
+// 3. CRhinoNasalSteam::Move. The original merged its body with
+//    CShellRhinoNasalSteam::Move at 0x48F5E0, which is shell.cpp territory.
+//
+// 4. CheckIfPlayerHit, FuckUpSomeBarrels, StandStill, ShakePad,
+//    GetShockDamage, GetNextFootstepSFX, PlaySingleAnim and both CRhino
+//    constructors have no standalone address, the original inlines them.
+//
+// @Bogus
+void patch_rhino(void)
+{
+	PATCH_PUSH_RET(0x0047DD10, Rhino_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x0047DFE0, CRhino::~CRhino, "??1CRhino@@UAE@XZ");
+
+	PATCH_PUSH_RET(0x0047E0A0, CRhino::PlayXAPlease);
+	PATCH_PUSH_RET(0x0047E1F0, CRhino::SetUpStuckHorn);
+	PATCH_PUSH_RET(0x0047E680, CRhino::StuckInWall);
+	PATCH_PUSH_RET(0x0047E8A0, CRhino::GonnaHitWall);
+	PATCH_PUSH_RET(0x0047ECA0, CRhino::GetLaunched);
+
+	// sub_47F190 in names.json. It is the only unclaimed function left in the
+	// file and CRhino::Hit calls it at 0x47F170, the same way CScorpion::Hit
+	// calls CScorpion::SlideFromHit.
+	PATCH_PUSH_RET(0x0047F190, CRhino::SlideFromHit);
+
+	PATCH_PUSH_RET(0x0047F320, CRhino::FollowWaypoints);
+	PATCH_PUSH_RET(0x0047F490, CRhino::ChasePlayer);
+	PATCH_PUSH_RET(0x0047F800, CRhino::ChargePlayer);
+	PATCH_PUSH_RET(0x00480090, CRhino::Laugh);
+	PATCH_PUSH_RET(0x00480170, CRhino::AttackPlayer);
+	PATCH_PUSH_RET(0x00480480, CRhino::DoDazedEffect);
+	PATCH_PUSH_RET(0x00480820, CRhino::TakeHit);
+	PATCH_PUSH_RET(0x00480A40, CRhino::GetTrapped);
+	PATCH_PUSH_RET(0x00480DA0, CRhino::DieRhino);
+	PATCH_PUSH_RET(0x00480F50, CRhino::HitWall);
+	PATCH_PUSH_RET(0x004810C0, CRhino::StompGround);
+	PATCH_PUSH_RET(0x00481300, CRhino::DetermineFightState);
+	PATCH_PUSH_RET(0x00481550, CRhino::PlaySounds);
+	PATCH_PUSH_RET(0x00481910, CRhino::RhinoInit);
+	PATCH_PUSH_RET(0x004823C0, CRhino::LineOfSightCheck);
+	PATCH_PUSH_RET(0x004825E0, CRhino::DoMGSShadow);
+
+	PATCH_PUSH_RET_POLY(0x00482920, CRhinoNasalSteam::~CRhinoNasalSteam, "??1CRhinoNasalSteam@@UAE@XZ");
 }

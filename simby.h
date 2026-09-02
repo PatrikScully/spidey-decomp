@@ -305,4 +305,6 @@ class CPlayer;
 EXPORT void SpideyAI_WaitForSimbyGrab(CPlayer *);
 EXPORT void SpideyAI_ThrownBySimby(CPlayer *);
 
+void patch_simby(void);
+
 #endif

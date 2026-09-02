@@ -164,4 +164,6 @@ EXPORT void Scorpion_CreateScorpion(const u32*, u32*);
 void validate_CScorpion(void);
 void validate_CConstantLaser(void);
 
+void patch_scorpion(void);
+
 #endif
