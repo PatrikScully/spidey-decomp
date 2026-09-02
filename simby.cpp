@@ -19,10 +19,17 @@
 #include "effects.h"
 #include "exp.h"
 
+// Simby's state flag table. The IDB names 0x00555564 gSimbyFlags, and
+// CSimby::AI (0x4AE3D0) and CSimby::Hit (0x4A8AB0) push that address into
+// CBaddy::CheckStateFlags, which is where PlayGruntSound got inlined. Nothing
+// in the binary writes the table, but our copy has no initialiser, so a hooked
+// reader would see zeros instead of the real flags.
 static SStateFlags gSimbyFlags;
-extern CBaddy* BaddyList;
-extern i32 gAttackRelated;
+//#define G_SIMBY_FLAGS (gSimbyFlags)
+#define G_SIMBY_FLAGS (*reinterpret_cast<SStateFlags*>(0x00555564))
 
+// MiscList belongs to shell.cpp and is still a plain repo global, so the two
+// CSymBurn functions that touch it are left out of patch_simby().
 extern CBody *MiscList;
 #include "camera.h"
 
@@ -33,6 +40,8 @@ static i32 * const gSimbyCount = reinterpret_cast<i32*>(0x682C5C);
 // guess: reset flag adjacent to gSimbyAttackData (0x682C60, idb_globals.txt), purpose unclear.
 static i32 * const gSimbyCountResetFlag = reinterpret_cast<i32*>(0x682C64);
 
+// Stays repo-local: the two words below are the exe bytes at 0x005521C0
+// (05 05 08 07, 05 01 00 00) and nothing in the binary writes them.
 EXPORT i32 gSimbySetup[2] = { 84215815, 261 };
 
 // @Ok
@@ -159,7 +168,7 @@ void Simby_CreateFlamingImpactWeb(const u32* stack,u32 *)
 // @Matching
 void Simby_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -465,7 +474,7 @@ void CPunchOb::AI(void)
 
 	M3d_BuildTransform(this);
 
-	if ( !(gAttackRelated & 0xF)
+	if ( !(G_ATTACK_RELATED & 0xF)
 			&& this->field_31C.bothFlags != 1
 			&& Mem_RecoverPointer(&this->field_104))
 	{
@@ -674,7 +683,7 @@ i32 CPunchOb::Hit(SHitInfo* pHitInfo)
 // @Ok
 CPunchOb::~CPunchOb(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 }
 
 // @Ok
@@ -683,7 +692,7 @@ CPunchOb::CPunchOb(
 		i32 a3)
 {
 	this->InitItem("sym_gen");
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mCBodyFlags |= 0x10;
 	this->mNode = a3;
@@ -957,7 +966,7 @@ void CSimby::TakeHit(void)
 // inlined block.
 void CSimby::PlayGruntSound(void)
 {
-	if (this->CheckStateFlags(&gSimbyFlags, 25) & 0x2000)
+	if (this->CheckStateFlags(&G_SIMBY_FLAGS, 25) & 0x2000)
 	{
 		this->RunTimer(&this->field_34C);
 
@@ -1102,7 +1111,7 @@ CSimby::CSimby(int* a2, int a3)
 
 	this->field_344 = Trig_GetLevelID();
 	this->InitItem(this->field_344 == 0x803 ? "sym_dark" : "symbi_02");
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_2A8 |= 0x201;
 	this->field_21E = 0x64;
@@ -1119,7 +1128,7 @@ CSimby::CSimby(int* a2, int a3)
 	this->field_294.Int = gSimbySetup[0];
 	this->field_298.Int = gSimbySetup[1];
 
-	this->field_3EC = gAttackRelated - 155;
+	this->field_3EC = G_ATTACK_RELATED - 155;
 
 	this->field_34C = Rnd(300);
 
@@ -1145,7 +1154,7 @@ CSimby::CSimby(int* a2, int a3)
 	if (!*gSimbyCount)
 		MakeVertexWibbler();
 
-	i32 v7 = gAttackRelated;
+	i32 v7 = G_ATTACK_RELATED;
 	(*gSimbyCount)++;
 
 	if (v7 < 0x3C)

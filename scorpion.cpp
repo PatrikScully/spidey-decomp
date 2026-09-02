@@ -13,7 +13,6 @@
 #include "ps2m3d.h"
 #include <cstring>
 
-extern CBaddy* BaddyList;
 
 // Fixed game address (no idb_globals.txt entry). Holds the compiled SLight
 // record the (0x483290/0x483450) constructors point mpLight at. Read
@@ -22,6 +21,9 @@ extern CBaddy* BaddyList;
 // (LightMatrix/BackColor/ColorMatrix values are exactly rhino's divided by
 // 1.5, so the two creatures likely share a common base light scaled per
 // model, but we only have hard evidence for this one address.)
+// Stays repo-local on purpose: the initialiser below matches the exe bytes at
+// 0x005523D0 exactly, and no function in the binary writes that range, so both
+// copies hold the same constants.
 EXPORT SLight M3d_ScorpionLight =
 {
   { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
@@ -70,7 +72,7 @@ CScorpion::CScorpion(i16 *a2, i32 a3)
 	this->mFlags |= 0x480;
 	this->mpLight = &M3d_ScorpionLight;
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_1F4 = a3;
 	this->mNode = static_cast<u16>(a3);
@@ -152,7 +154,7 @@ void Scorpion_CreateScorpion(const u32* stack, u32* result)
 // @Matching
 void Scorpion_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -359,7 +361,7 @@ INLINE CSuper* CScorpion::FindJonah(void)
 		return field_BEC;
 
 
-	for (CSuper* cur = BaddyList; cur; cur = reinterpret_cast<CSuper*>(cur->mNextItem))
+	for (CSuper* cur = G_BADDY_LIST; cur; cur = reinterpret_cast<CSuper*>(cur->mNextItem))
 	{
 		if (cur->mType == 316)
 		{
@@ -475,7 +477,7 @@ i32 CScorpion::GetEnvironmentalObjectTarget(void)
 
 	if (!obj)
 	{
-		obj = reinterpret_cast<CBody*>(BaddyList);
+		obj = reinterpret_cast<CBody*>(G_BADDY_LIST);
 		if (!obj)
 		{
 			return 0;
