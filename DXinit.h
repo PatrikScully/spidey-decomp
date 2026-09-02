@@ -131,7 +131,17 @@ EXPORT extern LPDIRECTSOUND8 g_pDS;
 	}\
 }
 
+// Created once by the exe's unhooked DXINIT_CreateDevice and never touched by
+// any hooked function, but plenty of hooked GAME LOGIC (health bars, progress
+// bars, panel icons) calls straight into the unhooked DX helper layer
+// (DXPOLY_SetTexture etc.) as a normal compiled call, since it is all one
+// DLL. Those DX helpers then dereferenced our own DLL's null copy of this
+// and crashed at 0x00502F4A (DXPOLY_SetTexture -> g_D3DDevice7->SetTexture).
+// Address confirmed from that disassembly: "mov eax,[6B791Ch]" right before
+// the vtable call.
 EXPORT extern LPDIRECT3DDEVICE7 g_D3DDevice7;
+//#define G_D3DDEVICE7 (g_D3DDevice7)
+#define G_D3DDEVICE7 (*reinterpret_cast<LPDIRECT3DDEVICE7*>(0x006B791C))
 EXPORT extern LPDIRECTDRAW7 lpDD;
 EXPORT extern i32 gDxOptionRelated;
 EXPORT extern LPDIRECTDRAWSURFACE7 g_pDDS_SaveScreen;

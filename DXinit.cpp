@@ -2091,10 +2091,10 @@ u8 initDirect3D7(u32 a1)
 		D3D_ERROR_LOG_AND_QUIT(hr);
 	}
 	
-	hr = g_D3D7->CreateDevice(pGUID, g_pDDS_Scene, &g_D3DDevice7);
+	hr = g_D3D7->CreateDevice(pGUID, g_pDDS_Scene, &G_D3DDEVICE7);
 	D3D_ERROR_LOG_AND_QUIT(hr);
 
-	hr = g_D3DDevice7->GetCaps(&gD3DDevCaps);
+	hr = G_D3DDEVICE7->GetCaps(&gD3DDevCaps);
 	D3D_ERROR_LOG_AND_QUIT(hr);
 
 	D3DVIEWPORT7 v80;
@@ -2105,7 +2105,7 @@ u8 initDirect3D7(u32 a1)
 	v80.dvMinZ = 0.0;
 	v80.dvMaxZ = 1.0;
 
-	hr = g_D3DDevice7->SetViewport(&v80);
+	hr = G_D3DDEVICE7->SetViewport(&v80);
 	D3D_ERROR_LOG_AND_QUIT(hr);
 
 	if ( (gD3DDevCaps.dwTextureOpCaps & 5) == 0 )
@@ -2384,11 +2384,11 @@ void shutdownDirect3D7(i32 releaseAll)
 #ifdef _WIN32
 	HRESULT hr;
 
-	if (g_D3DDevice7)
+	if (G_D3DDEVICE7)
 	{
-		hr = g_D3DDevice7->Release();
+		hr = G_D3DDEVICE7->Release();
 		D3D_ERROR_LOG_AND_QUIT(hr);
-		g_D3DDevice7 = 0;
+		G_D3DDEVICE7 = 0;
 	}
 
 	DDBLTFX fx;

@@ -7,7 +7,14 @@
 #include <cstring>
 #include <cstdlib>
 
+// The currently-bound D3D texture surface, tracked by DXPOLY_SetTexture to
+// skip redundant SetTexture calls. Same class of bug as G_D3DDEVICE7 in
+// DXinit.h: DXPOLY_SetTexture is called directly from hooked game logic, so
+// this has to be the exe's copy too. Address from the same disassembly,
+// "mov [6B7A74h],edi" at the end of DXPOLY_SetTexture.
 EXPORT LPDIRECTDRAWSURFACE7 gDDSurface7;
+//#define G_DD_SURFACE7 (gDDSurface7)
+#define G_DD_SURFACE7 (*reinterpret_cast<LPDIRECTDRAWSURFACE7*>(0x006B7A74))
 EXPORT bool gTexAlpha = false;
 EXPORT u32 dword_6B7A8C;
 EXPORT f32 flt_56817C = 10.0f;
@@ -1023,13 +1030,13 @@ void DXPOLY_BeginScene(void)
 	}
 	else
 	{
-		HRESULT hr = g_D3DDevice7->BeginScene();
+		HRESULT hr = G_D3DDEVICE7->BeginScene();
 		D3D_ERROR_LOG_AND_QUIT(hr);
 
 		if (gDxPolyRelated)
-			hr = g_D3DDevice7->Clear(0, 0, 3, gDxPolyBackgroundColor, gFlDepthCompare, 0);
+			hr = G_D3DDEVICE7->Clear(0, 0, 3, gDxPolyBackgroundColor, gFlDepthCompare, 0);
 		else
-			hr = g_D3DDevice7->Clear(0, 0, 1, gDxPolyBackgroundColor, gFlDepthCompare, 0);
+			hr = G_D3DDEVICE7->Clear(0, 0, 1, gDxPolyBackgroundColor, gFlDepthCompare, 0);
 		D3D_ERROR_LOG_AND_QUIT(hr);
 	}
 #endif
@@ -1115,7 +1122,7 @@ void DXPOLY_DrawPoly(
 
 		DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
 
-		g_D3DDevice7->DrawPrimitive(
+		G_D3DDEVICE7->DrawPrimitive(
 				D3DPT_TRIANGLEFAN,
 				324,
 				&pPoly->field_10[0],
@@ -1143,7 +1150,7 @@ void DXPOLY_EnableTexAlpha(bool a1)
 	if (a1 != gTexAlpha)
 	{
 		gTexAlpha = a1;
-		g_D3DDevice7->SetTextureStageState(0, D3DTSS_ALPHAOP, a1 ? 4 : 3);
+		G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_ALPHAOP, a1 ? 4 : 3);
 	}
 #endif
 }
@@ -1292,7 +1299,7 @@ void DXPOLY_EndScene(bool a1)
 		}
 		else
 		{
-			HRESULT hr = g_D3DDevice7->EndScene();
+			HRESULT hr = G_D3DDEVICE7->EndScene();
 			D3D_ERROR_LOG_AND_QUIT(hr);
 		}
 
@@ -1381,85 +1388,85 @@ void DXPOLY_Init(u32 a1)
 	gAddressU = 3;
 	gAddressV = 3;
 	gCurrentBlendMode = 0;
-	gDDSurface7 = 0;
+	G_DD_SURFACE7 = 0;
 
 #ifdef _WIN32
-	g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ANTIALIAS, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)4, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)7, gDxPolyRelated != 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)8, 3);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)9, 2);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)10, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)14, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)15, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)16, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)19, 2);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)20, 1);
+	G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ANTIALIAS, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)4, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)7, gDxPolyRelated != 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)8, 3);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)9, 2);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)10, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)14, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)15, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)16, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)19, 2);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)20, 1);
 	if ( gLowGraphics )
-		g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)22, 1);
+		G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)22, 1);
 	else
-		g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)22, 3);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)23, 4);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)24, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)25, 8);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)26, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)27, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)28, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)29, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)33, 0);
-	g_D3DDevice7->SetRenderState(D3DRENDERSTATE_FOGCOLOR, gFogColor);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)35, 0);
-	g_D3DDevice7->SetRenderState(D3DRENDERSTATE_FOGSTART, gFogStart);
-	g_D3DDevice7->SetRenderState(D3DRENDERSTATE_FOGEND, gFogEnd);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)38, 1065353216);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)40, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)41, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)47, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)48, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)52, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)53, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)54, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)55, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)56, 8);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)57, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)58, -1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)59, -1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)60, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)128, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)129, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)130, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)131, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)132, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)133, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)134, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)135, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)136, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)137, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)138, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)139, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)140, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)141, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)142, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)143, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)144, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)145, 1);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)146, 2);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)147, 2);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)148, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)151, 0);
-	g_D3DDevice7->SetRenderState((D3DRENDERSTATETYPE)152, 0);
+		G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)22, 3);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)23, 4);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)24, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)25, 8);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)26, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)27, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)28, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)29, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)33, 0);
+	G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_FOGCOLOR, gFogColor);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)35, 0);
+	G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_FOGSTART, gFogStart);
+	G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_FOGEND, gFogEnd);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)38, 1065353216);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)40, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)41, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)47, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)48, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)52, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)53, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)54, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)55, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)56, 8);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)57, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)58, -1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)59, -1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)60, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)128, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)129, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)130, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)131, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)132, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)133, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)134, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)135, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)136, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)137, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)138, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)139, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)140, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)141, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)142, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)143, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)144, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)145, 1);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)146, 2);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)147, 2);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)148, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)151, 0);
+	G_D3DDEVICE7->SetRenderState((D3DRENDERSTATETYPE)152, 0);
 
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)1, 4);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)2, 2);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)3, 0);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)4, 4);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)5, 2);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)6, 0);
-	g_D3DDevice7->SetTextureStageState(0, D3DTSS_ADDRESSU, gAddressU);
-	g_D3DDevice7->SetTextureStageState(0, D3DTSS_ADDRESSV, gAddressV);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)16, gMagFilters[gCurrentFilterIndex]);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)17, gMinFilters[gCurrentFilterIndex]);
-	g_D3DDevice7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)18, 1);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)1, 4);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)2, 2);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)3, 0);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)4, 4);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)5, 2);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)6, 0);
+	G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_ADDRESSU, gAddressU);
+	G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_ADDRESSV, gAddressV);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)16, gMagFilters[gCurrentFilterIndex]);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)17, gMinFilters[gCurrentFilterIndex]);
+	G_D3DDEVICE7->SetTextureStageState(0, (D3DTEXTURESTAGESTATETYPE)18, 1);
 #endif
 }
 
@@ -1698,29 +1705,29 @@ void DXPOLY_SetBlendMode(u32 a1)
 				DXERR_printf("ERROR: Invalid blend mode passed to DXPOLY_SetBlendMode(): %lu\r\n", a1);
 				newBlendMode = 0;
 			case 0:
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 2);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 1);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 0);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 2);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 1);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 0);
 				DXPOLY_SetDepthWriting(1);
 				break;
 			case 3:
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 1);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 4);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 1);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 1);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 4);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 1);
 				DXPOLY_SetDepthWriting(0);
 				break;
 			case 1:
 			case 5:
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 5);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 6);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 1);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 5);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 6);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 1);
 				DXPOLY_SetDepthWriting(0);
 				break;
 			case 2:
 			case 4:
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 5);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 2);
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 1);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_SRCBLEND, 5);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_DESTBLEND, 2);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, 1);
 				DXPOLY_SetDepthWriting(0);
 				break;
 
@@ -1742,7 +1749,7 @@ void DXPOLY_SetDepthCompare(u32 a1)
 		{
 			if (gDepthWriting)
 			{
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZENABLE, 0);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 0);
 				gDepthWriting = 0;
 				DXERR_printf("Depth Buffering Disabled.\r\n");
 			}
@@ -1752,14 +1759,14 @@ void DXPOLY_SetDepthCompare(u32 a1)
 
 		if (!gDepthWriting)
 		{
-			g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZENABLE, 1);
+			G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 1);
 			gDepthWriting = 1;
 			DXERR_printf("Depth Buffering Enabled.\r\n");
 		}
 
 		if (a1 != gDepthCompareIndex)
 		{
-			g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZFUNC, a1);
+			G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZFUNC, a1);
 			char* status = gD3DDepthCompareNames[a1];
 			gDepthCompareIndex = a1;
 
@@ -1778,7 +1785,7 @@ void DXPOLY_SetDepthWriting(bool a1)
 #ifdef _WIN32
 	if (gDxPolyRelated && a1 != gDepthWriting)
 	{
-		g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZWRITEENABLE, a1);
+		G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZWRITEENABLE, a1);
 		gDepthWriting = a1;
 
 		char *status = "Enabled";
@@ -1797,8 +1804,8 @@ void DXPOLY_SetFilterMode(u32 filterIndex)
 #ifdef _WIN32
 	if (filterIndex != gCurrentFilterIndex)
 	{
-		g_D3DDevice7->SetTextureStageState(0, D3DTSS_MAGFILTER, gMagFilters[filterIndex]);
-		g_D3DDevice7->SetTextureStageState(0, D3DTSS_MINFILTER, gMinFilters[filterIndex]);
+		G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_MAGFILTER, gMagFilters[filterIndex]);
+		G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_MINFILTER, gMinFilters[filterIndex]);
 
 		gCurrentFilterIndex = filterIndex;
 
@@ -1831,11 +1838,11 @@ void DXPOLY_SetOutlineColor(u32 a1)
 void DXPOLY_SetTexture(LPDIRECTDRAWSURFACE7 a1)
 {
 #ifdef _WIN32
-	if (a1 != gDDSurface7)
+	if (a1 != G_DD_SURFACE7)
 	{
-		HRESULT hr = g_D3DDevice7->SetTexture(0, a1);
+		HRESULT hr = G_D3DDEVICE7->SetTexture(0, a1);
 		D3D_ERROR_LOG_AND_QUIT(hr);
-		gDDSurface7 = a1;
+		G_DD_SURFACE7 = a1;
 	}
 #endif
 }
@@ -2530,13 +2537,13 @@ void DXPOLY_SetAddressUAndV(DWORD addressU, DWORD addressV)
 #ifdef _WIN32
 	if (addressU != gAddressU)
 	{
-		g_D3DDevice7->SetTextureStageState(0, D3DTSS_ADDRESSU, addressU);
+		G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_ADDRESSU, addressU);
 		gAddressU = addressU;
 	}
 
 	if (addressV != gAddressV)
 	{
-		g_D3DDevice7->SetTextureStageState(0, D3DTSS_ADDRESSV, addressV);
+		G_D3DDEVICE7->SetTextureStageState(0, D3DTSS_ADDRESSV, addressV);
 		gAddressV = addressV;
 	}
 #endif
@@ -2573,7 +2580,7 @@ void renderScene(void)
 
 			DXPOLY* pPoly = gSceneBuffer[i];
 			if (gDxPolyRelated && gHudOffset > 0 && i == gHudOffset)
-				g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZENABLE, 0);
+				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 0);
 
 			while (pPoly)
 			{
@@ -2587,7 +2594,7 @@ void renderScene(void)
 				DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
 				DXPOLY_SetFilterMode((pPoly->field_A & 0x10) == 0);
 
-				g_D3DDevice7->DrawPrimitive(
+				G_D3DDEVICE7->DrawPrimitive(
 						D3DPT_TRIANGLEFAN,
 						324,
 						&pPoly->field_10[0],
@@ -2599,7 +2606,7 @@ void renderScene(void)
 		}
 
 		if (gDxPolyRelated && gHudOffset > 0)
-			g_D3DDevice7->SetRenderState(D3DRENDERSTATE_ZENABLE, 1);
+			G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 1);
 	}
 #endif
 }
