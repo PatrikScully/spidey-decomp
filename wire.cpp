@@ -6,8 +6,8 @@
 #include "m3dcolij.h"
 #include "validate.h"
 #include "bit.h"
+#include "baddy.h"
 
-extern CBody* ControlBaddyList;
 extern CSVector gTrajectoryVector;
 
 // @Ok
@@ -95,7 +95,7 @@ CLaserFence::CLaserFence(i16* a2, i32 a3, bool a4)
 // matching
 void CLaserFence::CommonInitialisation(bool a2)
 {
-	this->AttachTo(&ControlBaddyList);
+	this->AttachTo(&G_CONTROL_BADDY_LIST);
 	if ( this->mPos.vx < this->field_F8.vx )
 	{
 		this->mVxMin = this->mPos.vx;
@@ -153,7 +153,7 @@ void CLaserFence::CommonInitialisation(bool a2)
 // @Ok
 CLaserFence::~CLaserFence(void)
 {
-	this->DeleteFrom(&ControlBaddyList);
+	this->DeleteFrom(&G_CONTROL_BADDY_LIST);
 
 	delete this->field_118;
 }
@@ -257,7 +257,7 @@ CTripWire::CTripWire(i16 *, u16 a3)
 	this->field_104.vy = 0;
 	this->field_104.vz = 0;
 
-	this->AttachTo(&ControlBaddyList);
+	this->AttachTo(&G_CONTROL_BADDY_LIST);
 	this->field_FB = 0;
 
 	Trig_GetPosition(&this->mPos, a3);
@@ -294,7 +294,7 @@ CTripWire::CTripWire(i16 *, u16 a3)
 // @Ok
 CTripWire::~CTripWire(void)
 {
-	this->DeleteFrom(&ControlBaddyList);
+	this->DeleteFrom(&G_CONTROL_BADDY_LIST);
 
 	delete this->field_110;
 }
