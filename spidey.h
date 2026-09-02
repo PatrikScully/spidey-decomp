@@ -1095,6 +1095,8 @@ EXPORT void Spidey_StoreTextureEntry(Texture const *,i16,i16);
 EXPORT void Spidey_SwapSuitTextures(i32,i32);
 EXPORT void spideyLog(char *,...);
 
+void patch_spidey(void);
+
 void validate_CPlayer(void);
 void validate_SIndicator(void);
 

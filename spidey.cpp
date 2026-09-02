@@ -33,6 +33,7 @@
 #include "SpideyDX.h"
 #include "switch.h"
 #include "ps2pad.h"
+#include "my_patch.h"
 
 // 0x006B78F8, "gLowGraphics" (DXinit.h). Same file-local macro trig.cpp,
 // spool.cpp and PCTex.cpp already use, spelled identically.
@@ -11774,4 +11775,132 @@ void validate_SIndicator(void)
 	VALIDATE(SIndicator, field_C, 0xC);
 
 	VALIDATE(SIndicator, mInUse, 0x64);
+}
+
+// @Bogus
+// Hooks the CPlayer code this file owns into the running game.
+//
+// Not hooked, and why:
+//  - CPlayer::CPlayer (0x004B9EB0) and CPlayer::~CPlayer (0x004BAA30, the
+//    real body behind the 0x004C9210 deleting thunk). Hooking a constructor
+//    stamps our vtable on the object. Our vtable matches the original one
+//    slot for slot (dtor, Die, AI, Hit, DeleteStuff at 0x0053C464), so that
+//    part is fine, but the two functions also read WebList and gLevelStatus,
+//    which are still plain repo variables in web.cpp and trig.cpp.
+//  - CPlayer::AI (0x004C65C0), reads WebList (web.h).
+//  - CPlayer::SwitchToDeathMode (0x004BDFF0) and
+//    CPlayer::SynthesizeAnalogueInput (0x004BC300), both read and write
+//    gLevelStatus (trig.h).
+//  - CPlayer::InitialiseSFXArray, SortFistsData, LockTargetTorsoAngle,
+//    GetNewCommandBlock, KillCommandBlock, KillAllCommandBlocks and
+//    GetHookPosition: no standalone address, the original inlines them.
+void patch_spidey(void)
+{
+	PATCH_PUSH_RET(0x004B8C80, Spidey_StoreTextureEntry);
+	PATCH_PUSH_RET(0x004B8D80, Spidey_SwapSuitTextures);
+	PATCH_PUSH_RET(0x004B8E60, Spidey_LoadAlternativeTextureSet);
+	PATCH_PUSH_RET(0x004B9020, Spidey_LoadAlternativeHealthIcon);
+	PATCH_PUSH_RET(0x004B9130, Spidey_DoArmorVRAMProcessing);
+	PATCH_PUSH_RET(0x004B9180, Spidey_CopyHeadModel);
+	PATCH_PUSH_RET(0x004B91F0, Spidey_FreeHeadModel);
+	PATCH_PUSH_RET(0x004B9210, Spidey_BagHead);
+	PATCH_PUSH_RET(0x004B9320, Spidey_SetUserFunction);
+	PATCH_PUSH_RET(0x004B9340, Bruce_Sync);
+	PATCH_PUSH_RET(0x004B9390, CPlayer::GetPerpendicularisationRadius);
+	PATCH_PUSH_RET(0x004B9420, CPlayer::PriorToVenomDistanceAttack);
+	PATCH_PUSH_RET(0x004B9730, CPlayer::CanITalkRightNow);
+	PATCH_PUSH_RET(0x004B9740, CPlayer::SetSpideyLookaroundCamValue);
+	PATCH_PUSH_RET(0x004B97D0, CPlayer::SetSpideyCamValue);
+	PATCH_PUSH_RET(0x004B9E10, CPlayer::SetCamAngleLock);
+	PATCH_PUSH_RET(0x004B9E30, CPlayer::SetFocusLockTarget);
+	PATCH_PUSH_RET(0x004B9E50, CPlayer::SetStartOrientation);
+	PATCH_PUSH_RET(0x004BA9F0, CPlayer::StopAlertMusic);
+	PATCH_PUSH_RET(0x004BAD90, CPlayer::AdjustBrightness);
+	PATCH_PUSH_RET(0x004BAEC0, CPlayer::SetArmor);
+	PATCH_PUSH_RET(0x004BAFC0, CPlayer::SetFireWebbing);
+	PATCH_PUSH_RET(0x004BAFE0, CPlayer::IncreaseWebbing);
+	PATCH_PUSH_RET(0x004BB0A0, CPlayer::DecreaseWebbing);
+	PATCH_PUSH_RET(0x004BB180, CPlayer::CreateFists);
+	PATCH_PUSH_RET(0x004BB1E0, CPlayer::CalculateIntermediateTrailSteps);
+	PATCH_PUSH_RET(0x004BB300, CPlayer::UpdateTrails);
+	PATCH_PUSH_RET(0x004BB710, CPlayer::KnockSpideyFromCrawlPosition);
+	PATCH_PUSH_RET(0x004BB810, CPlayer::GrabUpdate);
+	PATCH_PUSH_RET(0x004BBC60, CPlayer::NotifyKill);
+	PATCH_PUSH_RET(0x004BC020, CPlayer::CutSceneSkipCleanup);
+	PATCH_PUSH_RET(0x004BC1A0, CPlayer::SwitchToSynthesizedInput);
+	PATCH_PUSH_RET(0x004BD510, CPlayer::ReadAnalogueInput);
+	PATCH_PUSH_RET(0x004BD750, CPlayer::IncHealth);
+	PATCH_PUSH_RET_POLY(0x004BD7E0, CPlayer::Die, "?Die@CPlayer@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004BD800, CPlayer::DeleteStuff, "?DeleteStuff@CPlayer@@UAEXXZ");
+	PATCH_PUSH_RET(0x004BD830, CPlayer::GetDamageInflictedFromDifficulty);
+	PATCH_PUSH_RET_POLY(0x004BD890, CPlayer::Hit, "?Hit@CPlayer@@UAEHPAUSHitInfo@@@Z");
+	PATCH_PUSH_RET(0x004BDF10, CPlayer::ShouldPlayerDropFlail);
+	PATCH_PUSH_RET(0x004BDF30, CPlayer::CollideWithObject);
+	PATCH_PUSH_RET(0x004BE3E0, CPlayer::CheckSwitchToGrabbedMode);
+	PATCH_PUSH_RET(0x004BE4B0, CPlayer::SwitchToStandMode);
+	PATCH_PUSH_RET(0x004BE8C0, CPlayer::CheckFenceSurfaceTransition);
+	PATCH_PUSH_RET(0x004BEA90, CPlayer::HandleControlsForSurfaceTransition);
+	PATCH_PUSH_RET(0x004BEB70, CPlayer::CheckInteriorSurfaceTransition);
+	PATCH_PUSH_RET(0x004BF070, CPlayer::CheckExteriorSurfaceTransition);
+	PATCH_PUSH_RET(0x004BF5D0, CPlayer::SetFallingCamera);
+	PATCH_PUSH_RET(0x004BF690, CPlayer::SetSwingCamera);
+	PATCH_PUSH_RET(0x004BF720, CPlayer::SetFloorCamera);
+	PATCH_PUSH_RET(0x004BF7A0, CPlayer::SetWallCamera);
+	PATCH_PUSH_RET(0x004BF820, CPlayer::SetCeilingCamera);
+	PATCH_PUSH_RET(0x004BF8A0, CPlayer::CheckForwards);
+	PATCH_PUSH_RET(0x004BFBC0, CPlayer::CheckRunIntoWall);
+	PATCH_PUSH_RET(0x004BFCE0, CPlayer::CheckStickToCeiling);
+	PATCH_PUSH_RET(0x004BFEC0, CPlayer::CheckStickToWall);
+	PATCH_PUSH_RET(0x004C00B0, CPlayer::CheckKick);
+	PATCH_PUSH_RET(0x004C0510, CPlayer::CheckWebShot);
+	PATCH_PUSH_RET(0x004C0B80, CPlayer::CheckCeilingJumpingSmashPunch);
+	PATCH_PUSH_RET(0x004C0D50, CPlayer::CreateJumpingSmashKickTrail);
+	PATCH_PUSH_RET(0x004C0E60, CPlayer::DestroyJumpingSmashKickTrail);
+	PATCH_PUSH_RET(0x004C0EA0, CPlayer::DestroyHandTrails);
+	PATCH_PUSH_RET(0x004C0EE0, CPlayer::CheckJumpingR1ZipWeb);
+	PATCH_PUSH_RET(0x004C1460, CPlayer::CheckJumpingR2ZipWeb);
+	PATCH_PUSH_RET(0x004C18A0, CPlayer::CheckJumpingSwingWeb);
+	PATCH_PUSH_RET(0x004C1EB0, CPlayer::CheckJumpingSmashKick);
+	PATCH_PUSH_RET(0x004C2090, CPlayer::CheckJump);
+	PATCH_PUSH_RET(0x004C23A0, CPlayer::CheckGroundGone);
+	PATCH_PUSH_RET(0x004C24E0, CPlayer::CheckLanded);
+	PATCH_PUSH_RET(0x004C2840, CPlayer::DoMGSShadow);
+	PATCH_PUSH_RET(0x004C2B40, CPlayer::DoShadowCheck);
+	PATCH_PUSH_RET(0x004C2F70, CPlayer::CalculateSwingWebParameters);
+	PATCH_PUSH_RET(0x004C30A0, CPlayer::SetIgnoreInputTimer);
+	PATCH_PUSH_RET(0x004C30D0, CPlayer::CheckZipWebAvailability);
+	PATCH_PUSH_RET(0x004C31D0, CPlayer::CheckSwingWebAvailability);
+	PATCH_PUSH_RET(0x004C3580, CPlayer::EnterLookaroundMode);
+	PATCH_PUSH_RET(0x004C3810, CPlayer::ExitLookaroundMode);
+	PATCH_PUSH_RET(0x004C38A0, CPlayer::SetupLookaroundCamera);
+	PATCH_PUSH_RET(0x004C4700, CPlayer::DrawReticle);
+	PATCH_PUSH_RET(0x004C4940, CPlayer::RenderLookaroundReticle);
+	PATCH_PUSH_RET(0x004C4A20, CPlayer::TidyUpZipWebLandingPosition);
+	PATCH_PUSH_RET(0x004C4BB0, CPlayer::OrientToNormal);
+	PATCH_PUSH_RET(0x004C50C0, CPlayer::IsInIndicatorList);
+	PATCH_PUSH_RET(0x004C5100, CPlayer::GetFreeIndicatorListEntry);
+	PATCH_PUSH_RET(0x004C5130, CPlayer::UpdateOffscreenSpideySenseIndicatorList);
+	PATCH_PUSH_RET(0x004C5250, CPlayer::BuildOffscreenSpideySenseIndicatorList);
+	PATCH_PUSH_RET(0x004C5430, CPlayer::InitialiseOffscreenSpideySenseIndicatorList);
+	PATCH_PUSH_RET(0x004C54A0, CPlayer::DrawOffscreenSpideySenseIndicatorList);
+	PATCH_PUSH_RET(0x004C5AA0, CPlayer::SelectAutoAimTarget);
+	PATCH_PUSH_RET(0x004C5C60, CPlayer::CalculateTugWebPathPoints);
+	PATCH_PUSH_RET(0x004C5DD0, CPlayer::FireWeb);
+	PATCH_PUSH_RET(0x004C64A0, CPlayer::PutCameraBehind);
+	PATCH_PUSH_RET(0x004C68A0, CPlayer::SetTargetTorsoAngleToThisPoint);
+	PATCH_PUSH_RET(0x004C6970, CPlayer::SetTargetTorsoAngle);
+	PATCH_PUSH_RET(0x004C6AA0, CPlayer::GetEffectiveHeading);
+	PATCH_PUSH_RET(0x004C6BD0, CPlayer::CreateWebDrips);
+	PATCH_PUSH_RET(0x004C6E10, CPlayer::CreateCombatImpactEffect);
+	PATCH_PUSH_RET(0x004C70F0, CPlayer::SetFirstContactDetails);
+	PATCH_PUSH_RET(0x004C7120, CPlayer::UpdateAndTrackCombo);
+	PATCH_PUSH_RET(0x004C8410, CPlayer::SelectTargetBaddy);
+	PATCH_PUSH_RET(0x004C8570, CPlayer::SelectTargetSwitch);
+	PATCH_PUSH_RET(0x004C87D0, CPlayer::InitiateCombo);
+	PATCH_PUSH_RET(0x004C8C40, CPlayer::SortAnimationFollowOnData);
+	PATCH_PUSH_RET(0x004C8CC0, CPlayer::ParseFightData);
+	PATCH_PUSH_RET(0x004C8F40, CPlayer::ProcessSFXArray);
+	PATCH_PUSH_RET(0x004C9100, CPlayer::ResetSFXArrayEntry);
+	PATCH_PUSH_RET(0x004C9130, CPlayer::PlaySingleAnim);
+	PATCH_PUSH_RET(0x004C9180, CPlayer::IfPlayerCeilingCheck);
 }
