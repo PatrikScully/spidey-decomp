@@ -72,7 +72,7 @@ u8 GameFMV_PlayMovie(
 		f32 a4)
 {
 	Redbook_XAStop();
-	gSaveGame.field_88 |= 1 << a1;
+	G_SAVE_GAME.field_88 |= 1 << a1;
 	if (MechList)
 		MechList->StopAlertMusic();
 

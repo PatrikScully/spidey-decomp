@@ -1042,7 +1042,7 @@ i32 INLINE CMysterio::PlayAndAttachXAPlease(
 // @Matching
 void INLINE CMysterio::ShakePad(void)
 {
-	if (gSaveGame.field_7B)
+	if (G_SAVE_GAME.field_7B)
 	{
 		if (Pad_GetActuatorTime(0, 0) <= 2)
 			Pad_ActuatorOn(0, 6, 0, 1);

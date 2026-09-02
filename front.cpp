@@ -560,7 +560,7 @@ inline void* operator new(size_t, void* location)
 void Front_Init(void)
 {
 	*gFrontCardExists = DCCard_Exists(0);
-	gSaveGame = G_DEFAULT_SAVE_GAME;
+	G_SAVE_GAME = G_DEFAULT_SAVE_GAME;
 
 	PShell_ApplyGameState();
 
@@ -626,15 +626,15 @@ void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
 
 	i32 savedRestartNode = RestartNode;
 
-	if (gSaveGame.field_4[1] == 'f' && gSaveGame.field_4[3] == '1')
+	if (G_SAVE_GAME.field_4[1] == 'f' && G_SAVE_GAME.field_4[3] == '1')
 	{
 		print_if_false(gFrontSlotCounter < 9, reinterpret_cast<char*>(0x0054ACCC));
 
-		gSaveGame.field_4[4] = static_cast<char>(gFrontSlotShuffleTable[gFrontSlotCounter] + '0');
-		gSaveGame.field_4[5] = '_';
-		gSaveGame.field_4[6] = 't';
-		gSaveGame.field_4[7] = 0;
-		gSaveGame.mRestartPointName[0] = 0;
+		G_SAVE_GAME.field_4[4] = static_cast<char>(gFrontSlotShuffleTable[gFrontSlotCounter] + '0');
+		G_SAVE_GAME.field_4[5] = '_';
+		G_SAVE_GAME.field_4[6] = 't';
+		G_SAVE_GAME.field_4[7] = 0;
+		G_SAVE_GAME.mRestartPointName[0] = 0;
 
 		gFrontSlotCounter++;
 		if (gFrontSlotCounter >= 9)
@@ -644,33 +644,33 @@ void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
 		}
 	}
 
-	SLevel* pLevel = Front_FindLevel(gSaveGame.field_4);
+	SLevel* pLevel = Front_FindLevel(G_SAVE_GAME.field_4);
 
 	if (pLevel)
 	{
 		i32 field_10 = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(pLevel) + 0x10);
 		i32 field_C = *reinterpret_cast<i32*>(reinterpret_cast<u8*>(pLevel) + 0xC);
 
-		gSaveGame.field_84 |= field_10;
-		gSaveGame.field_90 |= field_C;
+		G_SAVE_GAME.field_84 |= field_10;
+		G_SAVE_GAME.field_90 |= field_C;
 
-		if (*reinterpret_cast<u8*>(0x0060CFC5) && Utils_CompareStrings(gSaveGame.field_4, reinterpret_cast<char*>(0x0054A808)))
-			gSaveGame.field_84 |= 0x2000000;
+		if (*reinterpret_cast<u8*>(0x0060CFC5) && Utils_CompareStrings(G_SAVE_GAME.field_4, reinterpret_cast<char*>(0x0054A808)))
+			G_SAVE_GAME.field_84 |= 0x2000000;
 	}
 
 	SFX_SpoolOutLevelSFX();
 
 	char levelId[5];
-	levelId[0] = gSaveGame.field_4[0];
-	levelId[1] = gSaveGame.field_4[1];
-	levelId[2] = gSaveGame.field_4[2];
-	levelId[3] = gSaveGame.field_4[3];
+	levelId[0] = G_SAVE_GAME.field_4[0];
+	levelId[1] = G_SAVE_GAME.field_4[1];
+	levelId[2] = G_SAVE_GAME.field_4[2];
+	levelId[3] = G_SAVE_GAME.field_4[3];
 	levelId[4] = 0;
 	SFX_SpoolInLevelSFX(levelId);
 
 	Spidey_SetUserFunction(0, 0);
 	((void(*)(i32))gsub_430880)(2000);
-	Trig_LoadTRG(gSaveGame.field_4);
+	Trig_LoadTRG(G_SAVE_GAME.field_4);
 
 	gFrontGauge = 0;
 	((void(*)(i32))gsub_430880)(4);
@@ -705,7 +705,7 @@ void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
 	v.vz = 0;
 
 	char *pName = &reinterpret_cast<char*>(Trig_GetPosition(&v, RestartNode))[6];
-	char *pDestBuf = &gSaveGame.mRestartPointName[0];
+	char *pDestBuf = &G_SAVE_GAME.mRestartPointName[0];
 	i32 i = 0;
 
 	while (*pName)
@@ -763,7 +763,7 @@ void Front_SaveGameState(void)
 	v4.vz = 0;
 
 	char *pName = &reinterpret_cast<char*>(Trig_GetPosition(&v4, RestartNode))[6];
-	char *pDestBuf = &gSaveGame.mRestartPointName[0];
+	char *pDestBuf = &G_SAVE_GAME.mRestartPointName[0];
 	i32 i = 0;
 
 	while (*pName)

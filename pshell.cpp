@@ -201,13 +201,13 @@ i32 ActivateCheat(i32 a1)
 			break;
 
 		case CHEAT_LEANEST:
-			gSaveGame.field_78 = 1;
-			gSaveGame.field_80 = -1;
-			gSaveGame.field_84 = -1;
-			gSaveGame.field_88 = -1;
-			gSaveGame.field_8C = -1;
-			gSaveGame.field_90 = -1;
-			gSaveGame.mCheatStoryboardFlag = 1;
+			G_SAVE_GAME.field_78 = 1;
+			G_SAVE_GAME.field_80 = -1;
+			G_SAVE_GAME.field_84 = -1;
+			G_SAVE_GAME.field_88 = -1;
+			G_SAVE_GAME.field_8C = -1;
+			G_SAVE_GAME.field_90 = -1;
+			G_SAVE_GAME.mCheatStoryboardFlag = 1;
 			G_LEVEL_SELECT_FLAG = 1;
 			break;
 
@@ -224,43 +224,43 @@ i32 ActivateCheat(i32 a1)
 			break;
 
 		case CHEAT_SECRTWAR:
-			gSaveGame.field_80 |= 4;
+			G_SAVE_GAME.field_80 |= 4;
 			break;
 
 		case CHEAT_MIGUELOH:
-			gSaveGame.field_80 |= 2;
+			G_SAVE_GAME.field_80 |= 2;
 			break;
 
 		case CHEAT_TRISNTNL:
-			gSaveGame.field_80 |= 8;
+			G_SAVE_GAME.field_80 |= 8;
 			break;
 
 		case CHEAT_SYNOPTIC:
-			gSaveGame.field_80 |= 0x10;
+			G_SAVE_GAME.field_80 |= 0x10;
 			break;
 
 		case CHEAT_XILRTRNS:
-			gSaveGame.field_80 |= 0x40;
+			G_SAVE_GAME.field_80 |= 0x40;
 			break;
 
 		case CHEAT_KICKME:
-			gSaveGame.field_80 |= 0x20;
+			G_SAVE_GAME.field_80 |= 0x20;
 			break;
 
 		case CHEAT_MRWATSON:
-			gSaveGame.field_80 |= 0x200;
+			G_SAVE_GAME.field_80 |= 0x200;
 			break;
 
 		case CHEAT_SMLVIII:
-			gSaveGame.field_80 |= 0x100;
+			G_SAVE_GAME.field_80 |= 0x100;
 			break;
 
 		case CHEAT_ROBRTSON:
-			gSaveGame.mCheatStoryboardFlag = !gSaveGame.mCheatStoryboardFlag;
+			G_SAVE_GAME.mCheatStoryboardFlag = !G_SAVE_GAME.mCheatStoryboardFlag;
 			break;
 
 		case CHEAT_KIRBYFAN:
-			gSaveGame.field_90 = 0x3F;
+			G_SAVE_GAME.field_90 = 0x3F;
 			break;
 
 		case CHEAT_MMEWEB:
@@ -268,15 +268,15 @@ i32 ActivateCheat(i32 a1)
 			break;
 
 		case CHEAT_FANBOY:
-			gSaveGame.field_8C = -1;
+			G_SAVE_GAME.field_8C = -1;
 			break;
 
 		case CHEAT_CINEMA:
-			gSaveGame.field_88 = -1;
+			G_SAVE_GAME.field_88 = -1;
 			break;
 
 		case CHEAT_RGSGLLRY:
-			gSaveGame.field_84 = -1;
+			G_SAVE_GAME.field_84 = -1;
 			break;
 
 		case CHEAT_UATUSEES:
@@ -288,7 +288,7 @@ i32 ActivateCheat(i32 a1)
 			break;
 
 		case CHEAT_CLUBNOIR:
-			gSaveGame.field_80 |= 0x80;
+			G_SAVE_GAME.field_80 |= 0x80;
 			break;
 
 		case CHEAT_STICKMAN:
@@ -387,43 +387,43 @@ static u8 * const gPracticeDifficultyFlag = (u8*)0x60CFC7;
 // @Ok
 void PShell_ApplyGameState(void)
 {
-	i8 v1 = gSaveGame.mDifficulty;
+	i8 v1 = G_SAVE_GAME.mDifficulty;
 	i16 v2 = G_GAMESTATE[11];
 	i16 v3 = G_GAMESTATE[12];
-	i16 v4 = gSaveGame.mDigitalMapping[3];
-	i16 v5 = gSaveGame.mAnalogueMapping[0];
+	i16 v4 = G_SAVE_GAME.mDigitalMapping[3];
+	i16 v5 = G_SAVE_GAME.mAnalogueMapping[0];
 
 	DifficultyLevel = v1;
-	gSaveGame.field_98 = v2;
-	i16 v6 = gSaveGame.mDigitalMapping[2];
+	G_SAVE_GAME.field_98 = v2;
+	i16 v6 = G_SAVE_GAME.mDigitalMapping[2];
 	G_GAMESTATE[4] = v5;
-	i16 v7 = gSaveGame.mAnalogueMapping[1];
-	gSaveGame.field_94 = v3;
+	i16 v7 = G_SAVE_GAME.mAnalogueMapping[1];
+	G_SAVE_GAME.field_94 = v3;
 	u8 v8 = gBootRomSoundMode;
 	G_GAMESTATE[3] = v4;
 	*gPracticeDifficultyFlag = (v1 == 0);
 	G_GAMESTATE[2] = v6;
 	i16 v9 = G_GAMESTATE[13];
 	G_GAMESTATE[5] = v7;
-	i16 v10 = gSaveGame.mAnalogueMapping[2];
-	gSaveGame.field_A0 = v8;
-	i16 v11 = gSaveGame.mDigitalMapping[1];
-	gSaveGame.field_9C = v9;
-	i16 v12 = gSaveGame.mDigitalMapping[0];
+	i16 v10 = G_SAVE_GAME.mAnalogueMapping[2];
+	G_SAVE_GAME.field_A0 = v8;
+	i16 v11 = G_SAVE_GAME.mDigitalMapping[1];
+	G_SAVE_GAME.field_9C = v9;
+	i16 v12 = G_SAVE_GAME.mDigitalMapping[0];
 	G_GAMESTATE[6] = v10;
-	i16 v13 = gSaveGame.mAnalogueMapping[3];
+	i16 v13 = G_SAVE_GAME.mAnalogueMapping[3];
 	G_GAMESTATE[1] = v11;
 
 	Pad_SetDigitalMapping(gSControl, v12, v11, v6, v4);
 
 	G_GAMESTATE[7] = v13;
-	i16 v14 = gSaveGame.field_A4;
+	i16 v14 = G_SAVE_GAME.field_A4;
 	G_GAMESTATE[0] = v12;
 
 	DoubleBuffer[0].Disp.screen.x = v14;
 	DoubleBuffer[1].Disp.screen.x = v14;
 
-	i16 v15 = gSaveGame.field_A8;
+	i16 v15 = G_SAVE_GAME.field_A8;
 
 	DoubleBuffer[0].Disp.screen.y = v15;
 	DoubleBuffer[1].Disp.screen.y = v15;
@@ -1177,7 +1177,7 @@ void PShell_MaybeUnlockStuff(void)
 	i32 allComplete = 1;
 	for (i = 0; i < 0x22; i++)
 	{
-		if (!gSaveGame.field_56[i])
+		if (!G_SAVE_GAME.field_56[i])
 		{
 			allComplete = 0;
 		}
@@ -1185,51 +1185,51 @@ void PShell_MaybeUnlockStuff(void)
 
 	if (allComplete)
 	{
-		u8 oldFlags = (u8)gSaveGame.field_80;
-		gSaveGame.mCheatStoryboardFlag = 1;
+		u8 oldFlags = (u8)G_SAVE_GAME.field_80;
+		G_SAVE_GAME.mCheatStoryboardFlag = 1;
 
 		if (!(oldFlags & 4))
 		{
 			unlocked = 2;
 		}
 
-		gSaveGame.field_80 |= 4;
-		gSaveGame.field_84 |= 0x1000000;
+		G_SAVE_GAME.field_80 |= 4;
+		G_SAVE_GAME.field_84 |= 0x1000000;
 
 		if (DifficultyLevel == 3)
 		{
-			if (!((u8)gSaveGame.field_80 & 8))
+			if (!((u8)G_SAVE_GAME.field_80 & 8))
 			{
 				unlocked = 3;
 			}
 
-			gSaveGame.field_80 |= 8;
+			G_SAVE_GAME.field_80 |= 8;
 		}
 	}
 
-	if (gSaveGame.field_8C == -1)
+	if (G_SAVE_GAME.field_8C == -1)
 	{
-		gSaveGame.field_80 |= 2;
+		G_SAVE_GAME.field_80 |= 2;
 	}
 
 	i32 idx1 = Front_GetLevelIndex("l4a1_t");
 	print_if_false(idx1 != -1, "Could not find l4a1_t ???");
-	if (gSaveGame.field_56[idx1])
+	if (G_SAVE_GAME.field_56[idx1])
 	{
-		gSaveGame.field_80 |= 0x40;
+		G_SAVE_GAME.field_80 |= 0x40;
 	}
 
 	i32 idx2 = Front_GetLevelIndex("l6a4_t");
 	print_if_false(idx2 != -1, "Could not find l6a4_t ???");
-	if (gSaveGame.field_56[idx2])
+	if (G_SAVE_GAME.field_56[idx2])
 	{
-		gSaveGame.field_80 |= 0x80;
+		G_SAVE_GAME.field_80 |= 0x80;
 	}
 
 	i32 allGold = 1;
 	for (i = 0; i < 0x22; i++)
 	{
-		if (gSaveGame.field_56[i] < 2)
+		if (G_SAVE_GAME.field_56[i] < 2)
 		{
 			allGold = 0;
 		}
@@ -1237,17 +1237,17 @@ void PShell_MaybeUnlockStuff(void)
 
 	if (allGold)
 	{
-		if (!((u8)gSaveGame.field_80 & 0x10))
+		if (!((u8)G_SAVE_GAME.field_80 & 0x10))
 		{
 			unlocked = 4;
 		}
 
-		gSaveGame.field_80 |= 0x10;
+		G_SAVE_GAME.field_80 |= 0x10;
 	}
 
 	if (unlocked != -1)
 	{
-		gSaveGame.field_7C = (u8)unlocked;
+		G_SAVE_GAME.field_7C = (u8)unlocked;
 	}
 }
 
@@ -1692,13 +1692,13 @@ i32 CExpandingBox::ScrollBarHitTest(i32 a2, i32 a3)
 // @Ok
 void PShell_BigCheat(void)
 {
-	gSaveGame.field_78 = 1;
-	gSaveGame.field_80 = -1;
-	gSaveGame.field_84 = -1;
-	gSaveGame.field_88 = -1;
-	gSaveGame.field_8C = -1;
-	gSaveGame.field_90 = -1;
-	gSaveGame.mCheatStoryboardFlag = 1;
+	G_SAVE_GAME.field_78 = 1;
+	G_SAVE_GAME.field_80 = -1;
+	G_SAVE_GAME.field_84 = -1;
+	G_SAVE_GAME.field_88 = -1;
+	G_SAVE_GAME.field_8C = -1;
+	G_SAVE_GAME.field_90 = -1;
+	G_SAVE_GAME.mCheatStoryboardFlag = 1;
 }
 
 // @Ok

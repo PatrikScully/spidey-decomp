@@ -562,8 +562,9 @@ static i32 * const gM3dTintOutR      = (i32*)0x006191D4; // == gDCTexAnimColorSr
 // CLAUDE.md's address-audit rule these are NOT given standalone names: the
 // slots are part of the save block (the `lXaX_t` level code lives there),
 // and the gamma the tint uses is picked from those two level-code
-// characters. gSaveGame still has no G_* macro (CLAUDE.md lists that as an
-// open item), so the raw address is used here with this note.
+// characters. front.h now has G_SAVE_GAME for the whole block, but this file
+// does not include front.h, so the raw address stays here with this note. The
+// two bytes are G_SAVE_GAME.field_4[1] and field_4[3].
 #define M3D_SAVEGAME_BYTE(i) (*reinterpret_cast<char*>(0x00682858 + (i)))
 
 // PS2: TestTheWater, CurrentWaterLevel, WaterNormal.pad, pCurrentCamera,

@@ -1053,7 +1053,7 @@ void CChopperMissile::Explode(void)
 		G_MECHLIST->Hit(&v7);
 	}
 
-	if (v2 < 0x320 && gSaveGame.field_7B)
+	if (v2 < 0x320 && G_SAVE_GAME.field_7B)
 	{
 		Pad_ActuatorOn(0, 0x3Cu, 1, 0x64u);
 	}

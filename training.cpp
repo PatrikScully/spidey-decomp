@@ -139,7 +139,7 @@ void Training_MonitorLevel(const u32*, u32*)
 				gTrainingStuff[1] = 1;
 			}
 
-			if (MechList->field_5D0 > 7500 && (gSaveGame.field_80 & 0x100) == 0)
+			if (MechList->field_5D0 > 7500 && (G_SAVE_GAME.field_80 & 0x100) == 0)
 			{
 				if (NumNodes > 1)
 				{
@@ -168,7 +168,7 @@ void Training_MonitorLevel(const u32*, u32*)
 						Trig_SendPulseToNode(node);
 				}
 
-				gSaveGame.field_80 |= 0x100;
+				G_SAVE_GAME.field_80 |= 0x100;
 			}
 
 			i32 score = MechList->field_5D0;
