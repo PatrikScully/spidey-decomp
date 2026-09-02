@@ -628,7 +628,7 @@ INLINE void CManipOb::TurnOffShadow(void)
 	CItem *v1 = this->field_11C;
 	if (v1)
 	{
-		CItem *res = reinterpret_cast<CItem*>(PSXRegion[v1->mRegion].ppModels[v1->mModel]);
+		CItem *res = reinterpret_cast<CItem*>(G_PSXREGION[v1->mRegion].ppModels[v1->mModel]);
 		res->mFlags |= 0x20;
 	}
 }
