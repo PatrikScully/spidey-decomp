@@ -62,9 +62,10 @@ struct PKR_HEADER
 struct LIBPKR_HANDLE
 {
 	FILE* fp;
-	char name[1];
-
-	PADDING(0x108-4-1);
+	// the path, up to the next field (PKR_Open strcpy's the file name here;
+	// declared as [1] plus padding before, which glibc's fortified strcpy
+	// rejected in the standalone build)
+	char name[0x108 - 4];
 
 
 	i32 field_108;

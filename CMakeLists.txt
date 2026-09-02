@@ -62,6 +62,9 @@ if (SPIDEY_STANDALONE)
 		# 0x08048000 load address of a non-PIE 32-bit binary.
 		target_compile_options(${PROJECT_NAME} PRIVATE -fno-pie)
 		target_link_options(${PROJECT_NAME} PRIVATE -no-pie)
+		# the 1999 code aliases byte arrays on purpose (PSX data, packed
+		# structs); glibc's fortified string functions abort on that
+		target_compile_options(${PROJECT_NAME} PRIVATE -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0)
 		# implicit linker script: places the G_*-twinned variables at their
 		# exe addresses (see platform/exemem.h)
 		target_link_libraries(${PROJECT_NAME} pthread ${CMAKE_SOURCE_DIR}/platform/exemem_syms.ld)
