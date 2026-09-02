@@ -399,7 +399,7 @@ void PShell_ApplyGameState(void)
 	G_GAMESTATE[4] = v5;
 	i16 v7 = gSaveGame.mAnalogueMapping[1];
 	gSaveGame.field_94 = v3;
-	u8 v8 = gBootRomSoundMode;
+	u8 v8 = G_BOOT_ROM_SOUND_MODE;
 	G_GAMESTATE[3] = v4;
 	*gPracticeDifficultyFlag = (v1 == 0);
 	G_GAMESTATE[2] = v6;

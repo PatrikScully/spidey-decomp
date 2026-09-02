@@ -240,7 +240,7 @@ void SPIDEYDX_LoadSettings(void)
 	gGameState[12] = gSavedSFXVolume;
 	gGameState[11] = gSavedMusicVolume;
 	gGameState[13] = gSavedXAVolume;
-	gBootRomSoundMode = gSavedSoundMode;
+	G_BOOT_ROM_SOUND_MODE = gSavedSoundMode;
 }
 
 // @Ok

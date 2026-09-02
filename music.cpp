@@ -221,7 +221,7 @@ void Music_MusicUpdate(void)
 	else
 	{
 		delta = 1;
-		gSfxGlobal = 6666;
+		G_SFX_GLOBAL = 6666;
 		gMusicTrackIndex = 0;
 	}
 
@@ -510,12 +510,12 @@ void Music_MusicUpdate(void)
 	}
 	else if (pIds != 0)
 	{
-		i32 timer = gSfxGlobal;
+		i32 timer = G_SFX_GLOBAL;
 		i32 wasIdle = (timer == 6666);
 		u32 index = static_cast<u32>(gMusicTrackIndex);
 
 		timer += delta;
-		gSfxGlobal = timer;
+		G_SFX_GLOBAL = timer;
 
 		if (!wasIdle
 				&& static_cast<u32>(timer) <= static_cast<u32>(pTimes[index]))
@@ -535,7 +535,7 @@ void Music_MusicUpdate(void)
 			}
 
 			SFX_Play(static_cast<u32>(pIds[index] | 0xC000), 0x2000, 0);
-			gSfxGlobal = 0;
+			G_SFX_GLOBAL = 0;
 		}
 	}
 

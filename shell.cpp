@@ -6125,7 +6125,7 @@ void Shell_SFXMusic(void)
 				Mess_SetRGBBottom(0x28, 35, 62);
 			}
 			PShell_SmallFont();
-			if (gBootRomSoundMode != 0)
+			if (G_BOOT_ROM_SOUND_MODE != 0)
 				Mess_DrawText(368, 149, "mono", 0, 0x1000);
 			else
 				Mess_DrawText(368, 149, "stereo", 0, 0x1000);
@@ -6273,8 +6273,8 @@ void Shell_SFXMusic(void)
 			if (v23 != 0 || v7 != 0)
 			{
 				SFX_Play(0x1F, 0x2000, 0);
-				DCSetBootROMSoundMode(gBootRomSoundMode == 0);
-				gSaveGame.field_A0 = gBootRomSoundMode;
+				DCSetBootROMSoundMode(G_BOOT_ROM_SOUND_MODE == 0);
+				gSaveGame.field_A0 = G_BOOT_ROM_SOUND_MODE;
 			}
 			break;
 		case 4:

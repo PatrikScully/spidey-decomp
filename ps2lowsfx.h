@@ -123,12 +123,20 @@ EXPORT void SFX_Unpause(void);
 EXPORT u32 playSFX(u32,u8,i16,i16,i32,u16);
 EXPORT u32 translateLevelSpecificAliasToIndex(u32);
 
+// 0x0061919D. Dreamcast boot ROM mono/stereo flag. Written by
+// DCSetBootROMSoundMode (0x00472AB4) and by the options screen at 0x00515837,
+// read from shell.cpp, pshell.cpp and SpideyDX.cpp, so both halves need the
+// same byte.
 EXPORT extern bool gBootRomSoundMode;
+//#define G_BOOT_ROM_SOUND_MODE (gBootRomSoundMode)
+#define G_BOOT_ROM_SOUND_MODE (*reinterpret_cast<bool*>(0x0061919D))
 
 // 0x0060D86C. Vblank timer of the currently playing music track, or 6666
 // when nothing is playing. SFX_Unpause parks it at 6666, Music_MusicUpdate
 // (music.cpp) counts it up and uses it to time the next track.
 EXPORT extern i32 gSfxGlobal;
+//#define G_SFX_GLOBAL (gSfxGlobal)
+#define G_SFX_GLOBAL (*reinterpret_cast<i32*>(0x0060D86C))
 
 void validate_SSFXBank(void);
 void validate_SSfxEntry(void);
