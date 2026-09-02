@@ -130,4 +130,6 @@ EXPORT void CreateCopRicochet(SLineInfo *,u8,u8,u8);
 EXPORT void Cop_RelocatableModuleInit(reloc_mod*);
 EXPORT void Cop_RelocatableModuleClear(void);
 
+void patch_cop(void);
+
 #endif

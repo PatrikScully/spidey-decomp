@@ -235,4 +235,6 @@ void validate_CBaddy(void);
 void validate_CScriptOnlyBaddy(void);
 void validate_SStateFlags(void);
 
+void patch_baddy(void);
+
 #endif

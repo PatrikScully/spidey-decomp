@@ -1095,3 +1095,56 @@ void validate_CCopLaserPing(void)
 	VALIDATE(CCopLaserPing, field_94, 0x94);
 	VALIDATE(CCopLaserPing, field_A0, 0xA0);
 }
+
+#include "my_patch.h"
+
+// @Bogus
+// Left out on purpose:
+//   CCop::CCop (0x00428750). The exe's CCop vtable (0x0053B670) has 18 slots,
+//     ours has 17: CCop::SetCopType (0x004288D0, slot 17) does not exist in
+//     our sources. Hooking the constructor would stamp the short vtable on
+//     every cop and a slot 17 call would run off the end of it.
+//   CCopLaserPing::CCopLaserPing (0x00428A50). Our CCopLaserPing has no Move,
+//     so it inherits CQuadBit's, while the exe's vtable (0x0053B6B8) points
+//     slot 1 at CCopLaserPing::Move (0x00428B90), the function that ages the
+//     ping and kills it after 4 steps. Hooking the constructor would leave
+//     every ricochet spark alive forever.
+//   Everything else in the file with no address of its own (CheckToShoot,
+//     DrawBarrelFlash, StopShooting, StandStill, SetAttacker,
+//     SpideyAnimUppercut, TryAddingCollidePointToPath, ClearAttackFlags,
+//     HelpOutBuddy, GetAttackPosition, PlayHitWallSound,
+//     DieAfterFlyingAcrossRoom, CCopPing::SetPosition) was inlined by the
+//     original compiler and has nothing to patch.
+void patch_cop(void)
+{
+	PATCH_PUSH_RET(0x00428080, Cop_RelocatableModuleInit);
+	PATCH_PUSH_RET(0x004280A0, Cop_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004280D0, Cop_CreateCop);
+	PATCH_PUSH_RET(0x00428C80, CreateCopRicochet);
+	PATCH_PUSH_RET(0x004292C0, CCop::WallHitCheck);
+	PATCH_PUSH_RET(0x004295D0, CCop::GetLaunched);
+	PATCH_PUSH_RET(0x0042B270, CCop::WarnOtherCops);
+	PATCH_PUSH_RET(0x0042B690, CCop::SetUpLaser);
+	PATCH_PUSH_RET(0x0042E950, CCop::Acknowledge);
+	PATCH_PUSH_RET(0x0042EFC0, CCop::RunToWhereTheActionIs);
+	PATCH_PUSH_RET(0x0042F1C0, CCop::LookForPlayer);
+	// the linker folded CThugBulletTracer::SetWidth into this one, so the
+	// single copy sits in thug.cpp's address range.
+	PATCH_PUSH_RET(0x004D2660, CCopBulletTracer::SetWidth);
+
+	PATCH_PUSH_RET_POLY(0x00428150, CCopPing::CCopPing, "??0CCopPing@@QAE@PAVCSuper@@PAUSHook@@@Z");
+	PATCH_PUSH_RET_POLY(0x00428290, CCopPing::~CCopPing, "??1CCopPing@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004282A0, CCopPing::Move, "?Move@CCopPing@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004282F0, CCopBulletTracer::CCopBulletTracer, "??0CCopBulletTracer@@QAE@PAVCVector@@0PAVCSuper@@PAUSLineInfo@@EEE@Z");
+	PATCH_PUSH_RET_POLY(0x00428630, CCopBulletTracer::~CCopBulletTracer, "??1CCopBulletTracer@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004286B0, CCopBulletTracer::Move, "?Move@CCopBulletTracer@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00428980, CCop::~CCop, "??1CCop@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x00428B80, CCopLaserPing::~CCopLaserPing, "??1CCopLaserPing@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004294E0, CCop::SetParamByIndex, "?SetParamByIndex@CCop@@UAEXHH@Z");
+	PATCH_PUSH_RET_POLY(0x004296B0, CCop::Grab, "?Grab@CCop@@UAEEPAVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x00429710, CCop::TugImpulse, "?TugImpulse@CCop@@UAEEPAVCVector@@00@Z");
+	// the exe uses this one body for CCop's, CThug's and CThugPing's
+	// Victorious slot, so this hook covers all three, same as the original.
+	PATCH_PUSH_RET_POLY(0x0042BFA0, CCop::Victorious, "?Victorious@CCop@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0042FF10, CCop::CreateCombatImpactEffect, "?CreateCombatImpactEffect@CCop@@UAEXPAVCVector@@H@Z");
+}

@@ -143,4 +143,6 @@ EXPORT void Thug_CreateThug(const u32 *stack, u32 *result);
 EXPORT void Thug_RelocatableModuleInit(reloc_mod*);
 EXPORT void Thug_RelocatableModuleClear(void);
 
+void patch_thug(void);
+
 #endif

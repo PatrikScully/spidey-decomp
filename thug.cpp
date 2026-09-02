@@ -1790,3 +1790,55 @@ void validate_CThugPing(void)
 	VALIDATE(CThugPing, field_70, 0x70);
 	VALIDATE(CThugPing, field_78, 0x78);
 }
+
+#include "my_patch.h"
+
+// @Bogus
+// Left out on purpose:
+//   CThug::CThug (0x004D2AB0). Hooking a constructor stamps our vtable on the
+//     object. The exe's CThug vtable (0x0053C550) has CThug_AI (0x004DB280) in
+//     slot 2 and CThug_Hit (0x004D3F50) in slot 3, and neither exists in our
+//     sources, so our vtable falls back to CBody::AI (empty) and CBody::Hit
+//     (return 1). Every hooked thug would stop thinking and stop taking
+//     damage. Same reason the destructor is still safe: nothing calls a
+//     virtual on a dying object.
+//   Everything with no address of its own (ShouldIShootPlayer, DrawBarrelFlash,
+//     CheckToShoot, AdjustPosPlaySound, SetAttacker, SpideyAnimUppercut,
+//     CanAck, SetHitDirectionFlag, ClearAttackFlags, HelpOutBuddy,
+//     PlayHitWallSound, StandStill, DieAfterFlyingAcrossRoom,
+//     RunAppropriateHitAnim, StopShooting, TryAddingCollidePointToPath,
+//     CThugPing::SetPosition) was inlined by the original compiler.
+//   CThugPing::Move is the same body as CCopPing::Move (0x004282A0) after link
+//     time folding, and cop.cpp already hooks it.
+void patch_thug(void)
+{
+	PATCH_PUSH_RET(0x004D2440, Thug_RelocatableModuleInit);
+	PATCH_PUSH_RET(0x004D2460, Thug_RelocatableModuleClear);
+	PATCH_PUSH_RET(0x004D2490, Thug_CreateThug);
+	PATCH_PUSH_RET(0x004D3800, CThug::GetLaunched);
+	PATCH_PUSH_RET(0x004D3A10, CThug::GetReadyToShootHostage);
+	PATCH_PUSH_RET(0x004D42D0, CThug::StrikeUpConversation);
+	PATCH_PUSH_RET(0x004D4520, CThug::Caution);
+	PATCH_PUSH_RET(0x004D4F30, CThug::MonitorSpitPlease);
+	PATCH_PUSH_RET(0x004D5DB0, CThug::WarnOtherThugs);
+	PATCH_PUSH_RET(0x004D6260, CThug::SetUpLaser);
+	PATCH_PUSH_RET(0x004D7670, CThug::TakeHit);
+	PATCH_PUSH_RET(0x004D8D70, CThug::CheckFallBack);
+	PATCH_PUSH_RET(0x004D9A40, CThug::DetermineFightState);
+	PATCH_PUSH_RET(0x004D9F30, CThug::Acknowledge);
+	PATCH_PUSH_RET(0x004DA100, CThug::Guard);
+	PATCH_PUSH_RET(0x004DA300, CThug::PlaySounds);
+	PATCH_PUSH_RET(0x004DA560, CThug::RunToWhereTheActionIs);
+	PATCH_PUSH_RET(0x004DA760, CThug::LookForPlayer);
+	PATCH_PUSH_RET(0x004DA8B0, CThug::BackpedalPlease);
+	PATCH_PUSH_RET(0x004DAA60, CThug::LookConfused);
+	// the linker put this one in baddy.cpp's address range.
+	PATCH_PUSH_RET(0x00403C00, CThug::CycleOrContinueAnim);
+
+	PATCH_PUSH_RET_POLY(0x004D2C40, CThug::SetThugType, "?SetThugType@CThug@@UAEXH@Z");
+	PATCH_PUSH_RET_POLY(0x004D2D00, CThug::~CThug, "??1CThug@@UAE@XZ");
+	PATCH_PUSH_RET_POLY(0x004D36E0, CThug::SetParamByIndex, "?SetParamByIndex@CThug@@UAEXHH@Z");
+	PATCH_PUSH_RET_POLY(0x004D38E0, CThug::Grab, "?Grab@CThug@@UAEEPAVCVector@@@Z");
+	PATCH_PUSH_RET_POLY(0x004D3940, CThug::TugImpulse, "?TugImpulse@CThug@@UAEEPAVCVector@@00@Z");
+	PATCH_PUSH_RET_POLY(0x004DB890, CThug::CreateCombatImpactEffect, "?CreateCombatImpactEffect@CThug@@UAEXPAVCVector@@H@Z");
+}
