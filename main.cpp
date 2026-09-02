@@ -1630,6 +1630,20 @@ void game_patches(void)
 	patch_baddy();
 	patch_thug();
 	patch_cop();
+	patch_simby();
+	patch_rhino();
+	patch_scorpion();
+	patch_web();
+	patch_venom();
+	patch_panel();
+	patch_screen();
+	patch_ai();
+	patch_weapons();
+	patch_docock();
+	patch_superock();
+	patch_lizman();
+	patch_blackcat();
+	patch_jonah();
 }
 
 // @Bogus
