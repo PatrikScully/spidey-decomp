@@ -27,7 +27,7 @@ CTurret::CTurret(i16 *a2, i32 a3)
 
 	M3dUtils_ReadHooksPacket(this, reinterpret_cast<void*>(0x55984C));
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mType = 325;
 	this->mRMinor = 0x80;
@@ -59,7 +59,7 @@ void Turret_CreateTurret(const u32 *stack, u32 * result)
 // @Matching
 void Turret_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
