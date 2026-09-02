@@ -73,6 +73,13 @@ EXPORT SPSXRegion PSXRegion[MAXPSX];
 
 #define TEXTURE_CHECKSUM_TABLE_SIZE (MAXTEXTUREENTRIES)
 EXPORT Texture* TextureChecksumHashTable[TEXTURE_CHECKSUM_TABLE_SIZE];
+// idb_globals.txt calls this TextureCheckSumHashTable. The only writers in the
+// original are ProcessNewPSX and Spool_RemoveUnusedTextures, neither of which is
+// hooked, while the already hooked Spool_FindTextureEntry reads it. Our copy
+// therefore stayed empty and every lookup missed. This is the "Spool_FindTextureEntry
+// returns null" symptom noted earlier in the project.
+//#define G_TEXTURE_CHECKSUM_HASH_TABLE (TextureChecksumHashTable)
+#define G_TEXTURE_CHECKSUM_HASH_TABLE (*reinterpret_cast<Texture*(*)[TEXTURE_CHECKSUM_TABLE_SIZE]>(0x006AB934))
 
 EXPORT i32 lowGraphics;
 
@@ -248,7 +255,7 @@ INLINE char* GetNextLine(char * a1)
 void GotoStartOfTextureList(void)
 {
 	HashIndex = 0;
-	pCurrentTex = TextureChecksumHashTable[0];
+	pCurrentTex = G_TEXTURE_CHECKSUM_HASH_TABLE[0];
 }
 
 // @Ok
@@ -274,9 +281,9 @@ void NewTextureEntry(u32 checksum)
 	Texture* pTex = gSpoolTexturesRelated;
 	gSpoolTexturesRelated = gSpoolTexturesRelated->pNext;
 
-	pTex->pNext = TextureChecksumHashTable[checksum % MAXTEXTUREENTRIES];
+	pTex->pNext = G_TEXTURE_CHECKSUM_HASH_TABLE[checksum % MAXTEXTUREENTRIES];
 	pTex->pPrevious = 0;
-	TextureChecksumHashTable[checksum % MAXTEXTUREENTRIES] = pTex;
+	G_TEXTURE_CHECKSUM_HASH_TABLE[checksum % MAXTEXTUREENTRIES] = pTex;
 
 	if (pTex->pNext != 0)
 		pTex->pNext->pPrevious = pTex;
@@ -323,7 +330,7 @@ search:
 	do
 	{
 		HashIndex++;
-		pCurrentTex = TextureChecksumHashTable[HashIndex];
+		pCurrentTex = G_TEXTURE_CHECKSUM_HASH_TABLE[HashIndex];
 
 		if (TEXTURE_CHECKSUM_TABLE_SIZE <= HashIndex)
 			return 0;
@@ -590,7 +597,7 @@ void ProcessNewPSX(i32 a1)
 		for (i32 m = 0; m < texCount; m++)
 		{
 			u32 checksum = *pSlot;
-			Texture* pTexEntry = TextureChecksumHashTable[checksum & (TEXTURE_CHECKSUM_TABLE_SIZE - 1)];
+			Texture* pTexEntry = G_TEXTURE_CHECKSUM_HASH_TABLE[checksum & (TEXTURE_CHECKSUM_TABLE_SIZE - 1)];
 
 			if (pTexEntry != 0)
 			{
@@ -622,8 +629,8 @@ void ProcessNewPSX(i32 a1)
 
 					u32 bucket = checksum & (TEXTURE_CHECKSUM_TABLE_SIZE - 1);
 					pTexEntry->pPrevious = 0;
-					pTexEntry->pNext = TextureChecksumHashTable[bucket];
-					TextureChecksumHashTable[bucket] = pTexEntry;
+					pTexEntry->pNext = G_TEXTURE_CHECKSUM_HASH_TABLE[bucket];
+					G_TEXTURE_CHECKSUM_HASH_TABLE[bucket] = pTexEntry;
 
 					if (pTexEntry->pNext != 0)
 						pTexEntry->pNext->pPrevious = pTexEntry;
@@ -1146,8 +1153,8 @@ INLINE void RemoveTextureEntry(Texture* pTexture)
 		pTexture->pPrevious->pNext = pTexture->pNext;
 
 	u32 checksum = pTexture->Checksum % TEXTURE_CHECKSUM_TABLE_SIZE;
-	if (pTexture == TextureChecksumHashTable[checksum])
-		TextureChecksumHashTable[checksum] = pTexture->pNext;
+	if (pTexture == G_TEXTURE_CHECKSUM_HASH_TABLE[checksum])
+		G_TEXTURE_CHECKSUM_HASH_TABLE[checksum] = pTexture->pNext;
 
 	pTexture->pNext = gSpoolTexturesRelated;
 	gSpoolTexturesRelated = pTexture;
@@ -1383,7 +1390,7 @@ void Spool_Init(void)
 
 	gSpoolTexturesRelated = &gSpoolInitRelated[0];
 	for (i32 j = 0; j < TEXTURE_CHECKSUM_TABLE_SIZE; j++)
-		TextureChecksumHashTable[j] = 0;
+		G_TEXTURE_CHECKSUM_HASH_TABLE[j] = 0;
 
 	for (i32 k = 0; k < 511; k++)
 	{
@@ -1532,7 +1539,7 @@ i32 Spool_TextureAccess(
 {
 	Texture* pTexture;
 	for (
-			pTexture = TextureChecksumHashTable[checksum % TEXTURE_CHECKSUM_TABLE_SIZE];
+			pTexture = G_TEXTURE_CHECKSUM_HASH_TABLE[checksum % TEXTURE_CHECKSUM_TABLE_SIZE];
 			pTexture;
 			pTexture = pTexture->pNext)
 	{
@@ -2097,7 +2104,7 @@ void Spool_ClearAllPSXs(void)
 Texture *Spool_FindTextureEntry(u32 checksum)
 {
 	Texture *pSearch;
-	for (pSearch = TextureChecksumHashTable[checksum & 511];
+	for (pSearch = G_TEXTURE_CHECKSUM_HASH_TABLE[checksum & 511];
 			pSearch;
 			pSearch = pSearch->pNext)
 	{
