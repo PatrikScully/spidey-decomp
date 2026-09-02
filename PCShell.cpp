@@ -1216,7 +1216,7 @@ u8 processControllerScreen(void)
 
 	if (PCSHELL_CheckTriggers(131616, 1, 1))
 	{
-		gSControl[0].Circle.Triggered = 0;
+		G_SCONTROL[0].Circle.Triggered = 0;
 		SFX_Play(0x23, 0x2000, 0);
 		return 1;
 	}
@@ -1237,8 +1237,8 @@ u8 processControllerScreen(void)
 		return 0;
 	}
 
-	gSControl[0].Start.Triggered = 0;
-	gSControl[0].X.Triggered = 0;
+	G_SCONTROL[0].Start.Triggered = 0;
+	G_SCONTROL[0].X.Triggered = 0;
 	SFX_Play(0x1F, 0x2000, 0);
 	gShellWaitingForInput = 1;
 	gShellControllerButton = 0x4000;

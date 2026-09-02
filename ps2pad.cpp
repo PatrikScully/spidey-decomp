@@ -9,6 +9,24 @@
 
 #include "validate.h"
 
+// ---------------------------------------------------------------------------
+// The pad state is written from all over the exe, so it gets G_ macros.
+// Addresses read out of the original disassembly (tools/functions/*.bin):
+//
+//   gPadVibrate   0x006610C0  DCPad_Vibrate            mov byte [6610C0h],1
+//   gSControl     0x00661100  Pad_GetActuatorTime      mov ax,[edx*2+661278h]
+//                             (0x661278 is Motor0Timer, +0x178, stride 0x18C)
+//   Pad_IdleTime  0x0066129C  Pad_Button               mov [66129Ch],edx
+//   gPadInited    0x006612AC  Pad_InitAtStart          mov dword [6612ACh],1
+//   gPadActuator  0x006612B0  Pad_ActuatorOff          mov dword [eax*4+6612B0h],1
+//
+// gPadOne (0x005502AC) and gPadTwo (0x006612B8) stay repo-local.  A scan of the
+// whole .text finds a single read of each, in Pad_ActuatorOn, and no writes
+// anywhere, and the exe's .data byte for gPadOne is 0x3B, the value we
+// initialise it to.  gAlarmFirst (dcmemcard.cpp, 0x0055028C) is the same case:
+// read only, and the exe's four dwords are {1, 2, 7, 8}, exactly our table.
+// ---------------------------------------------------------------------------
+
 // @Ok
 SControl gSControl[NUM_CONTROLLERS];
 
@@ -17,21 +35,27 @@ EXPORT i32 Pad_IdleTime;
 
 // @OK
 EXPORT u8 gPadVibrate[5];
+//#define G_PAD_VIBRATE (gPadVibrate)
+#define G_PAD_VIBRATE (reinterpret_cast<u8*>(0x006610C0))
 
 // @Ok
 // @FIXME - is it really 2?
 EXPORT i32 gPadActuator[2];
+//#define G_PAD_ACTUATOR (gPadActuator)
+#define G_PAD_ACTUATOR (reinterpret_cast<i32*>(0x006612B0))
 
 // @Ok
+// Read only, see the note at the top of the file.
 EXPORT u8 gPadOne = 0x3B;
 // @Ok
+// Read only, see the note at the top of the file.
 EXPORT u8 gPadTwo;
 
 // @Ok
 // @Matching
 void Pad_ActuatorOff(u8 a1, u8)
 {
-	gPadActuator[a1] = 1;
+	G_PAD_ACTUATOR[a1] = 1;
 }
 
 // @Ok
@@ -51,7 +75,7 @@ INLINE void Pad_SetDigitalMapping(SControl *pControl, i32 a2, i32 a3, i32 a4, i3
 u16 Pad_GetActuatorTime(u8 a1, u8 a2)
 {
 	// @FIXME - not portable
-	u16 *p = &gSControl[a1].Motor0Timer;
+	u16 *p = &G_SCONTROL[a1].Motor0Timer;
 	return p[a2];
 }
 
@@ -63,7 +87,7 @@ void Pad_ActuatorOn(
 		u8 a3,
 		u8 a4)
 {
-	gPadActuator[a1] = G_VBLANKS + a2 + 10;
+	G_PAD_ACTUATOR[a1] = G_VBLANKS + a2 + 10;
 	DCPad_Vibrate(a1, 5 * a3 + 2, gPadOne, gPadTwo);
 }
 
@@ -73,14 +97,14 @@ void DCPad_ExpireVibrations(void)
 {
 	for (i32 i = 0; i < 2; i++)
 	{
-		u32 v4 = gPadActuator[i];
+		u32 v4 = G_PAD_ACTUATOR[i];
 		if (v4)
 		{
 			if (G_VBLANKS > v4)
 			{
 				pdVibMxStop(gAlarmFirst[2 * i]);
 				pdVibMxStop(gAlarmFirst[2 * i + 1]);
-				gPadActuator[i] = 0;
+				G_PAD_ACTUATOR[i] = 0;
 			}
 		}
 	}
@@ -101,8 +125,8 @@ void DCPad_ShutDownVibrations(void)
 	}
 
 	nullsub_3();
-	gPadActuator[0] = 1;
-	gPadActuator[1] = 1;
+	G_PAD_ACTUATOR[0] = 1;
+	G_PAD_ACTUATOR[1] = 1;
 }
 
 // @Ok
@@ -121,15 +145,15 @@ i32 DCPad_Vibrate(
 			i32 val = gAlarmFirst[i];
 			if (pdVibMxIsReady(val) == 1)
 			{
-				gPadVibrate[0] = 1;
-				gPadVibrate[1] = 1;
-				gPadVibrate[2] = a2;
-				gPadVibrate[3] = a3;
-				gPadVibrate[4] = a4;
+				G_PAD_VIBRATE[0] = 1;
+				G_PAD_VIBRATE[1] = 1;
+				G_PAD_VIBRATE[2] = a2;
+				G_PAD_VIBRATE[3] = a3;
+				G_PAD_VIBRATE[4] = a4;
 				do
 				{
 				}
-				while (pdVibMxStart(val, gPadVibrate));
+				while (pdVibMxStart(val, G_PAD_VIBRATE));
 				break;
 			}
 		}
@@ -161,7 +185,7 @@ void Pad_Button(SButton* pBut, i32 state)
 
 	if ( state )
 	{
-		Pad_IdleTime = 0;
+		G_PAD_IDLE_TIME = 0;
 		pBut->Pressed = 1;
 	}
 	else
@@ -189,7 +213,7 @@ INLINE void Pad_Clear(SControl *pControl)
 	{
 		for (i32 i = 0; i < 1; i++)
 		{
-			Pad_Clear(&gSControl[i]);
+			Pad_Clear(&G_SCONTROL[i]);
 		}
 
 		return;
@@ -209,10 +233,10 @@ INLINE void Pad_Clear(SControl *pControl)
 	}
 
 	/*
-	gSControl[0].field_168 = 0;
-	gSControl[0].field_169 = 0;
-	gSControl[0].field_16A = 0;
-	gSControl[0].field_16B = 0;
+	G_SCONTROL[0].field_168 = 0;
+	G_SCONTROL[0].field_169 = 0;
+	G_SCONTROL[0].field_16A = 0;
+	G_SCONTROL[0].field_16B = 0;
 	*/
 }
 
@@ -230,14 +254,14 @@ INLINE void Pad_ClearAll(void)
 // @Matching
 INLINE void Pad_ClearAllOne(i32 a1)
 {
-	Pad_Clear(&gSControl[a1]);
+	Pad_Clear(&G_SCONTROL[a1]);
 
 	/*
-	gSControl[a1].field_170 = 0;
-	gSControl[a1].field_16B = 0;
-	gSControl[a1].field_16A = 0;
-	gSControl[a1].field_169 = 0;
-	gSControl[a1].field_168 = 0;
+	G_SCONTROL[a1].field_170 = 0;
+	G_SCONTROL[a1].field_16B = 0;
+	G_SCONTROL[a1].field_16A = 0;
+	G_SCONTROL[a1].field_169 = 0;
+	G_SCONTROL[a1].field_168 = 0;
 	*/
 }
 
@@ -249,7 +273,7 @@ void Pad_ClearTriggers(SControl *pControl)
 	{
 		for (i32 i = 0; i < 1; i++)
 		{
-			Pad_ClearTriggers(&gSControl[i]);
+			Pad_ClearTriggers(&G_SCONTROL[i]);
 		}
 
 		return;
@@ -264,6 +288,8 @@ void Pad_ClearTriggers(SControl *pControl)
 }
 
 EXPORT i32 gPadInited;
+//#define G_PAD_INITED (gPadInited)
+#define G_PAD_INITED (*reinterpret_cast<i32*>(0x006612AC))
 
 // @Bogus
 static void nullsub_38()
@@ -275,34 +301,34 @@ static void nullsub_38()
 void Pad_InitAtStart(void)
 {
 	DoAssert(1u, "NUMPADS defined as 0");
-	DoAssert(gPadInited == 0, "Control system already initialised");
+	DoAssert(G_PAD_INITED == 0, "Control system already initialised");
 
 	for (i32 i = 0; i < 1; i++)
 	{
-		gSControl[i].pTriangle = &gSControl[i].LeftOne;
-		gSControl[i].pSquare = &gSControl[i].LeftTwo;
-		gSControl[i].pCircle = &gSControl[i].RightOne;
-		gSControl[i].pX = &gSControl[i].RightTwo;
+		G_SCONTROL[i].pTriangle = &G_SCONTROL[i].LeftOne;
+		G_SCONTROL[i].pSquare = &G_SCONTROL[i].LeftTwo;
+		G_SCONTROL[i].pCircle = &G_SCONTROL[i].RightOne;
+		G_SCONTROL[i].pX = &G_SCONTROL[i].RightTwo;
 
 		Pad_SetDigitalMapping(
-				&gSControl[i], 
-				gGameState[0],
-				gGameState[1],
-				gGameState[2],
-				gGameState[3]);
+				&G_SCONTROL[i], 
+				G_GAMESTATE[0],
+				G_GAMESTATE[1],
+				G_GAMESTATE[2],
+				G_GAMESTATE[3]);
 
 		Pad_SetAnalogueMapping(
-				&gSControl[i],
+				&G_SCONTROL[i],
 				3, 2, 1, 0,
-				gGameState[4],
-				gGameState[5],
-				gGameState[6],
-				gGameState[7]);
+				G_GAMESTATE[4],
+				G_GAMESTATE[5],
+				G_GAMESTATE[6],
+				G_GAMESTATE[7]);
 	}
 
 	Pad_ClearAll();
-	Pad_IdleTime = 0;
-	gPadInited = 1;
+	G_PAD_IDLE_TIME = 0;
+	G_PAD_INITED = 1;
 	nullsub_38();
 
 	Pad_Update();

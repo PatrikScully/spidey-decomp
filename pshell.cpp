@@ -400,7 +400,7 @@ void PShell_ApplyGameState(void)
 	G_GAMESTATE[4] = v5;
 	i16 v7 = G_SAVE_GAME.mAnalogueMapping[1];
 	G_SAVE_GAME.field_94 = v3;
-	u8 v8 = gBootRomSoundMode;
+	u8 v8 = G_BOOT_ROM_SOUND_MODE;
 	G_GAMESTATE[3] = v4;
 	*gPracticeDifficultyFlag = (v1 == 0);
 	G_GAMESTATE[2] = v6;
@@ -415,7 +415,7 @@ void PShell_ApplyGameState(void)
 	i16 v13 = G_SAVE_GAME.mAnalogueMapping[3];
 	G_GAMESTATE[1] = v11;
 
-	Pad_SetDigitalMapping(gSControl, v12, v11, v6, v4);
+	Pad_SetDigitalMapping(G_SCONTROL, v12, v11, v6, v4);
 
 	G_GAMESTATE[7] = v13;
 	i16 v14 = G_SAVE_GAME.field_A4;
@@ -429,7 +429,7 @@ void PShell_ApplyGameState(void)
 	G_DOUBLE_BUFFER[0].Disp.screen.y = v15;
 	G_DOUBLE_BUFFER[1].Disp.screen.y = v15;
 
-	Pad_SetAnalogueMapping(gSControl, 3, 2, 1, 0,
+	Pad_SetAnalogueMapping(G_SCONTROL, 3, 2, 1, 0,
 			G_GAMESTATE[4], G_GAMESTATE[5], G_GAMESTATE[6], G_GAMESTATE[7]);
 }
 

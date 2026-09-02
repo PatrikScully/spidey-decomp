@@ -17,24 +17,68 @@
 // #define VALIDATE_PARSESFX
 
 
+// ---------------------------------------------------------------------------
+// The sound effect state is shared between this repo and the exe, so it gets
+// G_ macros.  Every enemy, weapon and cutscene file plays sounds through
+// SFX_Play / SFX_PlayPos, so as soon as any of those files is hooked its
+// hooked half allocates voices out of our private gSfxEntries while the exe
+// keeps using its own, and the two voice tables drift apart.
+//
+// Every address below was read out of the original disassembly
+// (tools/functions/*.bin), not taken from a name list:
+//
+//   gSfxArrayOne                0x0054F6F0  SFX_Play      lea edi,[eax*4+54F6F0h]
+//   gVoiceIndex                 0x0054FAF0  playSFX       mov dword [54FAF0h],1
+//   gSfxGlobal                  0x0060D86C  SFX_Unpause   mov [60D86Ch],eax (6666)
+//   gSfxRelatedOutLevel         0x00615308  playSFX       mov ecx,615308h
+//   gSoundBank                  0x00616D70  SFX_Init      push 616D70h (SFX_LoadBank)
+//   gSfxEntries                 0x00618730  SFX_FreeVoice lea eax,[eax*8+618730h]
+//   gSfxPlayRelated             0x00618C3C  SFX_Play      mov [618C3Ch],esi
+//   SFXLevelSpecificAliasArray  0x00618C7C  SFX_SpoolInLevelSFX push 618C7Ch
+//   gSfxArraAliasyOne           0x00618D00  SFX_Init      push 618D00h
+//   gSfxSomething               0x00618D80  SFX_ShutDown  mov edi,618D80h; rep stosd
+//   SFXLevelSpecificArray       0x00618D9C  SFX_SpoolInLevelSFX push 618D9Ch
+//   SFXFalloffArray             0x0061909C  SFX_ModifyPos mov ebx,61909Ch
+//   SFXPaused                   0x0061919C  SFX_LevelStart mov byte [61919Ch],0
+//   gBootRomSoundMode           0x0061919D  SFX_ModifyPos mov dl,[61919Dh]
+//   gReverbType                 0x0061919E  SFX_ReverbOff mov byte [61919Eh],0
+//   gNumVoices                  0x006191A0  SFX_FreeVoice mov [6191A0h],ecx
+//   gSfxInited                  0x006191A4  SFX_ShutDown  mov byte [6191A4h],0
+//
+// gSfxVolArr (0x0054F9F0) and gStubSfx (0x0054D342) stay repo-local.  A scan of
+// the whole .text finds only reads of both (three of gSfxVolArr, one of
+// gStubSfx) and no writes at all, and the exe's .data bytes for gSfxVolArr are
+// byte for byte the table below, so the two copies can never disagree.
+// ---------------------------------------------------------------------------
+
 // @Ok
 EXPORT u32 gSfxPlayRelated;
+//#define G_SFX_PLAY_RELATED (gSfxPlayRelated)
+#define G_SFX_PLAY_RELATED (*reinterpret_cast<u32*>(0x00618C3C))
 
 // @Ok
 EXPORT i32 gSfxGlobal;
 
 // @Ok
 u32 SFXFalloffArray[32];
+//#define G_SFX_FALLOFF_ARRAY (SFXFalloffArray)
+#define G_SFX_FALLOFF_ARRAY (reinterpret_cast<u32*>(0x0061909C))
 
 // @Ok
 u32 SFXLevelSpecificArray[192];
+//#define G_SFX_LEVEL_SPECIFIC_ARRAY (SFXLevelSpecificArray)
+#define G_SFX_LEVEL_SPECIFIC_ARRAY (reinterpret_cast<u32*>(0x00618D9C))
 // @Ok
 u16 SFXLevelSpecificAliasArray[64];
+//#define G_SFX_LEVEL_SPECIFIC_ALIAS_ARRAY (SFXLevelSpecificAliasArray)
+#define G_SFX_LEVEL_SPECIFIC_ALIAS_ARRAY (reinterpret_cast<u16*>(0x00618C7C))
 
 // @Ok
 EXPORT bool gBootRomSoundMode;
 
 // @Ok
+// Read only: nothing in the whole binary writes it, so our copy and the
+// exe's copy at 0x0054F9F0 always hold the same table.
 EXPORT u8 gSfxVolArr[256] =
 {
 
@@ -69,28 +113,46 @@ EXPORT u8 gSfxVolArr[256] =
 
 // @Ok
 EXPORT u8 gReverbType;
+//#define G_REVERB_TYPE (gReverbType)
+#define G_REVERB_TYPE (*reinterpret_cast<u8*>(0x0061919E))
 
 // @Ok
 EXPORT u8 gSfxInited;
+//#define G_SFX_INITED (gSfxInited)
+#define G_SFX_INITED (*reinterpret_cast<u8*>(0x006191A4))
 
 // @Ok
 EXPORT i32 gVoiceIndex = 1;
+//#define G_VOICE_INDEX (gVoiceIndex)
+#define G_VOICE_INDEX (*reinterpret_cast<i32*>(0x0054FAF0))
 
 // @Ok
 EXPORT SSfxRelated gSfxSomething;
+//#define G_SFX_SOMETHING (gSfxSomething)
+#define G_SFX_SOMETHING (*reinterpret_cast<SSfxRelated*>(0x00618D80))
 
 // @Ok
 EXPORT i32 gNumVoices;
+//#define G_NUM_VOICES (gNumVoices)
+#define G_NUM_VOICES (*reinterpret_cast<i32*>(0x006191A0))
 
 EXPORT u8 SFXPaused;
+//#define G_SFX_PAUSED (SFXPaused)
+#define G_SFX_PAUSED (*reinterpret_cast<u8*>(0x0061919C))
 #define LEN_SFX_ENTRIES 32
 EXPORT SSfxEntry gSfxEntries[LEN_SFX_ENTRIES];
+//#define G_SFX_ENTRIES (gSfxEntries)
+#define G_SFX_ENTRIES (reinterpret_cast<SSfxEntry*>(0x00618730))
 
 // @Ok
 EXPORT SSFXBank gSoundBank;
+//#define G_SOUND_BANK (gSoundBank)
+#define G_SOUND_BANK (*reinterpret_cast<SSFXBank*>(0x00616D70))
 
 // @Ok
 EXPORT SSFXBank gSfxRelatedOutLevel;
+//#define G_SFX_RELATED_OUT_LEVEL (gSfxRelatedOutLevel)
+#define G_SFX_RELATED_OUT_LEVEL (*reinterpret_cast<SSFXBank*>(0x00615308))
 
 
 // @Ok
@@ -301,10 +363,14 @@ EXPORT u32 gSfxArrayOne[192] =
   0u,
   0u
 };
+//#define G_SFX_ARRAY_ONE (gSfxArrayOne)
+#define G_SFX_ARRAY_ONE (reinterpret_cast<u32*>(0x0054F6F0))
 
 
 // @Ok
 EXPORT u16 gSfxArraAliasyOne[64];
+//#define G_SFX_ARRAY_ALIAS_ONE (gSfxArraAliasyOne)
+#define G_SFX_ARRAY_ALIAS_ONE (reinterpret_cast<u16*>(0x00618D00))
 
 // @Bogus
 // @Note: exists purely for matching purposes
@@ -350,9 +416,9 @@ INLINE i32 DCSFX_AdjustVol(i32 a1)
 // @Matching
 void DCSetBootROMSoundMode(bool a1)
 {
-	if (a1 != gBootRomSoundMode)
+	if (a1 != G_BOOT_ROM_SOUND_MODE)
 	{
-		gBootRomSoundMode = a1;
+		G_BOOT_ROM_SOUND_MODE = a1;
 		void *v1 = syMalloc(0x4000u);
 
 		i32 v2 = syCfgInit(v1);
@@ -387,17 +453,17 @@ INLINE i32 PSXPitchToDCPitch(i32 a1)
 // @AlmostMatching: only used once and code gen is slightly different
 INLINE i32 SFX_AllocVoice(i32 a1, bool a2)
 {
-	i32 v8 = gVoiceIndex;
+	i32 v8 = G_VOICE_INDEX;
 	i32 v9 = 0;
-	for (i32 i = gVoiceIndex; i < 32; i++)
+	for (i32 i = G_VOICE_INDEX; i < 32; i++)
 	{
 
 		if (!DXSOUND_IsPlaying(i))
 		{
 			SFX_KillVoice(i);
-			gVoiceIndex = i + 1;
+			G_VOICE_INDEX = i + 1;
 			if (i == 31)
-				gVoiceIndex = 1;
+				G_VOICE_INDEX = 1;
 			v9 = 1;
 			break;
 		}
@@ -410,9 +476,9 @@ INLINE i32 SFX_AllocVoice(i32 a1, bool a2)
 			if (!DXSOUND_IsPlaying(j))
 			{
 				SFX_KillVoice(j);
-				gVoiceIndex = j + 1;
+				G_VOICE_INDEX = j + 1;
 				if (j == 31)
-					gVoiceIndex = 1;
+					G_VOICE_INDEX = 1;
 				break;
 			}
 		}
@@ -421,22 +487,22 @@ INLINE i32 SFX_AllocVoice(i32 a1, bool a2)
 	i32 k;
 	for (k = 1; k < 32; k++)
 	{
-		if (!gSfxEntries[k].field_1A && !gSfxEntries[k].field_1B)
+		if (!G_SFX_ENTRIES[k].field_1A && !G_SFX_ENTRIES[k].field_1B)
 			break;
 	}
 
 	if (k < 32)
 	{
-		gSfxEntries[k].field_0 = a1;
-		gSfxEntries[k].field_1A = 1;
-		gSfxEntries[k].field_1B = a2;
-		gSfxEntries[k].field_4 = 0;
-		gSfxEntries[k].field_8 = 0;
-		gSfxEntries[k].field_C = 0;
-		gSfxEntries[k].field_10 = 0;
-		gSfxEntries[k].field_1C = 0;
+		G_SFX_ENTRIES[k].field_0 = a1;
+		G_SFX_ENTRIES[k].field_1A = 1;
+		G_SFX_ENTRIES[k].field_1B = a2;
+		G_SFX_ENTRIES[k].field_4 = 0;
+		G_SFX_ENTRIES[k].field_8 = 0;
+		G_SFX_ENTRIES[k].field_C = 0;
+		G_SFX_ENTRIES[k].field_10 = 0;
+		G_SFX_ENTRIES[k].field_1C = 0;
 
-		DoAssert(gNumVoices++ <= 32, "voice allocation error"); 
+		DoAssert(G_NUM_VOICES++ <= 32, "voice allocation error"); 
 		return k;
 	}
 
@@ -456,8 +522,8 @@ INLINE void SFX_CloseBank(SSFXBank *pBank)
 	{
 		DXSOUND_Unload(pBank->field_8, 0);
 		
-		if (pBank == &gSoundBank && gSfxRelatedOutLevel.field_4)
-			SFX_CloseBank(&gSfxRelatedOutLevel);
+		if (pBank == &G_SOUND_BANK && G_SFX_RELATED_OUT_LEVEL.field_4)
+			SFX_CloseBank(&G_SFX_RELATED_OUT_LEVEL);
 
 		DebugPrintfX("unloading sound bank %s.", pBank->field_8);
 
@@ -466,10 +532,10 @@ INLINE void SFX_CloseBank(SSFXBank *pBank)
 		pBank->field_4 = 0;
 		pBank->mNumAssets = 0;
 
-		if (gSfxSomething.field_0)
-			Mem_AlignedDelete(gSfxSomething.field_0);
+		if (G_SFX_SOMETHING.field_0)
+			Mem_AlignedDelete(G_SFX_SOMETHING.field_0);
 
-		memset(&gSfxSomething, 0, sizeof(gSfxSomething));
+		memset(&G_SFX_SOMETHING, 0, sizeof(G_SFX_SOMETHING));
 	}
 }
 
@@ -478,7 +544,7 @@ INLINE void SFX_CloseBank(SSFXBank *pBank)
 INLINE void SFX_FreeVoice(i32 a1)
 {
 	nullsub_3();
-	SSfxEntry *pEntry = &gSfxEntries[a1];
+	SSfxEntry *pEntry = &G_SFX_ENTRIES[a1];
 
 	pEntry->field_1A = 0;
 	pEntry->field_1B = 0;
@@ -486,7 +552,7 @@ INLINE void SFX_FreeVoice(i32 a1)
 	pEntry->field_1C = 0;
 	pEntry->field_24 = 0;
 
-	DoAssert(--gNumVoices >= 0, "voice deallocation error");
+	DoAssert(--G_NUM_VOICES >= 0, "voice deallocation error");
 	nullsub_3();
 }
 
@@ -497,10 +563,10 @@ void SFX_Init(char* pSfxBankName)
 	DoAssert(pSfxBankName && *pSfxBankName, "bad sfx bank filename");
 
 	CopyFilenameDefaultExtension(buf, sizeof(buf), pSfxBankName, ".kat");
-	SFX_LoadBank(buf, &gSoundBank);
+	SFX_LoadBank(buf, &G_SOUND_BANK);
 	CopyFilenameDefaultExtension(buf, sizeof(buf), pSfxBankName, ".sfx");
 
-	SFX_ParseSFXFile(buf, gSfxArrayOne, gSfxArraAliasyOne, 64, 0);
+	SFX_ParseSFXFile(buf, G_SFX_ARRAY_ONE, G_SFX_ARRAY_ALIAS_ONE, 64, 0);
 }
 
 // @Ok
@@ -530,12 +596,12 @@ void SFX_Init(char* pSfxBankName)
 // @Matching, exact-address matches for sub_430C30/sub_430CA0 respectively).
 void SFX_InitAtStart(void)
 {
-	if (!gSfxInited)
+	if (!G_SFX_INITED)
 	{
-		memset(gSfxEntries, 0, sizeof(gSfxEntries));
-		memset(&gSfxSomething, 0, sizeof(gSfxSomething));
-		gSfxInited = 1;
-		gNumVoices = 0;
+		memset(G_SFX_ENTRIES, 0, sizeof(SSfxEntry) * LEN_SFX_ENTRIES);
+		memset(&G_SFX_SOMETHING, 0, sizeof(G_SFX_SOMETHING));
+		G_SFX_INITED = 1;
+		G_NUM_VOICES = 0;
 
 		i32 dspBankSize;
 		void *dspBank = FileIO_Unk("thehall.fpb", &dspBankSize);
@@ -550,7 +616,7 @@ void SFX_InitAtStart(void)
 // @Ok
 INLINE void SFX_KillVoice(u32 a1)
 {
-	if (gSfxEntries[a1].field_1A)
+	if (G_SFX_ENTRIES[a1].field_1A)
 	{
 		DXSOUND_Stop(a1);
 		DXSOUND_Close(a1);
@@ -608,41 +674,41 @@ void SFX_LoadBank(
 		DoAssert(
 				pAsset->field_14 == 4 || pAsset->field_14 == 8 || pAsset->field_14 == 16,
 				"bogus bit depth");
-		if (pAsset->field_8 >= 0x20000 && pBank != &gSoundBank)
+		if (pAsset->field_8 >= 0x20000 && pBank != &G_SOUND_BANK)
 		{
 			DoAssert(1, "all streaming samples must be at end of bank");
 
-			gSfxSomething.field_4 = pAsset->field_8;
-			gSfxSomething.field_4 &= 0xFFFFFFFC;
-			gSfxSomething.field_4 = pAsset->field_8;
+			G_SFX_SOMETHING.field_4 = pAsset->field_8;
+			G_SFX_SOMETHING.field_4 &= 0xFFFFFFFC;
+			G_SFX_SOMETHING.field_4 = pAsset->field_8;
 
 			i32 v13 = 4 - (pAsset->field_4 & 3);
-			gSfxSomething.field_C += 13;
+			G_SFX_SOMETHING.field_C += 13;
 
-			if (!gSfxSomething.field_0)
+			if (!G_SFX_SOMETHING.field_0)
 			{
-				gSfxSomething.field_0 = DCMem_New(gSfxSomething.field_4, 0, 1, 0, 1);
+				G_SFX_SOMETHING.field_0 = DCMem_New(G_SFX_SOMETHING.field_4, 0, 1, 0, 1);
 				DoAssert(
-						!!gSfxSomething.field_0,
+						!!G_SFX_SOMETHING.field_0,
 						"could not allocate main mem stream buffer");
 				memcpy(
-						gSfxSomething.field_0,
-						&reinterpret_cast<u8*>(fileBuf)[gSfxSomething.field_C],
-						gSfxSomething.field_4);
+						G_SFX_SOMETHING.field_0,
+						&reinterpret_cast<u8*>(fileBuf)[G_SFX_SOMETHING.field_C],
+						G_SFX_SOMETHING.field_4);
 			}
 
-			gSfxSomething.field_10 = 0xC000;
+			G_SFX_SOMETHING.field_10 = 0xC000;
 
 			switch (pAsset->field_14)
 			{
 				case 4:
-					gSfxSomething.field_14 = gSfxSomething.field_10;
+					G_SFX_SOMETHING.field_14 = G_SFX_SOMETHING.field_10;
 					break;
 				case 8:
-					gSfxSomething.field_14 = gSfxSomething.field_10 >> 1;
+					G_SFX_SOMETHING.field_14 = G_SFX_SOMETHING.field_10 >> 1;
 					break;
 				case 16:
-					gSfxSomething.field_14 = gSfxSomething.field_10 >> 2;
+					G_SFX_SOMETHING.field_14 = G_SFX_SOMETHING.field_10 >> 2;
 					break;
 				default:
 					DoAssert(0, "?");
@@ -650,9 +716,9 @@ void SFX_LoadBank(
 			}
 
 			v17 = 1;
-			pAsset->field_8 = gSfxSomething.field_10 + v13;
+			pAsset->field_8 = G_SFX_SOMETHING.field_10 + v13;
 
-			fileSize += pAsset->field_8 - gSfxSomething.field_4;
+			fileSize += pAsset->field_8 - G_SFX_SOMETHING.field_4;
 			fileSize += 3;
 			fileSize &= 0xFFFFFFFC;
 		}
@@ -667,7 +733,7 @@ void SFX_LoadBank(
 	DoAssert(!!acRes, "acG2Write failed");
 
 	if (v17)
-		gSfxSomething.field_C += reinterpret_cast<i32>(v20);
+		G_SFX_SOMETHING.field_C += reinterpret_cast<i32>(v20);
 
 	Mem_AlignedDelete(fileBuf);
 	pBank->field_4 = reinterpret_cast<i32>(v20);
@@ -691,20 +757,20 @@ void SFX_ModifyPos(
 			{
 				u32 v11 = Utils_CalculateSpatialAttenuation(
 						pos,
-						(SFXFalloffArray[i] >> 2) & 0x3FFF,
-						(SFXFalloffArray[i] & 0xFFFF) << 1);
+						(G_SFX_FALLOFF_ARRAY[i] >> 2) & 0x3FFF,
+						(G_SFX_FALLOFF_ARRAY[i] & 0xFFFF) << 1);
 
 				i32 v13 = v11 & 0xFFF;
 				v13 <<= 2;
-				v13 *= gGameState[12];
+				v13 *= G_GAMESTATE[12];
 				v13 >>= 14;
 
 				i32 v14 = (v11 >> 16) & 0xFFF;
 				v14 <<= 2;
-				v14 *= gGameState[12];
+				v14 *= G_GAMESTATE[12];
 				v14 >>= 14;
 
-				if (gBootRomSoundMode)
+				if (G_BOOT_ROM_SOUND_MODE)
 				{
 					v14 = (v13 + v14) / 2;
 					v13 = v14;
@@ -715,14 +781,14 @@ void SFX_ModifyPos(
 
 				if (delta_dist)
 				{
-					i32 v16 = gSfxEntries[i].field_14;
+					i32 v16 = G_SFX_ENTRIES[i].field_14;
 					i32 v17 = v16 * delta_dist / 0x2000;
 					i32 v18 = v16 - v17;
 					if (v18 > v16 && v18 - v16 > v16 + (v16 >> 1))
 						v18 = v16 + (v16 >> 1);
 
-					gSfxEntries[i].field_20 = PSXPitchToDCPitch(v18);
-					DXSOUND_SetPitch(i, gSfxEntries[i].field_20);
+					G_SFX_ENTRIES[i].field_20 = PSXPitchToDCPitch(v18);
+					DXSOUND_SetPitch(i, G_SFX_ENTRIES[i].field_20);
 				}
 			}
 		}
@@ -741,7 +807,7 @@ void SFX_ModifyVol(
 	{
 		if (voice_id & 1)
 		{
-			if (gSfxEntries[v10].field_1A)
+			if (G_SFX_ENTRIES[v10].field_1A)
 			{
 				if (vl > 0x3FFF)
 				{
@@ -771,7 +837,7 @@ void SFX_ModifyVol(
 				DoAssert(1u, "pan out of range");
 
 				DXSOUND_SetPan(v10, v7);
-				gSfxEntries[v10].field_16 = v6;
+				G_SFX_ENTRIES[v10].field_16 = v6;
 
 				if (v6 > 0x3FFF)
 				{
@@ -792,6 +858,8 @@ void SFX_ModifyVol(
 	}
 }
 
+// Read only: 0x0054D342, read once by SFX_Off and written nowhere in the
+// binary, so it stays repo-local.
 EXPORT u8 volatile gStubSfx;
 
 // @Ok
@@ -877,13 +945,13 @@ void SFX_ParseSFXFile(
 // @Matching
 void SFX_Pause(void)
 {
-	if (!SFXPaused)
+	if (!G_SFX_PAUSED)
 	{
-		SFXPaused = 1;
+		G_SFX_PAUSED = 1;
 
 		for (i32 i = 0; i < LEN_SFX_ENTRIES; i++)
 		{
-			if (gSfxEntries[i].field_1A)
+			if (G_SFX_ENTRIES[i].field_1A)
 				DXSOUND_SetVolume(i, 0);
 		}
 
@@ -901,12 +969,12 @@ void SFX_SetVoiceVolume(u32 a1, i16 a2)
 		{
 			if (a1 & (1<< i))
 			{
-				gSfxEntries[i].field_16 = a2;
+				G_SFX_ENTRIES[i].field_16 = a2;
 
 				SFX_ModifyVol(
 						1 << i,
-						gSfxEntries[i].field_16,
-						gSfxEntries[i].field_16);
+						G_SFX_ENTRIES[i].field_16,
+						G_SFX_ENTRIES[i].field_16);
 				break;
 			}
 		}
@@ -917,15 +985,15 @@ void SFX_SetVoiceVolume(u32 a1, i16 a2)
 // @NotMatching: the null subs are weird are probably fucked the inlining
 void SFX_ShutDown(void)
 {
-	if (gSfxInited)
+	if (G_SFX_INITED)
 	{
-		SFX_CloseBank(&gSfxRelatedOutLevel);
-		SFX_CloseBank(&gSoundBank);
+		SFX_CloseBank(&G_SFX_RELATED_OUT_LEVEL);
+		SFX_CloseBank(&G_SOUND_BANK);
 
 		nullsub_3();
 		nullsub_3();
 
-		gSfxInited = 0;
+		G_SFX_INITED = 0;
 	}
 }
 
@@ -935,42 +1003,42 @@ void SFX_SpoolInLevelSFX(const char *p_name)
 {
 	DoAssert(p_name && *p_name, "bad level sfx bank filename");
 
-	SFX_CloseBank(&gSfxRelatedOutLevel);
+	SFX_CloseBank(&G_SFX_RELATED_OUT_LEVEL);
 
 	char v5[56];
 	CopyFilenameDefaultExtension(v5, sizeof(v5), p_name, ".kat");
-	SFX_LoadBank(v5, &gSfxRelatedOutLevel);
+	SFX_LoadBank(v5, &G_SFX_RELATED_OUT_LEVEL);
 
 	CopyFilenameDefaultExtension(v5, sizeof(v5), p_name, ".sfx");
-	SFX_ParseSFXFile(v5, SFXLevelSpecificArray, SFXLevelSpecificAliasArray, 64, 0x40000000);
+	SFX_ParseSFXFile(v5, G_SFX_LEVEL_SPECIFIC_ARRAY, G_SFX_LEVEL_SPECIFIC_ALIAS_ARRAY, 64, 0x40000000);
 }
 
 // @Ok
 // @AlmostMatching: inlining diffs by 4 bytes due to 2 inlined functions diffing 2 bytes
 void SFX_SpoolOutLevelSFX(void)
 {
-	SFX_CloseBank(&gSfxRelatedOutLevel);
+	SFX_CloseBank(&G_SFX_RELATED_OUT_LEVEL);
 }
 
 // @Ok
 // @AlmostMatching: same size and reg allocation, just shifted pointer diff offsets for gSfxEntries
 void SFX_Unpause(void)
 {
-	if (SFXPaused)
+	if (G_SFX_PAUSED)
 	{
-		SFXPaused = 0;
+		G_SFX_PAUSED = 0;
 		for (i32 i = 0; i < 32; i++)
 		{
-			if (gSfxEntries[i].field_1B)
+			if (G_SFX_ENTRIES[i].field_1B)
 			{
 				u8 v5;
-				if (!(gSfxEntries[i].field_24 & 0x4000) && gReverbType)
+				if (!(G_SFX_ENTRIES[i].field_24 & 0x4000) && G_REVERB_TYPE)
 					v5 = 0;
 				else
 					v5 = 1;
 
 
-				i32 v6 = (gGameState[12] * ((gSfxEntries[i].field_18 * gSfxEntries[i].field_16) >> 12)) >> 14;
+				i32 v6 = (G_GAMESTATE[12] * ((G_SFX_ENTRIES[i].field_18 * G_SFX_ENTRIES[i].field_16) >> 12)) >> 14;
 				if (v6 > 0x3FF)
 				{
 					v6 = 0x3FFF;
@@ -986,12 +1054,12 @@ void SFX_Unpause(void)
 
 				DXSOUND_SetVolume(i, v7);
 				DXSOUND_SetPan(i, 15);
-				DXSOUND_SetPitch(i, gSfxEntries[i].field_20);
+				DXSOUND_SetPitch(i, G_SFX_ENTRIES[i].field_20);
 				DXSOUND_Play(i, 1);
 			}
 		}
 
-		gSfxGlobal = 6666;
+		G_SFX_GLOBAL = 6666;
 		G_MECHLIST_PLAYER->field_530 = 6666;
 		Redbook_XAPause(0);
 		nullsub_one_arg(2);
@@ -1011,9 +1079,9 @@ u32 playSFX(
 {
 	u16 assetIndex = (sfx >> 0x10) & 0x7F;
 
-	SSFXBank *pBank = &gSfxRelatedOutLevel;
+	SSFXBank *pBank = &G_SFX_RELATED_OUT_LEVEL;
 	if (!(sfx & 0x40000000))
-		pBank = &gSoundBank;
+		pBank = &G_SOUND_BANK;
 
 	if (!pBank->field_4)
 		return -1;
@@ -1053,13 +1121,13 @@ u32 playSFX(
 	if (v19 < 0)
 		return 0;
 
-	gSfxEntries[v19].field_18 = volMod;
-	gSfxEntries[v19].field_24 = sfx;
-	gSfxEntries[v19].field_16 = v14;
-	gSfxEntries[v19].field_14 = pitch;
+	G_SFX_ENTRIES[v19].field_18 = volMod;
+	G_SFX_ENTRIES[v19].field_24 = sfx;
+	G_SFX_ENTRIES[v19].field_16 = v14;
+	G_SFX_ENTRIES[v19].field_14 = pitch;
 
 	i32 newPitch = PSXPitchToDCPitch((100 * (pitch - 60)) & 0xFF);
-	gSfxEntries[v19].field_20 = newPitch;
+	G_SFX_ENTRIES[v19].field_20 = newPitch;
 	i32 newVol = DCSFX_AdjustVol(v14);
 	DXSOUND_Open(
 			v19,
@@ -1099,10 +1167,10 @@ INLINE u32 translateLevelSpecificAliasToIndex(u32 alias)
 	for (i32 i = 0; i < 64; i++)
 	{
 
-		if (SFXLevelSpecificAliasArray[i] == 0xFFFF)
+		if (G_SFX_LEVEL_SPECIFIC_ALIAS_ARRAY[i] == 0xFFFF)
 			return 0xFFFFFFFF;
 
-		if (alias == SFXLevelSpecificAliasArray[i])
+		if (alias == G_SFX_LEVEL_SPECIFIC_ALIAS_ARRAY[i])
 			return i;
 	}
 
@@ -1148,9 +1216,9 @@ u32 SFX_PlayPos(
 		v9 = sfxIndex - 1;
 	}
 
-	u32 *v10 = &SFXLevelSpecificArray[3 * v9];
+	u32 *v10 = &G_SFX_LEVEL_SPECIFIC_ARRAY[3 * v9];
 	if (!v4)
-		v10 = &gSfxArrayOne[3 * v9];
+		v10 = &G_SFX_ARRAY_ONE[3 * v9];
 
 	u32 soundTwo = v10[2];
 	u32 v11 = Utils_CalculateSpatialAttenuation(
@@ -1163,21 +1231,21 @@ u32 SFX_PlayPos(
 
 	i32 v14 = v11 & 0xFFF;
 	v14 <<= 2;
-	v14 *= gGameState[12];
+	v14 *= G_GAMESTATE[12];
 	v14 >>= 14;
 
 	i32 v15 = (v11 >> 16) & 0xFFF;
 	v15 <<= 2;
-	v15 *= gGameState[12];
+	v15 *= G_GAMESTATE[12];
 	v15 >>= 14;
 
-	if (gBootRomSoundMode)
+	if (G_BOOT_ROM_SOUND_MODE)
 	{
 		v15 = (v14 + v15) / 2;
 		v14 = v15;
 	}
 
-	gSfxPlayRelated = (100 * v13) >> 12;
+	G_SFX_PLAY_RELATED = (100 * v13) >> 12;
 
 	u32 result = playSFX(
 			v10[0] | (v5 ? 0x4000 : 0),
@@ -1191,7 +1259,7 @@ u32 SFX_PlayPos(
 	{
 		if (result & (1 << i))
 		{
-			SFXFalloffArray[i] = soundTwo | (v13 << 16);
+			G_SFX_FALLOFF_ARRAY[i] = soundTwo | (v13 << 16);
 			break;
 		}
 	}
@@ -1203,14 +1271,14 @@ u32 SFX_PlayPos(
 // @Ok
 void SFX_LevelStart(void)
 {
-	SFXPaused = 0;
+	G_SFX_PAUSED = 0;
 }
 
 // @Ok
 // @Matching
 void INLINE SFX_SetReverbType(unsigned char reverb)
 {
-	gReverbType = reverb != 0;
+	G_REVERB_TYPE = reverb != 0;
 }
 
 // @Ok
@@ -1228,7 +1296,7 @@ INLINE void SFX_Stop(u32 a1)
 	{
 		if (a1 & 1)
 		{
-			if (!gSfxEntries[v2].field_1A)
+			if (!G_SFX_ENTRIES[v2].field_1A)
 				return;
 			SFX_KillVoice(v2);
 		}
@@ -1267,17 +1335,17 @@ u32 SFX_Play(
 		v9 = sfxIndex - 1;
 	}
 
-	u32 *v10 = &SFXLevelSpecificArray[3 * v9];
+	u32 *v10 = &G_SFX_LEVEL_SPECIFIC_ARRAY[3 * v9];
 	if (!v4)
-		v10 = &gSfxArrayOne[3 * v9];
+		v10 = &G_SFX_ARRAY_ONE[3 * v9];
 
 
 	u32 v12 = v10[1] & 0xFFFF;
 	u32 firstValue = v10[0];
     u32 v13 = (v10[1] >> 0x10) & 0xFFFF;
 
-	i32 realVol = (vol * gGameState[12]) >> 14;
-	gSfxPlayRelated = (100 * v13) >> 12;
+	i32 realVol = (vol * G_GAMESTATE[12]) >> 14;
+	G_SFX_PLAY_RELATED = (100 * v13) >> 12;
 
 	return playSFX(
 			firstValue | (d4 ? 0x4000 : 0),

@@ -89,7 +89,7 @@ u8 GameFMV_PlayMovie(
 		if (v4 > 255)
 			v4 = 255;
 		PCMOVIE_SetVolume(v4);
-		Pad_ClearTriggers(gSControl);
+		Pad_ClearTriggers(G_SCONTROL);
 
 		while (PCMOVIE_NextFrame())
 		{
@@ -99,7 +99,7 @@ u8 GameFMV_PlayMovie(
 					gGameFmvPad >= 60 &&
 					PCSHELL_CheckTriggers(0x7000000, 1, 1))
 			{
-				gSControl[0].Start.Triggered = 0;
+				G_SCONTROL[0].Start.Triggered = 0;
 				break;
 			}
 		}
@@ -108,7 +108,7 @@ u8 GameFMV_PlayMovie(
 		PCMOVIE_Stop();
 		Pad_ActuatorOff(0, 0);
 		Pad_ActuatorOff(0, 1);
-		Pad_ClearTriggers(gSControl);
+		Pad_ClearTriggers(G_SCONTROL);
 		G_GAME_FMV_ACTIVE = 0;
 
 		Front_ClearScreen();

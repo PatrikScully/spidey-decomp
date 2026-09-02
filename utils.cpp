@@ -126,7 +126,7 @@ void MyVSync(void)
 	if (!G_GAME_FMV_ACTIVE)
 		(*gIdleVsyncCount)++;
 
-	if (!Pad_IdleTime)
+	if (!G_PAD_IDLE_TIME)
 		*gIdleVsyncCount = 0;
 
 	if (!G_POST_WATER_EFFECT && !*gTrainingRelated)

@@ -14,8 +14,8 @@ EXPORT i32 gComicBookRun = 1;
 // @Ok
 u8 Cinema_ComicBookStill(const char *pBMP)
 {
-	gSControl[0].Start.Triggered = 0;
-	gSControl[0].X.Triggered = 0;
+	G_SCONTROL[0].Start.Triggered = 0;
+	G_SCONTROL[0].X.Triggered = 0;
 	BMP_Draw(pBMP);
 	i32 v1 = G_VBLANKS;
 	Pad_Update();
@@ -29,7 +29,7 @@ u8 Cinema_ComicBookStill(const char *pBMP)
 		if (PCSHELL_CheckTriggers(0x60220, 1, 1))
 			return 1;
 	}
-	gSControl[0].X.Triggered = 0;
+	G_SCONTROL[0].X.Triggered = 0;
 	return 0;
 }
 
