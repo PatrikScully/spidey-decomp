@@ -1644,6 +1644,13 @@ void game_patches(void)
 	patch_lizman();
 	patch_blackcat();
 	patch_jonah();
+	patch_hostage();
+	patch_spclone();
+	patch_switch();
+	patch_torch();
+	patch_powerup();
+	patch_turret();
+	patch_wire();
 }
 
 // @Bogus

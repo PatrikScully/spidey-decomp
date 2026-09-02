@@ -297,7 +297,7 @@ void PCTEX_Init(void)
 
 #ifdef _WIN32
 	DDPIXELFORMAT v36[16];
-	g_D3DDevice7->EnumTextureFormats(enumPixelFormatsCB, v36);
+	G_D3DDEVICE7->EnumTextureFormats(enumPixelFormatsCB, v36);
 
 	//DXERR_printf("Got %d pixel formats\n", G_NUM_PIXEL_FORMATS);
 	for (i32 j = 0; j < G_NUM_PIXEL_FORMATS; j++)
