@@ -1193,3 +1193,40 @@ void validate_SViewport(void)
 	VALIDATE(SViewport, field_E, 0xE);
 }
 
+
+// @Bogus
+void patch_camera(void)
+{
+	PATCH_PUSH_RET_POLY(0x00415EE0, CCamera::CCamera, "??0CCamera@@QAE@PAVCBody@@@Z");
+	PATCH_PUSH_RET_POLY(0x004162A0, CCamera::~CCamera, "??1CCamera@@UAE@XZ");
+	PATCH_PUSH_RET(0x00416300, CCamera::SetTripodInterpolation);
+	PATCH_PUSH_RET(0x00416370, CCamera::SetFixedPosMode);
+	PATCH_PUSH_RET(0x00416410, CCamera::SetFixedPosAnglesMode);
+	PATCH_PUSH_RET(0x004166C0, CCamera::SetFixedFocusMode);
+	PATCH_PUSH_RET(0x00416720, CCamera::PushMode);
+	PATCH_PUSH_RET(0x00416780, CCamera::PopMode);
+	PATCH_PUSH_RET(0x004167F0, CCamera::SetMode);
+	PATCH_PUSH_RET(0x00416840, CCamera::SetCollisionRayLR);
+	PATCH_PUSH_RET(0x00416850, CCamera::SetCollisionRayBack);
+	PATCH_PUSH_RET(0x00416860, CCamera::SetCollisionAngLR);
+	PATCH_PUSH_RET(0x00416870, CCamera::SetCollisionAngBack);
+	PATCH_PUSH_RET(0x00416880, CCamera::Shake);
+	PATCH_PUSH_RET(0x00416A00, CCamera::GetPosition);
+	PATCH_PUSH_RET(0x00416A20, CCamera::LoadIntoMikeCamera);
+	PATCH_PUSH_RET(0x00416AA0, CCamera::SetStartPosition);
+	PATCH_PUSH_RET(0x00417710, CCamera::SetTripodMotion);
+	PATCH_PUSH_RET(0x004178E0, CCamera::SetCamAngle);
+	PATCH_PUSH_RET(0x004179E0, CCamera::GetCamXZDistance);
+	PATCH_PUSH_RET(0x004179F0, CCamera::SetCamXZDistance);
+	PATCH_PUSH_RET(0x00417A60, CCamera::GetCamYDistance);
+	PATCH_PUSH_RET(0x00417A70, CCamera::SetCamYDistance);
+	PATCH_PUSH_RET(0x00417AE0, CCamera::SetCamXOffset);
+	PATCH_PUSH_RET(0x00417B60, CCamera::SetCamYOffset);
+	PATCH_PUSH_RET(0x00417BE0, CCamera::SetCamZOffset);
+	PATCH_PUSH_RET(0x00417C50, CCamera::SetZoom);
+	PATCH_PUSH_RET(0x00417CA0, CCamera::GetZoom);
+	PATCH_PUSH_RET(0x004186B0, CCamera::CM_TripodFocus);
+	PATCH_PUSH_RET(0x00418800, CCamera::CM_FixedPosAngles);
+	PATCH_PUSH_RET(0x004189A0, CCamera::CM_FixedPos);
+	PATCH_PUSH_RET(0x00418E00, CCamera::CM_Normal);
+}

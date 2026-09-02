@@ -271,4 +271,6 @@ void validate_CCamera(void);
 void validate_SCamera(void);
 void validate_SViewport(void);
 
+void patch_camera(void);
+
 #endif

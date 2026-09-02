@@ -1617,6 +1617,7 @@ void game_patches(void)
 	patch_CBit();
 	patch_CFT4Bit();
 
+	patch_camera();
 }
 
 // @Bogus
