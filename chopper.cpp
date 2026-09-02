@@ -2963,8 +2963,8 @@ void patch_chopper(void)
 	PATCH_PUSH_RET(0x00420AA0, Chopper_CreateSearchlight);
 	PATCH_PUSH_RET(0x00420B10, Chopper_CreateSniper);
 
-	PATCH_PUSH_RET(0x00420BB0, CSniperSplat::Move);
-	PATCH_PUSH_RET(0x00420D50, CBulletFrag::Move);
+	PATCH_PUSH_RET_POLY(0x00420BB0, CSniperSplat::Move, "?Move@CSniperSplat@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00420D50, CBulletFrag::Move, "?Move@CBulletFrag@@UAEXXZ");
 
 	PATCH_PUSH_RET_POLY(0x00421790, CSniperTarget::CSniperTarget, "??0CSniperTarget@@QAE@H@Z");
 	PATCH_PUSH_RET_POLY(0x004218A0, CSniperTarget::~CSniperTarget, "??1CSniperTarget@@UAE@XZ");
@@ -2973,8 +2973,8 @@ void patch_chopper(void)
 	PATCH_PUSH_RET_POLY(0x00422E90, CSearchlight::~CSearchlight, "??1CSearchlight@@UAE@XZ");
 	PATCH_PUSH_RET(0x00423830, CSearchlight::CheckPointInScreenTri);
 
-	PATCH_PUSH_RET(0x00425990, CChopper::SetFlag);
-	PATCH_PUSH_RET(0x00425B20, CChopper::FireMachineGunAtWaypoint);
+	PATCH_PUSH_RET_POLY(0x00425990, CChopper::SetFlag, "?SetFlag@CChopper@@UAEXGF@Z");
+	PATCH_PUSH_RET_POLY(0x00425B20, CChopper::FireMachineGunAtWaypoint, "?FireMachineGunAtWaypoint@CChopper@@UAEXII@Z");
 	PATCH_PUSH_RET(0x00425B70, CChopper::SetHeight);
 	PATCH_PUSH_RET(0x00425D20, CChopper::DoChopperPhysics);
 	PATCH_PUSH_RET(0x00425EF0, CChopper::AimGunPod);
