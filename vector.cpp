@@ -6,6 +6,7 @@
 #include <cstdio>
 #include "validate.h"
 #include "ps2funcs.h"
+#include "my_patch.h"
 
 /*
 CVector::CVector(void)
@@ -322,4 +323,42 @@ void validate_SVector(void){
 	VALIDATE(SVector, vx, 0);
 	VALIDATE(SVector, vy, 2);
 	VALIDATE(SVector, vz, 4);
+}
+
+// @Bogus
+void patch_vector(void)
+{
+	// Everything here is pure arithmetic on the arguments: no globals, no calls
+	// out of the file, so there is nothing to share with the exe and nothing to
+	// audit. All 21 mangled names match the original's exactly, so they go
+	// through PATCH_PUSH_RET_POLY rather than taking an overloaded operator's
+	// address.
+	//
+	// Not hooked: CVector::CVector and the Set/SetX/SetY/SetZ family are INLINE
+	// in vector.h with no standalone body; CVector::Zero, operator*(int, CVector)
+	// and CSVector's operator/= and operator%= have no named address in the
+	// original (operator*(int, CVector) has the same body as
+	// operator*(CVector, int) and was most likely folded into 0x004E77A0 at link
+	// time, so hooking it would mean guessing).
+	PATCH_PUSH_RET_POLY(0x004E74A0, CVector::Length,        "?Length@CVector@@QAEHXZ");
+	PATCH_PUSH_RET_POLY(0x004E7500, CVector::LengthSquared, "?LengthSquared@CVector@@QAEHXZ");
+	PATCH_PUSH_RET_POLY(0x004E7550, CVector::KillSmall,     "?KillSmall@CVector@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004E7590, CVector::operator_add_assign, "??YCVector@@QAEPAV0@ABV0@@Z");
+	PATCH_PUSH_RET_POLY(0x004E75C0, CVector::operator_sub_assign, "??ZCVector@@QAEPAV0@ABV0@@Z");
+	PATCH_PUSH_RET_POLY(0x004E75F0, CVector::operator_mul_assign, "??XCVector@@QAEPAV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E7620, CVector::operator_div_assign, "??_0CVector@@QAEPAV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E7650, CVector::operator_shr_assign, "??_2CVector@@QAEPAV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E7680, CVector::operator_shl_assign, "??_3CVector@@QAEPAV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E76B0, CVector::operator_mod_assign, "??_1CVector@@QAEPAV0@ABVCFriction@@@Z");
+	PATCH_PUSH_RET_POLY(0x004E76F0, CVector::operator_not_equal,  "??9CVector@@QAEHABV0@@Z");
+	PATCH_PUSH_RET_POLY(0x004E7720, operator_add_vec_vec, "??H@YA?AVCVector@@ABV0@0@Z");
+	PATCH_PUSH_RET_POLY(0x004E7760, operator_sub_vec_vec, "??G@YA?AVCVector@@ABV0@0@Z");
+	PATCH_PUSH_RET_POLY(0x004E77A0, operator_mul_vec_int, "??D@YA?AVCVector@@ABV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E77D0, operator_mul_vec_vec, "??D@YA?AVCVector@@ABV0@0@Z");
+	PATCH_PUSH_RET_POLY(0x004E7800, operator_div_vec_int, "??K@YA?AVCVector@@ABV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E7840, operator_shr_vec_int, "??5@YA?AVCVector@@ABV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E7870, operator_shl_vec_int, "??6@YA?AVCVector@@ABV0@ABH@Z");
+	PATCH_PUSH_RET_POLY(0x004E78A0, CSVector::Mask,       "?Mask@CSVector@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004E78C0, CSVector::KillSmall,  "?KillSmall@CSVector@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004E7900, CSVector::operator_add_assign, "??YCSVector@@QAEPAV0@ABV0@@Z");
 }

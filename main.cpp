@@ -1623,6 +1623,7 @@ void game_patches(void)
 	patch_carnage();
 	patch_effects();
 	patch_manipob();
+	patch_vector();
 }
 
 // @Bogus

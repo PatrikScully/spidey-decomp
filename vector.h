@@ -174,4 +174,6 @@ void validate_CVector(void);
 void validate_CSVector(void);
 void validate_SVector(void);
 
+void patch_vector(void);
+
 #endif
