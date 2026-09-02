@@ -4,8 +4,6 @@
 #include "trig.h"
 #include "mem.h"
 
-extern u8 submarinerDieRelated;
-
 EXPORT SLight M3d_TorchLight =
 {
   { { -2430, -2228, -2430 }, { 2509, -2896, 1447 }, { -648, -3711, -1607 } },
@@ -20,7 +18,7 @@ EXPORT SLight M3d_TorchLight =
 // @Matching
 void Torch_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -72,7 +70,7 @@ INLINE i32* CTorch::GetNewCommandBlock(u32 a1)
 // @Matching
 CTorch::~CTorch(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	delete this->gTorchQuadBit;
 	this->KillAllCommandBlocks();
 }
@@ -82,7 +80,7 @@ CTorch::~CTorch(void)
 // field_330/334=2, RunAnim(4,0,-1), mFlags|=0x480, mpLight before
 // AttachTo, mType=328 (0x148) then field_31C.bothFlags=1, mNode=a3,
 // mRMinor=0, field_34C=SquirtAngles result, Die(0) guarded by
-// submarinerDieRelated (shared global at 0x60CFC4) and level id != 2051
+// G_SUBMARINER_DIE_RELATED (shared global at 0x60CFC4) and level id != 2051
 // (0x803). All offsets and order match the original exactly.
 CTorch::CTorch(i16* a2, i32 a3)
 {
@@ -98,7 +96,7 @@ CTorch::CTorch(i16* a2, i32 a3)
 
 	this->mpLight = &M3d_TorchLight;
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->mType = 328;
 	this->field_31C.bothFlags = 1;
@@ -107,7 +105,7 @@ CTorch::CTorch(i16* a2, i32 a3)
 	this->mRMinor = 0;
 	this->field_34C = reinterpret_cast<i32>(v5);
 
-	if (submarinerDieRelated && Trig_GetLevelID() != 2051)
+	if (G_SUBMARINER_DIE_RELATED && Trig_GetLevelID() != 2051)
 		this->Die(0);
 }
 
