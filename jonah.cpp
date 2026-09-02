@@ -6,9 +6,13 @@
 #include "my_assert.h"
 
 // @Ok
+// Nonzero when the Joel Jewett cheat is on. shell.cpp is the only writer and
+// it is still in the exe, so ours has to be the same memory. Address
+// 0x60D004, the same one shell.cpp already reads through gJoelJewtCheatCode,
+// named JoelJewtCheatCode in the maintainer IDB.
 EXPORT i32 JoelJewtCheatCode;
-
-extern CBaddy* BaddyList;
+//#define G_JOEL_JEWT_CHEAT_CODE (JoelJewtCheatCode)
+#define G_JOEL_JEWT_CHEAT_CODE (*reinterpret_cast<i32*>(0x0060D004))
 
 // @Ok
 EXPORT i32 gJonahSetup[2] = { 33686018, 258 };
@@ -64,7 +68,7 @@ void Jonah_ShouldPlead(const u32 *stack, u32*)
 // @Matching
 void Jonah_RelocatableModuleClear(void)
 {
-	CItem *pSearch = BaddyList;
+	CItem *pSearch = G_BADDY_LIST;
 
 	while (pSearch)
 	{
@@ -90,7 +94,7 @@ void Jonah_RelocatableModuleInit(reloc_mod *pMod)
 // @Ok
 CJonah::CJonah(void)
 {
-	if (JoelJewtCheatCode)
+	if (G_JOEL_JEWT_CHEAT_CODE)
 	{
 		this->InitItem("jjjj");
 	}
@@ -112,7 +116,7 @@ CJonah::CJonah(i16* a2, i32 a3)
 	i16 *v5 = this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a2)));
 
 
-	if (JoelJewtCheatCode)
+	if (G_JOEL_JEWT_CHEAT_CODE)
 	{
 		this->InitItem("jjjj");
 	}
@@ -124,7 +128,7 @@ CJonah::CJonah(i16* a2, i32 a3)
 	this->mFlags |= 0x480;
 
 	this->mpLight = &M3d_JonahLight;
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 
 	this->field_1F4 = a3;
 	this->mNode = a3;
@@ -288,7 +292,7 @@ INLINE CBaddy* CJonah::FindScorp(void)
 {
 	if (!Mem_RecoverPointer(&this->field_35C))
 	{
-		for (CBaddy* cur = BaddyList; cur; cur = reinterpret_cast<CBaddy*>(cur->mNextItem))
+		for (CBaddy* cur = G_BADDY_LIST; cur; cur = reinterpret_cast<CBaddy*>(cur->mNextItem))
 		{
 			if (cur->mType == 310)
 			{
