@@ -1,4 +1,5 @@
 #include "docock.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "trig.h"
 #include "panel.h"
@@ -443,3 +444,24 @@ void validate_CDocOc(void){
 	VALIDATE(CDocOc, field_580, 0x580);
 }
 
+// @Bogus
+// Three things stay in the exe here.
+// The constructor, because our CDocOc is missing two virtuals the original
+// vtable at 0x53B740 has: AI (0x435610, slot 2) and Hit (0x4389A0, slot 3).
+// Stamping our vtable would give the boss CBaddy::AI and CBaddy::Hit.
+// DocOck_CreateDocOck and DocOck_RelocatableModuleInit go with it, they build
+// (or hand out the pointer that builds) that same object.
+// The destructor, because it clears gBossRelated (0x56E998, baddy.cpp) and
+// calls Panel_DestroyHealthBar, which clears gHealthBarOne/gHealthBarTwo
+// (panel.cpp). None of those three globals is on a G_ macro yet, so our copy
+// would go to zero while the exe kept a pointer to the freed boss.
+void patch_docock(void)
+{
+	PATCH_PUSH_RET(0x00434480, DocOck_RelocatableModuleClear);
+
+	PATCH_PUSH_RET_POLY(0x00435390, CDocOc::RenderClaws, "?RenderClaws@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004367E0, CDocOc::TakeHit, "?TakeHit@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00436890, CDocOc::PlayIdleOrGloatAnim, "?PlayIdleOrGloatAnim@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x00436980, CDocOc::Initialise, "?Initialise@CDocOc@@QAEXXZ");
+	PATCH_PUSH_RET_POLY(0x004384E0, CDocOc::HangAndGetBeaten, "?HangAndGetBeaten@CDocOc@@QAEXXZ");
+}
