@@ -11,9 +11,23 @@
 
 struct SModel;
 
+// The three live at 0x006B55A0..0x006B55AB, next to each other. CWeb::CWeb
+// (0x4F5DA0) pushes 0x6B55A0 into CBody::AttachTo, and CDome::CDome /
+// CDome::~CDome (0x4FA640 / 0x4FA770) bump 0x6B55A4 (the fire-dome count,
+// only touched on the a3 != 0 path) and 0x6B55A8 (the total dome count).
+// They get macros here in the owning header because baddy.cpp, rhino.cpp,
+// main.cpp, spidey.cpp and init.cpp read them too.
 EXPORT extern i32 gFireDomes;
+//#define G_FIRE_DOMES (gFireDomes)
+#define G_FIRE_DOMES (*reinterpret_cast<i32*>(0x006B55A4))
+
 EXPORT extern i32 gNumDomes;
+//#define G_NUM_DOMES (gNumDomes)
+#define G_NUM_DOMES (*reinterpret_cast<i32*>(0x006B55A8))
+
 EXPORT extern CBody* WebList;
+//#define G_WEB_LIST (WebList)
+#define G_WEB_LIST (*reinterpret_cast<CBody**>(0x006B55A0))
 
 // Address 0x4F7680. Axis-aligned-box-vs-line-segment clip test; see its own comment in
 // web.cpp. pMin/pMax are a box's two opposite corners; on a hit, *pEnd is overwritten with

@@ -332,7 +332,7 @@ CDomeShockWave::CDomeShockWave(i32 a2)
 
 	this->field_90 = a2;
 
-	this->ResetHitFlags(BaddyList);
+	this->ResetHitFlags(G_BADDY_LIST);
 	this->ResetHitFlags(G_ENVIRONMENTAL_OBJECT_LIST);
 
 	for (i32 i = 0; i < 16; i++)
@@ -363,7 +363,7 @@ CDomePiece::CDomePiece(
 	else
 		this->InitItem("webdome3");
 
-	print_if_false(a3 < reinterpret_cast<u32*>(PSXRegion[this->mRegion].ppModels)[-1], "Bad Model sent to CDomePiece");
+	print_if_false(a3 < reinterpret_cast<u32*>(G_PSXREGION[this->mRegion].ppModels)[-1], "Bad Model sent to CDomePiece");
 
 	this->mModel = a3;
 	this->AttachTo(&MiscList);
@@ -395,7 +395,7 @@ CDome::CDome(
 	{
 		this->InitItem("firedome");
 		this->mModel = 1;
-		gFireDomes++;
+		G_FIRE_DOMES++;
 		this->mFlags |= 0x200;
 		this->mScale.vy = 0;
 	}
@@ -407,7 +407,7 @@ CDome::CDome(
 	this->mFlags |= 1;
 	this->AttachTo(&MiscList);
 	this->field_100 = 0;
-	++gNumDomes;
+	++G_NUM_DOMES;
 }
 
 // @Ok
@@ -422,8 +422,8 @@ CDome::~CDome(void)
 	delete this->field_118;
 
 	if (this->field_104)
-		gFireDomes--;
-	gNumDomes--;
+		G_FIRE_DOMES--;
+	G_NUM_DOMES--;
 }
 
 // The single live CDomeRing. Written by CDomeRing's constructor (which
@@ -1227,7 +1227,7 @@ void CWeb::SwitchToBlob(void)
 // @Ok
 // verified against the IDA disasm of 0x4F5DA0 (136 bytes). Chains
 // CBody::CBody, zeroes the two anchor vectors and the three scalars behind
-// them, links the new web into WebList and stamps mType 1. Everything else
+// them, links the new web into G_WEB_LIST and stamps mType 1. Everything else
 // (the mode in field_104, the webbing cost in field_102, the hook and
 // target handles) is filled in by the caller, CPlayer::CheckJumpingR1ZipWeb
 // or CPlayer::CheckJumpingR2ZipWeb.
@@ -1245,7 +1245,7 @@ CWeb::CWeb(void)
 	this->field_124 = 0;
 	this->field_128 = 0;
 
-	this->AttachTo(&WebList);
+	this->AttachTo(&G_WEB_LIST);
 
 	this->mType = 1;
 }
@@ -1605,3 +1605,4 @@ void CDome::Burst(void)
 
 	this->Die();
 }
+
