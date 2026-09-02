@@ -10,8 +10,6 @@
 
 #include "validate.h"
 
-extern i32 CurrentSuit;
-
 // dword_56EA9C: a pointer (set up by the game, not by this repo) to a
 // table of effect Texture* entries, indexed by byte offset (stride 4).
 // Same table simby.cpp's CEmber::CEmber reads via a raw address cast at
@@ -1044,7 +1042,7 @@ void Effects_Electrify(CSuper* pSuper)
 
 	if (pSuper->mType == 50)
 	{
-		if (CurrentSuit != 4)
+		if (G_CURRENTSUIT != 4)
 		{
 			new CElectrify(pSuper, 10);
 		}
@@ -1187,4 +1185,52 @@ void validate_CVertexWobble(void)
 	VALIDATE(CVertexWobble, field_50, 0x50);
 	VALIDATE(CVertexWobble, field_54, 0x54);
 	VALIDATE(CVertexWobble, field_58, 0x58);
+}
+
+#include "my_patch.h"
+
+// @Bogus
+// Only the functions whose whole call closure runs on game memory are hooked.
+//
+// Two things block the rest, both outside this file:
+//
+// 1. The CFlatBit, CQuadBit and CGLine constructors and destructors attach and
+//    detach through FlatBitList (0x0056EA50), QuadBitList (0x0056EB2C) and
+//    GLineList (0x0056E9CC). Those three are still plain repo globals in
+//    bit.cpp, unlike their three neighbours (BitCount, SpecialDisplayList,
+//    NonRenderedBitList) which already have G_ macros. So a hooked constructor
+//    would put the new bit on our own list, which nothing walks, and a hooked
+//    destructor would unlink it from the wrong list head. That rules out the
+//    CBouncingRock, CChunkSmoke, CFootprint, CRhinoWallImpact, CSkinGoo and
+//    CPingLine constructors and destructors, and Effects_FootStomp.
+//
+// 2. A hooked constructor stamps our vtable into the object. Some virtuals of
+//    these classes are missing from this file, so our vtable would inherit the
+//    base version: CElectrify has no Move (0x00439410) and no destructor
+//    (0x004390E0), CElectro has no Move (0x00439670), CSkinGoo has no Move
+//    (0x0043AD30) and no destructor (0x0043AD20), CVertexWobble has no
+//    destructor (0x0043BA70). That rules out those constructors, and
+//    Effects_Electrify with them, since it does new CElectrify.
+//
+// 3. Rnd (utils.cpp) runs on three file-local statics that nothing seeds on
+//    our side, because Utils_InitialRand is not hooked. So Rnd returns 0 in
+//    every hooked function. That keeps CElectrify::ChooseRandomPositions
+//    (0x00439170) out, it is all Rnd calls and would put every arc in the
+//    same place.
+//
+// The Move overrides below are safe either way: they only touch the object and
+// game memory, so it does not matter who built the object.
+void patch_effects(void)
+{
+	PATCH_PUSH_RET(0x00438EE0, Effects_UnElectrify);
+	PATCH_PUSH_RET(0x00439570, CElectro::Setup);
+
+	PATCH_PUSH_RET_POLY(0x00439AE0, CElectro::~CElectro, "??1CElectro@@UAE@XZ");
+
+	PATCH_PUSH_RET_POLY(0x0043A040, CPingLine::Move, "?Move@CPingLine@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0043A290, CFootprint::Move, "?Move@CFootprint@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0043A650, CRhinoWallImpact::Move, "?Move@CRhinoWallImpact@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0043B1B0, CChunkSmoke::Move, "?Move@CChunkSmoke@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0043B6B0, CBouncingRock::Move, "?Move@CBouncingRock@@UAEXXZ");
+	PATCH_PUSH_RET_POLY(0x0043BB30, CVertexWobble::Move, "?Move@CVertexWobble@@UAEXXZ");
 }
