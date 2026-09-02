@@ -77,7 +77,7 @@ void L5A5LSC_DisplayProgressBar(u32 const *,u32 *)
 	{
 		gBombDieRelatedTwo = 1;
 		gBombAIRelated = 9000;
-		gBombDieTimerRelated = gTimerRelated;
+		gBombDieTimerRelated = G_TIMER_RELATED;
 
 		if (gWideScreen > 0)
 		{
@@ -130,7 +130,7 @@ void L5A5LSC_DisplayProgressBar(u32 const *,u32 *)
 void L5A5LSC_RelocatableModuleClear(void)
 {
 	gBombDieRelatedTwo = 0;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 
 	for (i32 i = 0; i < LEN_L5A5_TEXS; i++)
 	{
@@ -148,7 +148,7 @@ void L5A5LSC_RelocatableModuleInit(reloc_mod *pMod)
 	Spidey_SetUserFunction("l5a5lsc", 1u);
 
 	gBombDieRelatedTwo = 0;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 	gL5A5RelatedTwo = 0;
 }
 

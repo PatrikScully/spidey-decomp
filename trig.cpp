@@ -1855,8 +1855,8 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamAngle (0x4E23B0)
 			case 130:
 				trigLog("SetCamAngle");
-				if (CameraList)
-					CameraList->SetCamAngle(static_cast<i16>(p[0]), p[1]);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCamAngle(static_cast<i16>(p[0]), p[1]);
 				p += 2;
 				break;
 
@@ -1915,8 +1915,8 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamDistXZ (0x4E2405)
 			case 135:
 				trigLog("SetCamDistXZ");
-				if (CameraList)
-					CameraList->SetCamXZDistance(p[0], p[1]);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCamXZDistance(p[0], p[1]);
 				p += 2;
 				break;
 
@@ -2046,32 +2046,32 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamDistY (0x4E2432)
 			case 143:
 				trigLog("SetCamDistY");
-				if (CameraList)
-					CameraList->SetCamYDistance(static_cast<i16>(p[0]), p[1]);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCamYDistance(static_cast<i16>(p[0]), p[1]);
 				p += 2;
 				break;
 
 			// SetCamOffsetX (0x4E245F)
 			case 144:
 				trigLog("SetCamOffsetX");
-				if (CameraList)
-					CameraList->SetCamXOffset(static_cast<i16>(p[0]), p[1]);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCamXOffset(static_cast<i16>(p[0]), p[1]);
 				p += 2;
 				break;
 
 			// SetCamOffsetY (0x4E248C)
 			case 145:
 				trigLog("SetCamOffsetY");
-				if (CameraList)
-					CameraList->SetCamYOffset(static_cast<i16>(p[0]), p[1]);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCamYOffset(static_cast<i16>(p[0]), p[1]);
 				p += 2;
 				break;
 
 			// SetCamOffsetZ (0x4E24B9)
 			case 146:
 				trigLog("SetCamOffsetZ");
-				if (CameraList)
-					CameraList->SetCamZOffset(static_cast<i16>(p[0]), p[1]);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCamZOffset(static_cast<i16>(p[0]), p[1]);
 				p += 2;
 				break;
 
@@ -2135,16 +2135,16 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamColijSide (0x4E268F)
 			case 153:
 				trigLog("SetCamColijSide");
-				if (CameraList)
-					CameraList->SetCollisionRayLR(*reinterpret_cast<i16*>(p));
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCollisionRayLR(*reinterpret_cast<i16*>(p));
 				p++;
 				break;
 
 			// SetCamColijBack (0x4E26B7)
 			case 154:
 				trigLog("SetCamColijBack");
-				if (CameraList)
-					CameraList->SetCollisionRayBack(*reinterpret_cast<i16*>(p));
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCollisionRayBack(*reinterpret_cast<i16*>(p));
 				p++;
 				break;
 
@@ -2171,8 +2171,8 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamMode (0x4E272F)
 			case 160:
 				trigLog("SetCamMode");
-				if (CameraList)
-					CameraList->SetMode(static_cast<ECameraMode>(*p));
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetMode(static_cast<ECameraMode>(*p));
 				p++;
 				break;
 
@@ -2197,16 +2197,16 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamColijAngleSide (0x4E26DF)
 			case 164:
 				trigLog("SetCamColijAngleSide");
-				if (CameraList)
-					CameraList->SetCollisionAngLR(static_cast<i16>(*p));
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCollisionAngLR(static_cast<i16>(*p));
 				p++;
 				break;
 
 			// SetCamColijAngleBack (0x4E2707)
 			case 165:
 				trigLog("SetCamColijAngleBack");
-				if (CameraList)
-					CameraList->SetCollisionAngBack(static_cast<i16>(*p));
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetCollisionAngBack(static_cast<i16>(*p));
 				p++;
 				break;
 
@@ -2220,16 +2220,16 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamZoom (0x4E2331)
 			case 167:
 				trigLog("SetCamZoom");
-				if (CameraList)
-					CameraList->SetZoom(p[0], p[1]);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->SetZoom(p[0], p[1]);
 				p += 2;
 				break;
 
 			// SetCamPitchDamp (0x4E2360)
 			case 168:
 				trigLog("SetCamPitchDamp");
-				if (CameraList)
-					CameraList->field_1CC = static_cast<i16>(*p);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->field_1CC = static_cast<i16>(*p);
 				p++;
 				break;
 
@@ -2269,16 +2269,16 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// SetCamYDamp (0x4E2388)
 			case 172:
 				trigLog("SetCamYDamp");
-				if (CameraList)
-					CameraList->field_1CE = static_cast<i16>(*p);
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->field_1CE = static_cast<i16>(*p);
 				p++;
 				break;
 
 			// SetCamFocusEqualsTripod (0x4E2306)
 			case 173:
 				trigLog("SetCamFocusEqualsTripod");
-				if (CameraList)
-					CameraList->field_13C = CameraList->mTripod;
+				if (G_CAMERA_LIST)
+					G_CAMERA_LIST->field_13C = G_CAMERA_LIST->mTripod;
 				break;
 
 			// SetDropDamageOn (0x4E27F8)
@@ -2381,9 +2381,9 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			case 186:
 			{
 				trigLog("SetCamFixedPos");
-				print_if_false(CameraList != 0, "No camera for SETCAM...");
+				print_if_false(G_CAMERA_LIST != 0, "No camera for SETCAM...");
 
-				if (CameraList == 0)
+				if (G_CAMERA_LIST == 0)
 				{
 					p++;
 					break;
@@ -2429,7 +2429,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 
 				if (command == 185)
 				{
-					CameraList->SetFixedPosMode(pos, *p);
+					G_CAMERA_LIST->SetFixedPosMode(pos, *p);
 				}
 				else
 				{
@@ -2439,7 +2439,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 					angles.z = *reinterpret_cast<i16*>(&pAngles[2]);
 					angles.w = *reinterpret_cast<i16*>(&pAngles[3]);
 
-					CameraList->SetFixedPosAnglesMode(&pos, &angles, *p);
+					G_CAMERA_LIST->SetFixedPosAnglesMode(&pos, &angles, *p);
 				}
 
 				p++;
@@ -2458,9 +2458,9 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			case 188:
 			{
 				trigLog("SetCamFixedFocus");
-				print_if_false(CameraList != 0, "No camera for SETCAM...");
+				print_if_false(G_CAMERA_LIST != 0, "No camera for SETCAM...");
 
-				if (CameraList == 0)
+				if (G_CAMERA_LIST == 0)
 				{
 					p += 2;
 					break;
@@ -2500,7 +2500,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 
 					Trig_GetPosition(&pos, camNode);
 
-					CameraList->SetFixedFocusMode(&pos, p[0], p[1]);
+					G_CAMERA_LIST->SetFixedFocusMode(&pos, p[0], p[1]);
 				}
 
 				p += 2;
@@ -2850,7 +2850,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 			// AllowCamLOSCheck (0x4E0372)
 			case 217:
 				trigLog("AllowCamLOSCheck(%i)", *p);
-				*TrigFieldU8(CameraList, 0xF9) = (*p != 0) ? 1 : 0;
+				*TrigFieldU8(G_CAMERA_LIST, 0xF9) = (*p != 0) ? 1 : 0;
 				p++;
 				break;
 

@@ -490,13 +490,13 @@ EXPORT void CheckForPadUnplugged(void)
 
 	CDropDownController *pWidget = new CDropDownController();
 
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	PShell_DefaultText();
 
@@ -508,14 +508,14 @@ EXPORT void CheckForPadUnplugged(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 startVblanks = Vblanks;
+		i32 startVblanks = G_VBLANKS;
 
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 
-		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 		M3d_Render(pWidget);
 		M3d_RenderCleanup();
 
@@ -561,7 +561,7 @@ EXPORT void CheckForPadUnplugged(void)
 		Bit_Move();
 		Bit_RemoveDeadBits();
 
-		if (Vblanks == startVblanks)
+		if (G_VBLANKS == startVblanks)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -651,7 +651,7 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v21 = Vblanks;
+		i32 v21 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -763,7 +763,7 @@ i32 Shell_ChooseEnemy(i32 a1, u8 a2, i8 a3)
 			if (denied)
 				SFX_Play(0x1B, 0x2000, 0);
 		}
-		if (Vblanks == v21)
+		if (G_VBLANKS == v21)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -926,7 +926,7 @@ void Shell_ChooseSurvivalArena(i32 fromHighScores)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 vblanksSnapshot = Vblanks;
+		i32 vblanksSnapshot = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1u, -1);
@@ -1008,7 +1008,7 @@ void Shell_ChooseSurvivalArena(i32 fromHighScores)
 			break;
 		}
 
-		if (Vblanks == vblanksSnapshot)
+		if (G_VBLANKS == vblanksSnapshot)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -1068,7 +1068,7 @@ void Shell_ChooseTime(i32 a1, i32 a2)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v15 = Vblanks;
+		i32 v15 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -1141,7 +1141,7 @@ void Shell_ChooseTime(i32 a1, i32 a2)
 		}
 		if (pMenu->mLine < 0x28 && (IsMouseOverText || PCSHELL_CheckTriggers(65552, 1, 1)))
 			break;
-		if (Vblanks == v15)
+		if (G_VBLANKS == v15)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -1200,7 +1200,7 @@ i32 Shell_ChooseTrainingControlType(void)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		v17 = Vblanks;
+		v17 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		i32 v5 = pMenu->ChoiceIs("kid mode") && v11 == 0;
@@ -1293,7 +1293,7 @@ i32 Shell_ChooseTrainingControlType(void)
 			break;
 		label41:
 		Mess_Update();
-		if (Vblanks == v17)
+		if (G_VBLANKS == v17)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -1455,13 +1455,13 @@ void Shell_ComicCollection(void)
 	pIcon->mScale.vy = 1024;
 	pIcon->mScale.vz = 1024;
 
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	i32 titleScrollX = 0;
 	gShellMenuEase = 384;
@@ -1472,7 +1472,7 @@ void Shell_ComicCollection(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 startVblanks = Vblanks;
+		i32 startVblanks = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1, -1);
@@ -1483,9 +1483,9 @@ void Shell_ComicCollection(void)
 
 		Shell_DrawTitleBar(titleScrollX, 38, "comic collection", 1, 0, 150, -21, 29);
 
-		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 
 		if (pLoadingBox != 0)
 		{
@@ -1524,15 +1524,15 @@ void Shell_ComicCollection(void)
 							matrix4x4 savedView = *gComicViewMatrix;
 							matrix4x4 savedProj = *gComicProjMatrix;
 							matrix4x4 savedCam = *gComicCamMatrix;
-							SViewport savedViewport = gViewport;
+							SViewport savedViewport = G_VIEWPORT;
 
-							u16 xL = *(u16*)((char*)&gViewport + 0);
-							u16 yB = *(u16*)((char*)&gViewport + 2);
-							u16 xR = *(u16*)((char*)&gViewport + 4);
-							u16 yT = *(u16*)((char*)&gViewport + 6);
-							u16 hither = *(u16*)((char*)&gViewport + 8);
-							u16 yon = *(u16*)((char*)&gViewport + 10);
-							u16 zoom = *(u16*)((char*)&gViewport + 12);
+							u16 xL = *(u16*)((char*)&G_VIEWPORT + 0);
+							u16 yB = *(u16*)((char*)&G_VIEWPORT + 2);
+							u16 xR = *(u16*)((char*)&G_VIEWPORT + 4);
+							u16 yT = *(u16*)((char*)&G_VIEWPORT + 6);
+							u16 hither = *(u16*)((char*)&G_VIEWPORT + 8);
+							u16 yon = *(u16*)((char*)&G_VIEWPORT + 10);
+							u16 zoom = *(u16*)((char*)&G_VIEWPORT + 12);
 
 							f32 aspectX = (f32)gGameResolutionX / (f32)Xres;
 							f32 aspectY = (f32)gGameResolutionY / (f32)Yres;
@@ -1571,7 +1571,7 @@ void Shell_ComicCollection(void)
 								gComicProjMatrix->field_0[r] = savedProj.field_0[r];
 								gComicCamMatrix->field_0[r] = savedCam.field_0[r];
 							}
-							gViewport = savedViewport;
+							G_VIEWPORT = savedViewport;
 						}
 					}
 				}
@@ -1765,7 +1765,7 @@ void Shell_ComicCollection(void)
 tail:
 		pIcon->AI();
 
-		if (Vblanks == startVblanks)
+		if (G_VBLANKS == startVblanks)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -1901,13 +1901,13 @@ void Shell_CostumeViewer(void)
 	i32 texTransition = 0;
 	pDummy->field_1D4 = 1;
 
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	i32 zoom = 454;
 	i32 titleScrollX = 0;
@@ -1918,7 +1918,7 @@ void Shell_CostumeViewer(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 startVblanks = Vblanks;
+		i32 startVblanks = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1, -1);
@@ -1948,9 +1948,9 @@ void Shell_CostumeViewer(void)
 
 		if (texTransition == 0)
 		{
-			M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-			TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-			M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+			M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+			TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 			M3d_Render(pDummy);
 			M3d_RenderCleanup();
 			Bit_Display();
@@ -2115,20 +2115,20 @@ denied:
 		}
 		zoom = z;
 
-		i32 rot = gMikeCamera[0].Angles.vy;
+		i32 rot = G_MIKE_CAMERA[0].Angles.vy;
 		if (PCSHELL_CheckTriggers(16388, 0, 0))
-			rot = gMikeCamera[0].Angles.vy - 64;
+			rot = G_MIKE_CAMERA[0].Angles.vy - 64;
 		else if (PCSHELL_CheckTriggers(32776, 0, 0))
-			rot = gMikeCamera[0].Angles.vy + 64;
+			rot = G_MIKE_CAMERA[0].Angles.vy + 64;
 		rot &= 0xFFF;
-		gMikeCamera[0].Angles.vy = rot;
+		G_MIKE_CAMERA[0].Angles.vy = rot;
 
 		i32 cosA = rcossin_tbl[rot & 0xFFF].cos;
-		gMikeCamera[0].Position.vx = -(zoom * rcossin_tbl[rot & 0xFFF].sin) >> 12;
-		gMikeCamera[0].Position.vz = -(zoom * cosA) >> 12;
+		G_MIKE_CAMERA[0].Position.vx = -(zoom * rcossin_tbl[rot & 0xFFF].sin) >> 12;
+		G_MIKE_CAMERA[0].Position.vz = -(zoom * cosA) >> 12;
 
 	ail:
-		if (Vblanks == startVblanks)
+		if (G_VBLANKS == startVblanks)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -2307,13 +2307,13 @@ void Shell_CharacterViewer(void)
 
 	print_if_false(pDummy != 0, "No Spiderman in Character[] array");
 
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	i32 zoom = gCharacters[charIndex].Zoom;
 
@@ -2325,7 +2325,7 @@ void Shell_CharacterViewer(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 startVblanks = Vblanks;
+		i32 startVblanks = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1, -1);
@@ -2355,9 +2355,9 @@ void Shell_CharacterViewer(void)
 
 		if (transition == 0)
 		{
-			M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-			TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-			M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+			M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+			TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 
 			// the Human Torch's flames are a wibbly-texture effect
 			if (pDummy->mType == 704)
@@ -2520,13 +2520,13 @@ void Shell_CharacterViewer(void)
 
 			zoom = gCharacters[charIndex].Zoom;
 
-			gMikeCamera[0].Position.vx = 0;
-			gMikeCamera[0].Position.vy = 0;
-			gMikeCamera[0].Position.vz = 0;
-			gMikeCamera[0].Angles.vx = 0;
-			gMikeCamera[0].Angles.vy = 0;
-			gMikeCamera[0].Angles.vz = 0;
-			gMikeCamera[0].Style = 0;
+			G_MIKE_CAMERA[0].Position.vx = 0;
+			G_MIKE_CAMERA[0].Position.vy = 0;
+			G_MIKE_CAMERA[0].Position.vz = 0;
+			G_MIKE_CAMERA[0].Angles.vx = 0;
+			G_MIKE_CAMERA[0].Angles.vy = 0;
+			G_MIKE_CAMERA[0].Angles.vz = 0;
+			G_MIKE_CAMERA[0].Style = 0;
 		}
 
 		Mess_Update();
@@ -2606,23 +2606,23 @@ denied:
 		if (zoom > gCharacters[charIndex].MaxZoom)
 			zoom = gCharacters[charIndex].MaxZoom;
 
-		i32 rot = gMikeCamera[0].Angles.vy;
+		i32 rot = G_MIKE_CAMERA[0].Angles.vy;
 		if (PCSHELL_CheckTriggers(16388, 0, 0))
 		{
-			rot = (gMikeCamera[0].Angles.vy - 64) & 0xFFF;
-			gMikeCamera[0].Angles.vy = static_cast<i16>(rot);
+			rot = (G_MIKE_CAMERA[0].Angles.vy - 64) & 0xFFF;
+			G_MIKE_CAMERA[0].Angles.vy = static_cast<i16>(rot);
 		}
 		else if (PCSHELL_CheckTriggers(32776, 0, 0))
 		{
-			rot = (gMikeCamera[0].Angles.vy + 64) & 0xFFF;
-			gMikeCamera[0].Angles.vy = static_cast<i16>(rot);
+			rot = (G_MIKE_CAMERA[0].Angles.vy + 64) & 0xFFF;
+			G_MIKE_CAMERA[0].Angles.vy = static_cast<i16>(rot);
 		}
 		rot &= 0xFFF;
 
-		gMikeCamera[0].Position.vx = -(zoom * rcossin_tbl[rot].sin) >> 12;
-		gMikeCamera[0].Position.vz = -(zoom * rcossin_tbl[rot].cos) >> 12;
+		G_MIKE_CAMERA[0].Position.vx = -(zoom * rcossin_tbl[rot].sin) >> 12;
+		G_MIKE_CAMERA[0].Position.vz = -(zoom * rcossin_tbl[rot].cos) >> 12;
 
-		if (Vblanks == startVblanks)
+		if (G_VBLANKS == startVblanks)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -2713,7 +2713,7 @@ i32 Shell_Difficulty(i32 a1)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		v40 = Vblanks;
+		v40 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		v6 = pMenu->ChoiceIs("kid mode") && v32 == 0;
@@ -2790,7 +2790,7 @@ i32 Shell_Difficulty(i32 a1)
 		}
 		label69:
 		Mess_Update();
-		if (Vblanks == v40)
+		if (G_VBLANKS == v40)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -3361,7 +3361,7 @@ enterLevel:
 	}
 	if (gPshellArmorRealted == 0)
 		*gDoShellKidModeFlag = (DifficultyLevel == 0);
-	Utils_InitialRand(Vblanks);
+	Utils_InitialRand(G_VBLANKS);
 	for (i32 k = 10000; k != 0; --k)
 		Rnd(10);
 	PShell_Cleanup();
@@ -3461,7 +3461,7 @@ i32 Shell_Gallery(EShellResult a1)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v12 = Vblanks;
+		i32 v12 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -3552,7 +3552,7 @@ i32 Shell_Gallery(EShellResult a1)
 			}
 			SFX_Play(0x1B, 0x2000, 0);
 		}
-		if (Vblanks == v12)
+		if (G_VBLANKS == v12)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -3677,13 +3677,13 @@ void Shell_GameCovers(void)
 	pIcons[4] = new CShellPreviewIcon(0, 126, 500);
 	pIcons[5] = new CShellPreviewIcon(172, 126, 500);
 
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	i32 titleScrollX = 0;
 	gShellMenuEase = 384;
@@ -3694,7 +3694,7 @@ void Shell_GameCovers(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 startVblanks = Vblanks;
+		i32 startVblanks = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1, -1);
@@ -3705,9 +3705,9 @@ void Shell_GameCovers(void)
 
 		Shell_DrawTitleBar(titleScrollX, 38, "game covers", 1, 0, 150, -21, 29);
 
-		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 
 		CExpandingBox *pActiveBox;
 
@@ -3926,7 +3926,7 @@ tail:
 				pIcons[k]->AI();
 		}
 
-		if (Vblanks == startVblanks)
+		if (G_VBLANKS == startVblanks)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -3981,7 +3981,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 		textCountdown = 90;
 	}
 
-	Utils_InitialRand(Vblanks);
+	Utils_InitialRand(G_VBLANKS);
 	for (i = 10000; i != 0; --i)
 		Rnd(10);
 
@@ -3999,13 +3999,13 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 
 	pName[8] = 0;
 
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	if (a2 == 0)
 	{
@@ -4018,7 +4018,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		vblankAtDraw = Vblanks;
+		vblankAtDraw = G_VBLANKS;
 
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
@@ -4041,9 +4041,9 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 
 		if (pSpidey != 0)
 		{
-			M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-			TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-			M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+			M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+			TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+			M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 			M3d_Render(pSpidey);
 			M3d_RenderCleanup();
 		}
@@ -4209,7 +4209,7 @@ i32 Shell_InputName(char *pName,i32 a2,i32 a3, const char *pDesc)
 			}
 		}
 
-		if (Vblanks == vblankAtDraw)
+		if (G_VBLANKS == vblankAtDraw)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -4246,7 +4246,7 @@ void Shell_LegalScreen(void)
 		Pad_ClearTriggers(gSControl);
 
 		Sprite2* v0 = new Sprite2("LegalPC.bmp", 1, 0, 0, 3);
-		u32 v3 = Vblanks + 180;
+		u32 v3 = G_VBLANKS + 180;
 		while ( 1 )
 		{
 			if (!gSceneRelated)
@@ -4262,7 +4262,7 @@ void Shell_LegalScreen(void)
 			++TTime;
 			Pad_Update();
 
-			if (Vblanks > v3)
+			if (G_VBLANKS > v3)
 				break;
 
 			PCSHELL_Relax();
@@ -4330,7 +4330,7 @@ i32 Shell_LevelSelect(void)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v22 = Vblanks;
+		i32 v22 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -4366,7 +4366,7 @@ i32 Shell_LevelSelect(void)
 		}
 		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
 			break;
-		if (Vblanks == v22)
+		if (G_VBLANKS == v22)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -4460,7 +4460,7 @@ i32 Shell_LoadGame(void)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 vblanks = Vblanks;
+		i32 vblanks = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -4683,7 +4683,7 @@ i32 Shell_LoadGame(void)
 			SFX_Play(0x23, 0x2000, 0);
 			exiting = 1;
 		}
-		if (Vblanks == vblanks)
+		if (G_VBLANKS == vblanks)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -4872,13 +4872,13 @@ i32 Shell_MainMenu(EShellResult a1)
 	}
 
 	Mess_SetTextJustify(0);
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	Spidey_CIcon *pIcon = new Spidey_CIcon(line);
 	CDummy *pDummy = new CDummy("spidey", 50, 4096, -32, 0,
@@ -4903,14 +4903,14 @@ i32 Shell_MainMenu(EShellResult a1)
 		gsub_430880();
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		startVblanks = Vblanks;
+		startVblanks = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1, -1);
 
-		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 
 		curType = gMainMenuTable[line].type;
 		if (curType == 1 || curType == 5 || (curType == 2 && gSaveGame.field_78 != 0))
@@ -5133,7 +5133,7 @@ i32 Shell_MainMenu(EShellResult a1)
 		Bit_Move();
 		Bit_RemoveDeadBits();
 
-		if (Vblanks == startVblanks)
+		if (G_VBLANKS == startVblanks)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -5211,7 +5211,7 @@ i32 Shell_MemoryCard(EShellResult a1)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v11 = Vblanks;
+		i32 v11 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -5269,7 +5269,7 @@ i32 Shell_MemoryCard(EShellResult a1)
 		}
 		if (PCSHELL_CheckTriggers(131616, 1, 1))
 			break;
-		if ((G_SCONTROL[0].X.Triggered != 0 || G_SCONTROL[0].Start.Triggered != 0) && Vblanks == v11)
+		if ((G_SCONTROL[0].X.Triggered != 0 || G_SCONTROL[0].Start.Triggered != 0) && G_VBLANKS == v11)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -5338,7 +5338,7 @@ void Shell_MovieViewer(void)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v15 = Vblanks;
+		i32 v15 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -5408,7 +5408,7 @@ void Shell_MovieViewer(void)
 			playId = -1;
 			continue;
 		}
-		if (Vblanks == v15)
+		if (G_VBLANKS == v15)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -5481,7 +5481,7 @@ i32 Shell_Options(EShellResult a1)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v12 = Vblanks;
+		i32 v12 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -5545,7 +5545,7 @@ i32 Shell_Options(EShellResult a1)
 		}
 		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
 			break;
-		if (Vblanks == v12)
+		if (G_VBLANKS == v12)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -5750,13 +5750,13 @@ void Shell_RollCredits(void)
 
 	Mem_Delete(fileBuf);
 
-	gMikeCamera[0].Position.vx = 0;
-	gMikeCamera[0].Position.vy = 0;
-	gMikeCamera[0].Position.vz = 0;
-	gMikeCamera[0].Angles.vx = 0;
-	gMikeCamera[0].Angles.vy = 0;
-	gMikeCamera[0].Angles.vz = 0;
-	gMikeCamera[0].Style = 0;
+	G_MIKE_CAMERA[0].Position.vx = 0;
+	G_MIKE_CAMERA[0].Position.vy = 0;
+	G_MIKE_CAMERA[0].Position.vz = 0;
+	G_MIKE_CAMERA[0].Angles.vx = 0;
+	G_MIKE_CAMERA[0].Angles.vy = 0;
+	G_MIKE_CAMERA[0].Angles.vz = 0;
+	G_MIKE_CAMERA[0].Style = 0;
 
 	i32 scrollIndex = 0;
 	i32 rowTimer = 0;
@@ -5769,14 +5769,14 @@ void Shell_RollCredits(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		u32 startVblanks = Vblanks;
+		u32 startVblanks = G_VBLANKS;
 
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 
-		M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-		TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
-		M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+		M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+		M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 
 		if (pDummy)
 			M3d_Render(pDummy);
@@ -5881,7 +5881,7 @@ void Shell_RollCredits(void)
 			Redbook_XAPlay(67, 14, 0);
 		}
 
-		if (Vblanks == startVblanks)
+		if (G_VBLANKS == startVblanks)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -6104,7 +6104,7 @@ void Shell_SFXMusic(void)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v29 = Vblanks;
+		i32 v29 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -6294,7 +6294,7 @@ void Shell_SFXMusic(void)
 		}
 		if (pMenu->mLine != 1)
 			v25 = 0;
-		if (Vblanks == v29)
+		if (G_VBLANKS == v29)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -6362,7 +6362,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 		gsub_430880();
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 vblanks = Vblanks;
+		i32 vblanks = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -6799,7 +6799,7 @@ void Shell_SaveGame(const u32 *pFromGame, u32 *pResult)
 			SFX_Play(0x23, 0x2000, 0);
 		if (exiting == 0)
 		{
-			if (Vblanks == vblanks)
+			if (G_VBLANKS == vblanks)
 				Pause(1);
 			DoVblankProcessing = 0;
 			Pause(1);
@@ -6937,7 +6937,7 @@ void Shell_ScreenAdjust(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 vblanksSnapshot = Vblanks;
+		i32 vblanksSnapshot = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1u, -1);
@@ -7011,7 +7011,7 @@ void Shell_ScreenAdjust(void)
 			break;
 		}
 
-		if (Vblanks == vblanksSnapshot)
+		if (G_VBLANKS == vblanksSnapshot)
 			Pause(1);
 
 		*(volatile i32*)&DoVblankProcessing = 0;
@@ -7355,7 +7355,7 @@ void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		i32 vblanksSnapshot = Vblanks;
+		i32 vblanksSnapshot = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1u, -1);
@@ -7387,7 +7387,7 @@ void Shell_ShowRecord(char const *, char const *, STrainingMission* pMission)
 		if (PCSHELL_CheckTriggers(0x20220, 1, 1))
 			break;
 
-		if (Vblanks == vblanksSnapshot)
+		if (G_VBLANKS == vblanksSnapshot)
 			Pause(1);
 
 		*(volatile i32*)&DoVblankProcessing = 0;
@@ -7476,7 +7476,7 @@ i32 Shell_Special(EShellResult a1)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v13 = Vblanks;
+		i32 v13 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -7536,7 +7536,7 @@ i32 Shell_Special(EShellResult a1)
 		}
 		if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
 			break;
-		if (Vblanks == v13)
+		if (G_VBLANKS == v13)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -7610,7 +7610,7 @@ void Shell_StoryBoards(void)
 	{
 		Db_FlipClear();
 		CalcPolyBufferEnd();
-		i32 v16 = Vblanks;
+		i32 v16 = G_VBLANKS;
 		if (gSceneRelated == 0)
 			PCGfx_BeginScene(1, -1);
 		if (gBackgroundAnimFrame == 0)
@@ -7701,7 +7701,7 @@ void Shell_StoryBoards(void)
 				G_SCONTROL[0].Start.Triggered = 0;
 			}
 		}
-		if (Vblanks == v16)
+		if (G_VBLANKS == v16)
 			Pause(1);
 		DoVblankProcessing = 0;
 		Pause(1);
@@ -7766,7 +7766,7 @@ void Shell_TitleScreen(void)
 	Redbook_XAStop();
 	Mess_DeleteAll();
 
-	Utils_InitialRand(Vblanks);
+	Utils_InitialRand(G_VBLANKS);
 
 	for (i32 i = 10000; i > 0; i--)
 		Rnd(10);
@@ -8577,7 +8577,7 @@ CDummy::CDummy(const char* pName, i16 mTypeArg, i16 scale, i32 posY, i32 default
 
 	this->field_1C4 = a12;
 	this->field_1DC = a13;
-	this->field_1C8 = Vblanks;
+	this->field_1C8 = G_VBLANKS;
 
 	Utils_Jumble(gDummyTrackShuffle, 5);
 
@@ -10054,7 +10054,7 @@ void CDummy::AI(void)
 
 	// --- the costume's own intro track, once the model has been up for 30 vblanks ---
 	if (this->field_1C4 != 0 && this->field_1CC == 0
-			&& static_cast<u32>(Vblanks - this->field_1C8) > 30)
+			&& static_cast<u32>(G_VBLANKS - this->field_1C8) > 30)
 	{
 		Redbook_XAPlay(this->field_1C4 >> 16, static_cast<u16>(this->field_1C4), 0);
 		this->field_1CC = 1;

@@ -252,6 +252,21 @@ EXPORT extern CCamera *CameraList;
 EXPORT extern SViewport gViewport;
 EXPORT extern SCamera gMikeCamera[2];
 
+// These three are read from a dozen other .cpp files, so the macros live here
+// rather than in camera.cpp (one definition per shared global).  The exe still
+// owns the camera: CCamera::AI, MoveToDesiredPos, CM_FixedFocus, CM_Boss3 and
+// Camera_SelectOptimumViewingNode are not in this repo and keep driving these
+// every frame, so hooked code has to share the exe's memory, not our own copy.
+// Addresses confirmed in the disassembly: CCamera::CCamera pushes 0x0056F3B8
+// as &CameraList, Init_Cleanup writes gViewport.field_E at 0x0054D49E, and
+// LoadIntoMikeCamera writes gMikeCamera[0].Position at 0x0056F1B4.
+//#define G_CAMERA_LIST (CameraList)
+#define G_CAMERA_LIST (*reinterpret_cast<CCamera**>(0x0056F3B8))
+//#define G_VIEWPORT (gViewport)
+#define G_VIEWPORT (*reinterpret_cast<SViewport*>(0x0054D490))
+//#define G_MIKE_CAMERA (gMikeCamera)
+#define G_MIKE_CAMERA (reinterpret_cast<SCamera*>(0x0056F1B0))
+
 void validate_CCamera(void);
 void validate_SCamera(void);
 void validate_SViewport(void);

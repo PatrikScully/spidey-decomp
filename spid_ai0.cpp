@@ -735,7 +735,7 @@ void SpideyAI0(CPlayer *pPlayer)
 
 		if (state != 4)
 		{
-			PLR_I32(pPlayer, 0xE3C) = (i32)gTimerRelated;
+			PLR_I32(pPlayer, 0xE3C) = (i32)G_TIMER_RELATED;
 		}
 
 		camKind = pPlayer->field_540;
@@ -746,7 +746,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			{
 				if (camKind != 5
 					&& pPlayer->mVel.vy > 0
-					&& (u32)(gTimerRelated - lastAirborneTime) > 0x3C)
+					&& (u32)(G_TIMER_RELATED - lastAirborneTime) > 0x3C)
 				{
 					pPlayer->SetFallingCamera(15);
 				}
@@ -892,7 +892,7 @@ void SpideyAI0(CPlayer *pPlayer)
 		{
 			if (pPlayer->field_8EA == 0)
 			{
-				ECameraMode mode = CameraList->mCameraMode;
+				ECameraMode mode = G_CAMERA_LIST->mCameraMode;
 
 				if (mode != CAMERAMODE_START
 					&& mode != CAMERAMODE_FAR
@@ -1321,7 +1321,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 
 			if ((pPlayer->field_504 & 2) != 0
-				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+				&& (u32)(G_TIMER_RELATED - (i32)pPlayer->field_500) < 6)
 			{
 				if (pPlayer->ShouldPlayerDropFlail() == 0) break;
 
@@ -1383,7 +1383,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 
 			if ((pPlayer->field_504 & 4) != 0
-				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6
+				&& (u32)(G_TIMER_RELATED - (i32)pPlayer->field_500) < 6
 				&& pPlayer->ShouldPlayerDropFlail() != 0)
 			{
 				pPlayer->PlaySingleAnim(0xAF, 0, -1);
@@ -1411,7 +1411,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			{
 				pPlayer->field_E38 = pPlayer->mPos.vy;
 				// 0xE3C: gTimerRelated stamp of the last fall retarget.
-				PLR_I32(pPlayer, 0xE3C) = (i32)gTimerRelated;
+				PLR_I32(pPlayer, 0xE3C) = (i32)G_TIMER_RELATED;
 
 				anim = pPlayer->mAnim;
 				if (anim != 0xAF && anim != 0xB0)
@@ -1449,7 +1449,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 
 			if (pPlayer->field_AE5 != 0
-				&& (u32)(gTimerRelated - PLR_I32(pPlayer, 0xE3C)) > 0x1E)
+				&& (u32)(G_TIMER_RELATED - PLR_I32(pPlayer, 0xE3C)) > 0x1E)
 			{
 				pPlayer->field_AE5 = 0;
 				pPlayer->field_AE6 = 0;
@@ -1614,7 +1614,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 			else
 			{
-				i32 turned = ((u16)pPlayer->field_E32 + (i32)CameraList->field_23A) & 0xFFF;
+				i32 turned = ((u16)pPlayer->field_E32 + (i32)G_CAMERA_LIST->field_23A) & 0xFFF;
 
 				heading = pPlayer->GetEffectiveHeading();
 				aimDelta = (turned - (i32)(u16)heading) & 0xFFF;
@@ -1905,11 +1905,11 @@ void SpideyAI0(CPlayer *pPlayer)
 
 			if (pPlayer->mAnim == 0x11D
 				&& pPlayer->mFrame >= 7
-				&& (u32)(gTimerRelated - pPlayer->field_5B4) > 0x3C)
+				&& (u32)(G_TIMER_RELATED - pPlayer->field_5B4) > 0x3C)
 			{
 				pPlayer->field_5AC = 5;
 				pPlayer->field_5B0 = 0;
-				pPlayer->field_5B4 = (i32)gTimerRelated;
+				pPlayer->field_5B4 = (i32)G_TIMER_RELATED;
 				SFX_PlayPos(0x16, &pPlayer->mPos, 0);
 			}
 
@@ -1957,7 +1957,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			if (pPlayer->mAnim == 0x11C) break;
 
 			pPad = reinterpret_cast<u8*>(pPlayer->field_E0C);
-			if ((u32)(gTimerRelated - pPlayer->field_374) <= 0x96
+			if ((u32)(G_TIMER_RELATED - pPlayer->field_374) <= 0x96
 				&& pPad[0x120] == 0 && pPad[0x130] == 0 && pPad[0x100] == 0)
 			{
 				break;
@@ -2021,13 +2021,13 @@ void SpideyAI0(CPlayer *pPlayer)
 
 			if (pPlayer->field_E20 == 0)
 			{
-				CameraList->field_12C = 2;
+				G_CAMERA_LIST->field_12C = 2;
 				pPlayer->PutCameraBehind(0x10);
 				pPlayer->field_E20++;
 			}
 
 			if ((pPlayer->field_504 & 0x200) != 0
-				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+				&& (u32)(G_TIMER_RELATED - (i32)pPlayer->field_500) < 6)
 			{
 				if (pPlayer->ShouldPlayerDropFlail() != 0)
 				{
@@ -2276,7 +2276,7 @@ void SpideyAI0(CPlayer *pPlayer)
 						pPlayer->field_550 = 1;
 						pPlayer->PlaySingleAnim(0xD5, 0, -1);
 						pPlayer->field_E1C = 1;
-						CameraList->field_12C = -1;
+						G_CAMERA_LIST->field_12C = -1;
 						break;
 					}
 
@@ -2427,7 +2427,7 @@ void SpideyAI0(CPlayer *pPlayer)
 							pPlayer->field_E64 = 0;
 						}
 
-						CameraList->field_12C = -1;
+						G_CAMERA_LIST->field_12C = -1;
 
 						print_if_false(pPlayer->CheckFenceSurfaceTransition() != 0,
 							"fence error");
@@ -2443,7 +2443,7 @@ void SpideyAI0(CPlayer *pPlayer)
 					{
 						// 0x4B37F4
 						pPlayer->TidyUpZipWebLandingPosition(0x20);
-						CameraList->field_12C = -1;
+						G_CAMERA_LIST->field_12C = -1;
 						pPlayer->field_54C = 0;
 						pPlayer->field_550 = 1;
 						pPlayer->PlaySingleAnim(0x119, 0, -1);
@@ -2455,7 +2455,7 @@ void SpideyAI0(CPlayer *pPlayer)
 
 			// 0x4B3B0C
 			if ((pPlayer->field_504 & 0x400) != 0
-				&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+				&& (u32)(G_TIMER_RELATED - (i32)pPlayer->field_500) < 6)
 			{
 				pPlayer->PlaySingleAnim(0xD8, 0, -1);
 				pPlayer->field_E1C = 4;
@@ -2499,7 +2499,7 @@ void SpideyAI0(CPlayer *pPlayer)
 					pPlayer->field_54D = 1;
 				}
 
-				CameraList->field_12C = -1;
+				G_CAMERA_LIST->field_12C = -1;
 				pPlayer->field_54C = 0;
 				pPlayer->field_550 = 1;
 
@@ -2533,12 +2533,12 @@ void SpideyAI0(CPlayer *pPlayer)
 
 				if (pPad[0x110] != 0
 					&& (pPad[0x120] != 0 || pPad[0x130] != 0)
-					&& (u32)(gTimerRelated - pPlayer->field_898) <= 4)
+					&& (u32)(G_TIMER_RELATED - pPlayer->field_898) <= 4)
 				{
 					CBody *pTarget = pPlayer->SelectTargetBaddy(0xBE, -0x1000, 0x1000, 0);
 
 					pPlayer->field_DD8 = Mem_MakeHandle(pTarget);
-					pPlayer->field_DE0 = (i32)gTimerRelated;
+					pPlayer->field_DE0 = (i32)G_TIMER_RELATED;
 					pPlayer->field_E1C = 0x2000000;
 					pPlayer->PlaySingleAnim(0x78, 0, -1);
 					break;
@@ -2794,7 +2794,7 @@ void SpideyAI0(CPlayer *pPlayer)
 					: 0x12C;
 				u8 *pPad;
 
-				if ((u32)(gTimerRelated - pPlayer->field_DE0) > (u32)holdTime)
+				if ((u32)(G_TIMER_RELATED - pPlayer->field_DE0) > (u32)holdTime)
 				{
 					PLR_I32(pTarget, 0x2A8) &= ~0x40;
 					pPlayer->PlaySingleAnim(0x7A, 0, -1);
@@ -2807,7 +2807,7 @@ void SpideyAI0(CPlayer *pPlayer)
 				{
 					pPlayer->field_E1C = 0x8000000;
 					pPlayer->PlaySingleAnim(0x7D, 0, -1);
-					pPlayer->field_DE0 = (i32)gTimerRelated;
+					pPlayer->field_DE0 = (i32)G_TIMER_RELATED;
 					break;
 				}
 
@@ -2950,7 +2950,7 @@ void SpideyAI0(CPlayer *pPlayer)
 					if (leanY < 0)
 					{
 						if ((pPlayer->field_8E4 & 8) == 0
-							&& (u32)(gTimerRelated - pPlayer->field_5B4) > 0x1E
+							&& (u32)(G_TIMER_RELATED - pPlayer->field_5B4) > 0x1E
 							&& pPlayer->field_AD4 == 0)
 						{
 							// 0x4B4669: down, so the knock down web.
@@ -2977,7 +2977,7 @@ void SpideyAI0(CPlayer *pPlayer)
 							SFX_PlayPos(0x22, &pPlayer->mPos, 0);
 							pPlayer->field_E1C = 0x20000000;
 							pPlayer->PlaySingleAnim(0x11B, 0, -1);
-							pPlayer->field_374 = (i32)gTimerRelated;
+							pPlayer->field_374 = (i32)G_TIMER_RELATED;
 							pPlayer->field_AB8 = Mem_MakeHandle(
 								new CDome(pPlayer, (u8)pPlayer->field_5E8));
 							break;
@@ -3002,7 +3002,7 @@ void SpideyAI0(CPlayer *pPlayer)
 							// 0x4B4783
 							pPlayer->field_DD8 = Mem_MakeHandle(
 								pPlayer->SelectTargetBaddy(0xBE, -0x1000, 0x1000, 0));
-							pPlayer->field_DE0 = (i32)gTimerRelated;
+							pPlayer->field_DE0 = (i32)G_TIMER_RELATED;
 							pPlayer->field_E1C = 0x2000000;
 							pPlayer->PlaySingleAnim(0x78, 0, -1);
 							break;
@@ -3495,7 +3495,7 @@ void SpideyAI0(CPlayer *pPlayer)
 
 				// 0x4B52D9
 				if ((pPlayer->field_504 & 0x40000) != 0
-					&& (u32)(gTimerRelated - (i32)pPlayer->field_500) < 6)
+					&& (u32)(G_TIMER_RELATED - (i32)pPlayer->field_500) < 6)
 				{
 					pPlayer->PlaySingleAnim(0xAF, 0, -1);
 					pPlayer->field_E1C = 0x800000;
@@ -3596,8 +3596,8 @@ void SpideyAI0(CPlayer *pPlayer)
 				}
 
 				// 0x4B53BD: arrived at the anchor, snap onto it.
-				CameraList->field_100 = 1;
-				CameraList->mTripod = pPlayer;
+				G_CAMERA_LIST->field_100 = 1;
+				G_CAMERA_LIST->mTripod = pPlayer;
 
 				pPlayer->field_AE5 = 0;
 
@@ -4071,7 +4071,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 
 			if ((pPlayer->field_504 & 0x1000000) != 0
-				&& (u32)(gTimerRelated - pPlayer->field_500) < 6)
+				&& (u32)(G_TIMER_RELATED - pPlayer->field_500) < 6)
 			{
 				// bounced off: flip upright, play the recover animation and
 				// drop into the falling state.
@@ -4171,7 +4171,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			// print_if_false above without acting on a null target, so a lost
 			// target faults here.
 			if (pTarget->mHealth > 0
-				&& (u32)(gTimerRelated - pPlayer->field_DE0) <= 0x12C
+				&& (u32)(G_TIMER_RELATED - pPlayer->field_DE0) <= 0x12C
 				&& reinterpret_cast<u8*>(pPlayer->field_E0C)[0x101] == 0)
 			{
 				if ((u16)animJustFinished == 0x7E)
@@ -4487,7 +4487,7 @@ void SpideyAI0(CPlayer *pPlayer)
 
 				Utils_CalcAim(&aim, &pPlayer->mPos,
 					reinterpret_cast<CVector*>(reinterpret_cast<char*>(pLockTarget) + 8));
-				CameraList->SetCamAngle(aim.vy, 0);
+				G_CAMERA_LIST->SetCamAngle(aim.vy, 0);
 				pPlayer->field_551 = 1;
 			}
 			else if (pPlayer->field_EA6 == 0)
@@ -4516,17 +4516,17 @@ void SpideyAI0(CPlayer *pPlayer)
 				else if ((u8)(pPlayer->field_E2E | pPlayer->field_E2D) != 0
 					&& pPlayer->field_E1C == 0x10)
 				{
-					i16 camAngle = CameraList->field_23A;
+					i16 camAngle = G_CAMERA_LIST->field_23A;
 					i16 want = (i16)(pPlayer->field_E32 + camAngle);
 					i32 delta = ((i32)camAngle - (i32)want) & 0xFFF;
 
 					if (delta < 0x4B0 || delta > 0xB50)
 					{
-						CameraList->SetCamAngle(want, 0x3C);
+						G_CAMERA_LIST->SetCamAngle(want, 0x3C);
 					}
 					else if (delta > 0x7F0 && delta < 0x810)
 					{
-						CameraList->SetCamAngle(CameraList->field_236, 0);
+						G_CAMERA_LIST->SetCamAngle(G_CAMERA_LIST->field_236, 0);
 					}
 					else
 					{
@@ -4534,12 +4534,12 @@ void SpideyAI0(CPlayer *pPlayer)
 						i32 t = ((delta - 0x4B0) << 11) / 0x6A0;
 						i32 pitch = ((i32)Sine(t & 0xFFF) * 128 >> 12) + 0x3C;
 
-						CameraList->SetCamAngle(want, (u16)pitch);
+						G_CAMERA_LIST->SetCamAngle(want, (u16)pitch);
 					}
 				}
 				else
 				{
-					CameraList->SetCamAngle(CameraList->field_236, 0);
+					G_CAMERA_LIST->SetCamAngle(G_CAMERA_LIST->field_236, 0);
 				}
 			}
 			else
@@ -4578,7 +4578,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 		}
 
-		camYaw = (CameraList != 0) ? (i32)CameraList->field_23A : 0;
+		camYaw = (G_CAMERA_LIST != 0) ? (i32)G_CAMERA_LIST->field_23A : 0;
 		state = pPlayer->field_E1C;
 
 		if ((state & 0x10) != 0)
@@ -4680,7 +4680,7 @@ void SpideyAI0(CPlayer *pPlayer)
 			}
 			else
 			{
-				print_if_false(CameraList != 0, "no camera");
+				print_if_false(G_CAMERA_LIST != 0, "no camera");
 				M3dMaths_SetIdentityRotation(&identityA);
 				M3dMaths_SetIdentityRotation(&identityB);
 				gte_SetRotMatrix(&identityB);
@@ -4765,7 +4765,7 @@ void SpideyAI0(CPlayer *pPlayer)
 							heading = pPlayer->GetEffectiveHeading();
 							yaw = (i32)heading;
 
-							if (CameraList->mCameraMode == CAMERAMODE_LOOKAROUND)
+							if (G_CAMERA_LIST->mCameraMode == CAMERAMODE_LOOKAROUND)
 							{
 								CVector *pAnchor = reinterpret_cast<CVector*>(
 									reinterpret_cast<char*>(gBossRelated) + 8);
@@ -5350,7 +5350,7 @@ void SpideyAI0(CPlayer *pPlayer)
 				M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&pBuzz->mPos), pPlayer, 8);
 				gM3dUtils_GetPartAngles(pPlayer, 7, &pBuzz->mAngles, 0);
 
-				pulse = Sine(((i32)gTimerRelated << 6) & 0xFFF);
+				pulse = Sine(((i32)G_TIMER_RELATED << 6) & 0xFFF);
 				if (pulse < 0) pulse = -pulse;
 				pulse = pulse / 2 + 0x800;
 
@@ -5386,7 +5386,7 @@ void SpideyAI0(CPlayer *pPlayer)
 					gM3dUtils_GetPartAngles(pPlayer, (fist != 0) ? 5 : 10,
 						&pFist->mAngles, 0);
 
-					dist = Utils_CrapDist(pFist->mPos, CameraList->mPos);
+					dist = Utils_CrapDist(pFist->mPos, G_CAMERA_LIST->mPos);
 					if (dist < 0x100)
 					{
 						pFist->mFlags |= 0xC00;

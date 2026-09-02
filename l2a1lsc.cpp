@@ -204,7 +204,7 @@ void L2A1LSC_MonitorTimer(const u32 *,u32 *)
 		gBombDieRelatedOne = 1;
 		gBombDieRelatedTwo = 1;
 		gBombAIRelated = gL2A1DifficultyArr[DifficultyLevel];
-		gBombDieTimerRelated = gTimerRelated;
+		gBombDieTimerRelated = G_TIMER_RELATED;
 		gl2a1ArrOne[0] = 0;
 		gl2a1ArrOne[1] = 0;
 		gl2a1ArrOne[2] = 0;
@@ -257,7 +257,7 @@ void L2A1LSC_RelocatableModuleClear(void)
 {
 	gBombDieRelatedOne = 0;
 	gBombDieRelatedTwo = 0;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 
 	for (i32 i = 0; i < LEN_L2_TEXS; i++)
 	{

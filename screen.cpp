@@ -44,9 +44,9 @@ void Screen_DrawArrow(void)
 	pPoly = next;
 
 	VECTOR relPos;
-	relPos.vx = (gTargetRelated.vx >> 12) - gMikeCamera[0].Position.vx;
-	relPos.vy = (gTargetRelated.vy >> 12) - gMikeCamera[0].Position.vy;
-	relPos.vz = (gTargetRelated.vz >> 12) - gMikeCamera[0].Position.vz;
+	relPos.vx = (gTargetRelated.vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
+	relPos.vy = (gTargetRelated.vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
+	relPos.vz = (gTargetRelated.vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
 
 	gte_ldlv0(&relPos);
 	gte_rtps();
@@ -109,9 +109,9 @@ void Screen_DrawTarget(void)
 	m3d_ZeroTransVector();
 
 	VECTOR relPos;
-	relPos.vx = (gTargetRelated.vx >> 12) - gMikeCamera[0].Position.vx;
-	relPos.vy = (gTargetRelated.vy >> 12) - gMikeCamera[0].Position.vy;
-	relPos.vz = (gTargetRelated.vz >> 12) - gMikeCamera[0].Position.vz;
+	relPos.vx = (gTargetRelated.vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
+	relPos.vy = (gTargetRelated.vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
+	relPos.vz = (gTargetRelated.vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
 	gte_ldlv0(&relPos);
 	gte_rtps();
 

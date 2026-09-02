@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "my_patch.h"
 #include "validate.h"
 #include "ps2funcs.h"
 #include "utils.h"
@@ -6,6 +7,23 @@
 
 SViewport gViewport;
 CCamera *CameraList;
+
+// ---------------------------------------------------------------------------
+// The camera runs half in this repo and half in the exe.  Five camera routines
+// are not decompiled at all -- CCamera::AI (0x417CB0), MoveToDesiredPos
+// (0x416B10), CM_FixedFocus (0x418C40), CM_Boss3 (0x4192F0) and
+// Camera_SelectOptimumViewingNode (0x419430) -- and AI is the per-frame driver
+// that calls the mode handlers below.  It keeps reading and writing the globals
+// at their original addresses, so ours have to be the same memory or the two
+// halves get private copies and the camera stops responding.
+//
+// Every address below was read out of the original disassembly
+// (tools/functions/*.bin), not taken from a name list.
+//
+// The shake amplitude tables (BigShakeAmp .. LandShakeSpeed) deliberately stay
+// repo-local: the only writes to them in the whole binary are the C++ static
+// initialisers at 0x415D20..0x415DC0, so both copies hold the same constants.
+// ---------------------------------------------------------------------------
 
 // @Ok
 EXPORT CSVector BigShakeAmp(25, 0, 50);
@@ -27,84 +45,134 @@ EXPORT CSVector LandShakeSpeed(600, 0, 600);
 
 // @Ok
 EXPORT i32 gCameraModeOne;
+//#define G_CAMERA_MODE_ONE (gCameraModeOne)
+#define G_CAMERA_MODE_ONE (*reinterpret_cast<i32*>(0x0056F254))
 
 // @Ok
 EXPORT i32 gCameraModeTwo;
+//#define G_CAMERA_MODE_TWO (gCameraModeTwo)
+#define G_CAMERA_MODE_TWO (*reinterpret_cast<i32*>(0x0056F38C))
 
 // @Ok
 EXPORT i32 gCameraModeThree;
+//#define G_CAMERA_MODE_THREE (gCameraModeThree)
+#define G_CAMERA_MODE_THREE (*reinterpret_cast<i32*>(0x0056F28C))
 
 // @Ok
 EXPORT i32 NumCameras;
+//#define G_NUM_CAMERAS (NumCameras)
+#define G_NUM_CAMERAS (*reinterpret_cast<i32*>(0x0056F3B4))
 
 SCamera gMikeCamera[2];
 
-// @Ok
-EXPORT i32 gCameraModeRelated;
+// Same address as gCameraModeOne (0x0056F254), see CCamera::SetMode.
+// EXPORT i32 gCameraModeRelated;
 
 // @Ok
 EXPORT i32 camXZDist = 0x120;
+//#define G_CAM_XZ_DIST (camXZDist)
+#define G_CAM_XZ_DIST (*reinterpret_cast<i32*>(0x00548860))
 
 // @Ok
 EXPORT i32 camYDist = 0xFFFFFFDC;
+//#define G_CAM_Y_DIST (camYDist)
+#define G_CAM_Y_DIST (*reinterpret_cast<i32*>(0x00548864))
 
 // @Ok
 EXPORT i32 gWtfCam[35];
+//#define G_WTF_CAM (gWtfCam)
+#define G_WTF_CAM (reinterpret_cast<i32*>(0x0056F124))
 
 
 // @Ok
 EXPORT i32 gCamXZDistanceRelated;
+//#define G_CAM_XZ_DISTANCE_RELATED (gCamXZDistanceRelated)
+#define G_CAM_XZ_DISTANCE_RELATED (*reinterpret_cast<i32*>(0x0056F3BC))
 
 // @Ok
 EXPORT i32 gCamXZRelatedTwo;
+//#define G_CAM_XZ_RELATED_TWO (gCamXZRelatedTwo)
+#define G_CAM_XZ_RELATED_TWO (*reinterpret_cast<i32*>(0x0056F0DC))
 
 // @Ok
 EXPORT i32 gCamXZRelatedThree;
+//#define G_CAM_XZ_RELATED_THREE (gCamXZRelatedThree)
+#define G_CAM_XZ_RELATED_THREE (*reinterpret_cast<i32*>(0x0056F0EC))
 
 // @Ok
 EXPORT i32 gCamYDistanceRelated;
+//#define G_CAM_Y_DISTANCE_RELATED (gCamYDistanceRelated)
+#define G_CAM_Y_DISTANCE_RELATED (*reinterpret_cast<i32*>(0x0056F3C0))
 
 // @Ok
 EXPORT i32 gCamYDistanceRelatedTwo;
+//#define G_CAM_Y_DISTANCE_RELATED_TWO (gCamYDistanceRelatedTwo)
+#define G_CAM_Y_DISTANCE_RELATED_TWO (*reinterpret_cast<i32*>(0x0056F258))
 
 // @Ok
 EXPORT i32 gCamYDistanceRelatedThree;
+//#define G_CAM_Y_DISTANCE_RELATED_THREE (gCamYDistanceRelatedThree)
+#define G_CAM_Y_DISTANCE_RELATED_THREE (*reinterpret_cast<i32*>(0x0056F290))
 
 // @Ok
 EXPORT i32 gCamXOffsetRelatedOne;
+//#define G_CAM_X_OFFSET_ONE (gCamXOffsetRelatedOne)
+#define G_CAM_X_OFFSET_ONE (*reinterpret_cast<i32*>(0x0056F3A4))
 
 // @Ok
 EXPORT i32 gCamXOffsetRelatedTwo;
+//#define G_CAM_X_OFFSET_TWO (gCamXOffsetRelatedTwo)
+#define G_CAM_X_OFFSET_TWO (*reinterpret_cast<i32*>(0x0056F3C8))
 
 // @Ok
 EXPORT i32 gCamXOffsetRelatedThree;
+//#define G_CAM_X_OFFSET_THREE (gCamXOffsetRelatedThree)
+#define G_CAM_X_OFFSET_THREE (*reinterpret_cast<i32*>(0x0056EFF8))
 
 // @Ok
 EXPORT i32 gCamXOffsetRelatedFour;
+//#define G_CAM_X_OFFSET_FOUR (gCamXOffsetRelatedFour)
+#define G_CAM_X_OFFSET_FOUR (*reinterpret_cast<i32*>(0x0056F3C4))
 
 // @Ok
 EXPORT i32 gCamYOffsetOne;
+//#define G_CAM_Y_OFFSET_ONE (gCamYOffsetOne)
+#define G_CAM_Y_OFFSET_ONE (*reinterpret_cast<i32*>(0x0056F11C))
 
 // @Ok
 EXPORT i32 gCamYOffsetTwo;
+//#define G_CAM_Y_OFFSET_TWO (gCamYOffsetTwo)
+#define G_CAM_Y_OFFSET_TWO (*reinterpret_cast<i32*>(0x0056F3CC))
 
 // @Ok
 EXPORT i32 gCamYOffsetThree;
+//#define G_CAM_Y_OFFSET_THREE (gCamYOffsetThree)
+#define G_CAM_Y_OFFSET_THREE (*reinterpret_cast<i32*>(0x0056F120))
 
 // @Ok
 EXPORT i32 gCamYOffsetFour = 0xFFFFFFFA;
+//#define G_CAM_Y_OFFSET_FOUR (gCamYOffsetFour)
+#define G_CAM_Y_OFFSET_FOUR (*reinterpret_cast<i32*>(0x00548868))
 
 // @Ok
 EXPORT i32 gCamZOffsetOne;
+//#define G_CAM_Z_OFFSET_ONE (gCamZOffsetOne)
+#define G_CAM_Z_OFFSET_ONE (*reinterpret_cast<i32*>(0x0056F078))
 
 // @Ok
 EXPORT i32 gCamZOffsetTwo;
+//#define G_CAM_Z_OFFSET_TWO (gCamZOffsetTwo)
+#define G_CAM_Z_OFFSET_TWO (*reinterpret_cast<i32*>(0x0056F3D4))
 
 // @Ok
 EXPORT i32 gCamZOffsetThree;
+//#define G_CAM_Z_OFFSET_THREE (gCamZOffsetThree)
+#define G_CAM_Z_OFFSET_THREE (*reinterpret_cast<i32*>(0x0056F394))
 
 // @Ok
 EXPORT i32 gCamZOffsetFour;
+//#define G_CAM_Z_OFFSET_FOUR (gCamZOffsetFour)
+#define G_CAM_Z_OFFSET_FOUR (*reinterpret_cast<i32*>(0x0056F3D0))
 
 // @Ok
 // @AlmostMatching: lea instruction when assigning a2 happens couple places up for some reason
@@ -388,7 +456,7 @@ CCamera::CCamera(CBody* tripod)
 	this->field_2E8.vz = 0;
 
 
-	this->field_7C = gTimerRelated;
+	this->field_7C = G_TIMER_RELATED;
 	print_if_false(tripod != 0, "Bad tripod");
 	this->mType = 99;
 	this->mFlags = 1;
@@ -397,7 +465,7 @@ CCamera::CCamera(CBody* tripod)
 	this->field_144 = tripod->mPos;
 
 	this->LoadIntoMikeCamera();
-	this->AttachTo(reinterpret_cast<CBody**>(&CameraList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_CAMERA_LIST));
 
 	this->mCBodyFlags &= ~2;
 	NumCameras++;
@@ -408,15 +476,15 @@ CCamera::CCamera(CBody* tripod)
 // @Ok
 void CCamera::LoadIntoMikeCamera(void)
 {
-	gMikeCamera[0].Position.vx = this->mPos.vx >> 12;
-	gMikeCamera[0].Position.vy = this->mPos.vy >> 12;
-	gMikeCamera[0].Position.vz = this->mPos.vz >> 12;
+	G_MIKE_CAMERA[0].Position.vx = this->mPos.vx >> 12;
+	G_MIKE_CAMERA[0].Position.vy = this->mPos.vy >> 12;
+	G_MIKE_CAMERA[0].Position.vz = this->mPos.vz >> 12;
 
-	QToM(&this->field_214, &gMikeCamera[0].Transform);
-	TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+	QToM(&this->field_214, &G_MIKE_CAMERA[0].Transform);
+	TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
 
-	i32 two = gMikeCamera[0].Transform.m[0][2];
-	i32 eight = gMikeCamera[0].Transform.m[2][2];
+	i32 two = G_MIKE_CAMERA[0].Transform.m[0][2];
+	i32 eight = G_MIKE_CAMERA[0].Transform.m[2][2];
 	if (two || eight)
 	{
 		this->field_23A = (-1024 - ratan2(eight, two)) & 0xFFF;
@@ -459,7 +527,7 @@ void CCamera::SetTripodInterpolation(i32 a2, i32 a3, i32 a4)
 // @Ok
 CCamera::~CCamera(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&CameraList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_CAMERA_LIST));
 	--NumCameras;
 }
 
@@ -486,7 +554,11 @@ i32 CCamera::SetMode(ECameraMode mode){
 	this->mCameraMode = mode;
 	if (mode == CAMERAMODE_FUNKYFLYING || mode == CAMERAMODE_LOOKAROUND)
 	{
-		gCameraModeRelated = 0;
+		// gCameraModeRelated and gCameraModeOne were two repo variables for one
+		// global: SetMode at 0x41680A and SetCamAngle at 0x41793F both write
+		// 0x0056F254.  Kept apart they broke SetMode's reset of the camera
+		// angle interpolation counter, so both now go through one macro.
+		G_CAMERA_MODE_ONE = 0;
 	}
 
 	return oldMode;
@@ -1120,3 +1192,4 @@ void validate_SViewport(void)
 	VALIDATE(SViewport, Zoom, 0xC);
 	VALIDATE(SViewport, field_E, 0xE);
 }
+

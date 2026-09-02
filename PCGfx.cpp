@@ -465,15 +465,15 @@ void PCGfx_DoModelPreview(void)
 
 		//@FIXME
 		/*
-		gMikeCamera[0].Position.vx = SuperItem->mPos.vx >> 12;
-		gMikeCamera[0].Position.vy = SuperItem->mPos.vy >> 12;
-		gMikeCamera[0].Position.vz = (SuperItem->mPos.vz >> 12) - 1;
+		G_MIKE_CAMERA[0].Position.vx = SuperItem->mPos.vx >> 12;
+		G_MIKE_CAMERA[0].Position.vy = SuperItem->mPos.vy >> 12;
+		G_MIKE_CAMERA[0].Position.vz = (SuperItem->mPos.vz >> 12) - 1;
 		*/
 
-		gMikeCamera[0].Angles.vx = 0;
-		gMikeCamera[0].Angles.vy = 0;
-		gMikeCamera[0].Angles.vz = 0;
-		gMikeCamera[0].Style = 0;
+		G_MIKE_CAMERA[0].Angles.vx = 0;
+		G_MIKE_CAMERA[0].Angles.vy = 0;
+		G_MIKE_CAMERA[0].Angles.vz = 0;
+		G_MIKE_CAMERA[0].Style = 0;
 
 		i32 stop = 0;
 		while (!stop)
@@ -481,42 +481,42 @@ void PCGfx_DoModelPreview(void)
 			Pad_Update();
 			if (gSControl[0].Left.Pressed)
 			{
-				gMikeCamera[0].Angles.vy -= 16;
-				gMikeCamera[0].Angles.vy &= 0xFFF;
+				G_MIKE_CAMERA[0].Angles.vy -= 16;
+				G_MIKE_CAMERA[0].Angles.vy &= 0xFFF;
 			}
 			else if (gSControl[0].Right.Pressed)
 			{
-				gMikeCamera[0].Angles.vy -= 16;
-				gMikeCamera[0].Angles.vy &= 0xFFF;
+				G_MIKE_CAMERA[0].Angles.vy -= 16;
+				G_MIKE_CAMERA[0].Angles.vy &= 0xFFF;
 			}
 
 			if (gSControl[0].Up.Pressed)
 			{
 				if (!PCINPUT_IsKeyPressed(0x42, 0) && !PCINPUT_IsKeyPressed(0x36, 0))
 				{
-					i32 v14 = gMikeCamera[0].Angles.vy & 0xFFF;
-					gMikeCamera[0].Position.vx += (32 * rcossin_tbl[v14].sin) >> 12;
-					gMikeCamera[0].Position.vz += (32 * rcossin_tbl[v14].cos) >> 12;
-					gMikeCamera[0].Position.vy -= (32 * rcossin_tbl[gMikeCamera[0].Angles.vx & 0xFFF].sin) >> 12;
+					i32 v14 = G_MIKE_CAMERA[0].Angles.vy & 0xFFF;
+					G_MIKE_CAMERA[0].Position.vx += (32 * rcossin_tbl[v14].sin) >> 12;
+					G_MIKE_CAMERA[0].Position.vz += (32 * rcossin_tbl[v14].cos) >> 12;
+					G_MIKE_CAMERA[0].Position.vy -= (32 * rcossin_tbl[G_MIKE_CAMERA[0].Angles.vx & 0xFFF].sin) >> 12;
 				}
 				else
 				{
-					gMikeCamera[0].Angles.vx += 16;
-					gMikeCamera[0].Angles.vx &= 0xFFF;
+					G_MIKE_CAMERA[0].Angles.vx += 16;
+					G_MIKE_CAMERA[0].Angles.vx &= 0xFFF;
 				}
 			}
 			else if (gSControl[0].Down.Pressed)
 			{
 				if (!PCINPUT_IsKeyPressed(0x2Au, 0) && !PCINPUT_IsKeyPressed(0x36u, 0))
 				{
-					 gMikeCamera[0].Angles.vx = (gMikeCamera[0].Angles.vx - 16) & 0xFFF;
+					 G_MIKE_CAMERA[0].Angles.vx = (G_MIKE_CAMERA[0].Angles.vx - 16) & 0xFFF;
 				}
 				else
 				{
-					i32 v15 = gMikeCamera[0].Angles.vy & 0xFFF;
-					gMikeCamera[0].Position.vx -= (32 * rcossin_tbl[v15].sin) >> 12;
-					gMikeCamera[0].Position.vy += (32 * rcossin_tbl[gMikeCamera[0].Angles.vx & 0xFFF].sin) >> 12;
-					gMikeCamera[0].Position.vz -= (32 * rcossin_tbl[v15].cos) >> 12;
+					i32 v15 = G_MIKE_CAMERA[0].Angles.vy & 0xFFF;
+					G_MIKE_CAMERA[0].Position.vx -= (32 * rcossin_tbl[v15].sin) >> 12;
+					G_MIKE_CAMERA[0].Position.vy += (32 * rcossin_tbl[G_MIKE_CAMERA[0].Angles.vx & 0xFFF].sin) >> 12;
+					G_MIKE_CAMERA[0].Position.vz -= (32 * rcossin_tbl[v15].cos) >> 12;
 				}
 			}
 
@@ -592,13 +592,13 @@ void PCGfx_DoModelPreview(void)
 						SuperItem->mNextItem = 0;
 					}
 
-					gMikeCamera[0].Position.vx = SuperItem->mPos.vx >> 12;
-					gMikeCamera[0].Position.vy = SuperItem->mPos.vy >> 12;
-					gMikeCamera[0].Position.vz = (SuperItem->mPos.vz >> 12) - 1;
+					G_MIKE_CAMERA[0].Position.vx = SuperItem->mPos.vx >> 12;
+					G_MIKE_CAMERA[0].Position.vy = SuperItem->mPos.vy >> 12;
+					G_MIKE_CAMERA[0].Position.vz = (SuperItem->mPos.vz >> 12) - 1;
 
-					gMikeCamera[0].Angles.vx = 0;
-					gMikeCamera[0].Angles.vy = 0;
-					gMikeCamera[0].Angles.vz = 0;
+					G_MIKE_CAMERA[0].Angles.vx = 0;
+					G_MIKE_CAMERA[0].Angles.vy = 0;
+					G_MIKE_CAMERA[0].Angles.vz = 0;
 
 					modelTickUpdate = GetTickCount();
 					doModelSwap = 0;
@@ -1969,11 +1969,11 @@ void PCGfx_RenderModelPreview(
 {
 	char v3[128];
 
-	M3dMaths_RotMatrixYXZ(&gMikeCamera[0].Angles, &gMikeCamera[0].Transform);
-	TransMatrix(&gMikeCamera[0].Transform, &gMikeCamera[0].Position);
+	M3dMaths_RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+	TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
 	PCGfx_BeginScene(1u, -1);
 
-	M3d_RenderSetup(&gMikeCamera[0], &gViewport, (u32*)&pDoubleBuffer[1].Draw.tpage);
+	M3d_RenderSetup(&G_MIKE_CAMERA[0], &G_VIEWPORT, (u32*)&pDoubleBuffer[1].Draw.tpage);
 	M3d_Render(a1);
 	M3d_RenderCleanup();
 	Mess_SetSort(4095);
@@ -1987,7 +1987,7 @@ void PCGfx_RenderModelPreview(
 	Mess_DrawText(20, 20, v3, 0, 0x1000u);
 	sprintf(v3, "IDX: %i", a3);
 	Mess_DrawText(220, 20, v3, 0, 0x1000u);
-	sprintf(v3, "CAM: %i %i %i", gMikeCamera[0].Position.vx, gMikeCamera[0].Position.vy, gMikeCamera[0].Position.vz);
+	sprintf(v3, "CAM: %i %i %i", G_MIKE_CAMERA[0].Position.vx, G_MIKE_CAMERA[0].Position.vy, G_MIKE_CAMERA[0].Position.vz);
 	Mess_DrawText(20, 45, v3, 0, 0x1000u);
 	sprintf(v3, "ITM: %i %i %i", a1->mPos.vx >> 12, a1->mPos.vy >> 12, a1->mPos.vz >> 12);
 	Mess_DrawText(220, 45, v3, 0, 0x1000u);

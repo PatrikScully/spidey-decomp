@@ -2244,7 +2244,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		case 0x4298:
 		{
 			u16 val = CBaddy_ResolveOperand(this);
-			if (CameraList != 0)
+			if (G_CAMERA_LIST != 0)
 			{
 				i32 mode;
 				if (val == 0)
@@ -2599,8 +2599,8 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		case 0x450E:
 		{
 			u16 val = CBaddy_ReadOperand(this);
-			if (CameraList != 0)
-				gsub_416880(reinterpret_cast<CVector*>(reinterpret_cast<char*>(CameraList) + 680), val);
+			if (G_CAMERA_LIST != 0)
+				gsub_416880(reinterpret_cast<CVector*>(reinterpret_cast<char*>(G_CAMERA_LIST) + 680), val);
 			return true;
 		}
 

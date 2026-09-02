@@ -166,8 +166,8 @@ void Scorpion_RelocatableModuleClear(void)
 		pSearch = pNext;
 	}
 
-	if (CameraList)
-		CameraList->field_F9 = 0;
+	if (G_CAMERA_LIST)
+		G_CAMERA_LIST->field_F9 = 0;
 }
 
 // @Ok

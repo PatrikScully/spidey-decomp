@@ -63,7 +63,7 @@ void Pad_ActuatorOn(
 		u8 a3,
 		u8 a4)
 {
-	gPadActuator[a1] = Vblanks + a2 + 10;
+	gPadActuator[a1] = G_VBLANKS + a2 + 10;
 	DCPad_Vibrate(a1, 5 * a3 + 2, gPadOne, gPadTwo);
 }
 
@@ -76,7 +76,7 @@ void DCPad_ExpireVibrations(void)
 		u32 v4 = gPadActuator[i];
 		if (v4)
 		{
-			if (Vblanks > v4)
+			if (G_VBLANKS > v4)
 			{
 				pdVibMxStop(gAlarmFirst[2 * i]);
 				pdVibMxStop(gAlarmFirst[2 * i + 1]);

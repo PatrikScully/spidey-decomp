@@ -274,7 +274,7 @@ void PCSHELL_DoControllerConfig(bool isKeyboard)
 	u8 done;
 	do
 	{
-		i32 startVblanks = Vblanks;
+		i32 startVblanks = G_VBLANKS;
 
 		gsub_430880();
 
@@ -310,7 +310,7 @@ void PCSHELL_DoControllerConfig(bool isKeyboard)
 		WinYield();
 		Sleep(10);
 
-		Pause(startVblanks - Vblanks + 2);
+		Pause(startVblanks - G_VBLANKS + 2);
 	} while (!done);
 
 	gsub_430680();
@@ -437,7 +437,7 @@ void PCSHELL_DoDisplayOptions(void)
 
 	for (;;)
 	{
-		i32 startVblanks = Vblanks;
+		i32 startVblanks = G_VBLANKS;
 
 		gsub_430880();
 
@@ -585,7 +585,7 @@ void PCSHELL_DoDisplayOptions(void)
 		WinYield();
 		Sleep(10);
 
-		Pause(startVblanks - Vblanks + 2);
+		Pause(startVblanks - G_VBLANKS + 2);
 	}
 
 	Pad_ClearTriggers(G_SCONTROL);

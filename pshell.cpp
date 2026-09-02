@@ -901,7 +901,7 @@ void PShell_EndTrainingInit(void)
 // already @Ok @AlmostMatching in camera.cpp), and CCamera has a real
 // field_236 (i16) at that exact offset (VALIDATE(CCamera, field_236, 0x236)
 // in camera.cpp, also read by SetCamAngle itself).
-#define CameraList (*reinterpret_cast<CCamera**>(0x0056F3B8))
+#define G_CAMERA_LIST (*reinterpret_cast<CCamera**>(0x0056F3B8))
 
 // Same string-pointer table class as gTextNewRecord/gTextYourScore/gTextNone
 // above and gTextSaveGameProgress further down, just a different cluster of
@@ -955,8 +955,8 @@ void PShell_EndTrainingInit(void)
 // @Ok
 void PShell_EndTrainingUpdate(void)
 {
-	if (CameraList != 0)
-		CameraList->SetCamAngle(CameraList->field_236 + 24, 0);
+	if (G_CAMERA_LIST != 0)
+		G_CAMERA_LIST->SetCamAngle(G_CAMERA_LIST->field_236 + 24, 0);
 
 	if (gTrainingDisplayTimer != 0)
 		return;
@@ -1087,7 +1087,7 @@ void PShell_MaybeSaveGame(void)
 			Db_FlipClear();
 			CalcPolyBufferEnd();
 
-			i32 vblanksSnapshot = Vblanks;
+			i32 vblanksSnapshot = G_VBLANKS;
 
 			if (!gSceneRelated)
 				PCGfx_BeginScene(1, -1);
@@ -1119,7 +1119,7 @@ void PShell_MaybeSaveGame(void)
 					break;
 			}
 
-			if (Vblanks == vblanksSnapshot)
+			if (G_VBLANKS == vblanksSnapshot)
 				Pause(1);
 
 			*(volatile i32*)&DoVblankProcessing = 0;

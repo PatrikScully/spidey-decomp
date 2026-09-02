@@ -165,7 +165,7 @@ u8 Redbook_XAPlayPos(i32 a1, i32 a2, CVector* a3, i32 a4)
 	{
 		gPlayPosOne = a1;
 		gPlayPosTwo = a2;
-		gRedbookVblanks = Vblanks;
+		gRedbookVblanks = G_VBLANKS;
 		return 1;
 	}
 

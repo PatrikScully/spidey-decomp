@@ -1005,11 +1005,11 @@ void CElectrify::ChooseRandomPositions(i32 a1, i32 a2)
 		CVector interp;
 
 		CVector toCamera;
-		toCamera.vx = gMikeCamera[0].Position.vx << 12;
+		toCamera.vx = G_MIKE_CAMERA[0].Position.vx << 12;
 
 		i16 weight = static_cast<i16>(randOffset - this->field_58);
-		toCamera.vy = gMikeCamera[0].Position.vy << 12;
-		toCamera.vz = gMikeCamera[0].Position.vz << 12;
+		toCamera.vy = G_MIKE_CAMERA[0].Position.vy << 12;
+		toCamera.vz = G_MIKE_CAMERA[0].Position.vz << 12;
 
 		interp.vx = this->field_54[pos].vx + ((weight * (this->field_54[parent].vx - this->field_54[pos].vx)) >> 8);
 		interp.vy = this->field_54[pos].vy + ((weight * (this->field_54[parent].vy - this->field_54[pos].vy)) >> 8);

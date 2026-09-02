@@ -16,7 +16,7 @@
 #include <cmath>
 
 CItem* CWeapons;
-extern SCamera gMikeCamera[2];
+#include "camera.h"
 
 // Per-point scratch ring used only by CGouraudRibbon::Display (below), one
 // element per ribbon point, address confirmed via raw disasm (dword_614CD4).
@@ -946,9 +946,9 @@ INLINE i32 Transform(CVector *a1, i32* a2)
 	v8.vz = 0;
 
 
-	v8.vx = (a1->vx >> 12) - gMikeCamera[0].Position.vx;
-	v8.vy = (a1->vy >> 12) - gMikeCamera[0].Position.vy;
-	v8.vz = (a1->vz >> 12) - gMikeCamera[0].Position.vz;
+	v8.vx = (a1->vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
+	v8.vy = (a1->vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
+	v8.vz = (a1->vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
 
 	gte_ldlv0(reinterpret_cast<VECTOR*>(&v8));
 

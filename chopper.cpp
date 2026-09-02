@@ -32,7 +32,7 @@ extern i32 DifficultyLevel;
 extern const char *gObjFile;
 extern CPlayer* MechList;
 
-extern CCamera* CameraList;
+#include "camera.h"
 
 // scratch camera position/rotation matrix for GTE screen projection, same addresses
 // utils.cpp's gCameraViewMatrix and spidey.cpp's stru_56F1B4/stru_56F224 use
@@ -312,7 +312,7 @@ void INLINE CChopper::GetOutOfCameraPath(void)
 {
 	if (this->InCameraPath())
 	{
-		i32 newY = CameraList->mPos.vy - 409600;
+		i32 newY = G_CAMERA_LIST->mPos.vy - 409600;
 		if (this->field_34C > newY)
 			this->field_34C = newY;
 	}
@@ -322,7 +322,7 @@ void INLINE CChopper::GetOutOfCameraPath(void)
 // @Ok
 i32 INLINE CChopper::InCameraPath(void)
 {
-	i32 v1 = this->field_360 - CameraList->field_23A;
+	i32 v1 = this->field_360 - G_CAMERA_LIST->field_23A;
 	if (v1 < -2048)
 	{
 		v1 += 4096;
@@ -341,7 +341,7 @@ void CChopper::StartStrafeOnslaught(void)
 {
 	if (MechList->field_8E8)
 	{
-		CVector v18(0, (Vblanks & 1) != 0 ? 4096 : -4096, 0);
+		CVector v18(0, (G_VBLANKS & 1) != 0 ? 4096 : -4096, 0);
 
 		gte_ldopv1(reinterpret_cast<VECTOR*>(&MechList->field_C84));
 		gte_ldopv2(reinterpret_cast<VECTOR*>(&v18));
@@ -1862,14 +1862,14 @@ void CSniperTarget::AI(void)
 
 			// Raycast/spawn origin: the camera position, raised by 0x200000.
 			CVector camPos;
-			camPos.vx = CameraList->mPos.vx;
-			camPos.vy = CameraList->mPos.vy + 0x200000;
-			camPos.vz = CameraList->mPos.vz;
+			camPos.vx = G_CAMERA_LIST->mPos.vx;
+			camPos.vy = G_CAMERA_LIST->mPos.vy + 0x200000;
+			camPos.vz = G_CAMERA_LIST->mPos.vz;
 
 			// Rate-limited (gTimerRelated) bullet spawn while the strike is in flight.
-			if ((u32)(gTimerRelated - this->field_124) > 0xA && this->field_154 < this->field_158)
+			if ((u32)(G_TIMER_RELATED - this->field_124) > 0xA && this->field_154 < this->field_158)
 			{
-				this->field_124 = gTimerRelated;
+				this->field_124 = G_TIMER_RELATED;
 				SFX_Play(0x8074, 0x2000, 0);
 
 				// Hand-built CGLine object (184 bytes, the CMachineGunBullet layout):
@@ -2638,7 +2638,7 @@ void CSearchlight::AI(void)
 
 		this->field_128 -= 8;
 
-		CVector camPos = CameraList->mPos;
+		CVector camPos = G_CAMERA_LIST->mPos;
 		camPos.vy += 0x200000;
 
 		CVector perpA, perpB;

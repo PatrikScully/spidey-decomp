@@ -23,7 +23,7 @@ CL1A3Bomb::~CL1A3Bomb(void)
 {
 	gBombDieRelatedOne = 0;
 	gBombDieRelatedTwo = 0;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 }
 
 // @Ok
@@ -68,7 +68,7 @@ void CL1A3Bomb::DoPhysics(void)
 	{
 		if (!this->field_12A)
 		{
-			CameraList->Shake(this->mPos, CAMERASHAKE_SMALL);
+			G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_SMALL);
 
 			if (gBombRelated < 0x2000)
 				gBombRelated = 0x2000;
@@ -129,7 +129,7 @@ void CL1A3Bomb::DoPhysics(void)
 
 		if (line.pItem)
 		{
-			CameraList->Shake(this->mPos, CAMERASHAKE_SMALL);
+			G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_SMALL);
 			this->mPos = capturedPos;
 			SFX_PlayPos(0x819C, &this->mPos, 0);
 
@@ -193,7 +193,7 @@ void CL1A3Bomb::AI(void)
 			gBombDieRelatedOne = 1;
 			gBombDieRelatedTwo = 1;
 			gBombAIRelated = DifficultyLevel != 3 ? 7260 : 4260;
-			gBombDieTimerRelated = gTimerRelated;
+			gBombDieTimerRelated = G_TIMER_RELATED;
 		}
 	}
 
@@ -219,7 +219,7 @@ void CL1A3Bomb::Die(void)
 	Trig_SendPulse(Trig_GetLinksPointer(this->mNode));
 	gBombDieRelatedOne = 0;
 	gBombDieRelatedTwo = 0;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 }
 
 // @Ok

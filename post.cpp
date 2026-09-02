@@ -41,7 +41,7 @@ void Post_PostProcessEffects(void)
 {
 	if (gWaterEffect)
 	{
-		gPostTimerRelated = 48 * gTimerRelated;
+		gPostTimerRelated = 48 * G_TIMER_RELATED;
 		Post_WaterEffect();
 	}
 	if (gPostWordRelated)

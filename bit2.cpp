@@ -19,7 +19,7 @@ CGLineParticle::CGLineParticle(
 
 	this->mVel = a3;
 	this->mLifetime = a4;
-	this->field_5C = gTimerRelated;
+	this->field_5C = G_TIMER_RELATED;
 
 	this->mAcc.vy = a5 << 12;
 }
@@ -28,7 +28,7 @@ CGLineParticle::CGLineParticle(
 // @Matching
 void CGLineParticle::Move(void)
 {
-	u32 timeDiff = gTimerRelated - this->field_5C;
+	u32 timeDiff = G_TIMER_RELATED - this->field_5C;
 	if (this->mLifetime < timeDiff)
 	{
 		this->Die();
@@ -36,7 +36,7 @@ void CGLineParticle::Move(void)
 	else
 	{
 		this->mLifetime -= timeDiff;
-		this->field_5C = gTimerRelated;
+		this->field_5C = G_TIMER_RELATED;
 
 		this->mEnd.vx = this->mStart.vx;
 		this->mEnd.vy = this->mStart.vy;

@@ -363,7 +363,7 @@ void Front_Display(void)
 
 	Mess_SetTextJustify(0);
 
-	if (gFrontShowTrainingTip && (Vblanks & 0x20))
+	if (gFrontShowTrainingTip && (G_VBLANKS & 0x20))
 	{
 		Mess_SetRGB(0x80, 0x80, 0x80, 0);
 		Mess_SetScale(0x100);
@@ -717,7 +717,7 @@ void Front_LoadGame(SSaveGame *pSave, i32 a2, bool /* a3, unused */)
 
 	*pDestBuf = 0;
 
-	CameraList->SetMode(CAMERAMODE_DEMO);
+	G_CAMERA_LIST->SetMode(CAMERAMODE_DEMO);
 	Screen_StartCircularFadeIn(0x20, 8);
 }
 
@@ -980,10 +980,10 @@ void Front_Update(void)
 		if (gFrontFadeTimerActive == 0)
 		{
 			gFrontFadeTimerActive = 1;
-			gFrontFadeTimerStart = Vblanks;
+			gFrontFadeTimerStart = G_VBLANKS;
 		}
 
-		if (static_cast<u32>(Vblanks - gFrontFadeTimerStart) > 0x78)
+		if (static_cast<u32>(G_VBLANKS - gFrontFadeTimerStart) > 0x78)
 		{
 			gFrontFadeTimerActive = 0;
 			closeMenu = 1;

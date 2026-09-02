@@ -52,7 +52,7 @@ CLizMan::CLizMan(i16* a1, i32 a2)
 	// the shared header.
 	*reinterpret_cast<i16*>(&this->field_F4) = 0x40;
 
-	this->field_374 = gTimerRelated - 0x131;
+	this->field_374 = G_TIMER_RELATED - 0x131;
 	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
 
 	this->field_1F4 = a2;
@@ -241,7 +241,7 @@ void CLizMan::Guard(void)
 			this->field_1F8 = 0;
 			this->Neutralize();
 
-			if (gTimerRelated - this->field_374 < 0x12C)
+			if (G_TIMER_RELATED - this->field_374 < 0x12C)
 			{
 				new CAIProc_LookAt(
 						this,
@@ -403,7 +403,7 @@ cleanup:
 	this->Neutralize();
 
 	i32 flags = this->field_2F0;
-	this->field_374 = gTimerRelated - 0xF0;
+	this->field_374 = G_TIMER_RELATED - 0xF0;
 	this->field_31C.bothFlags = 2;
 	this->field_2A8 &= ~0x10000000;
 	*reinterpret_cast<u8*>(&flags) |= 1;

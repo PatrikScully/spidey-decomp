@@ -106,7 +106,7 @@ EXPORT CPixel* PixelList;
 u32 SparkSize = 1;
 
 // @FIXME - is it really?
-volatile i32 gTimerRelated;
+// volatile i32 gTimerRelated;   // see G_TIMER_RELATED in bit.h
 
 // @Ok
 EXPORT CNonRenderedBit* NonRenderedBitList = 0;
@@ -3104,7 +3104,7 @@ CTextBox::CTextBox(
 
 	this->mLifetime = a6;
 
-	this->field_3C = gTimerRelated;
+	this->field_3C = G_TIMER_RELATED;
 
 }
 
@@ -3543,8 +3543,8 @@ void CCombatImpactRing::Move(void)
 	}
 	else
 	{
-		i32 v1 = gTimerRelated - this->field_70;
-		this->field_70 = gTimerRelated;
+		i32 v1 = G_TIMER_RELATED - this->field_70;
+		this->field_70 = G_TIMER_RELATED;
 		this->mScale += this->field_6C * v1;
 
 		if (this->mScale > this->field_68)
@@ -3572,7 +3572,7 @@ CCombatImpactRing::CCombatImpactRing(
 	this->field_68 = a7;
 	this->field_6C = a8;
 	this->mPostScale = 0xA001000;
-	this->field_70 = gTimerRelated;
+	this->field_70 = G_TIMER_RELATED;
 
 	this->SetTint(a3, a4, a5);
 

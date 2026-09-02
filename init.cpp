@@ -149,7 +149,7 @@ u8 Init_AtStart(i32)
 	PutDispEnv();
 
 	Bit_Init();
-	i32 v5 = Vblanks;
+	i32 v5 = G_VBLANKS;
 
 	DrawSync();
 	PSXRegion[Spool_PSX("webdome2", 0)].Protected = 1;
@@ -178,7 +178,7 @@ u8 Init_AtStart(i32)
 		PSXRegion[Spool_PSX("sparmour", 0)].Protected = 1;
 	Spool_Sync();
 
-	Vblanks = v5 + 300;
+	G_VBLANKS = v5 + 300;
 
 	gInitRelatedTwo = 5;
 	gInitRelatedOne = 5;
@@ -202,7 +202,7 @@ void Init_Cleanup(i32 a1)
 
 	SFX_LevelStart();
 
-	gViewport.field_E = 256;
+	G_VIEWPORT.field_E = 256;
 	Redbook_XAExit();
 	GameFMV_StopFMV();
 	Init_KillAll();
@@ -268,7 +268,7 @@ void Init_Cleanup(i32 a1)
 void Init_KillAll(void)
 {
 	DeleteList(MechList);
-	DeleteList(CameraList);
+	DeleteList(G_CAMERA_LIST);
 	DeleteList(BaddyList);
 	DeleteList(ControlBaddyList);
 	DeleteList(EnvironmentalObjectList);
@@ -281,7 +281,7 @@ void Init_KillAll(void)
 	DeleteList(WebList);
 
 	print_if_false(MechList == 0, "Leftover protected members of MechList");
-	print_if_false(CameraList == 0, "Leftover protected members of CameraList");
+	print_if_false(G_CAMERA_LIST == 0, "Leftover protected members of G_CAMERA_LIST");
 	print_if_false(BaddyList == 0, "Leftover protected members of BaddyList");
 	print_if_false(ControlBaddyList == 0, "Leftover protected members of ControlBaddyList");
 	print_if_false(BackgroundList == 0, "Leftover protected members of BackgroundList");

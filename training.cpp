@@ -56,7 +56,7 @@ static u8 * const gTimeAttackComplete = (u8*)0x0060CFC6;
 static void Training_EndExercise(void)
 {
 	gBombDieRelatedTwo = 0;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 	gBombDieRelatedOne = 0;
 	PShell_EndTrainingInit();
 }
@@ -103,7 +103,7 @@ void Training_MonitorLevel(const u32*, u32*)
 				gBombAIRelated = 3600;
 				gBombDieRelatedOne = 1;
 				gBombDieRelatedTwo = 1;
-				gBombDieTimerRelated = gTimerRelated;
+				gBombDieTimerRelated = G_TIMER_RELATED;
 				gTrainingStuff[1] = 1;
 			}
 
@@ -135,7 +135,7 @@ void Training_MonitorLevel(const u32*, u32*)
 				gBombDieRelatedOne = 1;
 				gBombDieRelatedTwo = 1;
 				gBombAIRelated = 60 * gTrainingSeconds;
-				gBombDieTimerRelated = gTimerRelated;
+				gBombDieTimerRelated = G_TIMER_RELATED;
 				gTrainingStuff[1] = 1;
 			}
 
@@ -187,10 +187,10 @@ void Training_MonitorLevel(const u32*, u32*)
 			else
 			{
 				gTrainingStuff[2] = 1;
-				gTrainingStuff[3] = gTimerRelated;
+				gTrainingStuff[3] = G_TIMER_RELATED;
 			}
 
-			if ((u32)(gTimerRelated - gTrainingStuff[3]) > 0x1E)
+			if ((u32)(G_TIMER_RELATED - gTrainingStuff[3]) > 0x1E)
 			{
 				gTrainingScore = MechList->field_5D0;
 				Training_EndExercise();
@@ -201,17 +201,17 @@ void Training_MonitorLevel(const u32*, u32*)
 		// gTrainingStuff[0] == 0x1601
 		if (gTrainingStuff[1])
 		{
-			gBombAIRelated = gTimerRelated - gTrainingStuff[1];
+			gBombAIRelated = G_TIMER_RELATED - gTrainingStuff[1];
 		}
 		else
 		{
 			gBombAIRelated = 0;
 			gBombDieRelatedOne = 1;
 			gBombDieRelatedTwo = 0;
-			gBombDieTimerRelated = gTimerRelated;
+			gBombDieTimerRelated = G_TIMER_RELATED;
 
 			if (MechList && MechList->field_E18 == 0)
-				gTrainingStuff[1] = gTimerRelated;
+				gTrainingStuff[1] = G_TIMER_RELATED;
 		}
 
 		if (MechList)
@@ -219,7 +219,7 @@ void Training_MonitorLevel(const u32*, u32*)
 			if (MechList->field_5D0 >= 40 && gTrainingStuff[2] == 0)
 			{
 				gTrainingStuff[2] = 1;
-				gTrainingStuff[3] = gTimerRelated;
+				gTrainingStuff[3] = G_TIMER_RELATED;
 				gTrainingScore = gBombAIRelated;
 			}
 
@@ -227,13 +227,13 @@ void Training_MonitorLevel(const u32*, u32*)
 			{
 				gTrainingScore = -1000;
 				gTrainingStuff[2] = 1;
-				gTrainingStuff[3] = gTimerRelated;
+				gTrainingStuff[3] = G_TIMER_RELATED;
 			}
 		}
 
 		if (gTrainingStuff[2] == 1)
 		{
-			if ((u32)(gTimerRelated - gTrainingStuff[3]) > 0xF)
+			if ((u32)(G_TIMER_RELATED - gTrainingStuff[3]) > 0xF)
 				Training_EndExercise();
 		}
 
@@ -257,9 +257,9 @@ void Training_MonitorLevel(const u32*, u32*)
 
 			if (MechList->mHealth > 0 && MechList->field_E18 == 0)
 			{
-				gBombAIRelated = gTimerRelated - gTrainingStuff[1];
+				gBombAIRelated = G_TIMER_RELATED - gTrainingStuff[1];
 
-				if ((u32)(gTimerRelated - gTrainingStuff[1]) > 0x8CA0)
+				if ((u32)(G_TIMER_RELATED - gTrainingStuff[1]) > 0x8CA0)
 				{
 					gTrainingScore = -1000;
 					Training_EndExercise();
@@ -272,7 +272,7 @@ void Training_MonitorLevel(const u32*, u32*)
 			gBombAIRelated = 0;
 			gBombDieRelatedOne = 1;
 			gBombDieRelatedTwo = 0;
-			gBombDieTimerRelated = gTimerRelated;
+			gBombDieTimerRelated = G_TIMER_RELATED;
 			gTrainingFlags[0] = 0;
 			*gTimeAttackComplete = 0;
 
@@ -281,8 +281,8 @@ void Training_MonitorLevel(const u32*, u32*)
 
 			if (MechList->field_E18 == 0)
 			{
-				stuffOne = gTimerRelated;
-				gTrainingStuff[1] = gTimerRelated;
+				stuffOne = G_TIMER_RELATED;
+				gTrainingStuff[1] = G_TIMER_RELATED;
 			}
 		}
 
@@ -334,7 +334,7 @@ trainingLabel28:
 			}
 
 			if (MechList->field_E18 == 0)
-				gBombAIRelated = gTimerRelated - gTrainingStuff[1];
+				gBombAIRelated = G_TIMER_RELATED - gTrainingStuff[1];
 		}
 		else
 		{
@@ -347,9 +347,9 @@ trainingLabel28:
 
 			if (MechList->field_E18 == 0)
 			{
-				gTrainingStuff[1] = gTimerRelated;
+				gTrainingStuff[1] = G_TIMER_RELATED;
 				gBombDieRelatedTwo = 0;
-				gBombDieTimerRelated = gTimerRelated;
+				gBombDieTimerRelated = G_TIMER_RELATED;
 			}
 		}
 
@@ -373,7 +373,7 @@ trainingLabel27:
 		{
 			gBombDieRelatedTwo = 0;
 			gTrainingScore = *gKillNotifyCallCount;
-			gBombDieTimerRelated = gTimerRelated;
+			gBombDieTimerRelated = G_TIMER_RELATED;
 			gBombDieRelatedOne = 0;
 			PShell_EndTrainingInit();
 		}
@@ -383,7 +383,7 @@ trainingLabel27:
 			{
 				gBombDieRelatedTwo = 0;
 				gTrainingScore = *gKillNotifyCallCount;
-				gBombDieTimerRelated = gTimerRelated;
+				gBombDieTimerRelated = G_TIMER_RELATED;
 				gBombDieRelatedOne = 0;
 				PShell_EndTrainingInit();
 			}
@@ -393,7 +393,7 @@ trainingLabel27:
 			gBombDieRelatedOne = 1;
 			gBombDieRelatedTwo = 1;
 			gBombAIRelated = 60 * gTrainingSeconds;
-			gBombDieTimerRelated = gTimerRelated;
+			gBombDieTimerRelated = G_TIMER_RELATED;
 			gTrainingStuff[1] = 1;
 		}
 
@@ -409,7 +409,7 @@ trainingLabel27:
 void Training_RelocatableModuleClear(void)
 {
 	gBombDieRelatedTwo = 0;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 	gBombDieRelatedOne = 0;
 }
 

@@ -416,8 +416,8 @@ static void SendExplosionMessageToNearby(CVector *pos, i32 radius)
 // names.json).
 static void SpawnChunkSmokeBurst(CVector *pos, CVector *dirA, CVector *dirB, i32 spread, i32 count)
 {
-	i32 camX = (pos->vx >> 12) - gMikeCamera[0].Position.vx;
-	i32 camZ = (pos->vz >> 12) - gMikeCamera[0].Position.vz;
+	i32 camX = (pos->vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
+	i32 camZ = (pos->vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
 
 	for (i32 i = count; i != 0; i--)
 	{

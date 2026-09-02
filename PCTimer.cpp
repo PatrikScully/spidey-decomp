@@ -173,7 +173,7 @@ void CALLBACK TimerCallback(
 		gTimerVblankRelated += gTimerMsInterval;
 
 		u32 newTime = gTimerVblankRelated;
-		while ( newTime > Vblanks )
+		while ( newTime > G_VBLANKS )
 			MyVSync();
 	}
 	

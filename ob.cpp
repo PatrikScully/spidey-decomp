@@ -433,7 +433,7 @@ void CBody::AttachXA(i32 a2, i32 a3)
 // @Matching
 void CBody::StopMyXA(void)
 {
-	if ((Vblanks - this->field_98) < 0x12C
+	if ((G_VBLANKS - this->field_98) < 0x12C
 			&& G_REDBOOK_XA_RELATED_ONE == this->field_9C
 			&& G_REDBOOK_XA_RELATED_TWO == this->field_A0)
 	{
@@ -824,17 +824,17 @@ void CBody::EveryFrame(void)
 	{
 		this->field_80 = 2;
 		this->mCBodyFlags &= 0xFFFB;
-		this->field_7C = gTimerRelated;
+		this->field_7C = G_TIMER_RELATED;
 		this->field_84 = 0;
 	}
 	else
 	{
-		this->field_80 = gTimerRelated - this->field_7C;
+		this->field_80 = G_TIMER_RELATED - this->field_7C;
 		DoAssert(
 				this->field_80 >= 0,
 				"Timing error");
 
-		this->field_7C = gTimerRelated;
+		this->field_7C = G_TIMER_RELATED;
 		if (this->field_80 > 6)
 		{
 			this->field_80 = 6;

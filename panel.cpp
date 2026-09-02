@@ -502,14 +502,14 @@ void Panel_Display(void)
 		if (MechList->field_E18 != 0 || MechList->field_1AC != 0)
 			decay = 0;
 		else
-			decay = (static_cast<u32>(gTimerRelated - gBombDieTimerRelated) * gBombRelated) >> 12;
+			decay = (static_cast<u32>(G_TIMER_RELATED - gBombDieTimerRelated) * gBombRelated) >> 12;
 
 		if (gBombAIRelated <= decay)
 			gBombAIRelated = 0;
 		else
 			gBombAIRelated -= decay;
 	}
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 
 	Panel_DisplayTimer();
 
@@ -529,7 +529,7 @@ void Panel_Display(void)
 
 		u8 pulse;
 		if (MechList->field_5E8 != 0)
-			pulse = static_cast<u8>((abs(rcossin_tbl[(gTimerRelated << 5) & 0xFFF].sin) << 7) >> 12);
+			pulse = static_cast<u8>((abs(rcossin_tbl[(G_TIMER_RELATED << 5) & 0xFFF].sin) << 7) >> 12);
 		else
 			pulse = 0x80;
 		pWebcart->g0 = pulse;
@@ -555,7 +555,7 @@ void Panel_Display(void)
 		Mess_DrawText(95, *gPanelScreenY + 56, gWebCartDigits, 0, 0x1000);
 		Mess_SetSort(0);
 
-		i32 age = gTimerRelated - MechList->field_5DC;
+		i32 age = G_TIMER_RELATED - MechList->field_5DC;
 		if (age < 32)
 		{
 			i16 x0 = pWebcart->x0;
@@ -619,7 +619,7 @@ void Panel_Display(void)
 	if (damageWidth != 0)
 		DCPanel_DrawFlatShadedPoly(3.0f, 119 - damageWidth, *gPanelScreenY + 25, damageWidth, 6, 0, 0, 0, 0, 0);
 
-	i32 hitAge = gTimerRelated - MechList->field_5E0;
+	i32 hitAge = G_TIMER_RELATED - MechList->field_5E0;
 	i32 flash = (hitAge >= 32) ? 0 : 255 - 8 * hitAge;
 
 	if (damageWidth <= 30)
@@ -629,7 +629,7 @@ void Panel_Display(void)
 
 	if (damageFrac > 76)
 	{
-		i32 wave = rcossin_tbl[(gTimerRelated * (175 * (damageFrac - 76) / 52 + 25)) & 0xFFF].sin;
+		i32 wave = rcossin_tbl[(G_TIMER_RELATED * (175 * (damageFrac - 76) / 52 + 25)) & 0xFFF].sin;
 		u32 beat = static_cast<u32>(((wave * wave) | 0xFF00) >> 8);
 		DCDrawGouraudPoly(4.0f, 58, *gPanelScreenY + 25, 31, 6, beat, beat, beat, beat);
 	}
@@ -782,7 +782,7 @@ void Panel_DisplayCompass(void)
 
 	i32 pulseHalfWidth = (dist <= 0x4000) ? (((0x4000 - dist) >> 8) + 8) : 8;
 
-	i32 pulseSin = rcossin_tbl[(pulseHalfWidth * (i16)gTimerRelated) & 0xFFF].sin;
+	i32 pulseSin = rcossin_tbl[(pulseHalfWidth * (i16)G_TIMER_RELATED) & 0xFFF].sin;
 	i32 pulseBrightness = (255 * abs(pulseSin)) >> 12;
 	u32 dialColor = (pulseBrightness << 8) | 0xFF;
 
@@ -810,7 +810,7 @@ void Panel_DisplayCompass(void)
 
 		if (*gCompassFlashTimer != 0)
 		{
-			i32 sinT = rcossin_tbl[(gTimerRelated << 6) & 0xFFF].sin;
+			i32 sinT = rcossin_tbl[(G_TIMER_RELATED << 6) & 0xFFF].sin;
 			i32 signMask = (205 * sinT) >> 31;
 			tintColor = (abs((127 * sinT) >> 12) + 128)
 					| (((signMask ^ ((205 * sinT) >> 12)) + 0xFFFFFF * signMask + 50) << 8)
@@ -1401,7 +1401,7 @@ INLINE void Panel_UpdateTimer(void)
 		}
 		else
 		{
-			v1 = (gBombRelated * (gTimerRelated - gBombDieTimerRelated)) >> 12;
+			v1 = (gBombRelated * (G_TIMER_RELATED - gBombDieTimerRelated)) >> 12;
 		}
 
 		if (gBombAIRelated > v1)
@@ -1415,7 +1415,7 @@ INLINE void Panel_UpdateTimer(void)
 
 	}
 
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 }
 
 // @Ok

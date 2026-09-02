@@ -645,9 +645,9 @@ void CCarnage::AI(void)
 	print_if_false(1, "AI");
 
 	if (state == 0x2000)
-		CameraList->field_2A8 = 0;
+		G_CAMERA_LIST->field_2A8 = 0;
 	else
-		CameraList->field_2A8 = 0x80;
+		G_CAMERA_LIST->field_2A8 = 0x80;
 
 	this->DoSonicBubbleProcessing();
 	M3d_BuildTransform(this);
@@ -2611,15 +2611,15 @@ void CCarnage::Initialise(void)
 				{
 					if (MechList)
 						MechList->ExitLookaroundMode();
-					CameraList->SetMode((ECameraMode)16);
+					G_CAMERA_LIST->SetMode((ECameraMode)16);
 
 					DoAssert(1u, "bad value send to BossCamSpinRate");
 
-					CCamera *pCamera = CameraList;
+					CCamera *pCamera = G_CAMERA_LIST;
 					pCamera->field_2A4 = 63;
 					DoAssert(1, "bad value send to BossCamStationaryRadius");
 
-					CCamera *pCamera2 = CameraList;
+					CCamera *pCamera2 = G_CAMERA_LIST;
 					pCamera2->field_2A8 = 128;
 					pCamera2->SetTripodInterpolation(4, 8, 4);
 
@@ -2817,9 +2817,9 @@ void CSonicRipple::CalcPos(
 // @Matching
 void CSonicRipple::Move(void)
 {
-	this->field_74.vx = gMikeCamera[0].Position.vx - (this->mPos.vx >> 12);
-	this->field_74.vy = gMikeCamera[0].Position.vy - (this->mPos.vy >> 12);
-	this->field_74.vz = gMikeCamera[0].Position.vz - (this->mPos.vz >> 12);
+	this->field_74.vx = G_MIKE_CAMERA[0].Position.vx - (this->mPos.vx >> 12);
+	this->field_74.vy = G_MIKE_CAMERA[0].Position.vy - (this->mPos.vy >> 12);
+	this->field_74.vz = G_MIKE_CAMERA[0].Position.vz - (this->mPos.vz >> 12);
 
 	gte_ldopv1(reinterpret_cast<VECTOR*>(&this->field_68));
 	gte_ldopv2(reinterpret_cast<VECTOR*>(&this->field_74));
@@ -3050,9 +3050,9 @@ CCarnageHitSpark::CCarnageHitSpark(CVector* pVec)
 
 	CVector v40;
 
-	v40.vx = gMikeCamera[0].Position.vx - (this->mPosC.vx >> 12);
-	v40.vy = gMikeCamera[0].Position.vy - (this->mPosC.vy >> 12);
-	v40.vz = gMikeCamera[0].Position.vz - (this->mPosC.vz >> 12);
+	v40.vx = G_MIKE_CAMERA[0].Position.vx - (this->mPosC.vx >> 12);
+	v40.vy = G_MIKE_CAMERA[0].Position.vy - (this->mPosC.vy >> 12);
+	v40.vz = G_MIKE_CAMERA[0].Position.vz - (this->mPosC.vz >> 12);
 
 	gte_ldopv1(reinterpret_cast<VECTOR*>(&v41));
 	gte_ldopv2(reinterpret_cast<VECTOR*>(&v40));

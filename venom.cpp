@@ -98,9 +98,9 @@ CVenomHitSpark::CVenomHitSpark(const CVector *pVec)
 
 	CVector v40;
 
-	v40.vx = gMikeCamera[0].Position.vx - (this->mPosC.vx >> 12);
-	v40.vy = gMikeCamera[0].Position.vy - (this->mPosC.vy >> 12);
-	v40.vz = gMikeCamera[0].Position.vz - (this->mPosC.vz >> 12);
+	v40.vx = G_MIKE_CAMERA[0].Position.vx - (this->mPosC.vx >> 12);
+	v40.vy = G_MIKE_CAMERA[0].Position.vy - (this->mPosC.vy >> 12);
+	v40.vz = G_MIKE_CAMERA[0].Position.vz - (this->mPosC.vz >> 12);
 
 	gte_ldopv1(reinterpret_cast<VECTOR*>(&v41));
 	gte_ldopv2(reinterpret_cast<VECTOR*>(&v40));

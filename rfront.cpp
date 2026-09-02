@@ -69,7 +69,7 @@ i32 Front_ContinueExit(void)
 		Db_FlipClear();
 		CalcPolyBufferEnd();
 
-		u32 frameStart = Vblanks;
+		u32 frameStart = G_VBLANKS;
 
 		if (!gSceneRelated)
 			PCGfx_BeginScene(1, -1);
@@ -121,7 +121,7 @@ i32 Front_ContinueExit(void)
 		if (activated || clicked)
 			break;
 
-		if (Vblanks == frameStart)
+		if (G_VBLANKS == frameStart)
 			Pause(1);
 
 		DoVblankProcessing = 0;

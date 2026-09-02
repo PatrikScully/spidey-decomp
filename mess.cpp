@@ -305,11 +305,11 @@ void Mess_UnloadAllFonts(void)
 void Mess_Update(void)
 {
 	if (!gMessRelated)
-		gMessRelated = gTimerRelated - 2;
+		gMessRelated = G_TIMER_RELATED - 2;
 
-	i32 v1 = gTimerRelated - gMessRelated;
+	i32 v1 = G_TIMER_RELATED - gMessRelated;
 	SSimpleMessage* pMessage = pSimpleMessages;
-	gMessRelated = gTimerRelated;
+	gMessRelated = G_TIMER_RELATED;
 
 	while (pMessage)
 	{

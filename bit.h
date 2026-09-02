@@ -105,7 +105,13 @@ struct SAnimFrame
 
 EXPORT extern u32 SparkSize;
 // @FIXME - is it really volatile?
-EXPORT extern volatile i32 gTimerRelated;
+// Master game tick, bumped once per vblank by MyVSync (utils.cpp).  The exe
+// owns it at 0x006B4CA8 and 175 sites in the original read it, almost none of
+// which are hooked, so the macro has to point at game memory: a repo-local
+// copy would sit at 0 forever because MyVSync itself is not hooked.
+// EXPORT extern volatile i32 gTimerRelated;
+//#define G_TIMER_RELATED (gTimerRelated)
+#define G_TIMER_RELATED (*reinterpret_cast<volatile i32*>(0x006B4CA8))
 
 struct SRibbonPoint {
 	// offset: 0000 (12 bytes)

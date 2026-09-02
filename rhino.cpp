@@ -55,7 +55,7 @@ extern CBody* EnvironmentalObjectList;
 extern CPlayer* MechList;
 extern i32 gAttackRelated;
 extern CBaddy *BaddyList;
-extern CCamera *CameraList;
+#include "camera.h"
 
 // @Ok
 // @Matching
@@ -93,11 +93,11 @@ void CRhino::AI(void)
 
 	if (!this->field_3D8 && !MechList->field_E18)
 	{
-		CameraList->SetMode(CAMERAMODE_USER);
+		G_CAMERA_LIST->SetMode(CAMERAMODE_USER);
 		print_if_false(1, "bad value send to BossCamSpinRate");
-		CameraList->field_2A4 = 0x100;
+		G_CAMERA_LIST->field_2A4 = 0x100;
 		print_if_false(1, "bad value send to BossCamStationaryRadius");
-		CameraList->field_2A8 = 0x100;
+		G_CAMERA_LIST->field_2A8 = 0x100;
 
 		gBossRelated = reinterpret_cast<i32>(this);
 		this->field_3D8 = 1;
@@ -958,7 +958,7 @@ void CRhino::DieRhino(void)
 			MechList->SetIgnoreInputTimer(0x8000);
 
 			{
-				CCamera *camera = CameraList;
+				CCamera *camera = G_CAMERA_LIST;
 				if (camera)
 				{
 					camera->SetMode(CAMERAMODE_DEMO);
@@ -975,12 +975,12 @@ void CRhino::DieRhino(void)
 			}
 			break;
 		case 1:
-			if (CameraList)
+			if (G_CAMERA_LIST)
 			{
 				i16 angle = this->field_80;
 				angle <<= 5;
-				angle += CameraList->field_236;
-				CameraList->SetCamAngle(angle, 16);
+				angle += G_CAMERA_LIST->field_236;
+				G_CAMERA_LIST->SetCamAngle(angle, 16);
 			}
 
 			if (this->mAnimFinished)
@@ -2065,7 +2065,7 @@ void CRhino::SetUpStuckHorn(SLineInfo *a2, i32 a3)
 	if (a3 != 0)
 	{
 		new CRhinoWallImpact(a2);
-		CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+		G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_BIG);
 	}
 
 	if (gActuatorRelated)
@@ -2176,7 +2176,7 @@ void CRhino::StompGround(void)
 			}
 
 			SFX_PlayPos(0x804B, &this->mPos, 0);
-			CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+			G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_BIG);
 			this->ShakePad();
 			Effects_RhinoStomp(this);
 
@@ -2494,7 +2494,7 @@ void CRhino::HitWall(void)
 	{
 		case 0:
 			this->ShakePad();
-			CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+			G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_BIG);
 			this->Neutralize();
 			this->mCBodyFlags &= ~0x10;
 			this->PlaySingleAnim(17, 0, -1);

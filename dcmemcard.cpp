@@ -67,12 +67,12 @@ SDCCardTime* DCCard_CurTime(void)
 // @Matching
 INLINE u8 DCCard_Exists(i32 a1)
 {
-	u32 v0 = Vblanks;
+	u32 v0 = G_VBLANKS;
 	i32 i;
 
 	for (i = buIsFormat(a1); i == -1; i = buIsFormat(a1))
 	{
-		if (Vblanks - v0 > 0x78)
+		if (G_VBLANKS - v0 > 0x78)
 			break;
 	}
 
@@ -100,10 +100,10 @@ void DCCard_HappyBeep(i32 a1, u32 a2)
 	gAlarmTwo[1] = 64;
 	DCCard_StartBeep(a1);
 
-	u32 v2 = Vblanks;
+	u32 v2 = G_VBLANKS;
 	u32 v3 = v2 + (a2 >> 1);
 
-	while (Vblanks < v3)
+	while (G_VBLANKS < v3)
 	{
 		--gAlarmTwo[1];
 		gAlarmTwo[0] = 2 * gAlarmTwo[1];
@@ -111,7 +111,7 @@ void DCCard_HappyBeep(i32 a1, u32 a2)
 		DCCard_StartBeep(a1);
 	}
 
-	while (Vblanks < v2 + a2)
+	while (G_VBLANKS < v2 + a2)
 		;
 
 	DCCard_StopBeep(a1);
@@ -131,14 +131,14 @@ void DCCard_SadBeep(i32 a1, u32 a2)
 	gAlarmTwo[1] = 64;
 	DCCard_StartBeep(a1);
 
-	u32 v2 = Vblanks;
+	u32 v2 = G_VBLANKS;
 	u32 v3 = (a2 >> 1) + v2;
-	while (Vblanks < v3)
+	while (G_VBLANKS < v3)
 	{
 		DCCard_StartBeep(a1);
 	}
 
-	while (Vblanks < v2 + a2)
+	while (G_VBLANKS < v2 + a2)
 		;
 
 	DCCard_StopBeep(a1);
@@ -171,11 +171,11 @@ u8 DCCard_Wait(i32 a1,i32 a2)
 	if (!gCardData[a1])
 		return 0;
 
-	u32 v3 = Vblanks;
+	u32 v3 = G_VBLANKS;
 
 	do
 	{
-	} while(buStat(a1) == -1 && Vblanks - v3 < static_cast<u32>(a2));
+	} while(buStat(a1) == -1 && G_VBLANKS - v3 < static_cast<u32>(a2));
 
 	return buGetLastError(a1) == 0;
 }

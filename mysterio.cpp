@@ -1051,7 +1051,7 @@ void INLINE CMysterio::ShakePad(void)
 	}
 }
 
-extern CCamera *CameraList;
+#include "camera.h"
 
 // @Ok
 // @Validate: when inlined
@@ -1060,7 +1060,7 @@ i32 INLINE CMysterio::CheckforCameraShake(i32 a2)
 	if (this->field_218 & 8 || this->field_218 < a2)
 		return 0;
 
-	CameraList->Shake(this->mPos, CAMERASHAKE_BIG);
+	G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_BIG);
 
 	this->ShakePad();
 

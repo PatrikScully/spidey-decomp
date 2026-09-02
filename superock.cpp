@@ -171,7 +171,7 @@ void SuperDocOck_DisplayProgressBars(const u32*, u32*)
 	anim += 2;
 	i32 shake = 128;
 	if (doc->field_378 > 0xC00) {
-		i32 idx = (gTimerRelated << 4) & 0xFFF;
+		i32 idx = (G_TIMER_RELATED << 4) & 0xFFF;
 		i32 sin = rcossin_tbl[idx].sin;
 		i32 abs_sin = my_abs(sin);
 		shake = (abs_sin << 7) >> 12;
@@ -652,7 +652,7 @@ CSuperDocOck::CSuperDocOck(i16 *a2, i32 a3)
 	gBombRelated = 4096;
 	gBombAIRelated = 0xFFFFFF;
 	gBombDieRelatedTwo = 1;
-	gBombDieTimerRelated = gTimerRelated;
+	gBombDieTimerRelated = G_TIMER_RELATED;
 
 	this->field_194 = 0xFFFE0000;
 	this->field_198 = 0x1FFF;

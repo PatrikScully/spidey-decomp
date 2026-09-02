@@ -341,7 +341,7 @@ CDomeShockWave::CDomeShockWave(i32 a2)
 		this->field_50[i] = Rnd(4096);
 	}
 
-	CameraList->Shake(this->mPos, CAMERASHAKE_MEDIUM);
+	G_CAMERA_LIST->Shake(this->mPos, CAMERASHAKE_MEDIUM);
 }
 
 // @Ok
@@ -1517,7 +1517,7 @@ CImpactWeb::CImpactWeb(
 		this->mDamage = Damage;
 
 	this->mPos = Pos;
-	this->mStartTime = gTimerRelated;
+	this->mStartTime = G_TIMER_RELATED;
 
 	print_if_false(Speed != 0, "Zero speed sent to CImpactWeb");
 

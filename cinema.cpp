@@ -18,13 +18,13 @@ u8 Cinema_ComicBookStill(const char *pBMP)
 	gSControl[0].Start.Triggered = 0;
 	gSControl[0].X.Triggered = 0;
 	BMP_Draw(pBMP);
-	i32 v1 = Vblanks;
+	i32 v1 = G_VBLANKS;
 	Pad_Update();
 	if (PCSHELL_CheckTriggers(0x60220, 1, 1))
 		return 1;
 	while (!PCSHELL_CheckTriggers(0x10110, 1, 1))
 	{
-		if (Vblanks - v1 >= 0x12C)
+		if (G_VBLANKS - v1 >= 0x12C)
 			return 0;
 		Pad_Update();
 		if (PCSHELL_CheckTriggers(0x60220, 1, 1))

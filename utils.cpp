@@ -33,7 +33,7 @@ void print_if_false(unsigned char cry, char * message, ...) {
 
 volatile i32 gVlanksRelated;
 i32 DifficultyLevel;
-volatile u32 Vblanks;
+// volatile u32 Vblanks;   // see G_VBLANKS in utils.h
 
 EXPORT i32 gUtilsRelatedOne[6];
 EXPORT i32 gUtilsRelatedTwo;
@@ -125,7 +125,7 @@ static i32 * const gTrainingRelated = (i32*)0x0060CFB0;
 void MyVSync(void)
 {
 	*gInVsync = 1;
-	Vblanks++;
+	G_VBLANKS++;
 
 	if (!G_GAME_FMV_ACTIVE)
 		(*gIdleVsyncCount)++;
@@ -134,7 +134,7 @@ void MyVSync(void)
 		*gIdleVsyncCount = 0;
 
 	if (!G_POST_WATER_EFFECT && !*gTrainingRelated)
-		gTimerRelated++;
+		G_TIMER_RELATED++;
 
 	if (DoVblankProcessing)
 		Utils_VblankProcessing();
@@ -146,8 +146,8 @@ void MyVSync(void)
 // @Matching
 void Pause(i32 Time)
 {
-	i32 Until = Vblanks + Time;
-	while (Vblanks < Until);
+	i32 Until = G_VBLANKS + Time;
+	while (G_VBLANKS < Until);
 }
 
 // @Ok
@@ -202,9 +202,9 @@ void Utils_CalcUnitFacingCamera(CVector const * a1, CVector const * a2, CVector 
 	}
 
 	CVector delta2;
-	delta2.vx = gMikeCamera[0].Position.vx - (a1->vx >> 12);
-	delta2.vy = gMikeCamera[0].Position.vy - (a1->vy >> 12);
-	delta2.vz = gMikeCamera[0].Position.vz - (a1->vz >> 12);
+	delta2.vx = G_MIKE_CAMERA[0].Position.vx - (a1->vx >> 12);
+	delta2.vy = G_MIKE_CAMERA[0].Position.vy - (a1->vy >> 12);
+	delta2.vz = G_MIKE_CAMERA[0].Position.vz - (a1->vz >> 12);
 
 	gte_ldopv1(reinterpret_cast<VECTOR*>(&delta1));
 	gte_ldopv2(reinterpret_cast<VECTOR*>(&delta2));
@@ -303,9 +303,9 @@ static MATRIX * const gCameraViewMatrix = (MATRIX*)0x0056F224;
 u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 {
 	const CVector camPos(
-			gMikeCamera[0].Position.vx << 12,
-			gMikeCamera[0].Position.vy << 12,
-			gMikeCamera[0].Position.vz << 12);
+			G_MIKE_CAMERA[0].Position.vx << 12,
+			G_MIKE_CAMERA[0].Position.vy << 12,
+			G_MIKE_CAMERA[0].Position.vz << 12);
 	i32 dist = Utils_CrapDist(*a1, camPos);
 
 	if (dist <= a2)
@@ -318,9 +318,9 @@ u32 Utils_CalculateSpatialAttenuation(CVector const * a1, i32 a2, i32 a3)
 
 	gte_SetRotMatrix(gCameraViewMatrix);
 
-	i32 dx = (a1->vx >> 12) - gMikeCamera[0].Position.vx;
-	i32 dy = (a1->vy >> 12) - gMikeCamera[0].Position.vy;
-	i32 dz = (a1->vz >> 12) - gMikeCamera[0].Position.vz;
+	i32 dx = (a1->vx >> 12) - G_MIKE_CAMERA[0].Position.vx;
+	i32 dy = (a1->vy >> 12) - G_MIKE_CAMERA[0].Position.vy;
+	i32 dz = (a1->vz >> 12) - G_MIKE_CAMERA[0].Position.vz;
 
 	CVector v;
 	v.vx = dx;

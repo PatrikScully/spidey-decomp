@@ -409,11 +409,11 @@ void Logic(void)
 	if (G_GAMESTATE[8])
 	{
 		G_GAMESTATE[8] = 1;
-		CameraList->SetMode(CAMERAMODE_ITSYLOOKDOWN);
+		G_CAMERA_LIST->SetMode(CAMERAMODE_ITSYLOOKDOWN);
 	}
-	else if (CameraList && CameraList->mCameraMode == CAMERAMODE_ITSYLOOKDOWN)
+	else if (G_CAMERA_LIST && G_CAMERA_LIST->mCameraMode == CAMERAMODE_ITSYLOOKDOWN)
 	{
-		CameraList->SetMode(CAMERAMODE_DEMO);
+		G_CAMERA_LIST->SetMode(CAMERAMODE_DEMO);
 	}
 }
 
@@ -434,15 +434,15 @@ void Display(void)
 	}
 
 	if (!(gRenderTest & 0x400) || (gRenderTest & 0x200))
-		Ob_AI(reinterpret_cast<CBody**>(&CameraList), 0);
+		Ob_AI(reinterpret_cast<CBody**>(&G_CAMERA_LIST), 0);
 
 	// no null check on CameraList, same as the original
-	gViewport.Zoom = static_cast<u16>(CameraList->GetZoom());
+	G_VIEWPORT.Zoom = static_cast<u16>(G_CAMERA_LIST->GetZoom());
 
 	Screen_UpdateFades();
 	Panel_Display();
 
-	M3d_RenderSetup(gMikeCamera, &gViewport, pDoubleBuffer->OrderingTable);
+	M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, pDoubleBuffer->OrderingTable);
 
 	if (gRenderListFlags[9])
 		M3d_RenderBackground(BackgroundList);
@@ -543,7 +543,7 @@ void Display(void)
 			// scorpion fight housekeeping, folded into the render loop by the
 			// original: forget every object the camera is holding on to except
 			// the one the player is actually carrying.
-			CCamera *pCamera = CameraList;
+			CCamera *pCamera = G_CAMERA_LIST;
 
 			if (pCamera)
 			{
@@ -648,7 +648,7 @@ void PlayAway(void)
 	Bruce_Sync();
 	PCGfx_BeginScene(3, -1);
 
-	Vblanks = 0;
+	G_VBLANKS = 0;
 	TTime = 0;
 
 	Pad_ClearAll();
@@ -683,7 +683,7 @@ void PlayAway(void)
 
 	while (gLevelStatus == 0)
 	{
-		u32 frameStart = Vblanks;
+		u32 frameStart = G_VBLANKS;
 
 		Db_FlipClear();
 		CalcPolyBufferEnd();
@@ -722,7 +722,7 @@ void PlayAway(void)
 
 		// if no vblank happened while the frame was being built, burn one so
 		// the game never runs faster than 60Hz.
-		if (Vblanks == frameStart)
+		if (G_VBLANKS == frameStart)
 			Pause(1);
 
 		DoVblankProcessing = 0;
@@ -1616,6 +1616,7 @@ void game_patches(void)
 	patch_m3dutils();
 	patch_CBit();
 	patch_CFT4Bit();
+
 }
 
 // @Bogus

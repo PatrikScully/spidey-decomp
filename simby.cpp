@@ -25,7 +25,7 @@ extern CBaddy* BaddyList;
 extern i32 gAttackRelated;
 
 extern CBody *MiscList;
-extern CCamera* CameraList;
+#include "camera.h"
 
 // guess: counts constructed CSimby instances, gates the one-time MakeVertexWibbler call.
 // sits right after gShellMysterioRelated (0x682C58) in idb_globals.txt, before gSimbyAttackData (0x682C60).
@@ -195,7 +195,7 @@ CFlamingImpactWeb::CFlamingImpactWeb(
 {
 	this->field_6C = a4;
 	this->mPos = *a2;
-	this->field_70 = gTimerRelated;
+	this->field_70 = G_TIMER_RELATED;
 
 	Utils_GetVecFromMagDir(&this->mVel, 32, a3);
 
@@ -274,8 +274,8 @@ void Simby_CreateSimbyDroplet(const u32 *stack, u32 *result)
 // @Ok
 void CSymBurn::AI(void)
 {
-	if ( CameraList )
-		this->mAngles.vy = CameraList->field_236 + 2048;
+	if ( G_CAMERA_LIST )
+		this->mAngles.vy = G_CAMERA_LIST->field_236 + 2048;
 	this->mScale.vx = 3000;
 	this->mScale.vz = 3000;
 

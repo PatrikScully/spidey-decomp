@@ -9,7 +9,7 @@
 
 EXPORT extern volatile i32 gVlanksRelated;
 EXPORT extern i32 DifficultyLevel;
-EXPORT extern volatile u32 Vblanks;
+// EXPORT extern volatile u32 Vblanks;
 
 //#define G_VBLANKS (Vblanks)
 #define G_VBLANKS (*reinterpret_cast<volatile u32*>(0x006B4CA0))

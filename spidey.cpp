@@ -206,7 +206,7 @@ extern i32 CurrentSuit;
 
 EXPORT void *gSpideyHeadModel;
 
-extern CCamera* CameraList;
+#include "camera.h"
 
 // @Bogus
 void CPlayer::nullsub_one(i32)
@@ -239,19 +239,19 @@ void CPlayer::AI(void)
 	// One-time floor-camera setup, gated on field_53C.
 	if (this->field_53C == 0)
 	{
-		if (CameraList != 0)
+		if (G_CAMERA_LIST != 0)
 		{
-			if (CameraList->mCameraMode == 3)
+			if (G_CAMERA_LIST->mCameraMode == 3)
 			{
-				CameraList->SetCamXOffset(gSpideyFloorCamXOffset, 0);
-				CameraList->SetCamYOffset(gSpideyFloorCamYOffset, 0);
-				CameraList->SetCamZOffset(gSpideyFloorCamZOffset, 0);
-				CameraList->SetCamXZDistance(gSpideyFloorCamXZDistance, 0);
-				CameraList->SetCamYDistance(gSpideyFloorCamYDistance, 0);
+				G_CAMERA_LIST->SetCamXOffset(gSpideyFloorCamXOffset, 0);
+				G_CAMERA_LIST->SetCamYOffset(gSpideyFloorCamYOffset, 0);
+				G_CAMERA_LIST->SetCamZOffset(gSpideyFloorCamZOffset, 0);
+				G_CAMERA_LIST->SetCamXZDistance(gSpideyFloorCamXZDistance, 0);
+				G_CAMERA_LIST->SetCamYDistance(gSpideyFloorCamYDistance, 0);
 				this->field_540 = 0;
 			}
 			this->PutCameraBehind(0);
-			CameraList->SetStartPosition();
+			G_CAMERA_LIST->SetStartPosition();
 			this->field_53C = 1;
 		}
 	}
@@ -497,9 +497,9 @@ void CPlayer::BuildOffscreenSpideySenseIndicatorList(void)
 {
 	u32 lastUpdate = *gSpideySenseListLastUpdateTime;
 
-	if (lastUpdate < (u32)gTimerRelated - 0x14 || lastUpdate > (u32)gTimerRelated)
+	if (lastUpdate < (u32)G_TIMER_RELATED - 0x14 || lastUpdate > (u32)G_TIMER_RELATED)
 	{
-		*gSpideySenseListLastUpdateTime = gTimerRelated;
+		*gSpideySenseListLastUpdateTime = G_TIMER_RELATED;
 		this->field_528 = 0;
 		this->field_8BC = 0;
 		this->field_8C0 = -1;
@@ -1324,7 +1324,7 @@ u8 CPlayer::CheckCeilingJumpingSmashPunch(void)
 
 	this->field_E1C = 0x1000000;
 	this->field_8C8 = this->field_8C4;
-	this->field_8C4 = gTimerRelated;
+	this->field_8C4 = G_TIMER_RELATED;
 	this->field_8D8 = 0;
 
 	// @FIXME
@@ -1412,7 +1412,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 	hookPos.vz = 0;
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
 
-	CameraList->SetTripodMotion(hookPos, frames * 2);
+	G_CAMERA_LIST->SetTripodMotion(hookPos, frames * 2);
 
 	if (this->field_8E8 != 0)
 	{
@@ -1442,7 +1442,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 			if (lock == 0)
 			{
 				i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
-				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+				G_CAMERA_LIST->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 			}
 		}
 	}
@@ -1464,7 +1464,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 			if (lock == 0)
 			{
 				i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
-				CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+				G_CAMERA_LIST->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 			}
 
 			this->SetWallCamera(16);
@@ -1478,7 +1478,7 @@ i32 CPlayer::CheckExteriorSurfaceTransition(void)
 		if (lock == 0)
 		{
 			i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
-			CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
+			G_CAMERA_LIST->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(frames * 2));
 		}
 
 		this->SetWallCamera(16);
@@ -1552,7 +1552,7 @@ i32 CPlayer::CheckFenceSurfaceTransition(void)
 	hookPos.vz = 0;
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
 
-	CameraList->SetTripodMotion(hookPos, frames * 2);
+	G_CAMERA_LIST->SetTripodMotion(hookPos, frames * 2);
 
 	this->field_AD9 = 0;
 
@@ -1608,7 +1608,7 @@ i32 CPlayer::CheckForwards(bool bAllowStart)
 	if (onSurface != 0)
 		wanted = this->field_E32;
 	else
-		wanted = (i16)((CameraList->field_23A + this->field_E32) & 0xFFF);
+		wanted = (i16)((G_CAMERA_LIST->field_23A + this->field_E32) & 0xFFF);
 
 	i32 delta = (wanted - (u16)this->GetEffectiveHeading()) & 0xFFF;
 
@@ -1833,7 +1833,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	if (this->gCamAngleLock == 0 && bToFloor == 0 && bToWall == 0 && bToCeiling == 0)
 	{
 		i32 angle = ratan2(this->mLineInfo.Normal.vz, this->mLineInfo.Normal.vx);
-		CameraList->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(2 * frames));
+		G_CAMERA_LIST->SetCamAngle((i16)((1024 - angle) & 0xFFF), (u16)(2 * frames));
 	}
 
 	i32 *p = gSpideySFXEntry[anim];
@@ -1859,7 +1859,7 @@ i32 CPlayer::CheckInteriorSurfaceTransition(void)
 	hookPos.vz = 0;
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, 2);
 
-	CameraList->SetTripodMotion(hookPos, frames * 2);
+	G_CAMERA_LIST->SetTripodMotion(hookPos, frames * 2);
 
 	if (bToFloor)
 		this->SetFloorCamera(16);
@@ -2160,7 +2160,7 @@ u8 CPlayer::CheckJumpingR1ZipWeb(void)
 			(*(void(**)(i32*, i32))*pOld)(pOld, 1);
 			this->field_E64 = 0;
 			this->field_54C = 0;
-			CameraList->field_12C = -1;
+			G_CAMERA_LIST->field_12C = -1;
 		}
 
 		CWeb *pWeb = new CWeb();
@@ -2339,7 +2339,7 @@ u8 CPlayer::CheckJumpingSmashKick(void)
 	CSwinger **swingerSlot = reinterpret_cast<CSwinger**>(reinterpret_cast<u8*>(this) + 0xEAC);
 	CSwinger *swinger = *swingerSlot;
 	this->field_54C = 0;
-	CameraList->field_12C = -1;
+	G_CAMERA_LIST->field_12C = -1;
 	reinterpret_cast<u8*>(this)[0x54D] = 0;
 	if (swinger)
 	{
@@ -2354,7 +2354,7 @@ u8 CPlayer::CheckJumpingSmashKick(void)
 	i32 saved = this->field_8C4;
 	this->field_E1C = 0x1000000;
 	this->field_8C8 = saved;
-	this->field_8C4 = gTimerRelated;
+	this->field_8C4 = G_TIMER_RELATED;
 	this->field_8D8 = 0;
 	if (pad[289])
 	{
@@ -2812,7 +2812,7 @@ i32 CPlayer::CheckKick(void)
 	}
 
 	this->field_E1C = 0x800;
-	this->field_898 = gTimerRelated;
+	this->field_898 = G_TIMER_RELATED;
 	this->field_DF8 = 0;
 
 	this->InitiateCombo(bPunch ? 1 : 0, 0);
@@ -3023,7 +3023,7 @@ i32 CPlayer::CheckStickToCeiling(void)
 		this->PlaySingleAnim(227, 0, -1);
 
 	if (this->field_E1C & 0x300)
-		CameraList->field_12C = -1;
+		G_CAMERA_LIST->field_12C = -1;
 
 	this->field_E1C = 1;
 	SFX_Play(9u, 0x2000, 0);
@@ -3355,7 +3355,7 @@ i32 CPlayer::CheckWebShot(void)
 
 	if (this->field_E2E < 0
 		&& (this->field_8E4 & 8) == 0
-		&& (u32)(gTimerRelated - this->field_5B4) > 30
+		&& (u32)(G_TIMER_RELATED - this->field_5B4) > 30
 		&& this->field_AD4 == 0)
 	{
 		if (this->DecreaseWebbing(1024) == 0)
@@ -3380,7 +3380,7 @@ i32 CPlayer::CheckWebShot(void)
 			this->field_E1C = 0x20000000;
 			RunAnimWithSFX(this, 0x11B);
 
-			this->field_374 = gTimerRelated;
+			this->field_374 = G_TIMER_RELATED;
 
 			SFX_PlayPos(34, &this->mPos, 0);
 
@@ -3392,7 +3392,7 @@ i32 CPlayer::CheckWebShot(void)
 		{
 			// zip web towards an auto-picked baddy
 			this->field_DD8 = Mem_MakeHandle(this->SelectTargetBaddy(190, -4096, 4096, 0));
-			this->field_DE0 = gTimerRelated;
+			this->field_DE0 = G_TIMER_RELATED;
 			this->field_E1C = 0x2000000;
 			RunAnimWithSFX(this, 0x78);
 			return 1;
@@ -3400,7 +3400,7 @@ i32 CPlayer::CheckWebShot(void)
 	}
 
 	// plain forward shot
-	if (bButton == 0 || (u32)(gTimerRelated - this->field_5B4) <= 30)
+	if (bButton == 0 || (u32)(G_TIMER_RELATED - this->field_5B4) <= 30)
 		return 0;
 
 	u8 bStunned = this->field_AD4;
@@ -3744,7 +3744,7 @@ void CPlayer::DoShadowCheck(void)
 		this->field_158 = 0;
 		this->DoMGSShadow();
 	}
-	else if (this->field_8E9 == 0 || CameraList->mPos.vy >= this->mPos.vy)
+	else if (this->field_8E9 == 0 || G_CAMERA_LIST->mPos.vy >= this->mPos.vy)
 	{
 		i32 dist = this->field_EA8;
 
@@ -3757,7 +3757,7 @@ void CPlayer::DoShadowCheck(void)
 		this->mShadowNormal.vy = this->field_A8.vy;
 		this->mShadowNormal.vz = this->field_A8.vz;
 
-		CVector toCamera = (CameraList->mPos - this->mShadowPos) >> 12;
+		CVector toCamera = (G_CAMERA_LIST->mPos - this->mShadowPos) >> 12;
 
 		if (toCamera.vx * this->mShadowNormal.vx
 			+ toCamera.vy * this->mShadowNormal.vy
@@ -3795,7 +3795,7 @@ void CPlayer::DoShadowCheck(void)
 			this->mShadowPos.vy = lineInfo.Position.vy;
 			this->mShadowPos.vz = lineInfo.Position.vz;
 
-			CVector toCamera = (CameraList->mPos - this->mShadowPos) >> 12;
+			CVector toCamera = (G_CAMERA_LIST->mPos - this->mShadowPos) >> 12;
 
 			if (toCamera.vx * lineInfo.Normal.vx
 				+ toCamera.vy * lineInfo.Normal.vy
@@ -4266,7 +4266,7 @@ void CPlayer::EnterLookaroundMode(void)
 	this->field_DF8 = 0;
 
 	MATRIX localMat;
-	QToM(&CameraList->field_214, &localMat);
+	QToM(&G_CAMERA_LIST->field_214, &localMat);
 
 	localMat.m[2][0] = -localMat.m[2][0];
 	localMat.m[0][0] = -localMat.m[0][0];
@@ -4277,7 +4277,7 @@ void CPlayer::EnterLookaroundMode(void)
 
 	MToQ(localMat, this->field_CA4);
 
-	CameraList->GetPosition(this->field_CB8);
+	G_CAMERA_LIST->GetPosition(this->field_CB8);
 
 	this->field_CB4 = 0x18;
 	this->field_CE4 = 0;
@@ -4292,8 +4292,8 @@ void CPlayer::EnterLookaroundMode(void)
 	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&this->field_D00), this, 8);
 	this->field_D00 += this->field_C84 * 0x80;
 
-	CameraList->PushMode();
-	CameraList->SetMode(CAMERAMODE_FRONT);
+	G_CAMERA_LIST->PushMode();
+	G_CAMERA_LIST->SetMode(CAMERAMODE_FRONT);
 
 	i32 oldPath = this->field_C90;
 	print_if_false(oldPath == 0, "field_C90 already allocated");
@@ -5023,7 +5023,7 @@ i32 CPlayer::Hit(SHitInfo *a2)
 	// CCamera + 0x180: a u8 flag that falls inside camera.h's
 	// PADDING(0x1A8-0x17C-4). Read by address here rather than reshaping
 	// CCamera for this one test.
-	if (*(reinterpret_cast<u8*>(CameraList) + 0x180) != 0 && this->field_AD4 == 0)
+	if (*(reinterpret_cast<u8*>(G_CAMERA_LIST) + 0x180) != 0 && this->field_AD4 == 0)
 	{
 		this->PutCameraBehind(0);
 	}
@@ -5049,7 +5049,7 @@ i32 CPlayer::Hit(SHitInfo *a2)
 	}
 
 	this->field_504 = state;
-	this->field_500 = gTimerRelated;
+	this->field_500 = G_TIMER_RELATED;
 
 	CManipOb *pHeld = this->mHeldObject;
 
@@ -5093,10 +5093,10 @@ i32 CPlayer::Hit(SHitInfo *a2)
 		if (isDirected && a2->field_4 == 16)
 			return 1;
 
-		if (static_cast<u32>(gTimerRelated) > static_cast<u32>(this->field_EEC + 30))
+		if (static_cast<u32>(G_TIMER_RELATED) > static_cast<u32>(this->field_EEC + 30))
 		{
 			SFX_Play(Rnd(3) + 18, 0x2000, 0);
-			this->field_EEC = gTimerRelated;
+			this->field_EEC = G_TIMER_RELATED;
 		}
 
 		if (this->mHealth <= 0)
@@ -5282,7 +5282,7 @@ i32 CPlayer::IncHealth(i32 a2)
 			this->mHealth = this->mMaxHealth;
 		}
 
-		this->field_5E0 = gTimerRelated;
+		this->field_5E0 = G_TIMER_RELATED;
 		this->field_5D0++;
 		return 1;
 	}
@@ -5461,7 +5461,7 @@ void CPlayer::InitiateCombo(u16 move, i32 headStart)
 	this->field_94D = 1;
 
 	this->field_910 = this->field_84 - headStart;
-	this->field_918 = gTimerRelated;
+	this->field_918 = G_TIMER_RELATED;
 	this->field_958 = 0;
 
 	print_if_false(pMove != 0, "Bad move");
@@ -5671,7 +5671,7 @@ void CPlayer::NotifyKill(u16 a2)
 		}
 
 		{
-			i32 elapsed = gTimerRelated - this->field_35C;
+			i32 elapsed = G_TIMER_RELATED - this->field_35C;
 			i32 groupIndex;
 			i32 variantIndex;
 			bool checkRepeat;
@@ -6296,7 +6296,7 @@ u8 CPlayer::SetArmor(bool a2)
 // @Matching
 void CPlayer::SetCeilingCamera(i32 a3)
 {
-	CCamera *pCamera = CameraList;
+	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
 		pCamera->SetCamXOffset(gSpideyCeilingCameraXOffset, a3);
@@ -6312,7 +6312,7 @@ void CPlayer::SetCeilingCamera(i32 a3)
 // @Matching
 void CPlayer::SetFloorCamera(i32 a3)
 {
-	CCamera *pCamera = CameraList;
+	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera)
 	{
 		if (pCamera->mCameraMode == 3)
@@ -6335,7 +6335,7 @@ void CPlayer::SetFirstContactDetails(void)
 	{
 		this->field_354 = 1;
 		this->field_358 = this->mHealth;
-		this->field_35C = gTimerRelated;
+		this->field_35C = G_TIMER_RELATED;
 	}
 }
 
@@ -6343,7 +6343,7 @@ void CPlayer::SetFirstContactDetails(void)
 // @Matching
 void CPlayer::SetFallingCamera(i32 a3)
 {
-	CCamera *pCamera = CameraList;
+	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
 		pCamera->SetCamXOffset(gSpideyFallingCamXOff, a3);
@@ -6400,7 +6400,7 @@ void CPlayer::SetFocusLockTarget(const CBody *a2)
 // working lead yet.
 void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 {
-	CCamera *pCamera = CameraList;
+	CCamera *pCamera = G_CAMERA_LIST;
 	if (!pCamera)
 		return;
 
@@ -6646,7 +6646,7 @@ void CPlayer::SetSpideyCamValue(u16 type, u16 axis, i16 value, u16 a4, u16 a5)
 // @matching
 void CPlayer::SetSwingCamera(i32 a3)
 {
-	CCamera *pCamera = CameraList;
+	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
 		pCamera->SetCamXOffset(gSpideySwingCamXOffset, a3);
@@ -6662,7 +6662,7 @@ void CPlayer::SetSwingCamera(i32 a3)
 // @Matching
 void CPlayer::SetWallCamera(i32 a3)
 {
-	CCamera *pCamera = CameraList;
+	CCamera *pCamera = G_CAMERA_LIST;
 	if (pCamera->mCameraMode == 3)
 	{
 		pCamera->SetCamXOffset(gSpideyWallCamXOffset, a3);
@@ -6872,7 +6872,7 @@ void CPlayer::SetupLookaroundCamera(void)
 	camMat.m[1][2] = -camMat.m[1][2];
 	camMat.m[2][2] = -camMat.m[2][2];
 
-	MToQ(camMat, CameraList->field_1F4);
+	MToQ(camMat, G_CAMERA_LIST->field_1F4);
 
 	CVector anchor = this->mPos + this->field_D0C;
 	this->field_D00 = anchor;
@@ -6982,7 +6982,7 @@ gridSearchDone:
 		this->field_CE8 = campPos;
 	}
 
-	CameraList->mPos = campPos;
+	G_CAMERA_LIST->mPos = campPos;
 
 	if (this->field_CB4 != 0 || this->field_CE4 != 0)
 	{
@@ -7150,7 +7150,7 @@ gridSearchDone:
 		{
 			this->field_DE4 = 0;
 			Screen_TargetOn(true);
-			Screen_SetTarget(&this->field_DCC->mPos, 24, 32 * (gTimerRelated & 0x7F));
+			Screen_SetTarget(&this->field_DCC->mPos, 24, 32 * (G_TIMER_RELATED & 0x7F));
 			this->field_DC0 = this->field_DCC->mPos;
 			this->field_54F = 0;
 			return;
@@ -7306,7 +7306,7 @@ void CPlayer::SwitchToDeathMode(bool a2)
 		delete reinterpret_cast<SVTableSlot0Deletable*>(this->field_E64);
 		this->field_E64 = 0;
 
-		*(i32*)((u8*)CameraList + 0x12C) = -1;
+		*(i32*)((u8*)G_CAMERA_LIST + 0x12C) = -1;
 		return;
 	}
 
@@ -7762,7 +7762,7 @@ void CPlayer::SynthesizeAnalogueInput(void)
 					if (this->field_54C)
 					{
 						this->field_54C = 0;
-						CameraList->field_12C = -1;
+						G_CAMERA_LIST->field_12C = -1;
 					}
 
 					if (this->field_E64)
@@ -8029,7 +8029,7 @@ void CPlayer::SynthesizeAnalogueInput(void)
 
 				i32 dz = (block[3] - this->mPos.vz) >> 12;
 				i32 dx = (block[2] - this->mPos.vx) >> 12;
-				i32 idx = 2 * ((1024 - ratan2(dz, dx) - CameraList->field_23A) & 0xFFF);
+				i32 idx = 2 * ((1024 - ratan2(dz, dx) - G_CAMERA_LIST->field_23A) & 0xFFF);
 
 				i32 x = word_610C4A[idx] / 32;
 				if (x > 127) x = 127;
@@ -8682,7 +8682,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 
 	if (buttons != 0)
 	{
-		this->field_918 = gTimerRelated;
+		this->field_918 = G_TIMER_RELATED;
 	}
 
 	u8 hasParts = this->field_94C;
@@ -9032,7 +9032,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 						// CCamera + 0x180 sits inside a PADDING run in
 						// camera.h, which this file does not own; reached by
 						// byte offset until that field gets a name.
-						if (reinterpret_cast<u8*>(CameraList)[0x180] != 0
+						if (reinterpret_cast<u8*>(G_CAMERA_LIST)[0x180] != 0
 								&& this->field_AD4 == 0)
 						{
 							this->PutCameraBehind(0);
@@ -9044,7 +9044,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 							{
 								this->field_354 = 1;
 								this->field_358 = this->mHealth;
-								this->field_35C = gTimerRelated;
+								this->field_35C = G_TIMER_RELATED;
 							}
 
 							u16 anim = this->mAnim;
@@ -9111,12 +9111,12 @@ static u32 * const gSpideySenseIndicatorLastUpdateTime = (u32*)0x006A9080;
 // stack slots), unlike Build which uses two.
 void CPlayer::UpdateOffscreenSpideySenseIndicatorList(void)
 {
-	u32 threshold = (u32)gTimerRelated - 3;
+	u32 threshold = (u32)G_TIMER_RELATED - 3;
 	u32 lastUpdate = *gSpideySenseIndicatorLastUpdateTime;
 
-	if (lastUpdate < threshold || lastUpdate > (u32)gTimerRelated)
+	if (lastUpdate < threshold || lastUpdate > (u32)G_TIMER_RELATED)
 	{
-		*gSpideySenseIndicatorLastUpdateTime = gTimerRelated;
+		*gSpideySenseIndicatorLastUpdateTime = G_TIMER_RELATED;
 
 		gte_SetRotMatrix(stru_56F224);
 
@@ -10093,7 +10093,7 @@ u8 CPlayer::IncreaseWebbing(i32 amount)
 		{
 			this->field_5D8++;
 			this->mWebbing -= 4096;
-			this->field_5DC = gTimerRelated;
+			this->field_5DC = G_TIMER_RELATED;
 			this->field_5D0++;
 			return 1;
 		}
@@ -10218,7 +10218,7 @@ void CPlayer::ExitLookaroundMode(void)
 			this->field_C90 = 0;
 		}
 
-		CameraList->PopMode();
+		G_CAMERA_LIST->PopMode();
 		this->PutCameraBehind(0);
 		this->field_DE4 = 0;
 		Screen_TargetOn(false);
@@ -10572,24 +10572,24 @@ void CPlayer::PutCameraBehind(i32 a2)
 	{
 		if (!this->field_8E8)
 		{
-			CameraList->SetCamAngle(this->GetEffectiveHeading(), a2);
+			G_CAMERA_LIST->SetCamAngle(this->GetEffectiveHeading(), a2);
 		}
 		else
 		{
 			int v5 = (1024 - ratan2(this->field_C84.vz, this->field_C84.vx)) & 0xFFF;
-			CameraList->SetCamAngle(v5, a2);
+			G_CAMERA_LIST->SetCamAngle(v5, a2);
 
-			if (CameraList->mCameraMode == CAMERAMODE_DEMO)
+			if (G_CAMERA_LIST->mCameraMode == CAMERAMODE_DEMO)
 			{
 				if ((this->field_E2E | this->field_E2D) && this->field_E1C == 16)
 				{
 					i32 v6 = 2 * (this->field_E32 & 0xFFF);
-					CameraList->SetCamYDistance(*word_6A8C66 + ((500 * word_610C4A[v6]) >> 12), a2);
-					CameraList->SetCamAngle(v5 + ((700 * word_610C48[v6]) >> 12), a2);
+					G_CAMERA_LIST->SetCamYDistance(*word_6A8C66 + ((500 * word_610C4A[v6]) >> 12), a2);
+					G_CAMERA_LIST->SetCamAngle(v5 + ((700 * word_610C48[v6]) >> 12), a2);
 				}
 				else
 				{
-					CameraList->SetCamYDistance(*word_6A8C66, a2);
+					G_CAMERA_LIST->SetCamYDistance(*word_6A8C66, a2);
 				}
 			}
 		}
@@ -10993,9 +10993,9 @@ void CPlayer::PriorToVenomDistanceAttack(CVector a2)
 
 	// the original writes through CameraList before checking it for null,
 	// kept as is
-	CCamera *pCamera = CameraList;
+	CCamera *pCamera = G_CAMERA_LIST;
 
-	CameraList->field_12C = -1;
+	G_CAMERA_LIST->field_12C = -1;
 
 	if (pCamera != 0 && pCamera->mCameraMode == 3)
 	{
@@ -11183,9 +11183,9 @@ void CPlayer::CutSceneSkipCleanup(void)
 {
 	Redbook_XAStop();
 
-	if (CameraList->mCameraMode != CAMERAMODE_DEMO && Trig_GetLevelID() != 514)
+	if (G_CAMERA_LIST->mCameraMode != CAMERAMODE_DEMO && Trig_GetLevelID() != 514)
 	{
-		CameraList->SetMode(static_cast<ECameraMode>(3));
+		G_CAMERA_LIST->SetMode(static_cast<ECameraMode>(3));
 	}
 
 	int v3 = this->field_1A8;
@@ -11227,7 +11227,7 @@ void CPlayer::CutSceneSkipCleanup(void)
 	this->SwitchToStandMode();
 
 	this->field_E00 = 0;
-	CameraList->SetStartPosition();
+	G_CAMERA_LIST->SetStartPosition();
 
 	char * v13 = reinterpret_cast<char*>(this->field_E0C);
 

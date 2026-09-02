@@ -401,9 +401,9 @@ i32 Shatter_Glass(i32 count, CVector const *pA, CVector const *pB, CVector const
     if (gGlassShatterSound != 0)
     {
         CVector camPos;
-        camPos.vx = gMikeCamera[0].Position.vx;
-        camPos.vy = gMikeCamera[0].Position.vy;
-        camPos.vz = gMikeCamera[0].Position.vz;
+        camPos.vx = G_MIKE_CAMERA[0].Position.vx;
+        camPos.vy = G_MIKE_CAMERA[0].Position.vy;
+        camPos.vz = G_MIKE_CAMERA[0].Position.vz;
         camPos <<= 12;
         i32 dist1 = Utils_CrapDist(camPos, gLastGlassShatterPos);
         i32 dist2 = Utils_CrapDist(camPos, center);
