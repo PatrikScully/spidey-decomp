@@ -1603,6 +1603,52 @@ void DXPOLY_Init(u32 a1)
 // @Matching
 void DXPOLY_SaveScreen(void)
 {
+#ifdef SPIDEY_STANDALONE
+	// 24 bit BMP straight from the platform layer's frame buffer
+	{
+		char name[32];
+		sprintf(name, "scrn%4.4i.bmp", ++gScreenshotNumber);
+		i32 width, height;
+		DXINIT_GetCurrentResolution(&width, &height);
+		i32 rowBytes = (width * 3 + 3) & ~3;
+		u8* pixels = static_cast<u8*>(malloc(rowBytes * height));
+		memset(pixels, 0, rowBytes * height);
+		if (Plat_GfxReadPixels(pixels, width, height))
+		{
+			FILE* f = fopen(name, "wb");
+			if (f)
+			{
+				u32 fileSize = 54 + rowBytes * height;
+				u8 hdr[54];
+				memset(hdr, 0, sizeof(hdr));
+				hdr[0] = 'B'; hdr[1] = 'M';
+				memcpy(hdr + 2, &fileSize, 4);
+				u32 off = 54; memcpy(hdr + 10, &off, 4);
+				u32 dib = 40; memcpy(hdr + 14, &dib, 4);
+				memcpy(hdr + 18, &width, 4);
+				i32 negHeight = -height;   // top down rows
+				memcpy(hdr + 22, &negHeight, 4);
+				u16 planes = 1, bpp = 24;
+				memcpy(hdr + 26, &planes, 2);
+				memcpy(hdr + 28, &bpp, 2);
+				u32 imgSize = rowBytes * height; memcpy(hdr + 34, &imgSize, 4);
+				fwrite(hdr, 1, 54, f);
+				// Plat_GfxReadPixels packs rows at width*3, the BMP wants
+				// rows padded to 4 bytes
+				for (i32 y = 0; y < height; y++)
+				{
+					fwrite(pixels + y * width * 3, 1, width * 3, f);
+					if (rowBytes != width * 3)
+						fwrite(hdr + 50, 1, rowBytes - width * 3, f);   // zero pad
+				}
+				fclose(f);
+				printf("Saved %s\n", name);
+			}
+		}
+		free(pixels);
+	}
+	return;
+#endif
 #ifdef _WIN32
 	char v7[32];
 	sprintf(v7, "scrn%4.4i.bmp", ++gScreenshotNumber);

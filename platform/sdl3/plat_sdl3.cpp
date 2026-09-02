@@ -1,0 +1,792 @@
+// SDL3 + OpenGL backend for the standalone build.
+//
+// Rendering: the game hands us pre-transformed screen space triangle fans
+// (D3D7 TL vertices: x, y in pixels, z in 0..1, rhw, ARGB, u, v). That maps
+// onto fixed function GL with an orthographic projection one to one, so this
+// uses immediate mode GL 1.x, the simplest thing that can possibly work.
+// Input: SDL keyboard state translated to DirectInput DIK codes, relative
+// mouse, first gamepad. Sound: a small software mixer feeding one SDL audio
+// stream (volume/pan in DirectSound hundredths of dB, frequency changes by
+// linear resampling), which is exactly the DirectSound buffer/duplicate
+// model DXsound.cpp expects.
+//
+// Needs libsdl3-dev:i386 and libgl-dev:i386 (32 bit build).
+
+#include "../plat.h"
+#include "../../DXsound.h"   // SDXPolyField
+
+#include <SDL3/SDL.h>
+#include <GL/gl.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <pthread.h>
+#include <unistd.h>
+
+// ---------------------------------------------------------------- window
+
+static SDL_Window* gWindow;
+static SDL_GLContext gGL;
+static i32 gWidth = 640, gHeight = 480;
+static i32 gQuit;
+
+i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
+{
+	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD))
+	{
+		printf("Plat(sdl3): SDL_Init failed: %s\n", SDL_GetError());
+		return 0;
+	}
+
+	gWidth = width;
+	gHeight = height;
+
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+	SDL_WindowFlags flags = SDL_WINDOW_OPENGL;
+	if (fullscreen)
+		flags |= SDL_WINDOW_FULLSCREEN;
+
+	gWindow = SDL_CreateWindow("Spider-Man", width, height, flags);
+	if (!gWindow)
+	{
+		printf("Plat(sdl3): SDL_CreateWindow failed: %s\n", SDL_GetError());
+		return 0;
+	}
+
+	gGL = SDL_GL_CreateContext(gWindow);
+	if (!gGL)
+	{
+		printf("Plat(sdl3): SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+		return 0;
+	}
+	SDL_GL_SetSwapInterval(1);
+
+	printf("Plat(sdl3): %dx%d, GL %s / %s\n", width, height,
+			(const char*)glGetString(GL_VERSION), (const char*)glGetString(GL_RENDERER));
+
+	glViewport(0, 0, width, height);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	// D3D7 TL vertices address pixel centres, GL addresses pixel corners:
+	// the half pixel shift keeps textured 2D quads crisp.
+	glOrtho(-0.5, width - 0.5, height - 0.5, -0.5, 0.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+
+	glDisable(GL_LIGHTING);
+	glDisable(GL_DITHER);
+	glShadeModel(GL_SMOOTH);
+	glEnable(GL_TEXTURE_2D);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+	glDepthFunc(GL_LEQUAL);
+	glEnable(GL_DEPTH_TEST);
+	glFrontFace(GL_CCW);
+	glCullFace(GL_BACK);
+	glEnable(GL_CULL_FACE);
+	glEnable(GL_ALPHA_TEST);
+	glAlphaFunc(GL_GEQUAL, 8.0f / 255.0f);   // ALPHAREF 8 / GREATEREQUAL, ALPHATESTENABLE is off by
+	glDisable(GL_ALPHA_TEST);                 // default in DXPOLY_Init, matched below
+
+	SDL_SetWindowRelativeMouseMode(gWindow, true);
+	return 1;
+}
+
+void Plat_Shutdown(void)
+{
+	if (gGL)
+		SDL_GL_DestroyContext(gGL);
+	if (gWindow)
+		SDL_DestroyWindow(gWindow);
+	gGL = 0;
+	gWindow = 0;
+	SDL_Quit();
+}
+
+i32 Plat_Yield(void)
+{
+	SDL_Event e;
+	while (SDL_PollEvent(&e))
+	{
+		if (e.type == SDL_EVENT_QUIT)
+			gQuit = 1;
+		if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F12)
+			gQuit = 1;
+	}
+	return !gQuit;
+}
+
+u32 Plat_Ticks(void)
+{
+	return (u32)SDL_GetTicks();
+}
+
+void Plat_Sleep(u32 ms)
+{
+	SDL_Delay(ms);
+}
+
+// ----------------------------------------------------------------- timer
+
+struct STimer
+{
+	pthread_t thread;
+	u32 periodMs;
+	PlatTimerFn fn;
+	void* user;
+	volatile i32 stop;
+};
+
+static STimer gTimers[4];
+
+static void* timerThread(void* arg)
+{
+	STimer* t = (STimer*)arg;
+	while (!t->stop)
+	{
+		usleep(t->periodMs * 1000);
+		if (!t->stop)
+			t->fn(t->user);
+	}
+	return 0;
+}
+
+u32 Plat_TimerStart(u32 periodMs, PlatTimerFn fn, void* user)
+{
+	for (i32 i = 0; i < 4; i++)
+	{
+		if (!gTimers[i].fn)
+		{
+			gTimers[i].periodMs = periodMs ? periodMs : 1;
+			gTimers[i].fn = fn;
+			gTimers[i].user = user;
+			gTimers[i].stop = 0;
+			pthread_create(&gTimers[i].thread, 0, timerThread, &gTimers[i]);
+			return i + 1;
+		}
+	}
+	return 0;
+}
+
+void Plat_TimerStop(u32 handle)
+{
+	if (handle < 1 || handle > 4 || !gTimers[handle - 1].fn)
+		return;
+	STimer* t = &gTimers[handle - 1];
+	t->stop = 1;
+	pthread_join(t->thread, 0);
+	t->fn = 0;
+}
+
+// -------------------------------------------------------------- graphics
+
+struct PlatTexture
+{
+	GLuint id;
+	i32 width, height;
+	PlatTexFormat format;
+	i32 filter;     // last applied, -1 = none
+	i32 wrapU, wrapV;
+};
+
+static PlatTexture* gBoundTex;
+static i32 gFilter = 1;
+static u32 gAddrU = 3, gAddrV = 3;
+static i32 gTexAlphaModulate = 1;
+
+PlatTexture* Plat_TexCreate(i32 width, i32 height, PlatTexFormat format)
+{
+	PlatTexture* t = new PlatTexture;
+	memset(t, 0, sizeof(*t));
+	t->width = width;
+	t->height = height;
+	t->format = format;
+	t->filter = -1;
+	t->wrapU = t->wrapV = -1;
+	glGenTextures(1, &t->id);
+	return t;
+}
+
+void Plat_TexUpload(PlatTexture* t, const void* pixels, i32 pitch)
+{
+	GLenum fmt, type;
+	i32 bpp;
+	switch (t->format)
+	{
+		case PLAT_TEX_RGB565:   fmt = GL_RGB;  type = GL_UNSIGNED_SHORT_5_6_5;        bpp = 2; break;
+		case PLAT_TEX_ARGB1555: fmt = GL_BGRA; type = GL_UNSIGNED_SHORT_1_5_5_5_REV;  bpp = 2; break;
+		case PLAT_TEX_ARGB4444: fmt = GL_BGRA; type = GL_UNSIGNED_SHORT_4_4_4_4_REV;  bpp = 2; break;
+		default:                fmt = GL_BGRA; type = GL_UNSIGNED_INT_8_8_8_8_REV;    bpp = 4; break;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, t->id);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / bpp);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, t->width, t->height, 0, fmt, type, pixels);
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+	t->filter = -1;
+	t->wrapU = t->wrapV = -1;
+	if (gBoundTex)
+		glBindTexture(GL_TEXTURE_2D, gBoundTex->id);
+}
+
+void Plat_TexDestroy(PlatTexture* t)
+{
+	if (!t)
+		return;
+	if (gBoundTex == t)
+		gBoundTex = 0;
+	glDeleteTextures(1, &t->id);
+	delete t;
+}
+
+void Plat_GfxBeginScene(u32 clearColorARGB, i32 clearDepth)
+{
+	glClearColor(((clearColorARGB >> 16) & 0xFF) / 255.0f,
+			((clearColorARGB >> 8) & 0xFF) / 255.0f,
+			(clearColorARGB & 0xFF) / 255.0f, 1.0f);
+	glClearDepth(1.0);
+	glClear(GL_COLOR_BUFFER_BIT | (clearDepth ? GL_DEPTH_BUFFER_BIT : 0));
+}
+
+void Plat_GfxEndScene(void)
+{
+}
+
+void Plat_GfxFlip(void)
+{
+	SDL_GL_SwapWindow(gWindow);
+}
+
+// DXPOLY_SetBlendMode's cases, D3DBLEND numbers in the comments
+void Plat_GfxSetBlendMode(u32 mode)
+{
+	switch (mode)
+	{
+		case 3:   // ZERO(1), INVSRCCOLOR(4): darken
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
+			break;
+		case 1:
+		case 5:   // SRCALPHA(5), INVSRCALPHA(6)
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+		case 2:
+		case 4:   // SRCALPHA(5), ONE(2): additive
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+			break;
+		default:  // ONE, ZERO, blend off
+			glDisable(GL_BLEND);
+			break;
+	}
+}
+
+void Plat_GfxSetDepthTest(i32 enable)
+{
+	if (enable)
+		glEnable(GL_DEPTH_TEST);
+	else
+		glDisable(GL_DEPTH_TEST);
+}
+
+void Plat_GfxSetDepthWrite(i32 enable)
+{
+	glDepthMask(enable ? GL_TRUE : GL_FALSE);
+}
+
+void Plat_GfxSetDepthFunc(u32 d3dCmp)
+{
+	static const GLenum table[9] = { GL_LEQUAL, GL_NEVER, GL_LESS, GL_EQUAL, GL_LEQUAL,
+		GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_ALWAYS };
+	glDepthFunc(table[d3dCmp < 9 ? d3dCmp : 0]);
+}
+
+void Plat_GfxSetFilter(i32 bilinear)
+{
+	gFilter = bilinear ? 1 : 0;
+}
+
+void Plat_GfxSetAddress(u32 u, u32 v)
+{
+	gAddrU = u;
+	gAddrV = v;
+}
+
+void Plat_GfxSetTexAlpha(i32 modulate)
+{
+	gTexAlphaModulate = modulate;
+}
+
+void Plat_GfxSetTexture(PlatTexture* t)
+{
+	gBoundTex = t;
+	if (t)
+	{
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, t->id);
+	}
+	else
+	{
+		glDisable(GL_TEXTURE_2D);
+	}
+}
+
+void Plat_GfxSetFog(i32, u32, f32, f32)
+{
+	// PCGfx does its fog in software (colour tables), nothing to do here
+}
+
+static void applyTextureState(void)
+{
+	PlatTexture* t = gBoundTex;
+	if (!t)
+		return;
+	if (t->filter != gFilter)
+	{
+		GLint f = gFilter ? GL_LINEAR : GL_NEAREST;
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
+		t->filter = gFilter;
+	}
+	if (t->wrapU != (i32)gAddrU)
+	{
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, gAddrU == 1 ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+		t->wrapU = gAddrU;
+	}
+	if (t->wrapV != (i32)gAddrV)
+	{
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, gAddrV == 1 ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+		t->wrapV = gAddrV;
+	}
+
+	// COLOROP MODULATE always; ALPHAOP MODULATE (texture * diffuse) or
+	// SELECTARG1 (texture alpha only)
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+	glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, gTexAlphaModulate ? GL_MODULATE : GL_REPLACE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+}
+
+void Plat_GfxDrawFan(const SDXPolyField* v, i32 count)
+{
+	applyTextureState();
+
+	glBegin(GL_TRIANGLE_FAN);
+	for (i32 i = 0; i < count; i++)
+	{
+		u32 c = v[i].field_10;
+		glColor4ub((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, (c >> 24) & 0xFF);
+		glTexCoord2f(v[i].field_14, v[i].field_18);
+		glVertex3f(v[i].field_0, v[i].field_4, v[i].field_8);
+	}
+	glEnd();
+}
+
+i32 Plat_GfxReadPixels(u8* dst, i32 width, i32 height)
+{
+	if (width != gWidth || height != gHeight)
+		return 0;
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glReadPixels(0, 0, width, height, GL_BGR, GL_UNSIGNED_BYTE, dst);
+	// GL rows are bottom up, the caller wants top down
+	i32 rowBytes = width * 3;
+	u8* tmp = (u8*)malloc(rowBytes);
+	for (i32 y = 0; y < height / 2; y++)
+	{
+		memcpy(tmp, dst + y * rowBytes, rowBytes);
+		memcpy(dst + y * rowBytes, dst + (height - 1 - y) * rowBytes, rowBytes);
+		memcpy(dst + (height - 1 - y) * rowBytes, tmp, rowBytes);
+	}
+	free(tmp);
+	return 1;
+}
+
+// ----------------------------------------------------------------- input
+
+// SDL scancode -> DirectInput DIK_* (PC/AT set 1 make codes)
+static u8 gDikTable[SDL_SCANCODE_COUNT];
+
+static void buildDikTable(void)
+{
+	static i32 built;
+	if (built)
+		return;
+	built = 1;
+	struct { SDL_Scancode sc; u8 dik; } map[] = {
+		{ SDL_SCANCODE_ESCAPE, 0x01 }, { SDL_SCANCODE_1, 0x02 }, { SDL_SCANCODE_2, 0x03 },
+		{ SDL_SCANCODE_3, 0x04 }, { SDL_SCANCODE_4, 0x05 }, { SDL_SCANCODE_5, 0x06 },
+		{ SDL_SCANCODE_6, 0x07 }, { SDL_SCANCODE_7, 0x08 }, { SDL_SCANCODE_8, 0x09 },
+		{ SDL_SCANCODE_9, 0x0A }, { SDL_SCANCODE_0, 0x0B }, { SDL_SCANCODE_MINUS, 0x0C },
+		{ SDL_SCANCODE_EQUALS, 0x0D }, { SDL_SCANCODE_BACKSPACE, 0x0E }, { SDL_SCANCODE_TAB, 0x0F },
+		{ SDL_SCANCODE_Q, 0x10 }, { SDL_SCANCODE_W, 0x11 }, { SDL_SCANCODE_E, 0x12 },
+		{ SDL_SCANCODE_R, 0x13 }, { SDL_SCANCODE_T, 0x14 }, { SDL_SCANCODE_Y, 0x15 },
+		{ SDL_SCANCODE_U, 0x16 }, { SDL_SCANCODE_I, 0x17 }, { SDL_SCANCODE_O, 0x18 },
+		{ SDL_SCANCODE_P, 0x19 }, { SDL_SCANCODE_LEFTBRACKET, 0x1A }, { SDL_SCANCODE_RIGHTBRACKET, 0x1B },
+		{ SDL_SCANCODE_RETURN, 0x1C }, { SDL_SCANCODE_LCTRL, 0x1D }, { SDL_SCANCODE_A, 0x1E },
+		{ SDL_SCANCODE_S, 0x1F }, { SDL_SCANCODE_D, 0x20 }, { SDL_SCANCODE_F, 0x21 },
+		{ SDL_SCANCODE_G, 0x22 }, { SDL_SCANCODE_H, 0x23 }, { SDL_SCANCODE_J, 0x24 },
+		{ SDL_SCANCODE_K, 0x25 }, { SDL_SCANCODE_L, 0x26 }, { SDL_SCANCODE_SEMICOLON, 0x27 },
+		{ SDL_SCANCODE_APOSTROPHE, 0x28 }, { SDL_SCANCODE_GRAVE, 0x29 }, { SDL_SCANCODE_LSHIFT, 0x2A },
+		{ SDL_SCANCODE_BACKSLASH, 0x2B }, { SDL_SCANCODE_Z, 0x2C }, { SDL_SCANCODE_X, 0x2D },
+		{ SDL_SCANCODE_C, 0x2E }, { SDL_SCANCODE_V, 0x2F }, { SDL_SCANCODE_B, 0x30 },
+		{ SDL_SCANCODE_N, 0x31 }, { SDL_SCANCODE_M, 0x32 }, { SDL_SCANCODE_COMMA, 0x33 },
+		{ SDL_SCANCODE_PERIOD, 0x34 }, { SDL_SCANCODE_SLASH, 0x35 }, { SDL_SCANCODE_RSHIFT, 0x36 },
+		{ SDL_SCANCODE_KP_MULTIPLY, 0x37 }, { SDL_SCANCODE_LALT, 0x38 }, { SDL_SCANCODE_SPACE, 0x39 },
+		{ SDL_SCANCODE_CAPSLOCK, 0x3A }, { SDL_SCANCODE_F1, 0x3B }, { SDL_SCANCODE_F2, 0x3C },
+		{ SDL_SCANCODE_F3, 0x3D }, { SDL_SCANCODE_F4, 0x3E }, { SDL_SCANCODE_F5, 0x3F },
+		{ SDL_SCANCODE_F6, 0x40 }, { SDL_SCANCODE_F7, 0x41 }, { SDL_SCANCODE_F8, 0x42 },
+		{ SDL_SCANCODE_F9, 0x43 }, { SDL_SCANCODE_F10, 0x44 }, { SDL_SCANCODE_NUMLOCKCLEAR, 0x45 },
+		{ SDL_SCANCODE_SCROLLLOCK, 0x46 }, { SDL_SCANCODE_KP_7, 0x47 }, { SDL_SCANCODE_KP_8, 0x48 },
+		{ SDL_SCANCODE_KP_9, 0x49 }, { SDL_SCANCODE_KP_MINUS, 0x4A }, { SDL_SCANCODE_KP_4, 0x4B },
+		{ SDL_SCANCODE_KP_5, 0x4C }, { SDL_SCANCODE_KP_6, 0x4D }, { SDL_SCANCODE_KP_PLUS, 0x4E },
+		{ SDL_SCANCODE_KP_1, 0x4F }, { SDL_SCANCODE_KP_2, 0x50 }, { SDL_SCANCODE_KP_3, 0x51 },
+		{ SDL_SCANCODE_KP_0, 0x52 }, { SDL_SCANCODE_KP_PERIOD, 0x53 }, { SDL_SCANCODE_F11, 0x57 },
+		{ SDL_SCANCODE_F12, 0x58 }, { SDL_SCANCODE_KP_ENTER, 0x9C }, { SDL_SCANCODE_RCTRL, 0x9D },
+		{ SDL_SCANCODE_KP_DIVIDE, 0xB5 }, { SDL_SCANCODE_RALT, 0xB8 }, { SDL_SCANCODE_HOME, 0xC7 },
+		{ SDL_SCANCODE_UP, 0xC8 }, { SDL_SCANCODE_PAGEUP, 0xC9 }, { SDL_SCANCODE_LEFT, 0xCB },
+		{ SDL_SCANCODE_RIGHT, 0xCD }, { SDL_SCANCODE_END, 0xCF }, { SDL_SCANCODE_DOWN, 0xD0 },
+		{ SDL_SCANCODE_PAGEDOWN, 0xD1 }, { SDL_SCANCODE_INSERT, 0xD2 }, { SDL_SCANCODE_DELETE, 0xD3 },
+	};
+	for (u32 i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+		gDikTable[map[i].sc] = map[i].dik;
+}
+
+void Plat_InputPollKeyboard(u8 dikState[256])
+{
+	buildDikTable();
+	memset(dikState, 0, 256);
+	int numKeys = 0;
+	const bool* keys = SDL_GetKeyboardState(&numKeys);
+	for (int sc = 0; sc < numKeys && sc < SDL_SCANCODE_COUNT; sc++)
+	{
+		if (keys[sc] && gDikTable[sc])
+			dikState[gDikTable[sc]] = 0x80;
+	}
+}
+
+void Plat_InputPollMouse(i32* dx, i32* dy, u8 buttons[3])
+{
+	float fx = 0.0f, fy = 0.0f;
+	SDL_MouseButtonFlags b = SDL_GetRelativeMouseState(&fx, &fy);
+	*dx = (i32)fx;
+	*dy = (i32)fy;
+	buttons[0] = (b & SDL_BUTTON_LMASK) ? 0x80 : 0;
+	buttons[1] = (b & SDL_BUTTON_RMASK) ? 0x80 : 0;
+	buttons[2] = (b & SDL_BUTTON_MMASK) ? 0x80 : 0;
+}
+
+static SDL_Gamepad* gPad;
+static i32 gPadChecked;
+
+static SDL_Gamepad* openPad(void)
+{
+	if (gPad)
+		return gPad;
+	if (gPadChecked++ % 120)   // rescan every couple of seconds only
+		return 0;
+	int count = 0;
+	SDL_JoystickID* ids = SDL_GetGamepads(&count);
+	if (ids)
+	{
+		if (count > 0)
+			gPad = SDL_OpenGamepad(ids[0]);
+		SDL_free(ids);
+	}
+	if (gPad)
+		printf("Plat(sdl3): gamepad %s\n", SDL_GetGamepadName(gPad));
+	return gPad;
+}
+
+// DirectInput gave the game X/Y in -1000..1000 (DIPROP_RANGE in
+// DXINPUT_SetupController) and a POV hat in hundredths of degrees.
+i32 Plat_InputPollController(i32* x, i32* y, u32* pov, u8 buttons[32], i32* numButtons)
+{
+	SDL_Gamepad* pad = openPad();
+	if (!pad)
+	{
+		*numButtons = 0;
+		return 0;
+	}
+	if (!SDL_GamepadConnected(pad))
+	{
+		SDL_CloseGamepad(pad);
+		gPad = 0;
+		*numButtons = 0;
+		return 0;
+	}
+
+	*x = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX) * 1000 / 32767;
+	*y = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY) * 1000 / 32767;
+
+	// PlayStation layout the game was written for: 0 triangle, 1 circle,
+	// 2 cross, 3 square, 4 L1, 5 R1, 6 L2, 7 R2, 8 select, 9 start
+	static const SDL_GamepadButton order[] = {
+		SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_SOUTH,
+		SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,
+		SDL_GAMEPAD_BUTTON_LEFT_STICK, SDL_GAMEPAD_BUTTON_RIGHT_STICK,
+		SDL_GAMEPAD_BUTTON_BACK, SDL_GAMEPAD_BUTTON_START,
+	};
+	memset(buttons, 0, 32);
+	for (u32 i = 0; i < sizeof(order) / sizeof(order[0]); i++)
+		buttons[i] = SDL_GetGamepadButton(pad, order[i]) ? 0x80 : 0;
+	buttons[6] |= SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000 ? 0x80 : 0;
+	buttons[7] |= SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000 ? 0x80 : 0;
+	*numButtons = 10;
+
+	i32 up = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_UP);
+	i32 down = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+	i32 left = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+	i32 right = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+	if (up && right) *pov = 4500;
+	else if (right && down) *pov = 13500;
+	else if (down && left) *pov = 22500;
+	else if (left && up) *pov = 31500;
+	else if (up) *pov = 0;
+	else if (right) *pov = 9000;
+	else if (down) *pov = 18000;
+	else if (left) *pov = 27000;
+	else *pov = 0xFFFFFFFF;
+	return 1;
+}
+
+void Plat_InputRumble(i32 on, f32 strength)
+{
+	if (!gPad)
+		return;
+	u16 s = on ? (u16)(strength * 65535.0f) : 0;
+	SDL_RumbleGamepad(gPad, s, s, on ? 60000 : 0);
+}
+
+// ----------------------------------------------------------------- sound
+
+#define MIX_RATE 44100
+#define MAX_VOICES 64
+
+struct PlatSoundBuffer
+{
+	f32* samples;    // interleaved stereo, -1..1
+	i32 frames;
+	i32 rate;
+};
+
+struct PlatSoundVoice
+{
+	PlatSoundBuffer* buf;
+	f64 pos;         // in source frames
+	i32 rate;        // current playback rate in Hz
+	i32 playing;
+	i32 loop;
+	f32 gain;        // linear
+	f32 pan;         // -1..1
+};
+
+static SDL_AudioStream* gStream;
+static PlatSoundVoice* gVoices[MAX_VOICES];
+static SDL_Mutex* gMixLock;
+
+static void SDLCALL mixCallback(void*, SDL_AudioStream* stream, int additional, int)
+{
+	i32 frames = additional / (i32)(2 * sizeof(f32));
+	if (frames <= 0)
+		return;
+	f32* out = (f32*)calloc(frames * 2, sizeof(f32));
+
+	SDL_LockMutex(gMixLock);
+	for (i32 v = 0; v < MAX_VOICES; v++)
+	{
+		PlatSoundVoice* voice = gVoices[v];
+		if (!voice || !voice->playing || !voice->buf)
+			continue;
+		PlatSoundBuffer* b = voice->buf;
+		f64 step = (f64)voice->rate / MIX_RATE;
+		f32 gl = voice->gain * (voice->pan <= 0.0f ? 1.0f : 1.0f - voice->pan);
+		f32 gr = voice->gain * (voice->pan >= 0.0f ? 1.0f : 1.0f + voice->pan);
+		for (i32 i = 0; i < frames; i++)
+		{
+			i32 p = (i32)voice->pos;
+			if (p >= b->frames)
+			{
+				if (!voice->loop)
+				{
+					voice->playing = 0;
+					break;
+				}
+				voice->pos -= b->frames;
+				p = (i32)voice->pos;
+				if (p >= b->frames)
+					p = 0;
+			}
+			f32 frac = (f32)(voice->pos - p);
+			i32 p1 = p + 1 < b->frames ? p + 1 : (voice->loop ? 0 : p);
+			f32 l = b->samples[p * 2] + (b->samples[p1 * 2] - b->samples[p * 2]) * frac;
+			f32 r = b->samples[p * 2 + 1] + (b->samples[p1 * 2 + 1] - b->samples[p * 2 + 1]) * frac;
+			out[i * 2] += l * gl;
+			out[i * 2 + 1] += r * gr;
+			voice->pos += step;
+		}
+	}
+	SDL_UnlockMutex(gMixLock);
+
+	SDL_PutAudioStreamData(stream, out, frames * 2 * sizeof(f32));
+	free(out);
+}
+
+i32 Plat_SndInit(void)
+{
+	SDL_AudioSpec spec;
+	spec.format = SDL_AUDIO_F32;
+	spec.channels = 2;
+	spec.freq = MIX_RATE;
+	gMixLock = SDL_CreateMutex();
+	gStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, mixCallback, 0);
+	if (!gStream)
+	{
+		printf("Plat(sdl3): no audio device: %s\n", SDL_GetError());
+		return 0;
+	}
+	SDL_ResumeAudioStreamDevice(gStream);
+	return 1;
+}
+
+void Plat_SndShutdown(void)
+{
+	if (gStream)
+		SDL_DestroyAudioStream(gStream);
+	gStream = 0;
+}
+
+PlatSoundBuffer* Plat_SndCreateBuffer(const void* pcm, i32 bytes, i32 rate, i32 channels, i32 bits)
+{
+	i32 bps = (bits / 8) * channels;
+	if (bps <= 0)
+		return 0;
+	PlatSoundBuffer* b = new PlatSoundBuffer;
+	b->frames = bytes / bps;
+	b->rate = rate;
+	b->samples = (f32*)malloc(b->frames * 2 * sizeof(f32));
+	const u8* p8 = (const u8*)pcm;
+	const i16* p16 = (const i16*)pcm;
+	for (i32 i = 0; i < b->frames; i++)
+	{
+		f32 l, r;
+		if (bits == 8)
+		{
+			l = (p8[i * channels] - 128) / 128.0f;
+			r = channels > 1 ? (p8[i * channels + 1] - 128) / 128.0f : l;
+		}
+		else
+		{
+			l = p16[i * channels] / 32768.0f;
+			r = channels > 1 ? p16[i * channels + 1] / 32768.0f : l;
+		}
+		b->samples[i * 2] = l;
+		b->samples[i * 2 + 1] = r;
+	}
+	return b;
+}
+
+void Plat_SndDestroyBuffer(PlatSoundBuffer* b)
+{
+	if (!b)
+		return;
+	SDL_LockMutex(gMixLock);
+	for (i32 v = 0; v < MAX_VOICES; v++)
+		if (gVoices[v] && gVoices[v]->buf == b)
+			gVoices[v]->buf = 0;
+	SDL_UnlockMutex(gMixLock);
+	free(b->samples);
+	delete b;
+}
+
+PlatSoundVoice* Plat_SndCreateVoice(PlatSoundBuffer* b)
+{
+	PlatSoundVoice* v = new PlatSoundVoice;
+	v->buf = b;
+	v->pos = 0.0;
+	v->rate = b->rate;
+	v->playing = 0;
+	v->loop = 0;
+	v->gain = 1.0f;
+	v->pan = 0.0f;
+	SDL_LockMutex(gMixLock);
+	for (i32 i = 0; i < MAX_VOICES; i++)
+	{
+		if (!gVoices[i])
+		{
+			gVoices[i] = v;
+			break;
+		}
+	}
+	SDL_UnlockMutex(gMixLock);
+	return v;
+}
+
+void Plat_SndDestroyVoice(PlatSoundVoice* v)
+{
+	if (!v)
+		return;
+	SDL_LockMutex(gMixLock);
+	for (i32 i = 0; i < MAX_VOICES; i++)
+		if (gVoices[i] == v)
+			gVoices[i] = 0;
+	SDL_UnlockMutex(gMixLock);
+	delete v;
+}
+
+void Plat_SndPlay(PlatSoundVoice* v, i32 loop)
+{
+	SDL_LockMutex(gMixLock);
+	v->pos = 0.0;
+	v->loop = loop;
+	v->playing = 1;
+	SDL_UnlockMutex(gMixLock);
+}
+
+void Plat_SndStop(PlatSoundVoice* v)
+{
+	v->playing = 0;
+}
+
+i32 Plat_SndIsPlaying(PlatSoundVoice* v)
+{
+	return v->playing;
+}
+
+void Plat_SndSetVolume(PlatSoundVoice* v, i32 hundredthsDb)
+{
+	if (hundredthsDb > 0) hundredthsDb = 0;
+	if (hundredthsDb < -10000) hundredthsDb = -10000;
+	v->gain = powf(10.0f, hundredthsDb / 2000.0f);
+}
+
+void Plat_SndSetPan(PlatSoundVoice* v, i32 hundredthsDb)
+{
+	if (hundredthsDb < -10000) hundredthsDb = -10000;
+	if (hundredthsDb > 10000) hundredthsDb = 10000;
+	v->pan = hundredthsDb / 10000.0f;
+}
+
+void Plat_SndSetFrequency(PlatSoundVoice* v, i32 hz)
+{
+	if (hz < 100) hz = 100;
+	if (hz > 200000) hz = 200000;
+	v->rate = hz;
+}
+
+i32 Plat_SndGetFrequency(PlatSoundVoice* v)
+{
+	return v->rate;
+}
+
+i32 Plat_SndBufferRate(PlatSoundBuffer* b)
+{
+	return b->rate;
+}

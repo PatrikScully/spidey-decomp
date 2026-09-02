@@ -82,8 +82,9 @@ i32 Plat_GfxReadPixels(u8* dstBGR, i32 width, i32 height);
 void Plat_InputPollKeyboard(u8 dikState[256]);
 // Relative mouse motion since the last call, 3 buttons (0x80 = down).
 void Plat_InputPollMouse(i32* dx, i32* dy, u8 buttons[3]);
-// Game controller. Returns 0 if none. Axes are 0..65535 like DIJOFS_X/Y,
-// pov is a DirectInput POV (0xFFFFFFFF centred, else hundredths of degrees).
+// Game controller. Returns 0 if none. Axes are -1000..1000 (the DIPROP_RANGE
+// DXINPUT_SetupController asks DirectInput for), pov is a DirectInput POV
+// (0xFFFFFFFF centred, else hundredths of degrees).
 i32 Plat_InputPollController(i32* x, i32* y, u32* pov, u8 buttons[32], i32* numButtons);
 void Plat_InputRumble(i32 on, f32 strength);
 
