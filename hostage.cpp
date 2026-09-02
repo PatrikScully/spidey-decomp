@@ -9,8 +9,6 @@
 #include "trig.h"
 #include "ps2m3d.h"
 
-extern i32 DifficultyLevel;
-
 // guess: random XA speech sub-id table, picked with Rnd(5) when the player
 // gets close to a waiting hostage in CHostage::FollowWaypoints.
 EXPORT i32 gHostageXaSubIds[5] = { 0, 1, 2, 4, 0xC };
@@ -287,13 +285,13 @@ void CHostage::SetHostageType(i32 a2)
 // @Ok
 CHostage::~CHostage(void)
 {
-	this->DeleteFrom(reinterpret_cast<CBody**>(&BaddyList));
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 }
 
 // @Ok
 void Hostage_RelocatableModuleClear(void)
 {
-	for (CBody* cur = BaddyList; cur; )
+	for (CBody* cur = G_BADDY_LIST; cur; )
 	{
 		CBody* next = reinterpret_cast<CBody*>(cur->mNextItem);
 		if (cur->mType == 305)
@@ -324,11 +322,11 @@ void CHostage::BegMotherfucker(void)
 						200);
 			}
 
-			if (DifficultyLevel == 2)
+			if (G_DIFFICULTY_LEVEL == 2)
 			{
 				this->field_230 = 100;
 			}
-			else if (DifficultyLevel == 3)
+			else if (G_DIFFICULTY_LEVEL == 3)
 			{
 				this->field_230 = 65;
 			}
@@ -367,7 +365,7 @@ void INLINE CHostage::HostageXAPlay(i32 a2, i32 a3, i32 a4)
 // @Ok
 void CHostage::TellSomebodyToShootMe(void)
 {
-	if (DifficultyLevel != 1 && DifficultyLevel)
+	if (G_DIFFICULTY_LEVEL != 1 && G_DIFFICULTY_LEVEL)
 	{
 		CBaddy *pBaddy = this->GetClosest(304, 0);
 
@@ -396,7 +394,7 @@ INLINE void CHostage::CheckIfFreed(void)
 {
 	if (Utils_CrapDist(G_MECHLIST_PLAYER->mPos, this->mPos) < 0xC8 || this->mInputFlags & 1)
 	{
-		if (DifficultyLevel == 1 || DifficultyLevel == 0)
+		if (G_DIFFICULTY_LEVEL == 1 || G_DIFFICULTY_LEVEL == 0)
 			this->field_218 |= 1;
 		this->Baddy_SendSignal();
 		this->field_324 = 4;
@@ -506,7 +504,7 @@ CHostage::CHostage(i16* a2, i32 a3)
 {
 	i16 *afterAngles = this->SquirtAngles(reinterpret_cast<i16*>(this->SquirtPos(a2)));
 
-	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
+	this->AttachTo(reinterpret_cast<CBody**>(&G_BADDY_LIST));
 	this->ShadowOn();
 
 	this->mShadowScale = 48;
