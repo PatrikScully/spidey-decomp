@@ -43,5 +43,6 @@ void validate_CTorch(void);
 EXPORT void Torch_CreateTorch(const u32 *stack, u32 *result);
 EXPORT void Torch_RelocatableModuleInit(reloc_mod *);
 EXPORT void Torch_RelocatableModuleClear(void);
+void patch_torch(void);
 
-#endif 
+#endif
