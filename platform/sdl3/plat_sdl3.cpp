@@ -22,6 +22,17 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+
+// Debugging aids, read once in Plat_GfxInit:
+//   SPIDEY_NOCULL=1     no back face culling
+//   SPIDEY_NODEPTH=1    depth test always off
+//   SPIDEY_GLDEBUG=ms   from that many ms after start, log the GL state and
+//                       vertices of the first 60 fans after each of the next
+//                       4 clears to stderr
+static i32 gDbgNoDepth = 0;
+static i32 gDbgLogFrom = -1;
+static i32 gDbgClears = 0;
+static i32 gDbgSinceClear = 0;
 #include <pthread.h>
 #include <unistd.h>
 
@@ -95,6 +106,10 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	glEnable(GL_CULL_FACE);
 	if (getenv("SPIDEY_NOCULL"))   // debugging aid
 		glDisable(GL_CULL_FACE);
+	gDbgNoDepth = getenv("SPIDEY_NODEPTH") ? 1 : 0;
+	if (gDbgNoDepth)
+		glDisable(GL_DEPTH_TEST);
+	gDbgLogFrom = getenv("SPIDEY_GLDEBUG") ? atoi(getenv("SPIDEY_GLDEBUG")) : -1;
 	glEnable(GL_ALPHA_TEST);
 	glAlphaFunc(GL_GEQUAL, 8.0f / 255.0f);   // ALPHAREF 8 / GREATEREQUAL, ALPHATESTENABLE is off by
 	glDisable(GL_ALPHA_TEST);                 // default in DXPOLY_Init, matched below
@@ -253,11 +268,26 @@ void Plat_TexDestroy(PlatTexture* t)
 
 void Plat_GfxBeginScene(u32 clearColorARGB, i32 clearDepth)
 {
+	gDbgSinceClear = 0;
+	if (gDbgLogFrom >= 0 && (i32)SDL_GetTicks() >= gDbgLogFrom && gDbgClears < 4)
+	{
+		gDbgClears++;
+		fprintf(stderr, "GLCLEAR #%d t=%u color=%08x depth=%d\n", gDbgClears, (u32)SDL_GetTicks(), clearColorARGB, clearDepth);
+	}
 	glClearColor(((clearColorARGB >> 16) & 0xFF) / 255.0f,
 			((clearColorARGB >> 8) & 0xFF) / 255.0f,
 			(clearColorARGB & 0xFF) / 255.0f, 1.0f);
 	glClearDepth(1.0);
+	// D3D's Clear ignores ZWRITEENABLE, GL's glClear honours glDepthMask. The
+	// game often ends a frame with depth writes off (alpha polys), which left
+	// the depth buffer uncleared here and every opaque poly of the next frame
+	// failed the LEQUAL test against stale depth (the level rendered as the
+	// bare sky colour, 2026-09-03).
+	GLboolean depthMask = GL_TRUE;
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+	glDepthMask(GL_TRUE);
 	glClear(GL_COLOR_BUFFER_BIT | (clearDepth ? GL_DEPTH_BUFFER_BIT : 0));
+	glDepthMask(depthMask);
 }
 
 void Plat_GfxEndScene(void)
@@ -296,6 +326,8 @@ void Plat_GfxSetBlendMode(u32 mode)
 
 void Plat_GfxSetDepthTest(i32 enable)
 {
+	if (gDbgNoDepth)
+		enable = 0;
 	if (enable)
 		glEnable(GL_DEPTH_TEST);
 	else
@@ -386,6 +418,18 @@ static void applyTextureState(void)
 void Plat_GfxDrawFan(const SDXPolyField* v, i32 count)
 {
 	applyTextureState();
+	gDbgSinceClear++;
+	if (gDbgLogFrom >= 0 && gDbgClears > 0 && gDbgClears <= 4 && (i32)SDL_GetTicks() >= gDbgLogFrom && gDbgSinceClear <= 60)
+	{
+		GLint tex = 0, dfunc = 0, dmask = 0;
+		glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+		glGetIntegerv(GL_DEPTH_FUNC, &dfunc);
+		glGetIntegerv(GL_DEPTH_WRITEMASK, &dmask);
+		fprintf(stderr, "GLFAN #%d n=%d tex=%d cull=%d depth=%d/%d mask=%d alpha=%d blend=%d v0=(%.1f,%.1f,%.4f c=%08x) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
+			gDbgSinceClear, count, tex, glIsEnabled(GL_CULL_FACE), glIsEnabled(GL_DEPTH_TEST), dfunc, dmask,
+			glIsEnabled(GL_ALPHA_TEST), glIsEnabled(GL_BLEND),
+			v[0].field_0, v[0].field_4, v[0].field_8, v[0].field_10, v[1].field_0, v[1].field_4, v[1].field_8, v[2].field_0, v[2].field_4, v[2].field_8);
+	}
 
 	glBegin(GL_TRIANGLE_FAN);
 	for (i32 i = 0; i < count; i++)
