@@ -50,7 +50,10 @@ i32 Plat_Yield(void)
 
 u32 Plat_Ticks(void)
 {
-	return nowMs();
+	// milliseconds since Plat_Init, the same clock SPIDEY_KEYS and
+	// SPIDEY_QUIT_MS use, so SPIDEY_DUMPPOLYS_AT / SPIDEY_SHOTS values are
+	// run-relative too (an absolute clock made every "_AT" fire at once)
+	return nowMs() - gStartMs;
 }
 
 void Plat_Sleep(u32 ms)
