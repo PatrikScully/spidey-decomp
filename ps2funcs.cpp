@@ -966,14 +966,19 @@ void MulMatrix0(MATRIX *a1, MATRIX *a2, MATRIX *a3)
 
 
 // @Ok
+// 0x46D0E0: a1 = a1 * a2 (libgte MulMatrix). The original copies the nine
+// rotation words of a1 into a stack temp and calls MulMatrix0(temp, a2, a1).
+// The previous version copied a2 instead, so every caller got a2 * a2: a
+// yaw rotation composed through it came out with twice the angle, which
+// (via M3dColij_InitLineInfo's line-space frame) made every diagonal
+// collision ray test the wrong faces. Found by the standalone build:
+// Spidey could not stick to the wall at the level 1 spawn.
 void MulMatrix(MATRIX *a1, MATRIX *a2)
 {
-  //MATRIX v2 = *a1;
-
 	MATRIX v2;
 	for (int i = 0; i<3; i++){
 		for (int j = 0; j<3; j++){
-			v2.m[i][j] = a2->m[i][j];
+			v2.m[i][j] = a1->m[i][j];
 		}
 	}
   MulMatrix0(&v2, a2, a1);
