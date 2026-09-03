@@ -468,8 +468,8 @@ void Logic(void)
 			{
 				CPlayer *pP = reinterpret_cast<CPlayer*>(G_MECHLIST);
 				CCamera *pC = G_CAMERA_LIST;
-				fprintf(stderr, "PLAYER t=%u f80=%d pos=(%d,%d,%d) vel=(%d,%d,%d) ang=(%d,%d,%d) coll=%#x mode=%#x anim=%d frame=%d crawl=%d E2D=%d E2E=%d EBC=%d | cam pos=(%d,%d,%d) mode=%d yaw=%d\n",
-					Plat_Ticks(), pP->field_80, pP->mPos.vx, pP->mPos.vy, pP->mPos.vz,
+				fprintf(stderr, "PLAYER t=%u status=%d f80=%d pos=(%d,%d,%d) vel=(%d,%d,%d) ang=(%d,%d,%d) coll=%#x mode=%#x anim=%d frame=%d crawl=%d E2D=%d E2E=%d EBC=%d | cam pos=(%d,%d,%d) mode=%d yaw=%d\n",
+					Plat_Ticks(), gLevelStatus, pP->field_80, pP->mPos.vx, pP->mPos.vy, pP->mPos.vz,
 					pP->mVel.vx, pP->mVel.vy, pP->mVel.vz,
 					pP->mAngles.vx, pP->mAngles.vy, pP->mAngles.vz,
 					pP->mCollision, pP->field_E1C, pP->mAnim, pP->mFrame, pP->field_AD4,
