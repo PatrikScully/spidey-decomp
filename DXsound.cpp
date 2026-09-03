@@ -1431,6 +1431,28 @@ void DXPOLY_EndScene(bool a1)
 void DXPOLY_Flip(void)
 {
 #ifdef SPIDEY_STANDALONE
+	// SPIDEY_SHOTS="ms,ms,...": save scrnNNNN.bmp at those times (test aid)
+	{
+		static i32 parsed;
+		static u32 shotAt[16];
+		static i32 shotCount, shotNext;
+		if (!parsed)
+		{
+			parsed = 1;
+			const char* env = getenv("SPIDEY_SHOTS");
+			while (env && *env && shotCount < 16)
+			{
+				shotAt[shotCount++] = (u32)strtoul(env, 0, 10);
+				const char* c = strchr(env, ',');
+				env = c ? c + 1 : 0;
+			}
+		}
+		if (shotNext < shotCount && Plat_Ticks() >= shotAt[shotNext])
+		{
+			shotNext++;
+			DXPOLY_SaveScreen();
+		}
+	}
 	Plat_GfxFlip();
 	// the Windows build pumps its message queue from several places the
 	// standalone build does not have; once per presented frame is enough

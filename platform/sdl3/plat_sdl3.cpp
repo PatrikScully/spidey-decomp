@@ -459,6 +459,48 @@ static void buildDikTable(void)
 		gDikTable[map[i].sc] = map[i].dik;
 }
 
+// SPIDEY_KEYS="ms:enter,ms:down,..." scripted presses (same syntax as the
+// null backend, delays are relative to the previous key), merged with the
+// real keyboard so automated runs can drive the menus.
+struct SScriptKey { u32 atMs; u8 dik; };
+static SScriptKey gScript[64];
+static i32 gScriptCount = -1, gScriptNext;
+static u32 gKeyDownUntil;
+static u8 gScriptKeyDown;
+
+static void parseScript(void)
+{
+	gScriptCount = 0;
+	const char* s = getenv("SPIDEY_KEYS");
+	if (!s)
+		return;
+	char buf[512];
+	strncpy(buf, s, sizeof(buf) - 1);
+	buf[sizeof(buf) - 1] = 0;
+	u32 t = 0;
+	for (char* tok = strtok(buf, ","); tok && gScriptCount < 64; tok = strtok(0, ","))
+	{
+		char* colon = strchr(tok, ':');
+		if (!colon)
+			continue;
+		*colon = 0;
+		t += (u32)atoi(tok);
+		const char* name = colon + 1;
+		u8 dik;
+		if (!strcmp(name, "enter")) dik = 0x1C;
+		else if (!strcmp(name, "esc")) dik = 0x01;
+		else if (!strcmp(name, "up")) dik = 0xC8;
+		else if (!strcmp(name, "down")) dik = 0xD0;
+		else if (!strcmp(name, "left")) dik = 0xCB;
+		else if (!strcmp(name, "right")) dik = 0xCD;
+		else if (!strcmp(name, "space")) dik = 0x39;
+		else dik = (u8)strtol(name, 0, 0);
+		gScript[gScriptCount].atMs = t;
+		gScript[gScriptCount].dik = dik;
+		gScriptCount++;
+	}
+}
+
 void Plat_InputPollKeyboard(u8 dikState[256])
 {
 	buildDikTable();
@@ -469,6 +511,23 @@ void Plat_InputPollKeyboard(u8 dikState[256])
 	{
 		if (keys[sc] && gDikTable[sc])
 			dikState[gDikTable[sc]] = 0x80;
+	}
+
+	if (gScriptCount < 0)
+		parseScript();
+	u32 now = (u32)SDL_GetTicks();
+	if (gScriptKeyDown && now < gKeyDownUntil)
+	{
+		dikState[gScriptKeyDown] = 0x80;
+		return;
+	}
+	gScriptKeyDown = 0;
+	if (gScriptNext < gScriptCount && now >= gScript[gScriptNext].atMs)
+	{
+		gScriptKeyDown = gScript[gScriptNext].dik;
+		gKeyDownUntil = now + 120;
+		gScriptNext++;
+		dikState[gScriptKeyDown] = 0x80;
 	}
 }
 
