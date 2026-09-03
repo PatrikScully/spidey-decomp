@@ -3054,16 +3054,30 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	pCam->Transform.t[1] = *gM3dCamOffsetY + pCam->Transform.t[1];
 	pCam->Transform.t[2] = *gM3dCamOffsetZ + pCam->Transform.t[2];
 
-	matrix4x4 camMatrix;
-	ConvertMATRIXTomatrix4x4_0(&pCam->Transform, &camMatrix);
-	matrix4x4 stru_56E778;
-	memcpy(&stru_56E778, (void*)0x0056E778, sizeof(matrix4x4));
-	gsub_4021D0(&stru_56E778);
+	// 0x472DC0: the camera transform becomes a matrix4x4 at 0x56E738, is
+	// copied to 0x56E778 (shell.cpp: gComicCamMatrix) and inverted there in
+	// place; the frame's final matrix is that inverse times the projection
+	// matrix kept at 0x56E570 (shell.cpp: gComicViewMatrix). The previous
+	// version converted into a local it never read, inverted a stale copy of
+	// 0x56E778 and multiplied the two the other way round, so the camera
+	// never reached the renderer (the standalone drew the level upside down
+	// from the world origin, 2026-09-03).
+	static matrix4x4 * const gM3dCamMatrix = (matrix4x4*)0x0056E738;
+	static matrix4x4 * const gM3dCamInvMatrix = (matrix4x4*)0x0056E778;
+	static matrix4x4 * const gM3dProjMatrix = (matrix4x4*)0x0056E570;
+
+	ConvertMATRIXTomatrix4x4_0(&pCam->Transform, gM3dCamMatrix);
+	memcpy(gM3dCamInvMatrix, gM3dCamMatrix, sizeof(matrix4x4));
+	gsub_4021D0(gM3dCamInvMatrix);
 
 	f32 a1a = (f32)G_GAME_RESOLUTION_X / (f32)G_XRES;
 	f32 a1b = (f32)G_GAME_RESOLUTION_Y / (f32)G_YRES;
-	f32 left = (f32)xL * a1a;
-	f32 right = (f32)(xR - xL) * a1a;
+	// 0x472DC0 reads the viewport as u16[]: the projection's left edge is
+	// [2] (+4, the field this function calls xR) and its width is [0] - [2]
+	// (+0 minus +4). With the two swapped the x scale came out negative and
+	// the standalone drew the world mirrored and upside down.
+	f32 left = (f32)xR * a1a;
+	f32 right = (f32)(xL - xR) * a1a;
 	f32 top = (f32)yT * a1b;
 	f32 bottom = (f32)(yB - yT) * a1b;
 	f32 yon = (f32)vpYon;
@@ -3079,30 +3093,14 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	f32 v84 = v83 * v91;
 
 	matrix4x4 v95 = matrix4x4(v84, 0, 0, 0, 0, v84, 0, 0, v76, v92, invRange, 1, 0, 0, v94, 0);
-	vector4d v93[4];
-	for (i32 j = 0; j < 4; j++)
-		v93[j] = v95.field_0[j];
 
-	matrix4x4 stru_56E570;
-	memcpy(&stru_56E570, (void*)0x0056E570, sizeof(matrix4x4));
-	f32 *src = (f32*)v93;
-	f32 *dst = &stru_56E570.field_0[0].field_0[0];
-	// copy the 16 floats from v93 into stru_56E570, with the first row replaced
-	for (i32 r = 0; r < 4; r++)
-	{
-		for (i32 c = 0; c < 4; c++)
-		{
-			if (r == 0)
-				dst[r*4+c] = (c == 0) ? v92 : src[r*4+c];
-			else
-				dst[r*4+c] = src[r*4+c];
-		}
-	}
+	// four vector4d::operator= (0x402600) row copies in the original
+	memcpy(gM3dProjMatrix, &v95, sizeof(matrix4x4));
 
 	PCGfx_RenderInit(hither, yon, (f32)fieldE);
 
 	static matrix4x4 * const gM3dFinalProjMatrix = (matrix4x4*)0x0056E6F8;
-	gsub_476A00(gM3dFinalProjMatrix, &v95, &stru_56E778);
+	gsub_476A00(gM3dFinalProjMatrix, gM3dCamInvMatrix, gM3dProjMatrix);
 
 	i32 result = *gM3dFogFlag;
 	if (*gM3dFogFlag != 0)
