@@ -1301,6 +1301,62 @@ void CSimby::FlashUpdate(void)
 }
 
 // @Ok
+// 0x4AF260 (326 bytes), CSimby vtable slot 17, Mac Flash__6CSimbyFiUcUcUc.
+// Starts a colour flash that FlashUpdate above plays back: frames > 0
+// fades from (r,g,b) back to the 0x20 grey over `frames` steps and saves
+// the current mRGB (plus its 0x400 flag state in bit 25) in field_330 so
+// FlashUpdate can restore it; frames < 0 fades from grey towards (r,g,b);
+// frames == 0 sets the colour with no fade. All divisions are signed
+// (cdq/idiv) and the negative branch divides by the u16-truncated
+// negation, reproduced as written.
+void CSimby::Flash(i32 frames, u8 r, u8 g, u8 b)
+{
+	if (frames == 0)
+	{
+		this->field_328 = 0;
+		this->mFlags |= 0x400;
+		this->mRGB = r | (g << 8) | (b << 16);
+		return;
+	}
+
+	if (frames < 0)
+	{
+		this->mRGB = 0x202020;
+		i32 steps = static_cast<u16>(-frames);
+		this->field_328 = static_cast<i16>(-frames);
+		this->field_32A = static_cast<u16>((r - 32) / steps);
+		this->field_32C = static_cast<u16>((g - 32) / steps);
+		this->field_32E = static_cast<i16>((b - 32) / steps);
+		this->mFlags |= 0x400;
+		return;
+	}
+
+	this->field_328 = static_cast<i16>(frames + 1);
+	this->field_32A = static_cast<u16>((32 - r) / frames);
+	this->field_32C = static_cast<u16>((32 - g) / frames);
+	this->field_32E = static_cast<i16>((32 - b) / frames);
+
+	if ((this->field_330 & 0x1000000) == 0)
+	{
+		this->field_330 = (this->mRGB & 0xFFFFFF) | 0x1000000;
+		if (this->mFlags & 0x400)
+			this->field_330 |= 0x2000000;
+	}
+
+	this->mFlags |= 0x400;
+	this->mRGB = r | (g << 8) | (b << 16);
+}
+
+// @Ok
+// 0x4A7E70 (16 bytes), CSimby vtable slot 18. Just raises bit 0x8000 of
+// field_218 (the CBaddy state flags); CSimby::AI picks the flag up. The
+// original returns the new flag word in eax, which no caller reads.
+void CSimby::ExplosionReaction(void)
+{
+	this->field_218 |= 0x8000;
+}
+
+// @Ok
 void CSimbySlimeBase::ScaleUp(void)
 {
 	this->field_A4 = 32;
@@ -1435,6 +1491,8 @@ void validate_CSimbyDrop(void){
 
 void validate_CSimby(void){
 	VALIDATE_SIZE(CSimby, 0x460);
+	VALIDATE_VTABLE(CSimby, Flash, 17);
+	VALIDATE_VTABLE(CSimby, ExplosionReaction, 18);
 
 	VALIDATE(CSimby, field_324, 0x324);
 

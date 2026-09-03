@@ -26,6 +26,13 @@ class CSimby : public CBaddy {
 public:
 	EXPORT CSimby(i32*, i32);
 	EXPORT CSimby(void);
+	// The only two virtuals CSimby adds beyond CBaddy's 17 (vtable 0x53C0B4
+	// slots 17 and 18, the next dword is CSimbyBase's vtable). Flash is
+	// 0x4AF260 (Mac: Flash__6CSimbyFiUcUcUc), ExplosionReaction is a
+	// tentative name for the unnamed 0x4A7E70 that CManipOb::Chunk calls
+	// on every type 324 baddy inside the blast.
+	EXPORT virtual void Flash(i32, u8, u8, u8);
+	EXPORT virtual void ExplosionReaction(void);
 	EXPORT void FlashUpdate(void);
 	EXPORT void SetAlertModeTimer(i32);
 	EXPORT void ClearAttackData(void);

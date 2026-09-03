@@ -2809,18 +2809,17 @@ int CBaddy::ExecuteCommand(u16 cmd)
 
 			if (node != 0)
 			{
-				// raw vtable slot 17 (offset 0x44): not resolvable to a
-				// declared virtual in this repo, kept raw with a comment
-				// rather than guessed at. Real C++ virtual calls are
-				// thiscall, and this build's compiler flags reject the
-				// __thiscall keyword directly (error C4234, see
-				// SMechRangeCheckAdapter above), so the same member-
-				// function-pointer trick is used here.
-				void **vtable = *reinterpret_cast<void***>(node);
-				typedef void (SMechRangeCheckAdapter::*slot17_t)(CVector*);
-				union { slot17_t m; void *p; } u;
-				u.p = vtable[17];
-				(reinterpret_cast<SMechRangeCheckAdapter*>(node)->*u.m)(&this->mPos);
+				// vtable slot 17 (offset 0x44) on the type 314 baddy. Type
+				// 314 is CCarnage (Trig_CreateObject case 314 ->
+				// Carnage_CreateCarnage) and slot 17 of its vtable
+				// (0x53B52C) is CCarnage::MakeSonicRipple, already declared
+				// virtual in carnage.h and validated at slot 17, so this is
+				// a plain virtual call. The previous raw-slot member
+				// pointer trick indexed MSVC slot numbering, which is off
+				// by one under GCC (two destructor entries per vtable), and
+				// a member function pointer is 8 bytes there, so it broke
+				// the standalone build.
+				static_cast<CCarnage*>(node)->MakeSonicRipple(&this->mPos);
 			}
 
 			return true;

@@ -12,6 +12,7 @@
 #include "exp.h"
 #include "effects.h"
 #include "camera.h"
+#include "simby.h"
 
 static i16 * const word_610C48 = (i16*)0x610C48;
 extern const char *gObjFile;
@@ -457,14 +458,14 @@ static void SpawnChunkSmokeBurst(CVector *pos, CVector *dirA, CVector *dirB, i32
 // basis. The `CVector*` second parameter is never read anywhere in this
 // function (confirmed by scanning the full decompile for any use); reproduced
 // faithfully as unused, matching CManipOb::Smash's caller passing an unused
-// value for it. The single unnamed piece left: the mType==324 (CSimby)
-// reaction is a distinct virtual (not Hit) at vtable slot 18 -- confirmed by
-// reading CSimby's own vtable bytes (off_53C0B4) directly and decompiling
-// what's there (sub_4A7E70): `this->field_218 |= 0x8000; return field_218;`.
-// Called here via raw vtable dispatch (FontTools.cpp's own established
-// pattern for calling through an unnamed vtable slot) rather than adding a
-// new CSimby virtual, since slots 17/19 (also CSimby-specific, confirmed via
-// the same vtable read) are unrelated to this call and out of scope here.
+// value for it. The mType==324 (CSimby) reaction is a distinct virtual (not
+// Hit) at vtable slot 18 -- confirmed by reading CSimby's own vtable bytes
+// (off_53C0B4) directly and decompiling what's there (sub_4A7E70):
+// `this->field_218 |= 0x8000; return field_218;`. It is now declared as
+// CSimby::ExplosionReaction (simby.h) and called as a normal virtual. The
+// earlier raw `pVtable[18]` + fastcall dispatch used MSVC slot numbering
+// and put `this` in ecx, both wrong for the GCC standalone build (two
+// destructor slots per vtable, `this` on the stack).
 void CManipOb::Chunk(SLineInfo *pLineInfo, CVector*)
 {
 	CVector normal;
@@ -528,12 +529,7 @@ void CManipOb::Chunk(SLineInfo *pLineInfo, CVector*)
 			if (pBaddy->mType == 324)
 			{
 				if (dist <= 1024)
-				{
-					typedef void (FASTCALL *pfnExplosionReaction)(void*);
-					i32 *pVtable = *reinterpret_cast<i32**>(pBaddy);
-					pfnExplosionReaction fn = reinterpret_cast<pfnExplosionReaction>(pVtable[18]);
-					fn(reinterpret_cast<void*>(pBaddy));
-				}
+					static_cast<CSimby*>(pBaddy)->ExplosionReaction();
 			}
 			else if (dist < 1024)
 			{

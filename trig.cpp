@@ -485,9 +485,18 @@ CBody* PowerUp_Create(i32 type, CVector* pos, i32 flags, i32 param1, i32 param2)
 // SVTableSlot0Deletable reproduces a slot-0 call -- __thiscall itself is
 // rejected by this build (error C4234), so a same-shaped virtual class
 // is the only portable way to get the compiler to emit a thiscall here.
+// Slot 0 of every CItem-derived class is the virtual destructor, and this
+// fake class must declare one too, not a plain dummy virtual: MSVC gives
+// a virtual destructor ONE vtable entry (the scalar deleting destructor),
+// GCC's Itanium ABI gives it TWO (complete + deleting), so only a real
+// destructor here keeps SetSubType on the same slot as the real classes
+// under both compilers. With a dummy virtual instead, the standalone
+// (GCC) build called slot 17 = CBaddy::GetVariable, the thug never got
+// its type/region and RenderSuperItem crashed on region 0's NULL
+// pAnimFile (found 2026-09-03).
 struct SVTableSlot17Setter
 {
-	virtual void Unused00() {}
+	virtual ~SVTableSlot17Setter() {}
 	virtual void Unused01() {}
 	virtual void Unused02() {}
 	virtual void Unused03() {}
