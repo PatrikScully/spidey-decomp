@@ -1129,7 +1129,12 @@ static tagKMVERTEX3 * const gDCVertexPool = (tagKMVERTEX3*)0x0062E510;
 // into mFlags bits 16-23 by DCModel_CreateFromSModel, see dcmodel.h) --
 // shares an exact screen position across welded copies of one source
 // vertex so UV-seam splits don't crack at a shared edge.
-static f32 * const gDCStitchPositionTable = (f32*)0x0062861C;
+// 0x62861C is a POINTER variable (0x476D00 reads `*(float*)(16*idx + dword_62861C)`),
+// set by RenderSuperItem to 0x654FB8: the attach-point area that gDCAttachPointCursor
+// fills downward from 0x658E28 (= 0x654FB8 + 16*999), so stitch index k reads attach
+// point k. Reading 0x62861C as the table itself gave every stitched vertex zero /
+// NaN screen coordinates (spike triangles on the menu Spidey model, 2026-09-03).
+static u8 ** const gDCStitchPositionTable = (u8**)0x0062861C;
 
 // Bump-decrementing (16 bytes/record) output cursor. Written whenever a
 // DCVert's mFlags bit 0x1 is set, right after that vertex's screen position
@@ -1340,7 +1345,7 @@ void DCModel_RenderModel(SModel const *pModel, DCModelData *pData, matrix4x4 con
 			if ((vf & 2) != 0)
 			{
 				i32 stitchIdx = 999 - (u8)((u32)vf >> 16);
-				f32 *src = (f32*)((u8*)gDCStitchPositionTable + 16 * stitchIdx);
+				f32 *src = (f32*)(*gDCStitchPositionTable + 16 * stitchIdx);
 				pWrite[-1] = src[0];
 				pWrite[0]  = src[1];
 				pWrite[1]  = src[2];
