@@ -941,7 +941,7 @@ void PCGfx_DrawQPoly2D(
 			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
 
 			if (!(p->mBlendMode & 4))
-				dst->field_4 = 1.0f;
+				dst->field_C = 1.0f; // rhw, the original stores to +0xC (0x5071B0: *((DWORD*)v6 + 1) with v6 = dst + 8)
 
 			i32 alpha;
 			if (gProcessTextureRelated)
@@ -1506,7 +1506,7 @@ void PCGfx_DrawTPoly2D(
 			memcpy(dst, &dxPolyFields[i], sizeof(SDXPolyField));
 
 			if (!(p->mBlendMode & 4))
-				dst->field_4 = 1.0f;
+				dst->field_C = 1.0f; // rhw, the original stores to +0xC (0x5071B0: *((DWORD*)v6 + 1) with v6 = dst + 8)
 
 			i32 alpha;
 			if (gProcessTextureRelated)
@@ -2425,7 +2425,7 @@ void submitPoly(_DXVERT **verts, i32 count)
 				memcpy(dst, verts[i], sizeof(SDXPolyField));
 
 				if (!(p->mBlendMode & 4))
-					dst->field_4 = 1.0f;
+					dst->field_C = 1.0f; // rhw, the original stores to +0xC (0x5071B0: *((DWORD*)v6 + 1) with v6 = dst + 8)
 
 				i32 v23;
 				if (gProcessTextureRelated)
@@ -2475,7 +2475,7 @@ void submitPoly(_DXVERT **verts, i32 count)
 				memcpy(dst, verts[i], sizeof(SDXPolyField));
 
 				if (!(p->mBlendMode & 4))
-					dst->field_4 = 1.0f;
+					dst->field_C = 1.0f; // rhw, the original stores to +0xC (0x5071B0: *((DWORD*)v6 + 1) with v6 = dst + 8)
 
 				i32 v23;
 				if (gProcessTextureRelated)
