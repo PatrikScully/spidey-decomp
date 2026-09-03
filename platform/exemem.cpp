@@ -1,4 +1,8 @@
 #include "exemem.h"
+#include "../FontTools.h"
+#include "../dcmodel.h"
+#include "../dcmemcard.h"
+#include <new>
 
 #include <cstdio>
 #include <cstring>
@@ -156,6 +160,24 @@ i32 ExeMem_Init(const char* exePath)
 
 	fclose(f);
 	gExeMemSeeded = 1;
+
+	// The exe's 1677 C++ static initializers (.CRT$XCU table 0x546004..
+	// 0x547A34) ran before WinMain and filled the bss part of this block
+	// (every CVector/CQuat/matrix global with a constructor, e.g. the float
+	// identity matrix at 0x64E518 that M3d_Render gives every unrotated
+	// item). None of that code runs here, so replay the stores from the
+	// generated table, then the four initializers that call constructors:
+	// gSkaterModels[2] (0x5F6698) and gGlobalSkaterModel (0x5F6808) via
+	// DCSkaterModel::DCSkaterModel (0x4325F0), gMessFont (0x60D238) via
+	// Font::Font (0x4585E0), and gFrontCardExists / gFrontCardExistsThisFrame
+	// (0x5FAD98 / 0x5FAE8C) from DCCard_Exists(0) (0x43F990 / 0x43F9A0).
+	ExeMem_ApplyStaticInits();
+	::new (reinterpret_cast<void*>(0x005F6698)) DCSkaterModel();
+	::new (reinterpret_cast<void*>(0x005F6698 + sizeof(DCSkaterModel))) DCSkaterModel();
+	::new (reinterpret_cast<void*>(0x005F6808)) DCSkaterModel();
+	::new (reinterpret_cast<void*>(0x0060D238)) Font();
+	*reinterpret_cast<u8*>(0x005FAD98) = DCCard_Exists(0);
+	*reinterpret_cast<u8*>(0x005FAE8C) = DCCard_Exists(0);
 
 	// Repo variables that live in the exe's bss (zero in the exe) but carry a
 	// non-zero initializer in the repo. Their definitions are compiled out in
