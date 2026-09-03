@@ -76,6 +76,9 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	glOrtho(-0.5, width - 0.5, height - 0.5, -0.5, 0.0, 1.0);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
+	// glOrtho's near..far is along -z in eye space; the game's z (0 near ..
+	// 1 far) is positive, so mirror it. Screen winding is unaffected.
+	glScalef(1.0f, 1.0f, -1.0f);
 
 	glDisable(GL_LIGHTING);
 	glDisable(GL_DITHER);
@@ -87,6 +90,8 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	glFrontFace(GL_CCW);
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
+	if (getenv("SPIDEY_NOCULL"))   // debugging aid
+		glDisable(GL_CULL_FACE);
 	glEnable(GL_ALPHA_TEST);
 	glAlphaFunc(GL_GEQUAL, 8.0f / 255.0f);   // ALPHAREF 8 / GREATEREQUAL, ALPHATESTENABLE is off by
 	glDisable(GL_ALPHA_TEST);                 // default in DXPOLY_Init, matched below
