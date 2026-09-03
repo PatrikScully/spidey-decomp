@@ -270,6 +270,9 @@ EXPORT void Effects_LaserFlash(CVector*, i32, i32, u8, u8, u8, u8);
 // 0x43B740 (Mac: Effects_MakeRocks(CVector const&, ulong)). Called by
 // CBaddy::ExecuteCommand and CPlatform::ExecuteCommand for opcode 0x430A.
 EXPORT void Effects_MakeRocks(CVector*, u32);
+// 0x439CC0 (Mac: Effects_CreateElectroLines(int)). Called by Trig_CreateNodeItem
+// for node type 409.
+EXPORT void Effects_CreateElectroLines(i32);
 
 void patch_effects(void);
 

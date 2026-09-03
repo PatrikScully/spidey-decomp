@@ -18,6 +18,7 @@
 #include "db.h"
 #include "m3dinit.h"
 #include "ps2lowsfx.h"
+#include "effects.h"
 #include "ps2redbook.h"
 #include "ob.h"
 #include "init.h"
@@ -815,20 +816,8 @@ CBody* Trig_CreateObject(i32 NodeIndex)
 				break;
 
 			case 409:
-			{
-#ifdef SPIDEY_STANDALONE
-				// @TODO Phase 2: Effects_CreateElectroLines (0x439CC0, 350
-				// bytes, creates one CElectroLine per link of the node) is
-				// not decompiled yet. Visual only.
-				printf("Effects_CreateElectroLines(%d): not available in the standalone build yet\n", NodeIndex);
+				Effects_CreateElectroLines(NodeIndex);
 				return 0;
-#else
-				typedef void (*func_ptr)(i32);
-				func_ptr func = reinterpret_cast<func_ptr>(0x00439CC0);
-				func(NodeIndex);
-				return 0;
-#endif
-			}
 
 			case 411:
 				Simby_CreateSimbyDroplet(stack2, &outPtr);

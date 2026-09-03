@@ -391,6 +391,66 @@ void Effects_LaserFlash(CVector* pPos, i32 a2, i32 a3, u8 a4, u8 a5, u8 a6, u8 a
 }
 
 // @Ok
+// 0x439CC0, 350 bytes (Mac: Effects_CreateElectroLines(int)). Builds one
+// CElectroLine per link, following the single link of each node round the
+// chain until it comes back to the start node. Node 409 data (after the
+// u16 type/subtype header): i32 at +8 passed straight through, three
+// texture name pointers at +12 (terminated by a zero dword) that get
+// replaced in place by their Spool checksums, then the parameter block:
+// three bytes at +0/+2/+4 and u16s at +6/+8/+12 of it.
+void Effects_CreateElectroLines(i32 NodeIndex)
+{
+	u16 *pNode = reinterpret_cast<u16*>(G_OFFSETLIST[NodeIndex]);
+	print_if_false(pNode[0] == 1 && pNode[1] == 409, "Node is not an electroline");
+
+	CVector pos(0, 0, 0);
+	u8 *pData = reinterpret_cast<u8*>(Trig_GetPosition(&pos, NodeIndex));
+
+	i32 a10 = *reinterpret_cast<i32*>(pData + 8);
+	u32 *pTextures = reinterpret_cast<u32*>(pData + 12);
+	u32 *pCur = pTextures + 1;
+	i32 numTextures = 0;
+	if (pTextures[0] != 0)
+	{
+		u32 v;
+		do
+		{
+			v = *pCur;
+			numTextures++;
+			pCur++;
+		}
+		while (v != 0);
+	}
+	print_if_false(numTextures == 3, "Electrolines isn't composed of 3 Textures.");
+
+	pTextures[0] = Spool_FindTextureChecksum("Bolt");
+	pTextures[1] = Spool_FindTextureChecksum("Bolt2");
+	pTextures[2] = Spool_FindTextureChecksum("Bolt3");
+
+	u8 *pParams = reinterpret_cast<u8*>(pCur);
+	u16 node = static_cast<u16>(NodeIndex);
+	u16 next;
+	do
+	{
+		u16 *pLinks = Trig_GetLinksPointer(node);
+		if (pLinks[0] == 0)
+			break;
+		next = pLinks[1];
+
+		new CElectroLine(
+				static_cast<u16>(NodeIndex), node, next,
+				pParams[0], pParams[2], pParams[4],
+				*reinterpret_cast<u16*>(pParams + 6),
+				*reinterpret_cast<u16*>(pParams + 8),
+				*reinterpret_cast<u16*>(pParams + 12),
+				a10, numTextures, pTextures);
+
+		node = next;
+	}
+	while (next != NodeIndex);
+}
+
+// @Ok
 // @Matching
 // 0x43B740, 115 bytes (sub_43B740 in names.json; the Mac build names it
 // Effects_MakeRocks(CVector const&, ulong), between CBouncingRock::Move and
