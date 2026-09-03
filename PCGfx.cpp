@@ -23,8 +23,18 @@ extern void *my_malloc(size_t s);
 extern void my_free(void *block);
 
 #ifdef _WIN32
-EXPORT i32 gAnotherGameResolutionX = G_GAME_RESOLUTION_X;
-EXPORT i32 gAnotherGameResolutionY = G_GAME_RESOLUTION_Y;
+// Copied from G_GAME_RESOLUTION_X/Y in PCGfx_CopyGameResolution (called from
+// runtime_patches, inside the game process). Reading the exe address in a
+// static initializer made LoadLibrary fail in any other host, e.g. the
+// tobey_validator run of the CI ("Couldn't load the file").
+EXPORT i32 gAnotherGameResolutionX = 640;
+EXPORT i32 gAnotherGameResolutionY = 480;
+
+void PCGfx_CopyGameResolution(void)
+{
+	gAnotherGameResolutionX = G_GAME_RESOLUTION_X;
+	gAnotherGameResolutionY = G_GAME_RESOLUTION_Y;
+}
 #else
 // the exe data block does not exist yet at static init time (it crashed the
 // sanity build); RealWinMain/main_standalone set 640x480 anyway

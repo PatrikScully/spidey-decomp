@@ -1828,6 +1828,7 @@ BOOL WINAPI DllMain(
 			puts("spidey-decomp starting " RUNTIME_VERSION);
 
 			runtime_assertions();
+			PCGfx_CopyGameResolution();
 			runtime_patches();
 
             break;

@@ -77,6 +77,9 @@ struct tagKMVERTEX3
 #define _tagKMSTRIPHEAD i32
 
 EXPORT void PCGfx_BeginScene(u32,i32);
+#ifdef _WIN32
+EXPORT void PCGfx_CopyGameResolution(void);
+#endif
 EXPORT void PCGfx_ClipSendIndexedVertList(tagKMVERTEX3 const *,i32,u16 const *,i32);
 EXPORT void PCGfx_ClipTriToNearPlane(_DXVERT **,_DXVERT *const *);
 EXPORT void PCGfx_DoModelPreview(void);
