@@ -75,6 +75,21 @@ public:
 	EXPORT CCamera(CBody*);
 	EXPORT virtual ~CCamera(void);
 
+	// 0x417CB0, the per-frame driver (CBody::AI override): debug free camera,
+	// tripod/focus/zoom interpolation, the SetCam* parameter interpolations,
+	// dispatch to the CM_* mode handler, MoveToDesiredPos, shake, then
+	// LoadIntoMikeCamera.
+	EXPORT virtual void AI(void);
+	// 0x416B10, turns field_104 (tripod) + gCameraOffset + the orientation
+	// into mPos, pulling the camera in on collision.
+	EXPORT void MoveToDesiredPos(void);
+	// 0x418C40 and 0x4192F0, the two mode handlers that were still missing.
+	EXPORT void CM_FixedFocus(void);
+	EXPORT void CM_Boss3(void);
+	// 0x4164F0, the euler-angle overload (Mac: SetFixedPosAnglesMode(CVector &,
+	// CSVector &, ushort)). Only caller: Camera_SelectOptimumViewingNode.
+	EXPORT void SetFixedPosAnglesMode(CVector &, CSVector &, u16);
+
 	EXPORT void SetFixedFocusMode(CVector *, u16, u16);
 	EXPORT i32 SetMode(ECameraMode mode);
 	EXPORT void SetCollisionRayLR(i32);
@@ -129,12 +144,12 @@ public:
 	u8 field_140;
 	CVector field_144;
 
-	i32 field_150;
-	i32 field_154;
-	i32 field_158;
-	i32 field_15C;
-	i32 field_160;
-	i32 field_164;
+	// focus interpolation, driven by CCamera::AI: field_144 moves by
+	// field_15C * field_80 per frame until field_168 frames are used up, then
+	// snaps to field_150 (0x418041..0x418091, CVector operator+= on
+	// &field_144). Used to be six i32s.
+	CVector field_150;
+	CVector field_15C;
 	i32 field_168;
 	i32 field_16C;
 	i32 mZoom;
@@ -144,7 +159,12 @@ public:
 
 	i32 field_178;
 	i32 field_17C;
-	i32 field_180;
+
+	// set to 1 by MoveToDesiredPos when the camera ray hit something and the
+	// camera was pulled in, cleared at its start (byte stores at 0x416B1C and
+	// 0x41730B, so u8 and not the i32 it used to be declared as).
+	u8 field_180;
+	PADDING(3);
 
 	// eight CItem* the camera is currently holding on to (each of them has
 	// CItem flag 0x800 set). Display (main.cpp) walks the eight once a frame
@@ -154,16 +174,19 @@ public:
 	// nothing after it moves.
 	CItem* field_184[8];
 
-	i32 field_1A4;
+	// cleared (byte store, 0x4176F7) at the end of every MoveToDesiredPos.
+	u8 field_1A4;
+	PADDING(3);
 
 
 	i32 field_1A8;
 	i32 field_1AC;
 	i32 field_1B0;
 	i32 field_1B4;
-	i32 field_1B8;
-	i32 field_1BC;
-	i32 field_1C0;
+	// where the camera ray hit, pulled back along the ray a little
+	// (MoveToDesiredPos, CVector operator-= on &field_1B8 at 0x416EEF).
+	// Used to be three i32s.
+	CVector field_1B8;
 
 	PADDING(4);
 
@@ -172,7 +195,11 @@ public:
 	i16 field_1CC;
 	i16 field_1CE;
 
-	PADDING(0x8);
+	// MoveToDesiredPos: field_1D4 is the length of the tripod-to-camera
+	// vector this frame, field_1D0 eases toward it (by 1/2 after a collision,
+	// 1/8 otherwise) and is the distance the camera is actually placed at.
+	i32 field_1D0;
+	i32 field_1D4;
 
 
 	i32 field_1D8;
@@ -248,15 +275,18 @@ public:
 };
 
 EXPORT i16 CalcTheta(i16, i16);
+// 0x419430. Picks the type-13 trig node that sees both points best and moves
+// CameraList there (SetFixedPosAnglesMode); returns the node index, 0 if none.
+EXPORT i32 Camera_SelectOptimumViewingNode(u32, CVector *);
 EXPORT extern CCamera *CameraList;
 EXPORT extern SViewport gViewport;
 EXPORT extern SCamera gMikeCamera[2];
 
 // These three are read from a dozen other .cpp files, so the macros live here
-// rather than in camera.cpp (one definition per shared global).  The exe still
-// owns the camera: CCamera::AI, MoveToDesiredPos, CM_FixedFocus, CM_Boss3 and
-// Camera_SelectOptimumViewingNode are not in this repo and keep driving these
-// every frame, so hooked code has to share the exe's memory, not our own copy.
+// rather than in camera.cpp (one definition per shared global).  In the DLL
+// build the exe still owns the camera (CCamera::AI and friends are decompiled
+// but not hooked), so hooked code has to share the exe's memory, not our own
+// copy.
 // Addresses confirmed in the disassembly: CCamera::CCamera pushes 0x0056F3B8
 // as &CameraList, Init_Cleanup writes gViewport.field_E at 0x0054D49E, and
 // LoadIntoMikeCamera writes gMikeCamera[0].Position at 0x0056F1B4.

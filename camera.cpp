@@ -4,6 +4,15 @@
 #include "ps2funcs.h"
 #include "utils.h"
 #include "my_assert.h"
+#include "spidey.h"
+#include "m3dzone.h"
+#include "m3dutils.h"
+#include "trig.h"
+#include "powerup.h"
+#include "ps2pad.h"
+#include "SpideyDX.h"
+#include "PCInput.h"
+#include "baddy.h"
 
 #ifndef SPIDEY_STANDALONE
 SViewport gViewport;
@@ -17,13 +26,16 @@ extern CCamera * CameraList;
 #endif
 
 // ---------------------------------------------------------------------------
-// The camera runs half in this repo and half in the exe.  Five camera routines
-// are not decompiled at all -- CCamera::AI (0x417CB0), MoveToDesiredPos
-// (0x416B10), CM_FixedFocus (0x418C40), CM_Boss3 (0x4192F0) and
-// Camera_SelectOptimumViewingNode (0x419430) -- and AI is the per-frame driver
-// that calls the mode handlers below.  It keeps reading and writing the globals
-// at their original addresses, so ours have to be the same memory or the two
-// halves get private copies and the camera stops responding.
+// The whole camera is in this file now: CCamera::AI (0x417CB0) is the
+// per-frame driver that calls the mode handlers, MoveToDesiredPos (0x416B10)
+// places the camera, CM_FixedFocus (0x418C40) and CM_Boss3 (0x4192F0) are the
+// last two mode handlers and Camera_SelectOptimumViewingNode (0x419430) picks
+// a viewing node for the fixed camera.  In the DLL build none of these five
+// are hooked, so the exe's copies still run there and keep reading and
+// writing the globals at their original addresses; ours have to be the same
+// memory or the two halves get private copies and the camera stops
+// responding.  The standalone build places every twinned global at its exe
+// address (platform/exemem_syms.ld), so both spellings are one storage there.
 //
 // Every address below was read out of the original disassembly
 // (tools/functions/*.bin), not taken from a name list.
@@ -472,19 +484,19 @@ CCamera::CCamera(CBody* tripod)
 	this->field_144.vx = 0;
 	this->field_144.vy = 0;
 	this->field_144.vz = 0;
-	this->field_150 = 0;
-	this->field_154 = 0;
-	this->field_158 = 0;
-	this->field_15C = 0;
+	this->field_150.vx = 0;
+	this->field_150.vy = 0;
+	this->field_150.vz = 0;
+	this->field_15C.vx = 0;
 	this->field_130 = 4;
-	this->field_160 = 0;
-	this->field_164 = 0;
+	this->field_15C.vy = 0;
+	this->field_15C.vz = 0;
 	this->field_1A8 = 0;
 	this->field_1AC = 0;
 	this->field_1B0 = 0;
-	this->field_1B8 = 0;
-	this->field_1BC = 0;
-	this->field_1C0 = 0;
+	this->field_1B8.vx = 0;
+	this->field_1B8.vy = 0;
+	this->field_1B8.vz = 0;
 	this->field_1D8 = 0;
 	this->field_1B4 = 4096;
 	this->field_1DC = 0;
@@ -755,15 +767,43 @@ void CCamera::PopMode(void)
 // (same address, same file-local raw-address convention used there).
 static i16 * const word_610C48 = (i16*)0x610C48;
 
-// guess: global "current" camera look angle (fixed-point, 4096=full
-// circle) used as a table index here. Also referenced (same address) by
-// CCamera_AI, CCamera_MoveToDesiredPos, CCamera_CM_Boss3 and
-// CCamera_CM_FixedFocus, none of those are decompiled yet to confirm.
+// The camera's pitch (fixed-point, 4096 = full circle) around the tripod:
+// CCamera::AI and CM_Boss3 set it from ratan2(-YDistance, XZDistance), CM_Normal
+// and MoveToDesiredPos use it as a sin/cos table index.
 static i32 * const gCameraLookAngle = (i32*)0x548858;
-// guess: paired value read right after gCameraLookAngle, used as a plain
-// scalar (no table lookup), consistent with a desired camera distance.
-// Same caller set as gCameraLookAngle.
+// The camera's distance from the tripod: AI and CM_Boss3 set it to the length
+// of (XZDistance, YDistance), CM_FixedFocus eases it toward field_2E4,
+// MoveToDesiredPos builds the (0, 0, -distance) camera offset from it.
 static i32 * const gCameraDistance = (i32*)0x54885C;
+
+// The tripod-to-camera-pivot offset, a CVector global (static initialiser at
+// 0x415DE0). CCamera::AI rebuilds it every frame from the X/Y/Z offsets
+// rotated by the camera yaw (field_236), CM_Boss3 zeroes x and z,
+// MoveToDesiredPos and CM_FixedPos add it to field_104.
+static CVector * const gCameraOffset = (CVector*)0x56F260;
+
+// Camera position as of the last CCamera::AI, a CVector global (static
+// initialiser at 0x415E60). Written there and read by nothing else in the
+// binary, so probably left over for a debug display.
+static CVector * const gCameraPos = (CVector*)0x56F2F0;
+
+// Select-button edge detector in CCamera::AI: gCameraSelectReleased is 1
+// while Select is up, gCameraSelectTriggered goes 1 the frame it is pressed.
+// Only AI references either address and nothing reads Triggered back.
+static i32 * const gCameraSelectTriggered = (i32*)0x56F3DC;
+static i32 * const gCameraSelectReleased = (i32*)0x56F3E0;
+
+// Zeroed every frame by CCamera::AI right before the mode switch and
+// referenced by no other function in the binary; leftover debug counters as
+// far as we can tell.
+static i32 * const gCameraUnusedOne = (i32*)0x56F3E4;
+static i32 * const gCameraUnusedTwo = (i32*)0x56F3E8;
+
+// Region and model of the eight items held in field_184, two i32[8] filled and
+// checked only by MoveToDesiredPos, so a slot whose item got recycled into a
+// different object is dropped instead of un-flagged.
+static i32 * const gCameraHeldItemRegions = (i32*)0x56F2D0;
+static i32 * const gCameraHeldItemModels = (i32*)0x56F350;
 
 // @Ok
 // Disassembly-verified against 0x418e00 (IDA decompile of sub_418E00,
@@ -940,11 +980,9 @@ void CCamera::CM_FixedPosAngles(void)
 	}
 }
 
-static CVector * const stru_56F260 = (CVector*)0x56F260;
-
 // @Ok
 // Disassembly-verified against 0x4189a0. Two fixes from the earlier draft:
-// (1) v6 is field_144 minus *stru_56F260 (call target 0x4E7760 is the
+// (1) v6 is field_144 minus *gCameraOffset (call target 0x4E7760 is the
 // global CVector operator-, confirmed against the same address noted for
 // CQuadBit::OrientUsing in bit.cpp), not a multiply; (2) the function
 // ends with the same ratan2-based field_236 recompute idiom used
@@ -982,7 +1020,7 @@ void CCamera::CM_FixedPos(void){
 
 	this->field_258 = this->field_144;
 
-	v6 = this->mPos - *stru_56F260;
+	v6 = this->mPos - *gCameraOffset;
 
 	v15.vx = (this->field_258.vx - v6.vx) >> 12;
 	v15.vy = (this->field_258.vy - v6.vy) >> 12;
@@ -1108,10 +1146,9 @@ void CCamera::SetCamAngle(i16 y, u16 frames)
 }
 
 // @Ok
-// Not called anywhere in this file (or the rest of the repo yet), so it
-// has no standalone address in the PC binary to diff against: it is
-// almost certainly INLINE'd away at every real call site (CCamera_AI,
-// CCamera_CM_Boss3 and similar camera functions are not decompiled yet).
+// Has no standalone address in the PC binary to diff against: it is
+// INLINE'd away at every call site (CM_Boss3 and
+// Camera_SelectOptimumViewingNode below both carry the expanded idiom).
 // The Mac build has it as a real out-of-line function, CalcTheta(short,
 // short), 52 bytes (tools/prototypes.json, idbs/spiderman_names.txt),
 // confirming the parameter types here. The body reproduces the exact
@@ -1171,6 +1208,970 @@ void CCamera::Shake(CVector& pos, EShakeType ShakeMagnitude)
 	}
 }
 
+// @Ok
+// 0x4164F0 (458 bytes). The euler-angle twin of the CQuat overload above:
+// same mode/position/interpolation setup, then the angles go through
+// M3dMaths_RotMatrixYXZ and the rotated up (0,4096,0) and back (0,0,-4096)
+// vectors plus their cross product are packed into a matrix for MToQ, the
+// same construction CM_TripodFocus and CM_FixedFocus use.
+void CCamera::SetFixedPosAnglesMode(CVector &pos, CSVector &angles, u16 frames)
+{
+	this->mCameraMode = CAMERAMODE_FAR;
+	this->field_2AC = 1;
+	this->field_24C = pos;
+	this->field_2BC = frames;
+
+	if (frames)
+	{
+		this->field_2C0 = frames;
+		this->field_2C4 = this->field_1E4;
+		this->field_2B0 = (pos - this->mPos) / frames;
+	}
+
+	MATRIX mat;
+	M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(&angles), &mat);
+	gte_SetRotMatrix(&mat);
+
+	CVector up(0, 4096, 0);
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&up));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&up));
+
+	CVector back(0, 0, -4096);
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&back));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&back));
+
+	CVector right(0, 0, 0);
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&up));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&back));
+	gte_op12();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+
+	mat.m[0][0] = right.vx;
+	mat.m[1][0] = right.vy;
+	mat.m[0][1] = up.vx;
+	mat.m[2][0] = right.vz;
+	mat.m[0][2] = back.vx;
+	mat.m[1][1] = up.vy;
+	mat.m[2][1] = up.vz;
+	mat.m[1][2] = back.vy;
+	mat.m[2][2] = back.vz;
+
+	MToQ(mat, this->field_2D4);
+}
+
+// @Ok
+// 0x418C40 (428 bytes). Eases gCameraDistance toward field_2E4 by 16 units
+// per tick, then aims from the tripod (field_104) at the fixed focus point
+// (field_2E8) and turns that aim into the desired orientation field_1F4 with
+// the same up/back/cross matrix construction as CM_TripodFocus. Ends with the
+// yaw recompute idiom (ratan2 on the back vector) also used by CM_Normal.
+void CCamera::CM_FixedFocus(void)
+{
+	i32 target = static_cast<u16>(this->field_2E4);
+
+	if (*gCameraDistance >= target)
+	{
+		if (*gCameraDistance > target)
+		{
+			*gCameraDistance += -16 * this->field_80;
+			if (*gCameraDistance < target)
+			{
+				*gCameraDistance = target;
+			}
+		}
+	}
+	else
+	{
+		*gCameraDistance += 16 * this->field_80;
+		if (*gCameraDistance > target)
+		{
+			*gCameraDistance = target;
+		}
+	}
+
+	SVECTOR aim;
+	aim.vx = 0;
+	aim.vy = 0;
+	aim.vz = 0;
+	Utils_CalcAim(reinterpret_cast<CSVector*>(&aim), &this->field_104, &this->field_2E8);
+
+	MATRIX mat;
+	M3dMaths_RotMatrixYXZ(&aim, &mat);
+	gte_SetRotMatrix(&mat);
+
+	CVector up(0, 4096, 0);
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&up));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&up));
+
+	CVector back(0, 0, -4096);
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&back));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&back));
+
+	CVector right(0, 0, 0);
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&up));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&back));
+	gte_op12();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+
+	mat.m[0][0] = right.vx;
+	mat.m[1][0] = right.vy;
+	mat.m[0][1] = up.vx;
+	mat.m[1][1] = up.vy;
+	mat.m[2][0] = right.vz;
+	mat.m[0][2] = back.vx;
+	mat.m[1][2] = back.vy;
+	mat.m[2][1] = up.vz;
+	mat.m[2][2] = back.vz;
+
+	MToQ(mat, this->field_1F4);
+
+	this->field_236 = (-1024 - ratan2(back.vz, back.vx)) & 0xFFF;
+}
+
+// @Ok
+// 0x4192F0 (310 bytes). Boss camera: with no boss (gBossRelated == 0) it is
+// plain CM_Normal focused on the tripod. With a boss it focuses on the boss,
+// drops the x/z part of gCameraOffset, and when the tripod is further than
+// field_2A8 from the boss it turns the camera yaw (field_236) toward the boss
+// by at most field_2A4 per frame (CalcTheta idiom expanded inline in the
+// original, dead zone of 8). Then it rebuilds gCameraDistance/gCameraLookAngle
+// from the XZ/Y distances exactly like the CAMERAMODE_DEMO branch of AI and
+// falls through to CM_Normal.
+void CCamera::CM_Boss3(void)
+{
+	CBody* pBoss = reinterpret_cast<CBody*>(gBossRelated);
+	if (!pBoss)
+	{
+		this->field_13C = this->mTripod;
+		this->CM_Normal();
+		return;
+	}
+
+	this->field_13C = pBoss;
+	gCameraOffset->vx = 0;
+	gCameraOffset->vz = 0;
+
+	i32 dist = Utils_CrapDist(this->field_104, pBoss->mPos);
+
+	CSVector aim(0, 0, 0);
+	Utils_CalcAim(&aim, &this->field_104, &pBoss->mPos);
+
+	i16 yaw = this->field_236;
+	i32 delta = CalcTheta(yaw, aim.vy);
+
+	if (dist > this->field_2A8)
+	{
+		if (delta < -8)
+		{
+			if (delta < -this->field_2A4)
+			{
+				delta = -this->field_2A4;
+			}
+			this->field_236 = delta + yaw;
+		}
+		else if (delta > 8)
+		{
+			if (delta > this->field_2A4)
+			{
+				delta = this->field_2A4;
+			}
+			this->field_236 = delta + yaw;
+		}
+	}
+
+	this->field_236 &= 0xFFF;
+
+	i32 xz = G_CAM_XZ_DIST;
+	i32 y = -G_CAM_Y_DIST;
+	*gCameraDistance = M3dMaths_SquareRoot0(y * y + xz * xz);
+	*gCameraLookAngle = ratan2(y, xz);
+
+	this->CM_Normal();
+}
+
+// @Ok
+// 0x416B10 (3064 bytes). Functional decomp from Hex-Rays plus the raw
+// disassembly for the this-pointers it dropped: the two operator<<= calls are
+// on the rotated back vector and on the (never read again) rotated right
+// vector, the operator-= is on field_1B8. Flow: slerp field_1E4 toward the
+// desired orientation field_1F4 (FRONT snaps), fixed modes copy it to
+// field_214 and return. Otherwise cast a ray from tripod + gCameraOffset
+// along the camera's back vector; on a hit within gCameraDistance the camera
+// is pulled in to the hit point (field_1D0 eases toward the hit distance by
+// halves), unless a second ray shows the player could instead be seen from
+// behind, in which case SetCamAngle turns the camera there. Without a hit
+// field_1D0 eases toward the full distance by eighths. Items between camera
+// and tripod get CItem flag 0x800 (transparent) through field_184, cleared
+// again when they drop out. mVel is the position delta of this frame.
+void CCamera::MoveToDesiredPos(void)
+{
+	CBody* pTripod = this->mTripod;
+	this->field_180 = 0;
+	print_if_false(pTripod != 0 || this->field_100 == 0, "No valid tripod");
+
+	if (G_POST_WATER_EFFECT)
+	{
+		return;
+	}
+
+	CVector oldPos = this->mPos;
+
+	this->field_204 = this->field_1E4;
+	if (this->mCameraMode == CAMERAMODE_FRONT)
+	{
+		this->field_1E4 = this->field_1F4;
+		this->field_214 = this->field_1F4;
+	}
+	else
+	{
+		Quat_Slerp(this->field_204, this->field_1F4, 1023, this->field_1E4);
+	}
+
+	ECameraMode mode = this->mCameraMode;
+	if (mode == CAMERAMODE_START || mode == CAMERAMODE_FAR || mode == CAMERAMODE_FRONT)
+	{
+		this->field_214 = this->field_1E4;
+		return;
+	}
+
+	CVector back(0, 0, 0);
+	CVector backIn(0, 0, -*gCameraDistance);
+	CVector right(160, 0, 0);
+
+	MATRIX mat;
+	QToM(&this->field_1E4, &mat);
+	gte_SetRotMatrix(&mat);
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&backIn));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&back));
+
+	CVector dir(0, 0, 0);
+	VectorNormal(reinterpret_cast<VECTOR*>(&back), reinterpret_cast<VECTOR*>(&dir));
+	back <<= 12;
+
+	gte_ldlvl(reinterpret_cast<VECTOR*>(&right));
+	gte_rtir();
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&right));
+	right <<= 12;
+
+	mode = this->mCameraMode;
+	bool hit = false;
+	SLineInfo line;
+	line.pItem = 0;
+
+	if (mode != CAMERAMODE_USER && mode != CAMERAMODE_LOOKAROUND)
+	{
+		line.StartCoords = *gCameraOffset + this->field_104;
+		line.EndCoords = back + line.StartCoords + (dir << 8);
+		M3dColij_InitLineInfo(&line);
+		G_CAMERA_COLLISION_CHECK = 1;
+		M3dZone_LineToItem(&line, 1);
+		G_CAMERA_COLLISION_CHECK = 0;
+
+		if (line.pItem)
+		{
+			i32 dot = -(dir.vx * line.Normal.vx + dir.vy * line.Normal.vy + dir.vz * line.Normal.vz);
+			i32 pullIn = ((224 * (4096 - (abs(dot) >> 12))) >> 12) + 32;
+			hit = line.Distance <= *gCameraDistance + pullIn;
+
+			this->field_1B8 = line.Position;
+			this->field_1B8 -= pullIn * dir;
+
+			if (hit)
+			{
+				CPlayer* pPlayer = G_MECHLIST_PLAYER;
+
+				if (line.Normal.vy >= -2600
+						&& line.Normal.vy <= 3400
+						&& !pPlayer->field_8E8
+						&& (pPlayer->mVel.vx | pPlayer->mVel.vz))
+				{
+					SLineInfo line2;
+					line2.StartCoords = line.EndCoords;
+					line2.EndCoords = this->field_1B8;
+					M3dColij_InitLineInfo(&line2);
+					G_CAMERA_COLLISION_CHECK = 1;
+					M3dZone_LineToItem(&line2, 1);
+					G_CAMERA_COLLISION_CHECK = 0;
+
+					if (line2.pItem
+							&& line2.Normal.vy >= -2600
+							&& line2.Normal.vy <= 3400
+							&& abs(((line.Normal.vx * line2.Normal.vx) >> 12)
+								+ ((line.Normal.vy * line2.Normal.vy) >> 12)
+								+ ((line.Normal.vz * line2.Normal.vz) >> 12)) < 2048)
+					{
+						i16 heading = pPlayer->GetEffectiveHeading();
+
+						i32 idx = 2 * (*gCameraLookAngle & 0xFFF);
+						CVector behind(0, -word_610C48[idx], word_610C48[idx + 1]);
+
+						SVECTOR angles;
+						angles.vx = this->field_234;
+						angles.vy = heading;
+						angles.vz = this->field_238;
+						M3dMaths_RotMatrixYXZ(&angles, &mat);
+						gte_SetRotMatrix(&mat);
+						gte_ldlvl(reinterpret_cast<VECTOR*>(&behind));
+						gte_rtir();
+						gte_stlvnl(reinterpret_cast<VECTOR*>(&behind));
+
+						CVector savedBack = back;
+						CVector savedDir = dir;
+
+						back = behind * (*gCameraDistance);
+						dir = back >> 12;
+						VectorNormal(reinterpret_cast<VECTOR*>(&dir), reinterpret_cast<VECTOR*>(&dir));
+
+						line2.StartCoords = *gCameraOffset + this->field_104;
+						line2.EndCoords = back + line.StartCoords;
+						M3dColij_InitLineInfo(&line2);
+						G_CAMERA_COLLISION_CHECK = 1;
+						M3dZone_LineToItem(&line2, 1);
+						G_CAMERA_COLLISION_CHECK = 0;
+
+						back = savedBack;
+						dir = savedDir;
+
+						if (line2.pItem)
+						{
+							hit = true;
+						}
+						else
+						{
+							this->SetCamAngle(heading, 0);
+							hit = false;
+						}
+					}
+				}
+
+				if (hit)
+				{
+					CVector toHit = this->field_1B8 - line.StartCoords;
+					this->field_180 = 1;
+
+					i32 len = toHit.Length();
+					this->field_1D4 = len;
+					if (this->field_1D0 != len)
+					{
+						this->field_1D0 += (len - this->field_1D0) / 2;
+					}
+
+					toHit >>= 12;
+					VectorNormal(reinterpret_cast<VECTOR*>(&toHit), reinterpret_cast<VECTOR*>(&toHit));
+
+					this->mPos = *gCameraOffset + this->field_104 + dir * this->field_1D0;
+
+					pPlayer = G_MECHLIST_PLAYER;
+					if (this->field_1D0 >= 200)
+					{
+						if (pPlayer->field_57C)
+						{
+							pPlayer->mFlags |= 0x800;
+						}
+						else
+						{
+							pPlayer->mFlags &= ~0x800;
+						}
+					}
+					else
+					{
+						pPlayer->mFlags |= 0x800;
+					}
+				}
+			}
+		}
+	}
+
+	this->field_214 = this->field_1E4;
+
+	if (!hit)
+	{
+		if (this->field_100)
+		{
+			CVector fullBack = back;
+			i32 len = fullBack.Length();
+			this->field_1D4 = len;
+			if (this->field_1D0 != len)
+			{
+				this->field_1D0 += (len - this->field_1D0) / 8;
+			}
+
+			this->mPos = *gCameraOffset + this->field_104 + dir * this->field_1D0;
+
+			if (this->field_1D0 < 200)
+			{
+				G_MECHLIST_PLAYER->mFlags |= 0x800;
+			}
+		}
+		else
+		{
+			this->mPos = this->field_104;
+		}
+	}
+
+	if (this->field_F9)
+	{
+		i32 i;
+		for (i = 0; i < 8; i++)
+		{
+			CItem* pItem = this->field_184[i];
+			if (!pItem)
+			{
+				break;
+			}
+
+			if (pItem->mRegion == gCameraHeldItemRegions[i] && pItem->mModel == gCameraHeldItemModels[i])
+			{
+				CPlayer* pPlayer = G_MECHLIST_PLAYER;
+				if (pPlayer && pPlayer->mHeldObject == pItem)
+				{
+					continue;
+				}
+				pItem->mFlags &= ~0x800;
+			}
+
+			this->field_184[i] = 0;
+		}
+
+		line.StartCoords = this->mPos;
+		line.EndCoords = this->field_104;
+		M3dColij_InitLineInfo(&line);
+		M3dZone_LineToItem(&line, 1);
+
+		i32 count = 0;
+		CVector step(0, 0, 4096);
+		if (line.pItem)
+		{
+			MATRIX mat2;
+			QToM(&this->field_214, &mat2);
+			gte_SetRotMatrix(&mat2);
+			gte_ldlvl(reinterpret_cast<VECTOR*>(&step));
+			gte_rtir();
+			gte_stlvnl(reinterpret_cast<VECTOR*>(&step));
+
+			CItem* pItem = line.pItem;
+			if (pItem)
+			{
+				CItem** pSlot = this->field_184;
+				do
+				{
+					pItem->mFlags |= 0x800;
+					gCameraHeldItemRegions[count] = pItem->mRegion;
+					gCameraHeldItemModels[count] = pItem->mModel;
+					*pSlot = pItem;
+					count++;
+					pSlot++;
+					print_if_false(count < 8, "Overflow");
+					if (count >= 8)
+					{
+						break;
+					}
+					if (line.Length <= 4)
+					{
+						break;
+					}
+
+					line.StartCoords = line.Position + step * 2;
+					M3dColij_InitLineInfo(&line);
+					M3dZone_LineToItem(&line, 1);
+					pItem = line.pItem;
+				}
+				while (pItem);
+			}
+		}
+	}
+
+	this->mVel = this->mPos - oldPos;
+	this->field_1A4 = 0;
+}
+
+// @Ok
+// 0x417CB0 (2523 bytes). Functional decomp from Hex-Rays plus the raw
+// disassembly for the this-pointers it dropped (the two operator+= calls go
+// to field_104 and field_144). The gRenderTest & 0x200 block is the debug
+// free camera: it drives gMikeCamera[0] straight from the pad (Left/Right
+// yaw, Up/Down move along the view, Shift+Up/Down pitch; 42 and 54 are the
+// two shift scancodes) and skips the game camera entirely. The rest is the
+// per-frame camera update: tripod position (hook or body position, eased by
+// field_130/134/138 sixteenths), tripod and focus motion (field_128/168
+// frame counters), zoom, the SetCam* parameter interpolations into
+// gWtfCam[29..34] and back into the camXZDist/camYDist/offset globals,
+// gCameraOffset from the offsets rotated by the camera yaw, the mode switch,
+// MoveToDesiredPos, the shake (three axis quaternions folded into field_214,
+// amplitude decayed toward zero, zeroed on sign flip), LoadIntoMikeCamera.
+void CCamera::AI(void)
+{
+	if (gRenderTest & 0x200)
+	{
+		G_MIKE_CAMERA[0].Style = 0;
+
+		if (G_SCONTROL[0].Left.Pressed)
+		{
+			G_MIKE_CAMERA[0].Angles.vy = (G_MIKE_CAMERA[0].Angles.vy - 16) & 0xFFF;
+		}
+		else if (G_SCONTROL[0].Right.Pressed)
+		{
+			G_MIKE_CAMERA[0].Angles.vy = (G_MIKE_CAMERA[0].Angles.vy + 16) & 0xFFF;
+		}
+
+		if (G_SCONTROL[0].Up.Pressed)
+		{
+			if (PCINPUT_IsKeyPressed(42, 0) || PCINPUT_IsKeyPressed(54, 0))
+			{
+				G_MIKE_CAMERA[0].Angles.vx = (G_MIKE_CAMERA[0].Angles.vx + 16) & 0xFFF;
+			}
+			else
+			{
+				G_MIKE_CAMERA[0].Position.vx += (32 * word_610C48[2 * (G_MIKE_CAMERA[0].Angles.vy & 0xFFF)]) >> 12;
+				G_MIKE_CAMERA[0].Position.vz += (32 * word_610C48[2 * (G_MIKE_CAMERA[0].Angles.vy & 0xFFF) + 1]) >> 12;
+				G_MIKE_CAMERA[0].Position.vy -= (32 * word_610C48[2 * (G_MIKE_CAMERA[0].Angles.vx & 0xFFF)]) >> 12;
+			}
+		}
+		else if (G_SCONTROL[0].Down.Pressed)
+		{
+			if (PCINPUT_IsKeyPressed(42, 0) || PCINPUT_IsKeyPressed(54, 0))
+			{
+				G_MIKE_CAMERA[0].Angles.vx = (G_MIKE_CAMERA[0].Angles.vx - 16) & 0xFFF;
+			}
+			else
+			{
+				G_MIKE_CAMERA[0].Position.vx -= (32 * word_610C48[2 * (G_MIKE_CAMERA[0].Angles.vy & 0xFFF)]) >> 12;
+				G_MIKE_CAMERA[0].Position.vz -= (32 * word_610C48[2 * (G_MIKE_CAMERA[0].Angles.vy & 0xFFF) + 1]) >> 12;
+				G_MIKE_CAMERA[0].Position.vy += (32 * word_610C48[2 * (G_MIKE_CAMERA[0].Angles.vx & 0xFFF)]) >> 12;
+			}
+		}
+
+		RotMatrixYXZ(&G_MIKE_CAMERA[0].Angles, &G_MIKE_CAMERA[0].Transform);
+		TransMatrix(&G_MIKE_CAMERA[0].Transform, &G_MIKE_CAMERA[0].Position);
+		return;
+	}
+
+	if (!this->field_F8)
+	{
+		return;
+	}
+
+	if (G_POST_WATER_EFFECT)
+	{
+		return;
+	}
+
+	*gCameraPos = this->mPos;
+	CVector oldTripodPos = this->field_104;
+
+	if (this->field_128 == 0 && this->mTripod && this->field_100 && !this->mTripod->IsDead())
+	{
+		CVector hookPos(0, 0, 0);
+		if (this->field_12C == -1)
+		{
+			hookPos = this->mTripod->mPos;
+		}
+		else
+		{
+			M3dUtils_GetHookPosition(
+					reinterpret_cast<VECTOR*>(&hookPos),
+					reinterpret_cast<CSuper*>(this->mTripod),
+					this->field_12C);
+		}
+		this->field_104 = hookPos;
+	}
+
+	this->field_104.vx = this->field_130 * (this->field_104.vx >> 4) + (oldTripodPos.vx >> 4) * (16 - this->field_130);
+	this->field_104.vy = this->field_134 * (this->field_104.vy >> 4) + (oldTripodPos.vy >> 4) * (16 - this->field_134);
+	this->field_104.vz = this->field_138 * (this->field_104.vz >> 4) + (oldTripodPos.vz >> 4) * (16 - this->field_138);
+
+	i32 dt = this->field_80;
+
+	if (static_cast<u32>(this->field_128) <= static_cast<u32>(dt))
+	{
+		if (this->field_128)
+		{
+			this->field_128 = 0;
+			this->field_104 = this->field_110;
+		}
+	}
+	else
+	{
+		this->field_128 -= dt;
+		this->field_104 += this->field_11C * this->field_80;
+	}
+
+	if (static_cast<u32>(this->field_168) <= static_cast<u32>(dt))
+	{
+		if (this->field_168)
+		{
+			this->field_168 = 0;
+			this->field_144 = this->field_150;
+		}
+		else
+		{
+			CBody* pFocus = this->field_13C;
+			if (pFocus && this->field_140)
+			{
+				this->field_144 = pFocus->mPos;
+			}
+		}
+	}
+	else
+	{
+		this->field_168 -= dt;
+		this->field_144 += this->field_15C * this->field_80;
+	}
+
+	u16 zoomFrames = this->field_174;
+	if (zoomFrames <= dt)
+	{
+		if (zoomFrames)
+		{
+			this->field_174 = 0;
+			this->mZoom = this->field_17C;
+		}
+	}
+	else
+	{
+		this->field_174 = zoomFrames - dt;
+		this->mZoom = dt * this->field_178 + this->mZoom;
+	}
+
+	if (G_SCONTROL[0].Select.Pressed)
+	{
+		if (*gCameraSelectReleased)
+		{
+			*gCameraSelectTriggered = 1;
+		}
+		*gCameraSelectReleased = 0;
+	}
+	else
+	{
+		*gCameraSelectReleased = 1;
+	}
+
+	if (G_CAM_XZ_DISTANCE_RELATED <= dt)
+	{
+		if (G_CAM_XZ_DISTANCE_RELATED)
+		{
+			G_CAM_XZ_DISTANCE_RELATED = 0;
+			G_WTF_CAM[32] = G_CAM_XZ_RELATED_TWO;
+		}
+	}
+	else
+	{
+		G_CAM_XZ_DISTANCE_RELATED -= dt;
+		G_WTF_CAM[32] = G_CAM_XZ_RELATED_THREE * dt + G_CAM_XZ_DIST;
+	}
+
+	if (G_CAM_Y_DISTANCE_RELATED <= dt)
+	{
+		if (G_CAM_Y_DISTANCE_RELATED)
+		{
+			G_CAM_Y_DISTANCE_RELATED = 0;
+			G_WTF_CAM[33] = G_CAM_Y_DISTANCE_RELATED_TWO;
+		}
+	}
+	else
+	{
+		G_CAM_Y_DISTANCE_RELATED -= dt;
+		G_WTF_CAM[33] = G_CAM_Y_DISTANCE_RELATED_THREE * dt + G_CAM_Y_DIST;
+	}
+
+	i32 xOffset;
+	if (G_CAM_X_OFFSET_TWO <= dt)
+	{
+		if (G_CAM_X_OFFSET_TWO)
+		{
+			xOffset = G_CAM_X_OFFSET_ONE;
+			G_CAM_X_OFFSET_TWO = 0;
+			G_WTF_CAM[29] = xOffset;
+		}
+		else
+		{
+			xOffset = G_CAM_X_OFFSET_FOUR;
+		}
+	}
+	else
+	{
+		G_CAM_X_OFFSET_TWO -= dt;
+		xOffset = ((dt * G_CAM_X_OFFSET_THREE) >> 12) + G_CAM_X_OFFSET_FOUR;
+		G_WTF_CAM[29] = xOffset;
+	}
+
+	i32 yOffset;
+	if (G_CAM_Y_OFFSET_TWO <= dt)
+	{
+		if (G_CAM_Y_OFFSET_TWO)
+		{
+			yOffset = G_CAM_Y_OFFSET_ONE;
+			G_CAM_Y_OFFSET_TWO = 0;
+			G_WTF_CAM[30] = yOffset;
+		}
+		else
+		{
+			yOffset = G_CAM_Y_OFFSET_FOUR;
+		}
+	}
+	else
+	{
+		G_CAM_Y_OFFSET_TWO -= dt;
+		yOffset = ((dt * G_CAM_Y_OFFSET_THREE) >> 12) + G_CAM_Y_OFFSET_FOUR;
+		G_WTF_CAM[30] = yOffset;
+	}
+
+	i32 zOffset;
+	if (G_CAM_Z_OFFSET_TWO <= dt)
+	{
+		if (G_CAM_Z_OFFSET_TWO)
+		{
+			G_CAM_Z_OFFSET_TWO = 0;
+			zOffset = G_CAM_Z_OFFSET_ONE;
+			G_WTF_CAM[31] = zOffset;
+		}
+		else
+		{
+			zOffset = G_CAM_Z_OFFSET_FOUR;
+		}
+	}
+	else
+	{
+		G_CAM_Z_OFFSET_TWO -= dt;
+		zOffset = ((dt * G_CAM_Z_OFFSET_THREE) >> 12) + G_CAM_Z_OFFSET_FOUR;
+		G_WTF_CAM[31] = zOffset;
+	}
+
+	gCameraOffset->vy = yOffset << 12;
+	i32 idx = 2 * (this->field_236 & 0xFFF);
+	i32 cosYaw = word_610C48[idx + 1];
+	i32 sinYaw = word_610C48[idx];
+	gCameraOffset->vx = -(cosYaw * xOffset + sinYaw * zOffset);
+	gCameraOffset->vz = sinYaw * xOffset - cosYaw * zOffset;
+
+	i16 yaw;
+	if (G_CAMERA_MODE_ONE <= dt)
+	{
+		if (G_CAMERA_MODE_ONE)
+		{
+			yaw = G_CAMERA_MODE_TWO;
+			G_CAMERA_MODE_ONE = 0;
+			this->field_236 = yaw;
+		}
+		else
+		{
+			yaw = G_WTF_CAM[34];
+		}
+	}
+	else
+	{
+		G_CAMERA_MODE_ONE -= dt;
+		yaw = (this->field_236 + G_CAMERA_MODE_THREE * static_cast<i16>(this->field_80)) & 0xFFF;
+		this->field_236 = yaw;
+	}
+
+	ECameraMode mode = this->mCameraMode;
+	G_CAM_X_OFFSET_FOUR = G_WTF_CAM[29];
+	G_CAM_Y_OFFSET_FOUR = G_WTF_CAM[30];
+	G_CAM_Z_OFFSET_FOUR = G_WTF_CAM[31];
+	G_CAM_XZ_DIST = G_WTF_CAM[32];
+	G_CAM_Y_DIST = G_WTF_CAM[33];
+	G_WTF_CAM[34] = yaw & 0xFFF;
+
+	if (mode != CAMERAMODE_LOOSE && mode != CAMERAMODE_USER && mode != CAMERAMODE_LOOKAROUND)
+	{
+		this->field_236 = yaw & 0xFFF;
+	}
+
+	if (mode == CAMERAMODE_DEMO)
+	{
+		i32 y = -G_WTF_CAM[33];
+		i32 xz = G_WTF_CAM[32];
+		*gCameraDistance = M3dMaths_SquareRoot0(y * y + xz * xz);
+		*gCameraLookAngle = ratan2(y, xz);
+	}
+
+	*gCameraUnusedOne = 0;
+	*gCameraUnusedTwo = 0;
+
+	switch (mode)
+	{
+		case CAMERAMODE_DEMO:
+			this->CM_Normal();
+			break;
+		case CAMERAMODE_START:
+			this->CM_FixedPos();
+			break;
+		case CAMERAMODE_FAR:
+			this->CM_FixedPosAngles();
+			break;
+		case CAMERAMODE_OVERHEAD:
+			this->CM_FixedFocus();
+			break;
+		case CAMERAMODE_FRONT:
+			break;
+		case CAMERAMODE_IDLE:
+			this->CM_TripodFocus();
+			break;
+		case CAMERAMODE_LOOSE:
+		case CAMERAMODE_USER:
+		case CAMERAMODE_LOOKAROUND:
+			this->CM_Boss3();
+			break;
+		default:
+			print_if_false(0, "Unknown camera mode in switch!");
+			break;
+	}
+
+	this->MoveToDesiredPos();
+	Utils_CalcAim(&this->mAngles, &this->mPos, &this->field_144);
+
+	if (this->mShakeAmp.vx || this->mShakeAmp.vy || this->mShakeAmp.vz)
+	{
+		CQuat qz = QFromZRot(this->mShakeAmp.vz * word_610C48[2 * ((G_TTIME * this->mShakeSpeed.vz) & 0xFFF)] / 4096);
+		CQuat qx = QFromXRot(this->mShakeAmp.vx * word_610C48[2 * ((G_TTIME * this->mShakeSpeed.vx) & 0xFFF)] / 4096);
+		CQuat qy = QFromYRot(this->mShakeAmp.vy * word_610C48[2 * ((G_TTIME * this->mShakeSpeed.vy) & 0xFFF)] / 4096);
+		this->field_214 = qy * this->field_1E4 * qx * qz;
+
+		CSVector oldAmp = this->mShakeAmp;
+
+		if (this->mShakeAmp.vx < 0)
+		{
+			this->mShakeAmp.vx += this->mShakeDecay.vx;
+		}
+		else
+		{
+			this->mShakeAmp.vx -= this->mShakeDecay.vx;
+		}
+
+		if (this->mShakeAmp.vy >= 0)
+		{
+			this->mShakeAmp.vy -= this->mShakeDecay.vy;
+		}
+		else
+		{
+			this->mShakeAmp.vy += this->mShakeDecay.vy;
+		}
+
+		if (this->mShakeAmp.vz >= 0)
+		{
+			this->mShakeAmp.vz -= this->mShakeDecay.vz;
+		}
+		else
+		{
+			this->mShakeAmp.vz += this->mShakeDecay.vz;
+		}
+
+		if (static_cast<i16>(oldAmp.vx ^ this->mShakeAmp.vx) < 0)
+		{
+			this->mShakeAmp.vx = 0;
+		}
+		if (static_cast<i16>(oldAmp.vy ^ this->mShakeAmp.vy) < 0)
+		{
+			this->mShakeAmp.vy = 0;
+		}
+		if (static_cast<i16>(oldAmp.vz ^ this->mShakeAmp.vz) < 0)
+		{
+			this->mShakeAmp.vz = 0;
+		}
+	}
+
+	this->LoadIntoMikeCamera();
+}
+
+// @Ok
+// 0x419430 (939 bytes). Mac: Camera_SelectOptimumViewingNode(ulong, CVector*).
+// The vector argument is two points (the caller always passes 2, the assert
+// says so). Walks every type-13 trig node between 512 and 4096 (CrapDist) of
+// the midpoint, keeps those that see both points within 341 (30 degrees) of
+// the midpoint aim in yaw, scores 2048 minus the pitch spread between the two
+// points minus 1024 per point that is occluded (two camera-collision rays),
+// and moves CameraList to the best node with a zero-frame
+// SetFixedPosAnglesMode as it goes. Returns the winning node index, 0 if none.
+i32 Camera_SelectOptimumViewingNode(u32 numPoints, CVector *points)
+{
+	CVector mid(0, 0, 0);
+	print_if_false(numPoints == 2, "Error");
+
+	CVector boxMin(-0x7FFFFFFF, -0x7FFFFFFF, -0x7FFFFFFF);
+	i32 bestNode = 0;
+	i32 bestScore = 0;
+	CVector boxMax(0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF);
+	Utils_SetVisibilityInBox(&boxMin, &boxMax, 1, 1);
+
+	if (numPoints == 2)
+	{
+		mid = points[0] + ((points[1] - points[0]) >> 1);
+	}
+
+	i32 i = 1;
+	if (G_NUMNODES <= 1)
+	{
+		return 0;
+	}
+
+	do
+	{
+		if (*G_OFFSETLIST[i] == 13)
+		{
+			CVector nodePos(0, 0, 0);
+			Trig_GetPosition(&nodePos, i);
+
+			i32 dist = Utils_CrapDist(nodePos, mid);
+			if (dist >= 512 && dist <= 4096)
+			{
+				CSVector aimMid(0, 0, 0);
+				CSVector aimFirst(0, 0, 0);
+				CSVector aimSecond(0, 0, 0);
+				Utils_CalcAim(&aimMid, &nodePos, &mid);
+				Utils_CalcAim(&aimFirst, &nodePos, &points[0]);
+
+				if (CalcTheta(aimMid.vy, aimFirst.vy) <= 341)
+				{
+					Utils_CalcAim(&aimSecond, &nodePos, &points[1]);
+
+					if (CalcTheta(aimMid.vy, aimSecond.vy) <= 341)
+					{
+						i32 score = 2048 - abs(CalcTheta(aimFirst.vx, aimSecond.vx));
+
+						SLineInfo line;
+						line.StartCoords = nodePos;
+						line.EndCoords = points[0];
+						M3dColij_InitLineInfo(&line);
+						G_CAMERA_COLLISION_CHECK = 1;
+						M3dZone_LineToItem(&line, 1);
+						if (line.pItem)
+						{
+							score -= 1024;
+						}
+
+						line.EndCoords = points[1];
+						M3dColij_InitLineInfo(&line);
+						M3dZone_LineToItem(&line, 1);
+						G_CAMERA_COLLISION_CHECK = 0;
+						if (line.pItem)
+						{
+							score -= 1024;
+						}
+
+						if (score > bestScore)
+						{
+							bestNode = i;
+							bestScore = score;
+							G_CAMERA_LIST->SetFixedPosAnglesMode(nodePos, aimMid, 0);
+						}
+					}
+				}
+			}
+		}
+
+		i++;
+	}
+	while (i < G_NUMNODES);
+
+	return bestNode;
+}
+
 void validate_CCamera(void){
 	VALIDATE_SIZE(CCamera, 0x2F4);
 
@@ -1195,11 +2196,7 @@ void validate_CCamera(void){
 	VALIDATE(CCamera, field_144, 0x144);
 
 	VALIDATE(CCamera, field_150, 0x150);
-	VALIDATE(CCamera, field_154, 0x154);
-	VALIDATE(CCamera, field_158, 0x158);
 	VALIDATE(CCamera, field_15C, 0x15C);
-	VALIDATE(CCamera, field_160, 0x160);
-	VALIDATE(CCamera, field_164, 0x164);
 	VALIDATE(CCamera, field_168, 0x168);
 	VALIDATE(CCamera, field_16C, 0x16C);
 	VALIDATE(CCamera, mZoom, 0x170);
@@ -1207,18 +2204,19 @@ void validate_CCamera(void){
 	VALIDATE(CCamera, field_174, 0x174);
 	VALIDATE(CCamera, field_178, 0x178);
 	VALIDATE(CCamera, field_17C, 0x17C);
-
-
+	VALIDATE(CCamera, field_180, 0x180);
+	VALIDATE(CCamera, field_184, 0x184);
+	VALIDATE(CCamera, field_1A4, 0x1A4);
 	VALIDATE(CCamera, field_1A8, 0x1A8);
 	VALIDATE(CCamera, field_1AC, 0x1AC);
 	VALIDATE(CCamera, field_1B0, 0x1B0);
 	VALIDATE(CCamera, field_1B4, 0x1B4);
 	VALIDATE(CCamera, field_1B8, 0x1B8);
-	VALIDATE(CCamera, field_1BC, 0x1BC);
-	VALIDATE(CCamera, field_1C0, 0x1C0);
 	VALIDATE(CCamera, field_1C8, 0x1C8);
 	VALIDATE(CCamera, field_1CC, 0x1CC);
 	VALIDATE(CCamera, field_1CE, 0x1CE);
+	VALIDATE(CCamera, field_1D0, 0x1D0);
+	VALIDATE(CCamera, field_1D4, 0x1D4);
 	VALIDATE(CCamera, field_1D8, 0x1D8);
 	VALIDATE(CCamera, field_1DC, 0x1DC);
 	VALIDATE(CCamera, field_1E0, 0x1E0);

@@ -182,6 +182,60 @@ void Quat_Slerp (CQuat& a1, CQuat const & a2, int a3, CQuat& a4)
 	a4.w = (a1.w * w0 + a2.w * w1) >> 12;
 }
 
+// @Ok
+// 0x47C640 (232 bytes). Hex-Rays gives the four products with the operands
+// named as they are loaded: the second argument's components multiply the
+// first argument's, so with a = lhs and b = rhs every term below reads
+// b.<c> * a.<c>, in the original's order.
+CQuat operator*(const CQuat& a, const CQuat& b)
+{
+	CQuat r;
+	r.x = (b.x * a.w + b.y * a.z + b.w * a.x - b.z * a.y) >> 12;
+	r.y = (b.y * a.w + b.w * a.y + b.z * a.x - b.x * a.z) >> 12;
+	r.z = (b.z * a.w + b.w * a.z + b.x * a.y - b.y * a.x) >> 12;
+	r.w = (b.w * a.w - b.y * a.y - b.x * a.x - b.z * a.z) >> 12;
+	return r;
+}
+
+// @Ok
+// 0x47C730 (56 bytes): sar eax,1; and eax,0FFFh; shl eax,2; movsx from the
+// table at 0x610C48 (sin) and 0x610C4A (cos); stores x, 0, 0, w.
+CQuat QFromXRot(i32 angle)
+{
+	CQuat q;
+	i32 idx = 2 * ((angle >> 1) & 0xFFF);
+	q.x = word_610C48[idx];
+	q.y = 0;
+	q.z = 0;
+	q.w = word_610C48[idx + 1];
+	return q;
+}
+
+// @Ok
+// 0x47C770 (56 bytes), same as QFromXRot with the sine in y.
+CQuat QFromYRot(i32 angle)
+{
+	CQuat q;
+	i32 idx = 2 * ((angle >> 1) & 0xFFF);
+	q.x = 0;
+	q.y = word_610C48[idx];
+	q.z = 0;
+	q.w = word_610C48[idx + 1];
+	return q;
+}
+
+// @Ok
+// 0x47C7B0 (56 bytes), same as QFromXRot with the sine in z.
+CQuat QFromZRot(i32 angle)
+{
+	CQuat q;
+	i32 idx = 2 * ((angle >> 1) & 0xFFF);
+	q.x = 0;
+	q.y = 0;
+	q.z = word_610C48[idx];
+	q.w = word_610C48[idx + 1];
+	return q;
+}
 
 void validate_CQuat(void){
 	VALIDATE_SIZE(CQuat, 0x10);
