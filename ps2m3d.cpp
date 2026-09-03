@@ -1221,7 +1221,14 @@ static volatile i32 * const gDCBatchCallCount   = (i32*)0x00660FD4;
 static u16 * const gDCFaceTexIndexOut = (u16*)0x006191DC; // per-face resolved texture id, filled by the OT-build loop
 static u8 *  const gDCFaceNoLightOut  = (u8*)0x0065F72C;  // per-face "no-light" flag, filled by the OT-build loop
 static u16 * const gDCFaceSortBiasOut = (u16*)0x00652F54; // per-face env-map/sort adjustment, filled by the OT-build loop
-static u16 * const gDCTriIndexTemplate = (u16*)0x0062C850; // fixed 6-u16-per-face-slot triangle index template
+// Per-face triangle index list the OT-build loop fills and the batch
+// submission hands to PCGfx_ClipSendIndexedVertList: one 12 byte record of six
+// u16 vertex slots per accepted face, [s0,s1,s2, s2,s1,s3]. 0x476D00 walks it
+// with a pointer that starts at 0x62C512 (the record's second word) and reads
+// it back as 12*face + 0x62C510 at the call site. (Was a nonexistent fixed
+// "template" at 0x62C850, in BSS, so every triangle used vertex 0 and the
+// standalone build rendered no level geometry at all, 2026-09-03.)
+static u16 * const gDCTriIndexBuffer = (u16*)0x0062C510;
 
 static i32 * const gDCForceTexIndex = (i32*)0x00660FE4; // per-model forced texture-index override (0 = use the face's own)
 static i32 * const gDCEnvMapTableA  = (i32*)0x00614F88;
@@ -1555,6 +1562,7 @@ fogScanDone:
 		i32 facesLeft = pModel->NumFaces;
 		u8 *pFaceCursor = (u8*)&pFaces->mVertSlot[0]; // "v46": pFaces + 12
 		i32 overrideMask = *gDCOverrideFlags;
+		u16 *pIdxOut = gDCTriIndexBuffer;
 
 		i32 packedFaceFlags = 0;
 		u32 alphaMask = 0xFF000000u;
@@ -1623,15 +1631,17 @@ fogScanDone:
 				}
 			}
 
-			// NOTE: the original also writes this loop's per-corner values
-			// into a second scratch buffer at 0x62C512 (growing 12
-			// bytes/face) with a different corner reorder ([2]=old[0]
-			// etc). Confirmed via xref search this session that NOTHING,
-			// in this function or any other, ever reads 0x62C512 back --
-			// it is dead write-only scratch with no observable effect, so
-			// it is not reproduced here (cornerSlots below is the only
-			// copy of the resolved corner data that is actually consumed,
-			// by the texture/color-resolve code right after).
+			// This face's two triangles for PCGfx_ClipSendIndexedVertList:
+			// the four resolved corner slots, then the second triangle
+			// (s2, s1, s3) appended, exactly the word shuffle 0x476D00 does
+			// through its 0x62C512 cursor.
+			pIdxOut[0] = cornerSlots[0];
+			pIdxOut[1] = cornerSlots[1];
+			pIdxOut[2] = cornerSlots[2];
+			pIdxOut[3] = cornerSlots[2];
+			pIdxOut[4] = cornerSlots[1];
+			pIdxOut[5] = cornerSlots[3];
+			pIdxOut += 6;
 
 			// Resolve this face's texture index.
 			u16 texIndex;
@@ -1892,7 +1902,7 @@ afterFaceLoop:
 				PCGfx_ClipSendIndexedVertList(
 					pScratchBase,
 					4 * batchCount,
-					gDCTriIndexTemplate + 6 * idx,
+					gDCTriIndexBuffer + 6 * idx,
 					6 * (j - idx));
 
 				idx = j;
