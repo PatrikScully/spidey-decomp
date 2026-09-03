@@ -663,6 +663,12 @@ void M3d_Render(void* pList)
 			*gM3dFrustumNormal1Pad >> 1,
 			0);
 	M3dAsm_BoundingSpherePreprocessing(pItem);
+#ifdef SPIDEY_STANDALONE
+	// debugging aid: SPIDEY_NOSPHERECULL=1 draws everything
+	if (getenv("SPIDEY_NOSPHERECULL"))
+		for (CItem* p = pItem; p; p = p->mNextItem)
+			p->mFlags &= ~0x8000;
+#endif
 
 	// wibble the textures here so the bounding sphere cull has already run
 	if (pItem == *gM3dEnviroList)

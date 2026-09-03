@@ -1137,6 +1137,22 @@ void DXPOLY_BeginScene(void)
 // base value for the depth bucket math below, tentative name/purpose guess.
 static i32* const gDxPolyDepthBucketBase = (i32*)0x6BBAA8;
 
+#ifdef SPIDEY_STANDALONE
+static i32 gDumpFrames = -1;
+static u32 gDumpAt;
+static void dumpPoly(const DXPOLY* pPoly, i32 bucket)
+{
+	printf("POLY bucket=%d n=%lu tex=%p blend=%u flags=%x", bucket, (unsigned long)pPoly->field_C,
+			pPoly->field_4, pPoly->mBlendMode, pPoly->field_A);
+	for (u32 k = 0; k < pPoly->field_C && k < 4; k++)
+		printf(" [%.1f,%.1f,%.4f rhw=%.4f c=%08x uv=%.3f,%.3f]",
+				pPoly->field_10[k].field_0, pPoly->field_10[k].field_4, pPoly->field_10[k].field_8,
+				pPoly->field_10[k].field_C, pPoly->field_10[k].field_10,
+				pPoly->field_10[k].field_14, pPoly->field_10[k].field_18);
+	printf("\n");
+}
+#endif
+
 // @Ok
 // Behaviour: with low graphics on and not on render pass 1, a near plane
 // visibility test on the poly's first/second/last (and, for 4+ verts,
@@ -1221,6 +1237,8 @@ void DXPOLY_DrawPoly(
 				pPoly->field_C,
 				0);
 #elif defined(SPIDEY_STANDALONE)
+		if (gDumpFrames > 0 && Plat_Ticks() >= gDumpAt)
+			dumpPoly(pPoly, -1);
 		DXPOLY_SetTexture(pPoly->field_4);
 		DXPOLY_SetBlendMode(pPoly->mBlendMode);
 		DXPOLY_SetAddressUAndV(
@@ -3027,6 +3045,19 @@ void renderScene(void)
 			G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 1);
 	}
 #elif defined(SPIDEY_STANDALONE)
+	// SPIDEY_DUMPPOLYS=N (+ SPIDEY_DUMPPOLYS_AT=ms): print every fan of N
+	// frames once that time is reached
+	if (gDumpFrames < 0)
+	{
+		const char* d = getenv("SPIDEY_DUMPPOLYS");
+		const char* at = getenv("SPIDEY_DUMPPOLYS_AT");
+		gDumpFrames = d ? atoi(d) : 0;
+		gDumpAt = at ? (u32)atoi(at) : 0;
+	}
+	i32 dumping = gDumpFrames > 0 && Plat_Ticks() >= gDumpAt;
+	if (dumping)
+		gDumpFrames--;
+
 	for (i32 i = 4096; i >= 0; i--)
 	{
 		DXPOLY* pPoly = gSceneBuffer[i];
@@ -3035,6 +3066,8 @@ void renderScene(void)
 
 		while (pPoly)
 		{
+			if (dumping)
+				dumpPoly(pPoly, i);
 			DXPOLY_SetTexture(pPoly->field_4);
 			DXPOLY_SetBlendMode(pPoly->mBlendMode);
 			DXPOLY_SetAddressUAndV(
