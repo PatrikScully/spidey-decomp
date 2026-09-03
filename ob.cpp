@@ -31,7 +31,11 @@ u32 SuspendedDistance;
 #else
 extern u32 SuspendedDistance;
 #endif
+#ifndef SPIDEY_STANDALONE
 u8 gPsxItemsIndex;
+#else
+extern u8 gPsxItemsIndex;
+#endif
 #ifndef SPIDEY_STANDALONE
 const char *gObjFile;
 #else
@@ -306,8 +310,6 @@ void CBody::KillShadow(void)
 // @Matching
 void CBody::UpdateShadow(void)
 {
-	NOT_IMPLEMENTED;
-
 	if(this->mCBodyFlags & 8){
 
 		if(!this->mpShadow){

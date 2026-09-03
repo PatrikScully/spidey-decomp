@@ -1432,6 +1432,9 @@ void DXPOLY_Flip(void)
 {
 #ifdef SPIDEY_STANDALONE
 	Plat_GfxFlip();
+	// the Windows build pumps its message queue from several places the
+	// standalone build does not have; once per presented frame is enough
+	WinYield();
 #endif
 #ifdef _WIN32
 	if (gDxOptionRelated)

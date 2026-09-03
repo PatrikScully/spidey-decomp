@@ -2342,6 +2342,15 @@ void M3d_PreprocessWibblyTextures(i32 region)
 	if (region == -1)
 		return;
 
+#ifdef SPIDEY_STANDALONE
+	// @TODO Phase 2: this translation mixes u32* and byte offsets (packet+12,
+	// packet+23, the -8 record header) and reads gWibbleTables as i32 where
+	// the original reads i16 (0x47627F). It walked off the packet list and
+	// crashed on the first level. Texture wibble is visual only, so it is
+	// off until re-decompiled against 0x475FB0.
+	return;
+#endif
+
 	u32 *pTexWibData = PSXRegion[region].pTexWibData;
 	if (pTexWibData == 0)
 		return;

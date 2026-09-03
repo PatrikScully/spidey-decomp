@@ -411,3 +411,7 @@ gCheats = 0x005513e0;
 gLoadedBmp = 0x0056eefc;
 gStubSfx = 0x0054d342;
 gSfxVolArr = 0x0054f9f0;
+/* Init_AtStart stores the spidey / items region indices at these bytes
+   (0x443E01, 0x443EA1); spidey.cpp and ps2m3d.cpp read them by address */
+gSpideyPsxIndex = 0x006b4679;
+gPsxItemsIndex = 0x006b4678;

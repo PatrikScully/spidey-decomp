@@ -4172,6 +4172,15 @@ INLINE void* CBit::operator new(size_t size) {
 
 
 // @Ok
+// 0x409090, 66 bytes: unlink from QuadBitList, then CBit::~CBit. Without it a
+// direct "delete pQuadBit" (CPlayer::DoMGSShadow, CBody::KillShadow) left the
+// freed bit in the list and Bit_Move walked the heap scribble (0x55555555).
+CQuadBit::~CQuadBit(void)
+{
+	this->DeleteFrom(&G_QUADBIT_LIST);
+}
+
+// @Ok
 void CBit::operator delete(void* ptr)
 {
 	Mem_Delete(ptr);

@@ -191,6 +191,7 @@ public:
 	u32 field_80;
 
 	EXPORT CQuadBit(void);
+	EXPORT virtual ~CQuadBit(void);
 
 	EXPORT void SetTint(u8 a2, u8 a3, u8 a4);
 	EXPORT void SetSemiTransparent();

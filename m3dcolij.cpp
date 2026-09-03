@@ -842,8 +842,24 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 
 			if (!reject)
 			{
-				i32 crossA = static_cast<i32>(pV6[0]) * refY - static_cast<i32>(pV6[1]) * refX;
-				i32 crossB = static_cast<i32>(pV5[0]) * refY - static_cast<i32>(pV5[1]) * refX;
+				// Hex-Rays at 0x46F1F0: the two edge tests have opposite
+				// orientation depending on which triangle of the quad is
+				// used. First triangle (ref = v4): A = P6.x*P4.y - P4.x*P6.y,
+				// B = P4.x*P5.y - P5.x*P4.y. Second (ref = v7): A = P7.x*P6.y -
+				// P6.x*P7.y, B = P5.x*P7.y - P7.x*P5.y. (A single formula for
+				// both had one sign flipped each way and rejected every face,
+				// found by the standalone build: no floor collision at all.)
+				i32 crossA, crossB;
+				if (v39 >= 0)
+				{
+					crossA = static_cast<i32>(pV6[0]) * refY - static_cast<i32>(refX) * pV6[1];
+					crossB = static_cast<i32>(refX) * pV5[1] - static_cast<i32>(pV5[0]) * refY;
+				}
+				else
+				{
+					crossA = static_cast<i32>(refX) * pV6[1] - static_cast<i32>(pV6[0]) * refY;
+					crossB = static_cast<i32>(pV5[0]) * refY - static_cast<i32>(refX) * pV5[1];
+				}
 
 				if (crossA < 0 || crossB < 0)
 					reject = true;
@@ -984,9 +1000,14 @@ void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 			gLineColijRelPos->vz = (pItem->mPos.vz - pInfo->StartCoords.vz) >> 12;
 		}
 
-		SetCoarseTranslationVector(gLineColijRelPos);
-		CoarseTransformPoint();
-		gte_stlvnl(reinterpret_cast<VECTOR*>(gLineColijRelPos));
+		// 0x4529C0: only the non DropDown branch runs the relative position
+		// through the coarse GTE, the DropDown branch uses it as is
+		if (!pInfo->DropDown)
+		{
+			SetCoarseTranslationVector(gLineColijRelPos);
+			CoarseTransformPoint();
+			gte_stlvnl(reinterpret_cast<VECTOR*>(gLineColijRelPos));
+		}
 
 		SetTranslationVectorFromOffset(reinterpret_cast<u8*>(gLineColijRotMatrix));
 

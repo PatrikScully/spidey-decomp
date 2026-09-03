@@ -361,8 +361,12 @@ void M3dZone_SetZone(
 			{
 				// 0x10 (16 u32s = 64 bytes per record) matches the disasm's
 				// shl eax,6 on the index, confirmed by rebuild verification.
+				// the cell list holds item INDICES on disk and CItem POINTERS
+				// in memory (M3dAsm_LineColijPreprocessItemsZoned walks them as
+				// CItem*): store the item's address, not its first dword (the
+				// vtable pointer, which is what "*v18 = *tmp" put there).
 				u32 *tmp = &reinterpret_cast<u32 *>(G_PSXREGION[EnvRegions[EnvIndex]].pSuper)[0x10 * *v18];
-				*v18 = *tmp;
+				*v18 = reinterpret_cast<u32>(tmp);
 				++v18;
 
 			}

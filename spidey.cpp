@@ -393,7 +393,11 @@ CItem* MiscellaneousRenderingList;
 extern CItem* MiscellaneousRenderingList;
 #endif
 
+#ifndef SPIDEY_STANDALONE
 u8 gSpideyPsxIndex;
+#else
+extern u8 gSpideyPsxIndex;
+#endif
 #ifndef SPIDEY_STANDALONE
 CPlayer* MechList;
 #else
@@ -9755,8 +9759,10 @@ void Spidey_BagHead(i32 a1, i32 a2)
 	u8 regionIndex = *gCurrentCostumeRegionIndex;
 	*gBagHeadScaleFactor = a1;
 
-	u8 *pRegion = (u8*)CItemRelatedList + regionIndex * 0x44;
-	u8 *pSub = *(u8**)(pRegion + 0x1C);
+	// 0x4B9263: edx = PSXRegion[idx].ppModels (the 0x6B2454 table is that
+	// field), then [edx+1Ch] = ppModels[7], the head model. (An earlier
+	// version read a region field at +0x1C instead and got a null pointer.)
+	u8 *pSub = (u8*)G_PSXREGION[regionIndex].ppModels[7];
 	i16 count = *(i16*)(pSub + 2);
 	i16 *pDest = (i16*)(pSub + 0x1C);
 
