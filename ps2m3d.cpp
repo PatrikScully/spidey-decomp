@@ -1190,7 +1190,17 @@ static f32 * const gDCLightTintTable          = (f32*)0x0064F5A8;
 // (position) but for lighting: dword_64F5D8 (3 ints/entry, only element 0
 // read) plus a second 12-bytes/entry table at 0x64F858 for components 1/2.
 static i32 * const gDCStitchColorIndexTable = (i32*)0x0064F5D8;
-static volatile u8 * gDCLitColorOutCursor = (u8*)0x0065DFA8; // bump-incrementing (12 bytes/record) output cursor, DCVert mFlags bit 0x1
+// 0x65DFA8 holds the CURSOR (a pointer, 12 bytes/record, DCVert mFlags bit
+// 0x1), exactly like gDCAttachPointCursor above: the original reads
+// [65DFA8], stores through it and writes the bumped pointer back
+// (0x477770..0x477793), and RenderSuperItem re-points it at the stitch
+// colour table 0x64F5D8 for every superitem (0x474C86, gM3dLitColourCursor
+// below). An earlier revision declared this as `u8* cursor = 0x65DFA8`,
+// i.e. the address itself as the buffer, never reset: it bump-walked 12
+// bytes per attach-point vertex per frame from 0x65DFA8 up through the
+// data segment and zeroed MechList (0x6A9038) about 20 s into level 1
+// (Display then crashed in RenderLookaroundReticle, found 2026-09-03).
+static u8 ** const gDCLitColorOutCursor = (u8**)0x0065DFA8;
 
 static volatile i32 * const gDCTexAnimColorA    = (i32*)0x00660F58;
 static volatile i32 * const gDCTexAnimColorB    = (i32*)0x00660F54;
@@ -1515,10 +1525,11 @@ fogScanDone:
 							// Same "attachment point" bit as the position
 							// loop above: also records this vertex's lit
 							// color into a companion bump-allocated list.
-							*(f32*)gDCLitColorOutCursor = pLitColor[-2];
-							*(f32*)(gDCLitColorOutCursor + 4) = pLitColor[-1];
-							*(f32*)(gDCLitColorOutCursor + 8) = pLitColor[0];
-							gDCLitColorOutCursor += 12;
+							u8 *pOut = *gDCLitColorOutCursor;
+							*(f32*)pOut = pLitColor[-2];
+							*(f32*)(pOut + 4) = pLitColor[-1];
+							*(f32*)(pOut + 8) = pLitColor[0];
+							*gDCLitColorOutCursor = pOut + 12;
 						}
 					}
 					pLitColor += 3;
@@ -3397,6 +3408,9 @@ void RenderSuperItem(CItem *pItem, bool a2)
 
 	*gM3dStitchVertexCursor = 0x00654FB8;
 	*gM3dAttachPointCursor  = 0x00658E28;
+	// 0x474C86: the lit-colour output cursor restarts at the stitch colour
+	// table (gDCStitchColorIndexTable, 0x64F5D8) for every superitem.
+	*gM3dLitColourCursor    = 0x0064F5D8;
 
 	// the player's pose has two pairs of parts swapped while it renders
 	SMatrix swapTemp;
