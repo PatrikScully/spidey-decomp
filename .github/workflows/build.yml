@@ -26,9 +26,12 @@ jobs:
     needs: validate-repo
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # g++ only: the repo's INLINE functions are called across translation
+    # units and rely on g++'s -fkeep-inline-functions; clang has no equivalent
+    # and fails to link.
     strategy:
       matrix:
-        compiler: [g++, clang++]
+        compiler: [g++]
     steps:
     - uses: actions/checkout@v4
     - name: Install 32 bit toolchain
