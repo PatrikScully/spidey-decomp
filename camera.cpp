@@ -2311,7 +2311,10 @@ void patch_camera(void)
 	PATCH_PUSH_RET_POLY(0x004162A0, CCamera::~CCamera, "??1CCamera@@UAE@XZ");
 	PATCH_PUSH_RET(0x00416300, CCamera::SetTripodInterpolation);
 	PATCH_PUSH_RET(0x00416370, CCamera::SetFixedPosMode);
-	PATCH_PUSH_RET(0x00416410, CCamera::SetFixedPosAnglesMode);
+	// SetFixedPosAnglesMode is overloaded since the euler-angle version
+	// (0x4164F0) was added, so the hook needs the mangled name to pick the
+	// CQuat overload that lives at 0x416410.
+	PATCH_PUSH_RET_POLY(0x00416410, CCamera::SetFixedPosAnglesMode, "?SetFixedPosAnglesMode@CCamera@@QAEXPAVCVector@@PAVCQuat@@G@Z");
 	PATCH_PUSH_RET(0x004166C0, CCamera::SetFixedFocusMode);
 	PATCH_PUSH_RET(0x00416720, CCamera::PushMode);
 	PATCH_PUSH_RET(0x00416780, CCamera::PopMode);
