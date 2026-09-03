@@ -150,19 +150,17 @@ public:
 	i32 field_2B4;
 	CVector field_2B8;
 
-	i32 field_2C4;
-	i32 field_2C8;
-	i32 field_2CC;
+	// CBaddy::ExecuteCommand 0x4280 (0x406125): mPos after the timed
+	// physics steps, a CVector (field_2B8 is mPos before)
+	CVector field_2C4;
 
 
 	CVector field_2D0;
 
-	i16 field_2DC;
-	i16 field_2DE;
-	i16 field_2E0;
-	i16 field_2E2;
-	i16 field_2E4;
-	i16 field_2E6;
+	// CBaddy::ExecuteCommand 0x4280: mAngles before (0x406078) and after
+	// (0x406141) the timed physics steps, two CSVectors
+	CSVector field_2DC;
+	CSVector field_2E2;
 	CSVector field_2E8;
 	PADDING(0x2F0 - 0x2E8 - sizeof(CSVector));
 

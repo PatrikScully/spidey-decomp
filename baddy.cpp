@@ -13,13 +13,15 @@
 #include "m3dcolij.h"
 #include "mysterio.h"
 #include "ps2gamefmv.h"
+// CPowerUp::SetGravity is called on the object PowerUp_Create returns in
+// both builds (ExecuteCommand case 0x42A0)
+#include "powerup.h"
 #ifdef SPIDEY_STANDALONE
 // headers of the real implementations behind the ExecuteCommand
 // forward-to-original helpers (standalone build only, see below)
 #include "bit.h"
 #include "exp.h"
 #include "flash.h"
-#include "powerup.h"
 #include "camera.h"
 #include "ps2redbook.h"
 #include "chunk.h"
@@ -1204,18 +1206,18 @@ CBaddy::CBaddy(void)
 	this->field_2B8.vx = 0;
 	this->field_2B8.vy = 0;
 	this->field_2B8.vz = 0;
-	this->field_2C4 = 0;
-	this->field_2C8 = 0;
-	this->field_2CC = 0;
+	this->field_2C4.vx = 0;
+	this->field_2C4.vy = 0;
+	this->field_2C4.vz = 0;
 	this->field_2D0.vx = 0;
 	this->field_2D0.vy = 0;
 	this->field_2D0.vz = 0;
-	this->field_2DC = 0;
-	this->field_2DE = 0;
-	this->field_2E0 = 0;
-	this->field_2E2 = 0;
-	this->field_2E4 = 0;
-	this->field_2E6 = 0;
+	this->field_2DC.vx = 0;
+	this->field_2DC.vy = 0;
+	this->field_2DC.vz = 0;
+	this->field_2E2.vx = 0;
+	this->field_2E2.vy = 0;
+	this->field_2E2.vz = 0;
 	this->field_2E8.vx = 0;
 	this->field_2E8.vy = 0;
 	this->field_2E8.vz = 0;
@@ -1574,16 +1576,21 @@ static void CBaddy_SkipToMatchingEndif(CBaddy *self)
 // names) plus the Mac symbol list for the two unnamed effects helpers. The
 // non-standalone branches are untouched.
 //
-// Eight of the targets are __thiscall methods or constructors and the
+// Six of the targets are __thiscall methods or constructors and the
 // helper has no object to call them on (the original passes it in ecx or
 // gets it from operator new). Those helpers only exist in the normal build
 // and their ExecuteCommand call sites carry their own SPIDEY_STANDALONE
 // branch calling the method on the right object: 0x460D00 CSuper::CycleAnim
-// (this), 0x404320 CBaddy::Die (this), 0x4E7900 CSVector::operator+= (a
-// local CSVector accumulator), 0x40F480 CSpark::CSpark, 0x43CEA0
+// (this), 0x404320 CBaddy::Die (this), 0x40F480 CSpark::CSpark, 0x43CEA0
 // CWibbling3DExplosion::CWibbling3DExplosion, 0x43C250
-// CFlameExplosion::CFlameExplosion (all three via new), 0x46B450
-// CPowerUp::SetGravity (the CPowerUp PowerUp_Create just returned).
+// CFlameExplosion::CFlameExplosion (all three via new).
+//
+// Not forwarded at all (both builds call the repo code): the CVector /
+// CSVector operators case 0x4280 uses (0x4E7A40, 0x4E7900, 0x4E7760,
+// 0x4E7800, 0x4E79F0, 0x4E7AE0 are all @Ok in vector.cpp and declared
+// out of line in vector.h, so the calls come out the same) and 0x46B450
+// CPowerUp::SetGravity (@Ok in powerup.cpp, called on the CPowerUp
+// PowerUp_Create just returned, case 0x42A0).
 // @Bogus
 static i32 gsub_4E3940(i32 *outBuf, u16 nodeId)
 {
@@ -1628,93 +1635,6 @@ static i32 gsub_4DE770(void)
 	typedef i32 (*func_ptr)(void);
 	func_ptr func = (func_ptr)0x4DE770;
 	return func();
-#endif
-}
-
-// @Bogus
-static i32 gsub_4E7A40(CBaddy *self, void *outBuf, void *a3, i32 *a4)
-{
-#ifdef SPIDEY_STANDALONE
-	// operator*(const CSVector&, const int&), cdecl with a hidden return
-	// pointer: (outBuf, a3, a4) are its three real args. `self` is not an
-	// argument of the original (add esp,0Ch after the call at 0x4060CF),
-	// the helper only carries it along.
-	(void)self;
-	*static_cast<CSVector*>(outBuf) = *static_cast<const CSVector*>(a3) * *a4;
-	return reinterpret_cast<i32>(outBuf);
-#else
-	typedef i32 (*func_ptr)(CBaddy*, void*, void*, i32*);
-	func_ptr func = (func_ptr)0x4E7A40;
-	return func(self, outBuf, a3, a4);
-#endif
-}
-
-#ifndef SPIDEY_STANDALONE
-// 0x4E7900 = CSVector::operator+=(const CSVector&), __thiscall; the original
-// applies it to a local CSVector copy of mAngles (lea ecx,[esp+var_70] at
-// 0x4060D2), not to the object. Standalone: see case 0x4280.
-// @Bogus
-static void gsub_4E7900(i32 a2)
-{
-	typedef void (*func_ptr)(i32);
-	func_ptr func = (func_ptr)0x4E7900;
-	func(a2);
-}
-#endif
-
-// @Bogus
-static i32 *gsub_4E7760(void *a2, void *a3, void *a4)
-{
-#ifdef SPIDEY_STANDALONE
-	// operator-(const CVector&, const CVector&), hidden return pointer = a2
-	*static_cast<CVector*>(a2) = *static_cast<const CVector*>(a3) - *static_cast<const CVector*>(a4);
-	return static_cast<i32*>(a2);
-#else
-	typedef i32* (*func_ptr)(void*, void*, void*);
-	func_ptr func = (func_ptr)0x4E7760;
-	return func(a2, a3, a4);
-#endif
-}
-
-// @Bogus
-static i32 *gsub_4E7800(void *a2, void *a3, void *a4)
-{
-#ifdef SPIDEY_STANDALONE
-	// operator/(const CVector&, const int&), hidden return pointer = a2
-	*static_cast<CVector*>(a2) = *static_cast<const CVector*>(a3) / *static_cast<const int*>(a4);
-	return static_cast<i32*>(a2);
-#else
-	typedef i32* (*func_ptr)(void*, void*, void*);
-	func_ptr func = (func_ptr)0x4E7800;
-	return func(a2, a3, a4);
-#endif
-}
-
-// @Bogus
-static i32 *gsub_4E79F0(void *a2, void *a3, void *a4)
-{
-#ifdef SPIDEY_STANDALONE
-	// operator-(const CSVector&, const CSVector&), hidden return pointer = a2
-	*static_cast<CSVector*>(a2) = *static_cast<const CSVector*>(a3) - *static_cast<const CSVector*>(a4);
-	return static_cast<i32*>(a2);
-#else
-	typedef i32* (*func_ptr)(void*, void*, void*);
-	func_ptr func = (func_ptr)0x4E79F0;
-	return func(a2, a3, a4);
-#endif
-}
-
-// @Bogus
-static i32 *gsub_4E7AE0(void *a2, void *a3, void *a4)
-{
-#ifdef SPIDEY_STANDALONE
-	// operator/(const CSVector&, const int&), hidden return pointer = a2
-	*static_cast<CSVector*>(a2) = *static_cast<const CSVector*>(a3) / *static_cast<const int*>(a4);
-	return static_cast<i32*>(a2);
-#else
-	typedef i32* (*func_ptr)(void*, void*, void*);
-	func_ptr func = (func_ptr)0x4E7AE0;
-	return func(a2, a3, a4);
 #endif
 }
 
@@ -1838,37 +1758,26 @@ static void gsub_43D830(i32 a2, i32 a3, i32 a4, i32 a5, i32 a6, i32 a7)
 #endif
 }
 
+// 0x46BD80 = PowerUp_Create(type, CVector *pos, flags, param1, param2)
+// -> CPowerUp*. The position argument is a CVector* (0x4058E3 push esi with
+// esi = this+8, i.e. &this->mPos); an earlier revision passed the CBaddy.
 // @Bogus
-static i32 gsub_46BD80(i32 a2, CBaddy *a3, u16 a4, u16 a5, i32 a6)
+static CPowerUp *gsub_46BD80(i32 a2, CVector *a3, u16 a4, u16 a5, i32 a6)
 {
 #ifdef SPIDEY_STANDALONE
-	// PowerUp_Create(type, CVector* pos, flags, param1, param2) -> CPowerUp*.
-	// The original passes &this->mPos as the position (0x4058E3 push esi,
-	// with esi = this+8 in that block), so the CBaddy the helper receives
-	// is turned into its position here.
-	return reinterpret_cast<i32>(PowerUp_Create(a2, &a3->mPos, a4, a5, a6));
+	return reinterpret_cast<CPowerUp*>(PowerUp_Create(a2, a3, a4, a5, a6));
 #else
-	typedef i32 (*func_ptr)(i32, CBaddy*, u16, u16, i32);
+	typedef CPowerUp* (*func_ptr)(i32, CVector*, u16, u16, i32);
 	func_ptr func = (func_ptr)0x46BD80;
 	return func(a2, a3, a4, a5, a6);
 #endif
 }
 
-#ifndef SPIDEY_STANDALONE
-// 0x46B450 = CPowerUp::SetGravity(i32, i32), __thiscall on the CPowerUp
-// sub_46BD80 just returned (0x4058FB mov ecx,eax). Standalone: see case
-// 0x42A0.
+// 0x43B410 = Effects_LaserFlash. The first two operands are zero-extended
+// (0x40596D/0x4059BD and eax/edx,0FFFFh), the other four are plain 16-bit
+// register loads.
 // @Bogus
-static void gsub_46B450(i32 a2, i32 a3)
-{
-	typedef void (*func_ptr)(i32, i32);
-	func_ptr func = (func_ptr)0x46B450;
-	func(a2, a3);
-}
-#endif
-
-// @Bogus
-static void gsub_43B410(i32 *a2, i16 a3, i16 a4, i16 a5, i16 a6, i16 a7, i16 a8)
+static void gsub_43B410(i32 *a2, u16 a3, u16 a4, i16 a5, i16 a6, i16 a7, i16 a8)
 {
 #ifdef SPIDEY_STANDALONE
 	// Effects_LaserFlash (effects.cpp), the original passes a5..a8 on to
@@ -1876,7 +1785,7 @@ static void gsub_43B410(i32 *a2, i16 a3, i16 a4, i16 a5, i16 a6, i16 a7, i16 a8)
 	Effects_LaserFlash(reinterpret_cast<CVector*>(a2), a3, a4,
 			static_cast<u8>(a5), static_cast<u8>(a6), static_cast<u8>(a7), static_cast<u8>(a8));
 #else
-	typedef void (*func_ptr)(i32*, i16, i16, i16, i16, i16, i16);
+	typedef void (*func_ptr)(i32*, u16, u16, i16, i16, i16, i16);
 	func_ptr func = (func_ptr)0x43B410;
 	func(a2, a3, a4, a5, a6, a7, a8);
 #endif
@@ -2194,17 +2103,6 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			return true;
 		}
 
-		case 0x4103:
-		case 0x4108:
-		case 0x4109:
-		case 0x410A:
-		case 0x410B:
-		case 0x410C:
-		case 0x410D:
-		case 0x410E:
-		case 0x410F:
-			return true;
-
 		case 0x4107: // C_YIELD
 			return false;
 
@@ -2389,10 +2287,14 @@ int CBaddy::ExecuteCommand(u16 cmd)
 
 		case 0x4280: // uncertain name/purpose, see class comment
 		{
-			// mechanically faithful: snapshot mPos/mAngles/mScale-ish
-			// state, loop calling Shouldnt_DoPhysics_Be_Virtual() and the
-			// forwarded helpers, then restore. Read straight off the
-			// pseudocode; the WHY of this dance was not recovered.
+			// 0x405F75..0x406238. Measures how far the body travels over the
+			// next field_230 physics steps: remember mPos/mAngles in
+			// field_2B8/field_2DC, run Shouldnt_DoPhysics_Be_Virtual()
+			// field_230 times with field_80 forced to 2 (accumulating
+			// mAngVel*2 into a LOCAL copy of mAngles), then store the
+			// per-step average (mPos after - mPos before) / (2*val) in
+			// field_2D0 and (angles accumulated - mAngles before) / field_2B4
+			// in field_2E8, and put mPos/mAngles back.
 			u16 val = CBaddy_ResolveOperand(this);
 
 			if (this->mType == 203 && this->field_234 != 0 && *gSubmarinerDieRelated != 0)
@@ -2400,81 +2302,65 @@ int CBaddy::ExecuteCommand(u16 cmd)
 
 			this->field_230 = val;
 
-			i32 mode = gsub_4DE770();
-			if (mode != 2051 && mode != 258)
-			{
-				this->field_2A0 = 2 * val;
+			// 0x405FDF jne 0x406236: neither level -> return with no store
+			if (gsub_4DE770() != 2051 && gsub_4DE770() != 258)
 				return false;
-			}
 
-			if (val != 0 && (this->attributeArr[0] | this->field_240.vx | this->field_240.vy
-					| this->field_240.vz | this->attributeArr[1] | this->attributeArr[2]) != 0)
+			// 0x405FED..0x406015: the body is moving (mVel | mAngVel, offsets
+			// 0x60..0x68 and 0x88..0x8C), not attributeArr/field_240
+			if (val != 0 && (this->mAngVel.vz | this->mAngVel.vy | this->mVel.vz
+					| this->mVel.vy | this->mVel.vx | this->mAngVel.vx) != 0)
 			{
-				CVector savedPos = this->mPos;
-				CSVector savedAngles = this->mAngles;
+				// 0x40601B..0x40603A
+				print_if_false((this->field_2B0 | this->field_230 | this->field_2B4) == 0,
+						"New timer started before old timer finished!");
+
+				this->field_2B8 = this->mPos;    // 0x40605C, mPos before
+				this->field_2DC = this->mAngles; // 0x406078, mAngles before
+				CSVector angAcc = this->mAngles; // 0x406086, local copy at [esp+3Ch]
 				i32 savedField80 = this->field_80;
 				this->field_80 = 2;
 
-#ifdef SPIDEY_STANDALONE
-				// The original keeps a second local copy of mAngles
-				// (var_70 at 0x406084) and CSVector::operator+= (0x4E7900,
-				// __thiscall, ecx = &var_70 at 0x4060D2) accumulates into
-				// that copy, not into the object and not into the copy it
-				// later restores mAngles from. The multiplicand is
-				// [esi+88h] = mAngVel (0x4060BA), not mAcc (0x6C).
-				CSVector angAcc = savedAngles;
-#endif
 				for (i32 i = 0; i < this->field_230; i++)
 				{
-					i32 buf[3] = { 0, 0, 0 };
-					i32 cnt = 2;
-#ifdef SPIDEY_STANDALONE
-					i32 r = gsub_4E7A40(this, buf, &this->mAngVel, &cnt);
-					angAcc += *reinterpret_cast<const CSVector*>(r);
-#else
-					i32 r = gsub_4E7A40(this, buf, &this->mAcc, &cnt);
-					gsub_4E7900(r);
-#endif
+					// 0x4060CA operator*(CSVector, int) on mAngVel ([esi+88h],
+					// not mAcc), 0x4060D7 CSVector::operator+= with
+					// ecx = the local copy (0x4060D2 lea ecx,[esp+3Ch])
+					i32 two = 2;
+					angAcc += this->mAngVel * two;
 					this->Shouldnt_DoPhysics_Be_Virtual();
 				}
 
 				this->field_80 = savedField80;
 
-				i32 v256[3] = { 0, 0, 0 };
-				i32 v257[3] = { 0, 0, 0 };
-				i32 *r1 = gsub_4E7760(v256, &this->mVel, &this->mPos);
-				i32 v252 = 2 * val;
-				i32 *r2 = gsub_4E7800(v257, r1, &v252);
-				this->field_2B0 = r2[0];
-				this->field_2B4 = r2[1];
+				i32 twiceVal = 2 * val;
+				this->field_2B0 = 0;             // 0x406109
+				this->field_2B4 = twiceVal;      // 0x406119
+				this->field_2C4 = this->mPos;    // 0x406125, mPos after
+				this->field_2E2 = this->mAngles; // 0x406141, mAngles after
 
-				char v255[8] = { 0 };
-				char v253[8] = { 0 };
-				i32 v248 = this->field_2A0;
-#ifdef SPIDEY_STANDALONE
-				// original: (accumulated angles) - (angles before the loop),
-				// 0x4061B8 sub_4E79F0(&var_2C, &var_70, this+0x2DC). Reading
-				// a CSVector out of the i32 savedField80 (the non-standalone
-				// operands) would run 2 bytes past that local.
-				i32 *r3 = gsub_4E79F0(v255, &angAcc, &savedAngles);
-#else
-				i32 *r3 = gsub_4E79F0(v255, &savedField80, &savedAngles);
-#endif
-				i32 *r4 = gsub_4E7AE0(v253, r3, &v248);
+				// 0x406168 operator-(CVector, CVector)(field_2C4, field_2B8),
+				// 0x406179 operator/(CVector, int) by 2*val, stored at 0x2D0
+				this->field_2D0 = (this->field_2C4 - this->field_2B8) / twiceVal;
 
-				this->mPos = savedPos;
-				this->mAngles = savedAngles;
+				// 0x4061B8 operator-(CSVector, CSVector)(angAcc, field_2DC),
+				// 0x4061C6 operator/(CSVector, int) by field_2B4, stored at 0x2E8
+				i32 divisor = this->field_2B4;
+				this->field_2E8 = (angAcc - this->field_2DC) / divisor;
+
+				this->mPos = this->field_2B8;    // 0x4061E1
+				this->mAngles = this->field_2DC; // 0x4061FA
 
 				return false;
 			}
-			else if (gsub_4DE770() == 258 && this->field_220 == 402)
+			else if (gsub_4DE770() == 258 && this->mType == 402) // 0x406214 cmp word ptr [esi+38h],192h
 			{
-				this->field_2A0 = 2 * val + 40;
+				this->field_2B0 = 2 * val + 40; // 0x406220
 				return false;
 			}
 			else
 			{
-				this->field_2A0 = 2 * val;
+				this->field_2B0 = 2 * val; // 0x406230
 				return false;
 			}
 		}
@@ -2604,8 +2490,6 @@ int CBaddy::ExecuteCommand(u16 cmd)
 
 		case 0x429A:
 		case 0x42A6:
-		case 0x42A7:
-		case 0x42A8:
 		{
 			i32 posBuf[3];
 
@@ -2694,6 +2578,42 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			return true;
 		}
 
+		case 0x42A7:
+		case 0x42A8:
+		{
+			// 0x405939..0x405A0F: six 16-bit operands, then Effects_LaserFlash
+			// (0x43B410) at this baddy's position. This is NOT part of the
+			// 0x429A/0x42A6 explosion sub-switch above: that one reads a
+			// single sub-opcode word, so sharing its body left the script
+			// cursor up to five words short of the next opcode ("Bad script
+			// command" in ParseScript).
+			i32 posBuf[3];
+
+			if (cmd == 0x429A)
+			{
+				// the original's own guard (dead for these opcode values),
+				// kept as written
+				u16 val = CBaddy_ResolveOperand(this);
+				gsub_4E3940(posBuf, val);
+			}
+			else
+			{
+				posBuf[0] = this->mPos.vx;
+				posBuf[1] = this->mPos.vy;
+				posBuf[2] = this->mPos.vz;
+			}
+
+			u16 a3 = *reinterpret_cast<u16*>(this->field_24C); this->field_24C++;
+			u16 a4 = *reinterpret_cast<u16*>(this->field_24C); this->field_24C++;
+			i16 a5 = *this->field_24C; this->field_24C++;
+			i16 a6 = *this->field_24C; this->field_24C++;
+			i16 a7 = *this->field_24C; this->field_24C++;
+			i16 a8 = *this->field_24C; this->field_24C++;
+
+			gsub_43B410(posBuf, a3, a4, a5, a6, a7, a8);
+			return true;
+		}
+
 		case 0x429C:
 		{
 			u8 *p = reinterpret_cast<u8*>(this->field_24C);
@@ -2723,16 +2643,12 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			u16 a6 = *reinterpret_cast<u16*>(this->field_24C);
 			this->field_24C = reinterpret_cast<i16*>(reinterpret_cast<u16*>(this->field_24C) + 1);
 
-#ifdef SPIDEY_STANDALONE
-			// CPowerUp::SetGravity(i32, i32), __thiscall on the CPowerUp
-			// PowerUp_Create just returned (0x4058FB mov ecx,eax)
-			CPowerUp *pPowerUp = reinterpret_cast<CPowerUp*>(gsub_46BD80(val, this, a4, a5, -1));
+			// 0x4058E3: the position argument is &this->mPos (esi = this+8
+			// in this block), not the CBaddy. CPowerUp::SetGravity(i32, i32)
+			// is __thiscall on the CPowerUp just returned (0x4058FB mov ecx,eax).
+			CPowerUp *pPowerUp = gsub_46BD80(val, &this->mPos, a4, a5, -1);
 			if (pPowerUp != 0)
 				pPowerUp->SetGravity(a6 << 12, 5);
-#else
-			if (gsub_46BD80(val, this, a4, a5, -1) != 0)
-				gsub_46B450(a6 << 12, 5);
-#endif
 
 			return true;
 		}
@@ -2956,17 +2872,17 @@ int CBaddy::ExecuteCommand(u16 cmd)
 		case 0x450E:
 		{
 			u16 val = CBaddy_ReadOperand(this);
-#ifdef SPIDEY_STANDALONE
 			// The original does not call Shake here: it stores the operand
 			// into CameraList+680 (0x4068BF mov [esi+2A8h],edi, esi =
-			// CameraList), i.e. CCamera::field_2A8. All four real Shake
-			// calls in this function are in case 0x4298.
+			// CameraList), i.e. CCamera::field_2A8. The only Shake call in
+			// this function is in case 0x4298. The assert (0x4068AA test
+			// edi,edi; setge cl) is on the zero-extended operand, so it can
+			// never fire, same as the 0x450D copy above.
 			if (G_CAMERA_LIST != 0)
+			{
+				print_if_false(true, "bad value send to BossCamStationaryRadius");
 				G_CAMERA_LIST->field_2A8 = val;
-#else
-			if (G_CAMERA_LIST != 0)
-				gsub_416880(reinterpret_cast<CVector*>(reinterpret_cast<char*>(G_CAMERA_LIST) + 680), val);
-#endif
+			}
 			return true;
 		}
 
@@ -3077,7 +2993,23 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			this->field_2A8 |= 0x2000000;
 			return true;
 
+		case 0x4103:
+		case 0x4108:
+		case 0x4109:
+		case 0x410A:
+		case 0x410B:
+		case 0x410C:
+		case 0x410D:
+		case 0x410E:
+		case 0x410F:
 		default:
+			// 0x406AAC: the original's unhandled-opcode tail. It consumes no
+			// operands, so a script using an opcode this exe does not
+			// implement (level 1 has 0x450B with two operands, seven times)
+			// then feeds those operand words to ParseScript as opcodes,
+			// which trips its "Bad script command" assert. Same in the
+			// original, where both asserts are release no-ops.
+			print_if_false(0, "Unknown script command");
 			return true;
 	}
 }
@@ -3311,16 +3243,15 @@ i16 CBaddy::GetVariable(u16 a2)
 // mFric 0x78, field_80 0x80, mAngVel 0x88, mAngAcc 0x8E, mAngFric 0x94,
 // field_A8 0xA8, mCollision 0xE0) and CBaddy's own already-validated
 // fields (field_1F8, field_230, field_27C, field_2A8, field_2AC,
-// field_2B0, field_2B4, field_2B8, field_2C4, field_2C8, field_2CC,
-// field_2D0, field_2DC, field_2DE, field_2E0, field_2E2, field_2E4,
-// field_2E6, field_2E8).
+// field_2B0, field_2B4, field_2B8, field_2C4, field_2D0, field_2DC,
+// field_2E2, field_2E8).
 //
 // Shape: two early branches handle a running position/angle "teleport
 // blend" already in progress (field_2B4 = duration, field_2B0 = elapsed
 // so far, field_230 = active flag, field_2B8/field_2D0 = start position
-// and per-tick rate, field_2C4..field_2CC = final position,
-// field_2DC..field_2E0 = base angle, field_2E8 = per-tick angular rate,
-// field_2E2..field_2E6 = final angle; on completion or abort it snaps to
+// and per-tick rate, field_2C4 = final position (CVector),
+// field_2DC = base angle, field_2E8 = per-tick angular rate,
+// field_2E2 = final angle (CSVectors); on completion or abort it snaps to
 // the final pos/angle and clears the state). Once both field_2B4 and
 // field_2B0 are zero, the remaining block re-derives this frame's
 // elapsed ticks: callers passing 0 (see Shouldnt_DoPhysics_Be_Virtual's
@@ -3347,9 +3278,9 @@ void CBaddy::DoPhysics(i32 a2)
 		{
 			this->mPos = this->field_2B8 + this->field_2D0 * elapsed;
 
-			this->mAngles.vx = this->field_2DC + static_cast<i16>(this->field_2E8.vx * elapsed);
-			this->mAngles.vy = this->field_2DE + static_cast<i16>(this->field_2E8.vy * elapsed);
-			this->mAngles.vz = this->field_2E0 + static_cast<i16>(this->field_2E8.vz * elapsed);
+			this->mAngles.vx = this->field_2DC.vx + static_cast<i16>(this->field_2E8.vx * elapsed);
+			this->mAngles.vy = this->field_2DC.vy + static_cast<i16>(this->field_2E8.vy * elapsed);
+			this->mAngles.vz = this->field_2DC.vz + static_cast<i16>(this->field_2E8.vz * elapsed);
 			this->mAngles.Mask();
 		}
 		else
@@ -3358,13 +3289,13 @@ void CBaddy::DoPhysics(i32 a2)
 			this->field_2B4 = 0;
 			this->field_230 = 0;
 
-			this->mPos.vx = this->field_2C4;
-			this->mPos.vy = this->field_2C8;
-			this->mPos.vz = this->field_2CC;
+			this->mPos.vx = this->field_2C4.vx;
+			this->mPos.vy = this->field_2C4.vy;
+			this->mPos.vz = this->field_2C4.vz;
 
-			this->mAngles.vx = this->field_2E2;
-			this->mAngles.vy = this->field_2E4;
-			this->mAngles.vz = this->field_2E6;
+			this->mAngles.vx = this->field_2E2.vx;
+			this->mAngles.vy = this->field_2E2.vy;
+			this->mAngles.vz = this->field_2E2.vz;
 		}
 
 		return;
@@ -3589,18 +3520,11 @@ void validate_CBaddy(void){
 
 
 	VALIDATE(CBaddy, field_2C4, 0x2C4);
-	VALIDATE(CBaddy, field_2C8, 0x2C8);
-	VALIDATE(CBaddy, field_2CC, 0x2CC);
 
 	VALIDATE(CBaddy, field_2D0, 0x2D0);
 
 	VALIDATE(CBaddy, field_2DC, 0x2DC);
-	VALIDATE(CBaddy, field_2DE, 0x2DE);
-
-	VALIDATE(CBaddy, field_2E0, 0x2E0);
 	VALIDATE(CBaddy, field_2E2, 0x2E2);
-	VALIDATE(CBaddy, field_2E4, 0x2E4);
-	VALIDATE(CBaddy, field_2E6, 0x2E6);
 	VALIDATE(CBaddy, field_2E8, 0x2E8);
 
 
