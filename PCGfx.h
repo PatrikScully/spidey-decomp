@@ -66,6 +66,12 @@ struct tagKMVERTEX3
 	f32 field_10;
 	f32 field_14;
 	u32 field_18;
+	// 32 byte records: PCGfx_ClipSendIndexedVertList (0x506980) indexes the
+	// array with 32 * index and DCModel_RenderModel (0x476D00) writes 8
+	// floats per vertex. The struct used to stop at 0x1C (28 bytes), so
+	// every indexed read of the vertex pool landed between records and the
+	// standalone build clipped away all level geometry (2026-09-03).
+	i32 field_1C;
 };
 
 #define _tagKMSTRIPHEAD i32

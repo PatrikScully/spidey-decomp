@@ -1721,7 +1721,7 @@ fogScanDone:
 						}
 					}
 					pScratchBase[slot].field_18 = alphaMask | (u32)bi | (((u32)gi | ((u32)ri << 8)) << 8);
-					*(i32*)((u8*)&pScratchBase[slot] + 28) = 0; // untyped tail padding, offset 0x1C (no named field)
+					pScratchBase[slot].field_1C = 0;
 				}
 			}
 			else if ((packedFaceFlags & 0x800) != 0)
@@ -1733,7 +1733,7 @@ fogScanDone:
 					u32 entry = alphaMask | ((u32*)G_COLOUR_TABLE)[colorIdx];
 					u32 packed = (entry & 0xFF00FF00u) | ((u8)entry << 16) | (u8)(entry >> 16);
 					pScratchBase[slot].field_18 = packed;
-					*(i32*)((u8*)&pScratchBase[slot] + 28) = 0; // untyped tail padding, offset 0x1C (no named field)
+					pScratchBase[slot].field_1C = 0;
 				}
 			}
 			else
@@ -1744,7 +1744,7 @@ fogScanDone:
 				{
 					u16 slot = (u16)(cornerSlots[c] & 0x7FFF);
 					pScratchBase[slot].field_18 = bc;
-					*(i32*)((u8*)&pScratchBase[slot] + 28) = 0; // untyped tail padding, offset 0x1C (no named field)
+					pScratchBase[slot].field_1C = 0;
 				}
 			}
 
@@ -2158,7 +2158,7 @@ void DC_PSXModel_RenderModel(SModel const *pModel, matrix4x4 const *pTransform, 
 						u32 entry = alphaMask | ((u32*)G_COLOUR_TABLE)[color[c]];
 						u32 packed = (entry & 0xFF00FF00u) | ((u8)entry << 16) | (u8)(entry >> 16);
 						pScratchBase[slot].field_18 = packed;
-						*(i32*)((u8*)&pScratchBase[slot] + 28) = 0;
+						pScratchBase[slot].field_1C = 0;
 					}
 				}
 				else
@@ -2169,7 +2169,7 @@ void DC_PSXModel_RenderModel(SModel const *pModel, matrix4x4 const *pTransform, 
 					{
 						u16 slot = vertIdx[c];
 						pScratchBase[slot].field_18 = bc;
-						*(i32*)((u8*)&pScratchBase[slot] + 28) = 0;
+						pScratchBase[slot].field_1C = 0;
 					}
 				}
 
@@ -2187,7 +2187,7 @@ void DC_PSXModel_RenderModel(SModel const *pModel, matrix4x4 const *pTransform, 
 						u32 term2 = ((u16)(*gDCTexAnimColorSrcA) * (u8)orig) & 0xFF00u;
 						u32 term3 = ((u32)(*gDCTexAnimColorSrcC) * (0xFF0000u & orig)) & 0xFF0000FFu;
 						pScratchBase[slot].field_18 = (orig & 0xFF000000u) | ((term1 | term2 | term3) >> 8);
-						*(i32*)((u8*)&pScratchBase[slot] + 28) = 0;
+						pScratchBase[slot].field_1C = 0;
 					}
 				}
 
