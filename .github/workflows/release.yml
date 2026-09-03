@@ -1,0 +1,91 @@
+name: release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: write
+
+jobs:
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build the SDL3 game in Docker
+      run: |
+        git archive --format=tar --prefix=src/ HEAD > /tmp/ctx.tar
+        tar -rf /tmp/ctx.tar --transform 's,^platform/,,' platform/Dockerfile.sdl3
+        docker build -t spidey-sa -f Dockerfile.sdl3 - < /tmp/ctx.tar
+        id=$(docker create spidey-sa)
+        docker cp $id:/out ./spidey-linux-x86
+        docker rm $id
+        cp README.md spidey-linux-x86/
+        tar -czf spidey-${{ github.ref_name }}-linux-x86-sdl3.tar.gz spidey-linux-x86
+    - uses: actions/upload-artifact@v4
+      with:
+        name: linux
+        path: spidey-${{ github.ref_name }}-linux-x86-sdl3.tar.gz
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Setup Visual Studio 6 toolchain
+        run: |
+          Invoke-WebRequest https://github.com/krystalgamer/spidey-decomp-vs/releases/download/v1.0/spidey-vs.zip -OutFile c:\spidey_vs.zip
+          7z x C:\spidey_vs.zip -oC:\vs
+      - uses: actions/checkout@v4
+      - name: Write the build version
+        run: |
+          $version = git rev-parse HEAD
+          Write-Output "#define RUNTIME_VERSION `"$version`"" | Out-File -FilePath .\runtime_version.h -Encoding ascii
+      - name: Build
+        shell: cmd
+        run: build.bat
+      - name: Package
+        shell: cmd
+        run: |
+          mkdir spidey-windows-dll
+          copy Release\spider.dll spidey-windows-dll\binkw32.dll
+          copy README.md spidey-windows-dll\
+          7z a spidey-${{ github.ref_name }}-windows-binkw32.zip spidey-windows-dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: spidey-${{ github.ref_name }}-windows-binkw32.zip
+
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - name: Pack the sources
+      run: |
+        git archive --format=tar.gz --prefix=spidey-decomp-${{ github.ref_name }}/ -o spidey-${{ github.ref_name }}-source.tar.gz HEAD
+        git archive --format=zip --prefix=spidey-decomp-${{ github.ref_name }}/ -o spidey-${{ github.ref_name }}-source.zip HEAD
+    - uses: actions/upload-artifact@v4
+      with:
+        name: source
+        path: |
+          spidey-${{ github.ref_name }}-source.tar.gz
+          spidey-${{ github.ref_name }}-source.zip
+
+  publish:
+    needs: [linux, windows, source]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+    - name: Create the release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: Spidey Decomp ${{ github.ref_name }}
+        body_path: .github/release-notes.md
+        files: dist/*

@@ -1,0 +1,93 @@
+name: build
+
+on:
+  push:
+    branches: [ "main", "phase2" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+
+  validate-repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install tree-sitter
+      run: pip install tree-sitter tree-sitter-cpp
+    - name: Check the function tags
+      run: python tools/dunno.py
+
+  build-linux-check:
+    needs: validate-repo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install 32 bit toolchain
+      run: sudo apt-get update && sudo apt-get install -y g++-multilib cmake g++ clang
+    - name: Configure
+      run: CXX=${{ matrix.compiler }} cmake -B out
+    - name: Build
+      run: cmake --build out -j"$(nproc)"
+    - name: Run
+      run: ./out/spider
+
+  build-standalone-linux:
+    needs: validate-repo
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build the SDL3 game in Docker
+      run: |
+        git archive --format=tar --prefix=src/ HEAD > /tmp/ctx.tar
+        tar -rf /tmp/ctx.tar --transform 's,^platform/,,' platform/Dockerfile.sdl3
+        docker build -t spidey-sa -f Dockerfile.sdl3 - < /tmp/ctx.tar
+        id=$(docker create spidey-sa)
+        docker cp $id:/out ./spidey-linux-x86
+        docker rm $id
+        cp README.md spidey-linux-x86/
+        tar -czf spidey-linux-x86-sdl3.tar.gz spidey-linux-x86
+    - uses: actions/upload-artifact@v4
+      with:
+        name: spidey-linux-x86-sdl3
+        path: spidey-linux-x86-sdl3.tar.gz
+
+  build-windows-dll:
+    needs: validate-repo
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Setup Visual Studio 6 toolchain
+        run: |
+          Invoke-WebRequest https://github.com/krystalgamer/spidey-decomp-vs/releases/download/v1.0/spidey-vs.zip -OutFile c:\spidey_vs.zip
+          7z x C:\spidey_vs.zip -oC:\vs
+      - uses: actions/checkout@v4
+      - name: Setup validator
+        run: |
+          Invoke-WebRequest https://github.com/krystalgamer/tobey-validator/releases/download/v1/tobey_validator.zip -OutFile tobey_validator.zip
+          7z x tobey_validator.zip
+      - name: Write the build version
+        run: |
+          $version = git rev-parse HEAD
+          Write-Output "#define RUNTIME_VERSION `"$version`"" | Out-File -FilePath .\runtime_version.h -Encoding ascii
+      - name: Build
+        shell: cmd
+        run: build.bat
+      - name: Validate the struct layouts
+        shell: cmd
+        run: |
+          copy Release\spider.dll binkw32.dll
+          tobey_validator.exe binkw32.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spidey-windows-binkw32
+          path: binkw32.dll
