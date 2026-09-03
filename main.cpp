@@ -456,6 +456,30 @@ void Logic(void)
 		Ob_AI(reinterpret_cast<CBody**>(&G_MECHLIST_PLAYER), 0);
 		Trig_ResetCPExecutedFlags();
 
+#ifdef SPIDEY_STANDALONE
+		// SPIDEY_TRACE_PLAYER=1: one line per frame with the player's state,
+		// for comparing against the original game (gdb breakpoints distort the
+		// wall-clock frame step, this does not).
+		{
+			static i32 tracePlayer = -1;
+			if (tracePlayer < 0)
+				tracePlayer = getenv("SPIDEY_TRACE_PLAYER") ? 1 : 0;
+			if (tracePlayer && G_MECHLIST)
+			{
+				CPlayer *pP = reinterpret_cast<CPlayer*>(G_MECHLIST);
+				CCamera *pC = G_CAMERA_LIST;
+				fprintf(stderr, "PLAYER t=%u f80=%d pos=(%d,%d,%d) vel=(%d,%d,%d) ang=(%d,%d,%d) coll=%#x mode=%#x anim=%d frame=%d crawl=%d E2D=%d E2E=%d EBC=%d | cam pos=(%d,%d,%d) mode=%d yaw=%d\n",
+					Plat_Ticks(), pP->field_80, pP->mPos.vx, pP->mPos.vy, pP->mPos.vz,
+					pP->mVel.vx, pP->mVel.vy, pP->mVel.vz,
+					pP->mAngles.vx, pP->mAngles.vy, pP->mAngles.vz,
+					pP->mCollision, pP->field_E1C, pP->mAnim, pP->mFrame, pP->field_AD4,
+					pP->field_E2D, pP->field_E2E, pP->field_EBC,
+					pC ? pC->mPos.vx >> 12 : 0, pC ? pC->mPos.vy >> 12 : 0, pC ? pC->mPos.vz >> 12 : 0,
+					pC ? (i32)pC->mCameraMode : -1, pC ? (i32)pC->field_23A : 0);
+			}
+		}
+#endif
+
 		Ob_AI(&PowerUpList, 0);
 		Ob_AI(&BulletList, 0);
 		Ob_AI(&MiscList, 0);
