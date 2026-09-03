@@ -1971,6 +1971,12 @@ void DXPOLY_SetBlendMode(u32 a1)
 
 // @Ok
 // @Matching
+// The ZENABLE flag here is gDepthBuffering (0x6B7A98, the IDB's gDepthBUffering),
+// not gDepthWriting (0x6B7A89, ZWRITEENABLE, owned by DXPOLY_SetDepthWriting).
+// With the two merged, enabling the depth test marked writes as enabled too and
+// the next DXPOLY_SetDepthWriting(1) was skipped: opaque world polys were drawn
+// with the depth mask off and the far backdrop painted over them (found with
+// the SDL3 build, 2026-09-03).
 void DXPOLY_SetDepthCompare(u32 a1)
 {
 #ifdef _WIN32
@@ -1978,20 +1984,20 @@ void DXPOLY_SetDepthCompare(u32 a1)
 	{
 		if (!a1)
 		{
-			if (gDepthWriting)
+			if (gDepthBuffering)
 			{
 				G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 0);
-				gDepthWriting = 0;
+				gDepthBuffering = 0;
 				DXERR_printf("Depth Buffering Disabled.\r\n");
 			}
 
 			return;
 		}
 
-		if (!gDepthWriting)
+		if (!gDepthBuffering)
 		{
 			G_D3DDEVICE7->SetRenderState(D3DRENDERSTATE_ZENABLE, 1);
-			gDepthWriting = 1;
+			gDepthBuffering = 1;
 			DXERR_printf("Depth Buffering Enabled.\r\n");
 		}
 
@@ -2011,18 +2017,18 @@ void DXPOLY_SetDepthCompare(u32 a1)
 	{
 		if (!a1)
 		{
-			if (gDepthWriting)
+			if (gDepthBuffering)
 			{
 				Plat_GfxSetDepthTest(0);
-				gDepthWriting = 0;
+				gDepthBuffering = 0;
 			}
 			return;
 		}
 
-		if (!gDepthWriting)
+		if (!gDepthBuffering)
 		{
 			Plat_GfxSetDepthTest(1);
-			gDepthWriting = 1;
+			gDepthBuffering = 1;
 		}
 
 		if (a1 != gDepthCompareIndex)
