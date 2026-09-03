@@ -113,7 +113,11 @@ public:
 	i32 field_230;
 	u8 field_234;
 
-	PADDING(4);
+	PADDING(3);
+
+	// script frame-wait counter (CScriptOnlyBaddy::AI 0x407840 counts it
+	// down once per frame before running the next script command).
+	i32 field_238;
 
 	i32 field_23C;
 
@@ -199,6 +203,15 @@ public:
 
 	EXPORT CScriptOnlyBaddy(i16*, i32);
 	EXPORT virtual ~CScriptOnlyBaddy(void);
+
+	// The three overrides the original vtable (0x53B2E8) has besides the
+	// destructor: slot 2, 14 and 15. Without them the class ran CBody's
+	// empty AI, so a level's cutscene actor never executed its script
+	// (found 2026-09-03 in the standalone build: the level 1 intro never
+	// moved the camera, and Spidey fell off the spawn point).
+	EXPORT virtual void AI(void);
+	EXPORT virtual int ExecuteCommand(u16);
+	EXPORT virtual void SetVariable(u16);
 };
 
 EXPORT CBaddy* FindBaddyOfType(int);

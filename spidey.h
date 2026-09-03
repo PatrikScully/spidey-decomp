@@ -1026,7 +1026,7 @@ class CPlayer : public CSuper
 		EXPORT void SortAnimationFollowOnData(void);
 		EXPORT void SortFistsData(void);
 		EXPORT void SwitchToDeathMode(bool);
-		EXPORT void SwitchToSynthesizedInput(i16 *);
+		EXPORT i16* SwitchToSynthesizedInput(i16 *);
 		EXPORT void SynthesizeAnalogueInput(void);
 		EXPORT void UpdateAndTrackCombo(void);
 		EXPORT void UpdateOffscreenSpideySenseIndicatorList(void);

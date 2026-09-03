@@ -21,6 +21,8 @@
 #include "carnage.h"
 // Panel_DestroyCompass for ~CScriptOnlyBaddy
 #include "panel.h"
+#include "simby.h"
+#include "spidey.h"
 #ifdef SPIDEY_STANDALONE
 // headers of the real implementations behind the ExecuteCommand
 // forward-to-original helpers (standalone build only, see below)
@@ -1170,6 +1172,268 @@ CScriptOnlyBaddy::~CScriptOnlyBaddy(void)
 
 	if (this->field_218 & 0x80)
 		Panel_DestroyCompass();
+}
+
+// Compass flash timer, same address panel.cpp names gCompassFlashTimer
+// (0x60F768, written by Panel_DisplayCompass and this AI).
+static i32 * const gCompassFlashTimer = (i32*)0x0060F768;
+
+// @Ok
+// 0x407840, 505 bytes (unnamed in the IDB, found through vtable 0x53B2E8
+// slot 2). The cutscene actor's whole behaviour: a trimmed CBaddy script
+// runner. Per frame: latch mInputFlags into field_214 (bit 0 also bumps
+// field_210 and, for a compass owner, restarts the compass flash), then
+// while the script is active either count down the wait (field_230 in
+// frame units, field_238 in frames) or run script commands until one
+// returns 0, and when the list ends fire the death pulse (Venom levels
+// only) and go inactive; an inactive actor dies. Afterwards a 0x100 actor
+// pokes every CSimby (type 324) within field_32E every 4th frame, and a
+// looping sound (field_32C != -1) is re-positioned every field_32C frames.
+void CScriptOnlyBaddy::AI(void)
+{
+	u16 inputFlags = this->mInputFlags;
+	this->field_214 = inputFlags;
+
+	if (inputFlags & 1)
+	{
+		this->mInputFlags = inputFlags & 0xFFFE;
+		this->field_210++;
+
+		if (this->field_218 & 0x80)
+			*gCompassFlashTimer = 300;
+	}
+
+	if (this->field_20C != 0)
+	{
+		if (this->field_234 != 0 && *gSubmarinerDieRelated != 0)
+		{
+			this->field_238 = 0;
+			this->field_230 = 0;
+		}
+
+		i32 wait = this->field_230;
+
+		if (wait != 0)
+		{
+			i32 step = this->field_80;
+
+			if (wait < step)
+				this->field_230 = 0;
+			else
+				this->field_230 = wait - step;
+		}
+		else if (this->field_238 != 0)
+		{
+			this->field_238--;
+		}
+		else
+		{
+			while (*this->field_24C != 0x4100)
+			{
+				i16 opcode = *this->field_24C;
+				this->field_24C++;
+
+				print_if_false((opcode & 0x6000) != 0, "Bad script command");
+
+				if (opcode & 0x4000)
+				{
+					if (this->ExecuteCommand(opcode) == 0)
+						goto tail;
+				}
+				else if (opcode & 0x2000)
+				{
+					this->SetVariable(opcode);
+				}
+			}
+
+			if (this->field_234 != 0 && *gSubmarinerDieRelated != 0)
+			{
+				if (this->field_211 == 0 && this->mNode != 0xFFFF)
+				{
+					this->field_211 = 1;
+					Trig_SendPulse(Trig_GetLinksPointer(this->mNode));
+				}
+
+				this->field_2A8 |= 0x4000;
+			}
+
+			this->field_20C = 0;
+		}
+	}
+	else
+	{
+		this->Die(0);
+	}
+
+tail:
+	if ((this->field_218 & 0x100) && (G_TTIME & 3) == 0)
+	{
+		for (CBaddy *pBaddy = G_BADDY_LIST; pBaddy; pBaddy = reinterpret_cast<CBaddy*>(pBaddy->mNextItem))
+		{
+			if (pBaddy->mType == 324
+				&& Utils_XZDist(&this->mPos, &pBaddy->mPos) < this->field_32E)
+			{
+				static_cast<CSimby*>(pBaddy)->ExplosionReaction();
+			}
+		}
+	}
+
+	i16 sfxPeriod = this->field_32C;
+
+	if (sfxPeriod != -1)
+	{
+		if (G_TTIME % sfxPeriod == 0)
+			SFX_ModifyPos(this->field_328, &this->mPos, 0);
+	}
+}
+
+// @Ok
+// 0x407A50, 1077 bytes (IDB: CScriptOnlyBaddy_ExecuteCommand). The actor's
+// own script commands; everything else goes to CBaddy::ExecuteCommand.
+// Operands are read from field_24C as 16 bit words. Sound handles live in
+// field_328, field_32C is the re-position period for the looping sound,
+// field_324 the owned smoke jet, field_32E the CSimby poke radius.
+int CScriptOnlyBaddy::ExecuteCommand(u16 cmd)
+{
+	CPlayer *pPlayer = reinterpret_cast<CPlayer*>(G_MECHLIST);
+
+	switch (cmd)
+	{
+		// SmokeJetOn (two variants) and SmokeJetOff.
+		case 0x429B:
+		case 0x42A1:
+		{
+			print_if_false(this->field_324 == 0, "CSmokeJet on command when a smoke jet already exists");
+
+			// @TODO Phase 2: the original does
+			//   new(CBit::operator new(0x164)) CSmokeJet(&mPos, &mAngles,
+			//       p[0], 0xFFFF, p[1], p[2], p[3], p[4], *(u8*)&p[5], ...)
+			// (0x4AF470) and for 0x429B sets the jet's byte at +0x3A to 1.
+			// CSmokeJet::CSmokeJet is not decompiled yet (smoke.h is padding
+			// only), so the effect is skipped; the six operand words are
+			// still consumed so the script stays in sync.
+			this->field_324 = 0;
+			this->field_24C += 6;
+			return 1;
+		}
+
+		case 0x429F:
+			print_if_false(this->field_324 != 0, "CSmokeJet off command when no smoke jet exists");
+			if (this->field_324)
+				delete this->field_324;
+			this->field_324 = 0;
+			return 1;
+
+		// PlaySoundLooped: id | 0x8000 played without a position (0x428D)
+		// or at the actor (0x450B, followed by the re-position period).
+		case 0x428D:
+		case 0x450B:
+		{
+			if (this->field_328)
+				SFX_Stop(this->field_328);
+
+			i16 id = *this->field_24C;
+			this->field_24C++;
+
+			if (cmd != 0x428D)
+			{
+				this->field_328 = SFX_PlayPos(id | 0x8000, &this->mPos, 0);
+				this->field_32C = *this->field_24C;
+				this->field_24C++;
+				return 1;
+			}
+
+			this->field_328 = SFX_Play(id | 0x8000, 0x2000, 0);
+			this->field_32C = -1;
+			return 1;
+		}
+
+		case 0x4503:
+			print_if_false(0, "No longer supported script command");
+			return 1;
+
+		// MoveToPlayer.
+		case 0x4506:
+			if (G_MECHLIST)
+				this->mPos = G_MECHLIST->mPos;
+			return 1;
+
+		// PlaySound (no position).
+		case 0x4507:
+		{
+			if (this->field_328)
+				SFX_Stop(this->field_328);
+
+			u16 id = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C++;
+
+			this->field_328 = SFX_Play(id, 0x2000, 0);
+			this->field_32C = -1;
+			return 1;
+		}
+
+		// PlaySoundPos: id, then the re-position period.
+		case 0x4508:
+		{
+			if (this->field_328)
+				SFX_Stop(this->field_328);
+
+			u16 id = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C++;
+			u16 period = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C++;
+
+			this->field_32C = period;
+			this->field_328 = SFX_PlayPos(id, &this->mPos, 0);
+			return 1;
+		}
+
+		// StopSound.
+		case 0x4509:
+			if (this->field_328)
+				SFX_Stop(this->field_328);
+			this->field_328 = 0;
+			return 1;
+
+		// CreateCompass at the actor.
+		case 0x450C:
+			Panel_CreateCompass(&this->mPos);
+			this->field_218 |= 0x80;
+			return 1;
+
+		// SimbyPokeRadius: enables the CSimby ExplosionReaction sweep in AI.
+		case 0x4513:
+			this->field_218 |= 0x100;
+			this->field_32E = *this->field_24C;
+			this->field_24C++;
+			return 1;
+
+		// PlayerIgnoreInput(frames).
+		case 0x470D:
+		{
+			u16 frames = *reinterpret_cast<u16*>(this->field_24C);
+			this->field_24C++;
+			pPlayer->SetIgnoreInputTimer(frames);
+			return 1;
+		}
+
+		// PlayerCutSceneScript: the rest of the stream drives the player,
+		// the actor's own cursor jumps past it.
+		case 0x470E:
+			this->field_24C = pPlayer->SwitchToSynthesizedInput(this->field_24C);
+			return 1;
+
+		default:
+			return CBaddy::ExecuteCommand(cmd);
+	}
+}
+
+// @Ok
+// 0x407A40 (IDB: CScriptOnlyBaddy::SetVariable): plain forward to the
+// CBaddy version.
+void CScriptOnlyBaddy::SetVariable(u16 a2)
+{
+	CBaddy::SetVariable(a2);
 }
 
 // How many CBaddy objects are alive. The exe owns it at 0x0056E98C, right in
@@ -3515,6 +3779,7 @@ void validate_CBaddy(void){
 
 	VALIDATE(CBaddy, field_230, 0x230);
 	VALIDATE(CBaddy, field_234, 0x234);
+	VALIDATE(CBaddy, field_238, 0x238);
 	VALIDATE(CBaddy, field_23C, 0x23C);
 
 	VALIDATE(CBaddy, field_240, 0x240);
@@ -3590,6 +3855,9 @@ void validate_CScriptOnlyBaddy(void){
 
 	VALIDATE_SIZE(CScriptOnlyBaddy, 0x330);
 	VALIDATE(CScriptOnlyBaddy, field_324, 0x324);
+	VALIDATE_VTABLE(CScriptOnlyBaddy, AI, 2);
+	VALIDATE_VTABLE(CScriptOnlyBaddy, ExecuteCommand, 14);
+	VALIDATE_VTABLE(CScriptOnlyBaddy, SetVariable, 15);
 	VALIDATE(CScriptOnlyBaddy, field_328, 0x328);
 	VALIDATE(CScriptOnlyBaddy, field_32C, 0x32C);
 	VALIDATE(CScriptOnlyBaddy, field_32E, 0x32E);

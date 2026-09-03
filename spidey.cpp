@@ -7730,7 +7730,12 @@ caseDefault:
 // file) - both addresses land exactly on an element boundary, so no new
 // global was needed for either. RunAnim (CSuper, ob.h) argument order
 // confirmed from the push sequence (cdecl reverses declaration order).
-void CPlayer::SwitchToSynthesizedInput(i16 *pInput)
+// Returns the first word after the input stream (0x4BC1A0 ends by skipping
+// zero-terminated runs until a 0xFF word follows, then returns the word past
+// it). CScriptOnlyBaddy::ExecuteCommand's 0x470E stores that as the new
+// baddy script cursor; ExecuteCommandList's CutSceneScript recomputes the
+// same thing with TrigSkipCutSceneScript.
+i16* CPlayer::SwitchToSynthesizedInput(i16 *pInput)
 {
 	this->mVel.vx = 0;
 	this->mVel.vy = 0;
@@ -7814,6 +7819,17 @@ void CPlayer::SwitchToSynthesizedInput(i16 *pInput)
 
 		pClear += 0x10;
 	}
+
+	u16 *pEnd = reinterpret_cast<u16*>(pInput);
+
+	do
+	{
+		while (*pEnd++ != 0)
+			;
+	}
+	while (*pEnd != 0xFF);
+
+	return reinterpret_cast<i16*>(pEnd + 1);
 }
 
 static i16 * const word_610C4A = (i16*)0x610C4A;
