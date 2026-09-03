@@ -11032,17 +11032,37 @@ void CPlayer::OrientToNormal(bool useTarget, CVector *target)
 	// reset instead of running with a near-zero axis.
 	if (rightMag < 2048 || normalMag < 2048 || upMag < 2048)
 	{
-		this->mTransform.m[0][0] = -4096;
-		this->mTransform.m[1][0] = 0;
-		this->mTransform.m[2][0] = 0;
+		// 0x4C50A0: the original resets the three cached axis vectors
+		// first and then rebuilds the matrix from them (m[*][0] = field_C78,
+		// m[*][1] = -field_C84, m[*][2] = field_C6C). Without the vector
+		// stores field_C6C keeps the degenerate forward axis, and
+		// GetEffectiveHeading (which reads field_C6C) then points the
+		// scripted start-of-level push away from the wall instead of into
+		// it (found by the standalone build: Spidey fell off the level 1
+		// spawn instead of sticking to the wall).
+		this->field_C6C.vx = 0;
+		this->field_C6C.vy = 0;
+		this->field_C6C.vz = -4096;
 
-		this->mTransform.m[0][1] = 0;
-		this->mTransform.m[1][1] = 4096;
-		this->mTransform.m[2][1] = 0;
+		this->field_C78.vx = -4096;
+		this->field_C78.vy = 0;
+		this->field_C78.vz = 0;
 
-		this->mTransform.m[0][2] = 0;
-		this->mTransform.m[1][2] = 0;
-		this->mTransform.m[2][2] = -4096;
+		this->field_C84.vx = 0;
+		this->field_C84.vy = -4096;
+		this->field_C84.vz = 0;
+
+		this->mTransform.m[0][0] = (i16)this->field_C78.vx;
+		this->mTransform.m[1][0] = (i16)this->field_C78.vy;
+		this->mTransform.m[2][0] = (i16)this->field_C78.vz;
+
+		this->mTransform.m[0][1] = (i16)-this->field_C84.vx;
+		this->mTransform.m[1][1] = (i16)-this->field_C84.vy;
+		this->mTransform.m[2][1] = (i16)-this->field_C84.vz;
+
+		this->mTransform.m[0][2] = (i16)this->field_C6C.vx;
+		this->mTransform.m[1][2] = (i16)this->field_C6C.vy;
+		this->mTransform.m[2][2] = (i16)this->field_C6C.vz;
 
 		this->SwitchToStandMode();
 	}
