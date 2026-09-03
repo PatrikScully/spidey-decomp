@@ -87,7 +87,10 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 	glDepthFunc(GL_LEQUAL);
 	glEnable(GL_DEPTH_TEST);
-	glFrontFace(GL_CCW);
+	// D3D7 CULL_CCW keeps polygons that are clockwise on a y-down screen.
+	// After the ortho y flip those are clockwise in GL window space too, so
+	// clockwise is the front face here.
+	glFrontFace(GL_CW);
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
 	if (getenv("SPIDEY_NOCULL"))   // debugging aid

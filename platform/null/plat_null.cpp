@@ -128,8 +128,21 @@ PlatTexture* Plat_TexCreate(i32 width, i32 height, PlatTexFormat)
 	return t;
 }
 
-void Plat_TexUpload(PlatTexture*, const void*, i32)
+void Plat_TexUpload(PlatTexture* t, const void* pixels, i32 pitch)
 {
+	// SPIDEY_DUMPTEX=1: print what the game uploads (test aid)
+	static i32 dump = -1;
+	if (dump < 0)
+		dump = getenv("SPIDEY_DUMPTEX") ? 1 : 0;
+	if (dump)
+	{
+		const u8* p = (const u8*)pixels;
+		i32 nonzero = 0, total = pitch * t->height;
+		for (i32 i = 0; i < total; i++)
+			nonzero += p[i] != 0;
+		printf("TEX %dx%d fmt=%d pitch=%d nonzero=%d/%d first=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+				t->width, t->height, 0, pitch, nonzero, total, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+	}
 }
 
 void Plat_TexDestroy(PlatTexture* t)
