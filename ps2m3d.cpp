@@ -2331,102 +2331,104 @@ void M3d_PreprocessPulsingColours(i32 Region)
 		pData = reinterpret_cast<u32*>(pColourPulseInfo + 1) + ListLen - 1;
 	}
 }
-
-static i32 * const gWibbleTables = (i32*)0x00660748;
+// The wibble tables are i16 (0x47627F: movsx eax, word ptr [660748h + ...]).
+static i16 * const gWibbleTables = (i16*)0x00660748;
 static volatile i32 * const gM3dWibbleFrame = (i32*)0x0065CFA4;
 static volatile i32 * const gM3dWibbleScroll = (i32*)0x0065F724;
-static volatile u32 * const * const gM3dWibbleModelData = (u32* const*)0x005F6764;
+static u8 * const * const gM3dWibbleModelData = (u8* const*)0x005F6764;
 
 // @Ok
 // (0x00475FB0, 1848 bytes). Preprocesses the wibble (texture animation)
 // packets for a PSX region. For each wibble packet it reads the per-face
 // wibble indices, looks them up in gWibbleTables (offset by the frame),
 // adds the scroll offset, and writes the resulting texture coordinates
-// (u,v) into the model's face data, scaled by the texture's 1/width,1/height.
+// (u,v) into the model's DCFace data, scaled by the texture's 1/width,1/height.
+//
+// Packet layout (bytes, from the disassembly):
+//   +0  u32 item offset into the region's super item array (12 + 0x24 * index)
+//   +4  i16 scroll x per frame, +6 i16 scroll y per frame, +8 i32 wibble speed
+//   +12 u16 face count, then 16 bytes per face: 8 wibble index bytes at
+//   +16..+23 (read via a pointer at +23 with -5,-4,-1,0,3,4,7,8), stride 16.
+//
+// Rewritten 2026-09-03 against 0x475FB0: the first translation used u32
+// pointer arithmetic for byte offsets (packet + 12 read 48 bytes in), tested
+// the item flag as a dword, used the wrong face base (model + 28 + 8 *
+// (NumVertices + NumNormals)), read gWibbleTables as i32 and never advanced
+// the DCFace output pointer between faces.
 void M3d_PreprocessWibblyTextures(i32 region)
 {
 	if (region == -1)
 		return;
 
-#ifdef SPIDEY_STANDALONE
-	// @TODO Phase 2: this translation mixes u32* and byte offsets (packet+12,
-	// packet+23, the -8 record header) and reads gWibbleTables as i32 where
-	// the original reads i16 (0x47627F). It walked off the packet list and
-	// crashed on the first level. Texture wibble is visual only, so it is
-	// off until re-decompiled against 0x475FB0.
-	return;
-#endif
-
-	u32 *pTexWibData = PSXRegion[region].pTexWibData;
-	if (pTexWibData == 0)
+	u8 *packet = reinterpret_cast<u8*>(PSXRegion[region].pTexWibData);
+	if (packet == 0)
 		return;
 
-	print_if_false(*((i32*)(pTexWibData - 8)) == 6, "Pointer doesn't point to a texture-wibble packet");
+	print_if_false(*reinterpret_cast<i32*>(packet - 8) == 6, "Pointer doesn't point to a texture-wibble packet");
 
 	f32 invWidth = 1.0f;
 	f32 invHeight = 1.0f;
 	f32 texX = 1.0f;
 	f32 texY = 1.0f;
 
-	u32 *packet = pTexWibData;
-	while (*packet != 0)
+	while (*reinterpret_cast<u32*>(packet) != 0)
 	{
-		print_if_false(((u32)packet - 12) % 0x24 == 0, "PreProcessWibblyTextures(): itemIndex not computed correctly.");
+		u32 itemOffset = *reinterpret_cast<u32*>(packet);
+		print_if_false((itemOffset - 12) % 0x24 == 0, "PreProcessWibblyTextures(): itemIndex not computed correctly.");
 
-		u32 *pSuperBase = (u32*)((u8*)&PSXRegion[0].pSuper + 68 * region);
-		u32 *pItem = (u32*)(*pSuperBase + 64 * ((*packet - 12) / 0x24));
-		u32 *pNext = packet + 4;
-		u16 numFaces = *(u16*)(packet + 12);
+		u8 *pItem = reinterpret_cast<u8*>(PSXRegion[region].pSuper) + 64 * ((itemOffset - 12) / 0x24);
+		u8 *pNext = packet + 16;
+		i32 numFaces = *reinterpret_cast<u16*>(packet + 12);
 
-		if (pItem[1] >= 0)  // field at +5 (char)
+		// high byte of CItem::mFlags: skip items culled this frame (0x8000)
+		if (*reinterpret_cast<i8*>(pItem + 5) >= 0)
 		{
-			u16 modelIndex = *(u16*)((u8*)pItem + 0x1A);
-			u8 itemRegion = *(u8*)((u8*)pItem + 0x1F);
+			u16 modelIndex = *reinterpret_cast<u16*>(pItem + 26);
+			u8 itemRegion = pItem[31];
 			SModel *pModel = PSXRegion[itemRegion].ppModels[modelIndex];
-			i32 modelDataBase = (int)gM3dWibbleModelData[itemRegion];
-			i32 faceBase = *(i32*)(modelDataBase + 4 * (9 * modelIndex) + 4);
-			i32 faceList = modelDataBase + 4 * (9 * modelIndex);
+			// faces start after the header, the SVECTOR vertices and normals
+			u8 *facePtr = reinterpret_cast<u8*>(pModel) + 28 + 8 * (pModel->NumVertices + pModel->NumNormals);
+			u8 *pModelData = gM3dWibbleModelData[itemRegion] + 36 * modelIndex;
+			u8 *pFaces = *reinterpret_cast<u8**>(pModelData + 4);
 
 			i32 frame = (*gM3dWibbleFrame & 0x3FF) + 1;
-			i32 scrollY = (frame * *(i16*)(packet + 6)) >> 4;
-			i32 scrollX = (frame * *(i16*)(packet + 4)) >> 4;
-			gM3dWibbleScroll[0] = (frame * *(i32*)(packet + 8)) >> 10;
+			i32 scrollY = (frame * *reinterpret_cast<i16*>(packet + 6)) >> 4;
+			i32 scrollX = (frame * *reinterpret_cast<i16*>(packet + 4)) >> 4;
+			gM3dWibbleScroll[0] = (frame * *reinterpret_cast<i32*>(packet + 8)) >> 10;
 
 			if (numFaces > 0)
 			{
-				f32 *pFaceData = (f32*)(faceBase + 36);
-				u8 *pWibData = (u8*)(packet + 23);
+				f32 *pOut = reinterpret_cast<f32*>(pFaces + 36);
+				u8 *pWib = packet + 23;
 				pNext += 16 * numFaces;
-				i32 facePtr = (int)pModel + 4 * *(u16*)((u8*)pModel + 4) + 14 * 4 + 4 * *(u16*)((u8*)pModel + 8);
 
 				for (i32 f = numFaces; f != 0; f--)
 				{
-					print_if_false(*(u8*)facePtr & 1, "Wibbling a non-textured face");
-					if ((scrollX != 0 || scrollY != 0) && (*((u8*)facePtr) & 0x20) == 0)
-						print_if_false(0, "Scrolling a non-tiled texture");
+					print_if_false(*facePtr & 1, "Wibbling a non-textured face");
+					print_if_false((scrollX == 0 && scrollY == 0) || (*facePtr & 0x20) != 0, "Scrolling a non-tiled texture");
 
 					i32 tx0, ty0, tx1, ty1, tx2, ty2, tx3, ty3;
-					if ((*(i32*)(faceList + 12) & 0x400) != 0)
+					if ((*reinterpret_cast<i32*>(pModelData + 12) & 0x400) != 0)
 					{
-						tx0 = *(u8*)((u8*)facePtr + 20) << 24;
-						ty0 = *(u8*)((u8*)facePtr + 21) << 24;
-						tx1 = *(u8*)((u8*)facePtr + 22) << 24;
-						ty1 = *(u8*)((u8*)facePtr + 23) << 24;
-						tx2 = *(u8*)((u8*)facePtr + 24) << 24;
-						ty2 = *(u8*)((u8*)facePtr + 25) << 24;
-						tx3 = *(u8*)((u8*)facePtr + 26) << 24;
-						ty3 = *(u8*)((u8*)facePtr + 27) << 24;
+						tx0 = facePtr[20] << 24;
+						ty0 = facePtr[21] << 24;
+						tx1 = facePtr[22] << 24;
+						ty1 = facePtr[23] << 24;
+						tx2 = facePtr[24] << 24;
+						ty2 = facePtr[25] << 24;
+						tx3 = facePtr[26] << 24;
+						ty3 = facePtr[27] << 24;
 					}
 					else
 					{
-						tx0 = *(u16*)((u8*)facePtr + 20) << 8;
-						ty0 = *(u16*)((u8*)facePtr + 28) << 8;
-						tx1 = *(u16*)((u8*)facePtr + 22) << 8;
-						ty1 = *(u16*)((u8*)facePtr + 30) << 8;
-						tx2 = *(u16*)((u8*)facePtr + 24) << 8;
-						ty2 = *(u16*)((u8*)facePtr + 32) << 8;
-						tx3 = *(u16*)((u8*)facePtr + 26) << 8;
-						ty3 = *(u16*)((u8*)facePtr + 34) << 8;
+						tx0 = *reinterpret_cast<u16*>(facePtr + 20) << 8;
+						ty0 = *reinterpret_cast<u16*>(facePtr + 28) << 8;
+						tx1 = *reinterpret_cast<u16*>(facePtr + 22) << 8;
+						ty1 = *reinterpret_cast<u16*>(facePtr + 30) << 8;
+						tx2 = *reinterpret_cast<u16*>(facePtr + 24) << 8;
+						ty2 = *reinterpret_cast<u16*>(facePtr + 32) << 8;
+						tx3 = *reinterpret_cast<u16*>(facePtr + 26) << 8;
+						ty3 = *reinterpret_cast<u16*>(facePtr + 34) << 8;
 					}
 					if (scrollX != 0)
 					{
@@ -2443,96 +2445,81 @@ void M3d_PreprocessWibblyTextures(i32 region)
 						ty3 += 2 * scrollY;
 					}
 
-					i32 w0 = *(pWibData - 5) >> 4;
-					i32 w1 = *(pWibData - 4) >> 4;
-					i32 w2 = *(pWibData - 1) >> 4;
-					i32 w3 = *pWibData >> 4;
-					i32 w4 = pWibData[3] >> 4;
-					i32 w5 = pWibData[4] >> 4;
-					i32 w6 = pWibData[7] >> 4;
-					i32 w7 = pWibData[8] >> 4;
+					u8 scroll = static_cast<u8>(gM3dWibbleScroll[0]);
+					i32 w;
+					w = pWib[-5] >> 4;
+					i32 cu0 = tx0 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[-5] & 0xF)) & 0x3F)] : 0);
+					w = pWib[-4] >> 4;
+					i32 cv0 = ty0 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[-4] & 0xF)) & 0x3F)] : 0);
+					w = pWib[-1] >> 4;
+					i32 cu1 = tx1 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[-1] & 0xF)) & 0x3F)] : 0);
+					w = pWib[0] >> 4;
+					i32 cv1 = ty1 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[0] & 0xF)) & 0x3F)] : 0);
+					w = pWib[3] >> 4;
+					i32 cu2 = tx2 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[3] & 0xF)) & 0x3F)] : 0);
+					w = pWib[4] >> 4;
+					i32 cv2 = ty2 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[4] & 0xF)) & 0x3F)] : 0);
+					w = pWib[7] >> 4;
+					i32 cu3 = tx3 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[7] & 0xF)) & 0x3F)] : 0);
+					w = pWib[8] >> 4;
+					i32 cv3 = ty3 + (w ? gWibbleTables[64 * w + ((scroll + 4 * (pWib[8] & 0xF)) & 0x3F)] : 0);
 
-					i32 d0 = (w0 != 0) ? gWibbleTables[64 * w0 + (((u8)gM3dWibbleScroll[0] + 4 * (*(pWibData - 5) & 0xF)) & 0x3F)] : 0;
-					i32 d1 = (w1 != 0) ? gWibbleTables[64 * w1 + (((u8)gM3dWibbleScroll[0] + 4 * (*(pWibData - 4) & 0xF)) & 0x3F)] : 0;
-					i32 d2 = (w2 != 0) ? gWibbleTables[64 * w2 + (((u8)gM3dWibbleScroll[0] + 4 * (*(pWibData - 1) & 0xF)) & 0x3F)] : 0;
-					i32 d3 = (w3 != 0) ? gWibbleTables[64 * w3 + (((u8)gM3dWibbleScroll[0] + 4 * (*pWibData & 0xF)) & 0x3F)] : 0;
-					i32 d4 = (w4 != 0) ? gWibbleTables[64 * w4 + (((u8)gM3dWibbleScroll[0] + 4 * (pWibData[3] & 0xF)) & 0x3F)] : 0;
-					i32 d5 = (w5 != 0) ? gWibbleTables[64 * w5 + (((u8)gM3dWibbleScroll[0] + 4 * (pWibData[4] & 0xF)) & 0x3F)] : 0;
-					i32 d6 = (w6 != 0) ? gWibbleTables[64 * w6 + (((u8)gM3dWibbleScroll[0] + 4 * (pWibData[7] & 0xF)) & 0x3F)] : 0;
-					i32 d7 = (w7 != 0) ? gWibbleTables[64 * w7 + (((u8)gM3dWibbleScroll[0] + 4 * (pWibData[8] & 0xF)) & 0x3F)] : 0;
-
-					i32 cu0 = d0 + tx0;
-					i32 cv0 = d1 + ty0;
-					i32 cu1 = d2 + tx1;
-					i32 cv1 = d3 + ty1;
-					i32 cu2 = d4 + tx2;
-					i32 cv2 = d5 + ty2;
-					i32 cu3 = d6 + tx3;
-					i32 cv3 = d7 + ty3;
-
-					i32 texData = *(i32*)((u8*)facePtr + 16);
-					print_if_false(texData != 0, "No Texture data");
-					if (texData != 0)
+					u8 *pTex = *reinterpret_cast<u8**>(facePtr + 16);
+					print_if_false(pTex != 0, "No Texture data");
+					if (pTex != 0)
 					{
-						u8 *pVram = *(u8**)(texData + 28);
+						u8 *pVram = *reinterpret_cast<u8**>(pTex + 28);
 						print_if_false(pVram != 0, "Texture has no pVRAMRect info");
-						print_if_false(*(i32*)(pVram + 4) != 0, "pVRAMRect info has no pack info");
+						print_if_false(*reinterpret_cast<i32*>(pVram + 4) != 0, "pVRAMRect info has no pack info");
 						u8 vramType = *pVram;
+						u8 *pPack = *reinterpret_cast<u8**>(pVram + 4);
+						f32 width;
 						if ((vramType & 8) != 0)
 						{
-							i32 pack = *(i32*)(pVram + 4);
-							texX = (f32)(2 * (*(u8*)pack & 0x7F));
-							texY = (f32)*(u8*)(pack + 2);
-							invWidth = (f32)(2 * *(u16*)(pack + 4));
-							invHeight = (f32)*(u16*)(pack + 6);
+							texX = static_cast<f32>(2 * (*pPack & 0x7F));
+							texY = static_cast<f32>(pPack[2]);
+							width = static_cast<f32>(2 * *reinterpret_cast<u16*>(pPack + 4));
+						}
+						else if ((vramType & 0x10) != 0)
+						{
+							texX = static_cast<f32>(*pPack);
+							texY = static_cast<f32>(pPack[2]);
+							width = static_cast<f32>(*reinterpret_cast<u16*>(pPack + 4));
 						}
 						else
 						{
-							u8 *vramData = *(u8**)(pVram + 4);
-							if ((vramType & 0x10) != 0)
-							{
-								texX = (f32)*vramData;
-								texY = (f32)vramData[2];
-								invWidth = (f32)*(u16*)(vramData + 4);
-							}
-							else
-							{
-								print_if_false((vramType & 4) != 0, "Unexpected Texture bit depth");
-								texX = (f32)(4 * (*vramData & 0x3F));
-								texY = (f32)vramData[2];
-								invWidth = (f32)(4 * *(u16*)(vramData + 4));
-							}
-							invHeight = (f32)*(u16*)(vramData + 6);
+							print_if_false((vramType & 4) != 0, "Unexpected Texture bit depth");
+							texX = static_cast<f32>(4 * (*pPack & 0x3F));
+							texY = static_cast<f32>(pPack[2]);
+							width = static_cast<f32>(4 * *reinterpret_cast<u16*>(pPack + 4));
 						}
-						if (invWidth == 0.0f)
-							print_if_false(0, "Zero Tex Width");
-						if (invHeight == 0.0f)
-							print_if_false(0, "Zero Tex Height");
-						invWidth = 1.0f / invWidth;
-						invHeight = 1.0f / invHeight;
+						f32 height = static_cast<f32>(*reinterpret_cast<u16*>(pPack + 6));
+						print_if_false(width != 0.0f, "Zero Tex Width");
+						print_if_false(height != 0.0f, "Zero Tex Height");
+						invWidth = 1.0f / width;
+						invHeight = 1.0f / height;
 					}
 
-					f32 *out = pFaceData;
-					out[-4] = ((f32)(cu0 >> 8) - texX) * invWidth;
-					out[0] = ((f32)(cv0 >> 8) - texY) * invHeight;
-					out[-3] = ((f32)(cu1 >> 8) - texX) * invWidth;
-					out[1] = ((f32)(cv1 >> 8) - texY) * invHeight;
-					f32 *out2 = pFaceData + 14;
-					out2[-16] = ((f32)(cu2 >> 8) - texX) * invWidth;
-					out2[-12] = ((f32)(cv2 >> 8) - texY) * invHeight;
-					out2[-15] = ((f32)(cu3 >> 8) - texX) * invWidth;
-					out2[-11] = ((f32)(cv3 >> 8) - texY) * invHeight;
+					// DCFace: mU[4] at +0x14, mV[4] at +0x24, 0x38 bytes per face
+					pOut[-4] = (static_cast<f32>(cu0 >> 8) - texX) * invWidth;
+					pOut[0]  = (static_cast<f32>(cv0 >> 8) - texY) * invHeight;
+					pOut[-3] = (static_cast<f32>(cu1 >> 8) - texX) * invWidth;
+					pOut[1]  = (static_cast<f32>(cv1 >> 8) - texY) * invHeight;
+					pOut += 14;
+					pOut[-16] = (static_cast<f32>(cu2 >> 8) - texX) * invWidth;
+					pOut[-12] = (static_cast<f32>(cv2 >> 8) - texY) * invHeight;
+					pOut[-15] = (static_cast<f32>(cu3 >> 8) - texX) * invWidth;
+					pOut[-11] = (static_cast<f32>(cv3 >> 8) - texY) * invHeight;
 
-					facePtr += 4 * (*(i32*)facePtr >> 18);
-					pWibData += 16;
-					scrollX = scrollX;  // keep
+					facePtr += 4 * (*reinterpret_cast<u32*>(facePtr) >> 18);
+					pWib += 16;
 				}
 			}
 			packet = pNext;
 		}
 		else
 		{
-			packet += 4 + 4 * numFaces;
+			packet += 16 + 16 * numFaces;
 		}
 	}
 }
