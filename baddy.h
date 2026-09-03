@@ -186,13 +186,19 @@ public:
 class CScriptOnlyBaddy : public CBaddy {
 
 public:
-	PADDING(4);
+	// Owned object the destructor deletes through vtable slot 0 (0x407789:
+	// `mov ecx,[edi+324h]; test; mov eax,[ecx]; push 1; call [eax]`). Nothing
+	// decompiled writes it yet, so its concrete class is unknown; CClass is
+	// the smallest base with that virtual destructor. Zero from CItem's
+	// operator new, like in the original.
+	CClass* field_324;
 
 	i32 field_328;
 	i16 field_32C;
 	i16 field_32E;
 
 	EXPORT CScriptOnlyBaddy(i16*, i32);
+	EXPORT virtual ~CScriptOnlyBaddy(void);
 };
 
 EXPORT CBaddy* FindBaddyOfType(int);

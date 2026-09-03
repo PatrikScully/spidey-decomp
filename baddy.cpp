@@ -16,6 +16,11 @@
 // CPowerUp::SetGravity is called on the object PowerUp_Create returns in
 // both builds (ExecuteCommand case 0x42A0)
 #include "powerup.h"
+// CCarnage::MakeSonicRipple is the vtable slot 17 call in ExecuteCommand
+// case 0x430B, both builds
+#include "carnage.h"
+// Panel_DestroyCompass for ~CScriptOnlyBaddy
+#include "panel.h"
 #ifdef SPIDEY_STANDALONE
 // headers of the real implementations behind the ExecuteCommand
 // forward-to-original helpers (standalone build only, see below)
@@ -1143,6 +1148,28 @@ CScriptOnlyBaddy::CScriptOnlyBaddy(i16* a2, i32 a3)
 	this->field_20C = 1;
 
 	this->ParseScript(reinterpret_cast<u16*>(v5));
+}
+
+// @Ok
+// 0x407740 (0x407720 is MSVC's scalar deleting thunk around it; neither is
+// named in the IDB, found through CScriptOnlyBaddy's vtable 0x53B2E8 slot 0).
+// Unlinks from BaddyList, stops the script's sound, deletes the owned
+// object and the compass, then falls into ~CBaddy/~CBody. Without this the
+// class had no destructor at all, so Init_KillAll left BaddyList pointing
+// at freed memory and Reloc_UnloadAll crashed on the next level restart
+// (found 2026-09-03 in the standalone build).
+CScriptOnlyBaddy::~CScriptOnlyBaddy(void)
+{
+	this->DeleteFrom(reinterpret_cast<CBody**>(&G_BADDY_LIST));
+
+	if (this->field_328)
+		SFX_Stop(this->field_328);
+
+	if (this->field_324)
+		delete this->field_324;
+
+	if (this->field_218 & 0x80)
+		Panel_DestroyCompass();
 }
 
 // How many CBaddy objects are alive. The exe owns it at 0x0056E98C, right in
@@ -3562,6 +3589,7 @@ void validate_CBaddy(void){
 void validate_CScriptOnlyBaddy(void){
 
 	VALIDATE_SIZE(CScriptOnlyBaddy, 0x330);
+	VALIDATE(CScriptOnlyBaddy, field_324, 0x324);
 	VALIDATE(CScriptOnlyBaddy, field_328, 0x328);
 	VALIDATE(CScriptOnlyBaddy, field_32C, 0x32C);
 	VALIDATE(CScriptOnlyBaddy, field_32E, 0x32E);

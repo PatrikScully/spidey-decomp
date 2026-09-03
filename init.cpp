@@ -77,7 +77,13 @@ INLINE void DeleteList(CBody *pLst)
 	{
 		CBody *pNext = reinterpret_cast<CBody*>(pCur->mNextItem);
 
-		if (pCur->mCBodyFlags & 0x20)
+		// 0x20 is the "protected" bit: Init_KillAll (0x4437E0) inlines this
+		// loop eleven times and every copy deletes the member only when
+		// `(mCBodyFlags & 0x20) == 0`. An earlier revision had the test
+		// inverted, so a level restart kept the old CPlayer and every
+		// unprotected object alive ("Leftover protected members", then
+		// "2 or more CPlayers" and a crash in DoMGSShadow); found 2026-09-03.
+		if (!(pCur->mCBodyFlags & 0x20))
 		{
 			delete pCur;
 		}
@@ -232,7 +238,16 @@ void Init_Cleanup(i32 a1)
 	Init_KillAll();
 	Trig_DeleteCommandPoints();
 
-	delete pYesNoMenu;
+	// 0x443B0F: `mov ecx,[pYesNoMenu]; test; je; call 0x43FB00`, and
+	// 0x43FB00 is CMenu::KillBox (delete the zoom box at +4, null it), NOT a
+	// delete of the menu: the yes/no menu lives from Init_AtStart until the
+	// virtual delete at the end of SpideyMain. An earlier revision wrote
+	// `delete pYesNoMenu;` here, which freed the menu after the intro
+	// movies; the block got reused (a font glyph image), freed and
+	// scribbled, and the next Init_Cleanup (level restart) crashed reading
+	// the stale object (found 2026-09-03 in the standalone build).
+	if (pYesNoMenu)
+		pYesNoMenu->KillBox();
 
 	if (a1 == 3)
 	{
