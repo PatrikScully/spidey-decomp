@@ -1567,7 +1567,11 @@ fogScanDone:
 			alphaMask = 0xFF000000u;
 			alphaMode = 0;
 
-			u8 lowCombined = (u8)overrideMask | (u8)(faceFlags & (u8)(overrideMask >> 8));
+			// 0x476D00 / 0x478180: the face-flag byte is masked with BYTE2 of the
+			// override (bits 16..23), not byte 1. With the usual 0xFFFF0000 override
+			// byte 1 is zero, which skipped every face (found by the standalone build:
+			// no level geometry ever reached the renderer).
+			u8 lowCombined = (u8)overrideMask | (u8)(faceFlags & (u8)(overrideMask >> 16));
 			u8 fieldByte0 = *(pFaceCursor + 40); // DCFace::field_34[0]
 			if ((lowCombined & 0xC0) != 0 && (fieldByte0 & 2) == 0)
 				break;
@@ -1754,7 +1758,7 @@ fogScanDone:
 			{
 				u16 nextFlags = *(u16*)(pFaceCursor - 12);
 				packedFaceFlags = (u16)overrideMask | (nextFlags & (u16)(overrideMask >> 16));
-				u8 nextLowCombined = (u8)overrideMask | (u8)(nextFlags & (u8)(overrideMask >> 8));
+				u8 nextLowCombined = (u8)overrideMask | (u8)(nextFlags & (u8)(overrideMask >> 16));
 				if ((nextLowCombined & 0xC0) != 0 && (*(pFaceCursor + 40) & 2) == 0)
 					break;
 				pFaceCursor += 56;
@@ -2059,7 +2063,11 @@ void DC_PSXModel_RenderModel(SModel const *pModel, matrix4x4 const *pTransform, 
 			}
 
 			i32 packedFlags = (u16)overrideMask | (faceFlags & (u16)(overrideMask >> 16));
-			u8 lowCombined = (u8)overrideMask | (u8)(faceFlags & (u8)(overrideMask >> 8));
+			// 0x476D00 / 0x478180: the face-flag byte is masked with BYTE2 of the
+			// override (bits 16..23), not byte 1. With the usual 0xFFFF0000 override
+			// byte 1 is zero, which skipped every face (found by the standalone build:
+			// no level geometry ever reached the renderer).
+			u8 lowCombined = (u8)overrideMask | (u8)(faceFlags & (u8)(overrideMask >> 16));
 
 			if ((lowCombined & 0xC0) != 0)
 			{
