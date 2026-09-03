@@ -1,49 +1,121 @@
-<p align="center">
-  <img src="logo.svg" alt="Spidey Decomp logo" width="720">
-</p>
+# Spidey Decomp
 
-<h1 align="center">Spidey Decomp</h1>
-<p align="center">Your friendly neighborhood decompilation project. Turning a 2000s Spider-Man PC game back into readable source code, one function at a time.</p>
+Decompilation of Spider-Man (2000) for PC. The game was made by Neversoft and
+ported to Windows by LTI Gray Matter. The goal is readable, buildable C++
+that does what the original binary does, function by function, and a native
+build of the game that runs on today's systems.
 
-<p align="center">
-  <a href="https://github.com/krystalgamer/spidey-decomp"><img alt="fork of krystalgamer/spidey-decomp" src="https://img.shields.io/badge/fork%20of-krystalgamer%2Fspidey--decomp-4d7fff"></a>
-  <img alt="made with C++" src="https://img.shields.io/badge/made%20with-C%2B%2B-00599C?logo=cplusplus&logoColor=white">
-  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20PC-8a8a8a">
-  <img alt="status" src="https://img.shields.io/badge/status-actively%20swinging-brightgreen">
-  <img alt="powered by LLMs" src="https://img.shields.io/badge/powered%20by-LLMs-ff3b3b">
-  <a href="https://github.com/krystalgamer/spidey-decomp/stargazers"><img alt="upstream stars" src="https://img.shields.io/github/stars/krystalgamer/spidey-decomp?style=social"></a>
-</p>
+This repository is a fork of [krystalgamer/spidey-decomp](https://github.com/krystalgamer/spidey-decomp),
+the original project. All the groundwork, the tooling and the reverse
+engineering method come from there. Functions that are finished here go back
+upstream as pull requests. This fork adds the standalone build (no original
+exe code runs, only its data files are used) and uses AI coding agents for a
+lot of the decompiling and debugging work, with the original game running
+under Wine as the reference.
 
----
+## What you need
 
-## Hey there. Yeah, you. Come here often
+The game data from your own copy of Spider-Man (2000) for PC. The build
+never ships game data. From the installed game directory you need:
 
-So, funny story. Somewhere out there is a compiled, twenty five year old copy of a PC game starring yours truly, and nobody has been able to read its source code for a very long time. That is basically me getting webbed up and stuck to a wall. Somebody had to cut me loose.
+- `data.pkr` and `media.pkr` (the archives with models, textures, sounds)
+- `texture.dat`
+- `SpideyPC.exe` (only its data section is read, no code from it runs)
 
-That somebody is this project. We are decompiling **Spider-Man (2000)** for PC, the Neversoft classic ported by LTI Gray Matter, straight back into clean, buildable C++ source code. And we are not just going for "close enough, ship it." We want the real logic back, every function decompiled so it does exactly what the original did, readable C++ you can actually understand and build. Some of it lines up with the original byte for byte, the rest matches in behaviour. Either way the goal is the same: the whole game, back into source. No half measures. My aunt raised me better than that.
+Put them in one directory. That directory is the "game dir" below.
 
-## Whose web is this anyway
+## How it runs
 
-This repository swings in on the shoulders of **[krystalgamer/spidey-decomp](https://github.com/krystalgamer/spidey-decomp)**, the original project and the person who started the whole rescue mission. This is a fork. All credit for the vision, the tooling, and the reverse engineering groundwork belongs there. Seriously, go star it, they earned it, I did not just say that because they can see my source code now.
+Two builds come out of this repository.
 
-## So what am I doing over here
+1. The standalone game (`spider`). A 32 bit native binary with an SDL3 and
+   OpenGL backend. Everything it does is our decompiled code. This is the
+   Phase 2 build. Right now it boots to the menus, loads level 1, renders the
+   city and runs the player physics the same way the original does. Sound,
+   music and movies are still stubs.
+2. The Phase 1 DLL (`binkw32.dll`). A drop in for the game's Bink DLL on
+   Windows (or Wine). It loads the original game and hooks the decompiled
+   functions into it, one by one. This is how each function is checked
+   against the original.
 
-Around here, I get a little extra help. This fork pushes the decompilation forward with AI coding agents doing a lot of the late night decompiling, picking a function apart, rebuilding its logic from scratch, and checking it against the original game until it behaves the same, all under close supervision, because even a genius intern needs a mentor. Whatever comes out solid gets sent back upstream as a pull request, because sharing is caring, and also because credit belongs where the work started.
+## Linux
 
-## Why bother
+Build with Docker (no 32 bit packages needed on the host):
 
-Because a twenty five year old web slinger deserves readable source code too. Every function that matches is one more piece of gaming history rescued, understood, and put back where people can actually learn from it. Call it my responsibility. Great power, remember?
+```
+git archive --format=tar --prefix=src/ HEAD > /tmp/ctx.tar
+tar -rf /tmp/ctx.tar --transform 's,^platform/,,' platform/Dockerfile.sdl3
+docker build -t spidey-sa -f Dockerfile.sdl3 - < /tmp/ctx.tar
+id=$(docker create spidey-sa); docker cp $id:/out ./sa-run; docker rm $id
+```
 
-## How is it going
+`sa-run/` then holds `spider` and the i386 `libSDL3.so.0` it needs. Run it:
 
-In waves, mostly. Functions get picked up, decompiled, checked against the original binary, and merged in when they hold up. Some fall into place on the first swing. Some take a dozen tries and a faceful of webbing before the logic finally clicks. Some are still stuck to a wall somewhere, waiting their turn. Slow, careful work, but it never really stops. Neither do I.
+```
+cd sa-run
+LD_LIBRARY_PATH=. ./spider /path/to/game-dir
+```
 
-## Hall of fame
+Or build natively. You need a 32 bit toolchain and SDL3 for i386
+(`g++-multilib cmake libsdl3-dev:i386 libgl-dev:i386` on Ubuntu 25.04 or
+newer):
 
-- **[krystalgamer](https://github.com/krystalgamer)**, for starting and leading the original spidey-decomp project. The real hero of this story.
-- Everyone who has pitched in matches, tools, and reverse engineering notes upstream.
-- The AI agents pulling the late night shifts around here. No coffee breaks, no complaints, just results.
+```
+cmake -B out-sa -DSPIDEY_STANDALONE=ON -DSPIDEY_BACKEND=sdl3 -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build out-sa -j8
+./out-sa/spider /path/to/game-dir
+```
 
-## Want to swing in and help
+Keys: Enter selects, the arrow keys move, F12 quits. Set `SPIDEY_FULLSCREEN=1`
+for fullscreen. `SPIDEY_BACKEND=null` builds a headless version that runs the
+game logic without a window (used for tests and CI).
 
-Head over to the [original project](https://github.com/krystalgamer/spidey-decomp) to get involved, check open issues, or just watch the progress roll in. The more of us on this, the faster this old game gets its story told right.
+Debugging switches (environment variables): `SPIDEY_KEYS="6000:enter,4000:enter"`
+presses keys at the given times in ms, `SPIDEY_QUIT_MS=N` ends the run after N
+ms, `SPIDEY_TRACE_PLAYER=1` prints the player and camera state once per frame,
+`SPIDEY_DUMPPOLYS=N` with `SPIDEY_DUMPPOLYS_AT=ms` prints the polygons of N
+frames, `SPIDEY_NOCULL=1`, `SPIDEY_NODEPTH=1` and `SPIDEY_GLDEBUG=ms` change or
+log the OpenGL state in the SDL3 backend.
+
+The plain `cmake -B out && cmake --build out && ./out/spider` build is the
+compile check every function has to pass on Linux. It does not run the game.
+
+## Windows
+
+The Phase 1 DLL is built with the same MSVC 6 toolchain the game used.
+Download it from the
+[spidey-decomp-vs release](https://github.com/krystalgamer/spidey-decomp-vs/releases),
+extract it to `C:\vs` and run `build.bat`. The result is `Release\spider.dll`.
+In your game directory rename the original `binkw32.dll` to `binkw32_.dll`
+and copy `spider.dll` there as `binkw32.dll`. Start `SpideyPC.exe` as usual.
+The CI builds this DLL on every push and attaches it to releases.
+
+The standalone game has Windows code paths (see `platform/exemem.cpp`) but a
+Windows build of it with SDL3 has not been tested yet.
+
+## macOS
+
+There is no native macOS build. The game and both builds are 32 bit x86,
+and macOS dropped 32 bit support. Run the Linux build in a Linux virtual
+machine, or use the Windows DLL through Wine or CrossOver with your own copy
+of the game.
+
+## Working on the code
+
+- Every function carries one tag comment (`@Ok`, `@NotOk`, `@SMALLTODO`,
+  `@MEDIUMTODO`, `@BIGTODO`, `@Bogus`). `python tools/dunno.py` checks them
+  (needs `tree-sitter` and `tree-sitter-cpp`).
+- `tools/differ.py` and `tools/compare.py` compare the built functions
+  against the original bytes in `tools/functions/`.
+- `tobey_validator` from
+  [krystalgamer/tobey-validator](https://github.com/krystalgamer/tobey-validator)
+  checks the struct layouts (`VALIDATE` macros) in the built DLL.
+- The standalone build keeps the exe's data block mapped at its original
+  address (`platform/exemem.cpp`) and replays the exe's static initializers
+  (`platform/exe_static_init.cpp`, generated by `platform/gen_exe_static_init.py`).
+
+## Credits
+
+- [krystalgamer](https://github.com/krystalgamer) started and leads the
+  original spidey-decomp project. Go there to get involved.
+- Everyone who contributed matches, tools and notes upstream.
