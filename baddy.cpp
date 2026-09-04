@@ -2662,7 +2662,7 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			{
 				return true;
 			}
-			this->field_24C -= 2;
+			this->field_24C -= 1;   // 0x406272: add eax,-2 on the byte pointer, one word back to the opcode itself
 			return false;
 
 		case 0x428E:
