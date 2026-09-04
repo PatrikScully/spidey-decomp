@@ -829,13 +829,16 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 				refX = pV4[0];
 				refY = pV4[1];
 			}
-			else if (!(recFlags & 0x10))
+			else if (recFlags & 0x10)
 			{
+				// 0x46F399: a triangle (flag 0x10) has no second half, so a
+				// point on the far side of the v5 v6 diagonal is outside it
 				reject = true;
 				refX = refY = 0;
 			}
 			else
 			{
+				// a quad: test the point against the second triangle (v7 side)
 				refX = pV7[0];
 				refY = pV7[1];
 			}
