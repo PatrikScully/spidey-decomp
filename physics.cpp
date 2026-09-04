@@ -228,6 +228,12 @@ void CPlayer::DoCrawlingPhysics(void)
 
 	print_if_false(this->field_AD4, "Error");
 
+#ifdef SPIDEY_STANDALONE
+	if (getenv("SPIDEY_TRACE_CRAWL") && this->field_E1C == 16)
+		fprintf(stderr, "CRAWLIN pos=(%d,%d,%d) vel=(%d,%d,%d) acc=(%d,%d,%d) f80=%d anim=%d frame=%d\n", this->mPos.vx, this->mPos.vy, this->mPos.vz,
+			this->mVel.vx, this->mVel.vy, this->mVel.vz, this->mAcc.vx, this->mAcc.vy, this->mAcc.vz, this->field_80, this->mAnim, this->mFrame);
+#endif
+
 	this->mCollision = 0;
 	this->field_AD5 = 0;
 	this->field_B09 = 0;
@@ -275,6 +281,22 @@ void CPlayer::DoCrawlingPhysics(void)
 
 		M3dColij_InitLineInfo(&this->mLineInfo);
 		M3dZone_LineToItem(&this->mLineInfo, 1);
+
+#ifdef SPIDEY_STANDALONE
+		if (getenv("SPIDEY_TRACE_CRAWL") && this->field_E1C == 16)
+		{
+			i32 dbgDot = this->mLineInfo.pItem ? ((this->mLineInfo.Normal.vz * this->field_A8.vz) >> 12)
+				+ ((this->mLineInfo.Normal.vx * this->field_A8.vx) >> 12)
+				+ ((this->mLineInfo.Normal.vy * this->field_A8.vy) >> 12) : 0;
+			fprintf(stderr, "CRAWL hook=(%d,%d,%d) along=(%d,%d,%d) start=(%d,%d,%d) end=(%d,%d,%d) hit=%p normal=(%d,%d,%d) dot=%d dist=%d face3=%#x pos=(%d,%d,%d)\n",
+				hookPos.vx, hookPos.vy, hookPos.vz, alongUp.vx, alongUp.vy, alongUp.vz,
+				this->mLineInfo.StartCoords.vx, this->mLineInfo.StartCoords.vy, this->mLineInfo.StartCoords.vz,
+				this->mLineInfo.EndCoords.vx, this->mLineInfo.EndCoords.vy, this->mLineInfo.EndCoords.vz,
+				(void*)this->mLineInfo.pItem, this->mLineInfo.Normal.vx, this->mLineInfo.Normal.vy, this->mLineInfo.Normal.vz, dbgDot,
+				this->mLineInfo.pItem ? (i32)this->mLineInfo.Distance : -1, this->mLineInfo.pItem ? (u32)this->mLineInfo.pFace[3] : 0u,
+				this->mPos.vx >> 12, this->mPos.vy >> 12, this->mPos.vz >> 12);
+		}
+#endif
 
 		if (this->mLineInfo.pItem != 0)
 		{

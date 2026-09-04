@@ -476,6 +476,13 @@ void Logic(void)
 					pP->field_E2D, pP->field_E2E, pP->field_EBC,
 					pC ? pC->mPos.vx >> 12 : 0, pC ? pC->mPos.vy >> 12 : 0, pC ? pC->mPos.vz >> 12 : 0,
 					pC ? (i32)pC->mCameraMode : -1, pC ? (i32)pC->field_23A : 0);
+				if (pP->field_E1C == 16)
+					fprintf(stderr, "  WALL C6C=(%d,%d,%d) C78=(%d,%d,%d) C84=(%d,%d,%d) A8=(%d,%d,%d) T=[%d %d %d|%d %d %d|%d %d %d] t=(%d,%d,%d) surf=%d wall=%d AD5=%d AD7=%d E32=%d heading=%d\n",
+						pP->field_C6C.vx, pP->field_C6C.vy, pP->field_C6C.vz, pP->field_C78.vx, pP->field_C78.vy, pP->field_C78.vz, pP->field_C84.vx, pP->field_C84.vy, pP->field_C84.vz,
+						pP->field_A8.vx, pP->field_A8.vy, pP->field_A8.vz,
+						pP->mTransform.m[0][0], pP->mTransform.m[0][1], pP->mTransform.m[0][2], pP->mTransform.m[1][0], pP->mTransform.m[1][1], pP->mTransform.m[1][2], pP->mTransform.m[2][0], pP->mTransform.m[2][1], pP->mTransform.m[2][2],
+						pP->mTransform.t[0], pP->mTransform.t[1], pP->mTransform.t[2],
+						(i32)pP->field_8E8, (i32)pP->field_AD4, (i32)pP->field_AD5, (i32)pP->field_AD7, (i32)pP->field_E32, (i32)pP->GetEffectiveHeading());
 
 				// once, about a second in: the environmental object list in the
 				// same layout the wine oracle prints it (oracle.py ENVOBJ lines)
