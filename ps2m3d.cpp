@@ -1216,7 +1216,10 @@ static volatile u32 * const gDCTexAnimColorSrcC = (u32*)0x006191D4;
 
 static volatile i32 * const gDCDebugLightFlag = (i32*)0x0065CEB0; // gates the sub_509000 debug-line block
 
-static i32 * const gDCLastNoLightFlag  = (i32*)0x00AC08DC; // last "no-light" flag passed to PCGfx_UseTexture, batching cache
+static i32 * const gDCLastNoLightFlag  = (i32*)0x00AC08DC;
+// PS2: SubObjectMasked (== gM3dSubObjectMasked further down). When it is
+// set the whole fog remap and batch submission block is skipped (0x477F3D).
+static i32 * const gDCSubObjectMasked  = (i32*)0x0065DFAC; // last "no-light" flag passed to PCGfx_UseTexture, batching cache
 static i32 * const gDCFaceSortKey      = (i32*)0x00AC08E0; // PCGfx.cpp already references this address generically as an OT/sort key
 static i32 * const gDCFaceSortKeyExtra = (i32*)0x00AC08E4;
 static volatile i32 * const gDCForceNoTexFlag  = (i32*)0x00660FFC;
@@ -1837,7 +1840,7 @@ afterFaceLoop:
 
 	// Fog-distance / no-fog color remap pass over the whole scratch pool
 	// range this call touched (pScratchBase[0..pData->mVertexCount)).
-	if (*gDCLastNoLightFlag == 0)
+	if (*gDCSubObjectMasked == 0)   // 0x477F3D: mov eax,[65DFACh]; test eax,eax; jne epilogue
 	{
 		if (*gDCNoFogFlag != 0)
 		{
