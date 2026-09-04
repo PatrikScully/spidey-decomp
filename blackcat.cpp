@@ -773,6 +773,8 @@ void CBlackCat::SynthesizeAnalogueInput(void)
 				delta -= this->mPos;
 				delta >>= 12;
 				VectorNormal(reinterpret_cast<VECTOR*>(&delta), reinterpret_cast<VECTOR*>(&this->mVel));
+				// 0x414948: the unit vector is scaled by the block's speed
+				this->mVel *= block[5];
 
 				block = reinterpret_cast<i32*>(block[block[1] - 1]);
 				break;
