@@ -2927,6 +2927,9 @@ i32 Shell_Difficulty(i32 a1)
 		pMenu->GetEntryXY(pMenu->mEntry[pMenu->mLine].name, &x, &y);
 		IsMouseOverText = PCSHELL_IsMouseOverText(pMenu->mEntry[pMenu->mLine].name, x, y, pMenu->mJustification);
 	}
+	// 0x4A161D: the slide position takes the clamped value every frame,
+	// this is what moves the little Spider-Man down into view.
+	v4 = v30;
 	if (pMenu->mLine < 0x28 && (IsMouseOverText != 0 || PCSHELL_CheckTriggers(65552, 1, 1)))
 	{
 		G_SCONTROL[0].Start.Triggered = 0;
