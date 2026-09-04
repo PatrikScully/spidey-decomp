@@ -770,11 +770,17 @@ static void PanelCompass_DrawNeedleHalf(POLY_FT4 *p, Texture *tex)
 	f32 xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
 	u32 col = p->b0 | ((p->g0 | ((p->r0 | 0xFFFFFF00) << 8)) << 8);
 
+	// the second half is the mirror image: Panel_DisplayCompass swaps its
+	// u0/u1 bytes and the original's second call (0x464257) uses 0.95 on the
+	// left and 0.05 on the right
+	f32 uLeft = (p->u0 > p->u1) ? 0.95f : 0.05f;
+	f32 uRight = (p->u0 > p->u1) ? 0.05f : 0.95f;
+
 	PCGfx_DrawQPoly2D(
-			p->x0 * xScale, p->y0 * yScale, 0.05f, 0.0f, col,
-			p->x1 * xScale, p->y1 * yScale, 0.95f, 0.0f, col,
-			p->x2 * xScale, p->y2 * yScale, 0.05f, 1.0f, col,
-			p->x3 * xScale, p->y3 * yScale, 0.95f, 1.0f, col,
+			p->x0 * xScale, p->y0 * yScale, uLeft, 0.0f, col,
+			p->x1 * xScale, p->y1 * yScale, uRight, 0.0f, col,
+			p->x2 * xScale, p->y2 * yScale, uLeft, 1.0f, col,
+			p->x3 * xScale, p->y3 * yScale, uRight, 1.0f, col,
 			0.0f);
 }
 
@@ -889,6 +895,22 @@ void Panel_DisplayCompass(void)
 		p->y1 = (i16)(199 - tailOffset);
 		p->y2 = (i16)(199 - tipY2);
 		p->x2 = (i16)(xOff2 + 432);
+	}
+
+	// 0x463B6C: the PC port draws the two triangles above as one untextured
+	// quad (tip, side A, tip 2, side B) in the pulsing yellow, z offset 0.2
+	{
+		f32 xScale = G_GAME_RESOLUTION_X / (f32)G_XRES;
+		f32 yScale = G_GAME_RESOLUTION_Y / (f32)G_YRES;
+		u32 arrowColor = (static_cast<u32>(pulseBrightness) | 0xFFFFFF00u) << 8;
+
+		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
+		PCGfx_DrawQPoly2D(
+				(xOff1 + 432) * xScale, (199 - tipY) * yScale, 0.0f, 0.0f, arrowColor,
+				(sideA + 432) * xScale, (199 - tailA) * yScale, 0.0f, 0.0f, arrowColor,
+				(xOff2 + 432) * xScale, (199 - tipY2) * yScale, 0.0f, 0.0f, arrowColor,
+				(sideB + 432) * xScale, (199 - tailB) * yScale, 0.0f, 0.0f, arrowColor,
+				0.2f);
 	}
 
 	POLY_FT4 *pNeedle = (POLY_FT4 *)Panel_DrawTexturedPoly(G_ANIM_COMPASS->pTexture, 0);
