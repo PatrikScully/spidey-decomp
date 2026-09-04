@@ -925,6 +925,7 @@ EXPORT void Shell_ChooseTrainingMission(i32);
 EXPORT void Shell_DrawComicHighlightBox(i16,i16,SAnimFrame*,i32);
 EXPORT void Shell_ComicCollection(void);
 EXPORT void Shell_CostumeViewer(void);
+EXPORT void Shell_DrawKiddy(SAnimFrame*, i32, i32, i32, i32);
 EXPORT i32 Shell_Difficulty(i32);
 EXPORT void Shell_DisplayGameInfo(i32,i32,SSaveGame *);
 EXPORT void Shell_DoShell(const u32 *,u32 *);

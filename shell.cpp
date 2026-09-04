@@ -1256,7 +1256,7 @@ i32 Shell_ChooseTrainingControlType(void)
 		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		i32 v5 = pMenu->ChoiceIs("kid mode") && v11 == 0;
-		// sub_497690(pAnim, 330, v9, v5, v10); // kiddy animation
+		Shell_DrawKiddy(pAnim, 330, v9, v5, v10);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
 		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
@@ -2730,6 +2730,44 @@ denied:
 	PShell_NormalFont();
 }
 
+// @NotOk
+// Not compared against 0x497690 yet, written from its disassembly.
+// Tentative name. sub_497690 in tools/names.json (the Mac build only keeps the
+// "kiddy" string). Draws the little Spider-Man that hangs next to the
+// difficulty and training menus out of the "kiddy" anim frames: frame 0 is
+// the web line, frame 1 the stretched body (its bottom edge moves with the
+// scaled height of frame 1), frames 3 and 4 the kid mode pose, frame 2 the
+// normal pose. x, y and the scale (0..256) come from the caller.
+void Shell_DrawKiddy(SAnimFrame* pAnim, i32 x, i32 y, i32 kidMode, i32 scale)
+{
+	i32 stretch = (pAnim[1].Height * scale) >> 8;
+	i32 top = y - stretch;
+
+	POLY_FT4* pLine = (POLY_FT4*)Panel_DrawTexturedPoly(&pAnim[0], x + 8, top + 7, 0);
+	DCPanel_DrawTexturedPoly(2.0f, pLine, &pAnim[0], x + 8, top + 7, 0x1C, 0x1B, 0, 0);
+
+	POLY_FT4* pBody = (POLY_FT4*)Panel_DrawTexturedPoly(&pAnim[1], x - 4, top + 0x22, 0);
+	if (pBody)
+	{
+		pBody->y2 = (i16)(pBody->y0 + stretch);
+		pBody->y3 = (i16)(pBody->y1 + stretch);
+		DCPanel_DrawTexturedPoly(2.0f, pBody, &pAnim[1], x + 2, top + 0x22, 0x24, 0x1A, 0, 0);
+	}
+
+	if (kidMode)
+	{
+		POLY_FT4* p = (POLY_FT4*)Panel_DrawTexturedPoly(&pAnim[3], x - 0xC, top + 0x11, 0);
+		DCPanel_DrawTexturedPoly(2.0f, p, &pAnim[3], x - 0xC, top + 0x11, 0x14, 0x12, 0, 0);
+		p = (POLY_FT4*)Panel_DrawTexturedPoly(&pAnim[4], x - 0x2E, top + 0xD, 0);
+		DCPanel_DrawTexturedPoly(2.0f, p, &pAnim[4], x - 0x2E, top + 0xD, 0x16, 0xC, 0, 0);
+	}
+	else
+	{
+		POLY_FT4* p = (POLY_FT4*)Panel_DrawTexturedPoly(&pAnim[2], x - 6, top + 0x10, 0);
+		DCPanel_DrawTexturedPoly(2.0f, p, &pAnim[2], x - 6, top + 0x10, 0xE, 0x12, 0, 0);
+	}
+}
+
 // @Ok
 i32 Shell_Difficulty(i32 a1)
 {
@@ -2769,7 +2807,7 @@ i32 Shell_Difficulty(i32 a1)
 		if (G_SCENE_RELATED == 0)
 			PCGfx_BeginScene(1, -1);
 		v6 = pMenu->ChoiceIs("kid mode") && v32 == 0;
-		// sub_497690(pAnim, 321, v4, v6, v31); // kiddy animation
+		Shell_DrawKiddy(pAnim, 321, v4, v6, v31);
 		if (gBackgroundAnimFrame == 0)
 			Spool_AnimAccess("menubg", &gBackgroundAnimFrame);
 		PCPanel_DrawTexturedPoly(-1.0f, gBackgroundAnimFrame->pTexture, 0, 0, 512, 240, 128);
