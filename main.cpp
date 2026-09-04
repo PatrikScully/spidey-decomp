@@ -867,6 +867,22 @@ void PlayAway(void)
 		if (G_VBLANKS == frameStart)
 			Pause(1);
 
+#ifdef SPIDEY_STANDALONE
+		// The physics step treats 1 and 2 elapsed vblanks the same (see
+		// CPlayer::DoPhysics, "field_80 <= 2"), so at 60 fps the PC port moves
+		// everything twice as fast. That is the known "breaks above 30 fps"
+		// bug people work around with a 29 fps cap on Windows. Hold every
+		// frame to at least two vblanks. SPIDEY_60FPS=1 turns this off.
+		{
+			static i32 allow60 = -1;
+			if (allow60 < 0)
+				allow60 = getenv("SPIDEY_60FPS") ? 1 : 0;
+			if (!allow60)
+				while (static_cast<i32>(G_VBLANKS - frameStart) < 2)
+					Pause(1);
+		}
+#endif
+
 		DoVblankProcessing = 0;
 
 		DrawSync();
