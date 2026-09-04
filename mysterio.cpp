@@ -778,7 +778,7 @@ EXPORT i32 gMysterioCtorFlag;
 // (413) and the model hash 0x98A81283 are read straight off that disasm.
 INLINE CMystFoot::CMystFoot(void)
 {
-	this->InitItem(gObjFile);
+	this->InitItem(G_OBJ_FILE);
 	this->mModel = static_cast<u16>(Spool_GetModel(0x98A81283, gObjFileRegion));
 	this->AttachTo(&G_ENVIRONMENTAL_OBJECT_LIST);
 	this->mType = 0x19D;

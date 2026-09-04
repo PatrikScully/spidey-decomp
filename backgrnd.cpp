@@ -23,7 +23,7 @@ CBackground::CBackground(
 		u32 checksum,
 		CSVector* ang_vel)
 {
-	this->InitItem(gObjFile);
+	this->InitItem(G_OBJ_FILE);
 	this->mModel = Spool_GetModel(checksum, this->mRegion);
 	this->mFlags &= ~2u;
 	this->mCBodyFlags &= ~2u;

@@ -13,7 +13,6 @@
 
 #include "validate.h"
 
-extern const char* gObjFile;
 extern CSVector gTrajectoryVector;
 extern volatile i32 TTime; // defined in bit.cpp
 
@@ -211,7 +210,7 @@ CPlatform::CPlatform(i16 * a2,i32 a3)
 	this->field_350.vy = 0;
 	this->field_350.vz = 0;
 
-	this->InitItem(gObjFile);
+	this->InitItem(G_OBJ_FILE);
 	this->AttachTo(&G_ENVIRONMENTAL_OBJECT_LIST);
 
 	this->mFlags |= 0x111;

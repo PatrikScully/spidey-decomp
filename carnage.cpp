@@ -21,7 +21,6 @@
 #include "ps2redbook.h"
 #include "trig.h"
 
-extern const char *gObjFile;
 extern CBaddy *BaddyList;
 
 // @Ok
@@ -3240,7 +3239,7 @@ void Carnage_CreateCarnage(const u32 *stack, u32 *result)
 // @Matching
 INLINE CSonicBubble::CSonicBubble(void)
 {
-	this->InitItem(gObjFile);
+	this->InitItem(G_OBJ_FILE);
 
 	this->mModel = Spool_GetModel(0xE9DD4877, gObjFileRegion);
 	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));

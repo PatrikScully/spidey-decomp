@@ -2094,7 +2094,7 @@ void ExecuteCommandList(u16* pCommands, i32 Node, i32 WaitForSpooling)
 				char* pName = reinterpret_cast<char*>(p);
 				trigLog("SetObjFile(%s)", pName);
 
-				gObjFile = pName;
+				G_OBJ_FILE = pName;
 				p = SkipString(pName);
 				gObjFileRegion = static_cast<u8>(Spool_FindRegion(pName));
 				break;

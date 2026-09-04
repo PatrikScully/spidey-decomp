@@ -15,7 +15,6 @@
 #include "simby.h"
 
 static i16 * const word_610C48 = (i16*)0x610C48;
-extern const char *gObjFile;
 
 // @Ok
 void CManipObChunk::AI(void)
@@ -36,7 +35,7 @@ void CManipObChunk::AI(void)
 // @Matching
 CManipObChunk::CManipObChunk(u32 a1, CVector *a2, CVector *a3)
 {
-	this->InitItem(gObjFile);
+	this->InitItem(G_OBJ_FILE);
 	this->AttachTo(reinterpret_cast<CBody**>(&BaddyList));
 
 	this->mFlags &= 0xFFFD;
@@ -206,7 +205,7 @@ CManipOb::CManipOb(
 		i16* a2,
 		i32 a3)
 {
-	this->InitItem(gObjFile);
+	this->InitItem(G_OBJ_FILE);
 	this->AttachTo(&G_ENVIRONMENTAL_OBJECT_LIST);
 
 	this->mFlags = this->mFlags & 0x0FFFD | 0x10;
