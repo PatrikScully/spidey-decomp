@@ -435,7 +435,7 @@ i32 Load8BitBMP2(
 				v26[2] = v22[2] >> 3;
 			}
 			if ( v26[0] || v26[1] || v26[2] )
-				pClut[i] = v26[0] + 32 * (v26[1] + 32 * (v26[2] + 32));
+				pClut[i] = v26[2] + 32 * (v26[1] + 32 * (v26[0] + 32));   // red (BMP quad byte 2) in the low 5 bits, PSX CLUT order (0x4335A7)
 			else
 				pClut[i] = 0x8000;
 		}
