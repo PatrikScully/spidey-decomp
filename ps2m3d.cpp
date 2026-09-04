@@ -2677,6 +2677,15 @@ void M3d_RenderBackground(void *pList)
 				gsub_476A00(&v50, &v48, &v49);
 				memcpy(&v48, &v50, sizeof(matrix4x4));
 
+				// 0x474B3A: the translation row comes from the camera matrix
+				// (0x56E738 + 0x30, the camera position), so the backdrop is
+				// always centred on the camera
+				const f32* pCamRow = reinterpret_cast<const f32*>(0x0056E768);
+				v48.field_0[3].field_0[0] = pCamRow[0];
+				v48.field_0[3].field_0[1] = pCamRow[1];
+				v48.field_0[3].field_0[2] = pCamRow[2];
+				v48.field_0[3].field_0[3] = pCamRow[3];
+
 				i32 saved = *gM3dBackgroundSave;
 				*gM3dBackgroundSave = 0;
 				i32 modelFlags = *(i32*)((u8*)pModelData + 0xC);
