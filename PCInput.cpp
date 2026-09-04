@@ -533,8 +533,10 @@ u8 PCINPUT_UpdateMouse(void)
 	gOldMouseX = gMouseX;
 	gOldMouseY = gMouseY;
 
-	gMouseX += (i32)(v6 * ONE_FLOAT);
-	gMouseY += (i32)(v5 * ONE_FLOAT);
+	// 0x50A8D4: the first out param of DXINPUT_PollMouse (the X delta)
+	// goes to gMouseX, the second to gMouseY.
+	gMouseX += (i32)(v5 * ONE_FLOAT);
+	gMouseY += (i32)(v6 * ONE_FLOAT);
 
 	PCINPUT_SetMousePosition(gMouseX, gMouseY);
 
