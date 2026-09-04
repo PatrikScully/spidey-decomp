@@ -815,9 +815,9 @@ void CSuper::RunAnim(
 
 	this->mAnim = anim;
 	DoAssert(
-			static_cast<u32>(anim & 0xFFFF) < PSXRegion[this->mRegion].pAnimFile[0],
+			static_cast<u32>(anim & 0xFFFF) < G_PSXREGION[this->mRegion].pAnimFile[0],
 			"Bad anim sent to RunAnim");
-	u16 v6 = reinterpret_cast<u16*>(PSXRegion[this->mRegion].pAnimFile)[4 + (4 * this->mAnim)];
+	u16 v6 = reinterpret_cast<u16*>(G_PSXREGION[this->mRegion].pAnimFile)[4 + (4 * this->mAnim)];
 
 	this->mNumFrames = v6;
 	if (from == -1)
