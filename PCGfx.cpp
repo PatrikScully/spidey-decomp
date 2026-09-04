@@ -45,7 +45,11 @@ EXPORT i32 gAnotherGameResolutionY = 480;
 EXPORT i32 gDrawTexture2DRelatedOne;
 EXPORT i32 gDrawTexture2DRelatedTwo;
 
-EXPORT i8 gPcGfxBrightnessValues[256];
+// u8, not i8: submitPoly rebuilds the colour from three table reads shifted
+// into place. The original reads the bytes zero extended (0x509400), a
+// signed table sign extends any channel of 128 or more into the bytes above
+// it and saturates the whole colour (found on the sky dome of level 1).
+EXPORT u8 gPcGfxBrightnessValues[256];
 
 EXPORT u8 gProcessTextureRelated;
 #ifndef SPIDEY_STANDALONE
