@@ -934,19 +934,24 @@ void PCGfx_DrawQPoly2D(
 	dxPolyFields[1].field_8 = v27;
 	dxPolyFields[1].field_C = v32;
 
-	dxPolyFields[2].field_0 = x2;
-	dxPolyFields[2].field_4 = y2;
-	dxPolyFields[2].field_14 = u2;
-	dxPolyFields[2].field_18 = v2;
-	dxPolyFields[2].field_10 = color2;
+	// The callers hand the corners in PSX POLY_FT4 order (top left, top
+	// right, bottom left, bottom right). The poly is drawn as a triangle
+	// fan, so the original (0x507910) stores corner 3 into the third vertex
+	// and corner 2 into the fourth. Without the swap every HUD quad and the
+	// compass came out as a bow tie.
+	dxPolyFields[2].field_0 = x3;
+	dxPolyFields[2].field_4 = y3;
+	dxPolyFields[2].field_14 = u3;
+	dxPolyFields[2].field_18 = v3;
+	dxPolyFields[2].field_10 = color3;
 	dxPolyFields[2].field_8 = v27;
 	dxPolyFields[2].field_C = v32;
 
-	dxPolyFields[3].field_0 = x3;
-	dxPolyFields[3].field_4 = y3;
-	dxPolyFields[3].field_14 = u3;
-	dxPolyFields[3].field_18 = v3;
-	dxPolyFields[3].field_10 = color3;
+	dxPolyFields[3].field_0 = x2;
+	dxPolyFields[3].field_4 = y2;
+	dxPolyFields[3].field_14 = u2;
+	dxPolyFields[3].field_18 = v2;
+	dxPolyFields[3].field_10 = color2;
 	dxPolyFields[3].field_8 = v27;
 	dxPolyFields[3].field_C = v32;
 
