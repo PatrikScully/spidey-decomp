@@ -1,6 +1,9 @@
 #include "m3dinit.h"
 #include "m3dcolij.h"
 #include "validate.h"
+#ifdef SPIDEY_STANDALONE
+i32 gDbgColij;   // set by DoCrawlingPhysics while tracing the ground ray
+#endif
 #include "ob.h"
 #include "trig.h"
 #include "spool.h"
@@ -802,6 +805,9 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 		else if (((packed ^ 0x10000u) & 0x30000u) == 0)
 			reject = true;
 
+#ifdef SPIDEY_STANDALONE
+		i32 dbgMaskReject = reject;
+#endif
 		if (!reject)
 		{
 			const i16 *pV4 = pScratch + idx4 * 4;
@@ -813,6 +819,18 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 			if (oc & 0x60F)
 				reject = true;
 		}
+#ifdef SPIDEY_STANDALONE
+		if (gDbgColij == 2)
+		{
+			const i16 *pV4 = pScratch + idx4 * 4;
+			const i16 *pV5 = pScratch + idx5 * 4;
+			const i16 *pV6 = pScratch + idx6 * 4;
+			const i16 *pV7 = pScratch + idx7 * 4;
+			fprintf(stderr, "    ALLFACE %d flags=%#x packed=%#x idx=%d,%d,%d,%d v4=(%d,%d,%d|%#x) v5=(%d,%d,%d|%#x) v6=(%d,%d,%d|%#x) v7=(%d,%d,%d|%#x) %s\n", faceIdx, recFlags, packed, idx4, idx5, idx6, idx7,
+				pV4[0], pV4[1], pV4[2], (u16)pV4[3], pV5[0], pV5[1], pV5[2], (u16)pV5[3], pV6[0], pV6[1], pV6[2], (u16)pV6[3], pV7[0], pV7[1], pV7[2], (u16)pV7[3],
+				dbgMaskReject ? "MASKREJECT" : (reject ? "OUTCODEREJECT" : "geom"));
+		}
+#endif
 
 		if (!reject)
 		{
@@ -867,6 +885,12 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 				if (crossA < 0 || crossB < 0)
 					reject = true;
 
+#ifdef SPIDEY_STANDALONE
+				if (gDbgColij)
+					fprintf(stderr, "    FACE %d flags=%#x idx=%d,%d,%d,%d v4=(%d,%d,%d) v5=(%d,%d,%d) v6=(%d,%d,%d) v7=(%d,%d,%d) v39=%d crossA=%d crossB=%d %s\n", faceIdx, recFlags, idx4, idx5, idx6, idx7,
+						pV4[0], pV4[1], pV4[2], pV5[0], pV5[1], pV5[2], pV6[0], pV6[1], pV6[2], pV7[0], pV7[1], pV7[2], v39, crossA, crossB, reject ? "reject" : "PASS-edges");
+#endif
+
 				if (!reject)
 				{
 					u32 normalIdx = (packed & 0xFFFFu) >> 3;
@@ -888,6 +912,10 @@ static void TestItemFaces(const u8 *pFaceTable, i16 *pScratch, SLineInfo *pInfo,
 
 					if (numerator > 0 || numerator < denom)
 						reject = true;
+#ifdef SPIDEY_STANDALONE
+					if (gDbgColij)
+						fprintf(stderr, "      plane num=%d denom=%d rowDot=(%d,%d,%d) %s\n", numerator, denom, rowDot0, rowDot1, rowDot2, reject ? "reject" : "HIT");
+#endif
 
 					if (!reject)
 					{
@@ -1038,10 +1066,28 @@ void M3dColij_LineToThisItem(CItem* pItem, SLineInfo* pInfo)
 
 	i32 outcodeMask = ClipQuadAgainstCoarseMatrix(pFaceTable, pScratch, pInfo->Length, &fixedOffset);
 
+#ifdef SPIDEY_STANDALONE
+	if (gDbgColij)
+	{
+		CItem* before = pInfo->pItem;
+		if (!(outcodeMask & 0x60F))
+			TestItemFaces(pFaceTable, pScratch, pInfo, pItem, &foundToken);
+		fprintf(stderr, "  COLIJ item=%p model=%d region=%d pos=(%d,%d,%d) ang=(%d,%d,%d) flags=%#x outcode=%#x %s%s\n", (void*)pItem, pItem->mModel, pItem->mRegion,
+			pItem->mPos.vx >> 12, pItem->mPos.vy >> 12, pItem->mPos.vz >> 12, pItem->mAngles.vx, pItem->mAngles.vy, pItem->mAngles.vz, pItem->mFlags, outcodeMask,
+			(outcodeMask & 0x60F) ? "BOXREJECT" : "faces", (pInfo->pItem != before) ? " HIT" : "");
+		if (outcodeMask & 0x60F)
+			return;
+	}
+	else
+	{
+#endif
 	if (outcodeMask & 0x60F)
 		return;
 
 	TestItemFaces(pFaceTable, pScratch, pInfo, pItem, &foundToken);
+#ifdef SPIDEY_STANDALONE
+	}
+#endif
 
 	if (foundToken == -1)
 		return;

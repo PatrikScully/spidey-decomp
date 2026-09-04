@@ -348,6 +348,9 @@ void CPlayer::DoCrawlingPhysics(void)
 
 			if (sideInfo.pItem != 0)
 			{
+#ifdef SPIDEY_STANDALONE
+				if (getenv("SPIDEY_TRACE_CRAWL") && this->field_E1C == 16) fprintf(stderr, "CRAWL SIDEHIT right\n");
+#endif
 				this->mPos.vx = prevPos.vx;
 				this->mPos.vy = prevPos.vy;
 				this->mPos.vz = prevPos.vz;
@@ -363,6 +366,9 @@ void CPlayer::DoCrawlingPhysics(void)
 
 				if (sideInfo.pItem != 0)
 				{
+#ifdef SPIDEY_STANDALONE
+					if (getenv("SPIDEY_TRACE_CRAWL") && this->field_E1C == 16) fprintf(stderr, "CRAWL SIDEHIT left\n");
+#endif
 					this->mPos.vx = prevPos.vx;
 					this->mPos.vy = prevPos.vy;
 					this->mPos.vz = prevPos.vz;
@@ -391,6 +397,9 @@ void CPlayer::DoCrawlingPhysics(void)
 					+ ((this->mLineInfo.Normal.vx * this->field_A8.vx) >> 12) <= 3271)
 			{
 				this->field_B08 = 1;
+#ifdef SPIDEY_STANDALONE
+				if (getenv("SPIDEY_TRACE_CRAWL") && this->field_E1C == 16) fprintf(stderr, "CRAWL CORNERHIT dist=%d normal=(%d,%d,%d)\n", (i32)this->mLineInfo.Distance, this->mLineInfo.Normal.vx, this->mLineInfo.Normal.vy, this->mLineInfo.Normal.vz);
+#endif
 
 				this->mPos.vx = prevPos.vx;
 				this->mPos.vy = prevPos.vy;
@@ -419,7 +428,28 @@ void CPlayer::DoCrawlingPhysics(void)
 	groundInfo.EndCoords.vz = this->mPos.vz - 140 * this->field_C84.vz;
 
 	M3dColij_InitLineInfo(&groundInfo);
+#ifdef SPIDEY_STANDALONE
+	{
+		extern i32 gDbgColij;
+		i32 py = this->mPos.vy >> 12;
+		static i32 dbgFull = 0;
+		gDbgColij = (getenv("SPIDEY_TRACE_CRAWL") && this->field_E1C == 16 && py >= 4530 && py <= 4552) ? 1 : 0;
+		if (gDbgColij && py <= 4540 && dbgFull < 1) { gDbgColij = 2; dbgFull++; }
+		if (gDbgColij) fprintf(stderr, "CRAWL GROUNDQUERY py=%d\n", py);
+	}
+#endif
 	M3dZone_LineToItem(&groundInfo, 1);
+#ifdef SPIDEY_STANDALONE
+	{ extern i32 gDbgColij; gDbgColij = 0; }
+#endif
+
+#ifdef SPIDEY_STANDALONE
+	if (getenv("SPIDEY_TRACE_CRAWL") && this->field_E1C == 16)
+		fprintf(stderr, "CRAWL GROUND start=(%d,%d,%d) end=(%d,%d,%d) hit=%p normal=(%d,%d,%d) dist=%d face3=%#x\n",
+			groundInfo.StartCoords.vx, groundInfo.StartCoords.vy, groundInfo.StartCoords.vz, groundInfo.EndCoords.vx, groundInfo.EndCoords.vy, groundInfo.EndCoords.vz,
+			(void*)groundInfo.pItem, groundInfo.pItem ? groundInfo.Normal.vx : 0, groundInfo.pItem ? groundInfo.Normal.vy : 0, groundInfo.pItem ? groundInfo.Normal.vz : 0,
+			groundInfo.pItem ? (i32)groundInfo.Distance : -1, groundInfo.pItem ? (u32)groundInfo.pFace[3] : 0u);
+#endif
 
 	if (groundInfo.pItem == 0)
 	{
