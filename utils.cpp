@@ -1182,7 +1182,10 @@ int Utils_CalcAim(CSVector* a1, CVector* a2, CVector* a3)
 	{
 		if (z > 0)
 		{
-			a1->vy = catan(-((x << 12) / z));
+			// 0x4E6315: the yaw is mirrored around 0x800 when the target is
+			// in front (+z). Without this every aim at a +z target pointed
+			// the wrong way (Black Cat walked away from Spidey).
+			a1->vy = 0x800 - catan(-((x << 12) / z));
 		}
 		else
 		{
