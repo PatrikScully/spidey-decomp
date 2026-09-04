@@ -553,7 +553,11 @@ void CPlayer::AI(void)
 	this->field_360 = this->field_80;
 	this->field_368 = sum * 1365;
 
-	// field_E18 countdown timer.
+	// field_E18 countdown timer. While it runs (and the player is not
+	// script driven) the pad buttons are swallowed: 0x4C67BA clears the
+	// Pressed and Triggered bytes of 16 buttons, in this order. The old
+	// version ran this loop unconditionally, which ate every key press in
+	// normal play.
 	if (this->field_E18 != 0 && this->field_1AC == 0)
 	{
 		this->field_E18 -= this->field_80;
@@ -562,12 +566,14 @@ void CPlayer::AI(void)
 			this->field_E18 = 0;
 			this->mAnimSpeed = this->field_E12;
 		}
-	}
 
-	// Zero the 16 i16-pair fields in the field_E0C struct.
-	for (i32 i = 0; i < 16; i++)
-	{
-		*(i16*)((u8*)this->field_E0C + i * 0x10) = 0;
+		u8* pad = (u8*)this->field_E0C;
+		static const i32 clearedSlots[16] = {8, 9, 10, 11, 0, 2, 3, 1, 4, 5, 6, 7, 16, 17, 18, 19};
+		for (i32 i = 0; i < 16; i++)
+		{
+			pad[clearedSlots[i] * 0x10 + 1] = 0;
+			pad[clearedSlots[i] * 0x10] = 0;
+		}
 	}
 
 	// Per-tick callback.
@@ -6195,6 +6201,10 @@ void CPlayer::ReadAnalogueInput(void)
 				this->field_E2D = pad[0x168]; // AnalogueMoveForwardsBackwards
 				this->field_E2E = pad[0x169]; // AnalogueMoveLeftRight
 			}
+#ifdef SPIDEY_STANDALONE
+			if (getenv("SPIDEY_TRACE_PAD") && (pad[0x80] | pad[0x90] | pad[0xA0] | pad[0xB0]))
+				printf("READPAD pad=%p L=%d R=%d U=%d D=%d\n", (void*)pad, pad[0x80], pad[0x90], pad[0xA0], pad[0xB0]);
+#endif
 			if (this->field_E2D == 0 && this->field_E2E == 0)
 			{
 				if (pad[0xA0])                 // Up.Pressed
