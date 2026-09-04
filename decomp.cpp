@@ -355,6 +355,20 @@ SMatrix* Decomp_GetAnimTransform(CSuper* pSuper)
 			pStream = DecompressStream(pStream, pRawPart + 5, Stride, NumFrames);
 		}
 
+#ifdef SPIDEY_STANDALONE
+		// SPIDEY_TRACE_PARTS=1: check that the decoder consumed exactly the
+		// bytes the anim table says this anim occupies
+		if (getenv("SPIDEY_TRACE_PARTS"))
+		{
+			i32 NumAnimsDbg = pAnim[0];
+			u8* pEnd = reinterpret_cast<u8*>(pAnim) + ((pSuper->mAnim + 1 < NumAnimsDbg) ? pAnim[2 * (pSuper->mAnim + 1) + 1] : 0);
+			fprintf(stderr, "DECOMP region=%d anim=%d frames=%d numParts=%d psxParts=%d consumed=%d expected=%d%s\n", Region, pSuper->mAnim, NumFrames, NumParts, PsxNumParts,
+				(i32)(pStream - (reinterpret_cast<u8*>(pAnim) + pAnim[2 * pSuper->mAnim + 1])),
+				(pSuper->mAnim + 1 < NumAnimsDbg) ? (i32)(pEnd - (reinterpret_cast<u8*>(pAnim) + pAnim[2 * pSuper->mAnim + 1])) : -1,
+				(pSuper->mAnim + 1 < NumAnimsDbg && pStream != pEnd) ? "  MISMATCH" : "");
+		}
+#endif
+
 		pSuper->mDecompressedAnim = pSuper->mAnim;
 		DidDecompressAnim = true;
 	}
