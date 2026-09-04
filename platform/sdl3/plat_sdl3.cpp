@@ -98,6 +98,14 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 	glDepthFunc(GL_LEQUAL);
 	glEnable(GL_DEPTH_TEST);
+	// D3D7 does not clip pretransformed (XYZRHW) vertices on z, it clamps
+	// the depth. GL would drop every triangle that reaches past the far
+	// plane, so clamp instead of clip.
+#ifdef GL_DEPTH_CLAMP
+	glEnable(GL_DEPTH_CLAMP);
+#else
+	glEnable(0x864F);
+#endif
 	// D3D7 CULL_CCW keeps polygons that are clockwise on a y-down screen.
 	// After the ortho y flip those are clockwise in GL window space too, so
 	// clockwise is the front face here.
