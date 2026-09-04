@@ -41,6 +41,9 @@ static i32 gDbgSinceClear = 0;
 static SDL_Window* gWindow;
 static SDL_GLContext gGL;
 static i32 gWidth = 640, gHeight = 480;
+// Window scale: the game renders in 640x480 units, the window is this many
+// times bigger (SPIDEY_SCALE, default 2, 1 in fullscreen).
+static i32 gScale = 1;
 static i32 gQuit;
 
 i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
@@ -58,10 +61,15 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
 	SDL_WindowFlags flags = SDL_WINDOW_OPENGL;
+	gScale = 2;
+	if (getenv("SPIDEY_SCALE"))
+		gScale = atoi(getenv("SPIDEY_SCALE"));
+	if (fullscreen || gScale < 1)
+		gScale = 1;
 	if (fullscreen)
 		flags |= SDL_WINDOW_FULLSCREEN;
 
-	gWindow = SDL_CreateWindow("Spider-Man", width, height, flags);
+	gWindow = SDL_CreateWindow("Spider-Man", width * gScale, height * gScale, flags);
 	if (!gWindow)
 	{
 		printf("Plat(sdl3): SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -79,7 +87,7 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	printf("Plat(sdl3): %dx%d, GL %s / %s\n", width, height,
 			(const char*)glGetString(GL_VERSION), (const char*)glGetString(GL_RENDERER));
 
-	glViewport(0, 0, width, height);
+	glViewport(0, 0, width * gScale, height * gScale);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	// D3D7 TL vertices address pixel centres, GL addresses pixel corners:
@@ -109,7 +117,7 @@ i32 Plat_Init(i32 width, i32 height, i32 fullscreen)
 	// D3D7 CULL_CCW keeps polygons that are clockwise on a y-down screen.
 	// After the ortho y flip those are clockwise in GL window space too, so
 	// clockwise is the front face here.
-	glFrontFace(GL_CW);
+	glFrontFace(getenv("SPIDEY_FRONTCCW") ? GL_CCW : GL_CW);   // SPIDEY_FRONTCCW=1: test the other winding
 	glCullFace(GL_BACK);
 	glEnable(GL_CULL_FACE);
 	if (getenv("SPIDEY_NOCULL"))   // debugging aid
@@ -501,7 +509,21 @@ i32 Plat_GfxReadPixels(u8* dst, i32 width, i32 height)
 	if (width != gWidth || height != gHeight)
 		return 0;
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	glReadPixels(0, 0, width, height, GL_BGR, GL_UNSIGNED_BYTE, dst);
+	if (gScale == 1)
+	{
+		glReadPixels(0, 0, width, height, GL_BGR, GL_UNSIGNED_BYTE, dst);
+	}
+	else
+	{
+		// scaled window: read the whole framebuffer and pick every gScale-th pixel
+		i32 fw = width * gScale, fh = height * gScale;
+		u8* big = (u8*)malloc(fw * fh * 3);
+		glReadPixels(0, 0, fw, fh, GL_BGR, GL_UNSIGNED_BYTE, big);
+		for (i32 y = 0; y < height; y++)
+			for (i32 x = 0; x < width; x++)
+				memcpy(dst + (y * width + x) * 3, big + (y * gScale * fw + x * gScale) * 3, 3);
+		free(big);
+	}
 	// GL rows are bottom up, the caller wants top down
 	i32 rowBytes = width * 3;
 	u8* tmp = (u8*)malloc(rowBytes);
@@ -568,7 +590,7 @@ static void buildDikTable(void)
 // SPIDEY_KEYS="ms:enter,ms:down,..." scripted presses (same syntax as the
 // null backend, delays are relative to the previous key), merged with the
 // real keyboard so automated runs can drive the menus.
-struct SScriptKey { u32 atMs; u8 dik; };
+struct SScriptKey { u32 atMs; u32 holdMs; u8 dik; };
 static SScriptKey gScript[64];
 static i32 gScriptCount = -1, gScriptNext;
 static u32 gKeyDownUntil;
@@ -592,6 +614,13 @@ static void parseScript(void)
 		*colon = 0;
 		t += (u32)atoi(tok);
 		const char* name = colon + 1;
+		u32 hold = 120;
+		char* colon2 = strchr(name, ':');
+		if (colon2)
+		{
+			*colon2 = 0;
+			hold = (u32)atoi(colon2 + 1);
+		}
 		u8 dik;
 		if (!strcmp(name, "enter")) dik = 0x1C;
 		else if (!strcmp(name, "esc")) dik = 0x01;
@@ -603,6 +632,7 @@ static void parseScript(void)
 		else dik = (u8)strtol(name, 0, 0);
 		gScript[gScriptCount].atMs = t;
 		gScript[gScriptCount].dik = dik;
+		gScript[gScriptCount].holdMs = hold;
 		gScriptCount++;
 	}
 }
@@ -631,7 +661,7 @@ void Plat_InputPollKeyboard(u8 dikState[256])
 	if (gScriptNext < gScriptCount && now >= gScript[gScriptNext].atMs)
 	{
 		gScriptKeyDown = gScript[gScriptNext].dik;
-		gKeyDownUntil = now + 120;
+		gKeyDownUntil = now + gScript[gScriptNext].holdMs;
 		gScriptNext++;
 		dikState[gScriptKeyDown] = 0x80;
 	}
