@@ -52,7 +52,11 @@ static u8* DecompressStream(u8* pStream, i16* pDest, i32 Stride, i32 NumSamples)
 	i32 Mode = Header & 0xF;
 	i32 BlockSize = (Header >> 4) + 1;
 
-	i32 FullBlocks = 0;
+	// 0x433A86: eax = NumSamples - 1 and the divide is skipped for a block
+	// size of 1, so every sample is its own breakpoint (FullBlocks =
+	// NumSamples - 1, Remainder = 0). Setting FullBlocks to 0 here read only
+	// the first value and left every later channel of the anim misaligned.
+	i32 FullBlocks = NumSamples - 1;
 	i32 Remainder = 0;
 	if (BlockSize > 1)
 	{
