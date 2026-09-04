@@ -216,6 +216,10 @@ void Pad_Button(SButton* pBut, i32 state)
 	{
 		pBut->Pressed = 0;
 	}
+#ifdef SPIDEY_STANDALONE
+	if (state && getenv("SPIDEY_TRACE_PAD"))
+		printf("PADBTN %p state=%d pressed=%d (Up at %p)\n", (void*)pBut, state, (i32)pBut->Pressed, (void*)&G_SCONTROL[0].Up);
+#endif
 
 	if ( pBut->Pressed )
 	{

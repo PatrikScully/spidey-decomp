@@ -331,10 +331,15 @@ static void Ob_AI(CBody **ppList, i32 a2)
 			}
 			else
 			{
+				u8 upBefore = G_SCONTROL[0].Up.Pressed;
 				if (pItem->mFlags & 2)
 				{
 					pItem->EveryFrame();
+					if (upBefore && !G_SCONTROL[0].Up.Pressed && getenv("SPIDEY_TRACE_PAD"))
+						printf("PADCLR in EveryFrame type=%d\n", (i32)pItem->mType);
 					static_cast<CSuper*>(pItem)->UpdateFrame();
+					if (upBefore && !G_SCONTROL[0].Up.Pressed && getenv("SPIDEY_TRACE_PAD"))
+						printf("PADCLR in UpdateFrame type=%d\n", (i32)pItem->mType);
 					pItem->AI();
 				}
 				else
@@ -342,6 +347,8 @@ static void Ob_AI(CBody **ppList, i32 a2)
 					pItem->EveryFrame();
 					pItem->AI();
 				}
+				if (upBefore && !G_SCONTROL[0].Up.Pressed && getenv("SPIDEY_TRACE_PAD"))
+					printf("PADCLR by type=%d flags=%#x\n", (i32)pItem->mType, (u32)pItem->mFlags);
 
 				if ((pItem->mCBodyFlags & 8) || pItem->mpShadow)
 					pItem->UpdateShadow();
@@ -450,9 +457,16 @@ void Logic(void)
 
 	if (!G_POST_WATER_EFFECT && !*gEndTrainingFlag)
 	{
+#ifdef SPIDEY_STANDALONE
+		u8 upAfterPad = G_SCONTROL[0].Up.Pressed;
+#endif
 		Flash_Update();
 
 		Trig_ResetCPCollisionFlags();
+#ifdef SPIDEY_STANDALONE
+		if (upAfterPad && !G_SCONTROL[0].Up.Pressed && getenv("SPIDEY_TRACE_PAD"))
+			printf("PADCLR before Ob_AI\n");
+#endif
 		Ob_AI(reinterpret_cast<CBody**>(&G_MECHLIST_PLAYER), 0);
 		Trig_ResetCPExecutedFlags();
 
@@ -468,12 +482,14 @@ void Logic(void)
 			{
 				CPlayer *pP = reinterpret_cast<CPlayer*>(G_MECHLIST);
 				CCamera *pC = G_CAMERA_LIST;
-				fprintf(stderr, "PLAYER t=%u status=%d f80=%d pos=(%d,%d,%d) vel=(%d,%d,%d) ang=(%d,%d,%d) coll=%#x mode=%#x anim=%d frame=%d crawl=%d E2D=%d E2E=%d EBC=%d | cam pos=(%d,%d,%d) mode=%d yaw=%d\n",
+				fprintf(stderr, "PLAYER t=%u status=%d f80=%d pos=(%d,%d,%d) vel=(%d,%d,%d) ang=(%d,%d,%d) coll=%#x mode=%#x anim=%d frame=%d crawl=%d E2D=%d E2E=%d EBC=%d ctl=%d/%d/%d/%d t1B0=%d pad=%d%d%d%d E0C=%p | cam pos=(%d,%d,%d) mode=%d yaw=%d\n",
 					Plat_Ticks(), gLevelStatus, pP->field_80, pP->mPos.vx, pP->mPos.vy, pP->mPos.vz,
 					pP->mVel.vx, pP->mVel.vy, pP->mVel.vz,
 					pP->mAngles.vx, pP->mAngles.vy, pP->mAngles.vz,
 					pP->mCollision, pP->field_E1C, pP->mAnim, pP->mFrame, pP->field_AD4,
 					pP->field_E2D, pP->field_E2E, pP->field_EBC,
+					(i32)pP->field_1AC, (i32)*((u8*)pP + 0x1B4), (i32)*((u8*)pP + 0x1BC), (i32)pP->field_E18, (i32)pP->field_1B0,
+					(i32)G_SCONTROL[0].Left.Pressed, (i32)G_SCONTROL[0].Right.Pressed, (i32)G_SCONTROL[0].Up.Pressed, (i32)G_SCONTROL[0].Down.Pressed, (void*)pP->field_E0C,
 					pC ? pC->mPos.vx >> 12 : 0, pC ? pC->mPos.vy >> 12 : 0, pC ? pC->mPos.vz >> 12 : 0,
 					pC ? (i32)pC->mCameraMode : -1, pC ? (i32)pC->field_23A : 0);
 				if (pP->field_E1C == 16)
@@ -572,6 +588,23 @@ void Display(void)
 
 	if (!(gRenderTest & 0x400) || (gRenderTest & 0x200))
 		Ob_AI(reinterpret_cast<CBody**>(&G_CAMERA_LIST), 0);
+
+#ifdef SPIDEY_STANDALONE
+	{
+		// SPIDEY_TRACE_BADDY=1: list the baddies twice a second
+		static i32 traceBaddy = -1;
+		static i32 baddyTick = 0;
+		if (traceBaddy < 0)
+			traceBaddy = getenv("SPIDEY_TRACE_BADDY") ? 1 : 0;
+		if (traceBaddy && (++baddyTick % 30) == 0)
+		{
+			for (CBaddy* pB = G_BADDY_LIST; pB; pB = static_cast<CBaddy*>(pB->mNextItem))
+				fprintf(stderr, "BADDY t=%u type=%d pos=(%d,%d,%d) anim=%d frame=%d flags=%#x model=%p\n",
+						Plat_Ticks(), (i32)pB->mType, pB->mPos.vx, pB->mPos.vy, pB->mPos.vz,
+						(i32)pB->mAnim, (i32)pB->mFrame, (u32)pB->mFlags, (void*)pB->mModel);
+		}
+	}
+#endif
 
 	// no null check on CameraList, same as the original
 	G_VIEWPORT.Zoom = static_cast<u16>(G_CAMERA_LIST->GetZoom());
