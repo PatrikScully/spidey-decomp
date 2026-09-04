@@ -602,6 +602,17 @@ void Display(void)
 				fprintf(stderr, "BADDY t=%u type=%d pos=(%d,%d,%d) anim=%d frame=%d flags=%#x model=%p\n",
 						Plat_Ticks(), (i32)pB->mType, pB->mPos.vx, pB->mPos.vy, pB->mPos.vz,
 						(i32)pB->mAnim, (i32)pB->mFrame, (u32)pB->mFlags, (void*)pB->mModel);
+			for (CBaddy* pB = G_BADDY_LIST; pB; pB = static_cast<CBaddy*>(pB->mNextItem))
+			{
+				if (pB->mType != 319)
+					continue;
+				CBlackCat* pCat = static_cast<CBlackCat*>(pB);
+				i32* blk = pCat->field_350;
+				fprintf(stderr, "CAT state=%d sub=%d f340=%d f348=%d block=%d tgt=(%d,%d,%d) vel=(%d,%d,%d) stream=%p\n",
+						(i32)pCat->field_31C.bothFlags, (i32)pCat->dumbAssPad, (i32)pCat->field_340, (i32)pCat->field_348,
+						blk ? blk[0] : -1, blk ? blk[2] : 0, blk ? blk[3] : 0, blk ? blk[4] : 0,
+						pCat->mVel.vx, pCat->mVel.vy, pCat->mVel.vz, (void*)pCat->field_34C);
+			}
 		}
 	}
 #endif
