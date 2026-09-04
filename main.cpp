@@ -476,6 +476,28 @@ void Logic(void)
 					pP->field_E2D, pP->field_E2E, pP->field_EBC,
 					pC ? pC->mPos.vx >> 12 : 0, pC ? pC->mPos.vy >> 12 : 0, pC ? pC->mPos.vz >> 12 : 0,
 					pC ? (i32)pC->mCameraMode : -1, pC ? (i32)pC->field_23A : 0);
+
+				// once, about a second in: the environmental object list in the
+				// same layout the wine oracle prints it (oracle.py ENVOBJ lines)
+				static i32 traceFrames = 0;
+				if (++traceFrames == 60)
+				{
+					u8* it = reinterpret_cast<u8*>(G_ENVIRONMENTAL_OBJECT_LIST);
+					i32 n = 0;
+					while (it && n < 200)
+					{
+						fprintf(stderr, "ENVOBJ type=%d model=%d region=%d pos=(%d,%d,%d) flags=%#x\n",
+							*reinterpret_cast<u16*>(it + 0x38), *reinterpret_cast<u16*>(it + 0x1A), it[0x1F],
+							*reinterpret_cast<i32*>(it + 8) >> 12, *reinterpret_cast<i32*>(it + 12) >> 12,
+							*reinterpret_cast<i32*>(it + 16) >> 12, *reinterpret_cast<u16*>(it + 4));
+						it = *reinterpret_cast<u8**>(it + 0x20);
+						n++;
+					}
+					fprintf(stderr, "ENVOBJ count=%d\n", n);
+					for (i32 k = 0; k < MAXPSX; k++)
+						if (PSXRegion[k].Filename[0])
+							fprintf(stderr, "PSXREGION %d %s usable=%d\n", k, PSXRegion[k].Filename, PSXRegion[k].Usable);
+				}
 			}
 		}
 #endif
@@ -547,12 +569,24 @@ void Display(void)
 	// no null check on CameraList, same as the original
 	G_VIEWPORT.Zoom = static_cast<u16>(G_CAMERA_LIST->GetZoom());
 
+#ifdef SPIDEY_STANDALONE
+	// SPIDEY_SKIP=fades,panel,bg : leave out draw stages (debugging aid)
+	static const char* skip = getenv("SPIDEY_SKIP") ? getenv("SPIDEY_SKIP") : "";
+	if (!strstr(skip, "fades"))
+#endif
 	Screen_UpdateFades();
+#ifdef SPIDEY_STANDALONE
+	if (!strstr(skip, "panel"))
+#endif
 	Panel_Display();
 
 	M3d_RenderSetup(G_MIKE_CAMERA, &G_VIEWPORT, G_PDOUBLE_BUFFER->OrderingTable);
 
-	if (gRenderListFlags[9])
+	if (gRenderListFlags[9]
+#ifdef SPIDEY_STANDALONE
+			&& !strstr(skip, "bg")
+#endif
+			)
 		M3d_RenderBackground(BackgroundList);
 
 	if (g3DExplosions)

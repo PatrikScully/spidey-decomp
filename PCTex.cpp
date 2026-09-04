@@ -1474,6 +1474,9 @@ scannedHard:
 				case 0xFF000000: fmt = PLAT_TEX_ARGB8888; break;
 				default: fmt = PLAT_TEX_RGB565; break;
 			}
+			if (getenv("SPIDEY_DUMPTEX"))
+				printf("TEXDUMP id=%d %dx%d name=%s format=%d v14=%d container=%d flags=%x a8=%x\n", a1,
+						width, height, G_GLOBAL_TEXTURES[a1].field_28, format, v14, v19, a4, a8);
 			PlatTexture* pTex = Plat_TexCreate(width, height, fmt);
 			Plat_TexUpload(pTex, pixels, v20);
 			free(pixels);

@@ -1,5 +1,8 @@
 #include "DXsound.h"
 #ifdef SPIDEY_STANDALONE
+i32 gDbgFanBlend, gDbgFanTex, gDbgFanBucket;   // debugging aids for the GLFAN log
+#endif
+#ifdef SPIDEY_STANDALONE
 #include "platform/plat.h"
 
 // DirectInput buffered data gives the game edge states: 0xFF = went down
@@ -1245,6 +1248,7 @@ void DXPOLY_DrawPoly(
 				(pPoly->field_A & 2) ? 1 : 3,
 				(pPoly->field_A & 4) ? 1 : 3);
 		DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
+		gDbgFanBlend = pPoly->mBlendMode; gDbgFanTex = (i32)(size_t)pPoly->field_4; gDbgFanBucket = -1;
 		Plat_GfxDrawFan(pPoly->field_10, pPoly->field_C);
 #endif
 	}
@@ -3081,6 +3085,7 @@ void renderScene(void)
 					(pPoly->field_A & 4) ? 1 : 3);
 			DXPOLY_EnableTexAlpha((pPoly->field_A & 8) != 0);
 			DXPOLY_SetFilterMode((pPoly->field_A & 0x10) == 0);
+			gDbgFanBlend = pPoly->mBlendMode; gDbgFanTex = (i32)(size_t)pPoly->field_4; gDbgFanBucket = i;
 			Plat_GfxDrawFan(pPoly->field_10, pPoly->field_C);
 			pPoly = pPoly->pNext;
 		}

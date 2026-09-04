@@ -687,6 +687,30 @@ void M3d_Render(void* pList)
 	*gM3dScratchRefMapTpage = *gM3dRefMapTpage;
 	*gM3dScratchFadeColour  = *gM3dFadeColourValue;
 
+#ifdef SPIDEY_STANDALONE
+	// SPIDEY_TRACE_CULL=1: once a second, how many EnviroList items the
+	// bounding sphere pass culled vs. kept, plus the camera position
+	{
+		static i32 traceCull = -1;
+		static i32 calls = 0;
+		if (traceCull < 0)
+			traceCull = getenv("SPIDEY_TRACE_CULL") ? 1 : 0;
+		if (traceCull && pItem == *gM3dEnviroList && (++calls % 60) == 0)
+		{
+			i32 culled = 0, kept = 0, notUsable = 0;
+			for (CItem* p = pItem; p; p = p->mNextItem)
+			{
+				if (p->mFlags & 0x8000) culled++;
+				else if (G_PSXREGION[p->mRegion].Usable == 0) notUsable++;
+				else kept++;
+			}
+			SCamera* pCam = *(SCamera**)gM3dCameraPtrEarly;
+			fprintf(stderr, "CULL enviro culled=%d kept=%d notUsable=%d cam=(%d,%d,%d)\n", culled, kept, notUsable,
+				pCam->Position.vx, pCam->Position.vy, pCam->Position.vz);
+		}
+	}
+#endif
+
 	for ( ; pItem != 0; pItem = pItem->mNextItem)
 	{
 		if ((pItem->mFlags & 0x8000) != 0)
@@ -1851,7 +1875,11 @@ afterFaceLoop:
 				pScratchBase[i].field_18 = blended ^ (0xFFFFFFu & (c ^ blended));
 			}
 		}
-		else if (inFogRange)
+		else if (inFogRange
+#ifdef SPIDEY_STANDALONE
+				&& !getenv("SPIDEY_NOFOG")
+#endif
+				)
 		{
 			for (i32 i = 0; i < vertexCount; i++)
 			{
@@ -3556,6 +3584,26 @@ void RenderSuperItem(CItem *pItem, bool a2)
 		}
 
 		print_if_false(ValidMATRIX(reinterpret_cast<MATRIX*>(pAnimTransform)) != 0, "Invalid pAnimTransform.");
+#ifdef SPIDEY_STANDALONE
+		// SPIDEY_TRACE_PARTS=1: report part matrices that look broken
+		if (getenv("SPIDEY_TRACE_PARTS"))
+		{
+			const i16* pm = &pAnimTransform->m[0][0];
+			i32 bad = 0;
+			for (i32 q = 0; q < 9; q++)
+				if (pm[q] > 5000 || pm[q] < -5000) bad = 1;
+			if (pAnimTransform->t[0] > 20000 || pAnimTransform->t[0] < -20000 || pAnimTransform->t[1] > 20000 || pAnimTransform->t[1] < -20000 || pAnimTransform->t[2] > 20000 || pAnimTransform->t[2] < -20000) bad = 2;
+			if (pm[0] == 0 && pm[1] == 0 && pm[2] == 0 && pm[3] == 0 && pm[4] == 0 && pm[5] == 0) bad = 3;
+			if (bad)
+			{
+				static i32 nbad = 0;
+				if ((++nbad % 20) == 1)
+					fprintf(stderr, "BADPART kind=%d region=%d part=%d/%d anim=%d frame=%d frac=%d mode=%d numFrames=%d flags4=%d m=[%d %d %d | %d %d %d | %d %d %d] t=(%d,%d,%d)\n", bad, region, part, numParts,
+						pSuper->mAnim, pSuper->mFrame, pSuper->mFrameFrac, pSuper->mAnimMode, pSuper->mNumFrames, (itemFlags & 4) != 0,
+						pm[0], pm[1], pm[2], pm[3], pm[4], pm[5], pm[6], pm[7], pm[8], pAnimTransform->t[0], pAnimTransform->t[1], pAnimTransform->t[2]);
+			}
+		}
+#endif
 
 		matrix4x4 partMatrix;
 		ConvertSMatrixTomatrix4x4(pAnimTransform, &partMatrix);

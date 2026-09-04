@@ -283,6 +283,18 @@ void PCGfx_BeginScene(u32 a1, i32 a2)
 	gZLayerFurthest = -0.2;
 }
 
+#ifdef SPIDEY_STANDALONE
+// @Bogus
+// SPIDEY_NOFOG=1: skip the per vertex fog blend (debugging aid)
+static i32 PCGfx_DbgNoFog(void)
+{
+	static i32 v = -1;
+	if (v < 0)
+		v = getenv("SPIDEY_NOFOG") ? 1 : 0;
+	return v;
+}
+#endif
+
 // @Ok
 // Functional: fog color blend, logic verified against Hex-Rays at 0x506d70.
 // Blends a1 (ABGR color) toward the fog color for a2 (1/z depth) via the 4
@@ -293,6 +305,10 @@ void PCGfx_BeginScene(u32 a1, i32 a2)
 // if either gets hooked, bind the tables to those addresses first.
 EXPORT u32 gsub_506D70(u32 a1, f32 a2)
 {
+#ifdef SPIDEY_STANDALONE
+	if (PCGfx_DbgNoFog())
+		return a1;
+#endif
 	f32 depth = gPcGfxFogDepthScale * a2;
 	if (depth < gFlFoggingParamOne)
 		return a1;
@@ -723,7 +739,11 @@ EXPORT void gsub_509400(tagKMVERTEX3 const *corner, _DXVERT *out)
 	else
 		out->field_10 = (c & 0xFF000000) | (((c >> 1) & 0x7F7F7Fu) + 0x0F0F0Fu);
 
-	if (gNonRendderSettingE)
+	if (gNonRendderSettingE
+#ifdef SPIDEY_STANDALONE
+			&& !PCGfx_DbgNoFog()
+#endif
+			)
 	{
 		u32 a1 = corner->field_18;
 		f32 depth = gPcGfxFogDepthScale * (1.0f / corner->field_C);

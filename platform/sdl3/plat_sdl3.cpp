@@ -253,6 +253,51 @@ void Plat_TexUpload(PlatTexture* t, const void* pixels, i32 pitch)
 		default:                fmt = GL_BGRA; type = GL_UNSIGNED_INT_8_8_8_8_REV;    bpp = 4; break;
 	}
 
+	// SPIDEY_DUMPTEX=<dir>: write every uploaded texture as texNNNN_WxH_fF.ppm
+	// (RGB, alpha 0 pixels painted green) so the decode path can be checked
+	static const char* dumpDir = getenv("SPIDEY_DUMPTEX");
+	if (dumpDir)
+	{
+		static i32 dumpIndex = 0;
+		char name[512];
+		snprintf(name, sizeof(name), "%s/tex%04d_%dx%d_f%d.ppm", dumpDir, dumpIndex++, t->width, t->height, t->format);
+		FILE* f = fopen(name, "wb");
+		if (f)
+		{
+			fprintf(f, "P6\n%d %d\n255\n", t->width, t->height);
+			for (i32 y = 0; y < t->height; y++)
+			{
+				const u8* row = (const u8*)pixels + y * pitch;
+				for (i32 x = 0; x < t->width; x++)
+				{
+					u32 r, g, b, a = 255;
+					if (bpp == 4)
+					{
+						u32 p = ((const u32*)row)[x];
+						a = p >> 24; r = (p >> 16) & 0xFF; g = (p >> 8) & 0xFF; b = p & 0xFF;
+					}
+					else
+					{
+						u32 p = ((const u16*)row)[x];
+						switch (t->format)
+						{
+							case PLAT_TEX_RGB565:
+								r = (p >> 11) * 255 / 31; g = ((p >> 5) & 0x3F) * 255 / 63; b = (p & 0x1F) * 255 / 31; break;
+							case PLAT_TEX_ARGB1555:
+								a = (p >> 15) * 255; r = ((p >> 10) & 0x1F) * 255 / 31; g = ((p >> 5) & 0x1F) * 255 / 31; b = (p & 0x1F) * 255 / 31; break;
+							default:
+								a = (p >> 12) * 17; r = ((p >> 8) & 0xF) * 17; g = ((p >> 4) & 0xF) * 17; b = (p & 0xF) * 17; break;
+						}
+					}
+					if (a == 0) { r = 0; g = 255; b = 0; }
+					u8 rgb[3] = { (u8)r, (u8)g, (u8)b };
+					fwrite(rgb, 1, 3, f);
+				}
+			}
+			fclose(f);
+		}
+	}
+
 	glBindTexture(GL_TEXTURE_2D, t->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / bpp);
@@ -427,15 +472,16 @@ void Plat_GfxDrawFan(const SDXPolyField* v, i32 count)
 {
 	applyTextureState();
 	gDbgSinceClear++;
-	if (gDbgLogFrom >= 0 && gDbgClears > 0 && gDbgClears <= 4 && (i32)SDL_GetTicks() >= gDbgLogFrom && gDbgSinceClear <= 60)
+	if (gDbgLogFrom >= 0 && gDbgClears > 0 && gDbgClears <= 4 && (i32)SDL_GetTicks() >= gDbgLogFrom && gDbgSinceClear <= (getenv("SPIDEY_GLDEBUG_N") ? atoi(getenv("SPIDEY_GLDEBUG_N")) : 60))
 	{
 		GLint tex = 0, dfunc = 0, dmask = 0;
 		glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
 		glGetIntegerv(GL_DEPTH_FUNC, &dfunc);
 		glGetIntegerv(GL_DEPTH_WRITEMASK, &dmask);
-		fprintf(stderr, "GLFAN #%d n=%d tex=%d cull=%d depth=%d/%d mask=%d alpha=%d blend=%d v0=(%.1f,%.1f,%.4f c=%08x) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
+		extern i32 gDbgFanBlend, gDbgFanTex, gDbgFanBucket;
+		fprintf(stderr, "GLFAN #%d n=%d tex=%d cull=%d depth=%d/%d mask=%d alpha=%d blend=%d poly(blend=%d tex=%p bucket=%d) v0=(%.1f,%.1f,%.4f c=%08x) v1=(%.1f,%.1f,%.4f) v2=(%.1f,%.1f,%.4f)\n",
 			gDbgSinceClear, count, tex, glIsEnabled(GL_CULL_FACE), glIsEnabled(GL_DEPTH_TEST), dfunc, dmask,
-			glIsEnabled(GL_ALPHA_TEST), glIsEnabled(GL_BLEND),
+			glIsEnabled(GL_ALPHA_TEST), glIsEnabled(GL_BLEND), gDbgFanBlend, (void*)(size_t)gDbgFanTex, gDbgFanBucket,
 			v[0].field_0, v[0].field_4, v[0].field_8, v[0].field_10, v[1].field_0, v[1].field_4, v[1].field_8, v[2].field_0, v[2].field_4, v[2].field_8);
 	}
 

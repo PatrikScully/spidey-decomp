@@ -1096,6 +1096,10 @@ i32 CBaddy::CheckSightCone(i32 a2, i32 a3, i32 a4, i32 a5, CBody *a6)
 // (maintainer's IDB extraction), tentative.
 static u8 * const gSubmarinerDieRelated = (u8*)0x60CFC4;
 
+#ifdef SPIDEY_STANDALONE
+static u16 gTraceLastScriptCmd = 0;   // SPIDEY_TRACE_SCRIPT debugging aid
+#endif
+
 // @Ok
 // @Matching
 void CBaddy::ParseScript(u16 *a2)
@@ -1108,6 +1112,12 @@ void CBaddy::ParseScript(u16 *a2)
 		this->field_24C++;
 
 		print_if_false((opcode & 0x6000) != 0, "Bad script command");
+#ifdef SPIDEY_STANDALONE
+		if ((opcode & 0x6000) == 0 && getenv("SPIDEY_TRACE_SCRIPT"))
+			fprintf(stderr, "SCRIPT bad word %#x after cmd %#x (ParseScript, type %d)\n", opcode, gTraceLastScriptCmd, this->mType);
+		else if (opcode & 0x4000)
+			gTraceLastScriptCmd = opcode;
+#endif
 
 		if (opcode & 0x4000)
 		{
@@ -1234,6 +1244,12 @@ void CScriptOnlyBaddy::AI(void)
 				this->field_24C++;
 
 				print_if_false((opcode & 0x6000) != 0, "Bad script command");
+#ifdef SPIDEY_STANDALONE
+				if ((opcode & 0x6000) == 0 && getenv("SPIDEY_TRACE_SCRIPT"))
+					fprintf(stderr, "SCRIPT bad word %#x after cmd %#x (AI, type %d)\n", (u16)opcode, gTraceLastScriptCmd, this->mType);
+				else if (opcode & 0x4000)
+					gTraceLastScriptCmd = (u16)opcode;
+#endif
 
 				if (opcode & 0x4000)
 				{
@@ -3300,6 +3316,10 @@ int CBaddy::ExecuteCommand(u16 cmd)
 			// which trips its "Bad script command" assert. Same in the
 			// original, where both asserts are release no-ops.
 			print_if_false(0, "Unknown script command");
+#ifdef SPIDEY_STANDALONE
+			if (getenv("SPIDEY_TRACE_SCRIPT"))
+				fprintf(stderr, "SCRIPT unknown command %#x (type %d)\n", cmd, this->mType);
+#endif
 			return true;
 	}
 }
@@ -3416,6 +3436,10 @@ void CBaddy::SetVariable(u16 a2)
 
 		default:
 			DoAssert(0, "Unknown script variable");
+#ifdef SPIDEY_STANDALONE
+			if (getenv("SPIDEY_TRACE_SCRIPT"))
+				fprintf(stderr, "SCRIPT unknown variable (DoAssert site) %#x (type %d)\n", a2, this->mType);
+#endif
 			break;
 	}
 }
@@ -3522,6 +3546,10 @@ i16 CBaddy::GetVariable(u16 a2)
 
 		default:
 			print_if_false(0, "Unknown script variable");
+#ifdef SPIDEY_STANDALONE
+			if (getenv("SPIDEY_TRACE_SCRIPT"))
+				fprintf(stderr, "SCRIPT unknown variable %#x (type %d)\n", a2, this->mType);
+#endif
 			return 0;
 	}
 }
