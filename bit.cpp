@@ -4825,6 +4825,11 @@ void Bit_UpdateQuickAnimLookups(void)
 		}
 
 		Spool_AnimAccess(gAnimNames[i], &G_ANIM_TABLE[i]);
+#ifdef SPIDEY_STANDALONE
+		// SPIDEY_TRACE_ANIMS=1: show which quick anim lookups resolve
+		if (getenv("SPIDEY_TRACE_ANIMS"))
+			printf("ANIMS %2d %-12s -> %p\n", i, gAnimNames[i], (void*)G_ANIM_TABLE[i]);
+#endif
 	}
 }
 

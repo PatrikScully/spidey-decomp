@@ -707,6 +707,15 @@ void M3d_Render(void* pList)
 			SCamera* pCam = *(SCamera**)gM3dCameraPtrEarly;
 			fprintf(stderr, "CULL enviro culled=%d kept=%d notUsable=%d cam=(%d,%d,%d)\n", culled, kept, notUsable,
 				pCam->Position.vx, pCam->Position.vy, pCam->Position.vz);
+			static i32 scaleDumped = 0;
+			if (!scaleDumped)
+			{
+				scaleDumped = 1;
+				for (CItem* p = pItem; p; p = p->mNextItem)
+					if ((p->mFlags & 0x200) || p->mAngles.vx || p->mAngles.vy || p->mAngles.vz)
+						fprintf(stderr, "  ITEM %p model=%d region=%d pos=(%d,%d,%d) ang=(%d,%d,%d) flags=%#x scale=(%d,%d,%d)\n", (void*)p, p->mModel, p->mRegion,
+							p->mPos.vx >> 12, p->mPos.vy >> 12, p->mPos.vz >> 12, p->mAngles.vx, p->mAngles.vy, p->mAngles.vz, p->mFlags, p->mScale.vx, p->mScale.vy, p->mScale.vz);
+			}
 		}
 	}
 #endif

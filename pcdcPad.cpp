@@ -5,6 +5,8 @@
 
 
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #include "validate.h"
 
 
@@ -21,6 +23,20 @@ i32 Pad_Update(void)
 	u32 v3;
 	u32 v4;
 	PCINPUT_GetMappedStates(&v3, &v4);
+#ifdef SPIDEY_STANDALONE
+	{
+		// SPIDEY_TRACE_PAD=1: print the mapped button word whenever it changes
+		static i32 tracePad = -1;
+		static u32 lastV3 = 0;
+		if (tracePad < 0)
+			tracePad = getenv("SPIDEY_TRACE_PAD") ? 1 : 0;
+		if (tracePad && v3 != lastV3)
+		{
+			printf("PAD v3=0x%x v4=0x%x\n", v3, v4);
+			lastV3 = v3;
+		}
+	}
+#endif
 
 	if (PCSHELL_UpdateMouse())
 		G_PAD_IDLE_TIME = 0;
