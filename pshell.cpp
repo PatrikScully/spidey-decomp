@@ -1364,7 +1364,7 @@ static SAnimFrame * const * const gMenuBoxAnimSlot = (SAnimFrame* const*)0x0056E
 // broad; the semantics (call targets, argument counts/order, table
 // indices, field writes, control flow) are believed correct throughout.
 // @Ok
-i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrollbar, i32 a7, i32 a8)
+i32 PShell_DrawMenuBox(i32 x, i32 y, i32 width, i32 height, i32 a5, i32 hasScrollbar, i32 a7, i32 a8)
 {
 	i32 sort = G_SORT;
 	f32 depthBias;
@@ -1374,9 +1374,15 @@ i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrol
 	else
 		depthBias = 5.0f;
 
+#ifdef SPIDEY_STANDALONE
+	if (getenv("SPIDEY_TRACE_MENU"))
+		printf("MENUBOX x=%d w=%d width=%d h=%d a5=%d scroll=%d a7=%d a8=%d sort=%d\n",
+				x, y, width, height, a5, hasScrollbar, a7, a8, sort);
+#endif
+
 	if (hasScrollbar)
 	{
-		i32 shadowY = gMenuBoxSlices[0].b + (((height - a8 - 8) * a7) >> 8) + width + 4;
+		i32 shadowY = gMenuBoxSlices[0].b + (((height - a8 - 8) * a7) >> 8) + y + 4;
 		i32 shadowX = gMenuBoxSlices[0].a + x - 10;
 
 		DCPanel_DrawFlatShadedPoly(
@@ -1393,7 +1399,7 @@ i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrol
 	SAnimFrame* frames = *gMenuBoxAnimSlot;
 	print_if_false(frames != 0, "No menu box anim frames");
 
-	i32 v1 = width - 3;
+	i32 v1 = y - 3;
 	i32 hw;
 
 	if (hasScrollbar)
@@ -1402,32 +1408,32 @@ i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrol
 		if (p1)
 			p1->code |= 2;
 		DCPanel_DrawTexturedPoly(depthBias, p1, &frames[0],
-				gMenuBoxSlices[1].a + x - 14, gMenuBoxSlices[1].b + width - 3,
+				gMenuBoxSlices[1].a + x - 14, gMenuBoxSlices[1].b + y - 3,
 				gMenuBoxSlices[1].c, gMenuBoxSlices[1].d, G_SORT, 0);
 
 		POLY_FT4* p2 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[1], G_SORT);
-		p2->y0 = (i16)(width + 7);
-		p2->y1 = (i16)(width + 7);
+		p2->y0 = (i16)(y + 7);
+		p2->y1 = (i16)(y + 7);
 		p2->code |= 2;
 		p2->x0 = (i16)(x - 14);
 		p2->x2 = (i16)(x - 14);
 		p2->x1 = (i16)x;
-		hw = height + width;
+		hw = height + y;
 		p2->x3 = (i16)x;
 		p2->y2 = (i16)(hw - 7);
 		p2->y3 = (i16)(hw - 7);
 		p2->v2--;
 		p2->v3--;
 		DCPanel_DrawTexturedPoly(depthBias, p2, &frames[1],
-				gMenuBoxSlices[2].a + (x - 14), gMenuBoxSlices[2].b + (width + 7),
-				gMenuBoxSlices[2].c + (x - (x - 14)), gMenuBoxSlices[2].d + ((hw - 7) - (width + 7)),
+				gMenuBoxSlices[2].a + (x - 14), gMenuBoxSlices[2].b + (y + 7),
+				gMenuBoxSlices[2].c + (x - (x - 14)), gMenuBoxSlices[2].d + ((hw - 7) - (y + 7)),
 				G_SORT, 0);
 
-		POLY_FT4* p3 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[2], x - 14, width + height - 7, G_SORT);
+		POLY_FT4* p3 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[2], x - 14, y + height - 7, G_SORT);
 		if (p3)
 			p3->code |= 2;
 		DCPanel_DrawTexturedPoly(depthBias, p3, &frames[2],
-				gMenuBoxSlices[3].a + x - 14, gMenuBoxSlices[3].b + width + height - 7,
+				gMenuBoxSlices[3].a + x - 14, gMenuBoxSlices[3].b + y + height - 7,
 				gMenuBoxSlices[3].c, gMenuBoxSlices[3].d, G_SORT, 0);
 	}
 	else
@@ -1436,40 +1442,40 @@ i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrol
 		if (p4)
 			p4->code |= 2;
 		DCPanel_DrawTexturedPoly(depthBias, p4, &frames[7],
-				gMenuBoxSlices[4].a + x - 6, gMenuBoxSlices[4].b + width - 3,
+				gMenuBoxSlices[4].a + x - 6, gMenuBoxSlices[4].b + y - 3,
 				gMenuBoxSlices[4].c, gMenuBoxSlices[4].d, G_SORT, 0);
 
-		POLY_FT4* p5 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[8], x - 6, width + height - 3, G_SORT);
+		POLY_FT4* p5 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[8], x - 6, y + height - 3, G_SORT);
 		if (p5)
 			p5->code |= 2;
 		DCPanel_DrawTexturedPoly(depthBias, p5, &frames[8],
-				gMenuBoxSlices[5].a + x - 6, gMenuBoxSlices[5].b + width + height - 3,
+				gMenuBoxSlices[5].a + x - 6, gMenuBoxSlices[5].b + y + height - 3,
 				gMenuBoxSlices[5].c, gMenuBoxSlices[5].d, G_SORT, 0);
 
 		POLY_FT4* p6 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[5], G_SORT);
 		p6->code |= 2;
-		p6->y0 = (i16)(width + 3);
-		p6->y1 = (i16)(width + 3);
+		p6->y0 = (i16)(y + 3);
+		p6->y1 = (i16)(y + 3);
 		p6->x0 = (i16)(x - 6);
 		p6->x2 = (i16)(x - 6);
 		p6->x1 = (i16)x;
-		hw = height + width;
+		hw = height + y;
 		p6->x3 = (i16)x;
 		p6->y2 = (i16)(hw - 3);
 		p6->y3 = (i16)(hw - 3);
 		p6->v2--;
 		p6->v3--;
 		DCPanel_DrawTexturedPoly(depthBias, p6, &frames[5],
-				gMenuBoxSlices[6].a + (x - 6), gMenuBoxSlices[6].b + (width + 3),
-				gMenuBoxSlices[6].c + (x - (x - 6)), gMenuBoxSlices[6].d + ((hw - 3) - (width + 3)),
+				gMenuBoxSlices[6].a + (x - 6), gMenuBoxSlices[6].b + (y + 3),
+				gMenuBoxSlices[6].c + (x - (x - 6)), gMenuBoxSlices[6].d + ((hw - 3) - (y + 3)),
 				G_SORT, 0);
 	}
 
-	POLY_FT4* p7 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[4], x + y - 2, width - 3, G_SORT);
+	POLY_FT4* p7 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[4], x + width - 2, y - 3, G_SORT);
 	if (p7)
 		p7->code |= 2;
 	DCPanel_DrawTexturedPoly(depthBias, p7, &frames[4],
-			gMenuBoxSlices[7].a + x + y - 2, gMenuBoxSlices[7].b + width - 3,
+			gMenuBoxSlices[7].a + x + width - 2, gMenuBoxSlices[7].b + y - 3,
 			gMenuBoxSlices[7].c, gMenuBoxSlices[7].d, G_SORT, 0);
 
 	POLY_FT4* p8 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[3], G_SORT);
@@ -1484,28 +1490,28 @@ i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrol
 		p8->x0 = (i16)(x + 2);
 		p8->x2 = (i16)(x + 2);
 	}
-	p8->y0 = (i16)(width - 3);
-	p8->y1 = (i16)(width - 3);
-	p8->x1 = (i16)(y + x - 2);
+	p8->y0 = (i16)(y - 3);
+	p8->y1 = (i16)(y - 3);
+	p8->x1 = (i16)(width + x - 2);
 	p8->u1--;
-	p8->y2 = (i16)(width + 1);
-	p8->x3 = (i16)(y + x - 2);
+	p8->y2 = (i16)(y + 1);
+	p8->x3 = (i16)(width + x - 2);
 	p8->u3--;
 	DCPanel_DrawTexturedPoly(depthBias, p8, &frames[3],
-			gMenuBoxSlices[8].a + p8->x0, gMenuBoxSlices[8].b + (width - 3),
-			gMenuBoxSlices[8].c + ((y + x - 2) - p8->x0), gMenuBoxSlices[8].d + ((width + 1) - (width - 3)),
+			gMenuBoxSlices[8].a + p8->x0, gMenuBoxSlices[8].b + (y - 3),
+			gMenuBoxSlices[8].c + ((width + x - 2) - p8->x0), gMenuBoxSlices[8].d + ((y + 1) - (y - 3)),
 			G_SORT, 0);
 
-	POLY_FT4* p9 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[6], x + y - 2, width + height - 3, G_SORT);
+	POLY_FT4* p9 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[6], x + width - 2, y + height - 3, G_SORT);
 	if (p9)
 		p9->code |= 2;
 	DCPanel_DrawTexturedPoly(depthBias, p9, &frames[6],
-			gMenuBoxSlices[9].a + x + y - 2, gMenuBoxSlices[9].b + width + height - 3,
+			gMenuBoxSlices[9].a + x + width - 2, gMenuBoxSlices[9].b + y + height - 3,
 			gMenuBoxSlices[9].c, gMenuBoxSlices[9].d, G_SORT, 0);
 
 	POLY_FT4* p10 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[3], G_SORT);
-	p10->x1 = (i16)(y + x - 2);
-	p10->x3 = (i16)(y + x - 2);
+	p10->x1 = (i16)(width + x - 2);
+	p10->x3 = (i16)(width + x - 2);
 	p10->u1--;
 	p10->y2 = (i16)(hw + 4);
 	p10->y3 = (i16)(hw + 4);
@@ -1514,17 +1520,17 @@ i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrol
 	p10->y1 = (i16)hw;
 	DCPanel_DrawTexturedPoly(depthBias, p10, &frames[3],
 			gMenuBoxSlices[10].a + p10->x0, gMenuBoxSlices[10].b + hw,
-			gMenuBoxSlices[10].c + ((y + x - 2) - p10->x0), gMenuBoxSlices[10].d + ((hw + 4) - hw),
+			gMenuBoxSlices[10].c + ((width + x - 2) - p10->x0), gMenuBoxSlices[10].d + ((hw + 4) - hw),
 			G_SORT, 0);
 
 	POLY_FT4* p11 = (POLY_FT4*)Panel_DrawTexturedPoly(&frames[5], G_SORT);
 	p11->code |= 2;
 	hw -= 3;
-	i32 xy = y + x;
+	i32 xy = width + x;
 	p11->x0 = (i16)xy;
-	p11->y0 = (i16)(width + 3);
+	p11->y0 = (i16)(y + 3);
 	p11->x1 = (i16)(xy + 6);
-	p11->y1 = (i16)(width + 3);
+	p11->y1 = (i16)(y + 3);
 	p11->x3 = (i16)(xy + 6);
 	p11->x2 = (i16)xy;
 	p11->y2 = (i16)hw;
@@ -1532,16 +1538,16 @@ i32 PShell_DrawMenuBox(i32 x, i32 width, i32 y, i32 height, i32 a5, i32 hasScrol
 	p11->y3 = (i16)hw;
 	p11->v3--;
 	DCPanel_DrawTexturedPoly(depthBias, p11, &frames[5],
-			gMenuBoxSlices[11].a + xy, gMenuBoxSlices[11].b + (width + 3),
-			gMenuBoxSlices[11].c + ((xy + 6) - xy), gMenuBoxSlices[11].d + (hw - (width + 3)),
+			gMenuBoxSlices[11].a + xy, gMenuBoxSlices[11].b + (y + 3),
+			gMenuBoxSlices[11].c + ((xy + 6) - xy), gMenuBoxSlices[11].d + (hw - (y + 3)),
 			G_SORT, 0);
 
 	if (a5)
 	{
 		DCPanel_DrawFlatShadedPoly(
 				depthBias,
-				gMenuBoxSlices[12].a + x, gMenuBoxSlices[12].b + width,
-				gMenuBoxSlices[12].c + y, gMenuBoxSlices[12].d + height,
+				gMenuBoxSlices[12].a + x, gMenuBoxSlices[12].b + y,
+				gMenuBoxSlices[12].c + width, gMenuBoxSlices[12].d + height,
 				0x19, 0x19, 0x50,
 				G_SORT,
 				1);
@@ -1606,10 +1612,13 @@ int CExpandingBox::Display(){
 	if (this->field_4 == this->field_C && this->field_8 == this->field_10)
 		this->field_30 = 1;
 
+	// 0x47AF96: the arguments are x, y, width, height (the other callers in
+	// shell.cpp pass them in that order too). Passing the width as y put
+	// the box below the screen.
 	return PShell_DrawMenuBox(
 		this->field_1C + this->field_C / 2 - this->field_4 / 2,
-		this->field_4,
 		this->field_20 + this->field_10 / 2 - this->field_8 / 2,
+		this->field_4,
 		this->field_8,
 		1,
 		this->field_24,
