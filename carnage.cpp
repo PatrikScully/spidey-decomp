@@ -1769,7 +1769,7 @@ void CCarnage::DoMGSShadow(void)
 	box[3] -= this->mPos;
 
 	MATRIX localMat;
-	M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+	M3dMaths_TransposeMatrix1(&this->mTransform, &localMat);
 	gte_SetRotMatrix(&localMat);
 
 	i32 maxX = 0x20;

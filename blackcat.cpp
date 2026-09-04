@@ -204,7 +204,7 @@ void CBlackCat::AI(void)
 		Trig_GetPosition(&trigPos, this->field_324);
 
 		MATRIX localMat;
-		M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+		M3dMaths_TransposeMatrix1(&this->mTransform, &localMat);
 		gte_SetRotMatrix(&localMat);
 
 		CVector delta;
@@ -277,6 +277,7 @@ void CBlackCat::AI(void)
 	}
 
 	this->DoMGSShadow();
+
 }
 
 // @Ok
@@ -332,7 +333,7 @@ void CBlackCat::DoMGSShadow(void)
 	v3 -= this->mPos;
 
 	MATRIX localMat;
-	M3dMaths_TransposeMatrix1(&localMat, &this->mTransform);
+	M3dMaths_TransposeMatrix1(&this->mTransform, &localMat);
 	gte_SetRotMatrix(&localMat);
 
 	CVector box[4] = { v0, v1, v2, v3 };
