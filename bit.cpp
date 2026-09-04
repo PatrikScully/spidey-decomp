@@ -2083,6 +2083,11 @@ void DisplayTextBoxList(void** a1)
 		PCGfx_UseTexture(1, DCGfx_BlendingMode_0);
 
 		u32 color = 0xA0000000 | (p->r0 << 16) | (p->g0 << 8) | p->b0;
+#ifdef SPIDEY_STANDALONE
+		if (getenv("SPIDEY_TRACE_TEXTBOX"))
+			printf("TEXTBOX age=%d life=%d x=%d y=%d w=%d h=%d color=%08x scene=%d\n",
+					age, pBox->mLifetime, x, y, w, h, color, (i32)G_SCENE_RELATED);
+#endif
 		f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
 		f32 scaleY = G_GAME_RESOLUTION_Y / (f32)G_YRES;
 

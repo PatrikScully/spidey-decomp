@@ -1,5 +1,8 @@
 #include "DXsound.h"
 #ifdef SPIDEY_STANDALONE
+#include <execinfo.h>
+#endif
+#ifdef SPIDEY_STANDALONE
 i32 gDbgFanBlend, gDbgFanTex, gDbgFanBucket;   // debugging aids for the GLFAN log
 #endif
 #ifdef SPIDEY_STANDALONE
@@ -1179,7 +1182,23 @@ void DXPOLY_DrawPoly(
 		f32 depth)
 {
 	if (!gInBeginScene)
+	{
 		DXERR_printf("drawing outside scene\r\n");
+#ifdef SPIDEY_STANDALONE
+		// print the first caller once so the stray draw can be found
+		static i32 shown = 0;
+		if (!shown)
+		{
+			shown = 1;
+			void* frames[16];
+			i32 n = backtrace(frames, 16);
+			printf("OUTSIDE backtrace:");
+			for (i32 k = 0; k < n; k++)
+				printf(" %p", frames[k]);
+			printf("\n");
+		}
+#endif
+	}
 
 	if (gLowGraphics && dword_6B7A8C != 1)
 	{
