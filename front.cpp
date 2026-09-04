@@ -91,132 +91,134 @@ INLINE void CMenu::KillBox(void)
 // not a named struct member list.
 void CMenu::Display(void)
 {
-	if (this->ptr_to && this->ptr_to->field_30 == 0)
-		return;
-
-	Mess_SetTextJustify(this->mJustification);
-
-	i32 y = this->mY;
-
-	for (i32 i = this->mCursorLine;
-			i < this->mNumLines && i < (this->mCursorLine + this->field_1B);
-			i++)
+	// the box keeps expanding (0x4405CF calls CExpandingBox::Display) even
+	// while the entries are not drawn yet; only the entry drawing is skipped
+	if (!this->ptr_to || this->ptr_to->field_30 != 0)
 	{
-		y += this->mEntry[i].unk_a;
+		Mess_SetTextJustify(this->mJustification);
 
-		if (!this->mEntry[i].unk_b)
-			continue;
+		i32 y = this->mY;
 
-		if (this->mEntry[i].val_a <= 0)
+		for (i32 i = this->mCursorLine;
+				i < this->mNumLines && i < (this->mCursorLine + this->field_1B);
+				i++)
 		{
-			y += this->mLineSep;
-			continue;
-		}
+			y += this->mEntry[i].unk_a;
 
-		if (i == this->mLine)
-		{
-			if (this->field_1E & 0xFF)
+			if (!this->mEntry[i].unk_b)
+				continue;
+
+			if (this->mEntry[i].val_a <= 0)
 			{
-				i32 weight = Sine(this->field_20);
-				this->field_20 += 200;
+				y += this->mLineSep;
+				continue;
+			}
 
-				i32 r = ((this->mEntry[i].unk_c + this->mEntry[i].field_11) >> 1)
-					+ (((this->mEntry[i].unk_c - this->mEntry[i].field_11) * weight) >> 13);
-				i32 g = ((this->mEntry[i].unk_d + this->mEntry[i].field_12) >> 1)
-					+ (((this->mEntry[i].unk_d - this->mEntry[i].field_12) * weight) >> 13);
-				i32 b = ((this->mEntry[i].unk_e + this->mEntry[i].field_13) >> 1)
-					+ (((this->mEntry[i].unk_e - this->mEntry[i].field_13) * weight) >> 13);
+			if (i == this->mLine)
+			{
+				if (this->field_1E & 0xFF)
+				{
+					i32 weight = Sine(this->field_20);
+					this->field_20 += 200;
 
-				r = r * 350 / 256;
-				g = g * 350 / 256;
-				b = b * 350 / 256;
-				if (r > 255) r = 255;
-				if (g > 255) g = 255;
-				if (b > 255) b = 255;
+					i32 r = ((this->mEntry[i].unk_c + this->mEntry[i].field_11) >> 1)
+						+ (((this->mEntry[i].unk_c - this->mEntry[i].field_11) * weight) >> 13);
+					i32 g = ((this->mEntry[i].unk_d + this->mEntry[i].field_12) >> 1)
+						+ (((this->mEntry[i].unk_d - this->mEntry[i].field_12) * weight) >> 13);
+					i32 b = ((this->mEntry[i].unk_e + this->mEntry[i].field_13) >> 1)
+						+ (((this->mEntry[i].unk_e - this->mEntry[i].field_13) * weight) >> 13);
 
-				Mess_SetRGB(static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b), 0);
+					r = r * 350 / 256;
+					g = g * 350 / 256;
+					b = b * 350 / 256;
+					if (r > 255) r = 255;
+					if (g > 255) g = 255;
+					if (b > 255) b = 255;
 
-				i32 sr = ((this->mEntry[i].field_14 + this->mEntry[i].field_17) >> 1)
-					+ (((this->mEntry[i].field_14 - this->mEntry[i].field_17) * weight) >> 13);
-				i32 sg = ((this->mEntry[i].field_15 + this->mEntry[i].field_18) >> 1)
-					+ (((this->mEntry[i].field_15 - this->mEntry[i].field_18) * weight) >> 13);
-				i32 sb = ((this->mEntry[i].field_16 + this->mEntry[i].field_19) >> 1)
-					+ (((this->mEntry[i].field_16 - this->mEntry[i].field_19) * weight) >> 13);
+					Mess_SetRGB(static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b), 0);
 
-				sr = sr * 350 / 256;
-				sg = sg * 350 / 256;
-				sb = sb * 350 / 256;
-				if (sr > 255) sr = 255;
-				if (sg > 255) sg = 255;
-				if (sb > 255) sb = 255;
+					i32 sr = ((this->mEntry[i].field_14 + this->mEntry[i].field_17) >> 1)
+						+ (((this->mEntry[i].field_14 - this->mEntry[i].field_17) * weight) >> 13);
+					i32 sg = ((this->mEntry[i].field_15 + this->mEntry[i].field_18) >> 1)
+						+ (((this->mEntry[i].field_15 - this->mEntry[i].field_18) * weight) >> 13);
+					i32 sb = ((this->mEntry[i].field_16 + this->mEntry[i].field_19) >> 1)
+						+ (((this->mEntry[i].field_16 - this->mEntry[i].field_19) * weight) >> 13);
 
-				Mess_SetRGBBottom(static_cast<u8>(sr), static_cast<u8>(sg), static_cast<u8>(sb));
+					sr = sr * 350 / 256;
+					sg = sg * 350 / 256;
+					sb = sb * 350 / 256;
+					if (sr > 255) sr = 255;
+					if (sg > 255) sg = 255;
+					if (sb > 255) sb = 255;
+
+					Mess_SetRGBBottom(static_cast<u8>(sr), static_cast<u8>(sg), static_cast<u8>(sb));
+				}
+				else
+				{
+					Mess_SetRGB(this->mEntry[i].unk_c, this->mEntry[i].unk_d, this->mEntry[i].unk_e, 0);
+					Mess_SetRGBBottom(this->mEntry[i].field_14, this->mEntry[i].field_15, this->mEntry[i].field_16);
+				}
 			}
 			else
 			{
-				Mess_SetRGB(this->mEntry[i].unk_c, this->mEntry[i].unk_d, this->mEntry[i].unk_e, 0);
-				Mess_SetRGBBottom(this->mEntry[i].field_14, this->mEntry[i].field_15, this->mEntry[i].field_16);
+				Mess_SetRGB(this->mEntry[i].field_11, this->mEntry[i].field_12, this->mEntry[i].field_13, 0);
+				Mess_SetRGBBottom(this->mEntry[i].field_17, this->mEntry[i].field_18, this->mEntry[i].field_19);
 			}
-		}
-		else
-		{
-			Mess_SetRGB(this->mEntry[i].field_11, this->mEntry[i].field_12, this->mEntry[i].field_13, 0);
-			Mess_SetRGBBottom(this->mEntry[i].field_17, this->mEntry[i].field_18, this->mEntry[i].field_19);
-		}
 
-		Mess_TextWidth(this->mEntry[i].name);
-		i32 drawResult = Mess_DrawText(this->mX, y, this->mEntry[i].name, 0, 0x1000);
+			Mess_TextWidth(this->mEntry[i].name);
+			i32 drawResult = Mess_DrawText(this->mX, y, this->mEntry[i].name, 0, 0x1000);
 
-		if (this->field_16 && i == this->field_17 && this->mJustification == 0)
-		{
-			i32 highlightOffset = (this->mEntry[i].val_a * drawResult) / 512
-				+ (this->mEntry[i].val_a * 14) / 256;
-
-			u8* rec = reinterpret_cast<u8*>(G_PPOLY);
-			u8* next = rec + 0x28;
-
-			if (next <= G_POLY_BUFFER_END)
+			if (this->field_16 && i == this->field_17 && this->mJustification == 0)
 			{
-				G_PPOLY = reinterpret_cast<u32*>(next);
+				i32 highlightOffset = (this->mEntry[i].val_a * drawResult) / 512
+					+ (this->mEntry[i].val_a * 14) / 256;
 
-				if (!gPrintStubbed)
-					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
-				if (!gPrintStubbed)
-					stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
+				u8* rec = reinterpret_cast<u8*>(G_PPOLY);
+				u8* next = rec + 0x28;
 
-				i16 yMinus5 = static_cast<i16>(y - 5);
-				i16 xBase = static_cast<i16>(this->mX - highlightOffset);
-				i16 xBaseMinus20 = static_cast<i16>(xBase - 20);
-				i16 yMinus11 = static_cast<i16>(yMinus5 - 6);
-				i16 yPlus1 = static_cast<i16>(yMinus5 + 6);
-				i16 highlightOffset2 = static_cast<i16>(highlightOffset + this->mX);
-				i16 highlightOffset2Plus20 = static_cast<i16>(highlightOffset2 + 20);
+				if (next <= G_POLY_BUFFER_END)
+				{
+					G_PPOLY = reinterpret_cast<u32*>(next);
 
-				*reinterpret_cast<u8*>(rec + 4) = 0x96;
-				*reinterpret_cast<u8*>(rec + 5) = 0;
-				*reinterpret_cast<u8*>(rec + 6) = 0;
-				*reinterpret_cast<i16*>(rec + 0xA) = yMinus5;
-				*reinterpret_cast<i16*>(rec + 8) = xBase;
-				*reinterpret_cast<i16*>(rec + 0xC) = xBaseMinus20;
-				*reinterpret_cast<i16*>(rec + 0x10) = xBaseMinus20;
-				*reinterpret_cast<i16*>(rec + 0xE) = yMinus11;
-				*reinterpret_cast<i16*>(rec + 0x12) = yPlus1;
-				*reinterpret_cast<u8*>(rec + 0x18) = 0x96;
-				*reinterpret_cast<u8*>(rec + 0x19) = 0;
-				*reinterpret_cast<u8*>(rec + 0x1A) = 0;
-				*reinterpret_cast<i16*>(rec + 0x1E) = yMinus5;
-				*reinterpret_cast<i16*>(rec + 0x1C) = highlightOffset2;
-				*reinterpret_cast<i16*>(rec + 0x22) = yMinus11;
-				*reinterpret_cast<i16*>(rec + 0x20) = highlightOffset2Plus20;
-				*reinterpret_cast<i16*>(rec + 0x24) = highlightOffset2Plus20;
-				*reinterpret_cast<i16*>(rec + 0x26) = yPlus1;
+					if (!gPrintStubbed)
+						stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
+					if (!gPrintStubbed)
+						stubbed_printf(reinterpret_cast<char*>(0x0054ABF0));
 
-				stubbed_printf(G_RENDER_BUF);
-				stubbed_printf(G_RENDER_BUF);
+					i16 yMinus5 = static_cast<i16>(y - 5);
+					i16 xBase = static_cast<i16>(this->mX - highlightOffset);
+					i16 xBaseMinus20 = static_cast<i16>(xBase - 20);
+					i16 yMinus11 = static_cast<i16>(yMinus5 - 6);
+					i16 yPlus1 = static_cast<i16>(yMinus5 + 6);
+					i16 highlightOffset2 = static_cast<i16>(highlightOffset + this->mX);
+					i16 highlightOffset2Plus20 = static_cast<i16>(highlightOffset2 + 20);
+
+					*reinterpret_cast<u8*>(rec + 4) = 0x96;
+					*reinterpret_cast<u8*>(rec + 5) = 0;
+					*reinterpret_cast<u8*>(rec + 6) = 0;
+					*reinterpret_cast<i16*>(rec + 0xA) = yMinus5;
+					*reinterpret_cast<i16*>(rec + 8) = xBase;
+					*reinterpret_cast<i16*>(rec + 0xC) = xBaseMinus20;
+					*reinterpret_cast<i16*>(rec + 0x10) = xBaseMinus20;
+					*reinterpret_cast<i16*>(rec + 0xE) = yMinus11;
+					*reinterpret_cast<i16*>(rec + 0x12) = yPlus1;
+					*reinterpret_cast<u8*>(rec + 0x18) = 0x96;
+					*reinterpret_cast<u8*>(rec + 0x19) = 0;
+					*reinterpret_cast<u8*>(rec + 0x1A) = 0;
+					*reinterpret_cast<i16*>(rec + 0x1E) = yMinus5;
+					*reinterpret_cast<i16*>(rec + 0x1C) = highlightOffset2;
+					*reinterpret_cast<i16*>(rec + 0x22) = yMinus11;
+					*reinterpret_cast<i16*>(rec + 0x20) = highlightOffset2Plus20;
+					*reinterpret_cast<i16*>(rec + 0x24) = highlightOffset2Plus20;
+					*reinterpret_cast<i16*>(rec + 0x26) = yPlus1;
+
+					stubbed_printf(G_RENDER_BUF);
+					stubbed_printf(G_RENDER_BUF);
+				}
 			}
-		}
 
-		y += this->mLineSep;
+			y += this->mLineSep;
+		}
 	}
 
 	if (this->ptr_to)
