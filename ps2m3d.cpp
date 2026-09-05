@@ -2991,7 +2991,7 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	u16 vpHither = *(u16*)((char*)pView + 0x08);
 	u16 vpYon = *(u16*)((char*)pView + 0x0A);
 	u16 zoom = *(u16*)((char*)pView + 0x0C);
-	i32 v7 = (((u32)xR - xL) << 11) & 0xFFFFF000;
+	i32 v7 = (((u32)xL - xR) << 11) & 0xFFFFF000;
 	i32 v8 = xL + xR;
 	v7 = (v7 & 0xFFFF0000) | ((((v7 / zoom) << 12) / *gM3dPixelAspectY) & 0xFFFF);
 	u16 fieldE = (u16)v7;
@@ -3005,57 +3005,63 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	pm[2] = -4096;
 	pm[4] = 0;
 	pm[3] = vpYon;
-	pm[6] = 0;
-	pm[5] = 4096;
+	pm[5] = 0;
+	pm[6] = 4096;
 	pm[7] = -vpHither;
 
-	i32 v11 = *gM3dPixelAspectX * fieldE;
-	i32 v12 = ((u32)xR + 0x1FFFFF * xL) << 11;
-	i32 v13 = M3dMaths_SquareRoot0((v11 >> 12) * (v11 >> 12) + (v12 >> 12) * (v12 >> 12));
+	// 0x472FC4..0x4731C6: six padded normals, then four debug normals.
+	u32 v11 = *gM3dPixelAspectX * fieldE;
+	u32 v12 = ((u32)xL + 0x1FFFFF * xR) << 11;
+	u32 v13 = M3dMaths_SquareRoot0((v11 >> 12) * (v11 >> 12) + (v12 >> 12) * (v12 >> 12));
 	pm[8] = 0;
-	pm[10] = 0;
+	pm[11] = 0;
 	pm[12] = 0;
 	pm[9] = v11 / v13;
-	pm[11] = -pm[9];
-	pm[13] = v12 / v13;
+	pm[13] = -pm[9];
+	pm[10] = v12 / v13;
 	pm[14] = v12 / v13;
 	pm[15] = 0;
 
-	i32 v14 = *gM3dPixelAspectY * fieldE;
-	i32 v15 = ((u32)xR + 0x1FFFFF * xL) << 11;
-	i32 v16 = M3dMaths_SquareRoot0((v14 >> 12) * (v14 >> 12) + (v15 >> 12) * (v15 >> 12));
-	*(i32*)(pm + 16) = v14 / v16;
-	*(i32*)(pm + 18) = v15 / v16;
-	*(i32*)(pm + 22) = v15 / v16;
-	*(i32*)(pm + 20) = -(i16)(v14 / v16);
+	u32 v14 = *gM3dPixelAspectY * fieldE;
+	u32 v15 = ((u32)xL + 0x1FFFFF * xR) << 11;
+	u32 v16 = M3dMaths_SquareRoot0((v14 >> 12) * (v14 >> 12) + (v15 >> 12) * (v15 >> 12));
+	pm[17] = 0;
+	pm[19] = 0;
+	pm[21] = 0;
+	pm[23] = 0;
+	pm[16] = v14 / v16;
+	pm[20] = -pm[16];
+	pm[18] = v15 / v16;
+	pm[22] = v15 / v16;
 
-	v14 = (v14 & 0xFFFF0000) | (fieldE & 0xFFFF);
+	v14 = fieldE;
 	i32 v17 = (yB - yT) >> 1;
-	i32 v18 = M3dMaths_SquareRoot0(v17 * v17 + v14 * v14);
+	u32 v18 = M3dMaths_SquareRoot0(v17 * v17 + v14 * v14);
 	pm[24] = 0;
+	pm[27] = 0;
 	pm[28] = 0;
-	pm[30] = 0;
-	pm[34] = 0;
+	pm[31] = 0;
 	pm[25] = (v14 << 12) / v18;
-	pm[27] = -pm[25];
-	pm[29] = (v17 << 12) / v18;
-	pm[32] = (v17 << 12) / v18;
+	pm[29] = -pm[25];
+	pm[26] = (static_cast<u32>(v17) << 12) / v18;
+	pm[30] = (static_cast<u32>(v17) << 12) / v18;
 
-	i32 v19 = (xR - xL) >> 1;
-	v14 = (v14 & 0xFFFF0000) | (fieldE & 0xFFFF);
-	i32 v20 = M3dMaths_SquareRoot0(v19 * v19 + v14 * v14);
-	*(i32*)(pm + 36) = (v14 << 12) / v20;
+	i32 v19 = (xL - xR) >> 1;
+	v14 = fieldE;
+	u32 v20 = M3dMaths_SquareRoot0(v19 * v19 + v14 * v14);
+	pm[33] = 0;
+	pm[35] = 0;
+	pm[37] = 0;
 	pm[39] = 0;
-	pm[42] = 0;
-	pm[44] = 0;
-	pm[37] = -(i16)((v14 << 12) / v20);
-	pm[41] = (v19 << 12) / v20;
-	pm[46] = (v19 << 12) / v20;
+	pm[32] = (v14 << 12) / v20;
+	pm[36] = -pm[32];
+	pm[34] = (static_cast<u32>(v19) << 12) / v20;
+	pm[38] = (static_cast<u32>(v19) << 12) / v20;
 
 	gte_SetRotMatrix(&pCam->Transform);
-	SVECTOR *v21 = (SVECTOR*)(pm + 24);
+	SVECTOR *v21 = (SVECTOR*)(pm + 12);
 	i32 v70 = 0;
-	while ((int)v21 < (int)(pm + 32))
+	while ((int)v21 < (int)(pm + 24))
 	{
 		gte_ldv0(v21 - 3);
 		gte_rtv0();
