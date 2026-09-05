@@ -1940,10 +1940,10 @@ i32 Spool_FindRegion(const char *pName)
 u32 Spool_GetModel(u32 Checksum, i32 Region)
 {
 	print_if_false(Region >= 0 && Region < MAXPSX, "Bad region number sent to Spool_GetModel");
-	print_if_false(PSXRegion[Region].Usable != 0, "PSX not usable in call to Spool_GetModel");
+	print_if_false(G_PSXREGION[Region].Usable != 0, "PSX not usable in call to Spool_GetModel");
 
-	u32* pChecksum = PSXRegion[Region].pModelChecksums;
-	u32 numModels = reinterpret_cast<u32*>(PSXRegion[Region].ppModels)[-1];
+	u32* pChecksum = G_PSXREGION[Region].pModelChecksums;
+	u32 numModels = reinterpret_cast<u32*>(G_PSXREGION[Region].ppModels)[-1];
 
 	for (u32 i = 0; i < numModels; i++)
 	{
