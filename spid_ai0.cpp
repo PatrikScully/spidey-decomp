@@ -122,15 +122,6 @@ static void gM3dUtils_GetPartAngles(CSuper *pSuper, i32 part, CSVector *pAngles,
 	func(pSuper, part, pAngles, a4);
 }
 
-// CPowerUp::TakeEffect (0x0046B860, real name from tools/names.json) is a
-// __thiscall member the repo has not decompiled and powerup.h does not
-// declare. Same member-function-pointer adapter baddy.cpp uses for
-// gsub_4C9180, because this build's compiler rejects the __thiscall keyword.
-struct SPowerUpTakeEffectAdapter
-{
-	u8 TakeEffect(CPlayer *pPlayer);
-};
-
 // CSwinger::SetRenderEnd (0x004F74B0) and CWeb::SetFirePos (0x004F6170) are
 // real names from tools/names.json, but web.h declares neither, so both are
 // reached through the same adapter trick. They are __thiscall with one
@@ -216,15 +207,6 @@ static void gCSwinger_ctor(void *pSwinger, CVector *pAnchor, i32 length,
 	union { memfn m; void *p; } u;
 	u.p = (void*)0x004F6F00;
 	(reinterpret_cast<SSwingerCtorAdapter*>(pSwinger)->*u.m)(pAnchor, length, pAngles, pEnd);
-}
-
-// @Bogus
-static u8 gCPowerUp_TakeEffect(CBody *pPowerUp, CPlayer *pPlayer)
-{
-	typedef u8 (SPowerUpTakeEffectAdapter::*memfn)(CPlayer*);
-	union { memfn m; void *p; } u;
-	u.p = (void*)0x0046B860;
-	return (reinterpret_cast<SPowerUpTakeEffectAdapter*>(pPowerUp)->*u.m)(pPlayer);
 }
 
 // Scales the two extra body parts (spidey sense buzz, fists) the way the
@@ -5061,10 +5043,10 @@ void SpideyAI0(CPlayer *pPlayer)
 					{
 						if ((pPlayer->field_E1C & 0x11) != 0)
 						{
-							gCPowerUp_TakeEffect(pPowerUp, pPlayer);
+							static_cast<CPowerUp*>(pPowerUp)->TakeEffect(pPlayer);
 						}
 					}
-					else if (gCPowerUp_TakeEffect(pPowerUp, pPlayer) == 0)
+					else if (static_cast<CPowerUp*>(pPowerUp)->TakeEffect(pPlayer) == 0)
 					{
 						// 0x4B8C00, inlined
 						PLR_U8(pPowerUp, 0x124) = 1;

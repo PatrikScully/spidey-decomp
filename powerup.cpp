@@ -10,6 +10,10 @@
 
 #include "validate.h"
 #include "bit.h"
+#include "spidey.h"
+#include "front.h"
+#include "ps2redbook.h"
+#include "ps2lowsfx.h"
 
 #ifndef SPIDEY_STANDALONE
 CBody* PowerUpList;
@@ -218,7 +222,7 @@ static u8 * const gCostumeId = (u8*)0x6B4678;
 
 // guess: cheat/unlock bitmask, tested as (1 << mHealth) & this. Also
 // referenced (same address) by ActivateCheat, PShell_MaybeUnlockStuff,
-// Shell_ComicCollection and CPowerUp::TakeEffect, none decompiled yet.
+// Shell_ComicCollection and CPowerUp::TakeEffect (which uses G_SAVE_GAME.field_8C).
 static i32 * const gCheatUnlockFlags = (i32*)0x6828E4;
 
 // @Ok
@@ -524,6 +528,113 @@ void CPowerUp::SetNode(i32 NodeIndex)
 	this->mNodeIndex = NodeIndex;
 }
 
+// @Ok
+// 0x0046B860. Applies a picked up power up to the player. mHealth is the
+// amount (health percent, webbing, comic index...). The switch is on the
+// type, 8 to 18, the case blocks are in the original's code order. The
+// "already full" XA lines wait 300 ticks between two plays and never play
+// while the redbook is busy. Type 11 (node pulse) does its own effect and
+// never counts as taken.
+// 2 mnemonic diffs left: in case 10 the original stores the unlock bit
+// after it loads the redbook flag (0x46BA35 load, 0x46BA3C store), we store
+// first. Tried (5): sfx uninitialised, single exit, case blocks in code
+// order, case 11 through the common tail (these four got 166 -> 2), and the
+// flag read into a local before the store (moves the load too early).
+u8 CPowerUp::TakeEffect(CPlayer* pPlayer)
+{
+	u8 taken = 0;
+	i32 sfx;
+
+	switch (this->mType)
+	{
+		case 14:
+		case 15:
+		case 16:
+			taken = pPlayer->IncHealth(this->mHealth * pPlayer->mMaxHealth / 100) != 0;
+			sfx = 0x1D;
+			if (!taken && !G_REDBOOK_BUSY
+					&& static_cast<u32>(G_TIMER_RELATED - this->mLastXATime) > 300)
+			{
+				Redbook_XAPlay(0x20, 4, 0);
+				this->mLastXATime = G_TIMER_RELATED;
+			}
+			break;
+
+		case 8:
+			taken = pPlayer->IncreaseWebbing(this->mHealth);
+			sfx = 0x1E;
+			if (!taken && !G_REDBOOK_BUSY
+					&& static_cast<u32>(G_TIMER_RELATED - this->mLastXATime) > 300)
+			{
+				Redbook_XAPlay(0x20, Rnd(3) + 12, 0);
+				this->mLastXATime = G_TIMER_RELATED;
+			}
+			break;
+
+		case 12:
+			taken = pPlayer->SetFireWebbing();
+			sfx = 0x1E;
+			break;
+
+		case 13:
+			if (Trig_GetLevelId() == 0x1601)
+			{
+				G_SAVE_GAME.field_80 |= 0x200;
+				taken = 1;
+			}
+			else
+			{
+				taken = pPlayer->SetArmor(1);
+				if (taken && !G_REDBOOK_BUSY
+						&& static_cast<u32>(G_TIMER_RELATED - this->mLastXATime) > 300)
+				{
+					Redbook_XAPlay(0x20, Rnd(2), 0);
+					this->mLastXATime = G_TIMER_RELATED;
+				}
+			}
+			sfx = 0x1E;
+			break;
+
+		case 18:
+			pPlayer->field_5D0 += this->mHealth;
+			taken = 1;
+			sfx = 0x1E;
+			break;
+
+		case 10:
+			G_SAVE_GAME.field_8C |= 1 << static_cast<u8>(this->mHealth);
+			taken = 1;
+			sfx = 0x1F;
+			if (!G_REDBOOK_BUSY
+					&& static_cast<u32>(G_TIMER_RELATED - this->mLastXATime) > 300)
+			{
+				Redbook_XAPlay(0x20, 6, 0);
+			}
+			break;
+
+		case 11:
+			if (this->field_128 == 0 && this->mHasNode)
+			{
+				Trig_SendPulse(Trig_GetLinksPointer(this->mNodeIndex));
+				this->Die();
+				this->mHasNode = 0;
+				SFX_Play(0x1F, 0x2000, 0);
+			}
+			Exp_GlowFlash(&this->mPos, 0xC0, 0x40, 0x40, 0xA0, 4, 1, 100);
+			break;
+
+		default:
+			break;
+	}
+
+	if (taken && this->mType != 11)
+	{
+		this->Die();
+		SFX_Play(sfx, 0x2000, 0);
+	}
+	return taken;
+}
+
 void validate_CPowerUp(void)
 {
 	VALIDATE_SIZE(CPowerUp, 0x138);
@@ -552,6 +663,7 @@ void validate_CPowerUp(void)
 	VALIDATE(CPowerUp, field_128, 0x128);
 
 	VALIDATE(CPowerUp, mLifetime, 0x12C);
+	VALIDATE(CPowerUp, mLastXATime, 0x134);
 
 	VALIDATE_VTABLE(CPowerUp, DeleteStuff, 4);
 }
@@ -571,10 +683,9 @@ void validate_CPowerUp(void)
 // in this file hooks cleanly once those point at game memory.
 //
 // Not implemented anywhere in this repo, found while mapping addresses:
-// CPowerUp::TakeEffect (0x46B860, referenced by the gCheatUnlockFlags
-// comment above) and a free function named PowerUp_Create (0x46BD80,
-// different from trig.cpp's own inline `new CPowerUp(...)` at its line
-// 405, not investigated further this session).
+// a free function named PowerUp_Create (0x46BD80, different from
+// trig.cpp's own inline `new CPowerUp(...)` at its line 405, not
+// investigated further).
 void patch_powerup(void)
 {
 	PATCH_PUSH_RET_POLY(0x0046AFC0, CPowerUp::CPowerUp, "??0CPowerUp@@QAE@GPAVCVector@@0IHH@Z");

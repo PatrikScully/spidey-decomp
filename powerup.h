@@ -19,6 +19,8 @@ EXPORT extern volatile i32 TTime;
 //#define G_TTIME (TTime)
 #define G_TTIME (*reinterpret_cast<volatile i32*>(0x0060CFA8))
 
+class CPlayer;
+
 class CPowerUp : public CBody
 {
 	public:
@@ -29,6 +31,7 @@ class CPowerUp : public CBody
 		EXPORT void CreateBit(void);
 		EXPORT void CheckAge(void);
 		EXPORT void DoPhysics(void);
+		EXPORT u8 TakeEffect(CPlayer*);
 
 		EXPORT virtual void Die(void);
 		EXPORT virtual void AI(void);
@@ -84,7 +87,9 @@ class CPowerUp : public CBody
 
 		CFlatBit* pPickupBit;
 
-		PADDING(0x138-0x130-4);
+		// G_TIMER_RELATED value of the last "already full" XA line TakeEffect
+		// played for this pickup, it waits 300 ticks between two lines
+		i32 mLastXATime;
 };
 
 EXPORT extern CBody* PowerUpList;
