@@ -347,8 +347,10 @@ INLINE i32 PCINPUT_IsKeyPressed(u8 a1, i32 a2)
 // @Matching
 i32 PCINPUT_IsMouseButtonPressed(u8 a1, i32 a2)
 {
+	// 0x50A7E7: cmp al,0FFh. The state is a u8, so comparing it with -1
+	// (an int) is always false and no click was ever seen.
 	if ( a2 )
-		return DXINPUT_GetMouseButtonState(a1) == -1;
+		return DXINPUT_GetMouseButtonState(a1) == 0xFF;
 	else
 		return DXINPUT_GetMouseButtonState(a1) & 0x7F;
 }
