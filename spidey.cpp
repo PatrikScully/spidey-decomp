@@ -7934,7 +7934,7 @@ static u8 * const gSynthInputScriptFlag = (u8*)0x60F770;
 //      (Utils_Dist < 64), waking phase 1 again.
 //   6  is a countdown timer that holds/replays an anim (resetting its
 //      G_SPIDEY_SFX_ENTRY high-bit flags first, same idiom as
-//      CPlayer::DeathCleanup) while field_AD4 is set or the anim
+//      CPlayer::DeathCleanup) when mAnimFinished is set or the anim
 //      changed.
 //   7  is a countdown timer that forces field_E1C = 0x40000000 each
 //      tick, then calls SwitchToStandMode() on expiry.
@@ -8390,7 +8390,7 @@ void CPlayer::SynthesizeAnalogueInput(void)
 
 				block[3] = remaining;
 
-				if (this->field_AD4 || this->mAnim != animId)
+				if (this->mAnimFinished || this->mAnim != animId)
 				{
 					i32* p = G_SPIDEY_SFX_ENTRY[animId];
 					this->field_350 = p;
