@@ -51,6 +51,62 @@ extern SStateFlags gThugStateFlags;
 
 // @NotOk
 // Native comparison passed 40000 cases; instruction matching is pending.
+// 0x4D67F0
+// Original shot frame table at 0x552168 contains 2, 6, 10 and 14.
+i32 CThug::DrawLaserSiteThingie(i32 checkPlayer, CBaddy* target)
+{
+	static const u16 shotFrames[4] = {2, 6, 10, 14};
+	CVector direction;
+	SLineInfo line;
+	delete this->field_3A0;
+	this->field_3A0 = 0;
+	if (this->mType != 304)
+		return this->DrawLaserSiteThingieForAlternateModel(checkPlayer);
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&line.StartCoords), this, 1);
+	M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&line.EndCoords), this, 0);
+	direction = line.EndCoords - line.StartCoords;
+	line.StartCoords += direction;
+	direction <<= 6;
+	line.EndCoords += direction;
+	if (checkPlayer)
+		this->RotateTorsoToAimAtPlayer(line.StartCoords);
+	if (this->mAnim != 7)
+		return 0;
+	i32 shot = (static_cast<u32>(this->field_218) >> 12) & 7;
+	if (shot >= 4 || this->mFrame < shotFrames[shot])
+		return 0;
+	if (!this->field_338)
+		this->field_344 = 66;
+	SFX_PlayPos((Rnd(2) + 2) | 0x8000, &this->mPos, 500);
+	this->field_218 = (this->field_218 & ~0x7000) | ((shot + 1) << 12);
+	if (checkPlayer)
+		this->AutoAimPlease(&line.StartCoords, &line.EndCoords, &direction, this->field_380);
+	else if (target)
+	{
+		line.EndCoords = target->mPos;
+		line.EndCoords.vy -= 40 << 12;
+		direction = line.EndCoords - line.StartCoords;
+	}
+	i32 hit = this->LaserCollision(&line, &direction, checkPlayer);
+	if (hit == -1)
+	{
+		delete this->field_3A0;
+		this->field_3A0 = 0;
+		return 0;
+	}
+	if (target)
+		new CThugBulletTracer(line.StartCoords, line.EndCoords, target, 0, 100, 100, 255);
+	else if (hit)
+		new CThugBulletTracer(line.StartCoords, line.EndCoords, G_MECHLIST_PLAYER, 0, 100, 100, 255);
+	else
+		new CThugBulletTracer(line.StartCoords, line.EndCoords, 0, &line, 100, 100, 255);
+	if (!(this->mFlags & 0x8000))
+		this->DrawBarrelFlash(&line.StartCoords, &line.EndCoords, &line, 100, 100, 255);
+	return hit;
+}
+
+// @NotOk
+// Native comparison passed 40000 cases; instruction matching is pending.
 // 0x4D6330
 // Original shot frame table at 0x552170 contains 6 and 11.
 i32 CThug::DrawLaserSiteThingieForAlternateModel(i32 checkPlayer)

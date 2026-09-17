@@ -23,6 +23,7 @@ public:
 	EXPORT void GetTrapped(void);
 	EXPORT void RotateTorsoToAimAtPlayer(CVector&);
 	EXPORT void AutoAimPlease(CVector*, CVector*, CVector*, i32);
+	EXPORT i32 DrawLaserSiteThingie(i32, CBaddy*);
 	EXPORT i32 DrawLaserSiteThingieForAlternateModel(i32);
 	EXPORT i32 LaserCollision(SLineInfo*, CVector*, i32);
 	EXPORT void GetWhippedLikeTheWhoreYouAre(void);
