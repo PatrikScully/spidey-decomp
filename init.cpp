@@ -127,10 +127,8 @@ EXPORT i32 dword_60D218;
 u8 Init_AtStart(i32)
 {
 	Port_InitAtStart();
-	/*
-	dword_628618 = (int *)&unk_628690;
-	dword_654F54 = (int)&unk_62A5D0;
-	*/
+	*reinterpret_cast<u8**>(0x00628618) = reinterpret_cast<u8*>(0x00628690);
+	*reinterpret_cast<u8**>(0x00654F54) = reinterpret_cast<u8*>(0x0062A5D0);
 	HeapDefs[0][0] = gPortRelatedOne;
 	HeapDefs[0][1] = gPortRelatedOne + 64;
 	HeapDefs[1][0] = gPortRelatedOne + 64;
