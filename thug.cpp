@@ -49,6 +49,48 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D6BC0. Native comparison passed 30000 cases.
+// Instruction matching and full AI runtime checks are pending.
+void CThug::RotateTorsoToAimAtPlayer(CVector& origin)
+{
+	i32 height = (G_MECHLIST_PLAYER->mPos.vy - origin.vy) >> 12;
+	i32 angle;
+	if (!height)
+		angle = 0;
+	else
+	{
+		u32 distance = Utils_CrapDist(G_MECHLIST_PLAYER->mPos, origin);
+		angle = Utils_ArcCos((this->DistanceToPlayer(1) << 12) / distance);
+		if (height < 0)
+			angle = -angle;
+	}
+	SJoint* joints = this->mpJoints;
+	if (!joints)
+	{
+		this->mFlags |= 4;
+		i16* pose = reinterpret_cast<i16*>(0x557CE4);
+		if (this->mType != 304)
+			pose = reinterpret_cast<i16*>(0x557DBC);
+		this->ApplyPose(pose);
+		return;
+	}
+	i32 change = angle - joints[1].Angles.vz;
+	if (change > 8)
+		change >>= 3;
+	joints[1].Angles.vz += change;
+	if (this->mpJoints[1].Angles.vz)
+	{
+		this->mFlags |= 4;
+		i16* pose = reinterpret_cast<i16*>(0x557CE4);
+		if (this->mType != 304)
+			pose = reinterpret_cast<i16*>(0x557DBC);
+		this->ApplyPose(pose);
+	}
+	else
+		this->mFlags &= ~4;
+}
+
+// @NotOk
 // 0x4D78D0. Native comparison passed 40000 cases.
 // Instruction matching and full AI runtime checks are pending.
 void CThug::GetTrapped(void)

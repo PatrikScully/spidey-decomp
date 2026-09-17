@@ -21,6 +21,7 @@ public:
 	EXPORT void DieThug(i32);
 	EXPORT void Fall(void);
 	EXPORT void GetTrapped(void);
+	EXPORT void RotateTorsoToAimAtPlayer(CVector&);
 	EXPORT void GetWhippedLikeTheWhoreYouAre(void);
 	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
