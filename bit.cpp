@@ -2963,7 +2963,7 @@ void Bit_Init(void)
 	G_GLINE_LIST = 0;
 	G_SPECIALDISPLAY_LIST = 0;
 
-	if (G_BITSERVER)
+	if (!G_BITSERVER)
 	{
 		G_BITSERVER = new CBitServer();
 
