@@ -1077,6 +1077,7 @@ void CSwinger::AI(void)
 }
 
 // @Ok
+// @Matching
 // Original 0x4F74B0.
 void CSwinger::SetRenderEnd(CVector& end)
 {
@@ -1087,13 +1088,11 @@ void CSwinger::SetRenderEnd(CVector& end)
 	Utils_CalcUnitFacingCamera(anchor, &end, reinterpret_cast<CVector*>(&line->field_58));
 	i32* extra = reinterpret_cast<i32*>(line->mpExtraSegs);
 	i32* seg = reinterpret_cast<i32*>(line->mSegs);
-	for (i32 i = 0; i < line->mNumSegs; i++)
+	for (i32 i = 0; i < line->mNumSegs; extra += 7, seg += 4, i++)
 	{
 		extra[0] = seg[0];
 		extra[1] = seg[1];
 		extra[2] = seg[2];
-		seg += 4;
-		extra += 7;
 	}
 }
 
