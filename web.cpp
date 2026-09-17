@@ -1299,9 +1299,12 @@ void CSwinger_SwingBack(CSwinger *a1)
 
 			CVector relEnd = pLastSeg->End - a1->field_FC;
 
+#ifdef SPIDEY_STANDALONE
+			::new (pWeb) CSwingBack(pLine->mStart, relEnd);
+#else
 			::new (pWeb) CKnottedWeb(pLine->mStart, relEnd);
-
 			*reinterpret_cast<void**>(pWeb) = gSwingBackWebVtable;
+#endif
 
 			pWeb->SetStartAndEnd(&pLine->mStart, &relEnd);
 
@@ -1328,7 +1331,6 @@ void CSwinger_SwingBack(CSwinger *a1)
 		pWeb->field_74 = a1->field_F8;
 	}
 }
-
 // Turns a live web into a blob: mode field_104 goes to 3 and, unless the
 // attached item is type 401, bit 3 of the attached item's flag word at 0x2A8
 // is cleared (the "web attached" flag on the target, going by the fact that
