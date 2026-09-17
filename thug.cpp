@@ -16,6 +16,7 @@
 #include <new>
 #include "spool.h"
 #include "powerup.h"
+#include "ps2m3d.h"
 
 // @Ok
 // @Matching
@@ -310,6 +311,211 @@ extern SStateFlags gThugStateFlags;
 #endif
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
+
+// @NotOk
+// Native comparison passed 100000 cases; instruction matching is pending.
+// 0x4DB280
+void CThug::AI(void)
+{
+	if (this->mType != 304 && this->field_3B8 == 0x1101 && this->field_31C.bothFlags != 5)
+		this->field_3B4 += this->field_80;
+	if (this->field_31C.bothFlags)
+		this->DoAISwitchLogic();
+	if (!(this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 4))
+		this->DoPhysics(0);
+	if (!(this->mFlags & 4))
+		M3d_BuildTransform(this);
+	this->PlaySounds();
+	if (this->field_3AC & 2)
+	{
+		if (this->mShadowScale >= 5)
+			this->mShadowScale -= 5;
+		else
+			this->mShadowScale = 0;
+	}
+	else
+	{
+		this->mShadowScale += 10;
+		if (this->mShadowScale > 50)
+			this->mShadowScale = 50;
+		this->mShadowPos.vx = this->mPos.vx;
+		this->mShadowPos.vy = this->mPos.vy + (this->field_21E << 12);
+		this->mShadowPos.vz = this->mPos.vz;
+	}
+	if (this->pMessage)
+		this->ProcessMessages();
+	this->field_3AC = 0;
+	if (this->mAIProcList)
+	{
+		this->mAIProcList->Execute();
+		this->CleanUpAIProcList(0);
+	}
+	if (this->field_31C.bothFlags == 28)
+	{
+		this->mCBodyFlags |= 0x10;
+		this->field_310 = 0;
+		if (!this->DetermineFightState())
+		{
+			if (G_MECHLIST_PLAYER->field_57C && this->field_330)
+				this->field_31C.bothFlags = 25;
+			else
+				this->field_31C.bothFlags = 2;
+			this->dumbAssPad = 0;
+		}
+	}
+	else if ((this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 0x40)
+			&& !((G_ATTACK_RELATED + static_cast<u8>(this->field_21D)) & this->field_36C))
+		this->DetermineFightState();
+	if (this->field_330 && !((G_ATTACK_RELATED + this->field_21D) & 31)
+			&& this->PlayerIsVisible())
+		this->WarnOtherThugs();
+	this->field_2A8 &= ~0x20;
+	switch (this->field_31C.bothFlags)
+	{
+		case 0:
+			switch (this->dumbAssPad)
+			{
+				case 0:
+					this->field_330 = 0;
+					if (G_ATTACK_RELATED - this->field_3B0 <= 10 || !(G_ATTACK_RELATED & 15))
+					{
+						i32 ground = Utils_GetGroundHeight(&this->mPos, 300, 300, 0);
+						if (ground != -1)
+						{
+							this->mPos.vy = ground - (this->field_21E << 12);
+							this->field_29C = this->mPos.vy;
+							this->field_2A0 = ground;
+							this->SetHeight(1, 100, 600);
+							this->dumbAssPad++;
+							this->CycleAnim(static_cast<u8>(this->field_298.Bytes[0]), 1);
+						}
+					}
+					break;
+				case 1:
+					if (this->field_1F0 || this->GetNextWaypoint())
+						this->field_31C.bothFlags = 2;
+					else
+						this->field_31C.bothFlags = 1;
+					this->dumbAssPad = 0;
+					break;
+				default: print_if_false(0, "Unknown sub-state!"); break;
+			}
+			break;
+		case 1: this->Guard(); break;
+		case 3:
+			this->field_330 = 600;
+			this->field_2A8 |= 0x20;
+			this->Caution();
+			this->SetHeight(0, 100, 600);
+			break;
+		case 4:
+			this->field_2A8 |= 0x20;
+			this->field_330 = 600;
+			this->ChasePlayer(0);
+			this->SetHeight(0, 100, 600);
+			break;
+		case 10:
+			this->field_2A8 |= 0x20;
+			switch (this->dumbAssPad)
+			{
+				case 0:
+					this->RunAnim(9, 0, -1);
+					this->dumbAssPad++;
+					break;
+				case 1:
+					if (this->mAnimFinished)
+					{
+						this->field_31C.bothFlags = 28;
+						this->dumbAssPad = 0;
+					}
+					break;
+				default: print_if_false(0, "Unknown substate!"); break;
+			}
+			break;
+		case 2:
+		case 24:
+			this->FollowWaypoints();
+			this->SetHeight(0, 100, 600);
+			break;
+		case 5:
+			this->field_2A8 |= 0x20;
+			this->field_330 = 600;
+			this->AttackPlayer();
+			this->SetHeight(0, 100, 600);
+			break;
+		case 23: this->LookForPlayer(); break;
+		case 11:
+			this->field_2A8 |= 0x20;
+			this->field_330 = 600;
+			this->TossGrenade();
+			break;
+		case 8: this->ShootHostage(); break;
+		case 9:
+			this->field_330 = 600;
+			this->field_2A8 |= 0x20;
+			this->ShootPlayer();
+			break;
+		case 12:
+			this->field_2A8 |= 0x20;
+			this->TakeHit();
+			this->field_330 = 600;
+			break;
+		case 25: this->LookConfused(); break;
+		case 22: this->Fall(); break;
+		case 14:
+		case 15:
+			this->field_2A8 |= 0x20;
+			this->GetYankedBySpidey();
+			this->field_330 = 600;
+			break;
+		case 16: this->GetWhippedLikeTheWhoreYouAre(); break;
+		case 17:
+			this->field_2A8 |= 0x20;
+			this->FlyAcrossRoom();
+			break;
+		case 18:
+			this->field_330 = 600;
+			this->field_2A8 |= 0x20;
+			this->GetTrapped();
+			break;
+		case 13: this->BackpedalPlease(); break;
+		case 19:
+			this->field_330 = 600;
+			this->field_2A8 |= 0x20;
+			if (this->field_2A8 & 8)
+			{
+				if (!this->dumbAssPad)
+				{
+					this->Neutralize();
+					this->CycleAnim(this->mType != 304 ? 15 : 17, 1);
+					this->dumbAssPad++;
+				}
+				else if (this->dumbAssPad != 1) print_if_false(0, "Unknown substate.");
+			}
+			else
+			{
+				this->field_31C.bothFlags = 28;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 20:
+			this->field_330 = 600;
+			this->field_2A8 |= 0x20;
+			if (this->field_2A8 & 0x40)
+				this->GettingGrabbed();
+			else
+			{
+				SFX_PlayPos(0x802D, &this->mPos, 0);
+				this->field_31C.bothFlags = 13;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 21: this->Acknowledge(); break;
+		case 26: this->DieThug(0); break;
+		case 27: this->DieThug(1); break;
+		default: print_if_false(0, "Unknown state!"); break;
+	}
+}
 
 // @NotOk
 // 0x4D7C30
@@ -4671,12 +4877,9 @@ void validate_CThugPing(void)
 // @Bogus
 // Left out on purpose:
 //   CThug::CThug (0x004D2AB0). Hooking a constructor stamps our vtable on the
-//     object. The exe's CThug vtable (0x0053C550) has CThug_AI (0x004DB280) in
-//     slot 2 and CThug_Hit (0x004D3F50) in slot 3, and neither exists in our
-//     sources, so our vtable falls back to CBody::AI (empty) and CBody::Hit
-//     (return 1). Every hooked thug would stop thinking and stop taking
-//     damage. Same reason the destructor is still safe: nothing calls a
-//     virtual on a dying object.
+//     object. AI and Hit are now restored for the standalone engine, but their
+//     callees still need a Windows global and allocator audit before replacing
+//     the original game's vtable.
 //   Everything with no address of its own (ShouldIShootPlayer, DrawBarrelFlash,
 //     CheckToShoot, AdjustPosPlaySound, SetAttacker, SpideyAnimUppercut,
 //     CanAck, SetHitDirectionFlag, ClearAttackFlags, HelpOutBuddy,
