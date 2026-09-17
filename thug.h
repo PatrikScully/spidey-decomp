@@ -19,6 +19,7 @@ public:
 	EXPORT void DoAISwitchLogic(void);
 	EXPORT void SlideFromHit(i32, i32, CVector&);
 	EXPORT void DieThug(i32);
+	EXPORT void Fall(void);
 	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
 	EXPORT void AttackPlayer(void);

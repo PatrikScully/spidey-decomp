@@ -48,6 +48,127 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D9200. Native comparison passed 40000 cases.
+// Instruction matching and full AI runtime checks are pending.
+void CThug::Fall(void)
+{
+	this->field_3AC |= 2;
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->ClearAttackFlags();
+			this->field_310 = 0;
+			if (!(this->field_218 & 0x40002) && !Rnd(3))
+			{
+				this->dumbAssPad = 3;
+				return;
+			}
+			// fall through
+		case 1:
+			this->mAcc.vy = 147456;
+			new CAIProc_Fall(this, 4);
+			if (!(this->field_218 & 2))
+				this->CycleAnim(this->mType != 304 ? 15 : 33, 1);
+			this->field_2A8 &= ~1;
+			++this->dumbAssPad;
+			this->field_1F8 = 65;
+			if (!(this->field_2A8 & 0x400) || this->field_308 > this->mPos.vy + 1024000)
+			{
+				CVector sound;
+				sound.vx = ((1600 * this->mPos.vx) >> 12) + ((2400 * G_MECHLIST_PLAYER->mPos.vx) >> 12);
+				sound.vy = ((1600 * this->mPos.vy) >> 12) + ((2400 * G_MECHLIST_PLAYER->mPos.vy) >> 12);
+				sound.vz = ((1600 * this->mPos.vz) >> 12) + ((2400 * G_MECHLIST_PLAYER->mPos.vz) >> 12);
+				SFX_PlayPos(0x8018, &sound, 0);
+			}
+			return;
+		case 2:
+			this->mAngles.vx += 40;
+			if (this->mVel.vy >= 1228800)
+				this->mVel.vy = 1228800;
+			this->RunTimer(&this->field_1F8);
+			if (this->field_288 & 4)
+			{
+				this->field_288 &= ~4;
+				this->Neutralize();
+				this->SendDeathPulse();
+				this->mHealth = 0;
+				this->field_2A8 |= 0x8000;
+				SFX_Play(0x802E, 0x2000, 0);
+				this->field_1F8 = 50;
+				this->dumbAssPad = 5;
+			}
+			else if (!this->field_1F8)
+			{
+				this->Neutralize();
+				this->SendDeathPulse();
+				this->mHealth = 0;
+				SFX_Play(0x802E, 0x2000, 0);
+				this->field_1F8 = 50;
+				this->dumbAssPad = 6;
+			}
+			return;
+		case 3:
+			this->field_1F8 = 0;
+			SFX_PlayPos(0x8010, &this->mPos, 0);
+			this->CycleAnim(this->field_298.Bytes[0], 1);
+			++this->dumbAssPad;
+			return;
+		case 4:
+			if (this->mpJoints)
+			{
+				i16* joints = reinterpret_cast<i16*>(this->mpJoints);
+				if (!this->field_1F8)
+				{
+					joints[6] += 90;
+					if (joints[6] >= 900)
+					{
+						this->field_1F8 = 1;
+						return;
+					}
+				}
+				else
+				{
+					joints[6] -= 90;
+					if (joints[6] <= 0)
+					{
+						this->mFlags &= ~4;
+						this->dumbAssPad = 1;
+						return;
+					}
+				}
+			}
+			this->mFlags |= 4;
+			// Pose packets selected by model type in the original.
+			this->ApplyPose(reinterpret_cast<i16*>(this->mType != 304 ? 0x557DBC : 0x557CE4));
+			return;
+		case 5:
+			this->mFlags |= 1;
+			this->RunTimer(&this->field_1F8);
+			if (!this->field_1F8)
+			{
+				SFX_PlayPos(0x802C, &this->mPos, 0);
+				this->field_31C.bothFlags = 27;
+				this->dumbAssPad = 0;
+			}
+			return;
+		case 6:
+			this->mFlags |= 1;
+			this->RunTimer(&this->field_1F8);
+			if (!this->field_1F8)
+			{
+				SFX_PlayPos(0x802C, &this->mPos, 0);
+				this->field_2A8 |= 0x8000;
+				this->field_31C.bothFlags = 27;
+				this->dumbAssPad = 0;
+			}
+			return;
+		default:
+			print_if_false(0, "Unknown substate!");
+			return;
+	}
+}
+
+// @NotOk
 // 0x4D8E50. Native comparison passed 40000 cases.
 // Instruction matching and full AI runtime checks are pending.
 void CThug::DieThug(i32 instant)
