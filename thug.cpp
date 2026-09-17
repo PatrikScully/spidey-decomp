@@ -52,6 +52,14 @@ extern SStateFlags gThugStateFlags;
 
 // @Ok
 // @Matching
+// 0x42BFA0, shared with CCop::Victorious in the original vtable.
+void CThug::Victorious(void)
+{
+	SFX_PlayPos(0x8024, &this->mPos, 0);
+}
+
+// @Ok
+// @Matching
 // 0x4D7260
 void CThug::ShootHostage(void)
 {
