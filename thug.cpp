@@ -47,6 +47,86 @@ extern SStateFlags gThugStateFlags;
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
+// @NotOk
+// 0x4D34A0. Native comparison passed 50000 cases.
+// Instruction matching is pending.
+i32 CThug::SetAttackFlags(void)
+{
+	this->ClearAttackFlags();
+	if (G_MECHLIST_PLAYER->field_57C)
+		return 0;
+	i32 distance = this->DistanceToPlayer(2);
+	if (distance < 819200)
+	{
+		CThug* attacker = G_GLOBAL_THUG;
+		if (attacker)
+		{
+			i32 height = G_MECHLIST_PLAYER->mPos.vy - attacker->field_29C - 0x4000;
+			if (my_abs(height) < 409600)
+			{
+				if (distance < attacker->DistanceToPlayer(2) - 150)
+				{
+					if (G_GLOBAL_THUG->field_31C.bothFlags == 4
+						|| G_GLOBAL_THUG->field_31C.bothFlags == 5)
+						G_GLOBAL_THUG->DetermineFightState();
+					G_GLOBAL_THUG->ClearAttackFlags();
+				}
+				attacker = G_GLOBAL_THUG;
+			}
+			if (attacker)
+				goto waitingSlot;
+		}
+		i32 height = G_MECHLIST_PLAYER->mPos.vy - this->field_29C - 0x4000;
+		if (my_abs(height) < 409600)
+		{
+			G_GLOBAL_THUG = this;
+			this->field_3BC = 1;
+			return 1;
+		}
+	}
+waitingSlot:
+	i32 positiveX = this->mPos.vx - G_MECHLIST_PLAYER->mPos.vx > 0;
+	i32 positiveZ = this->mPos.vz - G_MECHLIST_PLAYER->mPos.vz > 0;
+	i32 direction = 1 << (this->field_3BE & 7);
+	if (positiveX)
+	{
+		if (positiveZ)
+		{
+			if (direction & 0x70)
+				this->field_3BE = 7;
+		}
+		else if (direction & 0xC1)
+			this->field_3BE = 1;
+	}
+	else if (positiveZ)
+	{
+		if (direction & 0x1C)
+			this->field_3BE = 5;
+	}
+	else if (direction & 7)
+		this->field_3BE = 3;
+	i32 count = 0;
+	u8 slot = this->field_3BE;
+	i32 index;
+	for (;; ++slot)
+	{
+		index = slot & 7;
+		if (!((1 << index) & G_ATTACK_FLAG_RELATED))
+			break;
+		if (++count >= 8)
+		{
+			this->field_3BC = 0;
+			return 0;
+		}
+	}
+	this->field_3BE = index;
+	this->field_3BD = 1 << index;
+	G_ATTACK_FLAG_RELATED |= 1 << index;
+	this->field_3BC = 2;
+	this->SetAnimMode(2, 0);
+	return 1;
+}
+
 // @Ok
 // @AlmostMatching: the attack-mask AND/store use DL instead of AL,
 // adding one byte. Both have 281 instructions. Tried 12 mask expressions.

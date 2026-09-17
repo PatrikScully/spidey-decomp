@@ -21,6 +21,7 @@ public:
 	EXPORT void AttackPlayer(void);
 	EXPORT i32 TooCloseToSpidey(void);
 	EXPORT void GetAttackPosition(CVector*);
+	EXPORT i32 SetAttackFlags(void);
 	EXPORT void ClearAttackFlags(void);
 	EXPORT i32 SetAnimMode(i32, i32);
 	EXPORT void HelpOutBuddy(CMessage*);
@@ -132,7 +133,8 @@ public:
 	u8 field_3BC;
 	u8 field_3BD;
 
-	PADDING(0x3C0 - 0x3BD - 1);
+	u8 field_3BE;
+	PADDING(1);
 };
 
 class CThugPing : public CSimpleAnim
