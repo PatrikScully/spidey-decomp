@@ -704,6 +704,27 @@ void Plat_InputPollMouse(i32* dx, i32* dy, u8 buttons[3])
 {
 	float fx = 0.0f, fy = 0.0f;
 	SDL_MouseButtonFlags b = SDL_GetRelativeMouseState(&fx, &fy);
+	const char* modern = getenv("SPIDEY_MODERN_CONTROLS");
+	CCamera* camera = G_CAMERA_LIST;
+	if ((!modern || atoi(modern)) && camera && G_MECHLIST_PLAYER &&
+		!G_MECHLIST_PLAYER->field_1AC && !gWideScreen && !gPausedMenu &&
+		camera->mCameraMode == CAMERAMODE_DEMO &&
+		SDL_GetKeyboardFocus() == gWindow && SDL_GetWindowRelativeMouseMode(gWindow))
+	{
+		const char* value = getenv("SPIDEY_MOUSE_SENSITIVITY");
+		f32 sensitivity = value ? (f32)atof(value) : 2.0f;
+		if (sensitivity < 0.1f) sensitivity = 0.1f;
+		if (sensitivity > 20.0f) sensitivity = 20.0f;
+		if (fx) camera->SetCamAngle((i16)(camera->field_236 - fx * sensitivity), 0);
+		if (fy)
+		{
+			i32 height = camera->GetCamYDistance() + (i32)(fy * sensitivity);
+			if (height < -600) height = -600;
+			if (height > 600) height = 600;
+			camera->SetCamYDistance((i16)height, 0);
+		}
+	}
+
 	*dx = (i32)fx;
 	*dy = (i32)fy;
 	buttons[0] = (b & SDL_BUTTON_LMASK) ? 0x80 : 0;
