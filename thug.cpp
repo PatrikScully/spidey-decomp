@@ -2792,6 +2792,61 @@ void Thug_CreateThug(const u32 *stack, u32 *result)
 
 // @Ok
 // @Matching
+// 0x4D2F10
+void CreateThugRicochet(SLineInfo* line, u8 red, u8 green, u8 blue)
+{
+	CVector position(line->Position.vx, line->Position.vy, line->Position.vz);
+	SFX_PlayPos(((red != 255 ? 12 : 39) + Rnd(2)) | 0x8000, &position, 0);
+	CVector direction(line->StartCoords.vx, line->StartCoords.vy, line->StartCoords.vz);
+	CVector end(line->EndCoords.vx, line->EndCoords.vy, line->EndCoords.vz);
+	direction = (direction - end) >> 12;
+	VectorNormal(reinterpret_cast<VECTOR*>(&direction), reinterpret_cast<VECTOR*>(&direction));
+	i32 twiceDot = 2 * ((direction.vx * line->Normal.vx
+			+ direction.vy * line->Normal.vy + direction.vz * line->Normal.vz) >> 12);
+	direction.vx = ((twiceDot * line->Normal.vx) >> 12) - direction.vx;
+	direction.vy = ((twiceDot * line->Normal.vy) >> 12) - direction.vy;
+	direction.vz = ((twiceDot * line->Normal.vz) >> 12) - direction.vz;
+	u32 absX = my_abs(direction.vx);
+	u32 absY = my_abs(direction.vy);
+	u32 absZ = my_abs(direction.vz);
+	CVector cross;
+	CVector perpendicular;
+	if (absY >= absX)
+	{
+		if (absX <= absZ)
+		{
+			perpendicular.vx = 0;
+			perpendicular.vy = -direction.vz;
+			perpendicular.vz = direction.vy;
+			goto havePerpendicular;
+		}
+		if (absY > absX)
+			goto useXY;
+	}
+	if (absY <= absZ)
+	{
+		perpendicular.vx = direction.vz;
+		perpendicular.vy = 0;
+		perpendicular.vz = -direction.vx;
+	}
+	else
+	{
+useXY:
+		perpendicular.vx = -direction.vy;
+		perpendicular.vy = direction.vx;
+		perpendicular.vz = 0;
+	}
+havePerpendicular:
+	gte_ldopv1(reinterpret_cast<VECTOR*>(&direction));
+	gte_ldopv2(reinterpret_cast<VECTOR*>(&perpendicular));
+	gte_op12();
+	new CThugLaserPing(position, direction, perpendicular, red, green, blue);
+	gte_stlvnl(reinterpret_cast<VECTOR*>(&cross));
+	new CThugLaserPing(position, direction, cross, red, green, blue);
+}
+
+// @Ok
+// @Matching
 // 0x4D2DD0
 CThugLaserPing::CThugLaserPing(
 		const CVector& position, CVector& direction, CVector& perpendicular,
