@@ -56,6 +56,55 @@ extern SStateFlags gCopStateFlags;
 
 // @Ok
 // @Matching
+// 0x42EBD0
+void CCop::LookConfused(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_1F8 = Rnd(3) + 2;
+			this->dumbAssPad++;
+			// fall through
+		case 1:
+			this->Neutralize();
+			if (!this->field_1F8)
+			{
+				this->field_324 = 0;
+				this->field_31C.bothFlags = 28;
+				this->dumbAssPad = 0;
+			}
+			else
+			{
+				this->dumbAssPad = 5;
+				this->field_1F8--;
+			}
+			break;
+		case 5:
+			{
+				i32 angle = Rnd(1000) + 1000;
+				if (Rnd(2))
+					angle = -angle;
+				angle += this->mAngles.vy;
+				new CAIProc_LookAt(this, angle, 2, 80, 200);
+				this->dumbAssPad++;
+			}
+			break;
+		case 6:
+			this->RunAppropriateAnim();
+			if (this->field_288 & 2)
+			{
+				this->dumbAssPad = 1;
+				this->field_288 &= ~2;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
+// @Ok
+// @Matching
 // 0x42EA60
 void CCop::Guard(void)
 {
