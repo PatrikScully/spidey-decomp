@@ -16,6 +16,10 @@ else()
 		# MSVC __inline functions are still callable from other translation
 		# units. Make GCC emit them too (see INLINE in my_types.h).
 		string (APPEND CMAKE_CXX_FLAGS " -fkeep-inline-functions")
+		# CBit and CClass clear object storage in operator new, as the
+		# original binary does (CBit: 0x4088A0). Constructors rely on it.
+		# Preserve those stores when allocation and construction are inlined.
+		string (APPEND CMAKE_CXX_FLAGS " -flifetime-dse=1")
 	elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 		message("Creating for Clang++")
 		string (APPEND CMAKE_CXX_FLAGS " -fms-extensions -Wno-address-of-temporary")
