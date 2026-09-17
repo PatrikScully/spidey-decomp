@@ -17,6 +17,58 @@
 #include "spool.h"
 #include "powerup.h"
 
+// @Ok
+// @Matching
+// 0x4D5B80
+void CThug::TossGrenade(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			this->field_32C = 1200;
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 100, 0);
+			this->dumbAssPad++;
+			break;
+		case 1:
+			if (this->field_288 & 2)
+			{
+				this->field_288 &= ~2;
+				this->RunAnim(31, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+			if (this->mFrame >= 37)
+			{
+				CVector pos;
+				SHook hook;
+				hook.Part.vx = 0;
+				hook.Part.vy = 0;
+				hook.Part.vz = 0;
+				hook.Offset = 14;
+				M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&pos), this, &hook);
+				new CGrenade(this->mPos, G_MECHLIST_PLAYER->mPos,
+						1024 / (Rnd(8) + 24), this->field_388, 512,
+						reinterpret_cast<CBody**>(&G_BADDY_LIST), 1989287857, 0, 0);
+				this->field_218 |= 1;
+				this->field_3B4 = 450 - Rnd(150);
+				this->dumbAssPad++;
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 28;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
 // @NotOk
 // 0x4DBBF0
 // Native comparison passed 40000 trajectory cases; instruction matching is pending.

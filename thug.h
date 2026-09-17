@@ -40,6 +40,7 @@ public:
 
 	EXPORT virtual void Victorious(void);
 	EXPORT void FlyAcrossRoom(void);
+	EXPORT void TossGrenade(void);
 	EXPORT void GetYankedBySpidey(void);
 	EXPORT void ProcessMessages(void);
 	EXPORT void GettingGrabbed(void);
