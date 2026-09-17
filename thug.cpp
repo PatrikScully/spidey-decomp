@@ -50,6 +50,68 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// Native comparison passed 40000 cases; instruction matching is pending.
+// 0x4D6330
+// Original shot frame table at 0x552170 contains 6 and 11.
+i32 CThug::DrawLaserSiteThingieForAlternateModel(i32 checkPlayer)
+{
+	static const u16 shotFrames[2] = {6, 11};
+	CVector direction;
+	SLineInfo line;
+	i32 firstHit = 0;
+	i32 secondHit = 0;
+	if (this->mAnim != 8)
+		return 0;
+	i32 shot = (static_cast<u32>(this->field_218) >> 12) & 7;
+	if (shot >= 2 || this->mFrame < shotFrames[shot])
+		return 0;
+	if (!this->field_338)
+		this->field_344 = 66;
+	SFX_PlayPos((Rnd(2) + 9) | 0x8000, &this->mPos, 500);
+	shot++;
+	this->field_218 = (this->field_218 & ~0x7000) | (shot << 12);
+	if (shot == 1)
+	{
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&line.StartCoords), this, 2);
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&line.EndCoords), this, 3);
+		direction = line.EndCoords - line.StartCoords;
+		line.StartCoords += direction * 3;
+		direction <<= 8;
+		line.EndCoords += direction;
+		this->AutoAimPlease(&line.StartCoords, &line.EndCoords, &direction, this->field_380);
+		firstHit = this->LaserCollision(&line, &direction, checkPlayer);
+		if (firstHit == -1)
+			return secondHit;
+		if (firstHit)
+			new CThugBulletTracer(line.StartCoords, line.EndCoords, G_MECHLIST_PLAYER, 0, 255, 128, 0);
+		else
+			new CThugBulletTracer(line.StartCoords, line.EndCoords, 0, &line, 255, 128, 0);
+		if (this->mFlags & 0x8000)
+			return firstHit | secondHit;
+		new CGlowFlash(&line.StartCoords, 5, 255, 128, 0, 32, 0, 0, 0, 0, 50, 20, 1, 20, 10, 40, 20, 10, 1);
+	}
+	else
+	{
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&line.StartCoords), this, 0);
+		M3dUtils_GetHookPosition(reinterpret_cast<VECTOR*>(&line.EndCoords), this, 1);
+		direction = line.EndCoords - line.StartCoords;
+		line.StartCoords += direction * 3;
+		direction <<= 8;
+		line.EndCoords += direction;
+		this->AutoAimPlease(&line.StartCoords, &line.EndCoords, &direction, this->field_380);
+		secondHit = this->LaserCollision(&line, &direction, checkPlayer);
+		if (secondHit == -1)
+			return firstHit;
+		new CThugBulletTracer(line.StartCoords, line.EndCoords, 0, &line, 255, 128, 0);
+		if (this->mFlags & 0x8000)
+			return firstHit | secondHit;
+		new CGlowFlash(&line.StartCoords, 5, 255, 128, 0, 32, 0, 0, 0, 0, 50, 20, 1, 20, 10, 40, 20, 10, 1);
+	}
+	this->SetUpLaser(&this->field_3A0, &line.StartCoords, &line.EndCoords);
+	return firstHit | secondHit;
+}
+
+// @NotOk
 // 0x4D5FA0. Native comparison passed 30000 cases.
 // Instruction matching and full AI runtime checks are pending.
 i32 CThug::LaserCollision(SLineInfo* line, CVector* direction, i32 checkPlayer)
