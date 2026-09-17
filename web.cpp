@@ -1003,6 +1003,45 @@ CSwinger::~CSwinger(void)
 }
 
 // @Ok
+// Original 0x4F6F00. The third argument is a full 32-byte MATRIX.
+CSwinger::CSwinger(CVector* anchor, i32 length, const MATRIX* basis, CVector* direction)
+{
+	this->field_7C = G_TIMER_RELATED;
+	this->mLength = length;
+	this->mAnchor = *anchor;
+	this->mBaseMatrix = *basis;
+	this->mForward.vx = this->mBaseMatrix.m[0][2];
+	this->mForward.vy = this->mBaseMatrix.m[1][2];
+	this->mForward.vz = this->mBaseMatrix.m[2][2];
+	this->mSide.vx = this->mBaseMatrix.m[0][0];
+	this->mSide.vy = this->mBaseMatrix.m[1][0];
+	this->mSide.vz = this->mBaseMatrix.m[2][0];
+	this->mDown.vx = -this->mBaseMatrix.m[0][1];
+	this->mDown.vy = -this->mBaseMatrix.m[1][1];
+	this->mDown.vz = -this->mBaseMatrix.m[2][1];
+	CVector end = this->mAnchor - (this->mLength * this->mDown);
+	CKnottedWeb* line = new CKnottedWeb(this->mAnchor, end);
+	this->mpLine = line;
+	line->SetStartAndEnd(&this->mAnchor, &end);
+	Utils_CalcUnitFacingCamera(&this->mAnchor, &end, reinterpret_cast<CVector*>(&line->field_58));
+	for (i32 i = 0; i < line->mNumSegs; i++)
+		line->mpExtraSegs[i].mPos = line->mSegs[i].End;
+	line->field_6D = 1;
+	line->field_74 = this->field_F8;
+	i32 dot = ((this->mDown.vx * direction->vx) >> 12)
+		+ ((this->mDown.vy * direction->vy) >> 12)
+		+ ((this->mDown.vz * direction->vz) >> 12);
+	this->mAngles.vx = Utils_ArcCos(dot < 0 ? -dot : dot);
+	this->field_180 = 2048;
+	this->mPhaseSpeed = (120 - M3dMaths_SquareRoot0(this->mLength)) / 2;
+	this->field_18C = this->mLength / 128;
+	if (this->field_18C < 3)
+		this->field_18C = 3;
+	this->field_18C = 9;
+	this->field_188 = this->mLength / 8;
+}
+
+// @Ok
 // Original 0x4F7310, vtable slot 2.
 void CSwinger::AI(void)
 {

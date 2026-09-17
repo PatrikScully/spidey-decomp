@@ -234,6 +234,7 @@ EXPORT void Web_Trap(CSuper *pSuper, i32 a2);
 class CSwinger : public CBody
 {
 	public:
+		EXPORT CSwinger(CVector*, i32, const MATRIX*, CVector*);
 		EXPORT virtual ~CSwinger(void);
 		EXPORT virtual void DeleteStuff(void);
 		EXPORT virtual void AI(void);
