@@ -1358,6 +1358,36 @@ void CWeb::SwitchToBlob(void)
 }
 
 // @Ok
+// @Matching
+// Original 0x4F6170. Follow a trapped target's drawn hook when available.
+void CWeb::SetFirePos(CVector& pos)
+{
+	this->field_108 = pos;
+	CSuper* target = static_cast<CSuper*>(Mem_RecoverPointer(
+		reinterpret_cast<SHandle*>(&this->field_134)));
+	if (target)
+	{
+		CTrapWebEffect* trap = static_cast<CTrapWebEffect*>(Mem_RecoverPointer(&target->field_104));
+		if (trap && trap->field_42C)
+			this->field_114 = trap->field_44->mSegs[Rnd(trap->field_42C)].End;
+	}
+	print_if_false(this->field_12C != 0, "No line?");
+	CVector* end = &this->field_114;
+	CVector* start = &this->field_108;
+	CKnottedWeb* line = this->field_12C;
+	line->SetStartAndEnd(end, start);
+	Utils_CalcUnitFacingCamera(end, start, reinterpret_cast<CVector*>(&line->field_58));
+	i32* extra = reinterpret_cast<i32*>(line->mpExtraSegs);
+	i32* seg = reinterpret_cast<i32*>(line->mSegs);
+	for (i32 i = 0; i < line->mNumSegs; extra += 7, seg += 4, i++)
+	{
+		extra[0] = seg[0];
+		extra[1] = seg[1];
+		extra[2] = seg[2];
+	}
+}
+
+// @Ok
 // verified against the IDA disasm of 0x4F5DA0 (136 bytes). Chains
 // CBody::CBody, zeroes the two anchor vectors and the three scalars behind
 // them, links the new web into G_WEB_LIST and stamps mType 1. Everything else

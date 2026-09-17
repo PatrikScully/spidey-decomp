@@ -170,6 +170,7 @@ class CWeb : public CBody
 	public:
 
 		EXPORT CWeb(void);
+		EXPORT void SetFirePos(CVector&);
 
 		PADDING(4);
 
