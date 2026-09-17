@@ -154,10 +154,14 @@ static void gCSwinger_SetRenderEnd(void *pSwinger, CVector &pos)
 // @Bogus
 static void gCWeb_SetFirePos(CWeb *pWeb, CVector &pos)
 {
+#ifdef SPIDEY_STANDALONE
+	pWeb->SetFirePos(pos);
+#else
 	typedef void (SWebFirePosAdapter::*memfn)(CVector&);
 	union { memfn m; void *p; } u;
 	u.p = (void*)0x004F6170;
 	(reinterpret_cast<SWebFirePosAdapter*>(pWeb)->*u.m)(pos);
+#endif
 }
 
 // CWeb::SwitchToSnap (0x004F69F0, real name in the maintainer's IDB, and the
