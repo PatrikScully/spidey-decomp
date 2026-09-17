@@ -17,6 +17,7 @@ public:
 	EXPORT virtual ~CThug();
 
 	EXPORT void DoAISwitchLogic(void);
+	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
 	EXPORT void AttackPlayer(void);
 	EXPORT i32 TooCloseToSpidey(void);
@@ -96,7 +97,8 @@ public:
 	SHandle mHandle;
 	SHandle mHandleTwo;
 
-	PADDING(0x36C-0x35C-sizeof(SHandle));
+	i32 field_364;
+	PADDING(4);
 
 	// Written by CThug::DetermineFightState (0x4d9ab1): a poll interval,
 	// set to 3/15/31 depending on distance to the player. Carved out of
@@ -126,7 +128,7 @@ public:
 
 	i32 field_3B0;
 
-	PADDING(0x3B8-0x3B0-4);
+	i32 field_3B4;
 
 	i32 field_3B8;
 

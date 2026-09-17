@@ -48,6 +48,238 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D4680. Native comparison passed 60000 cases.
+// Instruction matching and full AI runtime checks are pending.
+void CThug::ChasePlayer(i32 depth)
+{
+	SMoveToInfo move;
+	CVector target;
+	CVector hit;
+	i32 result;
+	i32 height;
+	i32 timed;
+	u32 distance;
+	print_if_false(depth < 5, "Matt needs to fix ChasePlayer.");
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			this->mCBodyFlags |= 0x10;
+			this->field_364 = 0;
+			if (this->mType != 304 && this->field_3B4 > 600)
+			{
+				this->field_31C.bothFlags = 11;
+				this->dumbAssPad = 0;
+				break;
+			}
+			// fall through
+		case 1:
+			this->field_310 = 160;
+			if (this->SetAnimMode(1, 1))
+			{
+				this->dumbAssPad = 5;
+				break;
+			}
+			this->SetAttackFlags();
+			this->GetAttackPosition(&target);
+			if (this->DistanceToPlayer(2) < (this->mType != 304 ? 190 : 140))
+			{
+				height = this->mPos.vy - G_MECHLIST_PLAYER->mPos.vy;
+				if (my_abs(height) < 204800)
+				{
+					if (this->field_3BC & 1)
+						goto attackOrGuard;
+					this->dumbAssPad = 20;
+					break;
+				}
+			}
+			result = this->PathCheck(&this->mPos, &target, &hit, 55);
+			if (result == 2)
+			{
+				if (Utils_CrapDist(hit, G_MECHLIST_PLAYER->mPos)
+					< (this->mType != 304 ? 190 : 140))
+				{
+					target = hit;
+					goto addTarget;
+				}
+			}
+			else if (!result)
+			{
+addTarget:
+				if (this->AddPointToPath(&target, 0)
+					|| (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(&target, 0)))
+				{
+					this->mAcc.vz = 0;
+					this->field_27C.vz = 0;
+					goto advance;
+				}
+			}
+			++this->field_3BE;
+			this->Neutralize();
+			if (G_MECHLIST_PLAYER->field_57C || !(this->field_3BC & 1)
+				|| G_THUG_LIST || G_MECHLIST_PLAYER->mHeldObject
+				|| this->DistanceToPlayer(2) <= 650 || this->DistanceToPlayer(2) >= 1500)
+				this->field_31C.bothFlags = 1;
+			else
+			{
+				G_THUG_LIST = this;
+				this->field_31C.bothFlags = 9;
+			}
+			this->dumbAssPad = 0;
+			this->ClearAttackFlags();
+			break;
+		case 2:
+			print_if_false(this->field_1F0 != 0, "What, no waypoint in cache?");
+			move.field_0 = this->field_1A8[this->field_1F0];
+			move.field_C = this->mType != 304 ? 144 : 192;
+			move.field_10 = 70;
+			move.field_14 = 193;
+			new CAIProc_MoveTo(this, &move, 1);
+advance:
+			++this->dumbAssPad;
+			if (this->field_31C.bothFlags == 4)
+				this->ChasePlayer(depth + 1);
+			break;
+		case 3:
+			if ((this->field_3BC & 1)
+				&& this->DistanceToPlayer(0) < (this->mType != 304 ? 190 : 140))
+			{
+				this->MarkAIProcList(1, 0, 0);
+				this->mAcc.vz = 0;
+				this->mAcc.vy = 0;
+				this->mAcc.vx = 0;
+				this->field_31C.bothFlags = 5;
+				this->dumbAssPad = 0;
+				break;
+			}
+			this->RunAppropriateAnim();
+			if (this->field_288 & 1)
+			{
+				this->field_288 &= ~1;
+				goto advance;
+			}
+			if (this->field_1F8++ <= 6)
+			{
+				timed = 0;
+				if (this->DistanceToPlayer(2) >= (this->mType != 304 ? 285 : 210))
+					break;
+			}
+			else
+				timed = 1;
+			this->SetAttackFlags();
+			if (this->DistanceToPlayer(2) < 800)
+			{
+				if (timed)
+					++this->field_364;
+				if (this->field_364 >= 6)
+				{
+					--this->field_364;
+					if (!G_MECHLIST_PLAYER->field_57C && !G_THUG_LIST && !G_MECHLIST_PLAYER->mHeldObject)
+						goto shoot;
+				}
+			}
+			if (!(this->field_3BC & 1))
+				break;
+			if (this->DistanceToPlayer(2) < (this->mType != 304 ? 190 : 140))
+			{
+				height = this->mPos.vy - G_MECHLIST_PLAYER->mPos.vy;
+				if (my_abs(height) < 204800)
+				{
+attackOrGuard:
+					this->dumbAssPad = 0;
+					this->field_31C.bothFlags = G_MECHLIST_PLAYER->field_57C ? 1 : 5;
+					break;
+				}
+			}
+			distance = Utils_CrapXZDist(this->mPos, this->field_1A8[this->field_1F0]);
+			if (this->DistanceToPlayer(2) + 50 < distance)
+			{
+				if (G_MECHLIST_PLAYER->field_57C || G_MECHLIST_PLAYER->mHeldObject
+					|| G_THUG_LIST || this->DistanceToPlayer(2) <= 650 || Rnd(5))
+				{
+					this->MarkAIProcList(1, 0, 0);
+					this->mAcc.vz = 0;
+					this->mAcc.vy = 0;
+					this->mAcc.vx = 0;
+					this->dumbAssPad = 1;
+				}
+				else
+					goto shoot;
+			}
+			this->field_1F8 = 0;
+			break;
+		case 4:
+			if ((this->field_3BC & 1)
+				&& this->DistanceToPlayer(2) < (this->mType != 304 ? 190 : 140))
+			{
+				height = this->mPos.vy - G_MECHLIST_PLAYER->mPos.vy;
+				if (my_abs(height) < 204800)
+				{
+					this->Neutralize();
+					this->RunAnim(this->field_298.Bytes[0], 0, -1);
+					this->dumbAssPad = 0;
+					this->field_31C.bothFlags = G_MECHLIST_PLAYER->field_57C ? 1 : 5;
+					break;
+				}
+			}
+			this->CycleAnim(this->field_298.Bytes[0], 1);
+			this->dumbAssPad = 20;
+			break;
+		case 5:
+			if (this->mAnimFinished)
+				this->dumbAssPad = 1;
+			break;
+		case 20:
+			this->field_310 = 160;
+			this->Neutralize();
+			this->CycleAnim(this->field_298.Bytes[0], 1);
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 100, 200);
+			++this->dumbAssPad;
+			break;
+		case 21:
+			this->field_3AC |= 4;
+			if (this->field_288 & 2)
+			{
+				this->field_1F8 = 30;
+				this->field_288 &= ~2;
+				this->dumbAssPad = 22;
+			}
+			break;
+		case 22:
+			this->RunTimer(&this->field_1F8);
+			if (this->field_1F8)
+			{
+				this->field_3AC |= 4;
+				break;
+			}
+			if (G_MECHLIST_PLAYER->field_57C || G_THUG_LIST || this->DistanceToPlayer(2) >= 2000
+				|| G_MECHLIST_PLAYER->mHeldObject)
+			{
+				this->dumbAssPad = 1;
+				break;
+			}
+			if (this->DistanceToPlayer(2) <= 650)
+			{
+				height = G_MECHLIST_PLAYER->mPos.vy - this->field_29C - 0x4000;
+				if (my_abs(height) <= 409600)
+				{
+					this->dumbAssPad = 1;
+					break;
+				}
+			}
+shoot:
+			this->Neutralize();
+			G_THUG_LIST = this;
+			this->field_31C.bothFlags = 9;
+			this->dumbAssPad = 0;
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
+// @NotOk
 // 0x4D34A0. Native comparison passed 50000 cases.
 // Instruction matching is pending.
 i32 CThug::SetAttackFlags(void)
