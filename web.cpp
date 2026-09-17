@@ -1003,6 +1003,39 @@ CSwinger::~CSwinger(void)
 }
 
 // @Ok
+// Original 0x4F7310, vtable slot 2.
+void CSwinger::AI(void)
+{
+	CKnottedWeb* line = static_cast<CKnottedWeb*>(this->mpLine);
+	if (this->field_F8 && line)
+		line->field_74 = 1;
+	this->field_180 += (G_TIMER_RELATED - this->field_7C) * this->mPhaseSpeed;
+	this->field_7C = G_TIMER_RELATED;
+	SVECTOR angles;
+	angles.vx = (this->mAngles.vx * (G_RCOSSIN_TBL[this->field_180 & 0xFFF].cos + 4096)) >> 12;
+	angles.vy = 0;
+	angles.vz = this->mAngles.vz;
+	MATRIX rotation;
+	M3dMaths_RotMatrixYXZ(&angles, &rotation);
+	this->mSwingMatrix = this->mBaseMatrix;
+	MulMatrix(&this->mSwingMatrix, &rotation);
+	this->mForward.vx = this->mSwingMatrix.m[0][2];
+	this->mForward.vy = this->mSwingMatrix.m[1][2];
+	this->mForward.vz = this->mSwingMatrix.m[2][2];
+	this->mSide.vx = this->mSwingMatrix.m[0][0];
+	this->mSide.vy = this->mSwingMatrix.m[1][0];
+	this->mSide.vz = this->mSwingMatrix.m[2][0];
+	this->mDown.vx = -this->mSwingMatrix.m[0][1];
+	this->mDown.vy = -this->mSwingMatrix.m[1][1];
+	this->mDown.vz = -this->mSwingMatrix.m[2][1];
+	CVector end = this->mAnchor - (this->mLength * this->mDown);
+	line->SetStartAndEnd(&this->mAnchor, &end);
+	Utils_CalcUnitFacingCamera(&this->mAnchor, &end, reinterpret_cast<CVector*>(&line->field_58));
+	for (i32 i = 0; i < line->mNumSegs; i++)
+		line->mpExtraSegs[i].mPos = line->mSegs[i].End;
+}
+
+// @Ok
 // Original 0x4F74B0.
 void CSwinger::SetRenderEnd(CVector& end)
 {

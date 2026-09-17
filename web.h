@@ -236,6 +236,7 @@ class CSwinger : public CBody
 	public:
 		EXPORT virtual ~CSwinger(void);
 		EXPORT virtual void DeleteStuff(void);
+		EXPORT virtual void AI(void);
 		EXPORT void SetRenderEnd(CVector&);
 		EXPORT i32 IsOneTimeToDie(void);
 		EXPORT void SetSpideyAnimFrame(i32);
