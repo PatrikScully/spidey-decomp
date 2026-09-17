@@ -81,6 +81,7 @@ class CKnottedWeb : public CGPolyLine
 public:
 
 	EXPORT CKnottedWeb(const CVector&, const CVector&);
+	EXPORT virtual ~CKnottedWeb(void);
 
 	i32 field_58;
 	i32 field_5C;

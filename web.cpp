@@ -977,6 +977,16 @@ CWebFrag::CWebFrag(
 }
 
 // @Ok
+// Original 0x4F9060.
+CKnottedWeb::~CKnottedWeb(void)
+{
+	delete this->mpInnerLine;
+	for (i32 i = 0; i < this->mNumSegs; i++)
+		delete this->mpExtraSegs[i].mpBit;
+	Mem_Delete(this->mpExtraSegs);
+}
+
+// @Ok
 int CSwinger::IsOneTimeToDie(void)
 {
 	return this->field_180 >= 4096;
