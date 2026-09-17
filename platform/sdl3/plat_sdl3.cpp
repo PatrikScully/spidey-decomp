@@ -14,6 +14,11 @@
 
 #include "../plat.h"
 #include "../../DXsound.h"   // SDXPolyField
+#include "../../PCInput.h"
+#include "../../spidey.h"
+#include "../../camera.h"
+#include "../../ps2m3d.h"
+#include "../../front.h"
 
 #include <SDL3/SDL.h>
 #include <GL/gl.h>
@@ -650,6 +655,31 @@ void Plat_InputPollKeyboard(u8 dikState[256])
 	{
 		if (keys[sc] && gDikTable[sc])
 			dikState[gDikTable[sc]] = 0x80;
+	}
+
+	// Modern bindings feed the current action map, so remapped actions work too.
+	const char* modern = getenv("SPIDEY_MODERN_CONTROLS");
+	if ((!modern || atoi(modern)) && G_MECHLIST_PLAYER &&
+		!G_MECHLIST_PLAYER->field_1AC && !gWideScreen && !gPausedMenu &&
+		SDL_GetKeyboardFocus() == gWindow)
+	{
+		const SDL_Scancode source[] = { SDL_SCANCODE_W, SDL_SCANCODE_S,
+			SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_SPACE, SDL_SCANCODE_F,
+			SDL_SCANCODE_Q, SDL_SCANCODE_E, SDL_SCANCODE_LSHIFT };
+		const u32 action[] = { 1, 2, 4, 8, 0x10, 0x20, 0x100, 0x200, 0x400 };
+		for (i32 j = 0; j < 9; ++j)
+		{
+			u32 key;
+			PCINPUT_GetKeyboardMappingForAction(action[j], &key);
+			if (keys[source[j]] && key < 256)
+				dikState[key] = 0x80;
+		}
+		SDL_MouseButtonFlags mouse = SDL_GetMouseState(0, 0);
+		u32 punch, web;
+		PCINPUT_GetKeyboardMappingForAction(0x40, &punch);
+		PCINPUT_GetKeyboardMappingForAction(0x80, &web);
+		if ((mouse & SDL_BUTTON_LMASK) && punch < 256) dikState[punch] = 0x80;
+		if ((mouse & SDL_BUTTON_RMASK) && web < 256) dikState[web] = 0x80;
 	}
 
 	if (gScriptCount < 0)
