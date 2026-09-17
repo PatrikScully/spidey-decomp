@@ -51,6 +51,161 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D7C30
+// Native comparison passed 80000 cases; instruction matching is pending.
+void CThug::FlyAcrossRoom(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			this->field_3AC |= 2;
+			this->ClearAttackFlags();
+			this->field_310 = 0;
+			if (this->mHealth <= 0)
+				this->mCBodyFlags &= ~0x10;
+			i32 previous = this->field_318;
+			if (previous == 1 || previous == 2 || previous == 6 || previous == 23)
+				this->mRMinor = 0;
+			i32 speed = this->mVel.vx;
+			if (my_abs(speed) <= my_abs(this->mVel.vz))
+				speed = this->mVel.vz;
+			if (my_abs(speed * this->field_1F8) < 819200)
+				this->RunAppropriateHitAnim();
+			else
+				this->CycleAnim(this->mType == 304 ? 33 : 15, 1);
+			if (this->mHealth <= 0 || ((this->field_218 & 0x80000) && this->mHealth <= 50))
+				this->dumbAssPad = 10;
+			else
+				this->dumbAssPad = 1;
+			break;
+		}
+		case 1:
+		{
+			this->field_3AC |= 2;
+			this->field_2FC = this->mPos;
+			this->DoPhysics(1);
+			CBody* body = this->StruckGameObject(0, 1);
+			if (body)
+			{
+				this->field_2A8 &= ~0x10;
+				if (this->field_1F8 > 1 && (body->mType == 312 || body->mType == 304))
+					this->ElasticCollision(this, body, this->mVel, this->field_1F8 >> 1);
+			}
+			if (!this->field_1F8 || body)
+			{
+				this->mVel.vz = this->mVel.vy = this->mVel.vx = 0;
+				if (this->ShouldFall(200, 389120))
+				{
+					this->field_31C.bothFlags = 22;
+					this->dumbAssPad = 0;
+					this->field_218 &= ~2;
+				}
+				else
+				{
+					this->SetHeight(1, 100, 600);
+					this->PlayHitWallSound();
+					switch (this->field_318)
+					{
+						case 1:
+						case 2:
+						case 6:
+						case 23:
+						case 25:
+							this->CheckFallBack();
+							this->RunAnim((this->field_2A8 & 0x10) ? 26 : (this->mType == 304 ? 14 : 19), 0, -1);
+							this->dumbAssPad++;
+							break;
+						default:
+							if (this->mAnim == (this->mType == 304 ? 33 : 15))
+							{
+								this->field_31C.bothFlags = 28;
+								this->dumbAssPad = 0;
+							}
+							this->dumbAssPad = 5;
+							break;
+					}
+				}
+			}
+			break;
+		}
+		case 2:
+			this->SetHeight(0, 100, 600);
+			if (this->mAnimFinished)
+			{
+				this->mRMinor = this->mType == 304 ? 96 : 150;
+				this->RunAnim(this->mType == 304 ? 15 : 20, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 3:
+			this->SetHeight(0, 100, 600);
+			if (this->mFrame < 22)
+				this->field_3AC |= 1;
+			if (this->mAnimFinished)
+			{
+				if (this->mHealth > 0)
+				{
+					this->mCBodyFlags |= 0x10;
+					this->field_31C.bothFlags = 2;
+					this->dumbAssPad = 0;
+				}
+				else
+					this->DieAfterFlyingAcrossRoom();
+			}
+			break;
+		case 5:
+			if (this->SetHeight(0, 100, 600) == 2 && this->mAnimFinished)
+			{
+				this->field_31C.bothFlags = 28;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 10:
+		{
+			this->field_2FC = this->mPos;
+			this->DoPhysics(1);
+			this->field_3AC |= 2;
+			if (this->field_218 & 0x40000)
+			{
+				this->mAngles.vx += static_cast<i16>(this->field_80) * static_cast<i16>(this->field_324);
+				this->mAngles.vy += static_cast<i16>(this->field_80) * static_cast<i16>(this->field_328);
+			}
+			// The PC entry saves ECX in its local stack slot. At 0x4D825A
+			// the collision-delay path reloads that saved this pointer.
+			CBody* body = this;
+			if (!this->field_340)
+			{
+				body = this->StruckGameObject(0, 1);
+				if (body)
+				{
+					this->field_2A8 &= ~0x10;
+					if (this->field_1F8 > 1 && (body->mType == 312 || body->mType == 304))
+					{
+						this->ElasticCollision(this, body, this->mVel, this->field_1F8 >> 1);
+						if (this->field_218 & 0x40000)
+						{
+							this->field_340 = 10;
+							body = 0;
+						}
+					}
+				}
+			}
+			if (!this->field_1F8 || body)
+			{
+				this->mVel.vz = this->mVel.vy = this->mVel.vx = 0;
+				this->mAngles.vx = 0;
+				this->DieAfterFlyingAcrossRoom();
+			}
+			break;
+		}
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
+// @NotOk
 // 0x4D85C0
 // Native comparison passed 60000 cases; instruction matching is pending.
 void CThug::GetYankedBySpidey(void)
