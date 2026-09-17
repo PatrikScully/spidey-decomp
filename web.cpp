@@ -1003,6 +1003,27 @@ CSwinger::~CSwinger(void)
 }
 
 // @Ok
+// Original 0x4F74B0.
+void CSwinger::SetRenderEnd(CVector& end)
+{
+	this->field_FC = end - this->mpLine->mSegs[this->mpLine->mNumSegs - 1].End;
+	CVector* anchor = &this->mAnchor;
+	CKnottedWeb* line = static_cast<CKnottedWeb*>(this->mpLine);
+	line->SetStartAndEnd(anchor, &end);
+	Utils_CalcUnitFacingCamera(anchor, &end, reinterpret_cast<CVector*>(&line->field_58));
+	i32* extra = reinterpret_cast<i32*>(line->mpExtraSegs);
+	i32* seg = reinterpret_cast<i32*>(line->mSegs);
+	for (i32 i = 0; i < line->mNumSegs; i++)
+	{
+		extra[0] = seg[0];
+		extra[1] = seg[1];
+		extra[2] = seg[2];
+		seg += 4;
+		extra += 7;
+	}
+}
+
+// @Ok
 int CSwinger::IsOneTimeToDie(void)
 {
 	return this->field_180 >= 4096;

@@ -236,22 +236,25 @@ class CSwinger : public CBody
 	public:
 		EXPORT virtual ~CSwinger(void);
 		EXPORT virtual void DeleteStuff(void);
+		EXPORT void SetRenderEnd(CVector&);
 		EXPORT i32 IsOneTimeToDie(void);
 		EXPORT void SetSpideyAnimFrame(i32);
 
 		PADDING(0xF8-0xF4);
-
 		i32 field_F8;
-
 		CVector field_FC;
-
-		PADDING(0x17C-0x108);
-
+		i32 mLength;
+		CVector mAnchor;
+		MATRIX mBaseMatrix;
+		MATRIX mSwingMatrix;
+		CVector mForward;
+		CVector mSide;
+		CVector mDown;
 		CGPolyLine *mpLine;
-
 		i32 field_180;
-
-		PADDING(0x190-0x180-4);
+		i32 mPhaseSpeed;
+		i32 field_188;
+		i32 field_18C;
 };
 
 // Called by CPlayer::CheckJumpingSmashKick to release the held web-swinging
