@@ -43,6 +43,7 @@ public:
 	EXPORT int CheckSightCone(int, int, int, int, CBody*);
 	EXPORT void ParseScript(u16*);
 	EXPORT void DoPhysics(int);
+	EXPORT void ElasticCollision(CBody*, CBody*, CVector&, i32);
 	EXPORT void Baddy_SendSignal(void);
 	EXPORT int SmackSpidey(int, CVector*, int, int);
 	EXPORT void RunAppropriateAnim(void);

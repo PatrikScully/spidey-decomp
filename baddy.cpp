@@ -23,6 +23,28 @@
 #include "panel.h"
 #include "simby.h"
 #include "spidey.h"
+
+// @Ok
+// @Matching
+// 0x404700
+void CBaddy::ElasticCollision(CBody* source, CBody* target, CVector& velocity, i32 strength)
+{
+	SHitInfo hit;
+	CVector direction;
+	if (target->mHealth > 0)
+	{
+		direction = target->mPos - (source->mPos - velocity * 2);
+		direction.vy = 0;
+		direction >>= 10;
+		VectorNormal(reinterpret_cast<VECTOR*>(&direction), reinterpret_cast<VECTOR*>(&direction));
+		hit.field_C = direction;
+		hit.field_1A = strength;
+		hit.field_18 = strength * velocity.Length();
+		hit.field_4 = 25;
+		hit.field_0 = 42;
+		target->Hit(&hit);
+	}
+}
 #ifdef SPIDEY_STANDALONE
 // headers of the real implementations behind the ExecuteCommand
 // forward-to-original helpers (standalone build only, see below)
