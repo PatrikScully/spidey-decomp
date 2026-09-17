@@ -714,13 +714,13 @@ void Plat_InputPollMouse(i32* dx, i32* dy, u8 buttons[3])
 		SDL_GetKeyboardFocus() == gWindow && SDL_GetWindowRelativeMouseMode(gWindow))
 	{
 		const char* value = getenv("SPIDEY_MOUSE_SENSITIVITY");
-		f32 sensitivity = value ? (f32)atof(value) : 2.0f;
+		f32 sensitivity = value ? (f32)atof(value) : 3.0f;
 		if (sensitivity < 0.1f) sensitivity = 0.1f;
 		if (sensitivity > 20.0f) sensitivity = 20.0f;
-		if (fx) camera->SetCamAngle((i16)(camera->field_236 - fx * sensitivity), 0);
+		if (fx) camera->SetCamAngle((i16)(camera->field_236 + fx * sensitivity), 0);
 		if (fy)
 		{
-			i32 height = camera->GetCamYDistance() + (i32)(fy * sensitivity);
+			i32 height = camera->GetCamYDistance() - (i32)(fy * sensitivity);
 			if (height < -600) height = -600;
 			if (height > 600) height = 600;
 			camera->SetCamYDistance((i16)height, 0);
