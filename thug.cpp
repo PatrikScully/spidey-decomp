@@ -9,6 +9,7 @@
 #include "ps2redbook.h"
 #include "spidey.h"
 #include "exp.h"
+#include "web.h"
 #include <cmath>
 #include <new>
 
@@ -46,6 +47,84 @@ extern SStateFlags gThugStateFlags;
 #endif
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
+
+// @NotOk
+// 0x4D78D0. Native comparison passed 40000 cases.
+// Instruction matching and full AI runtime checks are pending.
+void CThug::GetTrapped(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+		{
+			new CAIProc_StateSwitchSendMessage(this, 14);
+			CThug* buddy = reinterpret_cast<CThug*>(this->GetClosest(304, 0));
+			if (!buddy)
+				buddy = reinterpret_cast<CThug*>(this->GetClosest(312, 0));
+			if (buddy && !buddy->field_330)
+				new CMessage(this, buddy, 7, 0);
+			SFX_PlayPos(0x800E, &this->mPos, 0);
+			this->field_310 = 0;
+			this->ClearAttackFlags();
+			this->RunAnim(this->mType != 304 ? 14 : 16, 0, -1);
+			++this->dumbAssPad;
+			break;
+		}
+		case 1:
+			if (this->mAnimFinished)
+			{
+				this->field_364 = 0;
+				this->field_368 = 0;
+				this->field_1F8 = 5;
+				this->dumbAssPad = 2;
+				this->CycleAnim(this->mType != 304 ? 15 : 17, 1);
+				SFX_PlayPos((Rnd(2) + 43) | 0x8000, &this->mPos, 0);
+			}
+			break;
+		case 2:
+			if (this->field_368 > 0)
+				--this->field_368;
+			if (--this->field_1F8 <= 0)
+			{
+				CTrapWebEffect* web = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_104));
+				if (!web || web->field_44->mNumSegs == this->field_364)
+					++this->dumbAssPad;
+				else
+				{
+					this->field_368 += (8000 * (web->field_44->mNumSegs - this->field_364)) >> 12;
+					i32 strands = web->field_44->mNumSegs;
+					this->field_1F8 = 5;
+					this->field_364 = strands;
+					if (web->field_44->mNumSegs >= 80)
+					{
+						this->field_31C.bothFlags = 26;
+						this->dumbAssPad = 0;
+						this->SendDeathPulse();
+						this->mHealth = 0;
+						CPlayer* player = G_MECHLIST_PLAYER;
+						i32 value = player->field_528;
+						player->field_534 = 360;
+						player->field_52C = (value + 11) << 10;
+						this->field_218 |= 0xC0;
+					}
+				}
+			}
+			break;
+		case 3:
+			if (--this->field_368 <= 0)
+			{
+				CTrapWebEffect* web = reinterpret_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_104));
+				if (web)
+					web->Burst();
+				this->field_31C.bothFlags = 28;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
 
 // @Ok
 // @Matching

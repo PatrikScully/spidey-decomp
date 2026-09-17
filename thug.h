@@ -20,6 +20,7 @@ public:
 	EXPORT void SlideFromHit(i32, i32, CVector&);
 	EXPORT void DieThug(i32);
 	EXPORT void Fall(void);
+	EXPORT void GetTrapped(void);
 	EXPORT void GetWhippedLikeTheWhoreYouAre(void);
 	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
@@ -104,7 +105,7 @@ public:
 	SHandle mHandleTwo;
 
 	i32 field_364;
-	PADDING(4);
+	i32 field_368;
 
 	// Written by CThug::DetermineFightState (0x4d9ab1): a poll interval,
 	// set to 3/15/31 depending on distance to the player. Carved out of
