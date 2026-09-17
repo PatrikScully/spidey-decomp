@@ -2792,6 +2792,27 @@ void Thug_CreateThug(const u32 *stack, u32 *result)
 
 // @Ok
 // @Matching
+// 0x4D2660, shared with CCopBulletTracer::SetWidth.
+void CThugBulletTracer::SetWidth(void)
+{
+	print_if_false(this->mpRibbon && this->mpRibbon2, "NULL mpRibbon and mpRibbon2");
+
+	for (i32 i = 0; i < 5; i++)
+	{
+		this->mpRibbon->mpPoints[i].Width = (u16)(this->mMaxWidth) * 2 + Rnd(this->mMaxWidth);
+
+		this->mpRibbon2->mpPoints[i].Width = Rnd(this->mMaxWidth);
+	}
+
+
+	this->mpRibbon->mpPoints[0].Width = 0;
+	this->mpRibbon->mpPoints[4].Width = Rnd(this->mMaxWidth);
+	this->mpRibbon2->mpPoints[0].Width = 0;
+	this->mpRibbon2->mpPoints[4].Width = 0;
+}
+
+// @Ok
+// @Matching
 // 0x4D2F10
 void CreateThugRicochet(SLineInfo* line, u8 red, u8 green, u8 blue)
 {

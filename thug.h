@@ -149,6 +149,19 @@ public:
 	PADDING(1);
 };
 
+class CThugBulletTracer : public CNonRenderedBit
+{
+	public:
+		EXPORT CThugBulletTracer(const CVector&, const CVector&, CSuper*, SLineInfo*, u8, u8, u8);
+		EXPORT virtual ~CThugBulletTracer(void);
+		EXPORT virtual void Move(void);
+		EXPORT void SetWidth(void);
+
+		CGouraudRibbon* mpRibbon;
+		CGouraudRibbon* mpRibbon2;
+		u32 mMaxWidth;
+};
+
 class CThugLaserPing : public CQuadBit
 {
 	public:
