@@ -20,8 +20,8 @@ void MToQ(MATRIX const & a1, CQuat& a2)
 		a2.w = s >> 1;
 		i32 scale = 0x800000 / s;
 		a2.x = ((a1.m[1][2] - a1.m[2][1]) * scale) >> 12;
-		a2.y = ((a1.m[2][0] - a1.m[0][1]) * scale) >> 12;
-		a2.z = ((a1.m[0][2] - a1.m[1][0]) * scale) >> 12;
+		a2.y = ((a1.m[2][0] - a1.m[0][2]) * scale) >> 12;
+		a2.z = ((a1.m[0][1] - a1.m[1][0]) * scale) >> 12;
 		return;
 	}
 
