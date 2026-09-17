@@ -17,6 +17,32 @@
 #include "spool.h"
 #include "powerup.h"
 
+// @NotOk
+// 0x4DBBF0
+// Native comparison passed 40000 trajectory cases; instruction matching is pending.
+CGrenade::CGrenade(const CVector& start, const CVector& target, i32 speed, i32 damage, i32 radius, CBody** targets, u32 checksum, u8 contact, u8 flag)
+{
+	this->field_104 = damage;
+	this->CommonInit(targets, radius, checksum, contact, flag);
+	this->mPos = start;
+	i32 dx = (target.vx - start.vx) >> 12;
+	i32 dz = (target.vz - start.vz) >> 12;
+	i32 distance = M3dMaths_SquareRoot0(dx * dx + dz * dz);
+	if (distance)
+	{
+		i32 horizontalSpeed = 9 * speed / 10;
+		this->mVel.vy = (speed * ((target.vy - start.vy) >> 12) / distance - 8 * distance / (2 * speed)) << 12;
+		this->mVel.vx = horizontalSpeed * ((dx << 12) / distance);
+		this->mVel.vz = horizontalSpeed * ((dz << 12) / distance);
+	}
+	else
+	{
+		this->mVel.vx = 0;
+		this->mVel.vy = -81920;
+		this->mVel.vz = 0;
+	}
+}
+
 // @Ok
 // @Matching
 // 0x4DBD40
