@@ -51,6 +51,210 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D85C0
+// Native comparison passed 60000 cases; instruction matching is pending.
+void CThug::GetYankedBySpidey(void)
+{
+	if (!(G_ATTACK_RELATED & 3))
+	{
+		CThug* buddy = static_cast<CThug*>(this->GetClosest(304, 0));
+		if (!buddy)
+			buddy = static_cast<CThug*>(this->GetClosest(312, 0));
+		if (buddy && !buddy->field_330)
+			new CMessage(this, buddy, 7, 0);
+	}
+	if (this->field_31C.bothFlags == 14)
+	{
+		this->mPos.vy += 6144 * this->field_350;
+		this->mAngles.vx -= 8 * this->field_350;
+	}
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_310 = 0;
+			this->ClearAttackFlags();
+			this->mCBodyFlags &= ~0x10;
+			this->field_218 &= ~0x20;
+			this->field_350 = 0;
+			new CAIProc_StateSwitchSendMessage(this, 19);
+			this->RunAnim(this->mType == 304 ? 18 : 16, 0, -1);
+			if (this->field_218 & 0x100)
+				this->dumbAssPad = 9;
+			else
+				this->dumbAssPad = this->mHealth <= 0 ? 10 : 1;
+			this->field_3AC |= 2;
+			break;
+		case 1:
+		{
+			this->field_3AC |= 2;
+			if (this->mAnimFinished)
+				this->CycleAnim(this->mType == 304 ? 36 : 17, 1);
+			CBody* body = 0;
+			this->field_2FC = this->mPos;
+			this->DoPhysics(1);
+			if (this->field_1F8 > 0)
+			{
+				body = this->StruckGameObject(1, 1);
+				if (!body)
+					break;
+				if (body)
+				{
+					if (body->mType == 50)
+					{
+						SHitInfo hit;
+						hit.field_0 = 2;
+						hit.field_4 = 10;
+						this->mPos = this->field_2FC;
+						body->Hit(&hit);
+					}
+					if (this->field_1F8 > 1 && (body->mType == 312 || body->mType == 304))
+						this->ElasticCollision(this, body, this->mVel, this->field_1F8 >> 1);
+				}
+			}
+			if (this->field_1F8 <= 0 || body)
+			{
+				this->field_31C.bothFlags = 15;
+				this->mVel.vz = this->mVel.vy = this->mVel.vx = 0;
+				if (this->ShouldFall(200, 389120))
+				{
+					this->field_31C.bothFlags = 22;
+					this->dumbAssPad = 0;
+					this->field_218 &= ~2;
+				}
+				else
+				{
+					if (body)
+					{
+						this->field_1F8 = 0;
+						this->field_218 |= 0x400;
+					}
+					this->PlayHitWallSound();
+					this->RunAnim(this->mType == 304 ? 14 : 19, 0, -1);
+					this->dumbAssPad++;
+				}
+			}
+			break;
+		}
+		case 2:
+			if (this->mAnimFinished)
+			{
+				this->RunAnim(this->mType == 304 ? 15 : 20, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->mCBodyFlags |= 0x10;
+				this->field_31C.bothFlags = 2;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 9:
+			this->field_3AC |= 2;
+			if (this->mHealth <= 0)
+				this->field_2A8 |= 0x10;
+			this->dumbAssPad = 10;
+			// Fall through.
+		case 10:
+		{
+			if (this->mAnimFinished)
+				this->CycleAnim(this->mType == 304 ? 36 : 17, 1);
+			this->field_2FC = this->mPos;
+			this->DoPhysics(1);
+			CBody* body = this->StruckGameObject(1, 1);
+			if (body)
+			{
+				this->field_2A8 &= ~0x10;
+				if (body->mType == 50)
+				{
+					SHitInfo hit;
+					this->mPos = this->field_2FC;
+					hit.field_0 = 2;
+					hit.field_4 = 10;
+					body->Hit(&hit);
+				}
+				if (this->field_1F8 > 1 && (body->mType == 312 || body->mType == 304))
+					this->ElasticCollision(this, body, this->mVel, this->field_1F8 >> 1);
+			}
+			if (this->field_1F8 <= 0 || body)
+			{
+				this->field_31C.bothFlags = 15;
+				this->mVel.vz = this->mVel.vy = this->mVel.vx = 0;
+				if (this->ShouldFall(200, 389120))
+				{
+					this->field_31C.bothFlags = 22;
+					this->dumbAssPad = 0;
+					this->field_218 &= ~2;
+				}
+				else if (body || !(this->field_218 & 0x100))
+				{
+					this->field_1F8 = 0;
+					this->field_218 |= 0x400;
+					if (this->mHealth <= 0)
+					{
+						this->PlayHitWallSound();
+						this->field_31C.bothFlags = 26;
+						this->dumbAssPad = 0;
+					}
+					else
+					{
+						this->PlayHitWallSound();
+						SFX_PlayPos(0x801B, &this->mPos, 0);
+						this->RunAnim(this->mType == 304 ? 14 : 19, 0, -1);
+						this->dumbAssPad = 2;
+					}
+				}
+				else
+				{
+					this->RunAnim(this->mType == 304 ? 37 : 32, 0, -1);
+					this->dumbAssPad = 11;
+				}
+			}
+			break;
+		}
+		case 11:
+			if (this->mAnimFinished)
+			{
+				if (this->mHealth <= 0)
+				{
+					this->field_31C.bothFlags = 26;
+					this->dumbAssPad = 0;
+				}
+				else
+				{
+					this->RunAnim(this->mType == 304 ? 15 : 20, 0, -1);
+					this->dumbAssPad = 3;
+				}
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+	if (this->field_31C.bothFlags == 14 && this->dumbAssPad > 0)
+	{
+		if (this->field_218 & 0x20)
+		{
+			if (this->field_350)
+			{
+				this->field_350 -= this->field_80;
+				if (this->field_350 < 0)
+					this->field_350 = 0;
+			}
+		}
+		else
+		{
+			this->field_350 += this->field_80;
+			if (this->field_350 >= 40)
+				this->field_218 |= 0x20;
+		}
+		this->mPos.vy -= 6144 * this->field_350;
+		this->mAngles.vx += 8 * this->field_350;
+	}
+}
+
+// @NotOk
 // 0x4DABF0
 // Native comparison passed 60000 message sequences; instruction matching is pending.
 void CThug::ProcessMessages(void)
