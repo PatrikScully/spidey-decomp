@@ -1548,6 +1548,94 @@ EXPORT u8 gThugTypeRelatedFirstThird[1];
 
 EXPORT i32 gThugTypeRelatedSecondFirst[2] = { 0x6040504, 0 };
 
+// The four animation modes start at these named tables in the PC exe.
+// Each mode contains the two words copied to field_294 and field_298.
+#define G_THUG_ANIM_MODES (reinterpret_cast<i32 (*)[2]>(0x00552178))
+#define G_HENCHMAN_ANIM_MODES (reinterpret_cast<i32 (*)[2]>(0x00552198))
+
+// @Ok
+// @Matching
+// 0x4D3190
+i32 CThug::SetAnimMode(i32 mode, i32 playAnim)
+{
+	u8 oldMode = this->field_298.Bytes[1];
+	i32 anim = -1;
+	if (this->field_298.Bytes[1] != mode)
+	{
+
+		if (this->mType == 304)
+		{
+			switch (mode)
+			{
+				case 0:
+					if (oldMode == 1)
+						anim = 0;
+					else if (oldMode == 2)
+						anim = 27;
+					this->field_294.Int = G_THUG_ANIM_MODES[0][0];
+					this->field_298.Int = G_THUG_ANIM_MODES[0][1];
+					break;
+				case 1:
+					this->field_294.Int = G_THUG_ANIM_MODES[1][0];
+					this->field_298.Int = G_THUG_ANIM_MODES[1][1];
+					break;
+				case 2:
+					if (oldMode == 1)
+						anim = 8;
+					else if (oldMode == 3)
+						anim = 21;
+					this->field_294.Int = G_THUG_ANIM_MODES[2][0];
+					this->field_298.Int = G_THUG_ANIM_MODES[2][1];
+					break;
+				case 3:
+					if (oldMode == 2)
+						anim = 19;
+					this->field_294.Int = G_THUG_ANIM_MODES[3][0];
+					this->field_298.Int = G_THUG_ANIM_MODES[3][1];
+					break;
+				default:
+					print_if_false(0, "Unknown anim mode.");
+					break;
+			}
+		}
+		else
+		{
+			switch (mode)
+			{
+				case 0:
+					if (oldMode == 1 || oldMode == 2)
+						anim = 3;
+					this->field_294.Int = G_HENCHMAN_ANIM_MODES[0][0];
+					this->field_298.Int = G_HENCHMAN_ANIM_MODES[0][1];
+					break;
+				case 1:
+					this->field_294.Int = G_HENCHMAN_ANIM_MODES[1][0];
+					this->field_298.Int = G_HENCHMAN_ANIM_MODES[1][1];
+					break;
+				case 2:
+					this->field_294.Int = G_HENCHMAN_ANIM_MODES[2][0];
+					this->field_298.Int = G_HENCHMAN_ANIM_MODES[2][1];
+					break;
+				case 3:
+					this->field_294.Int = G_HENCHMAN_ANIM_MODES[3][0];
+					this->field_298.Int = G_HENCHMAN_ANIM_MODES[3][1];
+					break;
+				default:
+					print_if_false(0, "Unknown anim mode.");
+					break;
+			}
+		}
+
+		if (anim != -1)
+		{
+			if (playAnim)
+				this->RunAnim(anim, 0, -1);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 // @FIXME - add data
 #ifndef SPIDEY_STANDALONE
 EXPORT u8 gThugTypeRelatedSecondThird[1];
