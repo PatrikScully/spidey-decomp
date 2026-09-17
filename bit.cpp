@@ -2892,10 +2892,11 @@ void DisplayGPolyLineList(void** a1)
 			u32 color2 = (alpha << 24) | ((flags2 & 0xFF) << 16) |
 					(((flags2 >> 8) & 0xFF) << 8) | ((flags2 >> 16) & 0xFF);
 
-			f32 rawPos1[3];
+			f32 rawPos1[4];
 			rawPos1[0] = (f32)pt1.vx / 4096.0f;
 			rawPos1[1] = (f32)pt1.vy / 4096.0f;
 			rawPos1[2] = (f32)pt1.vz / 4096.0f;
+			rawPos1[3] = 1.0f;
 
 			f32 xf1[4];
 			Algebra_Transform4(xf1, rawPos1);
@@ -2909,10 +2910,11 @@ void DisplayGPolyLineList(void** a1)
 			f32 screen1X = xf1[0] * invZ1;
 			f32 screen1Y = xf1[1] * invZ1;
 
-			f32 rawPos2[3];
+			f32 rawPos2[4];
 			rawPos2[0] = (f32)pt2.vx / 4096.0f;
 			rawPos2[1] = (f32)pt2.vy / 4096.0f;
 			rawPos2[2] = (f32)pt2.vz / 4096.0f;
+			rawPos2[3] = 1.0f;
 
 			f32 xf2[4];
 			Algebra_Transform4(xf2, rawPos2);
