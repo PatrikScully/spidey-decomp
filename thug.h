@@ -9,6 +9,28 @@
 #include "m3dutils.h"
 #include "bit2.h"
 #include "reloc.h"
+#include "bullet.h"
+
+class CGrenade : public CBullet
+{
+public:
+	EXPORT void CommonInit(CBody**, i32, u32, u8, u8);
+	EXPORT CGrenade(const CVector&, const CVector&, i32, i32, i32, CBody**, u32, u8, u8);
+	EXPORT virtual ~CGrenade(void);
+	EXPORT virtual void AI(void);
+
+	PADDING(4);
+	i32 mStartTime;
+	u8 mSettled;
+	PADDING(3);
+	CGlow* mpGlow;
+	u8 mRed;
+	u8 mGreen;
+	u8 mBlue;
+	u8 mExplodeOnContact;
+	u8 field_15C;
+	PADDING(3);
+};
 
 class CThug : public CBaddy {
 public:

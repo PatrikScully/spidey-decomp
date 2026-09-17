@@ -48,7 +48,7 @@ class CBullet : public CBody
 		// damage falloff (field_104 * dist / field_106).
 		u16 field_106;
 
-		PADDING(0x10C-0x108);
+		HitId field_108;
 
 		void* field_10C;
 

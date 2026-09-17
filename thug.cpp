@@ -14,6 +14,56 @@
 #include "camera.h"
 #include <cmath>
 #include <new>
+#include "spool.h"
+
+// Shared region byte used by Spidey_SwapSuit and the default grenade model.
+static u8* const gGrenadeDefaultRegion = reinterpret_cast<u8*>(0x006B4678);
+
+// @NotOk
+// 0x4DB9C0
+// Native comparison passed 40000 cases; operand matching is pending.
+void CGrenade::CommonInit(CBody** targets, i32 radius, u32 checksum, u8 explodeOnContact, u8 flag)
+{
+	this->AttachTo(&G_BULLET_LIST);
+	if (checksum)
+	{
+		this->mModel = Spool_GetModel(checksum, G_OBJ_FILE_REGION);
+		this->mRegion = G_OBJ_FILE_REGION;
+	}
+	else
+	{
+		this->mModel = Spool_GetModel(0x51E46AAF, *gGrenadeDefaultRegion);
+		this->mRegion = *gGrenadeDefaultRegion;
+	}
+	this->field_108 = ALWAYS_TWENTY_NINE;
+	this->mStartTime = G_TIMER_RELATED;
+	if (Trig_GetLevelId() == 0x1101)
+		this->mStartTime += Rnd(480) + 120;
+	this->mExplodeOnContact = explodeOnContact;
+	i32 type = (targets != reinterpret_cast<CBody**>(&G_MECHLIST_PLAYER)) + 63;
+	this->field_106 = radius;
+	this->mShadowThreshold = 300;
+	this->field_100 = targets;
+	this->field_15C = flag;
+	this->mType = type;
+	if (targets == reinterpret_cast<CBody**>(&G_MECHLIST_PLAYER))
+		this->mCBodyFlags &= ~0x10;
+	this->mpGlow = new CGlow(4, 2);
+	this->mpGlow->mSkipTriangles = 1;
+	this->mpGlow->SetFringeWidth(0, 16);
+	this->mpGlow->SetFringeWidth(1, 16);
+	this->mpGlow->SetCentreRGB(0, 0, 0);
+	this->mpGlow->SetRGB(0, 0, 0);
+	this->mRed = 100;
+	this->mGreen = 50;
+	this->mBlue = 0;
+	this->mpGlow->SetFringeRGB(0, 100, 50, 0);
+	this->mpGlow->SetFringeRGB(1, 0, 0, 0);
+	this->mpGlow->mAngle = Rnd(1024);
+	this->mpGlow->SetRadius(0);
+	this->mpGlow->SetPos(this->mPos);
+	this->mpGlow->mProtected = 1;
+}
 
 // 0x00682C50 and 0x00682C54 in the exe (gGlobalThug / gThugList in the
 // maintainer's IDB). CThug_Hit, CThug_Fall, CThug_ProcessMessages and
@@ -4273,6 +4323,15 @@ i32 CThug::TryAddingCollidePointToPath(CVector* pVector)
 
 
 void validate_CThug(void){
+
+	VALIDATE_SIZE(CGrenade, 0x160);
+	VALIDATE(CGrenade, field_108, 0x108);
+	VALIDATE(CGrenade, mStartTime, 0x14C);
+	VALIDATE(CGrenade, mSettled, 0x150);
+	VALIDATE(CGrenade, mpGlow, 0x154);
+	VALIDATE(CGrenade, mRed, 0x158);
+	VALIDATE(CGrenade, mExplodeOnContact, 0x15B);
+	VALIDATE(CGrenade, field_15C, 0x15C);
 
 	VALIDATE_SIZE(CThug, 0x3C0);
 
