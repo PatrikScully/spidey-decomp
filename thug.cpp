@@ -48,6 +48,120 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @Ok
+// @Matching
+// 0x4D5720
+void CThug::AttackPlayer(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_310 = 160;
+			this->Neutralize();
+			this->SetAnimMode(3, 1);
+			this->mCBodyFlags |= 0x10;
+			++this->dumbAssPad;
+			// fall through
+		case 1:
+			if (G_MECHLIST_PLAYER->mHealth <= 0)
+			{
+				this->field_31C.bothFlags = 28;
+				this->dumbAssPad = 0;
+				break;
+			}
+			new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 100, 0);
+			this->field_1F8 = 120;
+			++this->dumbAssPad;
+			break;
+		case 2:
+			if (this->mAnimFinished)
+				this->CycleAnim(this->field_298.Bytes[0], 1);
+			if (!this->RunTimer(&this->field_1F8))
+			{
+				this->Neutralize();
+				this->field_31C.bothFlags = 4;
+				this->dumbAssPad = 0;
+				return;
+			}
+			if (this->field_288 & 2)
+			{
+				this->field_288 &= ~2;
+				this->MarkAIProcList(0, 256, 0);
+				this->mAngVel.vy = 0;
+				this->mAngAcc.vy = 0;
+				if (this->mType == 304)
+				{
+					if (this->DistanceToPlayer(0) < 120)
+					{
+						this->RunAnim(5, 0, -1);
+						new CAIProc_MonitorAttack(this, 0, 136, 5, 0);
+					}
+					else if (Rnd(2))
+					{
+						this->RunAnim(22, 0, -1);
+						new CAIProc_MonitorAttack(this, 4, 10, 10, 0);
+					}
+					else
+					{
+						this->RunAnim(23, 0, -1);
+						new CAIProc_MonitorAttack(this, 3, 4096, 7, 0);
+					}
+				}
+				else
+				{
+					this->RunAnim(13, 0, -1);
+					new CAIProc_MonitorAttack(this, 11, 23552, 10, 0);
+				}
+				SFX_PlayPos(0x8014, &this->mPos, 0);
+				++this->dumbAssPad;
+			}
+			return;
+		case 3:
+			if (!this->mAnimFinished)
+				return;
+			this->CycleAnim(this->field_298.Bytes[0], 1);
+			++this->dumbAssPad;
+			if (this->TooCloseToSpidey())
+				return;
+			// fall through
+		case 4:
+		{
+			if (this->DistanceToPlayer(2) < (this->mType != 304 ? 190 : 140))
+			{
+				i32 height = this->mPos.vy - G_MECHLIST_PLAYER->mPos.vy;
+				if (my_abs(height) < 204800)
+				{
+					this->dumbAssPad = 1;
+					break;
+				}
+			}
+			this->field_31C.bothFlags = 28;
+			this->dumbAssPad = 0;
+			break;
+		}
+		case 5:
+			if (this->mAnimFinished)
+				this->CycleAnim(this->field_298.Bytes[0], 1);
+			if (this->field_230-- <= 0)
+				this->dumbAssPad = 1;
+			break;
+		case 6:
+			if (this->mAnimFinished)
+				this->CycleAnim(this->field_294.Bytes[1], 1);
+			if (--this->field_1F8)
+			{
+				this->mPos.vx += (this->field_1A8[this->field_1F0].vx - this->mPos.vx) >> 1;
+				this->mPos.vz += (this->field_1A8[this->field_1F0].vz - this->mPos.vz) >> 1;
+			}
+			else
+				this->dumbAssPad = 4;
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
+// @Ok
 // @AlmostMatching: EBX/EDX swap in four offset calculations after 16
 // expression and temporary variants. Same instruction count and branches.
 // 0x4D5540. Native comparison passed 8800 cases.
