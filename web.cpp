@@ -1370,6 +1370,72 @@ CWeb::~CWeb(void)
 }
 
 // @Ok
+// Original 0x4F6C10. Update a loose web, then retire its line and chain.
+void CWeb::AI(void)
+{
+	this->EveryFrame();
+	if (this->field_104 == 2)
+	{
+		this->field_100 += static_cast<u16>(this->field_80);
+		if (this->field_100 > 64)
+		{
+			this->field_104 = 4;
+			delete this->field_12C;
+			this->field_12C = 0;
+			delete reinterpret_cast<CChain*>(this->field_130);
+			this->field_130 = 0;
+		}
+		else
+		{
+			CBody* target = static_cast<CBody*>(Mem_RecoverPointer(
+				reinterpret_cast<SHandle*>(&this->field_134)));
+			if (target)
+			{
+				CVector pos;
+				if (target->mType == 401)
+					static_cast<CManipOb*>(target)->GetAttachPoint(&pos);
+				else
+					pos = target->mPos;
+				CChain* chain = reinterpret_cast<CChain*>(this->field_130);
+				print_if_false(chain != 0, "No chain?");
+				chain->Move(&pos);
+				print_if_false(this->field_12C != 0, "No line?");
+				this->field_12C->mStart = chain->field_4[0].field_0;
+				SChainData* point = &chain->field_4[1];
+				for (i32 i = 0; i < this->field_12C->mNumSegs; i++, point++)
+					this->field_12C->mSegs[i].End = point->field_0;
+			}
+		}
+	}
+	else if (this->field_104 == 3)
+	{
+		this->field_100 += static_cast<u16>(this->field_80);
+		if (this->field_100 > 16)
+		{
+			this->field_104 = 4;
+			delete this->field_12C;
+			this->field_12C = 0;
+		}
+		else
+		{
+			CVector delta = this->field_114 - this->field_108;
+			delta = (delta >> 12) * G_RCOSSIN_TBL[(this->field_100 << 6) & 0xFFF].cos;
+			print_if_false(this->field_12C != 0, "No line?");
+			CVector start = this->field_114 - delta;
+			CKnottedWeb* line = this->field_12C;
+			line->SetStartAndEnd(&start, &this->field_114);
+			Utils_CalcUnitFacingCamera(&start, &this->field_114, reinterpret_cast<CVector*>(&line->field_58));
+			for (i32 i = 0; i < line->mNumSegs; i++)
+				line->mpExtraSegs[i].mPos = line->mSegs[i].End;
+		}
+	}
+	else if (this->field_104 == 4)
+	{
+		this->mCBodyFlags |= 0x40;
+	}
+}
+
+// @Ok
 // @Matching
 // Original 0x4F6170. Follow a trapped target's drawn hook when available.
 void CWeb::SetFirePos(CVector& pos)

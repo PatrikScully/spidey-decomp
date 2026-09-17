@@ -171,6 +171,7 @@ class CWeb : public CBody
 
 		EXPORT CWeb(void);
 		EXPORT virtual ~CWeb(void);
+		EXPORT virtual void AI(void);
 		EXPORT void SetFirePos(CVector&);
 
 		PADDING(4);
