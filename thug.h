@@ -152,6 +152,7 @@ public:
 class CThugLaserPing : public CQuadBit
 {
 	public:
+		EXPORT CThugLaserPing(const CVector&, CVector&, CVector&, u8, u8, u8);
 		EXPORT virtual void Move(void);
 
 		i32 field_84;

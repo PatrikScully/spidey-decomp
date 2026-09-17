@@ -2792,6 +2792,23 @@ void Thug_CreateThug(const u32 *stack, u32 *result)
 
 // @Ok
 // @Matching
+// 0x4D2DD0
+CThugLaserPing::CThugLaserPing(
+		const CVector& position, CVector& direction, CVector& perpendicular,
+		u8 red, u8 green, u8 blue)
+{
+	this->field_88 = position;
+	this->field_94 = direction;
+	this->field_A0 = perpendicular;
+	this->field_84 = 0;
+	this->SetTexture(10, 1);
+	this->SetSemiTransparent();
+	this->SetTint(red, green, blue);
+	this->mType = 34;
+}
+
+// @Ok
+// @Matching
 // 0x428B90, shared with CCopLaserPing::Move in the original binary.
 void CThugLaserPing::Move(void)
 {
