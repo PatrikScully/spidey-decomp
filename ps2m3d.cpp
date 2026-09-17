@@ -664,8 +664,11 @@ void M3d_Render(void* pList)
 			0);
 	M3dAsm_BoundingSpherePreprocessing(pItem);
 #ifdef SPIDEY_STANDALONE
-	// debugging aid: SPIDEY_NOSPHERECULL=1 draws everything
-	if (getenv("SPIDEY_NOSPHERECULL"))
+	// Submit all loaded environment geometry by default. Keep near-plane
+	// clipping and region validity checks in the polygon renderer.
+	const char* fullMapOption = getenv("SPIDEY_FULL_MAP");
+	bool fullMap = pItem == *gM3dEnviroList && (!fullMapOption || atoi(fullMapOption) != 0);
+	if (fullMap || getenv("SPIDEY_NOSPHERECULL"))
 		for (CItem* p = pItem; p; p = p->mNextItem)
 			p->mFlags &= ~0x8000;
 #endif
@@ -860,7 +863,11 @@ void M3d_Render(void* pList)
 		u8 *pViewport = G_VIEW_CLIP_INFO;
 
 		// level of detail
-		if (G_LOWGRAPHICS == 0)
+		if (G_LOWGRAPHICS == 0
+#ifdef SPIDEY_STANDALONE
+			&& !fullMap
+#endif
+			)
 		{
 			i32 zoom = *reinterpret_cast<u16*>(pViewport + 0x0E);
 			while (position.vz > pModel->zMax * zoom / 191)
@@ -883,7 +890,11 @@ void M3d_Render(void* pList)
 		}
 
 		// ran out of LODs and it is still too far away: drop the item
-		if (G_LOWGRAPHICS == 0)
+		if (G_LOWGRAPHICS == 0
+#ifdef SPIDEY_STANDALONE
+			&& !fullMap
+#endif
+			)
 		{
 			i32 zoom = *reinterpret_cast<u16*>(pViewport + 0x0E);
 			if (position.vz > pModel->zMax * zoom / 191 && pModel->NextLOD == 0xFFFF)
