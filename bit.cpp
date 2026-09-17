@@ -1651,10 +1651,27 @@ static u8 * const gRevisitInitTwo = (u8*)0x654F54;
 // the triangle winding - i.e. front face then back face of the same quad.
 void DisplayQuadBitList(void** a1)
 {
-	RefreshGfxMatrix();
+	u8*& screenScratch = *reinterpret_cast<u8**>(0x00628618);
+	u8*& viewScratch = *reinterpret_cast<u8**>(0x00654F54);
+	*reinterpret_cast<i32*>(viewScratch + 4) = 0;
+	*reinterpret_cast<i32*>(viewScratch + 12) = 0;
+	*reinterpret_cast<i32*>(viewScratch + 20) = 0;
+	*reinterpret_cast<i32*>(viewScratch + 28) = 0;
+
 
 	i32 savedRenderState = G_QUADBIT_RENDER_STATE;
 	G_QUADBIT_RENDER_STATE = (i32)0xFFFF0000;
+	i32 cameraZ = gCameraViewPos->vz;
+	i32 cameraX = gCameraViewPos->vx;
+	i32 cameraY = gCameraViewPos->vy;
+	for (i32 row = 1; row < 17; row += 4)
+	{
+		gFrameProjMatrix[row - 1] = gCameraBasisMatrix[row - 1];
+		gFrameProjMatrix[row] = gCameraBasisMatrix[row];
+		gFrameProjMatrix[row + 1] = gCameraBasisMatrix[row + 1];
+		gFrameProjMatrix[row + 2] = gCameraBasisMatrix[row + 2];
+	}
+
 
 	CQuadBit* pBit = reinterpret_cast<CQuadBit*>(*a1);
 	while (pBit)
@@ -1668,14 +1685,15 @@ void DisplayQuadBitList(void** a1)
 		f32 screenX[4];
 		f32 screenY[4];
 		f32 invZ[4];
+
 		i32 i;
 
-		for (i = 0; i < 4; i++)
+		// The original projects the four corners separately.
 		{
 			VECTOR relPos;
-			relPos.vx = (corners[i].vx >> 12) - gCameraViewPos->vx;
-			relPos.vy = (corners[i].vy >> 12) - gCameraViewPos->vy;
-			relPos.vz = (corners[i].vz >> 12) - gCameraViewPos->vz;
+			relPos.vx = (corners[0].vx >> 12) - cameraX;
+			relPos.vy = (corners[0].vy >> 12) - cameraY;
+			relPos.vz = (corners[0].vz >> 12) - cameraZ;
 
 			gte_ldlv0(&relPos);
 			gte_rtps();
@@ -1688,23 +1706,24 @@ void DisplayQuadBitList(void** a1)
 			i16 sx = (i16)sxy;
 			i16 sy = (i16)(sxy >> 16);
 
-			u8* rec1 = gRevisitInitOne + i * 8;
+			u8* rec1 = screenScratch + 0;
 			*(i16*)(rec1 + 0) = sx;
 			*(i16*)(rec1 + 2) = sy;
 			*(i16*)(rec1 + 4) = (i16)stlv.vz;
 			*(i16*)(rec1 + 6) = -256;
 
-			u8* rec2 = gRevisitInitTwo + i * 8;
+			u8* rec2 = viewScratch + 0;
 			*(i16*)(rec2 + 0) = (i16)stlv.vx;
 			*(i16*)(rec2 + 2) = (i16)stlv.vy;
 
-			screenX[i] = (f32)(i16)stlv.vx;
-			screenY[i] = (f32)(i16)stlv.vy;
+			screenX[0] = (f32)(i16)stlv.vx;
+			screenY[0] = (f32)(i16)stlv.vy;
 
-			f32 rawPos[3];
-			rawPos[0] = (f32)corners[i].vx / 4096.0f;
-			rawPos[1] = (f32)corners[i].vy / 4096.0f;
-			rawPos[2] = (f32)corners[i].vz / 4096.0f;
+			f32 rawPos[4];
+			rawPos[0] = (f32)corners[0].vx / 4096.0f;
+			rawPos[1] = (f32)corners[0].vy / 4096.0f;
+			rawPos[2] = (f32)corners[0].vz / 4096.0f;
+			rawPos[3] = 1.0f;
 
 			f32 xf[4];
 			Algebra_Transform4(xf, rawPos);
@@ -1718,7 +1737,157 @@ void DisplayQuadBitList(void** a1)
 			if (stlv.vz < 100)
 				iz = -1.0f;
 
-			invZ[i] = iz * 1.03f;
+			invZ[0] = iz * 1.03f;
+		}
+		{
+			VECTOR relPos;
+			relPos.vx = (corners[1].vx >> 12) - cameraX;
+			relPos.vy = (corners[1].vy >> 12) - cameraY;
+			relPos.vz = (corners[1].vz >> 12) - cameraZ;
+
+			gte_ldlv0(&relPos);
+			gte_rtps();
+
+			VECTOR stlv;
+			gte_stlvnl(&stlv);
+
+			i32 sxy;
+			gte_stsxy(&sxy);
+			i16 sx = (i16)sxy;
+			i16 sy = (i16)(sxy >> 16);
+
+			u8* rec1 = screenScratch + 8;
+			*(i16*)(rec1 + 0) = sx;
+			*(i16*)(rec1 + 2) = sy;
+			*(i16*)(rec1 + 4) = (i16)stlv.vz;
+			*(i16*)(rec1 + 6) = -256;
+
+			u8* rec2 = viewScratch + 8;
+			*(i16*)(rec2 + 0) = (i16)stlv.vx;
+			*(i16*)(rec2 + 2) = (i16)stlv.vy;
+
+			screenX[1] = (f32)(i16)stlv.vx;
+			screenY[1] = (f32)(i16)stlv.vy;
+
+			f32 rawPos[4];
+			rawPos[0] = (f32)corners[1].vx / 4096.0f;
+			rawPos[1] = (f32)corners[1].vy / 4096.0f;
+			rawPos[2] = (f32)corners[1].vz / 4096.0f;
+			rawPos[3] = 1.0f;
+
+			f32 xf[4];
+			Algebra_Transform4(xf, rawPos);
+
+			f32 iz;
+			if (fabsf(xf[3]) > 0.00000001f)
+				iz = 1.0f / xf[3];
+			else
+				iz = -1.0e12f;
+
+			if (stlv.vz < 100)
+				iz = -1.0f;
+
+			invZ[1] = iz * 1.03f;
+		}
+		{
+			VECTOR relPos;
+			relPos.vx = (corners[2].vx >> 12) - cameraX;
+			relPos.vy = (corners[2].vy >> 12) - cameraY;
+			relPos.vz = (corners[2].vz >> 12) - cameraZ;
+
+			gte_ldlv0(&relPos);
+			gte_rtps();
+
+			VECTOR stlv;
+			gte_stlvnl(&stlv);
+
+			i32 sxy;
+			gte_stsxy(&sxy);
+			i16 sx = (i16)sxy;
+			i16 sy = (i16)(sxy >> 16);
+
+			u8* rec1 = screenScratch + 16;
+			*(i16*)(rec1 + 0) = sx;
+			*(i16*)(rec1 + 2) = sy;
+			*(i16*)(rec1 + 4) = (i16)stlv.vz;
+			*(i16*)(rec1 + 6) = -256;
+
+			u8* rec2 = viewScratch + 16;
+			*(i16*)(rec2 + 0) = (i16)stlv.vx;
+			*(i16*)(rec2 + 2) = (i16)stlv.vy;
+
+			screenX[2] = (f32)(i16)stlv.vx;
+			screenY[2] = (f32)(i16)stlv.vy;
+
+			f32 rawPos[4];
+			rawPos[0] = (f32)corners[2].vx / 4096.0f;
+			rawPos[1] = (f32)corners[2].vy / 4096.0f;
+			rawPos[2] = (f32)corners[2].vz / 4096.0f;
+			rawPos[3] = 1.0f;
+
+			f32 xf[4];
+			Algebra_Transform4(xf, rawPos);
+
+			f32 iz;
+			if (fabsf(xf[3]) > 0.00000001f)
+				iz = 1.0f / xf[3];
+			else
+				iz = -1.0e12f;
+
+			if (stlv.vz < 100)
+				iz = -1.0f;
+
+			invZ[2] = iz * 1.03f;
+		}
+		{
+			VECTOR relPos;
+			relPos.vx = (corners[3].vx >> 12) - cameraX;
+			relPos.vy = (corners[3].vy >> 12) - cameraY;
+			relPos.vz = (corners[3].vz >> 12) - cameraZ;
+
+			gte_ldlv0(&relPos);
+			gte_rtps();
+
+			VECTOR stlv;
+			gte_stlvnl(&stlv);
+
+			i32 sxy;
+			gte_stsxy(&sxy);
+			i16 sx = (i16)sxy;
+			i16 sy = (i16)(sxy >> 16);
+
+			u8* rec1 = screenScratch + 24;
+			*(i16*)(rec1 + 0) = sx;
+			*(i16*)(rec1 + 2) = sy;
+			*(i16*)(rec1 + 4) = (i16)stlv.vz;
+			*(i16*)(rec1 + 6) = -256;
+
+			u8* rec2 = viewScratch + 24;
+			*(i16*)(rec2 + 0) = (i16)stlv.vx;
+			*(i16*)(rec2 + 2) = (i16)stlv.vy;
+
+			screenX[3] = (f32)(i16)stlv.vx;
+			screenY[3] = (f32)(i16)stlv.vy;
+
+			f32 rawPos[4];
+			rawPos[0] = (f32)corners[3].vx / 4096.0f;
+			rawPos[1] = (f32)corners[3].vy / 4096.0f;
+			rawPos[2] = (f32)corners[3].vz / 4096.0f;
+			rawPos[3] = 1.0f;
+
+			f32 xf[4];
+			Algebra_Transform4(xf, rawPos);
+
+			f32 iz;
+			if (fabsf(xf[3]) > 0.00000001f)
+				iz = 1.0f / xf[3];
+			else
+				iz = -1.0e12f;
+
+			if (stlv.vz < 100)
+				iz = -1.0f;
+
+			invZ[3] = iz * 1.03f;
 		}
 
 		f32 scaleX = G_GAME_RESOLUTION_X / (f32)G_XRES;
