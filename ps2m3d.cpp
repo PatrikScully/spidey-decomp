@@ -3169,7 +3169,17 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 	// four vector4d::operator= (0x402600) row copies in the original
 	memcpy(gM3dProjMatrix, &v95, sizeof(matrix4x4));
 
+#ifdef SPIDEY_STANDALONE
+	const char* fullMapOption = getenv("SPIDEY_FULL_MAP");
+	bool fullMap = !fullMapOption || atoi(fullMapOption) != 0;
+	// Keep all possible fixed-point world positions inside the depth range.
+	PCGfx_RenderInit(hither, fullMap ? 2097152.0f : yon, (f32)fieldE);
+	// Keep the original world-space offsets for decals and model parts.
+	extern f32 gRenderInitTwo[2];
+	gRenderInitTwo[1] = (yon - hither) / 4096.0f;
+#else
 	PCGfx_RenderInit(hither, yon, (f32)fieldE);
+#endif
 
 	static matrix4x4 * const gM3dFinalProjMatrix = (matrix4x4*)0x0056E6F8;
 	gsub_476A00(gM3dFinalProjMatrix, gM3dCamInvMatrix, gM3dProjMatrix);
@@ -3196,6 +3206,12 @@ void M3d_RenderSetup(SCamera *pCam, SViewport *pView, u32 *a3)
 		*gM3dProjScale = 255.0f / (*gM3dProjFar - *gM3dProjNear);
 	}
 	(void)result;
+#ifdef SPIDEY_STANDALONE
+	// Full-map mode also disables the original distance alpha fade.
+	// Keeping a model past the cull is not enough if its alpha becomes zero.
+	if (fullMap)
+		*gM3dFogFlag = 0;
+#endif
 }
 
 // @Ok
