@@ -10,6 +10,7 @@
 #include "spidey.h"
 #include "exp.h"
 #include "web.h"
+#include "m3dzone.h"
 #include <cmath>
 #include <new>
 
@@ -47,6 +48,55 @@ extern SStateFlags gThugStateFlags;
 #endif
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
+
+// @NotOk
+// 0x4D5FA0. Native comparison passed 30000 cases.
+// Instruction matching and full AI runtime checks are pending.
+i32 CThug::LaserCollision(SLineInfo* line, CVector* direction, i32 checkPlayer)
+{
+	SLineInfo* info = line;
+	i32 hitPlayer = 0;
+	CVector start = info->StartCoords;
+	CVector end = info->EndCoords;
+	info->EndCoords = start;
+	info->StartCoords = this->mPos;
+	M3dColij_InitLineInfo(info);
+	M3dZone_LineToItem(info, 1);
+	if (info->pItem)
+		return -1;
+	info->StartCoords = start;
+	info->EndCoords = end;
+	if (checkPlayer && Utils_CheckObjectCollision(&info->StartCoords, &info->EndCoords, G_MECHLIST_PLAYER, 0))
+	{
+		CVector toPlayer;
+		toPlayer = G_MECHLIST_PLAYER->mPos - info->StartCoords;
+		i32 distance = toPlayer.Length() << 12;
+		i32 scale = distance / direction->Length();
+		*direction >>= 12;
+		*direction *= scale;
+		hitPlayer = 1;
+		info->EndCoords = info->StartCoords + *direction;
+		// The original reuses the first argument slot for this shift at
+		// 0x4D60D1, then compares the hit item to that slot at 0x4D6138.
+		line = reinterpret_cast<SLineInfo*>(12);
+	}
+	M3dColij_InitLineInfo(info);
+	M3dZone_LineToItem(info, 1);
+	if (info->pItem && info->pItem != reinterpret_cast<CItem*>(line)
+		&& info->pItem != G_MECHLIST_PLAYER && info->pItem != this)
+	{
+		info->EndCoords = info->Position;
+		return 0;
+	}
+	if (!hitPlayer)
+	{
+		*direction >>= 3;
+		info->EndCoords = info->StartCoords + *direction;
+		return 0;
+	}
+	SFX_PlayPos(((this->mType != 304 ? 37 : 6) + Rnd(2)) | 0x8000, &G_MECHLIST_PLAYER->mPos, 0);
+	return hitPlayer;
+}
 
 // @NotOk
 // 0x4D5E40. Native comparison passed 40000 cases.

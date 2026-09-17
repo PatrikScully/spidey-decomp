@@ -23,6 +23,7 @@ public:
 	EXPORT void GetTrapped(void);
 	EXPORT void RotateTorsoToAimAtPlayer(CVector&);
 	EXPORT void AutoAimPlease(CVector*, CVector*, CVector*, i32);
+	EXPORT i32 LaserCollision(SLineInfo*, CVector*, i32);
 	EXPORT void GetWhippedLikeTheWhoreYouAre(void);
 	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
