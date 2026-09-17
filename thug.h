@@ -17,6 +17,7 @@ public:
 	EXPORT virtual ~CThug();
 
 	EXPORT virtual void Victorious(void);
+	EXPORT void ProcessMessages(void);
 	EXPORT void GettingGrabbed(void);
 	EXPORT void ShootPlayer(void);
 	EXPORT void ShootHostage(void);
@@ -108,7 +109,7 @@ public:
 	i32 field_348;
 
 	i32 field_34C;
-	PADDING(4);
+	i32 field_350;
 
 	SHandle mHandle;
 	SHandle mHandleTwo;

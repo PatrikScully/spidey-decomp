@@ -51,6 +51,147 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4DABF0
+// Native comparison passed 60000 message sequences; instruction matching is pending.
+void CThug::ProcessMessages(void)
+{
+	for (CMessage* message = this->pMessage; message; message = message->mNext)
+	{
+		if (this->field_31C.bothFlags != 26 || message->field_14 >= 11)
+		{
+			switch (message->field_14)
+			{
+				case 10:
+					if (this->field_31C.bothFlags == 2 || this->field_31C.bothFlags == 1)
+						this->RunToWhereTheActionIs(reinterpret_cast<CVector*>(message->mVects));
+					this->field_330 = 600;
+					break;
+				case 20:
+					if (this->field_31C.bothFlags != 26 && message->field_40++ < 8)
+					{
+						this->mFlags |= 4;
+						if (this->mpJoints)
+						{
+							if (message->field_40 >= 4)
+							{
+								this->mpJoints[3].Angles.vz >>= 1;
+								this->mpJoints[6 + (this->mType == 304)].Angles.vz >>= 1;
+							}
+							else
+							{
+								this->mpJoints[3].Angles.vz += 800 >> message->field_40;
+								this->mpJoints[6 + (this->mType == 304)].Angles.vz -= 800 >> message->field_40;
+							}
+						}
+						this->ApplyPose(reinterpret_cast<i16*>(this->mType == 304 ? 0x557CE4 : 0x557DBC));
+						continue;
+					}
+					if (!this->mpJoints)
+						this->ApplyPose(reinterpret_cast<i16*>(this->mType == 304 ? 0x557CE4 : 0x557DBC));
+					this->mpJoints[3].Angles.vz = 0;
+					this->mpJoints[6 + (this->mType == 304)].Angles.vz = 0;
+					this->mFlags &= ~4;
+					break;				case 19:
+					if (this->mAngles.vx)
+					{
+						this->mAngles.vx = 0;
+						this->mPos.vy += 6144 * this->field_350;
+					}
+					this->field_350 = 0;
+					this->field_218 &= ~0x20;
+					break;
+				case 13:
+					if (this->field_31C.bothFlags == 8 || (this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 1) || (this->field_2F0 & 0x10))
+					{
+						if (Mem_RecoverPointer(&message->mHandle))
+							new CMessage(this, reinterpret_cast<CBaddy*>(message->mHandle.pWhatever), 1, 0);
+						message->field_10 |= 1;
+					}
+					else
+						this->GetReadyToShootHostage(message);
+					continue;
+				case 16:
+					if (Mem_RecoverPointer(&this->mHandle))
+						new CMessage(this, reinterpret_cast<CBaddy*>(this->mHandle.pWhatever), 1, 0);
+					break;
+				case 17:
+					delete this->field_3A0;
+					this->field_3A0 = 0;
+					break;
+				case 12:
+					this->ApplyPose(reinterpret_cast<i16*>(this->mType == 304 ? 0x557CE4 : 0x557DBC));
+					if (this->field_31C.bothFlags != 26)
+					{
+						this->mpJoints[1].Angles.vz >>= 1;
+						if (this->mpJoints[1].Angles.vz > 1)
+							continue;
+					}
+					this->mpJoints[1].Angles.vz = 0;
+					if (G_THUG_LIST == this && this->field_31C.bothFlags != 9)
+						G_THUG_LIST = 0;
+					this->mFlags &= ~4;
+					break;
+				case 14:
+					if (!(this->field_218 & 0x40))
+					{
+						CTrapWebEffect* web = static_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_104));
+						if (web)
+							web->Burst();
+						SFX_PlayPos(0x802D, &this->mPos, 0);
+					}
+					break;
+				case 15:
+					if (this->field_31C.bothFlags == 14)
+						new CAIProc_StateSwitchSendMessage(this, 15);
+					else
+					{
+						CTrapWebEffect* web = static_cast<CTrapWebEffect*>(Mem_RecoverPointer(&this->field_10C));
+						if (web)
+							web->Burst();
+					}
+					break;
+				case 5:
+					if (this->field_31C.bothFlags != 18)
+					{
+						this->Neutralize();
+						this->field_31C.bothFlags = 18;
+						this->dumbAssPad = 0;
+					}
+					else
+					{
+						if (this->dumbAssPad != 3 && this->dumbAssPad != 2)
+							continue;
+						this->field_1F8 = 0;
+						this->dumbAssPad = 2;
+					}
+					break;
+				case 6:
+					if (this->field_31C.bothFlags != 19)
+					{
+						this->Neutralize();
+						SFX_PlayPos(0x800E, &this->mPos, 0);
+						this->field_31C.bothFlags = 19;
+						this->dumbAssPad = 0;
+						new CAIProc_StateSwitchSendMessage(this, 15);
+					}
+					break;
+				case 7:
+					if (this->field_31C.bothFlags == 2 || this->field_31C.bothFlags == 1)
+					{
+						CItem* item = static_cast<CItem*>(Mem_RecoverPointer(&message->mHandle));
+						if (item)
+							this->RunToWhereTheActionIs(&item->mPos);
+					}
+					break;
+
+			}
+		}
+		message->field_10 |= 1;
+	}
+	this->CleanUpMessages(0, 0);
+}
+
+// @NotOk
 // 0x4D96D0
 // Native comparison passed 40000 cases; instruction matching is pending.
 void CThug::GettingGrabbed(void)
@@ -3779,6 +3920,7 @@ void validate_CThug(void){
 	VALIDATE(CThug, field_32C, 0x32C);
 	VALIDATE(CThug, field_330, 0x330);
 	VALIDATE(CThug, field_348, 0x348);
+	VALIDATE(CThug, field_350, 0x350);
 	VALIDATE(CThug, field_33C, 0x33C);
 
 	VALIDATE(CThug, mHandle, 0x354);
