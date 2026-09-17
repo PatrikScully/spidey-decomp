@@ -48,6 +48,138 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @Ok
+// @AlmostMatching: the attack-mask AND/store use DL instead of AL,
+// adding one byte. Both have 281 instructions. Tried 12 mask expressions.
+// 0x4D5110. Native comparison passed 3584 patrol cases.
+void CThug::FollowWaypoints(void)
+{
+	SMoveToInfo move;
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			this->mCBodyFlags |= 0x10;
+			this->field_2A8 &= ~0x800;
+			this->field_310 = 0;
+			if (this->field_1F0)
+			{
+				this->field_2A8 &= ~0x10000000;
+				move.field_0 = this->field_1A8[this->field_1F0];
+				this->field_2F0 = (this->field_2F0 & ~2) | 1;
+			}
+			else
+			{
+				this->field_2A8 |= 0x10000000;
+				Trig_GetPosition(&move.field_0, this->field_1F4);
+				if (G_GLOBAL_THUG == this)
+					G_GLOBAL_THUG = 0;
+				else if (this->field_3BC & 2)
+					G_ATTACK_FLAG_RELATED &= ~this->field_3BD;
+				this->field_3BC = 0;
+				this->field_3BD = 0;
+			}
+			if (this->field_2F0 & 1)
+			{
+				this->SetAnimMode(1, 0);
+				move.field_10 = 70;
+				move.field_14 = 193;
+				move.field_C = this->mType != 304 ? 144 : 192;
+				this->field_2F0 &= ~1;
+			}
+			else
+			{
+				this->SetAnimMode(0, 1);
+				move.field_10 = 70;
+				move.field_14 = 500;
+				move.field_C = this->mType != 304 ? 48 : 120;
+			}
+			new CAIProc_MoveTo(this, &move, 1);
+			++this->dumbAssPad;
+			break;
+		case 1:
+			this->RunAppropriateAnim();
+			if (!(this->field_288 & 1))
+				return;
+			this->field_288 &= ~1;
+			if (this->field_31C.bothFlags == 24)
+			{
+				if (this->field_330)
+				{
+					this->field_31C.bothFlags = 23;
+					this->dumbAssPad = 0;
+					return;
+				}
+				this->field_31C.bothFlags = 2;
+			}
+			if (this->field_1F0)
+				--this->field_1F0;
+			else
+			{
+				this->field_218 &= ~1;
+				if (!this->GetNextWaypoint())
+				{
+					this->field_31C.bothFlags = 1;
+					this->dumbAssPad = 0;
+					return;
+				}
+			}
+			if (!this->field_330 || !this->DetermineFightState())
+			{
+				if (!(this->field_2F0 & 2))
+				{
+					this->dumbAssPad = 0;
+					return;
+				}
+				if (this->mType == 304)
+					this->RunAnim(10, 0, -1);
+				else
+				{
+					if (Rnd(2))
+					{
+						this->RunAnim(21, 0, -1);
+						this->dumbAssPad = 5;
+						return;
+					}
+					this->RunAnim(22, 0, -1);
+				}
+				++this->dumbAssPad;
+			}
+			break;
+		case 2:
+			if (this->mAnimFinished)
+			{
+				this->CycleAnim(this->mType == 304 ? 11 : 0, 1);
+				this->field_230 = 50;
+				++this->dumbAssPad;
+			}
+			break;
+		case 3:
+			if (this->field_230-- <= 0)
+			{
+				if (this->mType == 304)
+				{
+					this->RunAnim(12, 0, -1);
+					++this->dumbAssPad;
+				}
+				else
+					this->dumbAssPad = 0;
+			}
+			break;
+		case 4:
+			if (this->mAnimFinished)
+				this->dumbAssPad = 0;
+			break;
+		case 5:
+			if (this->MonitorSpitPlease())
+				this->dumbAssPad = 2;
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
+// @Ok
 // @Matching
 // 0x4D5720
 void CThug::AttackPlayer(void)

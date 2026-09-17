@@ -17,6 +17,7 @@ public:
 	EXPORT virtual ~CThug();
 
 	EXPORT void DoAISwitchLogic(void);
+	EXPORT void FollowWaypoints(void);
 	EXPORT void AttackPlayer(void);
 	EXPORT i32 TooCloseToSpidey(void);
 	EXPORT void GetAttackPosition(CVector*);
