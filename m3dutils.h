@@ -20,6 +20,7 @@ EXPORT void M3dUtils_BuildPose(CSuper*);
 // definition) through it, and every call site already passes a CSuper*,
 // so this is retyped to CSuper* here.
 EXPORT void M3dUtils_InterpolateVectors(i32, i32, u32*, CSuper*, i32, i32);
+EXPORT i32 M3dUtils_GetPartAngles(CSuper*, i32, CSVector*, CSVector*);
 EXPORT void M3dUtils_GetHookPosition(VECTOR*, CSuper*, int);
 EXPORT void M3dUtils_GetDynamicHookPosition(VECTOR*, CSuper*, SHook*);
 EXPORT void M3dUtils_ReadHooksPacket(CSuper*, void*);

@@ -360,6 +360,63 @@ void M3dUtils_InterpolateVectors(i32 NumVectors, i32 Interval, u32* pAnimFile, C
 }
 
 // @Ok
+// @AlmostMatching: 16 source variants tested. At 0x45411F/0x454125,
+// MSVC folds the fixed tween-buffer address into the index before shifting.
+// The original uses two LEAs; all other instructions match after relocation.
+// A real array reproduces those LEAs but does not read the game buffer.
+// 0x454040. Resolve a part's world rotation, with an optional local offset.
+i32 M3dUtils_GetPartAngles(CSuper* pSuper, i32 part, CSVector* pAngles, CSVector* pOffset)
+{
+	print_if_false(pSuper != 0, "NULL pSuper sent to M3dUtils_GetPartAngles");
+	print_if_false(pSuper->mRegion < 40, "Bad mRegion in pSuper");
+	print_if_false(G_PSXREGION[pSuper->mRegion].Usable != 0, "mRegion not usable");
+	SPSXRegion* pRegion = &G_PSXREGION[pSuper->mRegion];
+	i32 anim = pSuper->mAnim;
+	u32* pAnimFile = pRegion->pAnimFile;
+	i32 valid;
+	if (part < 0 || part >= pRegion->NumParts)
+		valid = 0;
+	else
+		valid = 1;
+	print_if_false(valid, "Bad part number sent to M3dUtils_GetPartAngles");
+	SMatrix* pPose;
+	if (pSuper->mFlags & 4)
+		pPose = pSuper->mpPoseBuffer + part;
+	else
+	{
+		u32 interval = pAnimFile[2 * anim + 2];
+		if (interval & 0xFFFF0000)
+		{
+			M3dUtils_InterpolateVectors(4, (interval >> 16) + 1, pAnimFile,
+					pSuper, part, pRegion->NumParts);
+			pPose = gTweenBuffer + part;
+		}
+		else
+			pPose = Decomp_GetAnimTransform(pSuper) + part;
+	}
+	MATRIX offset;
+	MATRIX world;
+	if (pOffset)
+		M3dMaths_RotMatrixYXZ(reinterpret_cast<SVECTOR*>(pOffset), &offset);
+	else
+		M3dMaths_SetIdentityRotation(&offset);
+	M3dMaths_CopyMat(&pSuper->mTransform, &world);
+	MulMatrix(&world, reinterpret_cast<MATRIX*>(pPose));
+	MulMatrix(&world, &offset);
+	i32 x = world.m[0][2];
+	i32 z = world.m[2][2];
+	i32 yx = world.m[1][0];
+	i32 yz = world.m[1][2];
+	i32 yy = world.m[1][1];
+	i32 length = M3dMaths_SquareRoot0(x * x + z * z);
+	pAngles->vx = ratan2(-yz, length);
+	pAngles->vy = ratan2(x, z);
+	i32 result = ratan2(yx, yy);
+	pAngles->vz = result;
+	return result;
+}
+
+// @Ok
 void M3dUtils_GetHookPosition(VECTOR* pOut, CSuper* pSuper, i32 hookIndex)
 {
 	SHook* pHook = &G_PSXREGION[pSuper->mRegion].pHooks[hookIndex];
