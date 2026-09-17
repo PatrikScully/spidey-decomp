@@ -17,6 +17,7 @@ public:
 	EXPORT virtual ~CThug();
 
 	EXPORT void DoAISwitchLogic(void);
+	EXPORT void SlideFromHit(i32, i32, CVector&);
 	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
 	EXPORT void AttackPlayer(void);
@@ -68,7 +69,8 @@ public:
 	EXPORT virtual void SetThugType(i32);
 
 
-	PADDING(0x32C-0x324);
+	i32 field_324;
+	i32 field_328;
 
 	// Read (never written) by CThug::DetermineFightState (0x4d9cbd) as a
 	// gate flag ("this->mType != 304 && field_32C == 0 && ..."). Carved

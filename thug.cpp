@@ -48,6 +48,98 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D3B00. Native comparison passed 40000 cases.
+// Instruction matching and full AI runtime checks are pending.
+void CThug::SlideFromHit(i32 distance, i32 frames, CVector& direction)
+{
+	CVector start;
+	CVector velocity;
+	CVector target;
+	CVector hit;
+	print_if_false(frames != 0, "Illegal to specify 0 frames for HITINFO slide frames.");
+	u32 flags = this->field_2A8 & ~0x10;
+	this->field_1F8 = frames;
+	this->field_2A8 = flags;
+	velocity = direction;
+	velocity.vx *= distance;
+	velocity.vz *= distance;
+	velocity.vy = 0;
+	start = this->mPos;
+	start.vy += (this->field_21E - 20) << 12;
+	target = this->mPos + velocity;
+	velocity.vx /= this->field_1F8;
+	velocity.vz /= this->field_1F8;
+	i32 result = this->PathCheck(&start, &target, &hit, 55);
+	if (result == 2)
+	{
+		i32 x = hit.vx - start.vx;
+		x = my_abs(x);
+		i32 z = hit.vz - start.vz;
+		z = my_abs(z);
+		if (x > z)
+			this->field_1F8 = x / (my_abs(velocity.vx));
+		else
+			this->field_1F8 = z / (my_abs(velocity.vz));
+		if (this->field_1F8 < 4)
+			return;
+		target.vx = this->mPos.vx + velocity.vx * this->field_1F8;
+		target.vy = this->mPos.vy;
+		target.vz = this->mPos.vz + velocity.vz * this->field_1F8;
+	}
+	else if (result == 4)
+		return;
+	if (this->AddPointToPath(&this->mPos, 0) && this->AddPointToPath(&target, 0))
+		this->field_2A8 &= ~0x10000000;
+	else
+		this->mHealth = 0;
+	this->Neutralize();
+	if (this->mHealth <= 0 && this->field_1F8 >= 8)
+	{
+		if (this->field_218 & 0x30000)
+		{
+			this->field_218 |= 0x40000;
+			CSVector angles;
+			Utils_CalcAim(&angles, &target, &this->mPos);
+			i32 angle = angles.vy - this->mAngles.vy;
+			if (angle < -2048)
+				angle += 4096;
+			else if (angle > 2048)
+				angle -= 4096;
+			this->field_324 = 0;
+			if (this->field_218 & 0x10000)
+				this->field_328 = (angle - 4096) / this->field_1F8;
+			else
+				this->field_328 = (angle + 4096) / this->field_1F8;
+		}
+		else
+		{
+			i32 anim = G_MECHLIST_PLAYER->mAnim;
+			if (anim == 106 || anim == 113 || anim == 284)
+			{
+				this->field_218 |= 0x40000;
+				this->field_1F8 *= 2;
+				velocity /= 2;
+				this->field_324 = 4096 / this->field_1F8;
+				this->field_328 = 0;
+				CVector look;
+				if (Rnd(2))
+				{
+					this->field_324 = -this->field_324;
+					look = this->mPos - velocity * (2 * this->field_1F8);
+				}
+				else
+					look = this->mPos + velocity * (2 * this->field_1F8);
+				new CAIProc_LookAt(this, 0, &look, 0, 80, 200);
+			}
+		}
+	}
+	CVector* motion = &this->mVel;
+	this->field_31C.bothFlags = 17;
+	this->dumbAssPad = 0;
+	*motion = velocity;
+}
+
+// @NotOk
 // 0x4D4680. Native comparison passed 60000 cases.
 // Instruction matching and full AI runtime checks are pending.
 void CThug::ChasePlayer(i32 depth)
