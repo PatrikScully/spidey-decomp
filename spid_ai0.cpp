@@ -171,24 +171,17 @@ static void gCWeb_SwitchToSnap(CWeb *pWeb, CVector &dir, CVector *pPath)
 	(reinterpret_cast<SWebSwitchToSnapAdapter*>(pWeb)->*u.m)(dir, pPath);
 }
 
-// spidey.h declares CPlayer::UpdateAndTrackCombo as returning void, but the
-// original (0x004C7120) returns the combo state that state 0x800 switches on
-// (0 = the combo ended, 2/3/6 = which follow-up move to start). The repo's
-// copy is still a printf stub, so this forwards to the original rather than
-// invent a return value. spidey.h's owner should change the declaration to
-// `i32 UpdateAndTrackCombo(void)`.
-struct SUpdateComboAdapter
-{
-	i32 UpdateAndTrackCombo(void);
-};
-
 // @Bogus
 static i32 gCPlayer_UpdateAndTrackCombo(CPlayer *pPlayer)
 {
-	typedef i32 (SUpdateComboAdapter::*memfn)(void);
+#ifdef SPIDEY_STANDALONE
+	return pPlayer->UpdateAndTrackCombo();
+#else
+	typedef i32 (CPlayer::*memfn)(void);
 	union { memfn m; void *p; } u;
 	u.p = (void*)0x004C7120;
-	return (reinterpret_cast<SUpdateComboAdapter*>(pPlayer)->*u.m)();
+	return (pPlayer->*u.m)();
+#endif
 }
 
 // CSwinger's constructor (0x004F6F00, real name from tools/names.json) is not
