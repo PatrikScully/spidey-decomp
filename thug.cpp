@@ -2805,6 +2805,25 @@ void INLINE CThugPing::SetPosition(void)
 }
 
 // @Ok
+// @Matching
+// 0x4D2510
+CThugPing::CThugPing(CSuper* host, SHook* hook)
+	: CSimpleAnim(&ZeroVector, 10, 0, 1, 0, -1)
+{
+	print_if_false(host != 0, "NULL pHost");
+	print_if_false(hook != 0, "NULL pHook");
+	this->field_78 = *hook;
+	this->field_70 = Mem_MakeHandle(host);
+	this->SetFrame(1);
+	this->SetTint(128, 128, 128);
+	this->mAngle = Rnd(1024);
+	if (Rnd(2))
+		this->mAngle = -this->mAngle;
+	this->mScale = 400;
+	this->SetPosition();
+}
+
+// @Ok
 void CThugPing::Move(void)
 {
 	this->SetPosition();

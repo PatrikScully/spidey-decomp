@@ -152,6 +152,7 @@ public:
 class CThugPing : public CSimpleAnim
 {
 	public:
+		EXPORT CThugPing(CSuper*, SHook*);
 		EXPORT void Move(void);
 		EXPORT void SetPosition(void);
 
