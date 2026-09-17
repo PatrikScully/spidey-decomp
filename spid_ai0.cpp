@@ -113,16 +113,16 @@ static i32 * const pgBossRelated = reinterpret_cast<i32*>(0x0056E998);
 static u16 * const gAnimFollowOnData = reinterpret_cast<u16*>(0x00555C6C);
 
 
-// 0x00454040 M3dUtils_GetPartAngles: real name from tools/names.json, but the
-// function is not decompiled and m3dutils.h has no declaration for it, so it
-// is forwarded to the original here. cdecl, four arguments (the two call
-// sites below are followed by an `add esp` that accounts for 4 dwords).
 // @Bogus
 static void gM3dUtils_GetPartAngles(CSuper *pSuper, i32 part, CSVector *pAngles, i32 a4)
 {
+#ifdef SPIDEY_STANDALONE
+	M3dUtils_GetPartAngles(pSuper, part, pAngles, reinterpret_cast<CSVector*>(a4));
+#else
 	typedef void (*func_ptr)(CSuper*, i32, CSVector*, i32);
 	func_ptr func = (func_ptr)0x00454040;
 	func(pSuper, part, pAngles, a4);
+#endif
 }
 
 // CSwinger::SetRenderEnd (0x004F74B0) and CWeb::SetFirePos (0x004F6170) are
