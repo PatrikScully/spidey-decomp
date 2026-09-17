@@ -50,20 +50,7 @@ void BlackCat_RelocatableModuleClear(void)
 }
 
 // @Ok
-// state machine: field_31C.bothFlags picks the outer phase (1 = climb down
-// from a ledge, 2 = walk to the player using SynthesizeAnalogueInput, 4 =
-// idle anim), dumbAssPad is the sub state inside each phase. field_324 is a
-// trig link id to look at, mpJoints is used as a guessed turret-style head
-// object with a pan/tilt pair at +0x24 (type unknown, offset used raw).
-// verified field by field and branch by branch against the IDA decompile of
-// 0x413b60: every offset, condition direction and call maps 1:1 (the
-// qt_register_signal_spy_callbacks/sub_46DA40/sub_46D790 triplet the
-// decompiler shows is really gte_ldlvl/gte_rtir/gte_stlvnl, a Hex-Rays
-// symbol-matching artifact, not a real Qt call). cmpsum still shows ~300
-// mnemonic diffs, all register/immediate-choice residue (same values, same
-// offsets, same branch shape on both sides everywhere checked), not a
-// logic difference. Per this session's functional-only bar this is left
-// @Ok without chasing a byte match.
+// 0x413B60. The head hook is local; Black Cat has no hook table.
 void CBlackCat::AI(void)
 {
 	if (*gSubmarinerDieRelated)
@@ -197,8 +184,13 @@ void CBlackCat::AI(void)
 
 	if (this->field_324)
 	{
-		VECTOR hookPos;
-		M3dUtils_GetHookPosition(&hookPos, this, 0x10);
+		CVector hookPos;
+		SHook hook;
+		hook.Part.vx = 0;
+		hook.Part.vy = 0;
+		hook.Part.vz = 0;
+		hook.Offset = 16;
+		M3dUtils_GetDynamicHookPosition(reinterpret_cast<VECTOR*>(&hookPos), this, &hook);
 
 		CVector trigPos;
 		Trig_GetPosition(&trigPos, this->field_324);
@@ -207,21 +199,16 @@ void CBlackCat::AI(void)
 		M3dMaths_TransposeMatrix1(&this->mTransform, &localMat);
 		gte_SetRotMatrix(&localMat);
 
-		CVector delta;
-		delta.vx = (trigPos.vx - hookPos.vx) >> 12;
-		delta.vy = (trigPos.vy - hookPos.vy) >> 12;
-		delta.vz = (trigPos.vz - hookPos.vz) >> 12;
-
-		delta <<= 12;
-		gte_ldlvl(reinterpret_cast<VECTOR*>(&delta));
+		trigPos.vx = (trigPos.vx - hookPos.vx) >> 12;
+		trigPos.vz = (trigPos.vz - hookPos.vz) >> 12;
+		trigPos.vy = (trigPos.vy - hookPos.vy) >> 12;
+		gte_ldlvl(reinterpret_cast<VECTOR*>(&trigPos));
 		gte_rtir();
-		gte_stlvnl(reinterpret_cast<VECTOR*>(&delta));
+		gte_stlvnl(reinterpret_cast<VECTOR*>(&trigPos));
 
 		CVector zero;
-		zero.vx = 0;
-		zero.vy = 0;
-		zero.vz = 0;
-		Utils_CalcAim(&lookAngle, &zero, &delta);
+		trigPos <<= 12;
+		Utils_CalcAim(&lookAngle, &zero, &trigPos);
 	}
 
 	if (this->mpJoints)
@@ -269,7 +256,7 @@ void CBlackCat::AI(void)
 
 	if (this->mFlags & 4)
 	{
-		this->ApplyPose(G_UNK_POSE);
+		this->ApplyPose(reinterpret_cast<i16*>(0x00548660));
 	}
 	else
 	{
