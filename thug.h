@@ -17,6 +17,7 @@ public:
 	EXPORT virtual ~CThug();
 
 	EXPORT virtual void Victorious(void);
+	EXPORT void GettingGrabbed(void);
 	EXPORT void ShootPlayer(void);
 	EXPORT void ShootHostage(void);
 	EXPORT void DoAISwitchLogic(void);

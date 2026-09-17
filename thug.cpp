@@ -50,6 +50,89 @@ extern SStateFlags gThugStateFlags;
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
+// @NotOk
+// 0x4D96D0
+// Native comparison passed 40000 cases; instruction matching is pending.
+void CThug::GettingGrabbed(void)
+{
+	this->SetAttacker();
+	if (G_MECHLIST_PLAYER->mAnim == 124)
+	{
+		i32 anim = this->mType == 304 ? 31 : 28;
+		if (this->mAnim != anim)
+			this->RunAnim(anim, 0, -1);
+	}
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			this->RunAnim(this->mType == 304 ? 34 : 29, 0, -1);
+			this->dumbAssPad++;
+			break;
+		case 1:
+			if (this->mAnimFinished)
+			{
+				if (G_MECHLIST_PLAYER->field_E1C == 0x8000000)
+				{
+					i32 heldAnim = this->mType == 304 ? 38 : 33;
+					i32 alternateAnim = this->mType == 304 ? 30 : 27;
+					if (this->mAnim == heldAnim || this->mAnim == alternateAnim)
+						this->RunAnim(heldAnim, 0, -1);
+					else
+						this->RunAnim(alternateAnim, 0, -1);
+					this->field_218 |= 4;
+				}
+				else
+				{
+					this->RunAnim(this->mType == 304 ? 35 : 30, 0, -1);
+					this->field_218 &= ~4;
+				}
+			}
+			if (my_abs(this->mPos.vx - this->field_1A8[this->field_1F0].vx) < 20
+					&& my_abs(this->mPos.vz - this->field_1A8[this->field_1F0].vz) < 20)
+			{
+				this->mAngVel.vy = 0;
+				this->mAngAcc.vy = 0;
+				this->mAngles.vy = G_MECHLIST_PLAYER->mAngles.vy;
+				this->field_1F0--;
+				this->dumbAssPad++;
+			}
+			else
+			{
+				this->YawTowards(G_MECHLIST_PLAYER->mAngles.vy, 100);
+				this->mPos.vx += (this->field_1A8[this->field_1F0].vx - this->mPos.vx) >> 1;
+				this->mPos.vz += (this->field_1A8[this->field_1F0].vz - this->mPos.vz) >> 1;
+			}
+			break;
+		case 2:
+			if (!G_MECHLIST_PLAYER->GrabUpdate(&this->mPos, &this->mAngles.vy))
+				this->field_2A8 &= ~0x40;
+			if (this->mAnimFinished)
+			{
+				if (G_MECHLIST_PLAYER->field_E1C == 0x8000000)
+				{
+					i32 heldAnim = this->mType == 304 ? 38 : 33;
+					i32 alternateAnim = this->mType == 304 ? 30 : 27;
+					if (this->mAnim == heldAnim || this->mAnim == alternateAnim)
+						this->RunAnim(heldAnim, 0, -1);
+					else
+						this->RunAnim(alternateAnim, 0, -1);
+					this->field_218 |= 4;
+				}
+				else
+				{
+					this->RunAnim(this->mType == 304 ? 35 : 30, 0, -1);
+					this->field_218 &= ~4;
+					SFX_PlayPos((Rnd(2) + 43) | 0x8000, &this->mPos, 0);
+				}
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
 // @Ok
 // @Matching
 // 0x42BFA0, shared with CCop::Victorious in the original vtable.
