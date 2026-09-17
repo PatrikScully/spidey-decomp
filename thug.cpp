@@ -49,6 +49,68 @@ extern SStateFlags gThugStateFlags;
 
 // @Ok
 // @Matching
+// 0x4DB090
+void CThug::DoAISwitchLogic(void)
+{
+	if ((this->field_3AC & 4) && (this->field_3BC & 1)
+		&& this->DistanceToPlayer(0) < (this->mType != 304 ? 190 : 140))
+	{
+		this->Neutralize();
+		this->field_31C.bothFlags = 5;
+		this->dumbAssPad = 0;
+	}
+	if ((this->field_218 & 0x80000) && this->field_31C.bothFlags != 14)
+	{
+		SHitInfo hit;
+		hit.field_0 = 4;
+		hit.field_8 = 50;
+		this->Hit(&hit);
+		this->field_218 &= ~0x80000;
+	}
+	i32* timer = &this->field_32C;
+	for (i32 count = 6; count; --count)
+	{
+		this->RunTimer(timer);
+		++timer;
+	}
+	if (!this->field_330 && this->BumpedIntoSpidey(100))
+	{
+		this->field_31C.bothFlags = 3;
+		this->dumbAssPad = 0;
+	}
+	if (this->field_348)
+	{
+		this->RunTimer(&this->field_348);
+		if (!this->field_348 && this->DistanceToPlayer(2) < 300)
+		{
+			i32 height = G_MECHLIST_PLAYER->mPos.vy - this->mPos.vy;
+			if (my_abs(height) < 819200
+				&& (this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 0x40)
+				&& !this->field_330)
+			{
+				this->field_31C.bothFlags = 3;
+				this->dumbAssPad = 0;
+			}
+		}
+	}
+	if (this->field_344)
+	{
+		this->RunTimer(&this->field_344);
+		if (!this->field_344)
+		{
+			this->field_338 = 166;
+			SFX_PlayPos((Rnd(2) + 30) | 0x8000, &this->mPos, 0);
+		}
+	}
+	if ((this->field_218 & 0x8000) && !this->field_33C
+		&& (this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 0x20)
+		&& !(G_ATTACK_RELATED & 0xF))
+		this->StrikeUpConversation();
+	this->RunTimer(&this->field_1A4);
+}
+
+// @Ok
+// @Matching
 void Thug_RelocatableModuleClear(void)
 {
 	for (CBody* cur = G_BADDY_LIST; cur; )
@@ -258,7 +320,7 @@ i32 CThug::DetermineFightState(void)
 	if (this->field_330 == 0
 			&& dist < 300
 			&& this->field_348 == 0
-			&& abs(G_MECHLIST_PLAYER->mPos.vy - this->mPos.vy) < 819200)
+			&& my_abs(G_MECHLIST_PLAYER->mPos.vy - this->mPos.vy) < 819200)
 	{
 		this->field_348 = 60;
 	}

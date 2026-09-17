@@ -16,6 +16,7 @@ public:
 	EXPORT CThug(i16*, i32);
 	EXPORT virtual ~CThug();
 
+	EXPORT void DoAISwitchLogic(void);
 	EXPORT void ClearAttackFlags(void);
 	EXPORT i32 SetAnimMode(i32, i32);
 	EXPORT void HelpOutBuddy(CMessage*);
@@ -70,11 +71,13 @@ public:
 
 	i32 field_330;
 
-	PADDING(0x33C-0x330-4);
+	i32 field_334;
+	i32 field_338;
 
 	i32 field_33C;
 
-	PADDING(0x348-0x33C-4);
+	i32 field_340;
+	i32 field_344;
 
 	// Written by CThug::DetermineFightState (0x4d9af2): a "just got close
 	// to the player" timer, set to 60 once when field_330==0 and the
@@ -113,7 +116,8 @@ public:
 	CGPolyLine *field_3A0;
 	CVector* field_3A4;
 
-	PADDING(0x3B0-0x3A4-4);
+	PADDING(4);
+	i32 field_3AC;
 
 	i32 field_3B0;
 
