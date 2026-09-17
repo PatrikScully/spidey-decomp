@@ -39,6 +39,7 @@ public:
 	EXPORT virtual ~CThug();
 
 	EXPORT virtual void Victorious(void);
+	EXPORT virtual i32 Hit(SHitInfo*);
 	EXPORT void FlyAcrossRoom(void);
 	EXPORT void TossGrenade(void);
 	EXPORT void GetYankedBySpidey(void);

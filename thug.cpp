@@ -3924,6 +3924,86 @@ void CThug::SetHitDirectionFlag(CVector* pVector)
 	}
 }
 
+// @NotOk
+// Native comparison passed 60000 cases; instruction matching is pending.
+// 0x4D3F50
+i32 CThug::Hit(SHitInfo* hit)
+{
+	if (this->field_31C.bothFlags == 26)
+	{
+		if (this->dumbAssPad == 8)
+		{
+			SFX_PlayPos((Rnd(3) + 25) | 0x8000, &this->mPos, 0);
+			SFX_PlayPos(0x8019, &this->mPos, 0);
+		}
+		return 0;
+	}
+	if (hit->field_0 & 4)
+		this->mHealth -= hit->field_8;
+	if (this->mHealth <= 0)
+		this->SendDeathPulse();
+	i32 attack = (hit->field_0 & 2) ? hit->field_4 : 0;
+	this->field_330 = 600;
+	if (!(hit->field_0 & 4) || this->mHealth > 0 || (hit->field_0 & 8))
+		SFX_PlayPos((Rnd(3) + 25) | 0x8000, &this->mPos, 0);
+	else if (this->field_31C.bothFlags != 26)
+	{
+		SFX_PlayPos(0x8019, &this->mPos, 0);
+		SFX_PlayPos((Rnd(3) + 21) | 0x8000, &this->mPos, 0);
+	}
+	if (attack == 3)
+	{
+		if (this->mHealth > 0)
+		{
+			new CMessage(this, this, 20, 0);
+			this->CycleAnim(this->mType == 304 ? 38 : 33, 1);
+			SFX_PlayPos(0x801C, &this->mPos, 0);
+			return 0;
+		}
+	}
+	else if (attack == 29 && this->field_31C.bothFlags == 20 && this->mHealth > 0)
+		return 0;
+	this->SetAnimMode(3, 0);
+	this->field_318 = attack;
+	CThug* buddy = static_cast<CThug*>(this->GetClosest(304, 0));
+	if (!buddy)
+		buddy = static_cast<CThug*>(this->GetClosest(312, 0));
+	if (buddy && !buddy->field_330)
+		new CMessage(this, buddy, 7, 0);
+	this->field_218 &= ~0x30000;
+	if ((this->CheckStateFlags(G_THUG_STATE_FLAGS, 17) & 0x10)
+			|| (this->mHealth > 0 && (this->field_3AC & 1)))
+		return 0;
+	this->Neutralize();
+	this->field_31C.bothFlags = this->mHealth > 0 ? 12 : 26;
+	this->dumbAssPad = 0;
+	this->field_218 &= ~0x30000;
+	if (hit->field_0 & 8)
+	{
+		CSVector angle;
+		angle.vx = 0;
+		angle.vy = 0;
+		angle.vz = 0;
+		Utils_CalcAim(&angle, &(this->mPos + hit->field_C * 300), &this->mPos);
+		i32 delta = angle.vy - this->mAngles.vy;
+		if (delta < -2048)
+			delta += 4096;
+		else if (delta > 2048)
+			delta -= 4096;
+		if (delta < -455)
+			this->field_218 |= 0x20000;
+		else if (delta > 455)
+			this->field_218 |= 0x10000;
+	}
+	if (hit->field_0 & 0x18)
+	{
+		this->SlideFromHit(hit->field_18, hit->field_1A, hit->field_C);
+		this->RunAnim(this->mType == 304 ? 24 : 14, 0, -1);
+	}
+	return 1;
+}
+
+
 // @Ok
 CThug::CThug(i16 *a2, i32 a3)
 {
