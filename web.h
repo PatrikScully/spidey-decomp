@@ -234,6 +234,7 @@ EXPORT void Web_Trap(CSuper *pSuper, i32 a2);
 class CSwinger : public CBody
 {
 	public:
+		EXPORT virtual void DeleteStuff(void);
 		EXPORT i32 IsOneTimeToDie(void);
 		EXPORT void SetSpideyAnimFrame(i32);
 

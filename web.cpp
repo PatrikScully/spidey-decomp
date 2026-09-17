@@ -987,6 +987,15 @@ CKnottedWeb::~CKnottedWeb(void)
 }
 
 // @Ok
+// Original 0x4F71E0, vtable slot 4.
+void CSwinger::DeleteStuff(void)
+{
+	if (this->mpLine)
+		delete this->mpLine;
+	this->mpLine = 0;
+}
+
+// @Ok
 int CSwinger::IsOneTimeToDie(void)
 {
 	return this->field_180 >= 4096;
