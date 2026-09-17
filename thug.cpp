@@ -2792,6 +2792,19 @@ void Thug_CreateThug(const u32 *stack, u32 *result)
 
 // @Ok
 // @Matching
+// 0x4D2A30
+CThugBulletTracer::~CThugBulletTracer(void)
+{
+	delete this->mpRibbon;
+
+	delete this->mpRibbon2;
+
+	this->mpRibbon = 0;
+	this->mpRibbon2 = 0;
+}
+
+// @Ok
+// @Matching
 // 0x4286B0, shared with CCopBulletTracer::Move.
 void CThugBulletTracer::Move(void)
 {
