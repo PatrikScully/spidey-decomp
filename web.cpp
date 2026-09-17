@@ -11,6 +11,8 @@
 #include "decomp.h"
 #include <string.h>
 #include "ps2funcs.h"
+#include "chain.h"
+#include "manipob.h"
 
 #include "validate.h"
 
@@ -1355,6 +1357,16 @@ void CWeb::SwitchToBlob(void)
 	// known yet (CWeb only ever sees it through this handle), so it stays a
 	// raw offset rather than a guessed field name.
 	*reinterpret_cast<i32*>(reinterpret_cast<u8*>(pTarget) + 0x2A8) &= ~8;
+}
+
+// @Ok
+// @Matching
+// Original 0x4F5E50. Unlink before freeing the web's effects.
+CWeb::~CWeb(void)
+{
+	this->DeleteFrom(&G_WEB_LIST);
+	delete this->field_12C;
+	delete reinterpret_cast<CChain*>(this->field_130);
 }
 
 // @Ok
