@@ -22,6 +22,7 @@ public:
 	EXPORT void Fall(void);
 	EXPORT void GetTrapped(void);
 	EXPORT void RotateTorsoToAimAtPlayer(CVector&);
+	EXPORT void AutoAimPlease(CVector*, CVector*, CVector*, i32);
 	EXPORT void GetWhippedLikeTheWhoreYouAre(void);
 	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
@@ -131,7 +132,7 @@ public:
 	CGPolyLine *field_3A0;
 	CVector* field_3A4;
 
-	PADDING(4);
+	i32 field_3A8;
 	i32 field_3AC;
 
 	i32 field_3B0;

@@ -49,6 +49,27 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D5E40. Native comparison passed 40000 cases.
+// Instruction matching and full AI runtime checks are pending.
+void CThug::AutoAimPlease(CVector* origin, CVector* target, CVector* direction, i32 spread)
+{
+	*direction = G_MECHLIST_PLAYER->mPos - *origin;
+	this->field_3A8 = ((G_MECHLIST_PLAYER->mPos.vy - this->field_3A8) >> ((this->mType != 304) + 1)) + this->field_3A8;
+	direction->vy += this->field_3A8 - G_MECHLIST_PLAYER->mPos.vy;
+	while ((my_abs(direction->vz)) + (my_abs(direction->vx)) < 0xBB8000)
+	{
+		*direction <<= 1;
+		spread <<= 1;
+	}
+	if (direction->vx > direction->vz)
+		direction->vz += (Rnd(spread) - (spread >> 1)) << 12;
+	else
+		direction->vx += (Rnd(spread) - (spread >> 1)) << 12;
+	direction->vy += (Rnd(spread) - (spread >> 1)) << 12;
+	*target = *origin + *direction;
+}
+
+// @NotOk
 // 0x4D6BC0. Native comparison passed 30000 cases.
 // Instruction matching and full AI runtime checks are pending.
 void CThug::RotateTorsoToAimAtPlayer(CVector& origin)
