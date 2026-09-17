@@ -16,6 +16,7 @@ public:
 	EXPORT CThug(i16*, i32);
 	EXPORT virtual ~CThug();
 
+	EXPORT void ShootHostage(void);
 	EXPORT void DoAISwitchLogic(void);
 	EXPORT void SlideFromHit(i32, i32, CVector&);
 	EXPORT void DieThug(i32);

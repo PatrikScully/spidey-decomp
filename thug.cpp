@@ -11,6 +11,7 @@
 #include "exp.h"
 #include "web.h"
 #include "m3dzone.h"
+#include "camera.h"
 #include <cmath>
 #include <new>
 
@@ -48,6 +49,91 @@ extern SStateFlags gThugStateFlags;
 #endif
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
+
+// @Ok
+// @Matching
+// 0x4D7260
+void CThug::ShootHostage(void)
+{
+	CBaddy** host = reinterpret_cast<CBaddy**>(&this->mHandle.pWhatever);
+	if (!Mem_RecoverPointer(&this->mHandle) || ((*host)->field_2A8 & 0x1000))
+	{
+		this->Neutralize();
+		this->field_31C.bothFlags = 28;
+		this->dumbAssPad = 0;
+		return;
+	}
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			new CAIProc_StateSwitchSendMessage(this, 17);
+			this->field_310 = 160;
+			if (this->mType == 304)
+				this->RunAnim(8, this->mAnim == 8 ? this->mFrame : 0, -1);
+			else
+				this->RunAnim(7, this->mAnim == 7 ? this->mFrame : 0, -1);
+			new CAIProc_LookAt(this, *host, 0, 2, 70, 200);
+			this->dumbAssPad++;
+			break;
+		case 1:
+			if (this->field_288 & 2)
+			{
+				this->field_288 &= ~2;
+				SFX_PlayPos((Rnd(3) + 14) | 0x8000, &this->mPos, 0);
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+			if (this->mAnimFinished)
+			{
+				if (Utils_LineOfSight(&this->mPos, &(*host)->mPos, 0, 0))
+				{
+					new CMessage(this, *host, 2, 0);
+					this->field_230 = G_DIFFICULTY_LEVEL == 2 ? Rnd(50) + 75 : Rnd(32) + 49;
+					this->dumbAssPad++;
+					this->CycleAnim(this->mType == 304 ? 4 : 1, 1);
+				}
+				else
+				{
+					this->field_31C.bothFlags = 28;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		case 3:
+			this->DrawLaserSiteThingie(0, *host);
+			if (--this->field_230 <= 0)
+			{
+				if (!Mem_RecoverPointer(&this->mHandle) || !Utils_LineOfSight(&this->mPos, &(*host)->mPos, 0, 0))
+				{
+					this->field_31C.bothFlags = 28;
+					this->dumbAssPad = 0;
+					break;
+				}
+				CVector positions[2];
+				positions[0] = this->mPos;
+				positions[1] = (*host)->mPos;
+				Camera_SelectOptimumViewingNode(2, positions);
+				this->RunAnim((this->mType != 304) + 7, 0, -1);
+				new CMessage(this, *host, 3, 0);
+				this->dumbAssPad++;
+			}
+			break;
+		case 4:
+			this->DrawLaserSiteThingie(0, *host);
+			if (this->mAnimFinished)
+			{
+				SFX_PlayPos(0x8024, &this->mPos, 0);
+				this->field_31C.bothFlags = 10;
+				this->dumbAssPad = 0;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
 
 // @NotOk
 // Native comparison passed 40000 cases; instruction matching is pending.
