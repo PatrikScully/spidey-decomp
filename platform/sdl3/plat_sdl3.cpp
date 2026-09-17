@@ -159,6 +159,8 @@ i32 Plat_Yield(void)
 			gQuit = 1;
 		if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F12)
 			gQuit = 1;
+		if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && e.key.scancode == SDL_SCANCODE_F1)
+			SDL_SetWindowRelativeMouseMode(gWindow, !SDL_GetWindowRelativeMouseMode(gWindow));
 	}
 	return !gQuit;
 }
