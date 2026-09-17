@@ -2792,6 +2792,29 @@ void Thug_CreateThug(const u32 *stack, u32 *result)
 
 // @Ok
 // @Matching
+// 0x4286B0, shared with CCopBulletTracer::Move.
+void CThugBulletTracer::Move(void)
+{
+	this->SetWidth();
+
+	if (this->mMaxWidth)
+		this->mMaxWidth = mMaxWidth - 1;
+
+	this->mpRibbon->mpPoints[this->mAge].r = 0;
+	this->mpRibbon->mpPoints[this->mAge].g = 0;
+	this->mpRibbon->mpPoints[this->mAge].b = 0;
+	this->mpRibbon2->mpPoints[this->mAge].r = 0;
+	this->mpRibbon2->mpPoints[this->mAge].g = 0;
+	this->mpRibbon2->mpPoints[this->mAge].b = 0;
+
+	if ( this->mAge < 4 )
+		this->mAge++;
+	else
+		this->Die();
+}
+
+// @Ok
+// @Matching
 // 0x4D2660, shared with CCopBulletTracer::SetWidth.
 void CThugBulletTracer::SetWidth(void)
 {
