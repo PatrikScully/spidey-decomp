@@ -17,6 +17,7 @@ public:
 	EXPORT virtual ~CThug();
 
 	EXPORT void DoAISwitchLogic(void);
+	EXPORT void GetAttackPosition(CVector*);
 	EXPORT void ClearAttackFlags(void);
 	EXPORT i32 SetAnimMode(i32, i32);
 	EXPORT void HelpOutBuddy(CMessage*);

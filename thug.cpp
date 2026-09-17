@@ -49,6 +49,35 @@ extern SStateFlags gThugStateFlags;
 
 // @Ok
 // @Matching
+// 0x4D3340
+void CThug::GetAttackPosition(CVector* target)
+{
+	*target = G_MECHLIST_PLAYER->mPos;
+	if (this->field_3BC & 1)
+	{
+		CVector direction;
+		direction = *target - this->mPos;
+		direction >>= this->DistanceToPlayer(2) > 100 ? 12 : 8;
+		direction.vy = 0;
+		VectorNormal(reinterpret_cast<VECTOR*>(&direction), reinterpret_cast<VECTOR*>(&direction));
+		direction *= (3200 * (this->mType != 304 ? 190 : 140)) >> 12;
+		*target -= direction;
+	}
+	else if (this->field_3BC & 2)
+	{
+		if (this->field_3BD & 0xEE)
+		{
+			i32 distance = this->field_3BD & 0xAA ? 1228800 : 1638400;
+			target->vx += (this->field_3BD > 8 ? -1 : 1) * distance;
+		}
+		if (this->field_3BD & 0xBB)
+			target->vz += (this->field_3BD & 0x83 ? 1 : -1)
+				* (this->field_3BD & 0xAA ? 1228800 : 1638400);
+	}
+}
+
+// @Ok
+// @Matching
 // 0x4DB090
 void CThug::DoAISwitchLogic(void)
 {
