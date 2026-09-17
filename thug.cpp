@@ -15,6 +15,130 @@
 #include <cmath>
 #include <new>
 #include "spool.h"
+#include "powerup.h"
+
+// @NotOk
+// 0x4DBDB0
+// Native comparison passed 50000 cases; instruction matching is pending.
+void CGrenade::AI(void)
+{
+	i32 detonate = 0;
+	this->mPos.vy += 81920;
+	if (!this->mSettled)
+	{
+		G_LINE_INFO.StartCoords = this->mPos;
+		G_LINE_INFO.EndCoords.vx = this->mPos.vx + 2 * this->mVel.vx;
+		G_LINE_INFO.EndCoords.vy = this->mPos.vy + 2 * this->mVel.vy;
+		G_LINE_INFO.EndCoords.vz = this->mPos.vz + 2 * this->mVel.vz;
+		i32 speed = this->mVel.Length();
+		M3dColij_InitLineInfo(&G_LINE_INFO);
+		G_LINE_OF_SIGHT_CHECK = 1;
+		M3dZone_LineToItem(&G_LINE_INFO, 1);
+		G_LINE_OF_SIGHT_CHECK = 0;
+		this->mPos += this->mVel;
+		this->mVel.vy += 0x8000;
+		if (G_LINE_INFO.pItem && G_LINE_INFO.Distance <= speed)
+		{
+			this->mPos = G_LINE_INFO.Position;
+			SFX_PlayPos(0x2A, &this->mPos, 0);
+			if (this->mExplodeOnContact)
+				detonate = 1;
+			i32 x = this->mVel.vx;
+			i32 y = this->mVel.vy;
+			i32 z = this->mVel.vz;
+			i32 dot = (G_LINE_INFO.Normal.vx * (x >> 6)
+					+ G_LINE_INFO.Normal.vy * (y >> 6)
+					+ G_LINE_INFO.Normal.vz * (z >> 6)) >> 12;
+			this->mVel.vx = x - ((dot * G_LINE_INFO.Normal.vx) >> 6);
+			this->mVel.vy = y - ((dot * G_LINE_INFO.Normal.vy) >> 6);
+			this->mVel.vz = z - ((dot * G_LINE_INFO.Normal.vz) >> 6);
+			this->mVel >>= 1;
+			this->mVel.vx -= (dot * G_LINE_INFO.Normal.vx) >> 7;
+			this->mVel.vy -= (dot * G_LINE_INFO.Normal.vy) >> 7;
+			this->mVel.vz -= (dot * G_LINE_INFO.Normal.vz) >> 7;
+			this->mVel.vx += (Rnd(11) - 5) << 12;
+			this->mVel.vz += (Rnd(11) - 5) << 12;
+			if (this->mVel.vy > -61440 && G_LINE_INFO.Normal.vy < -3500)
+			{
+				this->mSettled = 1;
+				if (Trig_GetLevelId() == 0x1101)
+				{
+					i32 height = Utils_GetGroundHeight(&this->mPos, 50, 50, 0);
+					this->mVel.vz = this->mVel.vy = this->mVel.vx = 0;
+					if (height != -1)
+						this->mPos.vy = height + 81920;
+				}
+			}
+		}
+		this->mAngles.vx += 410 * this->mVel.Length() / 128;
+		i32 vx = this->mVel.vx >> 12;
+		i32 vz = this->mVel.vz >> 12;
+		if (vz)
+		{
+			if (vz > 0)
+				this->mAngles.vy = 2048 - catan(-((vx << 12) / vz));
+			else
+				this->mAngles.vy = catan((vx << 12) / vz);
+		}
+		else
+			this->mAngles.vy = vx > 0 ? -1024 : 1024;
+	}
+	G_LINE_INFO.StartCoords = this->mPos;
+	G_LINE_INFO.EndCoords.vx = this->mPos.vx;
+	G_LINE_INFO.EndCoords.vy = this->mPos.vy + 0xBB8000;
+	G_LINE_INFO.EndCoords.vz = this->mPos.vz;
+	M3dColij_InitLineInfo(&G_LINE_INFO);
+	M3dZone_LineToItem(&G_LINE_INFO, 1);
+	if (G_LINE_INFO.pItem)
+	{
+		this->mShadowPos = G_LINE_INFO.Position;
+		this->mShadowDist = (G_LINE_INFO.Position.vy - this->mPos.vy) >> 12;
+		this->mShadowScale = 50 - 21 * this->mShadowDist / 128;
+		if (this->mShadowScale)
+			this->ShadowOn();
+		else
+			this->KillShadow();
+	}
+	else
+		this->KillShadow();
+	i32 age = G_TIMER_RELATED - this->mStartTime;
+	if (age > 90)
+	{
+		if (G_TTIME & 2)
+		{
+			u8 red = this->mRed <= 127 ? 2 * this->mRed : 255;
+			u8 green = this->mGreen <= 127 ? 2 * this->mGreen : 255;
+			u8 blue = this->mBlue <= 127 ? 2 * this->mBlue : 255;
+			this->mpGlow->SetFringeRGB(0, red, green, blue);
+		}
+		else
+			this->mpGlow->SetFringeRGB(0, this->mRed, this->mGreen, this->mBlue);
+	}
+	if (age > 120 || detonate)
+	{
+		this->GiveScaledDamageToObjects(*static_cast<CBody**>(this->field_100), this->field_106, 100, 10, ALWAYS_TWENTY_NINE);
+		this->GiveScaledDamageToObjects(G_ENVIRONMENTAL_OBJECT_LIST, this->field_106, 100, 10, ALWAYS_TWENTY_NINE);
+		if (this->field_100 != reinterpret_cast<void*>(&G_MECHLIST_PLAYER))
+			this->GiveScaledDamageToObjects(G_MECHLIST_PLAYER, this->field_106, 100, 10, ALWAYS_TWENTY_NINE);
+		this->GiveScaledDamageToEnviro(this->field_106);
+		CVector pos;
+		pos.vx = Rnd(50) << 12;
+		pos.vy = Rnd(50) << 12;
+		pos.vz = Rnd(50) << 12;
+		pos += this->mPos;
+		new CGrenadeExplosion(&pos);
+		pos.vx = Rnd(50) << 12;
+		pos.vy = Rnd(50) << 12;
+		pos.vz = Rnd(50) << 12;
+		pos += this->mPos;
+		new CGrenadeExplosion(&pos);
+		SFX_PlayPos(0x8029, &this->mPos, 0);
+		new CGlowFlash(&this->mPos, 5, 255, 255, 255, 1, 128, 100, 0, 1, 60, 0, 1, 100, 120, 80, 100, 10, 4);
+		this->Die();
+	}
+	this->mPos.vy -= 81920;
+	this->mpGlow->SetPos(this->mPos);
+}
 
 // Shared region byte used by Spidey_SwapSuit and the default grenade model.
 static u8* const gGrenadeDefaultRegion = reinterpret_cast<u8*>(0x006B4678);
