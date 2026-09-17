@@ -48,6 +48,117 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @NotOk
+// 0x4D8E50. Native comparison passed 40000 cases.
+// Instruction matching and full AI runtime checks are pending.
+void CThug::DieThug(i32 instant)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			G_MECHLIST_PLAYER->NotifyKill(this->mType);
+			this->SetHeight(1, 100, 600);
+			this->ClearAttackFlags();
+			this->field_310 = 0;
+			this->Neutralize();
+			this->mCBodyFlags &= ~0x10;
+			this->field_2A8 |= 0x41000;
+			if (instant)
+			{
+				this->Die(0);
+				this->dumbAssPad = 3;
+			}
+			else if (this->field_218 & 0x80)
+			{
+				this->RunAnim(this->mType != 304 ? 29 : 39, 0, -1);
+				this->dumbAssPad = 5;
+			}
+			else
+			{
+				u16 anim = this->mAnim;
+				if (this->mType == 304)
+				{
+					if (anim != 26 && anim != 14 && anim != 37)
+					{
+						this->CheckFallBack();
+						this->RunAnim(this->field_2A8 & 0x10 ? 26 : 14, 0, -1);
+					}
+				}
+				else if (anim != 26 && anim != 19 && anim != 32)
+				{
+					this->CheckFallBack();
+					this->RunAnim(this->field_2A8 & 0x10 ? 26 : 19, 0, -1);
+				}
+				this->field_1F8 = 0;
+				++this->dumbAssPad;
+			}
+			break;
+		case 1:
+			this->SetHeight(0, 100, 600);
+			if (this->mAnimFinished)
+			{
+				this->mRMinor = 0;
+				this->Die(1);
+				this->field_1F8 = 0;
+				++this->dumbAssPad;
+			}
+			break;
+		case 2:
+			this->SetHeight(0, 100, 600);
+			if (this->Die(2))
+			{
+				this->Die(3);
+				++this->dumbAssPad;
+			}
+			break;
+		case 3:
+			break;
+		case 5:
+			if (this->mAnimFinished)
+			{
+				this->RunAnim(this->mType != 304 ? 35 : 40, 0, -1);
+				++this->dumbAssPad;
+			}
+			break;
+		case 6:
+			if (this->mAnimFinished)
+			{
+				this->field_1F8 = 0;
+				this->dumbAssPad = 7;
+			}
+			break;
+		case 7:
+			this->field_1F8 += this->field_80;
+			if (this->field_1F8 >= 10)
+			{
+				if (!(this->field_2A8 & 0x4000))
+					this->SendDeathPulse();
+				this->CycleAnim(this->mType != 304 ? 36 : 41, 1);
+				this->field_1F8 = 120;
+				this->field_34C = Rnd(300) + 150;
+				++this->dumbAssPad;
+			}
+			break;
+		case 8:
+			this->RunTimer(&this->field_1F8);
+			this->RunTimer(&this->field_34C);
+			if (!this->field_1F8)
+			{
+				this->RunAnim(this->mAnim, 0, -1);
+				this->dumbAssPad = 1;
+			}
+			else if (!this->field_34C)
+			{
+				this->field_34C = Rnd(300) + 150;
+				SFX_PlayPos((Rnd(2) + 43) | 0x8000, &this->mPos, 0);
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
+// @NotOk
 // 0x4D3B00. Native comparison passed 40000 cases.
 // Instruction matching and full AI runtime checks are pending.
 void CThug::SlideFromHit(i32 distance, i32 frames, CVector& direction)

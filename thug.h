@@ -18,6 +18,7 @@ public:
 
 	EXPORT void DoAISwitchLogic(void);
 	EXPORT void SlideFromHit(i32, i32, CVector&);
+	EXPORT void DieThug(i32);
 	EXPORT void ChasePlayer(i32);
 	EXPORT void FollowWaypoints(void);
 	EXPORT void AttackPlayer(void);
@@ -94,7 +95,8 @@ public:
 	// PADDING(0x354-0x33C-4); same byte range.
 	i32 field_348;
 
-	PADDING(0x354-0x348-4);
+	i32 field_34C;
+	PADDING(4);
 
 	SHandle mHandle;
 	SHandle mHandleTwo;
