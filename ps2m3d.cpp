@@ -2714,6 +2714,12 @@ void M3d_RenderBackground(void *pList)
 				}
 
 				f32 s = *gM3dBackgroundScale;
+#ifdef SPIDEY_STANDALONE
+				// The sky stays behind the extended full-map depth range.
+				const char* fullMapOption = getenv("SPIDEY_FULL_MAP");
+				if (!fullMapOption || atoi(fullMapOption) != 0)
+					s *= 1024.0f;
+#endif
 				matrix4x4 v49 = matrix4x4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1.0f);
 
 				matrix4x4 v50;
