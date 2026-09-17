@@ -17,6 +17,15 @@
 #include "spool.h"
 #include "powerup.h"
 
+// @Ok
+// @Matching
+// 0x4DBD40
+CGrenade::~CGrenade(void)
+{
+	delete this->mpGlow;
+	this->DeleteFrom(&G_BULLET_LIST);
+}
+
 // @NotOk
 // 0x4DBDB0
 // Native comparison passed 50000 cases; instruction matching is pending.
