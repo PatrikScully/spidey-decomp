@@ -198,6 +198,7 @@ CKnottedWeb::CKnottedWeb(const CVector &start, const CVector &end)
 	}
 
 	this->mpInnerLine = new CGPolyLine(2 * this->mNumSegs);
+	this->mpInnerLine->mProtected = 1;
 	this->mpInnerLine->mStartR = 0xA2;
 	this->mpInnerLine->mStartG = 0xA2;
 	this->mpInnerLine->mStartB = 0xA2;
