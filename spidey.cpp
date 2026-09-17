@@ -3358,17 +3358,9 @@ i32 CPlayer::CheckStickToWall(void)
 }
 
 // @Ok
-// address 0x4C31D0, 932 bytes. Decompiled from IDA Hex-Rays output this
-// session (previous sessions only had raw disassembly, which got stuck on
-// interleaved register spills). Two calls in the original
-// (CVector::operator/= applied to short-lived temporaries, divisors 2 and
-// the field_DA0 length, at roughly the "half = len / 2" and
-// "field_DA0.Length()" points) write into locals that are never read
-// again afterwards (confirmed: the divisor-2 result is immediately
-// shadowed by a plain `len / 2` on a different variable, and the
-// field_DA0.Length() result is not read by anything downstream either).
-// Both are omitted here as dead stores with no functional effect; a
-// future byte-matching pass should reproduce them literally if needed.
+// Original 0x4C31D0. Halve the line vector and normalize the perpendicular
+// before using them to construct the web anchors. Both operator/= calls
+// modify live values in the original.
 u8 CPlayer::CheckSwingWebAvailability(SLineInfo *pLineInfo)
 {
 	i16 normalY = pLineInfo->Normal.vy;
@@ -3412,6 +3404,7 @@ u8 CPlayer::CheckSwingWebAvailability(SLineInfo *pLineInfo)
 
 	i32 len = toLine.Length();
 	i32 vyOverLen = toLine.vy / len;
+	toLine /= 2;
 	i32 halfLen = len / 2;
 
 	if (abs(vyOverLen) >= 2896)
@@ -3423,6 +3416,7 @@ u8 CPlayer::CheckSwingWebAvailability(SLineInfo *pLineInfo)
 	this->field_DA0.vx = (shifted.vy * shifted.vx) >> 8;
 	this->field_DA0.vy = (shifted.vx * negX - shifted.vz * shifted.vz) >> 8;
 	this->field_DA0.vz = (shifted.vz * shifted.vy) >> 8;
+	this->field_DA0 /= this->field_DA0.Length();
 
 	if (!farFromWall)
 	{
