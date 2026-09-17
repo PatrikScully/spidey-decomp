@@ -123,6 +123,15 @@ public:
 	i32 field_74;
 };
 
+// The 0x7C-byte loose strand created by CSwinger_SwingBack.
+class CSwingBack : public CKnottedWeb
+{
+public:
+	EXPORT CSwingBack(const CVector&, const CVector&);
+	EXPORT virtual void Move(void);
+	i32 mRetracting;
+};
+
 class CGLine : public CBit
 {
 	public:

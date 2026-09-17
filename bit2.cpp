@@ -305,6 +305,60 @@ void CKnottedWeb::Move(void)
 }
 
 // @Ok
+// Original 0x4F5960. Retracts and fades a released swing strand.
+void CSwingBack::Move(void)
+{
+	CVector end = this->mpExtraSegs[this->mNumSegs - 1].mPos;
+	u32 distance = Utils_Dist(this->mStart, end);
+	if (this->mRetracting)
+		distance -= 700;
+	CVector target = this->mStart;
+	target.vy += distance << 12;
+	CVector delta = target - end;
+	end += delta >> 4;
+	if (delta.Length() < 500)
+		this->mRetracting = 1;
+	this->SetStartAndEnd(&this->mStart, &end);
+	Utils_CalcUnitFacingCamera(&this->mStart, &end, reinterpret_cast<CVector*>(&this->field_58));
+	for (i32 i = 0; i < this->mNumSegs; i++)
+		this->mpExtraSegs[i].mPos = this->mSegs[i].End;
+	this->CKnottedWeb::Move();
+	for (i32 j = 0; j < this->mNumSegs; j++)
+	{
+		CFlatBit* bit = this->mpExtraSegs[j].mpBit;
+		u8 r = bit->mCodeBGR;
+		u8 g = bit->mCodeBGR >> 8;
+		u8 b = bit->mCodeBGR >> 16;
+		if (r > 10) r -= 10;
+		if (g > 10) g -= 10;
+		if (b > 10) b -= 10;
+		bit->SetTint(r, g, b);
+	}
+	if (this->mStartR > 10) this->mStartR -= 10;
+	if (this->mStartG > 10) this->mStartG -= 10;
+	if (this->mStartB > 10) this->mStartB -= 10;
+	for (i32 k = 0; k < this->mNumSegs; k++)
+	{
+		this->mSegs[k].r = this->mStartR;
+		this->mSegs[k].g = this->mStartG;
+		this->mSegs[k].b = this->mStartB;
+	}
+	this->mpInnerLine->mStartR = this->mStartR;
+	this->mpInnerLine->mStartG = this->mStartG;
+	this->mpInnerLine->mStartB = this->mStartB;
+	for (i32 inner = 0; inner < this->mpInnerLine->mNumSegs; inner++)
+	{
+		this->mpInnerLine->mSegs[inner].r = this->mStartR;
+		this->mpInnerLine->mSegs[inner].g = this->mStartG;
+		this->mpInnerLine->mSegs[inner].b = this->mStartB;
+	}
+	if ((u32)Utils_CrapDist(end, G_MECHLIST_PLAYER->mPos) > 2000)
+		this->Die();
+	if (++this->mAge > 60)
+		this->Die();
+}
+
+// @Ok
 // @AlmostMatching: diff reg allocation for the reg for the loop
 CPolyLine::CPolyLine(i32 numsegs)
 {
