@@ -47,6 +47,89 @@ extern SStateFlags gThugStateFlags;
 //#define G_THUG_STATE_FLAGS (&gThugStateFlags)
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
+// @Ok
+// @Matching
+// 0x4D8320. Native comparison passed 40000 cases.
+void CThug::GetWhippedLikeTheWhoreYouAre(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			++this->dumbAssPad;
+			this->RunAnim(this->mType != 304 ? 32 : 37, 0, -1);
+			this->field_1F8 = 0;
+			// fall through
+		case 1:
+		{
+			this->field_3AC |= 2;
+			print_if_false(this->field_3A4 != 0, "Pointer to mpThrowPoints is NULL.");
+			i32 path = this->PathCheck(&this->mPos, &this->field_3A4[this->field_1F8], 0, 55);
+			if (path || !this->AddPointToPath(&this->field_3A4[this->field_1F8], 0)
+				|| ++this->field_1F8 >= 8)
+			{
+				i32 fall = this->ShouldFall(200, 389120);
+				if (fall)
+				{
+					if (fall == -1 || fall > 1024000)
+					{
+						this->field_31C.bothFlags = 22;
+						this->dumbAssPad = 0;
+						this->field_218 |= 2;
+					}
+					else
+						this->dumbAssPad = 4;
+				}
+				else
+				{
+					if (path)
+						this->RunAnim(this->mType != 304 ? 19 : 14, 0, -1);
+					++this->dumbAssPad;
+				}
+			}
+			else
+				this->mPos = this->field_3A4[this->field_1F8 - 1];
+			break;
+		}
+		case 2:
+			if (this->mAnimFinished)
+			{
+				this->mHealth -= 50;
+				if (this->mHealth > 0)
+				{
+					this->RunAnim(this->mType != 304 ? 20 : 15, 0, -1);
+					++this->dumbAssPad;
+				}
+				else
+				{
+					this->field_31C.bothFlags = 26;
+					this->dumbAssPad = 0;
+				}
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->mCBodyFlags |= 0x10;
+				this->field_31C.bothFlags = 0;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 4:
+			this->mPos.vy += 409600;
+			if (this->mPos.vy > this->field_308)
+			{
+				SFX_PlayPos(0x802E, &this->mPos, 0);
+				this->mPos.vy = this->field_308;
+				this->dumbAssPad = 2;
+			}
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
 // @NotOk
 // 0x4D9200. Native comparison passed 40000 cases.
 // Instruction matching and full AI runtime checks are pending.
