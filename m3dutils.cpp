@@ -360,7 +360,7 @@ void M3dUtils_InterpolateVectors(i32 NumVectors, i32 Interval, u32* pAnimFile, C
 }
 
 // @Ok
-// @AlmostMatching: 16 source variants tested. At 0x45411F/0x454125,
+// @AlmostMatching: 18 source variants tested. At 0x45411F/0x454125,
 // MSVC folds the fixed tween-buffer address into the index before shifting.
 // The original uses two LEAs; all other instructions match after relocation.
 // A real array reproduces those LEAs but does not read the game buffer.
@@ -404,9 +404,9 @@ i32 M3dUtils_GetPartAngles(CSuper* pSuper, i32 part, CSVector* pAngles, CSVector
 	MulMatrix(&world, reinterpret_cast<MATRIX*>(pPose));
 	MulMatrix(&world, &offset);
 	i32 x = world.m[0][2];
-	i32 z = world.m[2][2];
 	i32 yx = world.m[1][0];
 	i32 yz = world.m[1][2];
+	i32 z = world.m[2][2];
 	i32 yy = world.m[1][1];
 	i32 length = M3dMaths_SquareRoot0(x * x + z * z);
 	pAngles->vx = ratan2(-yz, length);
