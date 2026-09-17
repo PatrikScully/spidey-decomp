@@ -1,3 +1,6 @@
+#ifdef SPIDEY_STANDALONE
+#include <new>
+#endif
 #include "spid_ai0.h"
 
 #include "bit.h"
@@ -199,12 +202,15 @@ struct SSwingerCtorAdapter
 static void gCSwinger_ctor(void *pSwinger, CVector *pAnchor, i32 length,
 	CSVector *pAngles, CVector *pEnd)
 {
+#ifdef SPIDEY_STANDALONE
+	::new (pSwinger) CSwinger(pAnchor, length, reinterpret_cast<MATRIX*>(pAngles), pEnd);
+#else
 	typedef void (SSwingerCtorAdapter::*memfn)(CVector*, i32, CSVector*, CVector*);
 	union { memfn m; void *p; } u;
 	u.p = (void*)0x004F6F00;
 	(reinterpret_cast<SSwingerCtorAdapter*>(pSwinger)->*u.m)(pAnchor, length, pAngles, pEnd);
+#endif
 }
-
 // Scales the two extra body parts (spidey sense buzz, fists) the way the
 // cheats ask for. Reproduces the original's three separate inline copies:
 // they only differ in what the stickman cheat does, a halve for the fists
