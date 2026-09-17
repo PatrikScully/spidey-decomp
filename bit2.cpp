@@ -3,6 +3,9 @@
 #include "mem.h"
 #include "my_assert.h"
 #include "utils.h"
+#include "ps2funcs.h"
+#include "reloc.h"
+#include "spidey.h"
 
 #include "validate.h"
 
@@ -207,6 +210,98 @@ CKnottedWeb::CKnottedWeb(const CVector &start, const CVector &end)
 	}
 
 	this->field_70 = 1;
+}
+
+// @Ok
+// Original 0x4F9150. Updates the knots and the second web strand.
+void CKnottedWeb::Move(void)
+{
+	if (this->field_74)
+	{
+		CVector delta = this->mSegs[this->mNumSegs - 1].End - this->mStart;
+		for (i32 i = 0; i < 3; i++)
+		{
+			CVector pos = this->mStart + ((delta * Rnd(256)) >> 8);
+			u32 args[2] = { reinterpret_cast<u32>(&pos), 256 };
+			u32 result;
+			Reloc_CallUserFunction("simby", 5, args, &result);
+		}
+		for (i32 j = 0; j < this->mNumSegs; j++)
+		{
+			i32 tint = Rnd(192);
+			this->mpExtraSegs[j].mpBit->SetTint(((255 * tint) >> 8) + 63, ((123 * tint) >> 8) + 30, 0);
+		}
+		i32 tint = Rnd(128);
+		this->mStartR = ((255 * tint) >> 8) + 127;
+		this->mStartG = ((123 * tint) >> 8) + 61;
+		this->mStartB = 0;
+		for (i32 k = 0; k < this->mNumSegs; k++)
+		{
+			tint = Rnd(128);
+			this->mSegs[k].r = ((255 * tint) >> 8) + 127;
+			this->mSegs[k].g = ((123 * tint) >> 8) + 61;
+			this->mSegs[k].b = 0;
+		}
+		tint = Rnd(128);
+		this->mpInnerLine->mStartR = ((255 * tint) >> 8) + 127;
+		this->mpInnerLine->mStartG = ((123 * tint) >> 8) + 61;
+		this->mpInnerLine->mStartB = 0;
+		for (i32 inner = 0; inner < 2 * this->mNumSegs; inner++)
+		{
+			tint = Rnd(128);
+			this->mpInnerLine->mSegs[inner].r = ((255 * tint) >> 8) + 127;
+			this->mpInnerLine->mSegs[inner].g = ((123 * tint) >> 8) + 61;
+			this->mpInnerLine->mSegs[inner].b = 0;
+		}
+	}
+	if (this->field_6D)
+	{
+		for (i32 i = 0; i < this->mNumSegs; i++)
+		{
+			SKnottedWebSeg* seg = &this->mpExtraSegs[i];
+			i16 phase = seg->field_E + G_TIMER_RELATED * seg->field_D;
+			i32 offset = (seg->field_C * G_RCOSSIN_TBL[phase & 0xFFF].sin) >> 12;
+			this->mSegs[i].End.vx = seg->mPos.vx + offset * this->field_58;
+			this->mSegs[i].End.vy = seg->mPos.vy + offset * this->field_5C;
+			this->mSegs[i].End.vz = seg->mPos.vz + offset * this->field_60;
+		}
+	}
+	if (this->field_6E)
+		this->field_6F = 20;
+	if (this->field_6F)
+	{
+		for (i32 i = 0; i < this->mNumSegs; i++)
+		{
+			i32 offset = ((this->field_6F * G_RCOSSIN_TBL[(G_TIMER_RELATED << 9) & 0xFFF].sin) >> 12)
+				* G_RCOSSIN_TBL[((2048 * (i + 1)) / this->mNumSegs) & 0xFFF].sin >> 12;
+			this->mSegs[i].End.vx = this->mpExtraSegs[i].mPos.vx + offset * this->field_58;
+			this->mSegs[i].End.vy = this->mpExtraSegs[i].mPos.vy + offset * this->field_5C;
+			this->mSegs[i].End.vz = this->mpExtraSegs[i].mPos.vz + offset * this->field_60;
+		}
+		this->field_6E = 0;
+		this->field_6F = this->field_70 > this->field_6F ? 0 : this->field_6F - this->field_70;
+	}
+	this->mpInnerLine->mStart = this->mStart;
+	CVector prev = this->mStart;
+	for (i32 i = 0; i < this->mNumSegs; i++)
+	{
+		SKnottedWebSeg* seg = &this->mpExtraSegs[i];
+		if (this->field_6C)
+		{
+			seg->field_11 = Rnd(256);
+			seg->field_10 = Rnd(19) - 9;
+		}
+		CVector pos = prev + (((this->mSegs[i].End - prev) * (i32)seg->field_11) >> 8);
+		seg->mpBit->mPos = pos;
+		CVector mid = i ? prev : (this->mStart + pos) >> 1;
+		i32 offset = static_cast<i8>(seg->field_10);
+		mid.vx += offset * this->field_58;
+		mid.vy += offset * this->field_5C;
+		mid.vz += offset * this->field_60;
+		this->mpInnerLine->mSegs[2 * i].End = mid;
+		this->mpInnerLine->mSegs[2 * i + 1].End = pos;
+		prev = this->mSegs[i].End;
+	}
 }
 
 // @Ok
@@ -462,9 +557,7 @@ void validate_CGLineParticle(void)
 // line renderers for these classes live in bit.cpp and all go through
 // PCGfx_DrawLine).
 //
-// CKnottedWeb is skipped. Its constructor is at 0x4F8E20 and its vtable has
-// CKnottedWeb::~CKnottedWeb (0x4F9060) and CKnottedWeb::Move (0x4F9150), and
-// this repo declares neither, so a hooked constructor would lose both slots.
+// CKnottedWeb remains unhooked while its standalone behavior is checked.
 
 // @Bogus
 void patch_bit2(void)

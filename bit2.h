@@ -82,6 +82,7 @@ public:
 
 	EXPORT CKnottedWeb(const CVector&, const CVector&);
 	EXPORT virtual ~CKnottedWeb(void);
+	EXPORT virtual void Move(void);
 
 	i32 field_58;
 	i32 field_5C;
@@ -105,8 +106,7 @@ public:
 	// touched by CDropDownController::AI (0x48E930) once the drop finishes; exact meaning
 	// (a "settled"/"snapped" flag on the inner line, guessed) not confirmed.
 	u8 field_6E;
-
-	PADDING(0x1);
+	u8 field_6F;
 
 	// set to 1 right after construction; same CBit::mProtected-style "don't reap me yet"
 	// convention seen elsewhere in this constructor, but at an offset past CGPolyLine's own
