@@ -200,6 +200,9 @@ void M3dUtils_BuildPose(CSuper* pSuper)
 			}
 		}
 
+		// Drop branches that are not ancestors of this joint.
+		StackCount = FoundIndex + 1;
+
 		bool HasLocal =
 			pJoint->Angles.vx != 0 || pJoint->Angles.vy != 0 || pJoint->Angles.vz != 0 ||
 			pJoint->Displacement.vx != 0 || pJoint->Displacement.vy != 0 || pJoint->Displacement.vz != 0;
