@@ -2791,6 +2791,31 @@ void Thug_CreateThug(const u32 *stack, u32 *result)
 }
 
 // @Ok
+// @Matching
+// 0x428B90, shared with CCopLaserPing::Move in the original binary.
+void CThugLaserPing::Move(void)
+{
+	this->field_84 += 8;
+	if (this->field_84 > 32)
+	{
+		this->Die();
+		return;
+	}
+	this->mPosC.vx = this->field_88.vx + this->field_A0.vx * this->field_84;
+	this->mPosC.vy = this->field_88.vy + this->field_A0.vy * this->field_84;
+	this->mPosC.vz = this->field_88.vz + this->field_A0.vz * this->field_84;
+	this->mPosD.vx = this->field_88.vx - this->field_A0.vx * this->field_84;
+	this->mPosD.vy = this->field_88.vy - this->field_A0.vy * this->field_84;
+	this->mPosD.vz = this->field_88.vz - this->field_A0.vz * this->field_84;
+	this->mPos.vx = this->mPosC.vx + this->field_94.vx * (this->field_84 * 4);
+	this->mPos.vy = this->mPosC.vy + this->field_94.vy * (this->field_84 * 4);
+	this->mPos.vz = this->mPosC.vz + this->field_94.vz * (this->field_84 * 4);
+	this->mPosB.vx = this->mPosD.vx + this->field_94.vx * (this->field_84 * 4);
+	this->mPosB.vy = this->mPosD.vy + this->field_94.vy * (this->field_84 * 4);
+	this->mPosB.vz = this->mPosD.vz + this->field_94.vz * (this->field_84 * 4);
+}
+
+// @Ok
 void INLINE CThugPing::SetPosition(void)
 {
 	CSuper* v2 = reinterpret_cast<CSuper*>(Mem_RecoverPointer(&this->field_70));

@@ -149,6 +149,17 @@ public:
 	PADDING(1);
 };
 
+class CThugLaserPing : public CQuadBit
+{
+	public:
+		EXPORT virtual void Move(void);
+
+		i32 field_84;
+		CVector field_88;
+		CVector field_94;
+		CVector field_A0;
+};
+
 class CThugPing : public CSimpleAnim
 {
 	public:
