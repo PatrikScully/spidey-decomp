@@ -3355,28 +3355,20 @@ INLINE i32 CThug::SpideyAnimUppercut(void)
 }
 
 // @Ok
+// @Matching
+// 0x4DA300
 // Verified against IDA decompile of 0x4da300: every case (frame guard,
 // sound id, MakeSpriteRing vector and its component order) matches.
 void CThug::PlaySounds(void)
 {
-	CVector v11;
 	if (this->mType == 304)
 	{
 		switch ( this->mAnim )
 		{
-			case 1u:
-				if ( this->mFrame == 27 || this->mFrame == 13 )
-				{
-					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 300);
-				}
-				return;
-			case 8u:
-				if ( this->mFrame == 5 )
-					SFX_PlayPos(0x801D, &this->mPos, 500);
-				break;
 			case 0xEu:
 				if ( this->mFrame == 15 )
 				{
+					CVector v11;
 					v11.vz = 409600;
 					v11.vx = 0;
 					v11.vy = 0;
@@ -3386,54 +3378,67 @@ void CThug::PlaySounds(void)
 			case 0x1Au:
 				if ( this->mFrame == 23 )
 				{
+					CVector v11;
 					v11.vx = 0;
 					v11.vy = 0;
 					v11.vz = -122880;
 					this->MakeSpriteRing(&v11);
 				}
 				break;
+			case 1u:
+				if ( this->mFrame == 27 || this->mFrame == 13 )
+				{
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 300);
+				}
+				return;
 			case 0x1Cu:
 				if ( this->mFrame == 4 || this->mFrame == 14)
-					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 50);
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 50);
+				break;			case 8u:
+				if ( this->mFrame == 5 )
+					SFX_PlayPos(0x801D, &this->mPos, 500);
 				break;
+
 		}
 	}
 	else
 	{
 		switch ( this->mAnim )
 		{
-			case 5u:
-				if ( this->mFrame == 1 || this->mFrame == 21 )
+			case 0x1Au:
+				if ( this->mFrame == 28 )
 				{
-					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 300);
+					CVector v11;
+					v11.vz = -204800;
+					v11.vx = 0;
+					v11.vy = 0;
+					this->MakeSpriteRing(&v11);
 				}
-				break;
-			case 7u:
-				if ( this->mFrame == 3 )
-					SFX_PlayPos(0x801D, &this->mPos, 500);
-				break;
-			case 0x13u:
+				break;			case 0x13u:
 				if ( this->mFrame == 15 )
 				{
+					CVector v11;
 					v11.vx = 0;
 					v11.vy = 0;
 					v11.vz = 204800;
 					this->MakeSpriteRing(&v11);
 				}
 				break;
-			case 0x18u:
-				if ( this->mFrame == 1 || this->mFrame == 12)
-					SFX_PlayPos((Rnd(4) + 32) | 0x80, &this->mPos, 50);
-				break;
-			case 0x1Au:
-				if ( this->mFrame == 28 )
+			case 5u:
+				if ( this->mFrame == 1 || this->mFrame == 21 )
 				{
-					v11.vz = -204800;
-					v11.vx = 0;
-					v11.vy = 0;
-					this->MakeSpriteRing(&v11);
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 300);
 				}
 				break;
+			case 0x18u:
+				if ( this->mFrame == 1 || this->mFrame == 12)
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 50);
+				break;
+			case 7u:
+				if ( this->mFrame == 3 )
+					SFX_PlayPos(0x801D, &this->mPos, 500);
+				break;
+
 		}
 	}
 
