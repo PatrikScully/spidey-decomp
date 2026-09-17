@@ -498,7 +498,10 @@ void Plat_GfxDrawFan(const SDXPolyField* v, i32 count)
 	{
 		u32 c = v[i].field_10;
 		glColor4ub((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, (c >> 24) & 0xFF);
-		glTexCoord2f(v[i].field_14, v[i].field_18);
+		// D3D XYZRHW vertices carry reciprocal depth at offset 0xC.
+		// Projective texture coordinates preserve it with our screen-space vertices.
+		f32 rhw = v[i].field_C;
+		glTexCoord4f(v[i].field_14 * rhw, v[i].field_18 * rhw, 0.0f, rhw);
 		glVertex3f(v[i].field_0, v[i].field_4, v[i].field_8);
 	}
 	glEnd();
