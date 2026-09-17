@@ -48,6 +48,47 @@ extern SStateFlags gThugStateFlags;
 #define G_THUG_STATE_FLAGS (reinterpret_cast<SStateFlags*>(0x00557CA0))
 
 // @Ok
+// @AlmostMatching: EBX/EDX swap in four offset calculations after 16
+// expression and temporary variants. Same instruction count and branches.
+// 0x4D5540. Native comparison passed 8800 cases.
+i32 CThug::TooCloseToSpidey(void)
+{
+	if (this->mType == 304)
+	{
+		if (this->DistanceToPlayer(2) >= 105)
+			return 0;
+		CVector target = this->mPos;
+		target.vx += (((target.vx - G_MECHLIST_PLAYER->mPos.vx) * (120 - this->DistanceToPlayer(2))) * 17) >> 12;
+		target.vz += (((target.vz - G_MECHLIST_PLAYER->mPos.vz) * (120 - this->DistanceToPlayer(2))) * 17) >> 12;
+		if (this->PathCheck(&this->mPos, &target, 0, 55))
+			return 0;
+		if (this->AddPointToPath(&target, 0))
+		{
+			this->dumbAssPad = 6;
+			this->field_1F8 = 3;
+			return 1;
+		}
+	}
+	else
+	{
+		if (this->DistanceToPlayer(2) >= 162)
+			return 0;
+		CVector target = this->mPos;
+		target.vx += (((target.vx - G_MECHLIST_PLAYER->mPos.vx) * (185 - this->DistanceToPlayer(2))) * 11) >> 12;
+		target.vz += (((target.vz - G_MECHLIST_PLAYER->mPos.vz) * (185 - this->DistanceToPlayer(2))) * 11) >> 12;
+		if (this->PathCheck(&this->mPos, &target, 0, 55))
+			return 0;
+		if (this->AddPointToPath(&target, 0))
+		{
+			this->dumbAssPad = 6;
+			this->field_1F8 = 3;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+// @Ok
 // @Matching
 // 0x4D3340
 void CThug::GetAttackPosition(CVector* target)
