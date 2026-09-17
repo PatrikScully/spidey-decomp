@@ -1397,12 +1397,7 @@ void DCModel_RenderModel(SModel const *pModel, DCModelData *pData, matrix4x4 con
 				pWrite[0]  = src[1];
 				pWrite[1]  = src[2];
 			}
-			else if (sawBillboardAnchor)
-			{
-				// nullsub_1 in the original is a confirmed empty no-op
-				// (0x4015B0), so its call here is omitted.
-			}
-			else if ((((u8)vf) & 0x10) == 0)
+			else if (!sawBillboardAnchor && (((u8)vf) & 0x10) == 0)
 			{
 				f32 in4[4] = { pv->x, pv->y, pv->z, 1.0f };
 				f32 out4[4];
