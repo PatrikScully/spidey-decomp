@@ -19,6 +19,7 @@ public:
 	EXPORT CCop(i16*, i32);
 	EXPORT virtual ~CCop(void);
 
+	EXPORT void Guard(void);
 	EXPORT void ClearAttackFlags(void);
 	EXPORT void LookForPlayer(void);
 	EXPORT i32 GetLaunched(CVector*, i32, i32, i32);

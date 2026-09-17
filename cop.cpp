@@ -56,6 +56,57 @@ extern SStateFlags gCopStateFlags;
 
 // @Ok
 // @Matching
+// 0x42EA60
+void CCop::Guard(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->Neutralize();
+			this->mCBodyFlags |= 0x10;
+			this->dumbAssPad++;
+			if (this->mAnim != 31)
+			{
+				this->RunAnim(this->mType != 306 ? 33 : 12, 0, -1);
+				break;
+			}
+			this->mAnimFinished = 1;
+			// fall through
+		case 1:
+			if (this->mAnimFinished)
+			{
+				this->CycleAnim(31, 1);
+				this->field_230 = Rnd(30) + 20;
+				this->dumbAssPad++;
+			}
+			break;
+		case 2:
+			if (this->field_230-- <= 0)
+			{
+				this->RunAnim(this->mType != 306 ? 32 : 7, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->CycleAnim(static_cast<u8>(this->field_298.Bytes[0]), 1);
+				this->field_230 = Rnd(30) + 20;
+				this->dumbAssPad++;
+			}
+			break;
+		case 4:
+			if (this->field_230-- <= 0)
+				this->dumbAssPad = 0;
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
+// @Ok
+// @Matching
 void Cop_RelocatableModuleClear(void)
 {
 	CItem *pSearch = G_BADDY_LIST;
