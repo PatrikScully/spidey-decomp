@@ -19,6 +19,7 @@ public:
 	EXPORT CCop(i16*, i32);
 	EXPORT virtual ~CCop(void);
 
+	EXPORT void PlaySounds(void);
 	EXPORT void LookConfused(void);
 	EXPORT void Guard(void);
 	EXPORT void ClearAttackFlags(void);

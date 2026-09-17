@@ -56,6 +56,93 @@ extern SStateFlags gCopStateFlags;
 
 // @Ok
 // @Matching
+// 0x42ED60
+void CCop::PlaySounds(void)
+{
+	if (this->mType == 306)
+	{
+		switch (this->mAnim)
+		{
+			case 22:
+				if (this->mFrame == 15)
+				{
+					CVector offset;
+					offset.vz = 409600;
+					offset.vx = 0;
+					offset.vy = 0;
+					this->MakeSpriteRing(&offset);
+				}
+				break;
+			case 24:
+				if (this->mFrame == 23)
+				{
+					CVector offset;
+					offset.vx = 0;
+					offset.vy = 0;
+					offset.vz = -122880;
+					this->MakeSpriteRing(&offset);
+				}
+				break;			case 14:
+				if (this->mFrame == 27 || this->mFrame == 13)
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 300);
+				break;
+			case 8:
+				if (this->mFrame == 4 || this->mFrame == 14)
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 50);
+				break;
+			case 10:
+				if (this->mFrame == 5)
+					SFX_PlayPos(0x801D, &this->mPos, 100);
+				break;
+
+		}
+	}
+	else
+	{
+		switch (this->mAnim)
+		{
+			case 24:
+				if (this->mFrame == 28)
+				{
+					CVector offset;
+					offset.vz = -204800;
+					offset.vx = 0;
+					offset.vy = 0;
+					this->MakeSpriteRing(&offset);
+				}
+				break;			case 22:
+				if (this->mFrame == 15)
+				{
+					CVector offset;
+					offset.vx = 0;
+					offset.vy = 0;
+					offset.vz = 204800;
+					this->MakeSpriteRing(&offset);
+				}
+				break;
+			case 14:
+				if (this->mFrame == 2 || this->mFrame == 12)
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 300);
+				break;
+			case 8:
+				if (this->mFrame == 13 || this->mFrame == 4)
+					SFX_PlayPos((Rnd(4) + 32) | 0x8000, &this->mPos, 50);
+				break;
+			case 10:
+				if (this->mFrame == 3)
+					SFX_PlayPos(0x801D, &this->mPos, 100);
+				break;
+			case 11:
+				if (this->mFrame == 5)
+					SFX_PlayPos((Rnd(2) + 30) | 0x8000, &this->mPos, 0);
+				break;
+
+		}
+	}
+}
+
+// @Ok
+// @Matching
 // 0x42EBD0
 void CCop::LookConfused(void)
 {
