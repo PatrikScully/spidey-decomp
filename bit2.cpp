@@ -305,6 +305,13 @@ void CKnottedWeb::Move(void)
 }
 
 // @Ok
+// Inlined in original CSwinger_SwingBack, 0x4F7550.
+CSwingBack::CSwingBack(const CVector& start, const CVector& end)
+	: CKnottedWeb(start, end)
+{
+}
+
+// @Ok
 // Original 0x4F5960. Retracts and fades a released swing strand.
 void CSwingBack::Move(void)
 {
