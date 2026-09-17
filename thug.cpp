@@ -2792,6 +2792,42 @@ void Thug_CreateThug(const u32 *stack, u32 *result)
 
 // @Ok
 // @Matching
+// 0x4D2710
+CThugBulletTracer::CThugBulletTracer(
+		const CVector& start, const CVector& end, CSuper* host, SLineInfo* line,
+		u8 red, u8 green, u8 blue)
+{
+	print_if_false(!host || !line, "pSuper and pLineInfo are both non-NULL in call to CThugBulletTracer");
+	if (line)
+		CreateThugRicochet(line, red, green, blue);
+	if (host)
+	{
+		SHook hook;
+		if (Web_CollideWithSuper(host, &start, &end, &hook, 4096))
+			new CThugPing(host, &hook);
+	}
+	CVector from = start;
+	u32 distance = Utils_Dist(from, end);
+	if (distance > 1000)
+		from = end + (((from - end) / distance) * 1000);
+	this->mpRibbon = new CGouraudRibbon(5, 0);
+	this->mpRibbon->mProtected = 1;
+	this->mpRibbon->SetRGB(red, green, blue);
+	this->mpRibbon2 = new CGouraudRibbon(5, 0);
+	this->mpRibbon2->mProtected = 1;
+	this->mpRibbon2->SetRGB(255, 255, 255);
+	this->mMaxWidth = 3;
+	this->SetWidth();
+	CVector direction = end - from;
+	for (i32 i = 0; i < 5; i++)
+	{
+		this->mpRibbon->mpPoints[i].Pos = from + ((i * direction) / 4);
+		this->mpRibbon2->mpPoints[i].Pos = this->mpRibbon->mpPoints[i].Pos;
+	}
+}
+
+// @Ok
+// @Matching
 // 0x4D2A30
 CThugBulletTracer::~CThugBulletTracer(void)
 {
