@@ -405,10 +405,10 @@ i32 CPlatform::ExecuteCommand(u16 a2)
 		{
 			switch (a2)
 			{
-			case 0x423D:
+			case 0x4205:
 				this->Die(0);
 				return 0;
-			case 0x4250:
+			case 0x4220:
 			{
 				CVector pos;
 				i32 *p = (i32*)((((i32)this->field_24C) + 3) & 0xFFFFFFFC);
@@ -426,7 +426,7 @@ i32 CPlatform::ExecuteCommand(u16 a2)
 				this->field_218 |= 1;
 				return 1;
 			}
-			case 0x4251:
+			case 0x4221:
 			{
 				u16 trigId = *this->field_24C;
 				this->field_24C++;
@@ -445,7 +445,7 @@ i32 CPlatform::ExecuteCommand(u16 a2)
 				this->field_218 |= 1;
 				return 1;
 			}
-			case 0x4252:
+			case 0x4222:
 			{
 				CVector pos;
 				i32 *p = (i32*)((((i32)this->field_24C) + 3) & 0xFFFFFFFC);
