@@ -1028,7 +1028,7 @@ class CPlayer : public CSuper
 		EXPORT void SwitchToDeathMode(bool);
 		EXPORT i16* SwitchToSynthesizedInput(i16 *);
 		EXPORT void SynthesizeAnalogueInput(void);
-		EXPORT void UpdateAndTrackCombo(void);
+		EXPORT i32 UpdateAndTrackCombo(void);
 		EXPORT void UpdateOffscreenSpideySenseIndicatorList(void);
 		EXPORT void UpdateTrails(void);
 		EXPORT ~CPlayer(void);

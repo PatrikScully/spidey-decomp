@@ -8546,9 +8546,8 @@ EXPORT void M3d_BuildTransform(CSuper*);
 // instructions) with the Hex-Rays output as a cross-check. Runs one tick of
 // the combo move started by CPlayer::InitiateCombo.
 //
-// The original returns int (0, 1, or the follow-on move id) but nothing
-// reads it, so the repo signature stays void; the three `return` points
-// below are the original's three returns.
+// Return 0 when the combo ends, 1 while it runs, or the follow-on move id.
+// SpideyAI0 uses this result to choose the next player state.
 //
 // Elapsed time is field_84 - field_910. The byte at field_950[elapsed / 2]
 // is copied into CSuper::mFrame every tick, and a 0xFF anywhere in
@@ -8582,7 +8581,7 @@ EXPORT void M3d_BuildTransform(CSuper*);
 //     field_43C[i] -> field_43C[i] + 1.5 * (field_37C[i] - field_43C[i]).
 //     On a hit it builds the SHitInfo, calls the target's virtual Hit, plays
 //     one of three impact effects and records the body in field_A6C.
-void CPlayer::UpdateAndTrackCombo(void)
+i32 CPlayer::UpdateAndTrackCombo(void)
 {
 	// per animation distance byte stream, filled by ParseFightData.
 	static u8 ** const gDistanceDefs = (u8**)0x006A8768;
@@ -8644,13 +8643,14 @@ void CPlayer::UpdateAndTrackCombo(void)
 
 				if (pFollowOn == 0)
 				{
-					return;
+					return 0;
 				}
 
 				print_if_false(0, "exit frame incorrectly defined");
 
-				this->InitiateCombo(*pFollowOn, this->field_90C);
-				return;
+				u16 move = *pFollowOn;
+				this->InitiateCombo(move, this->field_90C);
+				return move;
 			}
 		}
 
@@ -9114,8 +9114,9 @@ void CPlayer::UpdateAndTrackCombo(void)
 
 				if (startFollowOn)
 				{
-					this->InitiateCombo(*pFollowOn, this->field_90C);
-					return;
+					u16 move = *pFollowOn;
+					this->InitiateCombo(move, this->field_90C);
+					return move;
 				}
 			}
 		}
@@ -9123,7 +9124,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 
 	if ((i32)this->field_8FE > elapsed || (i32)this->field_900 < elapsed)
 	{
-		return;
+		return 1;
 	}
 
 	if (poseApplied == 0)
@@ -9168,7 +9169,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 	if (this->field_378 != 0)
 	{
 		this->field_378 = 0;
-		return;
+		return 1;
 	}
 
 	CBaddy *pBody = G_BADDY_LIST;
@@ -9318,7 +9319,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 							this->field_A7C = this->field_A7C + 1;
 						}
 
-						return;
+						return 1;
 					}
 
 					c = *pWalk;
@@ -9330,6 +9331,7 @@ void CPlayer::UpdateAndTrackCombo(void)
 
 		pBody = reinterpret_cast<CBaddy*>(pBody->mNextItem);
 	}
+	return 1;
 }
 
 // gSpideySenseIndicatorLastUpdateTime (0x6A9080): no idb_globals.txt entry
