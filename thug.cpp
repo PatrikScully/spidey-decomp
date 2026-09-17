@@ -58,6 +58,133 @@ void CThug::Victorious(void)
 	SFX_PlayPos(0x8024, &this->mPos, 0);
 }
 
+// @NotOk
+// 0x4D6C90
+// Native comparison passed 50000 cases; instruction matching is pending.
+void CThug::ShootPlayer(void)
+{
+	switch (this->dumbAssPad)
+	{
+		case 0:
+			this->field_330 = 600;
+			this->field_310 = 160;
+			this->Neutralize();
+			if (this->SetAnimMode(1, 1))
+				this->dumbAssPad = 6;
+			else
+			{
+				this->field_218 &= ~0x7000;
+				new CAIProc_StateSwitchSendMessage(this, 12);
+				new CAIProc_StateSwitchSendMessage(this, 17);
+				new CAIProc_LookAt(this, G_MECHLIST_PLAYER, 0, 2, 130, 4);
+				this->CycleAnim(this->mType != 304 ? 1 : 4, 1);
+				this->field_1F8 = 120;
+				this->dumbAssPad++;
+			}
+			break;
+		case 1:
+			if (this->RunTimer(&this->field_1F8))
+			{
+				if (G_MECHLIST_PLAYER->mHealth <= 0 || G_MECHLIST_PLAYER->mHeldObject)
+					goto finishShooting;
+				this->DrawLaserSiteThingie(1, 0);
+				if (this->field_288 & 2)
+				{
+					this->field_288 &= ~2;
+					this->dumbAssPad++;
+					this->field_3A8 = G_MECHLIST_PLAYER->mPos.vy;
+					this->field_230 = 15;
+					this->field_1F8 = Rnd(3) + 1;
+				}
+			}
+			else
+			{
+				this->Neutralize();
+				this->field_31C.bothFlags = 4;
+				this->dumbAssPad = 0;
+			}
+			break;
+		case 2:
+			if (G_MECHLIST_PLAYER->mHealth <= 0 || G_MECHLIST_PLAYER->mHeldObject)
+				goto finishShooting;
+			this->DrawLaserSiteThingie(1, 0);
+			{
+				i32 timer = this->field_230--;
+				if (timer == 7)
+				{
+					if (!G_MECHLIST_PLAYER->mHeldObject)
+						SFX_PlayPos(0x801D, &this->mPos, 500);
+				}
+				else if (timer == 1)
+				{
+					this->dumbAssPad++;
+					if (this->mType == 304)
+						this->RunAnim(8, this->mAnim == 8 ? this->mFrame : 0, -1);
+					else
+						this->RunAnim(7, this->mAnim == 7 ? this->mFrame : 0, -1);
+				}
+			}
+			break;
+		case 3:
+			if (this->mAnimFinished)
+			{
+				this->RunAnim((this->mType != 304) + 7, 0, -1);
+				this->dumbAssPad++;
+			}
+			break;
+		case 4:
+			if (this->mAnimFinished)
+			{
+				if (--this->field_1F8 > 0 && this->PlayerIsVisible())
+				{
+					if (this->mType != 304 && this->DistanceToPlayer(2) < 650
+							&& my_abs(G_MECHLIST_PLAYER->mPos.vy - this->field_29C - 0x4000) < 409600)
+					{
+						this->dumbAssPad++;
+						break;
+					}
+					this->field_218 &= ~0x7000;
+					this->RunAnim((this->mType != 304) + 7, 0, -1);
+				}
+				else
+				{
+					this->dumbAssPad++;
+					break;
+				}
+			}
+			if (G_MECHLIST_PLAYER->mHeldObject)
+				goto finishShooting;
+			if (this->DrawLaserSiteThingie(1, 0))
+			{
+				SHitInfo hit;
+				hit.field_0 = 4;
+				hit.field_8 = this->field_38C;
+				G_MECHLIST_PLAYER->Hit(&hit);
+				if (G_MECHLIST_PLAYER->mHealth <= 0)
+					this->Victorious();
+			}
+			if (this->mType == 304 && !(G_ATTACK_RELATED & 3)
+					&& this->DistanceToPlayer(2) < 650
+					&& my_abs(G_MECHLIST_PLAYER->mPos.vy - this->field_29C - 0x4000) < 409600)
+				this->dumbAssPad++;
+			break;
+		case 5:
+			delete this->field_3A0;
+			this->field_3A0 = 0;
+finishShooting:
+			this->field_31C.bothFlags = 10;
+			this->dumbAssPad = 0;
+			break;
+		case 6:
+			if (this->mAnimFinished)
+				this->dumbAssPad = 0;
+			break;
+		default:
+			print_if_false(0, "Unknown substate!");
+			break;
+	}
+}
+
 // @Ok
 // @Matching
 // 0x4D7260
