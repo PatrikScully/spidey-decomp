@@ -139,12 +139,15 @@ struct SWebFirePosAdapter
 // @Bogus
 static void gCSwinger_SetRenderEnd(void *pSwinger, CVector &pos)
 {
+#ifdef SPIDEY_STANDALONE
+	static_cast<CSwinger*>(pSwinger)->SetRenderEnd(pos);
+#else
 	typedef void (SSwingerRenderEndAdapter::*memfn)(CVector&);
 	union { memfn m; void *p; } u;
 	u.p = (void*)0x004F74B0;
 	(reinterpret_cast<SSwingerRenderEndAdapter*>(pSwinger)->*u.m)(pos);
+#endif
 }
-
 // @Bogus
 static void gCWeb_SetFirePos(CWeb *pWeb, CVector &pos)
 {
