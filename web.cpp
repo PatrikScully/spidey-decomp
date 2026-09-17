@@ -996,6 +996,13 @@ void CSwinger::DeleteStuff(void)
 }
 
 // @Ok
+// Original 0x4F7200.
+CSwinger::~CSwinger(void)
+{
+	this->DeleteStuff();
+}
+
+// @Ok
 int CSwinger::IsOneTimeToDie(void)
 {
 	return this->field_180 >= 4096;
