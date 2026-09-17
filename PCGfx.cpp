@@ -2513,9 +2513,6 @@ void submitPoly(_DXVERT **verts, i32 count)
 				SDXPolyField *dst = &p->field_10[i];
 				memcpy(dst, verts[i], sizeof(SDXPolyField));
 
-				if (!(p->mBlendMode & 4))
-					dst->field_C = 1.0f; // rhw, the original stores to +0xC (0x5071B0: *((DWORD*)v6 + 1) with v6 = dst + 8)
-
 				i32 v23;
 				if (gProcessTextureRelated)
 					v23 = 128;
